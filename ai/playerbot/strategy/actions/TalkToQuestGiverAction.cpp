@@ -247,6 +247,21 @@ ItemIds TalkToQuestGiverAction::BestRewards(Quest const* quest)
     }
 }
 
+int64 TalkToQuestGiverAction::RewardGain(uint32 itemId)
+{
+    ItemQualifier qualifier(itemId);
+    ItemPrototype const* proto = qualifier.GetProto();
+    if (!proto)
+        return 0;
+
+    int64 gain = sRandomItemMgr.ItemStatWeight(bot, qualifier);
+    uint8 const slot = ItemUsageValue::GetPreferredEquipSlot(bot, nullptr, proto);
+    if (slot != NULL_SLOT)
+        if (Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            gain -= sRandomItemMgr.ItemStatWeight(bot, worn);
+    return gain;
+}
+
 void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* quest, WorldObject* questGiver, std::string& out)
 {
     std::map<std::string, std::string> args;
@@ -259,16 +274,16 @@ void TalkToQuestGiverAction::RewardMultipleItem(Player* requester, Quest const* 
         (questRewardOption == QuestRewardOptionType::QUEST_REWARD_CONFIG_DRIVEN && sPlayerbotAIConfig.autoPickReward == "yes") ||
         questRewardOption == QuestRewardOptionType::QUEST_REWARD_OPTION_AUTO
     ) {
-        //Pick the best-scored item of the best rewards (AG-3/RPG-A1): usage
-        // ties are broken by live stat weight instead of vendor order.
+        // Usage ties are broken by the gain over the item worn in the
+        // target slot, not by vendor order or the reward's own score.
         bestIds = BestRewards(quest);
         uint32 rewardIndex = *bestIds.begin();
-        uint32 rewardScore = 0;
+        int64 rewardScore = 0;
         if (bestIds.size() > 1)
         {
-            std::vector<std::pair<uint32, uint32>> scored;
+            std::vector<std::pair<uint32, int64>> scored;
             for (uint32 id : bestIds)
-                scored.emplace_back(id, sRandomItemMgr.GetLiveStatWeight(bot, quest->RewChoiceItemId[id]));
+                scored.emplace_back(id, RewardGain(quest->RewChoiceItemId[id]));
             rewardIndex = ai::QuestRewardTiebreak(scored);
             for (auto const& candidate : scored)
                 if (candidate.first == rewardIndex)

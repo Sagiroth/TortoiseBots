@@ -5325,7 +5325,11 @@ class DungeonPlanSql(unittest.TestCase):
         # carries the walk-29 unit lists: the mages Polymorph the Venombroods (14532, beasts and not immune) and the
         # kill_first order names the Thekal zealots and the four Razzashi Cobras. 9 legs, 754 steps, 149 pulls, the
         # eight bosses in the guide's order; leg 2 is the r2 Mar'li route (below).
-        # 20261105101000 (turtle-agent 2db51e2, plan/zg-jindo fix 1, 2026-11-05): the newest zul_gurub migration. The
+        # 20261105140000 (turtle-agent 2d17a29, the walk-36 fixes: Jin'do guard first, stand in sight, 2026-11-05): the newest
+        # zul_gurub migration. 9 legs, 761 steps, 145 pulls. Against 20261105101000: legs 0 and 2 are unchanged; leg 6
+        # (jindo_the_hexxer) goes 90 -> 82 steps, 18 -> 16 pulls; legs 1, 3, 4, 5, 7 and 8 also re-cut (139 -> 142, 54 -> 55,
+        # 139 -> 141, 80 -> 84, 92 -> 97, 80 -> 81 steps; leg 4 26 -> 25 pulls).
+        # 20261105101000 (turtle-agent 2db51e2, plan/zg-jindo fix 1, 2026-11-05): the previous zul_gurub migration. The
         # honour-guard group is a stand pull with max_bodies 10, the pit pull group is dropped, and groups 8/9 are stand
         # pulls on a corridor that bends south of the pit. 9 legs, 753 steps, 148 pulls. Only leg 6 (jindo_the_hexxer)
         # differs from 20261105100500: 87 -> 90 steps, pulls unchanged at 18.
@@ -5333,18 +5337,18 @@ class DungeonPlanSql(unittest.TestCase):
         # carries kill_first 15112,14987 (Brain Wash Totem, Powerful Healing Ward) ahead of the old order; 9 legs, 750 steps,
         # 148 pulls. Only leg 6 (jindo_the_hexxer) differs from 20261104160000: 90 -> 87 steps, 19 -> 18 pulls.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261105101000_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532,11356,11339,14882,11361,11365,11350,14825,14826', '', '15112,14987,14750,15146,11830,14883,11353', 'turtle-agent 2db51e2 dungeons/zul_gurub.json', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        self.assertEqual(name, "20261105140000_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532,11356,11339,14882,11361,11365,11350,14825,14826', '', '15112,14987,14750,15146,11830,14883,11353', 'turtle-agent 2d17a29 dungeons/zul_gurub.json', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
         self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
                          ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 753)
+        self.assertEqual(len(rows), 761)
         self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
-                         [51, 139, 28, 54, 139, 80, 90, 92, 80])
+                         [51, 142, 28, 55, 141, 84, 82, 97, 81])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
-                         [16, 23, 6, 8, 26, 20, 18, 23, 8])
+                         [16, 23, 6, 8, 25, 20, 16, 23, 8])
         # Leg 1 (high_priest_venoxis), walk 20: the Mad Servant packs (15111) are pulled from stands out of the
         # others' aggro, in the order E, C, then D+A as one row (walk 18 moved D in from leg 7 group 37; walk 20
         # merged it with A). Each is a stand pull (flag 8192) run from the move row right before it (its stand):
@@ -5451,10 +5455,11 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(leg7[g20 - 1]["comment"], "approach path")
         # The r2 route's own cut walks the lake past the unowned elite Hooktooth Frenzy spawns 51444 (-11772.8
         # -1790.94), 49074 (-11795.1 -1754.62), 49730 (-11743.3 -1788.03) and 51443 (-11818.4 -1744.63): its nearest
-        # rows are 9.4, 4.1, 6.9 and 5.7 yd (flat) off, all plain `move` path rows. Pinned so the next re-cut of the
-        # leg shows here (the walk-25 corridor check it replaces wanted 15 yd of clearance).
-        for gid, sx, sy, want in (("51444", -11772.8, -1790.94, (65.6, "pull")), ("49074", -11795.1, -1754.62, (38.2, "move")),
-                                  ("49730", -11743.3, -1788.03, (57.2, "pull")), ("51443", -11818.4, -1744.63, (22.5, "move"))):
+        # rows are 53.3, 38.2, 47.0 and 22.5 yd (flat) off, all `move` path rows (walk 36: 51444 and 49730 were 65.6 and
+        # 57.2 yd off, pulls, before the re-cut). Pinned so the next re-cut of the leg shows here (the walk-25 corridor
+        # check it replaces wanted 15 yd of clearance).
+        for gid, sx, sy, want in (("51444", -11772.8, -1790.94, (53.3, "move")), ("49074", -11795.1, -1754.62, (38.2, "move")),
+                                  ("49730", -11743.3, -1788.03, (47.0, "move")), ("51443", -11818.4, -1744.63, (22.5, "move"))):
             got = min((round(math.hypot(float(r["x"]) - sx, float(r["y"]) - sy), 1), r["kind"]) for r in leg7)
             self.assertEqual(got, want, gid)
         # The Mad Servant spawns of map 309 (core sql/base tw_world_creature.sql): E 49056; C 49059-49061;
@@ -5537,9 +5542,9 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
                          ["14517", "14507", "14510", "14599", "14515", "11382", "11380", "14834"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "open"})
-        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 178)  # item 8's approach points (Jin'do fix 1: leg 6 gained two)
+        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 172)  # item 8's approach points (walk 36: 178 -> 172)
         pulls = [r for r in rows if r["kind"] == "pull"]
-        self.assertEqual(len(pulls), 148)
+        self.assertEqual(len(pulls), 145)
         # Every stand pull of the plan runs from the move row right before it, inside the run leader's 60 yd see
         # range, and carries param 0 (the gate's own marker).
         for leg in range(9):
