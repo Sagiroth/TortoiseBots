@@ -744,6 +744,40 @@ class BossTacticsSql(unittest.TestCase):
         live = {key for key in live if not delete_covers(scope, key)}
         self.assertEqual(live, {(309, 14599, "kill_first", 11361, 0)})
 
+    def test_aq20_step_one_rows_are_live(self):
+        # Walk-30 fixes, step 1 (20261104150000_world.sql): the rows of the kinds
+        # that already have a consumer. burn_mana and ranged_only go in a later
+        # migration with their C++, so the loader never skips them. Poison
+        # Stinger 25748 has no row: preventionType 2, not SILENCE (1), so the
+        # core cannot interrupt it (SpellEffects.cpp:3389-3393).
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        ossirian = live.get((509, 15339, "use_object", 180619, 25176))
+        self.assertIsNotNone(ossirian, "the Ossirian crystal use_object row is missing")
+        self.assertEqual(38.0, ossirian["window_s"], "the crystal window is not 38 s")
+        self.assertEqual("tank_anchor", ossirian["tactic_mode"], "the crystal row lost tank_anchor")
+        self.assertEqual(180619, ossirian["target_entry"])
+        self.assertEqual(25176, ossirian["spell_id"])
+        self.assertEqual((0, 25.0), (ossirian["priority"], ossirian["param"]))
+        expected = {
+            (509, 15348, "swap_on_aura", 0, 25646): (2, 5.0, ""),
+            (509, 15339, "taunt_after_cast", 0, 0): (1, 4.0, "until_tank"),
+            (509, 15339, "dispel_priority", 0, 25195): (1, 0.0, "now"),
+            (509, 15340, "kill_first", 15527, 0): (1, 0.0, ""),
+            (509, 15369, "kill_first", 15934, 0): (2, 0.0, ""),
+            (509, 15369, "taunt_after_cast", 0, 0): (0, 4.0, "until_tank"),
+            (509, 15324, "linked_death", 15324, 0): (1, 5.0, ""),
+        }
+        for key, want in expected.items():
+            self.assertIn(key, live, "missing AQ20 step-1 row %s" % (key,))
+            row = live[key]
+            self.assertEqual(want, (row["priority"], row["param"], row["tactic_mode"]),
+                             "AQ20 row %s drifted" % (key,))
+            self.assertIsNone(new_kind_problem(row))
+        glad = live[(509, 15324, "linked_death", 15324, 0)]
+        self.assertEqual(7.0, glad["window_s"])
+        self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
+        self.assertNotIn((509, 15369, "behind", 0, 25814), live)
+
 
 def _sql_statements(text):
     """Split a dump into statements: comments dropped, quotes and escapes respected."""
