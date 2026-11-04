@@ -8465,6 +8465,31 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     f.ccHeldRead = true;
 }
 
+// The fight's own units (DungeonRun::Run::ownFightGuids), each resolved with one object lookup on the run's map, so
+// the own-fight step end has positive evidence of death or despawn instead of a unit's absence from this tick's
+// reads: a pull mob dragged out of the row's radius, one evading out of the engaged read, or a read gap leaves no
+// proof of anything. Not on the map any more: gone; on it and not alive: dead; alive: not gone, wherever it stands.
+// The lead bot off the run's map (a ghost in a regroup) leaves the read unset, and an unread guid never counts as
+// gone. No grid or world scan.
+void ReadOwnFightFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!f.anyInCombat)
+        return;
+    Map* const map = lead->FindMap();
+    if (!map || (slot.run.plan && map->GetId() != slot.run.plan->map))
+        return;
+    for (std::uint64_t const guid : slot.run.ownFightGuids)
+    {
+        OwnUnitFact fact;
+        fact.guid = guid;
+        Unit* const unit = map->GetUnit(::ObjectGuid(guid));
+        fact.state = !unit ? OwnUnitState::Gone : !unit->IsAlive() ? OwnUnitState::Dead : OwnUnitState::Alive;
+        f.ownFightUnits.push_back(fact);
+    }
+    f.ownFightRead = true;
+}
+
 // A party bot is in combat when it or its living pet is (DungeonRun::MemberFact::inCombat, Facts::anyInCombat, and
 // the member read below): a pet held alone keeps its bot in the fight (Codex adversarial review of 5017a644).
 bool MemberInCombat(Player* bot)
@@ -11338,6 +11363,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // engaged read loses it while the hold lasts (DungeonRun::Facts::ccHeld).
         if (!slot.run.ccHolds.empty())
             ReadCcBreakFacts(slot, lead, bots, f);
+        // The fight's own units, one object lookup each (DungeonRun::Facts::ownFightUnits).
+        ReadOwnFightFacts(slot, lead, f);
     }
     if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
         ReadKillFirst(*slot.run.plan, lead, bots, f);

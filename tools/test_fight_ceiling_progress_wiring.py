@@ -47,6 +47,22 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         # The watch's clock is the tick's real length.
         self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", CODE)
 
+    def test_the_glue_proves_the_fights_own_units_gone(self):
+        # The own-fight step end takes positive evidence: the glue resolves each remembered own guid on the run's
+        # map, and only a dead or despawned unit erases it (a unit that left the reads alone proves nothing).
+        facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
+        self.assertIn("ReadOwnFightFacts(slot, lead, f);", facts)
+        read = body(CODE, "void ReadOwnFightFacts(DungeonRunSlot const& slot, Player* lead,")
+        self.assertIn("map->GetUnit(::ObjectGuid(guid))", read)
+        self.assertIn("OwnUnitState::Gone", read)
+        self.assertIn("OwnUnitState::Dead", read)
+        self.assertIn("f.ownFightRead = true;", read)
+        self.assertIn("u.state == OwnUnitState::Dead || u.state == OwnUnitState::Gone", RULES)
+        self.assertIn("r.ownFightGuids.erase(u.guid);", RULES)
+        # A boss row ends on his corpse alone: the unrelated units that keep the party fighting do not hold it.
+        self.assertIn("bool const bossRowDown = s->kind == PlanStepKind::Boss && BossDownEvidence(r, f)", RULES)
+        self.assertIn("(bossRowDown ||\n            (f.engagedRead && !f.staleCombat", RULES)
+
     def test_the_fight_block_watches_every_fight_tick_before_the_pause(self):
         fight = body(RULES, "    if (f.anyInCombat && !objectDone && !ownFightOver)\n    {", "\n    }\n")
         watch = fight.index("FightProgress const progress = FightProgressTick(r, f, dt);")

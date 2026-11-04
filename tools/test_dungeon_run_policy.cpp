@@ -33263,9 +33263,12 @@ static void TestClearedPullEndsWhileUnrelatedUnitsFight()
     r.fighting = true;
     CHECK(Tick(r, f).empty());
     CHECK(r.step == 0 && r.state == State::Running);
-    // The pack dies; the pit's respawns take the party. The ceiling's timer is over the cap: the step is not held.
+    // The pack dies; the pit's respawns take the party. The glue's lookup proves the row's own unit dead (its
+    // absence from the reads alone proves nothing), and the ceiling's timer is over the cap: the step is not held.
     f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
     r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.state == State::Running && r.step == 1 && r.note == "pack cleared");
@@ -33405,6 +33408,8 @@ static void TestNewPullIsNotBypassedByTheEarlierFight()
     CHECK(Tick(r, f).empty());
     f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
     r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.step == 1 && r.state == State::Running);
@@ -33460,9 +33465,10 @@ static void TestNewOwnUnitNotYetPulledDoesNotEndTheFight()
     }
 }
 
-// Probe B: the own unit drops out of the engaged read for a tick (fled, evading, a read gap) while unrelated units
-// fight: younger than the ceiling, the fight is not the step's over.
-static void TestOwnUnitReadGapDoesNotEndTheFight()
+// Probe B: the row's own unit is alive but absent from the engaged read and the row's lists (a pull mob dragged out
+// of the row's radius, one evading, a read gap) while unrelated units fight. Its absence is no death: past the
+// ceiling too, the step is not over (the glue's lookup says it is alive).
+static void TestOwnUnitAliveOffTheReadsDoesNotEndTheFight()
 {
     DungeonPlan plan;
     plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
@@ -33480,12 +33486,20 @@ static void TestOwnUnitReadGapDoesNotEndTheFight()
     f.engagedUnits = {a};
     r.fighting = true;
     CHECK(Tick(r, f).empty());
+    f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
-    for (int i = 0; i < 5; ++i)
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
+    for (int i = 0; i < 3; ++i)
     {
         CHECK(Tick(r, f).empty());
         CHECK(r.step == 0 && r.state == State::Running && r.fighting);
     }
+    // Past the ceiling it still does not go on: the fight ceiling's pause, not the step's end.
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
 }
 
 // Probe C: the own pack dies and the combat flag lingers with nothing engaged (a stale flag), or unrelated units
@@ -33510,6 +33524,8 @@ static void TestOwnFightHoldsAndTheRestRunsAfterIt(bool stale)
     r.fighting = true;
     CHECK(Tick(r, f).empty());
     f.units.clear();
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
     f.minHealerManaPct = 10;
     f.minHealthPct = 30;
     if (stale)
@@ -33552,6 +33568,8 @@ static void TestClearedPullPastTheCeilingStillRests()
     CHECK(Tick(r, f).empty());
     f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
     f.minHealerManaPct = 10;
     f.minHealthPct = 30;
     r.fightMs = kFightCapMs + 5000;
@@ -33611,6 +33629,8 @@ static void TestOwnUnitReadGapKeepsTheStepPastTheCeiling()
     r.fighting = true;
     CHECK(Tick(r, f).empty());
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
     r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.step == 0 && r.state == State::Paused);
@@ -33637,10 +33657,13 @@ static void TestHeldOwnUnitKeepsTheFight()
     f.engagedUnits = {a};
     r.fighting = true;
     CHECK(Tick(r, f).empty());
-    // The pack's last unit is held: the engaged read has only the pit's respawns, the run's own hold has it.
+    // The pack's last unit is held: the engaged read has only the pit's respawns, the run's own hold has it, and
+    // the glue's lookup finds it alive.
     f.engagedUnits = {Unit(0x900, 14826, 10)};
     f.ccHeldRead = true;
     f.ccHeld = {a};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
     r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.step == 0 && r.state == State::Paused);
@@ -33652,7 +33675,10 @@ static void TestHeldOwnUnitKeepsTheFight()
 static void TestMidFightReEntryKeepsTheFightStart()
 {
     DungeonPlan plan;
-    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    PlanStep first = PullStep(10, {14825});
+    PlanStep later = PullStep(50, {14826});
+    later.radius = 8.0f;
+    plan.steps = {first, Step(PlanStepKind::Move, 20), later, Step(PlanStepKind::Move, 60)};
     Run r = Start(&plan);
     Facts f = Party(0);
     UnitFact a = Unit(0x101, 14825, 20);
@@ -33672,17 +33698,98 @@ static void TestMidFightReEntryKeepsTheFightStart()
     // The own pack dies and the step ends past the ceiling; the same combat goes on on the walk row.
     f.units.clear();
     f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
     r.fightMs = kFightCapMs + 5000;
     Tick(r, f);
     CHECK(r.step == 1 && r.state == State::Running);
-    // The walk's own unit is engaged again: the fight block re-enters mid-fight.
+    // A later row's unit takes the party on the walk: the fight block re-enters mid-fight.
     r.fightMs = 5000;
-    f.engagedUnits = {a};
+    UnitFact ahead = Unit(0x901, 14826, 10);
+    ahead.x = 50.0f; // by the later row's own point: its unit
+    f.engagedUnits = {ahead};
+    f.ownFightUnits = {{0x901, OwnUnitState::Alive}};
     CHECK(Tick(r, f).empty());
     CHECK(r.fighting);
     CHECK(r.ccOpenSent.count(0x777) == 1);
     CHECK(r.ccOpenPrepull.count(0x777) == 1);
     CHECK(r.fightMs == 5000 + kTickMs);
+}
+
+// The same fight, no lookup: a guid the glue could not resolve is unknown, and unknown never counts as gone (an own
+// unit absent from every read alone proves nothing).
+static void TestUnreadOwnUnitNeverCountsAsGone()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// ZG walk 36 d4: Jin'do 11380 died at his spot while the pit's Sacrificed Trolls 14826 (respawning every 10 s)
+// kept the party in the combat. The pull before his row had engaged him, so the boss row's own read never saw him
+// engaged and the own-fight end never named the row; the run sat in the fight for an hour. His corpse is positive
+// evidence: the row ends though the trolls fight on, and the next row goes on with them.
+static void TestBossDownEndsTheRowThoughTrollsKeepFighting()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 11380;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {PullStep(10, {14825}), Step(PlanStepKind::Move, 20), boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 8);
+    a.x = 8.0f;
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.ownFightStep == 0);
+    // The pull row clears; the respawns take the party and the same combat goes on onto the boss row.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    f.leadX = 20.0f;
+    Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    // Jin'do is dead (his corpse at his own spawn) and the trolls fight on: the row ends on his death alone.
+    f.bossOwnDead = true;
+    f.bossOwnDeadEntry = 11380;
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(r.note.find("boss down") != std::string::npos);
+    // The combat goes on onto the walk row: the trolls no longer hold the run's next step.
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
 }
 
 static void TestHealerGuardSkipsCcHolders()
@@ -34051,7 +34158,8 @@ int main()
     TestWipeOverUnrelatedUnitsKeepsTheRegroup();
     TestNewPullIsNotBypassedByTheEarlierFight();
     TestNewOwnUnitNotYetPulledDoesNotEndTheFight();
-    TestOwnUnitReadGapDoesNotEndTheFight();
+    TestOwnUnitAliveOffTheReadsDoesNotEndTheFight();
+    TestUnreadOwnUnitNeverCountsAsGone();
     TestOwnFightHoldsAndTheRestRunsAfterIt(true);
     TestOwnFightHoldsAndTheRestRunsAfterIt(false);
     TestClearedPullPastTheCeilingStillRests();
@@ -34059,6 +34167,7 @@ int main()
     TestOwnUnitReadGapKeepsTheStepPastTheCeiling();
     TestHeldOwnUnitKeepsTheFight();
     TestMidFightReEntryKeepsTheFightStart();
+    TestBossDownEndsTheRowThoughTrollsKeepFighting();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();

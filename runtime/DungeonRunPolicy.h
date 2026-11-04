@@ -1430,6 +1430,23 @@ struct LeadAttackerFact
     bool held = false;
 };
 
+// How the glue resolved one of the fight's remembered own guids (Run::ownFightGuids): one object lookup on the
+// run's map. Unknown: not read (the lead bot off the run's map). Only Dead and Gone are positive evidence; Alive
+// and Unknown never end a step.
+enum class OwnUnitState : std::uint8_t
+{
+    Unknown = 0,
+    Alive = 1,
+    Dead = 2, // on the map, not alive
+    Gone = 3, // not on the map any more: despawned
+};
+
+struct OwnUnitFact
+{
+    std::uint64_t guid = 0;
+    OwnUnitState state = OwnUnitState::Unknown;
+};
+
 // What the glue reads once a tick for the run's current step.
 struct Facts
 {
@@ -1492,6 +1509,14 @@ struct Facts
     // ... the party's own bots under an enemy's charm (Dominate Mind, Mind Control) that fight the party: never
     // engaged units, but named in the note when nothing else is engaged (EngagedUnitsNote).
     std::vector<std::string> charmedFighting;
+    // The fight's remembered own guids (Run::ownFightGuids), each resolved by the glue with one object lookup on
+    // the run's map: Alive (still there, whatever this tick's other reads say), Dead, or Gone. The own-fight step
+    // end takes a step's end only on positive evidence: an own unit missing from the engaged read and the row's
+    // lists proves nothing (it may be dragged out of the row's radius or evading), and a guid the glue did not
+    // read is Unknown, which never counts as gone. ownFightRead false: not read (out of combat, or the lead bot
+    // off the run's map).
+    std::vector<OwnUnitFact> ownFightUnits;
+    bool ownFightRead = false;
     float leadX = 0.0f, leadY = 0.0f, leadZ = 0.0f;
     bool leadMoving = false;           // the lead bot is moving now (Unit::IsMoving): an exact point's proof waits
     // The walk after a rest (Run::restWalkDue): the lead bot is in a rest state (a meal or drink aura up, or not
@@ -2076,15 +2101,17 @@ struct Run
     std::uint32_t fightMs = 0;
     std::uint32_t staleMs = 0;          // all the time in this fight the combat flag stood with nothing hostile engaged (Facts::staleCombat)
     std::uint32_t staleRunMs = 0;       // ... and the time it has stood so without a break
-    // The guids of the run's own units engaged at some point in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit,
-    // and the units the run holds: Facts::ccHeld) and the step whose own units were among them. Past the fight ceiling,
-    // with none of them engaged any more, a pull or boss step that its own end rule clears, and a walk, go on though
-    // unrelated units (respawning trash, a patrol) still fight: those are the bots' own combat's, not the step's
-    // (ZG walk 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run
-    // paused 14 min later at the 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty
-    // engaged read, and with no own unit seen, the fight block keeps today's rules, a wipe's included. Cleared with
-    // the combat.
+    // The guids of the run's own units seen in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit, and the
+    // units the run holds: Facts::ccHeld) and the step whose own units were among them. The set keeps only the units
+    // no read has yet proven gone (Facts::ownFightUnits: dead or despawned, one object lookup each); a unit that
+    // merely left the engaged read and the row's lists stays. Past the fight ceiling, with every one of them proven
+    // gone, a pull or boss step that its own end rule clears, and a walk, go on though unrelated units (respawning
+    // trash, a patrol) still fight: those are the bots' own combat's, not the step's (ZG walk 36 d/e3: the pit's
+    // Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run paused 14 min later at the
+    // 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty engaged read, and with no own
+    // unit seen, the fight block keeps today's rules, a wipe's included. Cleared with the combat.
     std::unordered_set<std::uint64_t> ownFightGuids;
+    bool ownFightSeen = false; // an own unit of this fight was seen (the set empties as units are proven gone)
     std::size_t ownFightStep = static_cast<std::size_t>(-1);
     bool ownFightCleared = false; // the own fight ended over the ceiling and the combat went on: the rows after it do too
     bool fightReentry = false;    // that end left the combat running: the next fight-block entry keeps the fight's start
@@ -14334,6 +14361,15 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     return nullptr;
 }
 
+// The positive evidence a boss row is done: his corpse near the step's spot, the step's own spawn (the spawn row
+// nearest to the step's point) lying dead whatever entry it reads now, or, once he was seen alive, his corpse near
+// the lead bot. Absence proves nothing: a boss merely missing from the row's read (dragged after the party, a read
+// gap) is no dead boss.
+inline bool BossDownEvidence(const Run& r, const Facts& f)
+{
+    return f.bossDeadNearSpot || f.bossOwnDead || (r.bossSeenAlive && f.bossDeadNearLead);
+}
+
 inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
 {
     if (!f.seen || OpenUnits(r, f.units) > 0)
@@ -14354,10 +14390,8 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
                 return FightEnd::NotYet;
         return FightEnd::Cleared;
     }
-    // f.bossOwnDead: the step's own spawn (the spawn row nearest to the step's point) lies dead, whatever entry it
-    // reads now: checked before the away-wait, so a boss whose script changed his entry never starts it.
-    return f.bossDeadNearSpot || f.bossOwnDead || (r.bossSeenAlive && f.bossDeadNearLead) ? FightEnd::BossDown
-                                                                                           : FightEnd::NotYet;
+    // Checked before the away-wait, so a boss whose script changed his entry never starts it.
+    return BossDownEvidence(r, f) ? FightEnd::BossDown : FightEnd::NotYet;
 }
 
 // Where a place lies from the lead bot, for a boss step's pause: "N yd from the lead bot (M yd above it)" (or below),
@@ -20636,6 +20670,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.staleMs = 0;
         r.staleRunMs = 0;
         r.ownFightGuids.clear(); // the fight is over: the next one reads its own units afresh
+        r.ownFightSeen = false;
         r.ownFightStep = static_cast<std::size_t>(-1);
         r.ownFightCleared = false;
         r.fightReentry = false;
@@ -21015,17 +21050,24 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         ResetStragglerPull(r);
     // The fight's own units: the current pull or boss row's (its read lists, the pack its pull took), a later row's,
     // and the units the run holds (Facts::ccHeld), remembered for the fight. Only past the 180 s ceiling, with one
-    // of them seen and none engaged any more, the step is over for the run: unrelated units that still fight
+    // of them seen and every one of them proven gone, the step is over for the run: unrelated units that still fight
     // (respawning trash, a patrol) are the bots' own combat's and neither hold the step nor run its ceiling (ZG walk
     // 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run paused
-    // 14 min later at the 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty
-    // engaged read, the fight block keeps today's rules: a fresh pull, a read gap and the flag wait it out.
+    // 14 min later at the 180 s ceiling with 20 dead). Proven gone is positive evidence only: the glue's lookup on
+    // the run's map found the unit dead or despawned (Facts::ownFightUnits). A unit merely missing from this tick's
+    // engaged read and the row's lists (dragged out of the row's radius, evading) is alive until that lookup says
+    // otherwise, and a guid the glue could not read is unknown and never gone. Younger than the ceiling, on a stale
+    // flag or an empty engaged read, the fight block keeps today's rules: a fresh pull, a read gap and the flag wait
+    // it out.
     // A pull or boss step goes on so only for its own step and only once its own end rule clears it (a later pull
     // never goes out from inside another fight); a walk goes on for the fight's own units. A fight that never
     // engaged one of them keeps the rules, a patrol met on the way included, and so does a wipe: its regroup and
     // stop caps stay the fight block's. The combat that is once read so goes on for the rows after it too
     // (ownFightCleared), until the combat drops.
-    bool ownEngaged = false;
+    if (f.ownFightRead)
+        for (const OwnUnitFact& u : f.ownFightUnits)
+            if (u.state == OwnUnitState::Dead || u.state == OwnUnitState::Gone)
+                r.ownFightGuids.erase(u.guid);
     if (f.anyInCombat && f.engagedRead)
     {
         for (const UnitFact& u : f.engagedUnits)
@@ -21048,18 +21090,22 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
                 if (StepOwnEngagedUnit(r, f, u))
                     r.ownFightStep = r.step;
                 r.ownFightGuids.insert(u.guid);
-                ownEngaged = true;
             }
-        for (const UnitFact& u : f.engagedUnits)
-            ownEngaged = ownEngaged || r.ownFightGuids.count(u.guid) != 0;
+        r.ownFightSeen = r.ownFightSeen || !r.ownFightGuids.empty();
     }
     bool const ownFightRow = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss;
     bool const overForStep = ownFightRow ? r.ownFightStep == r.step
                                          : (s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
-    bool const ownFightOver = f.anyInCombat && f.engagedRead && !f.staleCombat && !f.engagedUnits.empty() &&
-        !r.ownFightGuids.empty() && !ownEngaged && !wipe && overForStep &&
-        (r.ownFightCleared || r.fightMs > kFightCapMs) &&
-        (!ownFightRow || FightStepEnd(r, f, *s) != FightEnd::NotYet);
+    // A boss row is the exception: his death is the row's end whatever keeps the party in combat afterwards (ZG walk
+    // 36 d4: Jin'do died at his spot while the 14826 Sacrificed Trolls respawned beside him, and the run sat in the
+    // fight for an hour; the pull before his row had engaged him, so no own unit of the row's ever read as engaged).
+    // The boss's own death is proof enough on a stale flag too, and no engagement read is needed for it.
+    bool const bossRowDown = s->kind == PlanStepKind::Boss && BossDownEvidence(r, f) && OpenUnits(r, f.units) == 0;
+    bool const ownFightOver = f.anyInCombat && !wipe &&
+        (bossRowDown ||
+            (f.engagedRead && !f.staleCombat && !f.engagedUnits.empty() && f.ownFightRead && r.ownFightSeen &&
+                r.ownFightGuids.empty() && overForStep && (r.ownFightCleared || r.fightMs > kFightCapMs) &&
+                (!ownFightRow || FightStepEnd(r, f, *s) != FightEnd::NotYet)));
     if (ownFightOver)
     {
         r.ownFightCleared = true;
