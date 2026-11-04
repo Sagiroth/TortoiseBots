@@ -58,16 +58,24 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
             self.assertIn("WarlockSpreadTargetAllowed(", fn, start)
         # The raid cap lives in the policy, not in a trigger loop copy.
         helper = body(TRIGGERS, "bool WarlockSpreadTargetAllowed(", "\n}\n")
-        self.assertIn("TortoiseBots::WarlockSpreadAllowed(true, true, dotted)", helper)
-        # The curse spread skips attackers below the spread line as well.
+        self.assertIn("TortoiseBots::WarlockSpreadCapApplies(", helper)
+        self.assertIn("TortoiseBots::WarlockSpreadAllowed(true, true,", helper)
+        # The curse spread skips attackers below the spread line as well, and
+        # the Agony spread is capped like every other spread row.
         fn = body(TRIGGERS, "bool NoCurseOnAttackerTrigger::IsActive()", "\n}\n")
-        self.assertIn("WarlockDotTargetAllowed(attacker, true)", fn)
+        self.assertIn("WarlockDotTargetAllowed(ai, attacker, true)", fn)
+        self.assertIn('WarlockExtraDottedTargets(ai, "curse of agony", true)', fn)
+        self.assertIn("TortoiseBots::WarlockSpreadAllowed(", fn)
 
     def test_drain_soul_uses_the_boss_and_shard_gate(self):
         fn = body(TRIGGERS, "bool DrainSoulTrigger::IsActive()", "\n}\n")
         self.assertIn("WarlockBossTarget(ai, ", fn)
+        # The lookup is only paid for with the key on.
+        self.assertIn("raidRotation && WarlockBossTarget(ai, ", fn)
         boss = body(TRIGGERS, "bool WarlockBossTarget(PlayerbotAI* ai, Unit* target)", "\n}\n")
+        self.assertIn("TortoiseBots::WarlockIsBossTarget(", boss)
         self.assertIn("creature->IsWorldBoss()", boss)
+        self.assertIn("CREATURE_FLAG_EXTRA_INSTANCE_BIND", boss)
         self.assertIn("GetDungeonPlans().IsBossEntry(", boss)
         self.assertIn("TortoiseBots::WarlockDrainSoulAllowed(", fn)
         # Below Shadowburn with the key on, above the rotation without it.
@@ -85,6 +93,24 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
         topup = body(TRIGGERS, "bool LifeTapTopUpTrigger::IsActive()", "\n}\n")
         self.assertNotIn("WarlockCombatTapAllowed(", topup)
 
+    def test_boss_and_raid_group_decisions_are_policy_functions(self):
+        gate = body(TRIGGERS, "bool WarlockDotTargetAllowed(", "\n}\n")
+        self.assertIn("TortoiseBots::WarlockIsBossTarget(", body(
+            TRIGGERS, "bool WarlockBossTarget(", "\n}\n"))
+        self.assertIn("WarlockBossTarget(ai, target)", gate)
+        spread = body(TRIGGERS, "bool WarlockSpreadTargetAllowed(", "\n}\n")
+        self.assertIn("TortoiseBots::WarlockSpreadCapApplies(", spread)
+        self.assertIn("WarlockBossTarget(ai, target)", spread)
+
+    def test_bosses_and_raid_utility_curses_skip_the_life_gate(self):
+        for start in ("bool CurseOfTheElementsTrigger::IsActive()",
+                      "bool CurseOfRecklessnessRaidTrigger::IsActive()",
+                      "bool CurseOfShadowRaidTrigger::IsActive()"):
+            fn = body(TRIGGERS, start, "\n}\n")
+            self.assertIn("WarlockDotTargetAllowed(ai, GetTarget(), false, true)", fn, start)
+        fn = body(TRIGGERS, "bool CurseOfTheElementsOnAttackerTrigger::IsActive()", "\n}\n")
+        self.assertIn('WarlockSpreadTargetAllowed(ai, GetTarget(), "curse of the elements", false, true)', fn)
+
     def test_policy_header_is_the_single_threshold_source(self):
         policy = (ROOT / "runtime/policy/class/WarlockRaidRotationPolicy.h").read_text()
         for constant in ("WARLOCK_DOT_MIN_TARGET_HEALTH = 35",
@@ -93,6 +119,9 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
                          "WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2",
                          "WARLOCK_COMBAT_TAP_NUKE_COUNT = 2"):
             self.assertIn(constant, policy)
+        for function in ("WarlockIsBossTarget(", "WarlockSpreadCapApplies("):
+            self.assertIn(function, policy)
+            self.assertNotIn("bool " + function, TRIGGERS)
         # Triggers call the decisions; they do not re-type the numbers.
         self.assertNotRegex(TRIGGERS, r"\bWARLOCK_(DOT|SPREAD|DRAIN|COMBAT)_")
 

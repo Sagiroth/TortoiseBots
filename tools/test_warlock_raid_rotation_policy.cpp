@@ -2,7 +2,9 @@
 // (runtime/policy/class/WarlockRaidRotationPolicy.h, key
 // AiPlayerbot.WarlockRaidRotation):
 //   - no new DoT/curse on a target under 35% health, no spread to an attacker
-//     at or below 50%, and at most two extra dotted targets in a raid;
+//     at or below 50%, and at most two extra dotted targets per spread row in
+//     a raid;
+//   - bosses and the raid-utility curses skip the life gate entirely;
 //   - Drain Soul never on a boss and only below two shards;
 //   - Life Tap in combat only when two filler casts cannot be paid for.
 // Every helper must also answer "today's behaviour" with the key off.
@@ -49,7 +51,42 @@ static void TestSpreadLifeGate()
     CHECK(WarlockDotAllowed(false, 30, true));
 }
 
-// Raids keep at most two extra dotted targets; a party and the key off never cap.
+// Any one signal makes a boss: world/raid rank, an instance-binding boss, or
+// a boss row of the loaded dungeon plan.
+static void TestBossDetection()
+{
+    CHECK(!WarlockIsBossTarget(false, false, false));
+    CHECK(WarlockIsBossTarget(true, false, false));
+    CHECK(WarlockIsBossTarget(false, true, false));
+    CHECK(WarlockIsBossTarget(false, false, true));
+    CHECK(WarlockIsBossTarget(true, true, true));
+}
+
+// A boss keeps Corruption/Agony (and the raid-utility curses) on the target
+// through its execute phase; trash at the same health gets nothing new. The
+// utility exemption is target-independent.
+static void TestBossAndUtilityExemption()
+{
+    CHECK(WarlockDotAllowed(true, 20, false, true));
+    CHECK(WarlockDotAllowed(true, 20, true, true));
+    CHECK(!WarlockDotAllowed(true, 20, false));
+    CHECK(WarlockDotAllowed(true, 20, false, false, true));
+    CHECK(WarlockDotAllowed(true, 20, true, false, true));
+    CHECK(WarlockDotAllowed(false, 20, false, true));
+    CHECK(WarlockDotAllowed(false, 20, false, false, true));
+}
+
+// The spread cap only exists for the key in a converted raid group.
+static void TestSpreadCapApplies()
+{
+    CHECK(WarlockSpreadCapApplies(true, true));
+    CHECK(!WarlockSpreadCapApplies(true, false));
+    CHECK(!WarlockSpreadCapApplies(false, true));
+    CHECK(!WarlockSpreadCapApplies(false, false));
+}
+
+// Raids keep at most two extra dotted targets per spread row; a party and the
+// key off never cap.
 static void TestRaidSpreadCap()
 {
     CHECK(WarlockSpreadAllowed(true, true, 0));
@@ -88,6 +125,9 @@ int main()
 {
     TestDotLifeGateOnCurrentTarget();
     TestSpreadLifeGate();
+    TestBossDetection();
+    TestBossAndUtilityExemption();
+    TestSpreadCapApplies();
     TestRaidSpreadCap();
     TestDrainSoulBossGate();
     TestCombatTapNeedsTwoFillers();
