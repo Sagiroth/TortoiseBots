@@ -2264,31 +2264,41 @@ Unit* SwapBoss(const BossTacticsFight& fight, const BossTacticRow& row)
 }
 
 // The swap_on_aura boss the fight's record names this bot as the tank moved off, while the stand-down still runs, or
-// null. The record is shared by the instance, so every bot reads the same history.
-Unit* HeldSwapBoss(Player* bot, const BossTacticsFight& fight)
+// null. The record is shared by the instance, so every bot reads the same history. An explicit attack order on the
+// boss clears the stand-down: the player's order beats the tactic.
+Unit* HeldSwapBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
+    Unit* ordered = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("explicit attack target")->Get());
     for (const BossTacticRow* row : fight.rows)
     {
         if (row->kind != BossTacticKind::SwapOnAura)
             continue;
         Unit* boss = SwapBoss(fight, *row);
-        if (boss && TankSwapHoldsTank(bot, boss, *row, AuraStacks(bot, row->spellId)))
+        if (boss && boss != ordered && TankSwapHoldsTank(bot, boss, *row, AuraStacks(bot, row->spellId)))
             return boss;
     }
     return nullptr;
 }
 
-// The tank's taunt, first castable wins: Taunt (warrior), Growl (druid), Righteous Defense where the server's data
-// gives the paladin one. Null when this bot has none ready on the boss.
-const char* CastableTaunt(PlayerbotAI* ai, Unit* target)
+// The tank's taunt this bot knows, first learned wins: Taunt (warrior), Growl (druid), Hand of Reckoning (Turtle's
+// trainer taunt 51303; Righteous Defense is TBC and no 1.12 spell). Null when it knows none.
+const char* KnownTaunt(PlayerbotAI* ai)
 {
-    static const char* const kTaunts[] = { "taunt", "growl", "righteous defense" };
+    static const char* const kTaunts[] = { "taunt", "growl", "hand of reckoning" };
     for (const char* name : kTaunts)
     {
-        if (ai->HasSpell(name) && ai->CanCastSpell(name, target))
+        if (ai->HasSpell(name))
             return name;
     }
     return nullptr;
+}
+
+// The tank's taunt that is castable on the target now (range, cooldown, resources), or null. Taunt and Growl are
+// melee-range spells; Hand of Reckoning has its own (ranged) spell range.
+const char* CastableTaunt(PlayerbotAI* ai, Unit* target)
+{
+    const char* const taunt = KnownTaunt(ai);
+    return taunt && ai->CanCastSpell(taunt, target) ? taunt : nullptr;
 }
 
 // Whether the hold multiplier stands one action down for a swapped-off tank: every action aimed at the boss it was
@@ -2304,7 +2314,7 @@ bool TankSwapHold(PlayerbotAI* ai, Player* bot, Action* action)
     if (!GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
-    Unit* boss = HeldSwapBoss(bot, fight);
+    Unit* boss = HeldSwapBoss(ai, bot, fight);
     if (!boss)
         return false;
     const bool taunt = EbonrocTauntAction(action->getName());
@@ -2319,7 +2329,7 @@ Unit* ai::TankSwapStandDownBoss(PlayerbotAI* ai, Player* bot, const BossTacticsF
 {
     if (!ai || !bot)
         return nullptr;
-    Unit* boss = HeldSwapBoss(bot, fight);
+    Unit* boss = HeldSwapBoss(ai, bot, fight);
     if (!boss)
         return nullptr;
     Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
@@ -2366,17 +2376,23 @@ BossTankSwapTask ai::FindBossTankSwap(PlayerbotAI* ai, Player* bot, const BossTa
         std::vector<int> stacks(rotation);
         std::vector<bool> alive(rotation);
         std::vector<bool> inRange(rotation);
+        std::vector<bool> canTaunt(rotation);
         for (std::size_t i = 0; i < rotation; ++i)
         {
             Player* tank = roles.tanks[i];
+            PlayerbotAI* tankAi = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+            const char* taunt = tankAi ? KnownTaunt(tankAi) : nullptr;
             alive[i] = tank && sServerFacade.IsAlive(tank);
             stacks[i] = AuraStacks(tank, row->spellId);
-            inRange[i] = alive[i] && tank->IsInMap(bot) &&
-                tank->GetDistance(boss) <= kTankSwapCandidateYd;
+            // Taunt and Growl are melee-range spells, so the core's cast check measures them with the melee spell
+            // reach, never a fixed 30 yd; it uses Hand of Reckoning's own range. A tank whose taunt is on cooldown is
+            // not picked either: the trigger would fire every tick with nothing cast.
+            inRange[i] = alive[i] && tank->IsInMap(bot) && taunt && tankAi->CanCastSpell(taunt, boss);
+            canTaunt[i] = taunt != nullptr;
         }
         const int victimStacks = AuraStacks(victim, row->spellId);
         const int wanted = TankSwapWanted(victimIndex, victimStacks, static_cast<int>(row->param),
-                                          stacks, alive, inRange);
+                                          stacks, alive, inRange, canTaunt);
         if (wanted != roles.botIndex)
             continue;
         task.valid = true;
@@ -2403,7 +2419,10 @@ bool ai::TankSwapHoldsTank(Player* bot, Unit* boss, const BossTacticRow& row, in
     const TankSwapRecord& record = it->second;
     if (record.fromGuid != bot->GetObjectGuid().GetRawValue())
         return false;
-    return TankSwapStandsDown(true, stacks, nowMs - record.swappedAtMs);
+    Unit* victim = boss->GetVictim();
+    const bool newTankHolds = victim && victim != bot && sServerFacade.IsAlive(victim) &&
+        victim->GetObjectGuid().GetRawValue() == record.toGuid;
+    return TankSwapStandsDown(true, stacks, nowMs - record.swappedAtMs, newTankHolds);
 }
 
 void ai::NoteBossTankSwapCast(PlayerbotAI* ai, Player* bot, const BossTankSwapTask& task)

@@ -23,7 +23,22 @@ int main()
         const std::vector<int> stacks{5, 0};
         const std::vector<bool> alive{true, true};
         const std::vector<bool> inRange{true, true};
-        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange) == 1);
+        const std::vector<bool> canTaunt{true, true};
+        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange, canTaunt) == 1);
+    }
+
+    // SkipsCandidateWithoutTaunt: a rotation tank with no taunt cannot take the boss: no trained taunt at all, so the
+    // next tank in the rotation is chosen instead of a tank that would fire the trigger every tick with nothing to
+    // cast.
+    {
+        const std::vector<int> stacks{5, 0, 0};
+        const std::vector<bool> alive{true, true, true};
+        const std::vector<bool> inRange{true, true, true};
+        const std::vector<bool> canTaunt{true, false, true};
+        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange, canTaunt) == 2);
+        // Nobody with a taunt: no swap at all.
+        const std::vector<bool> none{true, false, false};
+        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange, none) == -1);
     }
 
     // Below the row's threshold nobody swaps, however clean the other tank is.
@@ -31,8 +46,9 @@ int main()
         const std::vector<int> stacks{4, 0};
         const std::vector<bool> alive{true, true};
         const std::vector<bool> inRange{true, true};
-        CHECK(TankSwapWanted(0, 4, 5, stacks, alive, inRange) == -1);
-        CHECK(TankSwapWanted(0, 0, 5, stacks, alive, inRange) == -1);
+        const std::vector<bool> canTaunt{true, true};
+        CHECK(TankSwapWanted(0, 4, 5, stacks, alive, inRange, canTaunt) == -1);
+        CHECK(TankSwapWanted(0, 0, 5, stacks, alive, inRange, canTaunt) == -1);
     }
 
     // A dead or out-of-reach tank is skipped, and the search still finds the next ready one past it.
@@ -41,12 +57,13 @@ int main()
         const std::vector<bool> dead{true, false, true};
         const std::vector<bool> alive{true, true, true};
         const std::vector<bool> inRange{true, true, true};
-        CHECK(TankSwapWanted(0, 5, 5, stacks, dead, inRange) == 2);
+        const std::vector<bool> canTaunt{true, true, true};
+        CHECK(TankSwapWanted(0, 5, 5, stacks, dead, inRange, canTaunt) == 2);
         const std::vector<bool> far{true, false, true};
-        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, far) == 2);
+        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, far, canTaunt) == 2);
         // Nobody ready: no swap rather than a taunt from a corpse or from across the room.
         const std::vector<bool> allDead{true, false, false};
-        CHECK(TankSwapWanted(0, 5, 5, stacks, allDead, inRange) == -1);
+        CHECK(TankSwapWanted(0, 5, 5, stacks, allDead, inRange, canTaunt) == -1);
     }
 
     // A candidate that still carries a deep stack is not a swap: at 3 of a threshold of 5 it would only add stacks
@@ -55,10 +72,11 @@ int main()
         const std::vector<int> stacks{5, 3};
         const std::vector<bool> alive{true, true};
         const std::vector<bool> inRange{true, true};
-        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange) == -1);
+        const std::vector<bool> canTaunt{true, true};
+        CHECK(TankSwapWanted(0, 5, 5, stacks, alive, inRange, canTaunt) == -1);
         // ... while 2 stacks is under half and does qualify.
         const std::vector<int> light{5, 2};
-        CHECK(TankSwapWanted(0, 5, 5, light, alive, inRange) == 1);
+        CHECK(TankSwapWanted(0, 5, 5, light, alive, inRange, canTaunt) == 1);
     }
 
     // The rotation wraps: with three tanks and the last one as victim, the main tank is the next one.
@@ -66,26 +84,38 @@ int main()
         const std::vector<int> stacks{0, 0, 5};
         const std::vector<bool> alive{true, true, true};
         const std::vector<bool> inRange{true, true, true};
-        CHECK(TankSwapWanted(2, 5, 5, stacks, alive, inRange) == 0);
+        const std::vector<bool> canTaunt{true, true, true};
+        CHECK(TankSwapWanted(2, 5, 5, stacks, alive, inRange, canTaunt) == 0);
     }
 
     // The swapped-off tank holds its threat for the window, or until its own stacks are gone, whichever comes first.
     {
-        CHECK(TankSwapStandsDown(true, 3, 0));
-        CHECK(TankSwapStandsDown(true, 3, kTankSwapStandDownMs - 1));
-        CHECK(!TankSwapStandsDown(true, 3, kTankSwapStandDownMs));
-        CHECK(!TankSwapStandsDown(true, 0, 1000));
-        CHECK(!TankSwapStandsDown(false, 3, 1000));
+        CHECK(TankSwapStandsDown(true, 3, 0, true));
+        CHECK(TankSwapStandsDown(true, 3, kTankSwapStandDownMs - 1, true));
+        CHECK(!TankSwapStandsDown(true, 3, kTankSwapStandDownMs, true));
+        CHECK(!TankSwapStandsDown(true, 0, 1000, true));
+        CHECK(!TankSwapStandsDown(false, 3, 1000, true));
         // The hold ends on the stack drop at once, whatever the window still allows.
-        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), false, false, true));
-        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), true, false, true));
-        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000), false, true, false));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000, true), false, false, true));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000, true), true, false, true));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 0, 1000, true), false, true, false));
+    }
+
+    // StandDownEndsWhenNewTankLosesBoss: the stand-down lasts only while the new tank actually holds the boss: a
+    // resisted taunt, a dead new tank or a boss on a healer ends it at once, and the old tank may taunt again (the
+    // rescue).
+    {
+        CHECK(!TankSwapStandsDown(true, 3, 0, false));
+        CHECK(!TankSwapStandsDown(true, 3, kTankSwapStandDownMs - 1, false));
+        // A held taunt stays held while the new tank holds, so the rule itself did not start letting taunts through.
+        CHECK(TankSwapHoldsAction(TankSwapStandsDown(true, 3, 0, true), true, false, false));
+        CHECK(!TankSwapHoldsAction(TankSwapStandsDown(true, 3, 0, false), true, false, false));
     }
 
     // The hold names no class: the rule answers from what the action is aimed at, whether it is a taunt and whether it
     // damages an area, so every tank's boss action is held and single-target actions aimed elsewhere still run.
     {
-        const bool down = TankSwapStandsDown(true, 5, 0);
+        const bool down = TankSwapStandsDown(true, 5, 0, true);
         struct Case { const char* action; bool taunt; bool area; bool targetsBoss; bool held; };
         const Case cases[] = {
             { "growl", true, false, true, true },             // a druid's taunt, aimed at the boss

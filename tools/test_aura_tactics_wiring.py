@@ -302,6 +302,15 @@ class TankSwapWiring(unittest.TestCase):
         find = body(ACTIONS, "BossTankSwapTask ai::FindBossTankSwap(")
         self.assertIn("!sPlayerbotAIConfig.dungeonRunTankSwap || !sPlayerbotAIConfig.dungeonRunAuraTactics", find)
         self.assertIn("TankSwapWanted(victimIndex, victimStacks", find)
+        self.assertIn("stacks, alive, inRange, canTaunt)", find)
+        # A tank with no taunt (never trained one) is skipped, not picked to fire a trigger every tick with nothing
+        # done; Hand of Reckoning is Turtle's paladin taunt, so a paladin that trained it qualifies.
+        self.assertIn("canTaunt[i] = taunt != nullptr;", find)
+        self.assertIn("KnownTaunt(tankAi)", find)
+        # Taunt and Growl are melee-range spells; the core's cast check measures each taunt's own range, not 30 yd.
+        self.assertIn("tankAi->CanCastSpell(taunt, boss)", find)
+        self.assertNotIn("kTankSwapCandidateYd", find)
+        self.assertNotIn("kTankSwapCandidateYd", TANK_SWAP_POLICY)
         self.assertIn("BossTacticKind::SwapOnAura", find)
         self.assertIn("GetRaidTankRoles(ai)", find)
 
@@ -310,9 +319,11 @@ class TankSwapWiring(unittest.TestCase):
         self.assertIn("FindBossTankSwap(ai, bot, ScanBossTactics(ai, bot))", action)
         self.assertIn("CastableTaunt(ai, task.boss)", action)
         self.assertIn("NoteBossTankSwapCast(ai, bot, task)", action)
-        taunts = body(ACTIONS, "const char* CastableTaunt(PlayerbotAI* ai, Unit* target)")
-        for name in ("taunt", "growl", "righteous defense"):
+        taunts = body(ACTIONS, "const char* KnownTaunt(PlayerbotAI* ai)")
+        for name in ("taunt", "growl", "hand of reckoning"):
             self.assertIn('"%s"' % name, taunts)
+        # Righteous Defense is TBC and no 1.12 spell, so the entry would only stall the rotation.
+        self.assertNotIn("righteous defense", taunts)
         note = body(ACTIONS, "void ai::NoteBossTankSwapCast(")
         self.assertIn("record.fromGuid = task.victim->GetObjectGuid().GetRawValue();", note)
         self.assertIn('"taunt=%llu,stacks=%d"', note)
@@ -333,13 +344,25 @@ class TankSwapWiring(unittest.TestCase):
             self.assertNotIn('"%s"' % class_spell, rule)
         self.assertIn("sPlayerbotAIConfig.dungeonRunTankSwap", rule)
         self.assertIn("sPlayerbotAIConfig.dungeonRunAuraTactics", rule)
-        held = body(ACTIONS, "Unit* HeldSwapBoss(Player* bot, const BossTacticsFight& fight)")
+        held = body(ACTIONS, "Unit* HeldSwapBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)")
         self.assertIn("BossTacticKind::SwapOnAura", held)
         self.assertIn("TankSwapHoldsTank(bot, boss, *row, AuraStacks(bot, row->spellId))", held)
         self.assertIn("inline bool TankSwapHoldsAction(bool standsDown, bool taunt, bool areaDamage, bool targetsBoss)",
                       TANK_SWAP_POLICY)
         self.assertIn("inline constexpr std::uint32_t kTankSwapStandDownMs = 20000;", TANK_SWAP_POLICY)
         self.assertIn("TankSwapStandsDown(true, stacks", body(ACTIONS, "bool ai::TankSwapHoldsTank("))
+        # The stand-down lasts only while the boss is on the new tank: a resisted taunt or a lost boss frees the old
+        # tank at once, so its rescue taunts run.
+        holds = body(ACTIONS, "bool ai::TankSwapHoldsTank(")
+        self.assertIn("boss->GetVictim()", holds)
+        self.assertIn("victim != bot", holds)
+        self.assertIn("sServerFacade.IsAlive(victim)", holds)
+        self.assertIn("record.toGuid", holds)
+        self.assertIn("newTankHolds", holds)
+        # An explicit player attack order on the boss clears the stand-down for that bot.
+        held = body(ACTIONS, "Unit* HeldSwapBoss(")
+        self.assertIn('GetValue<ObjectGuid>("explicit attack target")', held)
+        self.assertIn("boss != ordered", held)
 
     def test_the_stand_down_drops_the_boss_at_once(self):
         trigger = body(TRIGGERS, "bool BossTacticsTankSwapHoldTrigger::IsActive()")

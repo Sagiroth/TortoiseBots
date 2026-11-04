@@ -969,8 +969,9 @@ AiPlayerbot.DungeonRunAuraTactics = 0
 AiPlayerbot.DungeonRunUseObject = 0
 
 # The swap_on_aura boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): at the row's stack
-# count of its aura on the tank the boss is on, the next tank of the row's rotation that is alive, in melee reach and
-# knows a taunt (Taunt or Growl) takes the boss off it. The swapped-off tank then holds for 20 s or until its own
+# count of its aura on the tank the boss is on, the next tank of the row's rotation that is alive, knows a taunt it
+# can cast on the boss (Taunt, Growl or Hand of Reckoning; Taunt and Growl are melee-range) and carries fewer than
+# half the row's threshold takes the boss off it. The swapped-off tank then holds for 20 s or until its own
 # stacks are gone, whichever comes first: it stops attacking the boss, and every action aimed at that boss (any
 # class's threat builder, melee swing or cast), all area damage and every taunt stay down, so it cannot take the boss
 # back. The hold ends at once when the boss is no longer on the new tank (a resisted taunt, a dead new tank), so the
