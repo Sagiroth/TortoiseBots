@@ -18,7 +18,7 @@ relates_to:
 
 # Class AI & Roles Overview
 
-TortoiseBots implements combat and utility AI for all nine Vanilla classes (Warrior through Druid). Bots detect their active talent spec dynamically, execute class-appropriate rotations, and support Turtle WoW 1.18.1 custom spells and talents.
+Bots cover all nine Vanilla classes. Each bot reads its spent talent points, picks the matching spec strategy, and fights in that spec's style.
 
 ## Supported Roles & Classes
 
@@ -26,9 +26,9 @@ TortoiseBots implements combat and utility AI for all nine Vanilla classes (Warr
 | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
 | **[Warrior](warrior.md)** | Prot | - | Arms, Fury | - | Intimidating Shout, Concussion Blow | Shield Bash, Pummel |
 | **[Paladin](paladin.md)** | Prot | Holy | Retribution | - | Hammer of Justice, Repentance | Hammer of Justice, Repentance |
-| **[Hunter](hunter.md)** | - | - | Survival (ranged-first hybrid) | BM, MM | Freezing Trap, Scare Beast | None (Scatter Shot snares) |
+| **[Hunter](hunter.md)** | - | - | - | BM, MM, Survival | Freezing Trap, Scare Beast | None (Scatter Shot snares) |
 | **[Rogue](rogue.md)** | - | - | All Specs | - | Sap, Blind, Gouge | Kick |
-| **[Priest](priest.md)** | - | Holy, Disc | - | Shadow | Shackle Undead, Psychic Scream, Chastise | Silence (Shadow) |
+| **[Priest](priest.md)** | - | Holy, Disc | - | Shadow | Shackle Undead, Psychic Scream (PvP and close range only) | Silence (Shadow) |
 | **[Shaman](shaman.md)** | Tank (experimental) | Resto | Enhancement | Elemental | None | Earth Shock |
 | **[Mage](mage.md)** | - | - | - | All Specs | Polymorph | Counterspell |
 | **[Warlock](warlock.md)** | - | - | - | All Specs | Fear, Banish | Spell Lock (Felhunter) |
@@ -38,95 +38,94 @@ TortoiseBots implements combat and utility AI for all nine Vanilla classes (Warr
 
 ## Spec Detection & Strategy Selection
 
-```mermaid
-flowchart TD
-    Talents["Spent Talent Points (Talent.dbc)"] --> Tally["AiFactory::GetPlayerSpecTab (Count Tab Points)"]
-    Tally --> Tree{"Dominant Talent Tree?"}
-    Tree -->|Tab 1 Highest| Spec1["Primary Spec Strategy (e.g. Arms, Holy, Assassination)"]
-    Tree -->|Tab 2 Highest| Spec2["Secondary Spec Strategy (e.g. Fury, Protection, Combat)"]
-    Tree -->|Tab 3 Highest| Spec3["Tertiary Spec Strategy (e.g. Prot, Retribution, Subtlety)"]
-    Spec1 --> Modifiers["Apply Contextual Role Modifiers (Tank / Heal / DPS)"]
-    Spec2 --> Modifiers
-    Spec3 --> Modifiers
-    Modifiers --> ActiveEngine["Active Class Strategy Engine Attached"]
-```
+The bot counts spent talent points in each of its three class trees. The tree with the most points picks the combat strategy. Hybrid classes also read stance, form, and gear to confirm the role.
 
-The bot determines its combat strategy dynamically by inspecting spent talent points:
-
-- **Dominant Talent Tree:** The bot tallies spent talent points across the three class tabs. Whichever tree has the highest allocation activates that combat strategy.
-- **Hybrid Support:** Hybrid classes adapt forms and stances based on context and assigned group roles.
-- **Battlegrounds:** Healing specs retain healing priorities in battlegrounds, layering battleground objectives and PvP strategies on top.
-- **Dynamic Role Assignment:** In parties, players can set bot roles to adjust aggro generation, healing urgency, and positioning.
-
-Players can use [`.bot role <Name|self>`](../play/commands/roster-and-hiring.md#bot-role) to override runtime role inference. Without an override, role detection uses party composition, stance or form, and tanking equipment (a shaman needs a shield, *Rockbiter Weapon* and *Totemic Alignment* or *Spirit Armor*; a bot that rolled the tank build counts as a tank from its talents alone — see [Shaman tank](shaman.md#class-settings)). If another tank already occupies the role, temporary stance or form changes do not promote a second tank.
+Players can use [`.bot role <Name|self>`](../play/commands/roster-and-hiring.md#bot-role) to override the result.
+Without an override, role detection uses:
+- Party composition, stance or form, and tanking gear.
+- A shaman needs a shield, *Rockbiter Weapon*, and *Totemic Alignment* or *Spirit Armor*.
+- A bot that rolled the tank build counts as a tank from its talents alone — see [Shaman tank](shaman.md#class-settings).
+- A detected shaman tank fights alongside a warrior, paladin, or druid tank instead of standing down.
 
 ---
 
 ## Shared Bot Behaviors
 
-| Subsystem | Trigger Condition | Bot Action / Behavior | Configuration / Control |
-| :--- | :--- | :--- | :--- |
-| **Resting & Recovery** | Out-of-combat health or mana below recovery thresholds. | Sits down and consumes food and drink simultaneously. | See [Combat settings](../server/settings/combat.md). |
-| **Buffs & Imbues** | Buff missing on self or party member. | Recasts class buffs, seals, auras, and weapon poisons. | Automatic out-of-combat maintenance. |
-| **Targeting & Assist** | Tank or party leader engages hostile enemies. | Assists leader focus target and respects crowd control marks. | See [Focus skull](../play/commands/party-actions.md#bot-action-focus-skull). |
-| **Finishing Runners** | Enemy mob flees below 30% health. | Ranged DPS finish within spell range; eligible melee close distance. | See detailed runner policy below. |
-| **Threat Back-Off** | AoE threat at 50% of tank's threat, single-target threat at 80%. | Pauses high-threat single-target or AoE spells. | Controlled by `threat` strategy. |
-| **Healer Off-DPS** | Party stable (heal target at/above 90%), own mana above the fight reserve, and the mob already fighting the group. | Contributes offensive spells and debuffs; healing always wins. | Controlled by `offdps` strategy. |
-| **DPS Off-Healing** | An ally drops into a wound band (see below). | Damage dealers cast emergency heals instead of attacking. | Controlled by `offheal` strategy. |
-| **Spell Downranking** | Friendly target wounded but not in critical danger. | Casts lower-rank heals matching missing health. | Automatic triage optimization. |
-| **Healer Positioning** | Party member out of heal range or line of sight. | Closes distance toward the tank or injured party member. | Automatic positioning routine. |
-| **Looting & Gathering** | Corpse or nearby gathering node available. | Approaches corpse, loots quest items, and rolls on items. | See [Party actions](../play/commands/party-actions.md). |
+| Subsystem | Trigger | Bot Behavior |
+| :--- | :--- | :--- |
+| **Resting & Recovery** | Out of combat, health or mana low. | Sits and eats or drinks to recover. See [Combat settings](../server/settings/combat.md). |
+| **Buffs & Imbues** | Buff missing on self or party member. | Recasts class buffs, seals, auras, and weapon poisons out of combat. |
+| **Targeting & Assist** | Tank or party leader engages. | Assists the leader's target and leaves crowd-controlled mobs alone. |
+| **Finishing Runners** | Enemy mob flees below 30% health. | Ranged DPS finish within spell range; eligible melee close distance. See details below. |
+| **Threat Back-Off** | AoE threat at 50% of the tank's, single-target threat climbing past the tank's. | Pauses high-threat spells until threat stabilizes. Controlled by the `threat` strategy. |
+| **Healer Off-DPS** | Party stable (heal target at or above 90%), own mana above the fight reserve, and the mob already fighting the group. | Contributes damage; healing always wins. Controlled by the `offdps` strategy. |
+| **DPS Off-Healing** | An ally drops into a wound band (see below). | Casts emergency heals instead of attacking. Controlled by the `offheal` strategy. |
+| **Spell Downranking** | Friendly target wounded but not in critical danger. | Casts the lowest rank that covers the missing health. |
+| **Healer Positioning** | Party member out of heal range or line of sight. | Moves toward the tank or the injured member. |
+| **Looting & Gathering** | Corpse or nearby gathering node. | Pool bots approach corpses, loot quest items, and roll. Hired companions pass unless [`AiPlayerbot.HireLoot`](../server/settings/hiring.md#aiplayerbothireloot) is on. |
 
 <details>
 <summary>Runner finishing, threat back-off, off-DPS, downranking, and healer positioning details</summary>
 
 ### Finishing Runners
-When an enemy mob flees below 30% health (either flee state or flee-for-assistance):
-- Ranged DPS finish the target within spell range.
-- Warriors finish the runner if *Intercept* is available (in combat, Berserker Stance, rage available, off cooldown) within 25 yards.
+
+When an enemy mob flees below 30% health (fleeing or fleeing for help, still in the fight, and not feared or crowd-controlled):
+- Ranged DPS finish the target within spell range (plus a small slack).
+- Warriors finish the runner if *Intercept* is ready (in combat, Berserker Stance, rage available, off cooldown) within 25 yards.
 - Other melee only attack runners already in melee reach.
-- During `stay` holds, melee bots hold their position while ranged bots shoot within spell range.
-- Healers and tanks do not chase runners.
-- The active runner is never dropped for a fresh mob, and crowd-controlled targets are never chased.
-- **Chases stop at ledges:** in a dungeon run, a bot lets a fleeing enemy go when following it means dropping more than 6 yards down a cliff (or there is no path). Stairs and slopes are still chased, and so is an enemy you ordered the bot to attack. The enemy is left alone for up to 30 seconds. Pool bots and normal groups are not affected.
+- During `stay` holds, melee bots hold position while ranged bots shoot within spell range.
+- Healers and tanks never chase runners.
+- The active runner is kept until it dies or escapes, and crowd-controlled targets are never chased.
+- In a dungeon run, a bot lets a fleeing enemy go when following means dropping more than 6 yards down or losing the path. Stairs and slopes are still chased, and so is an enemy the player ordered the bot to attack. The enemy is left alone for up to 30 seconds. Pool bots and normal groups are not affected.
 
 ### Party Threat Back-Off
-In groups with the `threat` strategy active, damage dealers (including Druids, Hunters, Mages, Shamans, and Warlocks) monitor relative threat against the tank. When AoE threat reaches 50% of the tank's, or single-target threat reaches 80% (high threat), they pause high-threat single-target nukes or area-of-effect spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*, *Earthquake*) until threat stabilizes.
+
+In groups with the `threat` strategy active, damage dealers watch their threat against the tank. AoE threat at 50% of the tank's pauses area spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*) until threat stabilizes. Single-target threat pauses nukes only once it is climbing to pass the tank (at or above 80% with a rising trend), not on a flat 80% reading.
 
 ### Healer Off-DPS (`offdps`)
+
 Healing specs get `offdps` by default (Discipline and Holy priests, Restoration shamans and druids, Holy paladins). When it is on, the healer only attacks when every condition holds:
-- Nobody needs healing: the heal target (worst-off member, tank favored) is at or above 90% health.
+- Nobody needs healing: the heal target (worst-off member, tank favored) is at or above 90% health (`AlmostFullHealth` default).
 - The healer's own mana is above the fight reserve: 85% in hard fights, 70% in even or easy fights, 95% in raids.
-- The mob already fights the group (or the player explicitly ordered the attack on it); healers never open on a fresh mob.
+- The mob already fights the group (or the player explicitly ordered the attack); healers never open on a fresh mob.
 - No ordered pull is walking in, and the bot is not the run leader's heal-only healer.
 
-Casting yields to healing instantly: damage rows sit at the lowest priority, so any firing heal outbids them. Solo or far from the group, the healer fights like a normal bot.
+Damage rows sit at the lowest priority, so any firing heal outbids them. Solo or far from the group, the healer fights like a normal bot.
 
-What each class casts: priests use *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards*, *Mind Blast* (*Holy Nova* into packed melee, wand when mana is spent); druids shift out of Tree of Life for *Moonfire*, *Wrath*, *Starfire*; shamans use *Flame Shock* and *Lightning Bolt* (*Chain Lightning* into packs); paladins use *Hammer of Wrath* on dying targets, *Holy Shock*, *Judgement* and *Exorcism* on Undead or Demon targets (*Consecration* into packed melee). See the class pages for details.
+What each class casts: priests use *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards*, *Mind Blast* (*Holy Nova* into packed melee, wand when mana is spent); druids leave Tree of Life Form for *Moonfire*, *Wrath*, *Starfire*; shamans use *Flame Shock* and *Lightning Bolt* (*Chain Lightning* into packs); paladins use *Hammer of Wrath* on dying targets, *Holy Shock*, *Judgement* and *Exorcism* on Undead or Demon targets (*Consecration* into packed melee). See the class pages for details.
 
 ### DPS Off-Healing (`offheal`)
+
 Damage specs of hybrid classes get `offheal` by default (Shadow priests, Elemental and Enhancement shamans, Retribution paladins, Cat and Balance druids). When it is on, the damage dealer stops attacking and heals once an ally falls into a wound band:
 
 | Class | Ally below 20% (critical) | Ally at 20–50% (low) | Ally at 50–70% (medium) |
 | :--- | :--- | :--- | :--- |
 | Priest (Shadow) | *Power Word: Shield*, then *Flash Heal* | *Greater Heal* | *Renew* |
 | Shaman (Ele/Enh) | - | *Healing Wave* | - |
-| Paladin (Ret) | *Lay on Hands*; *Blessing of Protection* on an attacked ally | *Holy Light* | - |
+| Paladin (Ret) | *Lay on Hands* | *Holy Light* | - |
 | Druid (Cat/Balance) | *Regrowth*, then *Healing Touch* | *Regrowth* | - |
 
-Off-heals outbid damage, so they fire the moment an ally enters a band; outside the bands the bot keeps its normal rotation. Out of combat only the low band (20–50%) heals. There is no party/raid or PvP difference: the same rows run everywhere. Off-heals use the same mana care as real heals (downranking, no wasteful casts at high health), and are never held back at or below 50% ally health.
+Retribution's *Blessing of Protection* on an attacked ally sits in the same off-heal kit at critical priority.
+Off-heals outbid damage, so they fire the moment an ally enters a band; outside the bands the bot keeps its normal rotation. Out of combat only the low band (20–50%) heals. Off-heals use the same care as real heals (downranking, no wasteful casts at high health), and are never held back at or below 50% ally health (the `LowHealth` default).
 
 ### Switching off-spec behavior on and off
-Per bot, whisper the bot (`/w <BotName> co +offheal`, `/w <BotName> co -offdps`; `co ?` lists active combat strategies), or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy) for one bot, a role, or the party (`.bot strategy -offdps @heal`). Changes are saved per bot. Server admins can change the default for newly created bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off; players can still toggle it per bot).
+
+Per bot, whisper the bot or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy):
+- `/w <BotName> co +offheal` or `/w <BotName> co -offdps` (`co ?` lists active combat strategies).
+- `.bot strategy -offdps @heal` for one bot, a role, or the party.
+- Changes are saved per bot.
+- Server admins change the default for new bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off; players can still toggle it per bot).
 
 ### Spell Downranking
-Healing bots automatically select the lowest spell rank that covers the target's missing health to conserve mana. Full spell ranks are enforced whenever a target falls into critical health (at or below 20% health).
+
+Healing bots pick the lowest spell rank that covers the target's missing health, to save mana. Full ranks are used at or below critical health (`CriticalHealth`, 20% default). Some lines never downrank: heal-over-time spells, shields, area heals, and cooldown heals.
 
 ### Healer Positioning
+
 When a party member is out of heal range or line of sight:
-- The healer moves toward that member. The default follow anchor is the tank when no member is injured.
-- If another living healer already has that member in range and sight, the healer does not path to them unless the member is at or below critical health.
-- Silenced, pacified, crowd-controlled, or out-of-mana healers do not satisfy the coverage check.
-- Out of combat, healers only path to members below 90% health.
+- The healer moves toward that member. The default follow anchor is the tank when nobody is injured.
+- If another living healer already has that member in range and sight, the healer does not move unless the member is at or below critical health.
+- Silenced, pacified, crowd-controlled, or out-of-mana (below 20%) healers do not count as covering a member.
+- Out of combat, healers only move to members below 90% health.
 
 </details>
