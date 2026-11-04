@@ -491,6 +491,9 @@ constexpr float kSegmentRiseYd = 2.0f;            // at most this height step fr
 constexpr float kSegmentDropYd = kSegmentGroundYd; // ... at most this step down (Uldaman r16-19z34: a ramp's tip 2.1-2.5 yd
                                                   // above the floor it is not linked to)
 constexpr float kEscapeHostileYd = 10.0f;         // no living hostile this close to the hop's end
+// The island suspicion is the lead bot's own spot when it was taken (the island is read there): a lead bot this far
+// from it by the next tick (combat, a walk) stands on other ground, so the hop off it is dropped (FightStep).
+constexpr float kIslandSuspectMoveYd = 3.0f;
 // One partial path toward one point does not prove an island (a ledge, a closed
 // door, a point off the mesh): IslandConfirmed wants a second sign as well.
 constexpr float kIslandCellYd = 4.0f;             // the evidence is kept for the lead bot's cell of this size ...
@@ -2757,6 +2760,9 @@ struct Run
     bool passSpotKnown = false;
     float passX = 0.0f, passY = 0.0f, passZ = 0.0f;
     bool islandSuspect = false;
+    // Where the lead bot stood when the suspicion was taken (the ground the island was read at; FightStep's hop out
+    // of it needs the lead bot still standing there).
+    float islandSuspectX = 0.0f, islandSuspectY = 0.0f, islandSuspectZ = 0.0f;
     // The island's evidence (IslandConfirmed): a single partial reading, the
     // lead bot's cell and spot and the point it was read toward; cleared when
     // the lead bot leaves the cell or a good path is read.
@@ -7133,6 +7139,9 @@ inline void PassWalkBackPoint(Run& r, float x, float y, float z, const std::stri
     if (same && !r.leadPathGoodNow)
     {
         r.islandSuspect = true;
+        r.islandSuspectX = x;
+        r.islandSuspectY = y;
+        r.islandSuspectZ = z;
         r.note = why + ": the second point given up from this spot: the lead bot is hopped off it first";
         return;
     }
@@ -7300,6 +7309,9 @@ inline void TakeIslandSign(Run& r)
 {
     ++r.islandRefusals;
     r.islandSuspect = true; // the next Begin tick's MoveStep (or ApproachHop) hops it off (IslandConfirmed)
+    r.islandSuspectX = r.leadLastX;
+    r.islandSuspectY = r.leadLastY;
+    r.islandSuspectZ = r.leadLastZ;
     EnterPhase(r, Phase::Begin);
 }
 
@@ -11226,6 +11238,9 @@ inline bool ApproachStandFound(Run& r, const Facts& f, bool found, float x, floa
         }
         ++r.islandRounds;
         r.islandSuspect = true;     // FightStep's check hops it off (IslandConfirmed: islandSuspect is the second sign)
+        r.islandSuspectX = f.leadX;
+        r.islandSuspectY = f.leadY;
+        r.islandSuspectZ = f.leadZ;
         EnterPhase(r, Phase::Begin);
         r.note = island + ": hopped off it first";
         return false;
@@ -14400,12 +14415,20 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
 
     // The stand search found none with the lead bot on a navmesh island (ApproachStandFound): hop it off before any
     // pull, or the pack in sight is pulled from the island and refused again. IslandConfirmed takes islandSuspect as
-    // the second sign, so the hop runs on the tick after the answer, with no new reading.
-    if (r.islandSuspect && r.phase != Phase::Walk && !r.escapeOn && IslandConfirmed(r, f, s.x, s.y, s.z))
+    // the second sign, so the hop runs on the tick after the answer, with no new reading. The island was read at the
+    // lead bot's spot: one that moved off it meanwhile (combat, a walk) stands on other ground, so the suspicion is
+    // dropped and the step goes on as usual rather than hop it off valid ground.
+    if (r.islandSuspect && r.phase != Phase::Walk && !r.escapeOn)
     {
-        IslandEscape(r, f, s.x, s.y, s.z, std::string(s.kind == PlanStepKind::Boss ? "the boss" : "the pack") +
-            " at " + StepPoint(s), order);
-        return;
+        if (ai::PlanDistance(f.leadX, f.leadY, f.leadZ, r.islandSuspectX, r.islandSuspectY, r.islandSuspectZ) >
+            kIslandSuspectMoveYd)
+            r.islandSuspect = false;
+        else if (IslandConfirmed(r, f, s.x, s.y, s.z))
+        {
+            IslandEscape(r, f, s.x, s.y, s.z, std::string(s.kind == PlanStepKind::Boss ? "the boss" : "the pack") +
+                " at " + StepPoint(s), order);
+            return;
+        }
     }
     // A pullback refused for the tank's firing position asked the approach stand with the pack in sight
     // (PullbackRefusedUnreachable): its search (answered by the glue after this tick) and its walk run here, not a

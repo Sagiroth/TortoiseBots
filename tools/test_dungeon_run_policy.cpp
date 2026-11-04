@@ -28688,6 +28688,44 @@ static void TestRefusedFiringPositionFromAnIslandHopsOffFirst()
     CHECK(r.state == State::Running && next.rfind("pullback 7", 0) == 0);
 }
 
+// The island suspicion is the lead bot's own spot when the stand answer took it (ApproachStandFound): a tank that
+// moved off it (combat, a walk) stands on other ground by the next tick, so no hop goes out and the step goes on as
+// usual; one that stayed put hops as before.
+static void TestIslandSuspectDroppedWhenTheLeadMoved()
+{
+    DungeonPlan plan = FiringPlan(ai::kPlanFlagNoDefer);
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(Tick(r, f).empty() && r.approachStandWanted);
+    Facts island = f;
+    island.leadIsland = true;
+    ApproachStandFound(r, island, false, 0, 0, 0);
+    CHECK(r.islandSuspect);
+    Facts moved = f;
+    moved.leadX = 5;                       // the tank walked 5 yd off the spot it was read at
+    moved.units[0].distLead = 35;
+    std::string const order = Tick(r, moved);
+    CHECK(order.rfind("escape", 0) != 0 && !r.escapeOn && !r.islandSuspect);
+    CHECK(r.state == State::Running);
+    // The lead bot still there: the hop goes out on the next tick, as before.
+    Run s = Start(&plan);
+    s.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 1, 40)};
+    CHECK(FirstOrder(s, g) == "pullback 7");
+    OrderRefused(s, "pullback 7", kFiringRefusal);
+    CHECK(Tick(s, g).empty() && s.approachStandWanted);
+    Facts stay = g;
+    stay.leadIsland = true;
+    ApproachStandFound(s, stay, false, 0, 0, 0);
+    CHECK(s.islandSuspect);
+    CHECK(Tick(s, g).rfind("escape from 0.0 0.0 0.0", 0) == 0 && s.escapeOn);
+}
+
 // The reading says the lead bot's way gets somewhere: not an island, so the old pause stays.
 static void TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses()
 {
@@ -33603,6 +33641,7 @@ int main()
     TestOtherPullbackRefusalsStillPause();
     TestRefusedFiringPositionNeverLoops();
     TestRefusedFiringPositionFromAnIslandHopsOffFirst();
+    TestIslandSuspectDroppedWhenTheLeadMoved();
     TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses();
     TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt();
     TestRefusedFiringPositionFromAnIslandPastTheCapsDefers();
