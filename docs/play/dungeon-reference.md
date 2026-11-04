@@ -11,7 +11,10 @@ relates_to:
 
 # Turtle WoW 5-Man Dungeon Reference
 
-Companion bots follow you through a dungeon; they do not explore or clear it on their own. The exception is the [dungeon run leader](dungeon-run-leader.md) (`.bot run`, switched on by default but still work in progress), which lets a bound party walk a stored dungeon route by itself ([settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear)). Its limits are in [Known Limitations](known-limitations.md#dungeon-run-leader-work-in-progress). This catalog is a practical reference for human players leading companion bots: creature IDs, boss kill orders that match where the bosses stand, pooled rares to ignore, and event triggers across 18 dungeons. Every ID below was checked against the world database; orders follow walking order unless noted.
+Companion bots follow you through a dungeon; they do not explore or clear it on their own. The exception is the [dungeon run leader](dungeon-run-leader.md) (`.bot run`, on by default but still work in progress): it walks a stored dungeon route by itself ([settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear)).
+- Its limits are in [Known Limitations](known-limitations.md#dungeon-run-leader-work-in-progress).
+- This catalog is for human leaders: creature IDs, boss kill orders in walking order, pooled rares to ignore, and event triggers across 18 dungeons.
+- Every ID below was checked against the world database.
 
 For general pulling, crowd control, and wipe recovery tactics, see the [Dungeon & Raid Tactics Guide](dungeons-and-raids.md).
 
