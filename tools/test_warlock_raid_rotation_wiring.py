@@ -15,6 +15,7 @@ CONFIG_H = (PB / "PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (PB / "PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (PB / "aiplayerbot.conf.dist.in").read_text()
 TRIGGERS = (PB / "strategy/warlock/WarlockTriggers.cpp").read_text()
+STRATEGY = (PB / "strategy/warlock/WarlockStrategy.cpp").read_text()
 
 
 def body(text, start, end):
@@ -56,11 +57,20 @@ class WarlockRaidRotationWiringTest(unittest.TestCase):
         fn = body(TRIGGERS, "bool NoCurseOnAttackerTrigger::IsActive()", "\n}\n")
         self.assertIn("WarlockDotTargetAllowed(attacker, true)", fn)
 
+    def test_drain_soul_uses_the_boss_and_shard_gate(self):
+        fn = body(TRIGGERS, "bool DrainSoulTrigger::IsActive()", "\n}\n")
+        self.assertIn("WarlockBossTarget(", fn)
+        self.assertIn("TortoiseBots::WarlockDrainSoulAllowed(", fn)
+        # Below Shadowburn with the key on, above the rotation without it.
+        fn = body(STRATEGY, '"drain soul",', "NULL)));")
+        self.assertIn("sPlayerbotAIConfig.warlockRaidRotation ? ACTION_HIGH - 1 : ACTION_HIGH + 1", fn)
+
     def test_policy_header_is_the_single_threshold_source(self):
         policy = (ROOT / "runtime/policy/class/WarlockRaidRotationPolicy.h").read_text()
         for constant in ("WARLOCK_DOT_MIN_TARGET_HEALTH = 35",
                          "WARLOCK_DOT_MIN_SPREAD_HEALTH = 50",
-                         "WARLOCK_SPREAD_MAX_EXTRA_TARGETS = 2"):
+                         "WARLOCK_SPREAD_MAX_EXTRA_TARGETS = 2",
+                         "WARLOCK_DRAIN_SOUL_MAX_SHARDS = 2"):
             self.assertIn(constant, policy)
         # Triggers call the decisions; they do not re-type the numbers.
         self.assertNotRegex(TRIGGERS, r"\bWARLOCK_(DOT|SPREAD|DRAIN|COMBAT)_")

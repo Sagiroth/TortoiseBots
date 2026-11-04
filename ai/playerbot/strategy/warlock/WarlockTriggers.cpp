@@ -27,6 +27,14 @@ bool WarlockDotTargetAllowed(Unit* target, bool spread = false)
     return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), spread);
 }
 
+// Bosses carry rank 3 (CREATURE_ELITE_WORLDBOSS), the Zul'Gurub rank; Drain
+// Soul is a trash finisher and never spends a boss execute phase channelling.
+bool WarlockBossTarget(Unit* target)
+{
+    Creature* creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    return creature && creature->IsWorldBoss();
+}
+
 // "On attacker" DoT row: the candidate must be above 50% health, and a raid
 // group keeps at most two other attackers dotted besides the current target.
 bool WarlockSpreadTargetAllowed(PlayerbotAI* ai, Unit* target, std::string const& spell, bool checkIsOwner)
@@ -245,19 +253,14 @@ bool DrainSoulTrigger::IsActive()
 	// grants the shard when the drained target dies while yielding XP/honor,
 	// so finishing below 20% health mirrors the donor execute without
 	// wasting casts on full-health targets.
-	if (!bot->HasItemCount(6265, 5))
-	{
-		if (AI_VALUE(uint8, "bag space") > 0)
-		{
-			const uint32 targetHealth = AI_VALUE2(uint8, "health", "current target");
-			if (targetHealth <= 20)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
+	// Raid rotation: trash only, and only below two shards (the row also
+	// moves below Shadowburn), so a boss execute is left to nukes.
+	return TortoiseBots::WarlockDrainSoulAllowed(
+		sPlayerbotAIConfig.warlockRaidRotation,
+		WarlockBossTarget(AI_VALUE(Unit*, "current target")),
+		bot->GetItemCount(6265),
+		AI_VALUE2(uint8, "health", "current target"),
+		AI_VALUE(uint8, "bag space") > 0);
 }
 
 bool NoCurseTrigger::IsActive()

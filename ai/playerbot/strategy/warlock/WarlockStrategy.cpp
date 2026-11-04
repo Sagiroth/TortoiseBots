@@ -38,9 +38,13 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "shadow trance",
         NextAction::array(0, new NextAction("shadow bolt", ACTION_HIGH + 2), NULL)));
 
+    // Shard harvest sits above the rotation by default (the donor shape).
+    // With the raid rotation on it drops below Shadowburn, so a dying trash
+    // mob takes the instant first and the channel only starts without it.
     triggers.push_back(new TriggerNode(
         "drain soul",
-        NextAction::array(0, new NextAction("drain soul", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("drain soul",
+            sPlayerbotAIConfig.warlockRaidRotation ? ACTION_HIGH - 1 : ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target critical health",

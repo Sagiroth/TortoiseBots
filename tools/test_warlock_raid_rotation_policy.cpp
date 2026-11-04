@@ -2,7 +2,8 @@
 // (runtime/policy/class/WarlockRaidRotationPolicy.h, key
 // AiPlayerbot.WarlockRaidRotation):
 //   - no new DoT/curse on a target under 35% health, no spread to an attacker
-//     at or below 50%, and at most two extra dotted targets in a raid.
+//     at or below 50%, and at most two extra dotted targets in a raid;
+//   - Drain Soul never on a boss and only below two shards.
 // Every helper must also answer "today's behaviour" with the key off.
 //
 // Build and run:
@@ -57,11 +58,26 @@ static void TestRaidSpreadCap()
     CHECK(WarlockSpreadAllowed(false, true, 5));
 }
 
+// Drain Soul: shard harvest stays for trash; a boss under 20% is left to
+// Shadow Bolt and Shadowburn. Key off keeps today's <5-shard gate everywhere.
+static void TestDrainSoulBossGate()
+{
+    CHECK(!WarlockDrainSoulAllowed(true, true, 3, 15, true));
+    CHECK(WarlockDrainSoulAllowed(false, true, 3, 15, true));
+    CHECK(WarlockDrainSoulAllowed(true, false, 1, 15, true));
+    CHECK(!WarlockDrainSoulAllowed(true, false, 2, 15, true));
+    CHECK(WarlockDrainSoulAllowed(true, false, 0, 20, true));
+    CHECK(WarlockDrainSoulAllowed(false, false, 4, 20, true));
+    CHECK(!WarlockDrainSoulAllowed(true, false, 0, 21, true));
+    CHECK(!WarlockDrainSoulAllowed(true, false, 0, 15, false));
+}
+
 int main()
 {
     TestDotLifeGateOnCurrentTarget();
     TestSpreadLifeGate();
     TestRaidSpreadCap();
+    TestDrainSoulBossGate();
 
     std::printf("warlock raid rotation policy: %d checks passed\n", checks);
     return 0;
