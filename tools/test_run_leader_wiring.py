@@ -2085,7 +2085,7 @@ class RunFactKeyWiringTest(unittest.TestCase):
                       "                totemTarget, totemFocus)", COMMANDS)
         # The focus order hands the tick to the totem before the guard (and now before every other order) can spend it.
         policy = strip_comments(self.POLICY)
-        totem = policy.index("if (f.totemFocus)")
+        totem = policy.index("if (f.totemFocus && !r.retreatOn)")
         self.assertLess(totem, policy.index("if (CheckGuard(r, f, dt, order))", totem))
         self.assertIn("return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));", policy)
 

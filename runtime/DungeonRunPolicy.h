@@ -21104,8 +21104,9 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // AiPlayerbot.DungeonRunTotemFocus first, before any other tick can spend it: a kill_first totem (the Brain Wash
         // Totem, a healing ward) dies in 1-2 s, and behind the hp hold, a CC break, the retreat, the auto-CC or the
         // guard its focus waits a whole second more. A totem focus sends the DPS by guid and leaves the skull on the
-        // boss (IssueKillFirstFocus, FocusMovesSkull).
-        if (f.totemFocus)
+        // boss (IssueKillFirstFocus, FocusMovesSkull). A retreat in progress keeps the tick: the living walk back first,
+        // not one more totem kill.
+        if (f.totemFocus && !r.retreatOn)
         {
             const UnitFact* totem = PickKillFirst(r, f);
             if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)

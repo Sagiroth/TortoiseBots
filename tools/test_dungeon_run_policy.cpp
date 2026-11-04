@@ -26760,6 +26760,38 @@ static void TestTotemFocusMayInterrupt()
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false));     // Shoot (a wand's shot)
 }
 
+// M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back
+// first. Without the retreat the same tick focuses the totem.
+static void TestTotemFocusYieldsToTheRetreat()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {15112})};
+    plan.killFirst = {15112};
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.engaged = true;
+    Facts f = Party(20);
+    f.anyInCombat = true;
+    f.retreatAt2Dead = true;
+    f.dead = 2;
+    f.alive = 3;
+    f.killFirst = {totem};
+    Run r = Start(&plan, 1);
+    r.fighting = true;
+    r.anchorKnown = true;
+    r.retreatOn = true;
+    r.retreatOrders = 1;
+    r.retreatMs = 0;
+    CHECK(Tick(r, f).empty()); // the retreat waits for its resend
+    CHECK(r.focusGuid == 0);
+    CHECK(r.note.compare(0, 7, "retreat") == 0);
+    Run q = Start(&plan, 1);
+    q.fighting = true;
+    Facts g = f;
+    g.retreatAt2Dead = false;
+    CHECK(Tick(q, g) == "focus 501");
+}
+
 static void TestKillFirstLogLine()
 {
     CHECK(KillFirstLogLine("zul_gurub", "seen", 15112, 501, 0) == "TBM:KILLFIRST|zul_gurub|seen|15112|501");
@@ -34444,6 +34476,7 @@ int main()
     TestTotemFocusFiresBeforeTheAutoCcTick();
     TestTotemFocusLeavesTheSkullOnTheBoss();
     TestTotemFocusMayInterrupt();
+    TestTotemFocusYieldsToTheRetreat();
     TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();

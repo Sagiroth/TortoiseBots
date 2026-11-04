@@ -71,6 +71,9 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn("TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind", cut)
         self.assertIn("bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL)", cut)
 
+    def test_the_totem_focus_yields_to_the_retreat(self):
+        tick = body(POLICY, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{")
+        self.assertIn("if (f.totemFocus && !r.retreatOn)", tick)
 
     def test_kill_first_spans_close_out_of_combat(self):
         i = COMMANDER.index("if (slot.run.plan && !slot.run.plan->killFirst.empty())")
