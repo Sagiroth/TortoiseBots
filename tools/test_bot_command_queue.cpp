@@ -56,6 +56,57 @@ int main()
         assert(queue.PendingCount() == 0);
     }
 
+    // A command whose bot still holds an earlier chat or packet is deferred to
+    // the next drain instead of overtaking it.
+    {
+        BotCommandQueue queue;
+        FakePlayer alice{ 1 };
+        queue.Enqueue(1, BotCommandReply::Chat, "action follow");
+
+        std::vector<std::string> ran;
+        auto find = [&](uint64_t) -> FakePlayer* { return &alice; };
+        auto run = [&](FakePlayer*, PendingBotCommand const& c) { ran.push_back(c.args); };
+        auto none = [&](FakePlayer*, DroppedBotCommands const&) { assert(false); };
+
+        size_t executed = queue.Drain(find, run, none,
+            [](FakePlayer*, PendingBotCommand const&) { return true; });
+        assert(executed == 0);
+        assert(ran.empty());
+        assert(queue.PendingCount() == 1);
+
+        executed = queue.Drain(find, run, none);
+        assert(executed == 1);
+        assert((ran == std::vector<std::string>{ "action follow" }));
+        assert(queue.PendingCount() == 0);
+    }
+
+    // A deferred command keeps its place ahead of a command queued while the
+    // same drain ran.
+    {
+        BotCommandQueue queue;
+        FakePlayer alice{ 1 };
+        queue.Enqueue(1, BotCommandReply::Chat, "first");
+
+        std::vector<std::string> ran;
+        auto find = [&](uint64_t) -> FakePlayer* { return &alice; };
+        auto run = [&](FakePlayer*, PendingBotCommand const& c) { ran.push_back(c.args); };
+        auto none = [&](FakePlayer*, DroppedBotCommands const&) { assert(false); };
+
+        size_t executed = queue.Drain(find, run, none,
+            [&](FakePlayer*, PendingBotCommand const&)
+            {
+                queue.Enqueue(1, BotCommandReply::Chat, "second");
+                return true;
+            });
+        assert(executed == 0);
+        assert(ran.empty());
+        assert(queue.PendingCount() == 2);
+
+        executed = queue.Drain(find, run, none);
+        assert(executed == 2);
+        assert((ran == std::vector<std::string>{ "first", "second" }));
+    }
+
     // Logout before the drain: the requester is no longer found, so the command
     // is dropped (no reply, nothing executed); other players' commands still run.
     {

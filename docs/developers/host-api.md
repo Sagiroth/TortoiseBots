@@ -365,7 +365,14 @@ that runs on the world thread itself (marked at the top of every
 `BotHostAdapter::OnUpdate`, before the command drain,
 `WorldThreadMark`) still calls the AI at once, as it cannot race the deletion.
 Only opcodes an AI handles are copied (`PlayerbotAI::Handles*Opcode`, built from
-the same table the AI registers its handlers from).
+the same table the AI registers its handlers from). An item whose bot is between
+maps when the drain runs (not in world, or a far teleport the bot update has not
+acked yet) is not handed to the AI: the drain keeps it for the next tick and
+drops it after three such ticks, except the handlers that read the bot's map
+(cast result, spell failure, spell delay, knock-back), which are dropped at once
+(`runtime/policy/infra/DeferredDeliveryPolicy.h`, whose opcode values the adapter
+checks against the core's at compile time). A bot whose far teleport is acked
+later in the same tick therefore cannot meet a map-reading handler off its map.
 
 | Entry | Threads | What it does now |
 | --- | --- | --- |

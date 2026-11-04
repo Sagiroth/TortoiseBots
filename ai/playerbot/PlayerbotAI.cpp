@@ -1047,7 +1047,7 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 // pair leaves an instance group, so it never carries a stale route.
 void PlayerbotAI::UpdateLeadTrail()
 {
-    Map* map = bot ? bot->GetMap() : nullptr;
+    Map* map = bot ? bot->FindMap() : nullptr;
     if (!bot || !map || !bot->GetGroup() || !(map->IsDungeon() || map->IsRaid()) || !aiObjectContext)
     {
         leadTrail.clear();
@@ -1202,7 +1202,7 @@ bool PlayerbotAI::IsInRaid()
     bool inRaidFight = false;
     if (IsSafe(bot))
     {
-        const Map* map = bot->GetMap();
+        const Map* map = bot->FindMap();
         if (map && (map->IsDungeon() || map->IsRaid()))
         {
             inRaidFight = true;
@@ -3818,11 +3818,7 @@ namespace MaNGOS
 
 Unit* PlayerbotAI::GetUnit(ObjectGuid guid)
 {
-    if (!guid)
-        return NULL;
-
-    Map* map = bot->GetMap();
-    if (!map)
+    if (!guid || !bot->IsInWorld() || !bot->FindMap())
         return NULL;
 
     return sObjectAccessor.GetUnit(*bot, guid);
@@ -3849,10 +3845,10 @@ Unit* PlayerbotAI::GetUnit(CreatureDataPair const* creatureDataPair)
 
 Creature* PlayerbotAI::GetCreature(ObjectGuid guid) const
 {
-    if (!guid)
+    if (!guid || !bot->IsInWorld())
         return NULL;
 
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3861,10 +3857,10 @@ Creature* PlayerbotAI::GetCreature(ObjectGuid guid) const
 
 Creature* PlayerbotAI::GetAnyTypeCreature(ObjectGuid guid) const
 {
-    if (!guid)
+    if (!guid || !bot->IsInWorld())
         return NULL;
 
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3873,10 +3869,10 @@ Creature* PlayerbotAI::GetAnyTypeCreature(ObjectGuid guid) const
 
 GameObject* PlayerbotAI::GetGameObject(ObjectGuid guid)
 {
-    if (!guid)
+    if (!guid || !bot->IsInWorld())
         return NULL;
 
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3903,10 +3899,10 @@ GameObject* PlayerbotAI::GetGameObject(GameObjectDataPair const* gameObjectDataP
 
 WorldObject* PlayerbotAI::GetWorldObject(ObjectGuid guid)
 {
-    if (!guid)
+    if (!guid || !bot->IsInWorld())
         return NULL;
 
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -4992,7 +4988,7 @@ float PlayerbotAI::GetRange(std::string type)
 
     // In dungeons and raids the follow leash stays tight (raid distance)
     // so bots trail the master instead of cutting corners into side packs.
-    if (type == "follow" && bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()))
+    if (type == "follow" && bot->FindMap() && (bot->FindMap()->IsDungeon() || bot->FindMap()->IsRaid()))
         type = "followraid";
 
     if (aiObjectContext) val = aiObjectContext->GetValue<float>("range", type)->Get();

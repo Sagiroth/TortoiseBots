@@ -6,6 +6,7 @@
 #include "../runtime/BotManager.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/WorldThreadQueue.h"
+#include "../runtime/policy/infra/DeferredDeliveryPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 
 #include "ObjectMgr.h"
@@ -17,6 +18,8 @@
 
 #include <chrono>
 #include <cstring>
+#include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,6 +36,40 @@ BotPacketAdapter::BotPacketAdapter()
 
 namespace
 {
+// Issue #844: every drained item is handed to the bot's AI or held while the
+// bot is between maps. The route picks the handler, and the queue a held item
+// goes back to (DeferredDeliveryPolicy.h).
+enum class PacketRoute : uint8_t
+{
+    BotChat,
+    BotOutgoing,
+    MasterOutgoing,
+    MasterIncoming,
+};
+
+struct DeferredPacket
+{
+    PacketRoute route;
+    std::shared_ptr<WorldPacket const> packet;
+};
+
+// A deferred packet that its bot could not take yet (the bot is between maps).
+// It keeps the sequence number of its arrival, and the moment it was first
+// held, so a per-bot backlog can deliver held items in their original order
+// and drop them once they are older than DeferredDelivery::kMaxHeldMs.
+struct HeldPacketEntry
+{
+    uint64_t seq;
+    uint64_t key;
+    DeferredPacket item;
+    uint64_t firstHeldMs;
+};
+
+// Per-bot ordered backlog of held packets. Only the world thread touches it
+// (the drain), so no lock is needed; the queues that feed it are already
+// thread-safe. A key disappears as soon as its backlog is empty.
+std::map<uint64_t, std::deque<HeldPacketEntry>> g_heldBacklogs;
+
 // Issue #839: SMSG_MESSAGECHAT delivered to a bot's headless session arrives on
 // the sender's thread - AsyncPackets for party / raid / guild / whisper,
 // ChannelBroadcaster for channels, a map thread for say / yell. Its handler
@@ -43,9 +80,9 @@ namespace
 // logic ignores most channel lines anyway.
 constexpr size_t kMaxDeferredChatPerBot = 64;
 
-WorldThreadQueue<std::unique_ptr<WorldPacket>>& DeferredBotChat()
+WorldThreadQueue<DeferredPacket>& DeferredBotChat()
 {
-    static WorldThreadQueue<std::unique_ptr<WorldPacket>> queue(kMaxDeferredChatPerBot);
+    static WorldThreadQueue<DeferredPacket> queue(kMaxDeferredChatPerBot);
     return queue;
 }
 
@@ -80,24 +117,22 @@ bool IsBotHandledChatType(WorldPacket const& packet)
 // A master packet is copied once and shared by the bots it is queued for.
 constexpr size_t kMaxDeferredPacketsPerBot = 256;
 
-enum class PacketRoute : uint8_t
-{
-    BotOutgoing,
-    MasterOutgoing,
-    MasterIncoming,
-};
-
-struct DeferredPacket
-{
-    PacketRoute route;
-    std::shared_ptr<WorldPacket const> packet;
-};
-
 WorldThreadQueue<DeferredPacket>& DeferredBotPackets()
 {
     static WorldThreadQueue<DeferredPacket> queue(kMaxDeferredPacketsPerBot);
     return queue;
 }
+
+// The delivery policy names the wire values of the AI handlers that read the
+// bot's map; the build fails if they drift from the core's opcodes.
+static_assert(TortoiseBots::DeferredDelivery::kSmsgMoveKnockBack == SMSG_MOVE_KNOCK_BACK,
+    "DeferredDelivery::kSmsgMoveKnockBack no longer matches SMSG_MOVE_KNOCK_BACK");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgCastResult == SMSG_CAST_RESULT,
+    "DeferredDelivery::kSmsgCastResult no longer matches SMSG_CAST_RESULT");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellFailure == SMSG_SPELL_FAILURE,
+    "DeferredDelivery::kSmsgSpellFailure no longer matches SMSG_SPELL_FAILURE");
+static_assert(TortoiseBots::DeferredDelivery::kSmsgSpellDelayed == SMSG_SPELL_DELAYED,
+    "DeferredDelivery::kSmsgSpellDelayed no longer matches SMSG_SPELL_DELAYED");
 
 // The world thread deletes AIs, so a hook running on it can hand a packet to
 // the AI at once, as before: the AI's own casts, hire provisioning (which drops
@@ -155,6 +190,61 @@ PlayerbotAI* FindBotAI(uint64_t botGuid)
 {
     return PlayerbotAIStorage::Instance().GetAI(ObjectGuid(botGuid));
 }
+
+// World thread: hand one packet to the handler its route names. The caller has
+// already checked that the bot is in world and not between maps.
+void DeliverToAI(PlayerbotAI* ai, DeferredPacket const& item)
+{
+    switch (item.route)
+    {
+        case PacketRoute::BotChat:
+        case PacketRoute::BotOutgoing:
+            ai->HandleBotOutgoingPacket(*item.packet);
+            break;
+        case PacketRoute::MasterOutgoing:
+            ai->HandleMasterOutgoingPacket(*item.packet);
+            break;
+        case PacketRoute::MasterIncoming:
+            ai->HandleMasterIncomingPacket(*item.packet);
+            break;
+    }
+}
+
+// World thread: hand one drained item to its AI. A bot between maps (a far
+// teleport the bot update has not acked yet) must not run a handler that reads
+// its map, so the item is held for the next drain, or dropped once it is stale
+// (DeferredDeliveryPolicy.h). A bot whose AI left the storage (logout,
+// removal) since the copy took its queue with it.
+void DeliverOrHold(WorldThreadQueue<DeferredPacket>::Entry& entry)
+{
+    PlayerbotAI* ai = FindBotAI(entry.key);
+    if (!ai || !ai->GetBot())
+        return;
+    Player* bot = ai->GetBot();
+
+    // A bot that already has a backlog keeps every later packet behind it, in
+    // arrival sequence; only the backlog may reach the AI first.
+    auto it = g_heldBacklogs.find(entry.key);
+    if (it != g_heldBacklogs.end())
+    {
+        it->second.push_back(HeldPacketEntry{ entry.seq, entry.key, std::move(entry.item), SteadyNowMs() });
+        return;
+    }
+
+    switch (DeferredDelivery::Decide(bot->IsInWorld(), bot->IsBeingTeleportedFar(),
+                entry.item.packet->getOpcode()))
+    {
+        case DeferredDelivery::Verdict::Deliver:
+            DeliverToAI(ai, entry.item);
+            break;
+        case DeferredDelivery::Verdict::Hold:
+            g_heldBacklogs[entry.key].push_back(
+                HeldPacketEntry{ entry.seq, entry.key, std::move(entry.item), SteadyNowMs() });
+            break;
+        case DeferredDelivery::Verdict::Drop:
+            break;
+    }
+}
 } // namespace
 
 bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& packet)
@@ -196,7 +286,8 @@ bool BotPacketAdapter::CanPacketSend(WorldSession* session, WorldPacket const& p
         if (opcode == SMSG_MESSAGECHAT)
         {
             if (IsBotHandledChatType(packet) && BotWantsChat(gate, packet))
-                DeferredBotChat().Enqueue(botGuid.GetRawValue(), std::make_unique<WorldPacket>(packet));
+                DeferredBotChat().Enqueue(botGuid.GetRawValue(),
+                    DeferredPacket{ PacketRoute::BotChat, std::make_shared<WorldPacket const>(packet) });
             return true;
         }
 
@@ -239,39 +330,74 @@ void BotPacketAdapter::MarkWorldThread()
     WorldThread().MarkCurrent();
 }
 
+bool BotPacketAdapter::HasHeldPacketsForMaster(uint64_t masterGuid)
+{
+    for (uint64_t botGuid : BotManager::Instance().GetBotGuidsForMasterAnyThread(ObjectGuid(masterGuid)))
+    {
+        if (g_heldBacklogs.find(botGuid) != g_heldBacklogs.end())
+            return true;
+    }
+    return false;
+}
+
 void BotPacketAdapter::DrainDeferredPackets(uint64_t before, bool endOfTick)
 {
     // Issue #844: resolved again on the world thread, so a bot whose AI left
-    // the storage (logout, removal) since the copy is skipped. Issue #846: the
-    // two queues run merged in the order their items were queued, so each
-    // bot's chat and packets reach its AI in arrival order, and only items
-    // queued before `before` run (the command drain passes each command's
-    // number, so chat typed before a `.bot` command runs before it).
-    std::vector<WorldThreadQueue<DeferredPacket>::Entry> packets = DeferredBotPackets().TakeBefore(before);
-    std::vector<WorldThreadQueue<std::unique_ptr<WorldPacket>>::Entry> chat = DeferredBotChat().TakeBefore(before);
-    RunInSequence(packets, [](WorldThreadQueue<DeferredPacket>::Entry& entry)
+    // the storage (logout, removal) since the copy is skipped, and a bot
+    // between maps holds its packets instead of running a map-reading handler
+    // (DeliverOrHold). Issue #846: the two queues run merged in the order their
+    // items were queued, so each bot's chat and packets reach its AI in
+    // arrival order, and only items queued before `before` run (the command
+    // drain passes each command's number, so chat typed before a `.bot`
+    // command runs before it). Held items keep their original sequence in a
+    // per-bot backlog, so nothing for that bot can overtake them; the backlog
+    // is drained first and drops entries older than kMaxHeldMs.
+
+    // 1. Drain the per-bot backlogs. Held entries are in arrival sequence, so
+    // a bot that is still between maps keeps its backlog; stale entries are
+    // dropped from the front.
+    for (auto it = g_heldBacklogs.begin(); it != g_heldBacklogs.end(); )
     {
-        PlayerbotAI* ai = FindBotAI(entry.key);
+        uint64_t const botGuid = it->first;
+        std::deque<HeldPacketEntry>& backlog = it->second;
+
+        PlayerbotAI* ai = FindBotAI(botGuid);
         if (!ai || !ai->GetBot())
-            return;
-        switch (entry.item.route)
         {
-            case PacketRoute::BotOutgoing:
-                ai->HandleBotOutgoingPacket(*entry.item.packet);
-                break;
-            case PacketRoute::MasterOutgoing:
-                ai->HandleMasterOutgoingPacket(*entry.item.packet);
-                break;
-            case PacketRoute::MasterIncoming:
-                ai->HandleMasterIncomingPacket(*entry.item.packet);
-                break;
+            // The bot left the storage (logout, removal): its backlog is gone.
+            it = g_heldBacklogs.erase(it);
+            continue;
         }
-    }, chat, [](WorldThreadQueue<std::unique_ptr<WorldPacket>>::Entry& entry)
-    {
-        if (PlayerbotAI* ai = FindBotAI(entry.key))
-            if (ai->GetBot())
-                ai->HandleBotOutgoingPacket(*entry.item);
-    });
+
+        // Held entries keep the sequence they arrived with and were stamped
+        // when first held; drop the stale front before trying to deliver.
+        while (!backlog.empty() &&
+               SteadyNowMs() - backlog.front().firstHeldMs > DeferredDelivery::kMaxHeldMs)
+            backlog.pop_front();
+
+        Player* bot = ai->GetBot();
+        if (bot->IsInWorld() && !bot->IsBeingTeleportedFar())
+        {
+            // Deliver only entries queued before this drain's limit; later
+            // ones wait behind the command they follow.
+            while (!backlog.empty() && backlog.front().seq < before)
+            {
+                HeldPacketEntry const& held = backlog.front();
+                DeliverToAI(ai, held.item);
+                backlog.pop_front();
+            }
+        }
+
+        if (backlog.empty())
+            it = g_heldBacklogs.erase(it);
+        else
+            ++it;
+    }
+
+    // 2. Drain items that arrived since the last drain.
+    std::vector<WorldThreadQueue<DeferredPacket>::Entry> packets = DeferredBotPackets().TakeBefore(before);
+    std::vector<WorldThreadQueue<DeferredPacket>::Entry> chat = DeferredBotChat().TakeBefore(before);
+    RunInSequence(packets, DeliverOrHold, chat, DeliverOrHold);
 
     // Issue #846: the tick's last drain reports what the caps dropped.
     if (endOfTick)
@@ -285,6 +411,7 @@ void BotPacketAdapter::DrainDeferredPackets(uint64_t before, bool endOfTick)
 
 void BotPacketAdapter::ClearDeferredPackets()
 {
+    g_heldBacklogs.clear();
     DeferredBotChat().Clear();
     DeferredBotPackets().Clear();
 }

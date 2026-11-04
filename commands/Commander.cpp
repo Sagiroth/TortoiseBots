@@ -1510,7 +1510,7 @@ Unit* SeenHostile(Player* bot, ObjectGuid guid)
 {
     if (guid.IsEmpty() || guid == bot->GetObjectGuid())
         return nullptr;
-    Map* map = bot->GetMap();
+    Map* map = bot->FindMap();
     Unit* unit = map ? map->GetUnit(guid) : nullptr;
     if (!unit || !unit->IsInWorld() || !unit->IsAlive())
         return nullptr;
@@ -1546,7 +1546,7 @@ void AddViewHostile(RemoteCommander::View::Snapshot& snapshot, RemoteCommander::
         // lists repeat is dropped here before any unit lookup.
         if (std::find(nonBosses.begin(), nonBosses.end(), guid) != nonBosses.end())
             return;
-        Map* map = bot->GetMap();
+        Map* map = bot->FindMap();
         Unit* seen = map ? map->GetUnit(guid) : nullptr;
         // A guid that does not resolve here (a stale list, another instance
         // copy) says nothing about the unit; only this occurrence is skipped.
@@ -6417,6 +6417,17 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                         ai::Event("revive", "release", order.commander));
                     bool const running = ExecuteQuietAction(memberAi, "corpse run",
                         ai::Event("revive", "corpse run", order.commander));
+                    // A headless bot's release only schedules the graveyard
+                    // repop, and the core fires it when its movement acks
+                    // settle, seconds later. A resurrect in between leaves the
+                    // flag set, and the repop then far-teleports a living bot
+                    // out of the instance. Run it now, while the bot is still
+                    // a corpse: in a dungeon a managed bot comes back at the
+                    // entrance, so nothing was lost by not waiting.
+                    if ((released || running) && !member->IsAlive() &&
+                        IsLiveHeadlessBot(member, memberRecord) &&
+                        member->IsInWorld() && member->FindMap())
+                        member->RepopAtGraveyard();
                     if (released || running)
                         ++revived;
                 }
@@ -8159,6 +8170,46 @@ bool RunCcHeld(Unit const* unit)
         HasAnyAura(unit, kRepentanceSpells) || HasAnyAura(unit, kFearSpells) || HasAnyAura(unit, kScareBeastSpells);
 }
 
+// The time left on the run crowd control on it (DungeonRun::UnitFact::ccRemainMs): the soonest-ending aura of the
+// families above, 0 when none is read (a permanent or unread hold). The run breaks the hold that ends first.
+uint32 RunCcRemainingMs(Unit* unit)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!unit)
+        return 0;
+    uint32 remain = 0;
+    auto const soonest = [&](uint32 spell)
+    {
+        Aura* const aura = unit->GetAura(spell, EFFECT_INDEX_0);
+        if (!aura)
+            return;
+        int32 const ms = aura->GetAuraDuration();
+        if (ms > 0 && (!remain || static_cast<uint32>(ms) < remain))
+            remain = static_cast<uint32>(ms);
+    };
+    for (uint32 spell : kPolymorphSpells)
+        soonest(spell);
+    for (uint32 spell : kShackleUndeadSpells)
+        soonest(spell);
+    for (uint32 spell : kBanishSpells)
+        soonest(spell);
+    for (uint32 spell : kSapSpells)
+        soonest(spell);
+    for (uint32 spell : kHibernateSpells)
+        soonest(spell);
+    for (uint32 spell : kFreezingTrapAuras)
+        soonest(spell);
+    for (uint32 spell : kSeductionSpells)
+        soonest(spell);
+    for (uint32 spell : kRepentanceSpells)
+        soonest(spell);
+    for (uint32 spell : kFearSpells)
+        soonest(spell);
+    for (uint32 spell : kScareBeastSpells)
+        soonest(spell);
+    return remain;
+}
+
 // A periodic damage aura from the party is on it: a bot or player of the lead bot's group, or the pet of one
 // (DungeonRun::UnitFact::partyDots). The automatic crowd control leaves a dotted unit alone, since its ticks break
 // the hold the moment it lands. An aura an enemy cast is no reason to skip the unit.
@@ -8305,6 +8356,8 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
         fact.evading = other->IsCreature() && static_cast<Creature*>(other)->IsInEvadeMode();
+        fact.polymorphed = RunCcHeld(other);
+        fact.ccRemainMs = fact.polymorphed ? RunCcRemainingMs(other) : 0;
         fact.health = other->GetHealth();
         fact.maxHealth = other->GetMaxHealth();
         fact.partyHits = ep && ep->victims.count(fact.guid) != 0;
@@ -8335,6 +8388,54 @@ void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBo
                 ReadEngagedWith(lead, judge, pet, seen, f.engagedUnits, &ep);
         }
     f.engagedRead = true;
+}
+
+// The automatic crowd control's break read (DungeonRun::RunCcBreakTick): the run's own held units that are still in
+// combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
+// keeps no fight open and is none. The party's own read (partyHits) is the unit's attacker set only, no scan.
+void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
+    TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    Map* const map = lead->GetMap();
+    if (!map)
+        return;
+    Player* const judge = RunJudge(lead, bots);
+    std::unordered_set<uint64> party;
+    for (Player* bot : bots)
+    {
+        if (!bot || bot->GetMap() != map)
+            continue;
+        party.insert(bot->GetObjectGuid().GetRawValue());
+        if (Pet* const pet = bot->GetPet())
+            if (pet->IsAlive() && pet->IsInWorld())
+                party.insert(pet->GetObjectGuid().GetRawValue());
+    }
+    for (auto const& hold : slot.run.ccHolds)
+    {
+        Unit* const unit = map->GetUnit(::ObjectGuid(hold.first));
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, lead) ||
+            !RunCcHeld(unit))
+            continue;
+        UnitFact fact;
+        fact.guid = hold.first;
+        fact.entry = unit->GetEntry();
+        fact.distLead = lead->GetDistance(unit);
+        fact.hostile = true;
+        fact.polymorphed = true;
+        fact.attackable = GroupCanAttack(judge, unit);
+        fact.health = unit->GetHealth();
+        fact.maxHealth = unit->GetMaxHealth();
+        fact.ccRemainMs = RunCcRemainingMs(unit);
+        for (Unit* attacker : unit->GetAttackers())
+            if (attacker && party.count(attacker->GetObjectGuid().GetRawValue()))
+            {
+                fact.partyHits = true;
+                break;
+            }
+        f.ccHeld.push_back(fact);
+    }
+    f.ccHeldRead = true;
 }
 
 // A party bot is in combat when it or its living pet is (DungeonRun::MemberFact::inCombat, Facts::anyInCombat, and
@@ -10866,6 +10967,15 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
+    // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
+    // the canal at -11944.3 -1353.9 62.3 and the run stranded there).
+    if (Map* const map = lead->GetMap())
+        f.pointLiquid = [map](float x, float y, float z)
+        {
+            GridMapLiquidStatus const status = map->GetTerrain()->getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, nullptr);
+            return status == LIQUID_MAP_IN_WATER || status == LIQUID_MAP_UNDER_WATER;
+        };
     f.leadMoving = lead->IsMoving(); // an exact waypoint's stand-still proof (DungeonRunPolicy.h ExactWalkTo)
     // The walk after a rest (DungeonRun::RestWalkResendDue): a rest state confirms the stall, a cast defers it.
     f.leadResting = HasMealAura(lead) || lead->GetStandState() != UNIT_STAND_STATE_STAND;
@@ -11169,6 +11279,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         ReadEngagedUnits(lead, bots, f);
         f.staleCombat = f.engagedUnits.empty();
+        if (f.autoCc)
+            ReadCcBreakFacts(slot, lead, bots, f);
     }
     if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
         ReadKillFirst(*slot.run.plan, lead, bots, f);

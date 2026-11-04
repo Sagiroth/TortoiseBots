@@ -231,7 +231,7 @@ Releases the spirit of a dead companion bot so it can run back to its corpse and
 .bot cmd revive party
 ```
 
-Requires Owner or GM permissions. With `party`, every dead bot of the party you control is released at once, and one ACK carries the count. Live bots are refused (`not-dead`; with `party`: none dead). Dead bots are released, run back to their corpse, and are revived by their own dead strategy.
+Requires Owner or GM permissions. With `party`, every dead bot of the party you control is released at once, and one ACK carries the count. Live bots are refused (`not-dead`; with `party`: none dead). Dead bots are released, run back to their corpse, and are revived by their own dead strategy. A headless bot's release is completed at once instead of waiting for the core's graveyard repop: inside a dungeon it comes back alive at the entrance, and a later resurrect never leaves a pending repop that could move a living bot out of the instance.
 
 ### `.bot cmd lootmethod`
 

@@ -12371,6 +12371,83 @@ static void TestTheRescueRetryAsksForItsRead()
     CHECK(r.strandTries == 1);
 }
 
+// ZG walk 33 f step 438 / c-r6 step 452: the rescue teleport put the lead bot in the canal at -11944.3 -1353.9 62.3
+// ("lead in water: yes") and the run stranded there. No rescue, strand or return point may be a point in liquid: the
+// pickers fall back to the previous dry candidate.
+static void TestTheRescueNeverPicksALiquidPoint()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -460.0f, 50.0f, -172.9f),
+        Step(PlanStepKind::Move, -422.4f, 82.4f, -172.9f), Step(PlanStepKind::Move, -422.9f, 104.3f, -172.9f),
+        Step(PlanStepKind::Rest)};
+    Facts f = StrandFacts(-960.0f, 620.0f, -172.9f);
+    f.pointLiquid = [](float x, float, float) { return x > -430.0f; }; // step 2's point is under water
+    CHECK(PointInLiquid(&f, -422.4f, 82.4f, -172.9f));
+    CHECK(!PointInLiquid(&f, -460.0f, 50.0f, -172.9f));
+    Run r = Start(&plan, 2);
+    NoteCheckpoint(r, 0);
+    // The safe point is the previous dry one (step 1), not the wet step 2.
+    CHECK(SafePointAtOrBefore(r, 2, 1, &f) == 0);
+    CHECK(StraightWalkBackTarget(r, 2, 1, &f) == 0);
+    // Unread: the old answer, the point itself.
+    CHECK(SafePointAtOrBefore(r, 2, 1) == 1);
+    // A fetch return never puts a bot in liquid: the lead's own wet spot is skipped for the dry spot.
+    Facts g = f;
+    g.leadX = -420.0f; // the lead bot stands in the canal
+    g.leadY = 80.0f;
+    ai::ApproachPoint point;
+    bool clear = true;
+    ai::ApproachPoint wet;
+    wet.x = -420.0f;
+    wet.y = 80.0f;
+    wet.z = -172.9f;
+    ai::ApproachPoint dry;
+    dry.x = -460.0f;
+    dry.y = 50.0f;
+    dry.z = -172.9f;
+    g.fetchSpots = {wet, dry};
+    CHECK(FetchPoint(g, point, clear) == 1 && clear && point.x == -460.0f);
+    g.fetchSpots = {wet}; // only wet spots: no teleport (the member holds)
+    CHECK(FetchPoint(g, point, clear) == -1 && !clear);
+    // A teleport return's fallback anchor is no member swimming either.
+    Facts returned = f;
+    returned.leadInCombat = true; // the lead bot's own spot is out of the question
+    MemberFact swimmer = Mem("Swimmer", 50.0f);
+    swimmer.x = -420.0f;
+    swimmer.y = 80.0f;
+    swimmer.z = -172.9f;
+    returned.members.push_back(swimmer);
+    std::string why;
+    CHECK(!FarReturnPoint(returned, {}, point, why));
+    MemberFact dryMember = swimmer;
+    dryMember.name = "Dry";
+    dryMember.x = -460.0f;
+    dryMember.y = 50.0f;
+    returned.members = {returned.members[0], dryMember};
+    CHECK(FarReturnPoint(returned, {}, point, why) && point.x == -460.0f);
+    // The stranded rescue refuses the wet plan point and steps back to the earlier dry one.
+    Run s = Start(&plan, 2);
+    NoteCheckpoint(s, 0);
+    s.walkBack = true;
+    s.walkBackIdx = 1;
+    s.walkBackStart = 1;
+    s.strandDue = true;
+    s.strandIdx = 1;
+    CHECK(Tick(s, f).empty()); // never the wet point: the earlier one is read first
+    CHECK(s.note == "the lead bot is stranded: reading the earlier point of step 1 for live hostiles (the point of "
+        "step 2 is held)");
+    CHECK(s.rescueScanX == -460.0f && s.rescueScanY == 50.0f);
+    f.rescueRead = true;
+    f.rescueReadX = -460.0f;
+    f.rescueReadY = 50.0f;
+    f.rescueReadZ = -172.9f;
+    f.rescueReach.clear();
+    f.leadX = -960.0f; // the lead bot stands where StrandFacts put it
+    f.leadY = 620.0f;
+    f.leadZ = -172.9f;
+    CHECK(Tick(s, f) == "rescue from -960.0 620.0 -172.9 to -460.0 50.0 -172.9");
+}
+
 // After a full wipe the party all revives together at the entrance: every member stands on the lead bot's spot, so
 // MemberGroupPoint finds no group to join, and the held point used to hold and pause the run after kRescueHoldMs. The
 // rescue reads the earlier clear point of the way it came and teleports the lead bot there instead.
@@ -32544,6 +32621,71 @@ static void TestAutoCcKeyOffIsToday()
     CHECK(s.ccSent.size() == 4);
 }
 
+// ZG walk 33 d, Jin'do steps 540/550: a fight stalled about 50 min with eight shackled Sacrificed Trolls 14826 and
+// nothing else engaged. Every hostile still in combat is one of the run's holds: the run breaks them one at a time,
+// the hold that ends soonest first (the oldest when no time was read).
+static void TestCcOnlyFightIsBrokenOneAtATime()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(0, {14826}), Step(PlanStepKind::Move, 9)};
+    Run r = Start(&plan);
+    r.fighting = true;
+    r.fightMs = 10000;
+    Facts f = AutoParty(6);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.ccHeldRead = true;
+    f.members = {Mem("Tanky", 0)};
+    f.members[0].inCombat = true;
+    f.engagedUnits.clear(); // nothing attacking: the stale flag the stall's note showed
+    for (int i = 0; i < 8; ++i)
+    {
+        UnitFact u = Unit(0x100 + i, 14826, 12.0f);
+        u.polymorphed = true;
+        u.ccRemainMs = static_cast<std::uint32_t>(20000 - i * 1000); // the last-marked hold ends first
+        f.ccHeld.push_back(u);
+    }
+    // One order, for the hold that ends soonest (0x107, 13 s), and never two.
+    CHECK(Tick(r, f) == "attack 263 Tanky");
+    CHECK(r.note.find("only the run's crowd control holds this fight: breaking 14826 one at a time (8 held)") !=
+        std::string::npos);
+    CHECK(r.ccBreakGuid == 0x107);
+    CHECK(Tick(r, f).empty()); // still held: the next waits for this one
+    CHECK(f.ccHeld.size() == 8);
+    // The party is on it: still no second order, and the break's grace keeps running (a hold that never breaks
+    // under the attack ends in the ceiling's pause, not a stall).
+    f.ccHeld[7].partyHits = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.ccBreakMs >= 2 * kTickMs);
+    // It dies (out of the read): the next soonest hold goes.
+    f.ccHeld.erase(f.ccHeld.begin() + 7);
+    CHECK(Tick(r, f) == "attack 262 Tanky");
+    // A real hostile engages: no break at all, the fight is a fight.
+    Facts g = f;
+    UnitFact real = Unit(0x300, 11352, 10.0f);
+    g.engagedUnits = {real};
+    std::string live;
+    CHECK(!RunCcBreakTick(r, g, kTickMs, live) && live.empty());
+    // No remaining time read: the oldest hold goes (the first seen this fight).
+    Facts h = f;
+    for (UnitFact& u : h.ccHeld)
+        u.ccRemainMs = 0;
+    h.ccHeld.erase(h.ccHeld.begin()); // 0x100 is gone
+    Run o = Start(&plan);
+    o.fighting = true;
+    o.fightMs = 10000;
+    o.ccBreakSeen = {{0x101, 1000}, {0x102, 2000}};
+    std::string order;
+    CHECK(RunCcBreakTick(o, h, kTickMs, order) && order == "attack 257 Tanky"); // 0x101 was seen first
+    // The key off sends nothing.
+    Facts off = f;
+    off.autoCc = false;
+    Run p = Start(&plan);
+    p.fighting = true;
+    std::string none;
+    CHECK(!RunCcBreakTick(p, off, kTickMs, none) && none.empty());
+}
+
 static void TestHealerGuardSkipsCcHolders()
 {
     DungeonPlan plan;
@@ -32902,6 +33044,7 @@ int main()
     TestAutoCcReappliesTwiceThenStops();
     TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();
+    TestCcOnlyFightIsBrokenOneAtATime();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();
@@ -33348,6 +33491,7 @@ int main()
     TestStrandedLeadIsTeleportedToTheLastReachedPoint();
     TestAFetchWithoutAnAnchorWaitsForOne();
     TestTheRescueNeverTeleportsAloneOntoLiveHostiles();
+    TestTheRescueNeverPicksALiquidPoint();
     TestTheRescueRetryAsksForItsRead();
     TestAFullWipeRescueStepsBackToAnEarlierClearPoint();
     TestAFetchedMemberIsNotTeleportedIntoAFight();
