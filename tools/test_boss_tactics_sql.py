@@ -502,6 +502,19 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
         self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
 
+    def test_kurinnaxx_mortal_wound_swap_row_is_live(self):
+        # The tank swap (swap_on_aura): Kurinnaxx's Mortal Wound 25646 at 5 stacks, a rotation of two tanks (the main
+        # tank and off-tank 1). The C++ consumer is behind AiPlayerbot.DungeonRunTankSwap; the row itself is data, and
+        # the AQ20 migration owns it: a second migration must not write the same row again.
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): row for row in effective_rows()}
+        row = live.get((509, 15348, "swap_on_aura", 0, 25646))
+        self.assertIsNotNone(row, "the Kurinnaxx swap_on_aura row is gone")
+        self.assertEqual("20261104150000_world.sql", row[0], "the AQ20 migration owns the Kurinnaxx swap row")
+        self.assertEqual(2, int(row[6]), "the rotation is two tanks")
+        self.assertEqual(5.0, float(row[7]), "the swap fires at 5 Mortal Wound stacks")
+        self.assertFalse(os.path.isfile(os.path.join(ROOT, "data/sql/world/20261104155900_world.sql")),
+                         "the duplicate Kurinnaxx migration is back")
+
     def test_mandokir_keyed_gaze_hold_migration(self):
         # 20261104040000_world.sql: the keyed until_tank hold on Threatening Gaze 24314 (a real cast, castingTimeIndex 5),
         # the only dps_hold_after row Mandokir has. Its DELETE names that one row, so it is idempotent and touches
@@ -1210,9 +1223,10 @@ class BossTacticsCoreData(unittest.TestCase):
         self.assertEqual([], problems, "the core cannot interrupt these rows:\n" + "\n".join(problems))
 
     def test_aura_tactic_spells_exist(self):
-        # Every spell a new-kind row names exists in spell_template: a dispel_priority aura, a freeze/flee aura, a
-        # dps_hold_after trigger or a kill_first target's spell id (0 for the target rows).
-        aura_kinds = ("dispel_priority", "freeze_on_aura", "flee_on_aura", "dps_hold_after")
+        # Every spell a new-kind row names exists in spell_template: a dispel_priority aura, a freeze/flee aura, the
+        # aura a dps_hold_after row triggers on, a swap_on_aura stack source or a kill_first target's spell id (0 for
+        # the target rows).
+        aura_kinds = ("dispel_priority", "freeze_on_aura", "flee_on_aura", "dps_hold_after", "swap_on_aura")
         problems = []
         for row in effective_rows():
             if row[3] not in aura_kinds or not int(row[5]):
