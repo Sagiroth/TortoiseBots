@@ -50,13 +50,14 @@ class RangedOnlyWiring(unittest.TestCase):
         self.assertIn("sPlayerbotAIConfig.dungeonRunRangedOnly", hold)
         self.assertIn("ai->IsRanged(bot)", hold)
         self.assertIn("PlayerbotAI::IsHeal(bot)", hold)
-        self.assertIn("RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), row.param)", hold)
-        self.assertIn("BossTacticKind::RangedOnly", hold)
+        self.assertIn("GetBossTactics().RangedOnlyGap(bot->GetMapId(), unit->GetEntry())", hold)
+        self.assertIn("RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), rowGap)", hold)
         self.assertIn("float gap = unit->GetPositionZ() - bot->GetPositionZ();", hold)
 
     def test_trigger_drops_the_target_and_logs(self):
         trigger = body(TRIGGERS, "bool BossTacticsRangedOnlyTrigger::IsActive()")
         self.assertIn("IsRangedOnlyHeld(ai, bot, current, &gapYd)", trigger)
+        self.assertIn('AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty()', trigger)
         self.assertIn("LogBossRangedOnly(ai, bot, current, gapYd)", trigger)
         action = body(ACTIONS, "bool BossTacticsRangedOnlyAction::Execute(Event& event)")
         self.assertIn("IsRangedOnlyHeld(ai, bot, held)", action)
@@ -113,7 +114,7 @@ class BurnManaWiring(unittest.TestCase):
         self.assertIn("LiveGroupMembers(group)", rank)
         self.assertIn("member->GetObjectGuid().GetRawValue() >= self", rank)
         self.assertIn("PlayerbotAI::IsTank(player) || PlayerbotAI::IsHeal(player)", ACTIONS)
-
+        self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', rank)
     def test_config_key_is_read_templated_and_documented(self):
         self.assertIn('dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);',
                       CONFIG_CPP)

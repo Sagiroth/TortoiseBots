@@ -268,6 +268,10 @@ bool BossTacticsRangedOnlyTrigger::IsActive()
 {
     if (!Ready(ai, bot))
         return false;
+    // An explicit player order outranks the tactic, as it does for hold_kill: the picker would restore the order next
+    // tick, so a drop here would only oscillate.
+    if (!AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty())
+        return false;
     Unit* current = AI_VALUE(Unit*, "current target");
     float gapYd = 0.0f;
     if (!current || !IsRangedOnlyHeld(ai, bot, current, &gapYd))

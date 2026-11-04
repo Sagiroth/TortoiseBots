@@ -444,6 +444,9 @@ namespace ai
                 spreadMaps_[row.map] = true;
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
+            // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
+            if (row.kind == BossTacticKind::RangedOnly)
+                rangedOnlyGaps_[row.map].emplace(row.targetEntry != 0 ? row.targetEntry : row.bossEntry, row.param);
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -560,6 +563,19 @@ namespace ai
             return it == byMap->second.end() ? 0 : it->second;
         }
 
+        // The vertical gap a map's ranged_only row holds the entry under (0: no row), keyed by the held entry: the
+        // row's target, or its boss for target_entry 0. 0 before the seal.
+        float RangedOnlyGap(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || rangedOnlyGaps_.empty())
+                return 0.0f;
+            auto const byMap = rangedOnlyGaps_.find(map);
+            if (byMap == rangedOnlyGaps_.end())
+                return 0.0f;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? 0.0f : it->second;
+        }
+
         // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
         // before the seal.
         bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
@@ -660,6 +676,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;

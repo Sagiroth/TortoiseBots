@@ -4797,24 +4797,17 @@ bool ai::IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYd
     // The kind holds melee damage and tanks: a healer keeps its own business in the air phase.
     if (PlayerbotAI::IsHeal(bot))
         return false;
-    const std::vector<BossTacticRow>* rows = GetBossTactics().Rows(bot->GetMapId(), unit->GetEntry());
-    if (!rows)
+    // The table carries the hold keyed by the held entry: the row's boss for target_entry 0, or its own target. The
+    // kind's key and the strategy are the caller's gate, so a key-off table answers 0 and changes nothing.
+    const float rowGap = GetBossTactics().RangedOnlyGap(bot->GetMapId(), unit->GetEntry());
+    if (!(rowGap > 0.0f))
         return false;
-    for (const BossTacticRow& row : *rows)
-    {
-        if (row.kind != BossTacticKind::RangedOnly)
-            continue;
-        // target_entry 0 is the row's boss, the unit looked up by its own entry; an entry row holds that entry only.
-        if (row.targetEntry != 0 && row.targetEntry != unit->GetEntry())
-            continue;
-        const float gap = unit->GetPositionZ() - bot->GetPositionZ();
-        if (!RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), row.param))
-            continue;
-        if (gapYdOut)
-            *gapYdOut = gap;
-        return true;
-    }
-    return false;
+    const float gap = unit->GetPositionZ() - bot->GetPositionZ();
+    if (!RangedOnlyHolds(true, unit->GetPositionZ(), bot->GetPositionZ(), rowGap))
+        return false;
+    if (gapYdOut)
+        *gapYdOut = gap;
+    return true;
 }
 
 bool ai::BossCanBurnMana(PlayerbotAI* ai, Player* bot)
@@ -4837,7 +4830,11 @@ int ai::BossBurnManaRank(PlayerbotAI* ai, Player* bot)
             continue;
         if (member->GetObjectGuid().GetRawValue() >= self)
             continue;
-        if (CanBurnMana(PlayerbotAIStorage::Instance().GetAI(member), member))
+        // A member that does not run the boss tactics never burns, so it must not hold one of the capped slots.
+        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+            continue;
+        if (CanBurnMana(memberAi, member))
             ++rank;
     }
     return rank;

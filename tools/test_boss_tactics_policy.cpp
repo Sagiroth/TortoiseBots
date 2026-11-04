@@ -2455,6 +2455,18 @@ int main()
             BossTacticTable table;
             CHECK(!table.Add(tooHigh));                   // RangedOnlyRowRefusedAboveFortyYards
         }
+        // The hold is looked up by the held entry: the row's boss for target_entry 0, or its own target for an entry
+        // row. The entry index is what the target pickers read on the hot path.
+        {
+            BossTacticTable table;
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 0.0f)); // not sealed yet
+            CHECK(table.Add(hold));
+            CHECK(table.Add(Row(509, 15369, BossTacticKind::RangedOnly, 15934, 0, 0, 12.0f)));
+            table.Seal();
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 8.0f));   // RangedOnlyGapFromTheBossRow
+            CHECK(Near(table.RangedOnlyGap(509, 15934), 12.0f));  // RangedOnlyGapFromAnEntryRow
+            CHECK(Near(table.RangedOnlyGap(531, 15369), 0.0f));
+        }
     }
 
     std::cout << "All boss tactics policy tests passed.\n";
