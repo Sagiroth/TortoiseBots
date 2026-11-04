@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.16.0 (2026-11-04)
+
+### Raids & Dungeons
+- Raid leaders now apply crowd control, including Freezing Trap, right as the pull starts. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- Tanks hold raid fights better, and a crash during raids is fixed. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- Bots now pick up raid members who fall behind instead of leaving them. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- The Hakkar fight works properly again. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- 46 raid and dungeon routes now understand which floor the party is on. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- Five dungeons have refreshed routes. [#1509](https://github.com/Sagiroth/TortoiseBots/pull/1509)
+- A rescue no longer drags the raid back toward the start of a long walk. [#1509](https://github.com/Sagiroth/TortoiseBots/pull/1509)
+
+### Professions & Crafting
+- The new `.bot professions <bot>` command lists a bot's professions, skill levels and every recipe it knows. [#1504](https://github.com/Sagiroth/TortoiseBots/pull/1504)
+- It also shows recipes the bot could still learn and whether a trainer or a recipe item teaches them. [#1504](https://github.com/Sagiroth/TortoiseBots/pull/1504)
+- Craft orders can no longer ask for things the bot cannot hand over or you cannot use. [#1504](https://github.com/Sagiroth/TortoiseBots/pull/1504)
+
+### Guild Orders
+- The new `.bot order ... preview` command shows what a bot will farm, make or buy before you send the order. [#1511](https://github.com/Sagiroth/TortoiseBots/pull/1511)
+- Guild bots now refuse Buy orders from players unless you allow it. [#1511](https://github.com/Sagiroth/TortoiseBots/pull/1511)
+
+### Bots & Companions
+- Bots can now actually found their own guilds, and this is off by default until you switch it on. [#1512](https://github.com/Sagiroth/TortoiseBots/pull/1512)
+- A hired bot keeps its gear item-level limit after logging out and back in. [#1514](https://github.com/Sagiroth/TortoiseBots/pull/1514)
+
+### Dashboard
+- The dashboard has a new Raids tab. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- You can record a bot's decisions to see why it did something. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
+- Signing in now works when your server's login database runs on MySQL 8. [#1502](https://github.com/Sagiroth/TortoiseBots/pull/1502)
+
+### Behind the scenes
+- The setup guide now has clear Windows and Linux steps, and the player pages were rewritten to match what bots really do. [#1501](https://github.com/Sagiroth/TortoiseBots/pull/1501) [#1510](https://github.com/Sagiroth/TortoiseBots/pull/1510)
+- Windows builds work again after one oversized text block was split into smaller pieces. [#1513](https://github.com/Sagiroth/TortoiseBots/pull/1513)
+- An unused automated build job was removed. [#1502](https://github.com/Sagiroth/TortoiseBots/pull/1502)
+
+---
+
 ## v1.15.1 (2026-11-03)
 
 ### Bots & Setup
