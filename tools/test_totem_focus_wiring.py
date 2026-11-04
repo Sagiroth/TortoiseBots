@@ -64,6 +64,12 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn('"fire blast", "shadowburn", "death coil", "arcane shot"', COMMANDER)
         self.assertIn("kTotemFocusOpeners", helper)
 
+    def test_kill_first_spans_close_out_of_combat(self):
+        i = COMMANDER.index("if (slot.run.plan && !slot.run.plan->killFirst.empty())")
+        block = COMMANDER[i:i + 420]
+        self.assertIn("if (f.anyInCombat)\n            ReadKillFirst(*slot.run.plan, lead, bots, f);", block)
+        self.assertIn("LogKillFirstSpans(slot, lead, f);", block)
+
     def test_kill_first_trigger_drops_to_one_second_under_the_key(self):
         self.assertIn('Trigger(ai, "boss tactics kill first", sPlayerbotAIConfig.dungeonRunTotemFocus ? 1 : 2)', TRIGGERS)
 

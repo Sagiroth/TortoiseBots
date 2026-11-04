@@ -11443,7 +11443,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // In a fight of a plan with kill_first: those units among what the bots
     // already hold, their own cached "attackers" lists (which carry the
     // attackers' totems and guardians, a healing ward too; read only when
-    // already calculated), resolved by guid. No grid or world scan.
+    // already calculated), resolved by guid. The only scan is the totem key's
+    // bounded grid read of an engaged boss's kill-first units (ReadKillFirst).
     // In combat by the flag, yet nothing hostile is engaged with any bot or its
     // pet: stale (DungeonRun::Facts::staleCombat).
     // The same read lists those units with whether the group can attack each (DungeonRun::Facts::engagedUnits):
@@ -11456,9 +11457,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         if (f.autoCc)
             ReadCcBreakFacts(slot, lead, bots, f);
     }
-    if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
+    if (slot.run.plan && !slot.run.plan->killFirst.empty())
     {
-        ReadKillFirst(*slot.run.plan, lead, bots, f);
+        if (f.anyInCombat)
+            ReadKillFirst(*slot.run.plan, lead, bots, f);
+        // Also out of combat: a kill-first unit that dies or despawns as the fight ends still gets its closing line,
+        // and a span is never left open into the next fight.
         LogKillFirstSpans(slot, lead, f);
     }
     if (f.anyInCombat)
