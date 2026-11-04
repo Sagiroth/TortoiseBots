@@ -26734,7 +26734,6 @@ static void TestTotemFocusLeavesTheSkullOnTheBoss()
     }
 }
 
-// T6: the fight log's kill_first span lines, exact.
 // H1: the totem focus cuts only the damage dealer's own generic cast or channel, and never a spell the fight needs:
 // a run crowd-control spell, a resurrect (Rebirth or any spell with a resurrect effect) or the hearthstone. An Auto
 // Shot or a wand's shot is an autorepeat spell and is never cut.
@@ -26792,11 +26791,14 @@ static void TestTotemFocusYieldsToTheRetreat()
     CHECK(Tick(q, g) == "focus 501");
 }
 
+// T6: the server log's kill_first span lines, exact.
 static void TestKillFirstLogLine()
 {
-    CHECK(KillFirstLogLine("zul_gurub", "seen", 15112, 501, 0) == "TBM:KILLFIRST|zul_gurub|seen|15112|501");
-    CHECK(KillFirstLogLine("", "dead", 14987, 502, 4200) == "TBM:KILLFIRST|-|dead|14987|502|4200");
-    CHECK(KillFirstLogLine("zul_gurub", "gone", 15112, 503, 900) == "TBM:KILLFIRST|zul_gurub|gone|15112|503|900");
+    CHECK(KillFirstLogLine("zul_gurub", "Tanky", 1234, "seen", 15112, 501, 0) ==
+        "TBM:KILLFIRST|zul_gurub|Tanky|1234|seen|15112|501");
+    CHECK(KillFirstLogLine("", "", 0, "dead", 14987, 502, 4200) == "TBM:KILLFIRST|-|-|0|dead|14987|502|4200");
+    CHECK(KillFirstLogLine("zul_gurub", "Healy", 7, "gone", 15112, 503, 900) ==
+        "TBM:KILLFIRST|zul_gurub|Healy|7|gone|15112|503|900");
 }
 
 // A raid boss fight's healer guard with a ranged dps in reach of the add and the main tank holding the boss.

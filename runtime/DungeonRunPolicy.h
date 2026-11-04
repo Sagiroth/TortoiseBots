@@ -21761,15 +21761,17 @@ inline std::string PhaseText(const Run& r)
     return PhaseName(r.phase);
 }
 
-// A kill_first unit's sighting or death in the fight log:
-//   TBM:KILLFIRST|<plan>|<seen|dead|gone>|<entry>|<guid>[|<ms>]
-// <ms> is the time since it was first seen (0: none, a sighting). The frames sample a fight every few seconds, so a
-// totem's lifetime is only measurable from the log.
-inline std::string KillFirstLogLine(const std::string& plan, const char* event, std::uint32_t entry,
-    std::uint64_t guid, std::uint32_t ms)
+// A kill_first unit's sighting or death in the server log:
+//   TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]
+// <lead> is the run's lead bot and <instance> its instance id, so the line names its run in a log shared by every run
+// of the server. <ms> is the time since it was first seen (0: none, a sighting). The frames sample a fight every few
+// seconds, so a totem's lifetime is only measurable from the log.
+inline std::string KillFirstLogLine(const std::string& plan, const std::string& lead, std::uint32_t instance,
+    const char* event, std::uint32_t entry, std::uint64_t guid, std::uint32_t ms)
 {
-    std::string line = std::string("TBM:KILLFIRST|") + (plan.empty() ? "-" : plan) + "|" + event + "|" +
-        std::to_string(entry) + "|" + std::to_string(guid);
+    std::string line = std::string("TBM:KILLFIRST|") + (plan.empty() ? "-" : plan) + "|" +
+        (lead.empty() ? "-" : lead) + "|" + std::to_string(instance) + "|" + event + "|" + std::to_string(entry) +
+        "|" + std::to_string(guid);
     if (ms)
         line += "|" + std::to_string(ms);
     return line;

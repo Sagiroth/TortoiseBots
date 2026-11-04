@@ -8937,10 +8937,12 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         }
 }
 
-// A kill_first unit's sighting and death in the fight log (TBM:KILLFIRST, DungeonRun::KillFirstLogLine): the frames
-// sample a fight every few seconds, so a totem's lifetime is only measurable from these lines. One line per unit: seen
-// when the read first lists it, dead or gone when it leaves the list dead. A unit still alive but out of the list for
-// a tick (not engaged, out of the boss's grid) keeps its span and is not seen again. World thread, once a second.
+// A kill_first unit's sighting and death in the server log (TBM:KILLFIRST, DungeonRun::KillFirstLogLine): the line
+// carries the run's lead bot and instance id, so it names its run in a log shared by every run of the server. The
+// frames sample a fight every few seconds, so a totem's lifetime is only measurable from these lines. One line per
+// unit: seen when the read first lists it, dead or gone when it leaves the list dead. A unit still alive but out of
+// the list for a tick (not engaged, out of the boss's grid) keeps its span and is not seen again. World thread, once a
+// second.
 void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts const& f)
 {
     if (!lead || !lead->IsInWorld() || !slot.run.plan)
@@ -8953,8 +8955,8 @@ void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::D
         if (slot.killFirstSeen.count(u.guid))
             continue;
         slot.killFirstSeen[u.guid] = {u.entry, now};
-        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, "seen", u.entry, u.guid, 0)
-            .c_str());
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), "seen", u.entry, u.guid, 0).c_str());
     }
     for (auto it = slot.killFirstSeen.begin(); it != slot.killFirstSeen.end();)
     {
@@ -8971,8 +8973,8 @@ void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::D
         }
         char const* const event = unit ? "dead" : "gone";
         std::uint32_t const ms = WorldTimer::getMSTimeDiff(it->second.seenMs, now);
-        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, event, it->second.entry,
-            it->first, ms).c_str());
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), event, it->second.entry, it->first, ms).c_str());
         it = slot.killFirstSeen.erase(it);
     }
 }
