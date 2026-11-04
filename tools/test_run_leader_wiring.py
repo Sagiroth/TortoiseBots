@@ -2073,7 +2073,10 @@ class RunFactKeyWiringTest(unittest.TestCase):
 
     def test_the_totem_focus_reads_the_key_and_goes_before_the_guard(self):
         self.assertIn("f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;", COMMANDS)
-        self.assertIn("bool const totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;", COMMANDS)
+        # Only the run leader's own order is automated: a player's explicit focus passes false and arms every bot.
+        self.assertIn("bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,\n"
+                      "        sPlayerbotAIConfig.dungeonRunTotemFocus);", COMMANDS)
+        self.assertIn("return CommanderFocus(handler, order, target, intent, s_runIssuing);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
                       "                totemTarget, totemFocus)", COMMANDS)
         # The focus order hands the tick to the totem before the guard can spend it.

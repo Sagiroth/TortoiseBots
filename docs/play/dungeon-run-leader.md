@@ -286,7 +286,7 @@ Opt-in (`AiPlayerbot.DungeonRunPullStand = 1`, default `0`; not yet proven in a 
 
 ### Totem focus
 
-Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`; only read while `AiPlayerbot.DungeonSelfClear = 1`). A creature of type totem (11) whose entry is on the plan's `kill_first` list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. While the key is on, the guard and the engage on arrival leave such a totem alone, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's.
+Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`; only read while `AiPlayerbot.DungeonSelfClear = 1`). A creature of type totem (11) whose entry is on the plan's `kill_first` list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. While the key is on, the guard and the engage on arrival leave such a totem alone, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's. The DPS-only rule is the run leader's own order: a player's explicit focus on a totem still sends the whole group.
 
 ### Events
 

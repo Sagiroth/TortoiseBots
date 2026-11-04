@@ -26279,6 +26279,21 @@ static void TestTotemFocusKeyOffJoinsAll()
     CHECK(!FocusSkipsBot(false, false, false, true, false));
 }
 
+// The DPS-only totem focus is the run leader's own kill-first order: a player's explicit focus on a totem, with the
+// key on, is the player's order and arms the tanks and the healers too.
+static void TestExplicitTotemFocusArmsEveryBot()
+{
+    CHECK(AutomatedTotemFocus(true, true, true));   // the run's own order on a kill_first totem
+    CHECK(!AutomatedTotemFocus(false, true, true)); // a player's explicit focus on the same totem
+    CHECK(!AutomatedTotemFocus(true, true, false)); // the key off: every bot joins, the run's order included
+    CHECK(!AutomatedTotemFocus(true, false, true)); // not a totem
+    CHECK(!FocusSkipsBot(true, false, false, true, AutomatedTotemFocus(false, true, true)));
+    CHECK(!FocusSkipsBot(false, true, false, true, AutomatedTotemFocus(false, true, true)));
+    CHECK(FocusSkipsBot(true, false, false, true, AutomatedTotemFocus(true, true, true)));
+    CHECK(FocusSkipsBot(false, true, false, true, AutomatedTotemFocus(true, true, true)));
+    CHECK(!FocusSkipsBot(false, false, false, true, AutomatedTotemFocus(true, true, true)));
+}
+
 static void TestTankHoldFocusUnchanged()
 {
     CHECK(FocusSkipsBot(true, false, true, false, true));    // a tank skips a tank_hold target
@@ -33955,6 +33970,7 @@ int main()
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
     TestTotemFocusSkipsTanksAndHealers();
     TestTotemFocusKeyOffJoinsAll();
+    TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();

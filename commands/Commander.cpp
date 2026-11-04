@@ -3149,17 +3149,19 @@ static bool FocusIsTankHoldTarget(Unit* target)
 }
 
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
-// group, every bot attacks its Skull target.
+// group, every bot attacks its Skull target. `automatedKillFirst`: the run leader's own kill-first order (an order the
+// run issued), the only focus the totem key may make DPS-only; a player's explicit focus arms every bot.
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
-    std::string const& intent)
+    std::string const& intent, bool automatedKillFirst)
 {
     order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
     // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
-    // healer, so the focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
     bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
-    bool const totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
+    bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,
+        sPlayerbotAIConfig.dungeonRunTotemFocus);
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -6576,7 +6578,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         if (verb == "attack")
             return CommanderAttack(handler, order, target, intent, attackBot);
         if (verb == "focus")
-            return CommanderFocus(handler, order, target, intent);
+            return CommanderFocus(handler, order, target, intent, s_runIssuing);
         SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Pull);
         BotCommandContext context = CommanderContext(order, target);
         // Player-led: the run's tank (the one named at the start, else the first tank-role bot) pulls, whoever else

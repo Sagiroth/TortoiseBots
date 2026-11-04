@@ -10057,6 +10057,13 @@ inline bool FocusSkipsBot(bool isTank, bool isHealer, bool tankHoldTarget, bool 
     return tankHoldTarget && isTank;
 }
 
+// The DPS-only totem focus is the run leader's own automated kill-first order, never a player's: an explicit
+// `.bot action focus` (or `.bot cmd focus`) on a totem is the player's order and arms every bot.
+inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool totemKeyOn)
+{
+    return automatedKillFirst && totemKeyOn && totemTarget;
+}
+
 // Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
 // like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
 // no order budget spent on it.
