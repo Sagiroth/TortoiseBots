@@ -578,10 +578,11 @@ namespace ai
         float GetValue(Action* action) override;
     };
     // A taunt_after_cast row (mode until_tank) whose subject stopped being on a tank, for the one bot the row's raid
-    // order names (`priority`, the first alive at or after it): `valid` is true only while that bot is the one asking
-    // and the deadline the rising edge opened has not run out. `sinceMs` is how long ago it opened, `deadlineMs` the
-    // row's param. blink and the spell triggers stay unimplemented: the loader accepts those rows, this scan ignores
-    // them.
+    // order names for the current window (`priority` and the roll of tanks that can taunt now): `valid` is true only
+    // while that bot is the one asking and its window has not run out. `sinceMs` is how long ago the window opened,
+    // `deadlineMs` its length (the row's param, 10 s when the row leaves it 0). A new window opens every deadline
+    // while the subject stays off a tank. blink and the spell triggers stay unimplemented: the loader accepts those
+    // rows, this scan ignores them.
     struct BossTauntAfter
     {
         bool valid = false;
@@ -589,14 +590,14 @@ namespace ai
         const BossTacticRow* row = nullptr;
         int tankIndex = -1;          // the bot's slot in the raid tank order
         std::uint32_t deadlineMs = 0;
-        std::uint32_t sinceMs = 0;   // since the subject's victim stopped being a tank
+        std::uint32_t sinceMs = 0;   // since the current window opened
     };
-    // One read of the taunt_after_cast rows of the fight: opens the episode on the rising edge, closes and logs it
-    // when the subject is on a tank again or the deadline ran out (`BossTacticsTauntAfter`). Gated by
-    // AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; the episode state is the fight's, shared by
-    // every bot of the instance, so a tank taking over mid-episode continues it.
+    // One read of the taunt_after_cast rows of the fight: opens a window (the first, or the retry after one ran out),
+    // logs a window that ran out or ended, and ends the episode when a tank has the subject again
+    // (`BossTacticsTauntAfter`). Gated by AiPlayerbot.DungeonRunAuraTactics and the "boss tactics" strategy; the
+    // window state is per bot, subject and row, so a tank taking over mid-episode starts from its own state.
     BossTauntAfter FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
-    // The taunt of the episode was cast: its outcome row then says taunted=1.
+    // The taunt of the window was cast: its outcome row then says taunted=1.
     void NoteBossTauntAfterCast(PlayerbotAI* ai, Player* bot, const BossTauntAfter& task);
 
     // The row's tank attacks the subject and casts its class taunt (`taunt`/`growl`) as soon as it can.

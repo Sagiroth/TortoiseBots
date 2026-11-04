@@ -1979,8 +1979,26 @@ namespace ai
         return -1;
     }
 
-    // The taunt_after_cast deadline: `triggered` is an episode the rising edge opened, `sinceMs` how long ago it did
-    // and `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
+    // The tank of one until_tank window: the first usable tank at or after `priority` that can taunt the subject right
+    // now (in melee, targeting it, and not its victim) counts before one that cannot, wrapping to the front; else the
+    // first usable tank, which walks in and takes the next window. A tank that can taunt counts in every window: the
+    // pick is read again each time one opens. -1 when no tank is usable.
+    inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt, int wanted)
+    {
+        int const count = static_cast<int>(usable.size());
+        if (count == 0 || wanted < 0)
+            return -1;
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
+                return index;
+        }
+        return TauntAfterTankIndex(usable, wanted);
+    }
+
+    // The taunt_after_cast deadline: `triggered` is a window that is open, `sinceMs` how long ago it opened and
+    // `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
     inline bool TauntAfterDue(bool triggered, std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         if (!triggered || victimIsAssigned)
@@ -1998,49 +2016,43 @@ namespace ai
     enum class TauntEpisodeStep
     {
         None = 0,
-        Due = 1,      // an open episode inside its deadline and the victim is not its tank
-        Miss = 2,     // the deadline ran out on a non-tank: log once, no second attempt this charm
-        Regained = 3, // a tank has the subject back: the episode ends
+        Due = 1,      // the open window allows the taunt and the victim is not its tank
+        Regained = 2, // a tank has the subject back: the episode ends
     };
 
     struct TauntEpisodeRead
     {
-        bool starts = false; // the rising edge: the caller opens the episode now
+        bool starts = false; // a window opens now: the caller resets its deadline clock
         bool open = false;
-        bool spent = false;
+        bool missed = false; // the window that just ran out on a non-tank is logged once
         TauntEpisodeStep step = TauntEpisodeStep::None;
     };
 
-    // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
-    // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
-    // and one between victims (a pet, a transition) keeps its deadline.
-    inline TauntEpisodeRead TauntEpisodeTick(bool onNonTank, bool victimIsTank, bool open, bool spent,
+    // One read of a taunt_after_cast window (mode until_tank): `onNonTank` the subject's victim is a player that is
+    // not a tank, `victimIsTank` any tank has it. While the subject stays on a non-tank a new window opens the moment
+    // the last one ran out (`param` seconds), so a taunt that missed or could not be cast is retried at that cadence
+    // instead of the row going dead until a tank happens to take the subject back. A tank having it back ends the
+    // episode, and a subject between victims (a pet, a transition) keeps the open window's clock running.
+    inline TauntEpisodeRead TauntEpisodeTick(bool onNonTank, bool victimIsTank, bool open,
         std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         TauntEpisodeRead out;
         out.open = open;
-        out.spent = spent;
         if (onNonTank)
         {
-            if (!open && !spent)
+            if (TauntAfterDue(true, open ? sinceMs : 0, deadlineMs, victimIsAssigned))
             {
-                out.starts = true;
+                out.starts = !open;
                 out.open = true;
-                if (TauntAfterDue(true, 0, deadlineMs, victimIsAssigned))
-                    out.step = TauntEpisodeStep::Due;
+                out.step = TauntEpisodeStep::Due;
                 return out;
             }
-            if (out.open)
-            {
-                if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
-                    out.step = TauntEpisodeStep::Due;
-                else
-                {
-                    out.step = TauntEpisodeStep::Miss;
-                    out.open = false;
-                    out.spent = true;
-                }
-            }
+            // The window ran out, or its own assigned tank is the victim: log the run-out once and open the next
+            // window at once.
+            out.missed = open && !victimIsAssigned;
+            out.starts = true;
+            out.open = true;
+            out.step = victimIsAssigned ? TauntEpisodeStep::None : TauntEpisodeStep::Due;
             return out;
         }
         if (victimIsTank)
@@ -2048,7 +2060,6 @@ namespace ai
             if (open)
                 out.step = TauntEpisodeStep::Regained;
             out.open = false;
-            out.spent = false;
         }
         return out;
     }

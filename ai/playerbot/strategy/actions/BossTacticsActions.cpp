@@ -4485,7 +4485,8 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
 namespace
 {
 // taunt_after_cast's fight state (mode until_tank): the subject's victim stopped being a tank, so the row's tank has
-// `param` seconds to take it back. One entry per map instance, subject and row, keyed like a dps_hold_after hold.
+// `param` seconds to take it back, and a new window opens every `param` seconds while the subject stays off a tank.
+// One entry per map instance, subject and row, keyed like a dps_hold_after hold.
 using TauntAfterKey = std::tuple<std::uint32_t, std::uint32_t, std::uint64_t, std::uint32_t, std::uint32_t,
                                  std::uint8_t, std::uint8_t>;
 
@@ -4495,10 +4496,7 @@ struct TauntAfterEpisode
     std::uint32_t startMs = 0;
     std::uint32_t regainedMs = 0;
     bool open = false;
-    bool taunted = false;
-    // This charm's window is spent (regained or missed): no second attempt until the subject's victim is a tank again,
-    // which is where the next charm starts afresh.
-    bool spent = false;
+    bool taunted = false; // the row's tank cast its taunt in the open window
 };
 
 std::mutex g_tauntAfterMutex;
@@ -4560,8 +4558,8 @@ const char* ClassTauntSpell(Player* bot)
     }
 }
 
-// The outcome row of one episode: how long after the rising edge the subject was on a tank again (none for a miss),
-// and whether the row's tank got its taunt off.
+// The outcome row of one window: how long after it opened the subject was on a tank again (none for a window that ran
+// out), and whether the row's tank got its taunt off in it.
 void LogTauntAfter(PlayerbotAI* ai, Unit* subject, int tankIndex, const TauntAfterEpisode& episode, bool regained)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -4598,23 +4596,24 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     // The role order drops a dead or absent tank; a creature-charmed one yields its AI, so it is as gone for the order
     // as a dead one and the pick wraps past it (M5). The pure pick's wrap also covers a row naming an index past the
     // end (fewer tanks than the row expects).
-    std::vector<bool> alive;
-    alive.reserve(roles.tanks.size());
+    std::vector<bool> usable;
+    usable.reserve(roles.tanks.size());
     for (Player* const tank : roles.tanks)
     {
         const ObjectGuid charmer = tank ? tank->GetCharmerGuid() : ObjectGuid();
-        alive.push_back(TauntAfterTankUsable(!charmer.IsEmpty(), charmer.IsPlayer()));
+        usable.push_back(TauntAfterTankUsable(!charmer.IsEmpty(), charmer.IsPlayer()));
     }
+    std::vector<bool> canTaunt(roles.tanks.size(), false);
     for (const BossTacticRow* row : fight.rows)
     {
         // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
         // the scan having no teleport edge or cast slot to offer them.
         if (row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank)
             continue;
-        int const assigned = TauntAfterTankIndex(alive, static_cast<int>(row->priority));
-        if (assigned < 0 || roles.tanks[assigned] != bot)
-            continue;
-        std::uint32_t const deadlineMs = static_cast<std::uint32_t>(row->param * 1000.0f + 0.5f);
+        // The row's param is the window length (and its retry cadence); a row that leaves it 0 keeps the 10 s the
+        // shipped rows use.
+        std::uint32_t const deadlineMs =
+            static_cast<std::uint32_t>((row->param > 0.0f ? row->param : 10.0f) * 1000.0f + 0.5f);
         for (Unit* unit : fight.units)
         {
             if (!unit || unit->GetEntry() != TacticSubjectEntry(*row))
@@ -4622,6 +4621,17 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             // A needs_aura subject is no taunt target without the row's aura: skip it before its episode opens, so a
             // Shade is never taken off a tank by a taunt that could not kill it anyway.
             if (TauntAuraGated(bot, unit))
+                continue;
+            // A tank that can taunt the subject right now (in melee, with it as its target, and not its victim) counts
+            // before one that cannot; read for every window, so the pick follows the tanks that can act.
+            for (std::size_t i = 0; i < roles.tanks.size(); ++i)
+            {
+                Player* const tank = roles.tanks[i];
+                canTaunt[i] = tank && tank->GetSelectionGuid() == unit->GetObjectGuid() &&
+                    unit->GetVictim() != tank && tank->CanReachWithMeleeAutoAttack(unit);
+            }
+            int const assigned = TauntAfterTankPick(usable, canTaunt, static_cast<int>(row->priority));
+            if (assigned < 0 || roles.tanks[assigned] != bot)
                 continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;
@@ -4638,23 +4648,29 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             }
             bool const onNonTank = victimIsPlayer && !victimIsTank;
             bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
-            TauntAfterEpisode episode;
-            bool close = false;
+            TauntAfterEpisode closed;
+            bool missed = false;
             bool regained = false;
             {
                 std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
                 TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
                 state.lastReadMs = nowMs;
                 std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                const TauntEpisodeRead read = TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,
-                    sinceMs, deadlineMs, victimIsAssigned);
+                const TauntEpisodeRead read =
+                    TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned);
+                if (read.missed)
+                {
+                    // The window ran out on a non-tank: log it once, then the new one opens in the same read.
+                    closed = state;
+                    closed.regainedMs = 0;
+                    missed = true;
+                }
                 if (read.starts)
                 {
                     state.startMs = nowMs;
                     state.taunted = false;
                 }
                 state.open = read.open;
-                state.spent = read.spent;
                 if (read.step == TauntEpisodeStep::Due)
                 {
                     out.valid = true;
@@ -4664,30 +4680,22 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     out.deadlineMs = deadlineMs;
                     out.sinceMs = read.starts ? 0 : sinceMs;
                 }
-                else if (read.step == TauntEpisodeStep::Miss || read.step == TauntEpisodeStep::Regained)
+                else if (read.step == TauntEpisodeStep::Regained)
                 {
-                    // The miss is logged once and the window is spent; a tank having the subject back ends the episode
-                    // and the next charm starts from a clean state.
-                    episode = state;
-                    episode.regainedMs = read.step == TauntEpisodeStep::Regained ? sinceMs : 0;
-                    regained = read.step == TauntEpisodeStep::Regained;
-                    close = true;
-                    if (regained)
-                    {
-                        state = TauntAfterEpisode();
-                        state.lastReadMs = nowMs;
-                    }
-                    else
-                    {
-                        state.open = false;
-                        state.spent = true;
-                    }
+                    // A tank has the subject back: its window ends and the next charm starts from a clean state.
+                    closed = state;
+                    closed.regainedMs = sinceMs;
+                    regained = true;
+                    state = TauntAfterEpisode();
+                    state.lastReadMs = nowMs;
                 }
                 // A subject between victims, or one on a pet, is mid-transition: the episode stays open and its
                 // deadline keeps running, so a rival victim retarget does not hand the off-tank a second window.
             }
-            if (close)
-                LogTauntAfter(ai, unit, assigned, episode, regained);
+            if (missed)
+                LogTauntAfter(ai, unit, assigned, closed, false);
+            if (regained)
+                LogTauntAfter(ai, unit, assigned, closed, true);
             if (out.valid)
                 return out;
         }

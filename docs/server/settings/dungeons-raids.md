@@ -302,7 +302,7 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 - `dps_hold_after`: holds free DPS off a subject for a row's seconds after a pull, health-band opening, cast, aura, or blink
 - `flee_on_aura`: moves a carrier out of the group (or to the main tank)
 - `freeze_on_aura`: stands a carrier still and vetoes every action while the aura lasts
-- `taunt_after_cast`: sends a rotation tank to taunt a subject back inside a deadline
+- `taunt_after_cast`: sends a rotation tank to taunt a subject back, and retries every window while the subject stays off a tank
 - `swap_on_aura`: rotates two tanks at a stack count
 - the same key opens the row gates: a row whose `hp_min`/`hp_max` or `bot_aura` does not match is ignored while off
 - the `until_tank` mode also needs `AiPlayerbot.DungeonRunCharmYield`: a creature-charmed tank yields its AI and cannot take the taunt back
