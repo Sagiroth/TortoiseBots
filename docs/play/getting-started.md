@@ -14,104 +14,102 @@ relates_to:
 
 # Getting Started with TortoiseBots
 
-TortoiseBots turns characters on your own account into intelligent companion bots to explore the open world, level together, and run 5-player dungeons. This guide walks you through setting up the companion addon, spawning your first bots, and leading a balanced party into the field.
+TortoiseBots fills the realm with bots and lets you take some of them along: your own alts, hired companions, or bots you invite into your guild. This page gets your first party going.
 
-TortoiseBots is designed for a player who plays solo on their realm. The world is populated by autonomous bots who level, travel, and trade, while you can bring your own characters or hire temporary mercenaries to tackle group content.
+## What you need
+
+- A character to play, and a few more characters (alts) on the same account that you want as bots.
+- The [TortoiseBotsManager](commands/addon.md) addon (`/tbm`) in your client's `Interface/AddOns/` folder. Optional, but much easier than typing commands.
+- A server that runs TortoiseBots.
 
 ## The Kinds of Bots
 
-TortoiseBots features three distinct categories of bots in the game world:
+| Kind | What it is | How you get one | When you are done with it |
+| :--- | :--- | :--- | :--- |
+| **Pool bot** | A bot that lives in the world: levels, quests, grinds, sells on the auction house. | You don't. It may invite you to its group (nearby, similar level, and never while you are `/dnd`) or fill your dungeon finder (LFT) group when roles are missing. | It carries on with its own life. |
+| **Own alt** | A character on your own account, played by the server. | `.bot add <Name>` or **Login** in `/tbm`. | `.bot remove <Name>` (or `.bot rm`) logs it out. If it just leaves your group, it starts playing on its own ([alt-bot](#when-your-alt-leaves-the-group)). |
+| **Hired companion** | A temporary character made for you, at your level. | Talk to a `<Mercenary Hire>` recruiter in an inn or a capital. Costs gold (about 1.5 gold at level 60, less at low level; each extra hire costs more). Up to 4 at once by default (the server can raise this to 39 for raids). | Deleted when you dismiss it, it leaves your party, or you stay logged out past the grace time (5 minutes by default). |
+| **Guild bot** | A pool bot you invited into your guild. | `/ginvite <Name>` on a pool bot of your faction with no guild (see the conditions below). | It stays in your guild, keeps its own life, and you can command it like your own alt. See [Guild bots](#guild-bots). |
 
-| Kind | What it is | Persistence |
+## Your first party
+
+| Step | With the addon | With chat commands |
 | :--- | :--- | :--- |
-| **Pool bots** | Random characters levelling and wandering the open world. | Permanent characters that live in the world database. |
-| **Own alts** | Characters you created on your own player account. | Permanent characters fully owned and customized by you. |
-| **Hired companions** | Mercenary companions hired for a play session. | Temporary characters deleted after dismissal or logout grace. |
+| 1. Log in your alt | `/tbm` → **Roster** tab → select the alt → **Login** | `.bot add <Name>` |
+| 2. Invite it | **Invite** | `.bot invite <Name>` |
+| 3. Bring it to you | **Summon** | `.bot summon <Name>` |
+| 4. Log it out later | **Logout** | `.bot remove <Name>` |
 
-<details>
-<summary>How bot types differ in gameplay</summary>
+- The alt logs in where you last left it and follows you.
+- Want to play the alt yourself? Just log into it from the character screen; the bot session ends by itself.
+- Missing a class? Hire one at a recruiter. Hired companions join your party by themselves. Full details: [Roster and Hiring Commands](commands/roster-and-hiring.md#bot-hire).
 
-Pool bots represent the living realm: they enter the world across levels 1-60, grind, quest, run dungeons via queue autofill, and progress naturally. They never join your private roster directly unless hired or claimed.
+## When your alt leaves the group
 
-Your own alts are secondary characters on your account. When spawned with `.bot add`, the server starts a headless session for that character and sets it to follow you. You can then invite it into your group with `.bot invite <CharacterName>`, swap gear, train spells, set talents, and log into them directly as a human player at any time.
+> On a default server an own alt that **leaves your group** (you kick it, it leaves, or the group breaks up) does not stop: it becomes an **alt-bot** and plays on its own like a pool bot. If it is level 10 or higher it is first teleported to a zone that fits its level (an alt left in an instance, a battleground or on a boat leaves through the instance entrance portal, or to its battleground entry or a graveyard, first).
 
-Hired companions are generated on demand at capital recruiters or mercenary inns to match your character level. When dismissed or when you leave the party, they are cleanly removed and never pollute the organic world pool.
+| You want to... | Do this |
+| :--- | :--- |
+| Stop it playing | `.bot remove <Name>` (logs it out) |
+| Take it back as your companion | `.bot add <Name>`, or invite it into your group again (only your own group's invite reclaims it) |
+| Play it yourself | Log into it from the character screen |
 
-</details>
+- It keeps playing while you are logged out, until the server restarts ([`AiPlayerbot.AltBotsLogoutWithOwner`](../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` logs it out with you).
+- When it stops, it whispers you what it did: levels, quests, deaths, gold.
+- It plays carefully with your character: no auction house, mail, trade or guild bank; its own automation never destroys items, and it sells only grey and unneeded white items.
+- Hardcore characters never become alt-bots.
+- The server can switch this off ([`AiPlayerbot.AltBots`](../server/settings/party.md#aiplayerbotaltbots) = `0`); the alt then just stands where you left it.
 
-## Quick Setup Workflow
+More: [Alt-Bots](commands/roster-and-hiring.md#alt-bots-autonomous-alts).
 
-```mermaid
-flowchart LR
-    CreateAlt["1. Create Alts on Your Account"] --> LogMain["2. Log Main Character"]
-    LogMain --> OpenTBM["3. Open /tbm (Roster Tab)"]
-    OpenTBM --> SelectRow["4. Select Alt & Click Login"]
-    SelectRow --> InviteParty["5. Invite Alt to Party"]
-    InviteParty --> Field["6. Adventure & Dungeons"]
-```
+## Guild bots
 
-### Prerequisites
+Invite a pool bot into your guild with `/ginvite <Name>`. It joins when it has no guild, is your faction, is not hired, is not more than 30 levels above you and is not queued for a battleground or dungeon (a full guild also refuses). From then on:
 
-1. Create the characters you want to use as bots on your account at the character select screen.
-2. Download and install the [TortoiseBotsManager](commands/addon.md) addon into your client's `Interface/AddOns/` directory.
-3. Log into your main character in the game world.
+- **It is yours to command:** whispers, `.bot` commands, trade, gear, summon, the same as your own alts. Only you (the player who invited it) get this, not the rest of the guild.
+- **It still lives its own life** when you do not use it: questing, levelling, selling junk.
+- **It keeps its gear for your raids:** at level 60 it no longer swaps gear or sells anything to vendors by itself; while levelling it never sells blue or epic items.
+- **It survives pool resets**, and shows in the **Guild** tab of `/tbm`.
+- **It takes [guild orders](guild-orders.md):** farm, buy or craft items for the guild bank.
+- Removing it from the guild ends all of this.
 
-## Spawning Your Bots
+## Levelling, spells and gear
 
-You can manage your bots using the in-game addon interface or through native chat commands.
-
-### In-Game Addon (`/tbm`)
-
-1. Type `/tbm` in chat to open the management panel. See [TortoiseBotsManager Addon](commands/addon.md) for full controls.
-2. Open the **Roster** tab.
-3. Select an alt character from the list and click **Login**, then click **Invite** to add them to your party.
-4. The alt enters the world as a headless session and joins your party.
-
-### Command-Line Shortcuts
-
-You can also control bot logins directly using chat commands:
-
-```text
-.bot add <CharacterName>
-.bot invite <CharacterName>
-.bot summon <CharacterName>
-.bot remove <CharacterName>
-```
-
-See [Roster and Hiring Commands](commands/roster-and-hiring.md) for full command syntax.
-
-> [!NOTE]
-> **Human Reclaim:** If you want to play an alt character yourself while it is currently running as a bot, simply log into it from the character select screen. The server automatically disconnects the bot session and logs your human client in normally.
-
-### Progression and Training Tips
-
-- **Level Synchronization:** When [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster) is enabled, only non-random grouped bots whose master is party leader gain +1 level per update while below master level.
-- **Spell Training:** Escort your bots to class trainers in major cities and whisper `trainer` to each bot (or use `.bot command <Name> trainer`). The bot automatically learns all available, affordable spell ranks and class abilities in a single pass. See [Whisper Commands](commands/whispers.md#w--trainer).
-- **Hiring Mercenaries:** If you lack alts of a specific class, visit a <Mercenary Hire> recruiter at an inn or capital city and hire a temporary companion at your level. See [Roster and Hiring Commands](commands/roster-and-hiring.md#bot-hire) and [Hiring Settings](../server/settings/hiring.md).
-
-## Building a Balanced 5-Man Party
-
-A standard dungeon group consists of one tank, one healer, one melee DPS, and two ranged DPS. Example balanced compositions:
-
-| Role | Recommended Classes & Specs | Primary Responsibilities | Tactical Strengths |
+| | Own alt / alt-bot | Hired companion | Pool bot / guild bot |
 | :--- | :--- | :--- | :--- |
-| **Tank** (1) | Protection Warrior, Feral Bear Druid, Protection Paladin | Holds primary threat and positions packs. | High mitigation, taunt mechanics, and melee interrupts. |
-| **Healer** (1) | Holy Priest, Restoration Shaman, Holy Paladin, Resto Druid | Maintains party health and dispels debuffs. | Triage healing, dispel coverage, and party recovery. |
-| **Melee DPS** (1) | Combat / Assassination Rogue, Fury Warrior, Feral Cat Druid | Focuses single-target burst, interrupts, and utility. | Physical burst, interrupts, stealth Sap, and Lockpicking. |
-| **Ranged DPS** (2) | Frost / Fire Mage, Marksmanship Hunter, Affliction Warlock | Deals ranged burst and provides crowd control. | Polymorph, Freezing Trap, Banish, and conjured food/water. |
+| **Class spells** | Train it yourself: take it to its class trainer, **target the trainer**, whisper `trainer` (it pays with its own gold) | Free, learned at every level-up | Free, learned at every level-up |
+| **Levels** | Earned by playing. Optional: [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster) levels it up to you while grouped (off by default) | Hired at your level (or at the level you asked for) | Earned by playing |
+| **Gear** | What you give it; it also equips upgrades it loots | Comes with a kit; at level 60 a gear tier set ([contracts](commands/roster-and-hiring.md#mercenary-contracts)) | Starter outfit once, then loot, quests and the auction house |
+| **Loot rolls** | Rolls, never Needs against you | Never loots, always passes (off by default) | Rolls, never Needs against you |
 
-## Basic Controls in the Field
+## Building a balanced 5-man party
 
-Use these essential actions to direct your bots during dungeon runs and combat:
+One tank, one healer, one melee damage dealer and two ranged damage dealers:
 
-| Intent / Action | Addon Button | Chat Command | Bot Behavior |
+| Role | Good picks | What they bring |
+| :--- | :--- | :--- |
+| **Tank** | Protection Warrior, Bear Druid, Protection Paladin | Holds threat, taunts, interrupts |
+| **Healer** | Holy Priest, Restoration Shaman, Holy Paladin, Restoration Druid | Healing and dispels |
+| **Melee DPS** | Combat or Assassination Rogue, Fury Warrior, Cat Druid | Burst, interrupts, Sap before the pull |
+| **Ranged DPS** (2) | Frost or Fire Mage, Marksmanship Hunter, Affliction Warlock | Polymorph, Freezing Trap, Banish, conjured food and water |
+
+## Basic controls in the field
+
+The buttons are in `/tbm` (Summon is on the **Roster** tab).
+
+| You want to... | Button | Command | What the bots do |
 | :--- | :--- | :--- | :--- |
-| **Regroup / Unstuck** | **Summon** | [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) | Teleports an out-of-combat bot to a safe position near you (about 5 yards away, 3-second portal). |
-| **Focus Target** | **Focus Skull** | [`.bot action focus skull`](commands/party-actions.md#bot-action-focus-skull) | Orders all party bots in scope including healers to prioritize the Skull-marked target. |
-| **Pullback Maneuver** | **Pullback** | [`.bot action pullback`](commands/party-actions.md#bot-action-pullback) | Orders the tank to pull from range and retreat behind a corner. |
-| **Hold Position** | **Stay** | [`.bot action stay`](commands/party-actions.md#bot-action-stay) | Halts bot movement to prevent adds. |
-| **Resume Follow** | **Follow** | [`.bot action follow`](commands/party-actions.md#bot-action-follow) | Resumes normal follow formation behind the party leader. |
-| **Crowd Control** | **CC Mark** | [`.bot action cc <mark>`](commands/party-actions.md#bot-action-cc) | Assigns a bot with matching CC spells to disable a marked target. |
-| **Disable AoE** | **AoE Off** | [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe) | Disables area spells to protect active crowd control. |
+| Bring a bot to you | **Summon** | [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) | The bot itself must be out of combat and alive: it appears about 5 yards from you after a 3-second portal. |
+| Kill one target first | **Focus Skull** | [`.bot action focus skull`](commands/party-actions.md#bot-action-focus-skull) | Your target gets the Skull mark and every party bot attacks it. |
+| Pull a pack around a corner | **Pullback** | [`.bot action pullback`](commands/party-actions.md#bot-action-pullback) | The tank pulls your target and runs back to you; the others wait at your spot until it arrives. Stand behind a corner first. |
+| Stop moving | **Stay** | [`.bot action stay`](commands/party-actions.md#bot-action-stay) | Bots hold their position. |
+| Follow again | **Follow** | [`.bot action follow`](commands/party-actions.md#bot-action-follow) | Bots follow you in formation. |
+| Crowd-control a mob | **CC Mark** | [`.bot action cc <mark>`](commands/party-actions.md#bot-action-cc) | A bot that can CC your target (Polymorph, Sap, Shackle...) keeps it out of the fight. |
+| Protect crowd control | **AoE** (toggle) | [`.bot action aoe off`](commands/party-actions.md#bot-action-aoe) | Bots stop using area spells. |
 
-For detailed dungeon mechanics, LoS corner pulls, and raid strategies, read the [Dungeon & Raid Tactics Guide](dungeons-and-raids.md). For complete command syntax, see [Party Action Commands](commands/party-actions.md).
+## Where next
+
+- [Dungeon & Raid Tactics](dungeons-and-raids.md): pulling, crowd control, wipes, loot.
+- [What Bots Can Do](features.md): every feature and whether it is on.
+- [Party Action Commands](commands/party-actions.md) and [Whisper Commands](commands/whispers.md): every order.
+- [Known Limitations](known-limitations.md): what does not work yet.

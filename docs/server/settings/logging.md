@@ -81,7 +81,7 @@ Defines the active CSV log streams:
 - `pvp_seek.csv`: Records open-world PvP seek-role grants and new seek engagements (bot, target, level, map, zone).
 - Additional diagnostic logs (such as `travel_route_gate.csv` and `ghost_moves.csv`) can be added to the list as needed.
 
-Setting this key to an empty string (`""`) disables all CSV event logging. Note that if this key is omitted from configuration entirely, the internal fallback defaults to disabled; ensure the key is present to record events.
+Setting this key to an empty string (`""`) disables all CSV event logging. An omitted key falls back to `bot_events.csv,deaths.csv`; set it explicitly to empty to disable.
 
 If a file cannot be written (for example, if the directory is missing or permissions are denied), the server logs an error, backs off for 5 minutes, and retries.
 
@@ -96,7 +96,7 @@ Number of days historical compressed CSV log files are retained on disk.
 
 Active CSV logs are automatically compressed into `<filename>_<date>_<time>.csv.gz` archives every hour and at server startup. Packing occurs in the background; a packing operation stopped mid-pack finishes on the next server start.
 
-Compressed archives older than `LogRetentionDays` are automatically purged during background cleanup passes. Three days take roughly 65-130 MB at 500 bots and 130-260 MB at 1000 bots.
+Compressed archives older than `LogRetentionDays` are automatically purged during background cleanup passes.
 
 Setting this to `0` disables automated deletion, preserving all archives permanently.
 
@@ -113,9 +113,13 @@ When enabled, the server generates detailed execution logs for individual bots a
 
 Because logging all bots simultaneously can produce gigabytes of data daily, file creation is filtered by `ActionLogScope` and capped by the retention limits below.
 
-A failed movement action's line (`A:move to position - FAILED ...`) ends with why it failed since 2026-10-23: `why=<reason>` (the fail site of the move tried in that same action, such as `dispatch-short`, `empty-path` or `cantmove`; `no-move-try` when the action failed before trying a move, so an older try's reason is never shown), `water=` and `under=` (the bot in or under water), `swim=` (its swimming flag) and `path=0x..` (the core PathFinder's type for the bot's own route on that try; `0x0` when the try reused its route). In Blackfathom Deeps the lead bot's move had failed 172 times in a row with nothing more on the line.
+A failed move line (`A:move to position - FAILED ...`) ends with:
+- `why=<reason>` (fail site of the tried move: `dispatch-short`, `empty-path`, `cantmove`; `no-move-try` when no move was tried)
+- `water=` and `under=` (bot in or under water)
+- `swim=` (swimming flag)
+- `path=0x..` (core PathFinder type for that try; `0x0` when the route was reused)
 
-Strategy AI action traces can also be enabled on an individual bot in-game via `.bot strategy +debug`.
+Strategy AI action traces can also be enabled on an individual bot in-game via `.bot strategy +debug` (executed actions; also add `debug action` for considered actions). Both still need `EnableActionLog=1`, scope, and `LogInGroupOnly`.
 
 </details>
 
@@ -184,7 +188,7 @@ Records cumulative action execution counts and success/failure rates to CSV.
 
 When enabled, every executed bot action is tracked by class and action name, tallying successful versus failed executions. Every 5 minutes, a cumulative snapshot (`utc_time,class,action,ok_count,fail_count`) is appended to `logs/action_counts.csv`.
 
-Because the file is written while the server is active, a live copy may tear mid-line; copy twice and compare before using.
+Because the file is written while the server is active, copy twice and compare before using a live copy.
 
 When disabled (`0`), the tracking branch costs negligible CPU time.
 
@@ -206,7 +210,10 @@ Writes grouped-healer snapshots and failed heal checks to `bot_events.csv`.
 <details>
 <summary>How it works in detail</summary>
 
-Only acts when `bot_events.csv` is in `AiPlayerbot.AllowedLogFiles`, and only for a grouped healer. At most once every 10 seconds per healer it writes a `HealState` row (injured members, those in heal range, mana, movement, casting, the lowest member's health, distance and line of sight, the motion type and destination, and the last action), and at most once every 10 seconds a `HealSkip` row naming why a heal could not be cast (out of range, line of sight, no mana, moving, bad target, and so on). It reads the group roster only, never the world, and does not change any decision.
+Only acts when `bot_events.csv` is allowed, and only for a grouped healer:
+- at most every 10 s, one `HealState` row (injured members, heal range, mana, movement, casting, lowest health, distance, line of sight, motion, destination, last action)
+- at most every 10 s, one `HealSkip` row (why no heal: range, line of sight, mana, moving, bad target)
+- reads the group roster only, never the world; changes no decision
 
 </details>
 
@@ -256,9 +263,13 @@ Sends the mobs of every dungeon run (with their threat and the bots' target line
 <details>
 <summary>How it works in detail</summary>
 
-Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on. Setting it to `0` in either `modules/tortoise_bots.conf` or `aiplayerbot.conf` switches it off.
+Needs [`AiPlayerbot.Observability`](#aiplayerbotobservability) and `AiPlayerbot.CombatMonitor = 1`:
+- while a bound group fights, sends `COMBAT_EVENTS` every `EventGapMs` (start, pulls, deaths, taunts, interrupts, elite and boss casts, kill or wipe)
+- events often arrive before the `COMBAT_FIGHT` summary
+- `0` stops events and positions at once (use it to cut traffic on a busy server)
+- a fight that outlives `.bot run stop` is still followed to its end and recorded
 
-Once per 2 s telemetry cycle the server sends a `DUNGEON_MOBS` datagram built from the run members' own victims, attackers and cached lists, without a world scan: up to 48 mobs per party run and 64 per raid run, fewer when many runs share the 384-mob cycle budget, packed by whole runs into parts of at most 96 mobs and 8 runs. The limits live in `runtime/DungeonMobTelemetry.h` ([#1101](https://github.com/Sagiroth/TortoiseBots/issues/1101)).
+Once per 2 s telemetry cycle the server sends a `DUNGEON_MOBS` datagram built from the run members' own victims, attackers and cached lists, without a world scan: up to 48 mobs per party run and 64 per raid run, fewer when many runs share the 384-mob cycle budget, packed by whole runs into parts of at most 96 mobs and 8 runs.
 
 </details>
 
@@ -271,7 +282,14 @@ Sends the raid groups of every raid map copy to the dashboard's Raids tab, witho
 
 Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on. Both `modules/tortoise_bots.conf` and `aiplayerbot.conf` carry the key and the feed is on only when both say `1`; setting it to `0` in either switches it off, and a `.reload config` applies the change without a restart.
 
-The tab needs no flag for its instances, groups, member rows, map, mobs and the link to a bound commander: the roster and `DUNGEON_MOBS` carry those. This key adds the leader, the offline members, and the live fight window and finished fights of unbound groups (the window also needs `AiPlayerbot.CombatMonitor = 1`). Once per 2 s cycle the server sends a `RAIDS` datagram with one row per qualifying group, filed under the map copy one of its bots stands in (a human in a copy never names the group): guid and subgroup per member, a name and an offline flag for members not online, the window raw JSON while the group fights; a group whose row would pass the datagram cap first loses the window, then the offline names, then members, and says so in `trimmed`. The same flag turns on a 1 Hz combat sample of those groups, so a fight pulled without a bind is recorded under the key `raid#<group id>`. The sample reads only the members standing on that copy, and only while a bot still stands there: a member in another instance of the same raid, on another map or back outdoors never opens or extends that fight, never keeps it from closing and is never its boss. Turning the flag off with `.reload config` closes whatever fight the sample had open at that moment (it shows as unfinished) and sends the empty `"raids":[]` list once. The limits live in `runtime/RaidTelemetry.h`.
+This key adds, on top of the roster and `DUNGEON_MOBS` lines:
+- the leader and the offline members
+- the live fight window and finished fights of unlisted groups (window needs `AiPlayerbot.CombatMonitor = 1`)
+- one `RAIDS` row per group per 2 s cycle, filed under the map copy a bot stands in
+- per member: guid, subgroup, name, offline flag
+- while the group fights: the window raw JSON
+- when a row would pass the datagram cap, it first loses the window, then offline names, then members, and says so in `trimmed`
+- turning the flag off with `.reload config` closes the open fight (marked unfinished) and sends `"raids":[]` once
 
 </details>
 
@@ -282,8 +300,13 @@ Appends the ready check and the boss debuffs to the raid groups of the dashboard
 <details>
 <summary>How it works in detail</summary>
 
-Only acts while [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) is on (both config files). The ready check (buffs, consumables, key cooldowns) and the boss debuffs of every online member ride a `detail` array appended at the END of each `RAIDS` group object, keyed by member guid — after the window, so a dashboard that does not know the key ignores the tail. The collection reads the same per-bot data the bound path reads (ready cache, aura holders), at most every 5 s: cycles between two detail reads repeat the last read. With the key off the card says "detail off (AiPlayerbot.ObservabilityRaidsDetail)".
+Only acts while [`AiPlayerbot.ObservabilityRaids`](#aiplayerbotobservabilityraids) is on (both config files).
 
+- The ready check (buffs, consumables, key cooldowns) and the boss debuffs of every online member ride a `detail` array at the END of each `RAIDS` group object, keyed by member guid. It comes after the window, so a dashboard that does not know the key ignores the tail.
+- The collection reads the same per-bot data the bound path reads (ready cache, aura holders), at most every 5 s. Cycles between two detail reads repeat the last read.
+- With the key off the card says "detail off (AiPlayerbot.ObservabilityRaidsDetail)".
+
+</details>
 
 ### `AiPlayerbot.ObservabilityRealtime`
 Streams a commander group's fight events to the dashboard as they happen.
@@ -292,7 +315,13 @@ Streams a commander group's fight events to the dashboard as they happen.
 <details>
 <summary>How it works in detail</summary>
 
-Only acts while [`AiPlayerbot.Observability`](#aiplayerbotobservability) is on and needs `AiPlayerbot.CombatMonitor = 1` in `aiplayerbot.conf` for the fights themselves. While a bound group fights, the module sends `COMBAT_EVENTS` datagrams every `EventGapMs` with the fight's start, pulls, deaths, taunts, interrupts, elite and boss casts and its kill or wipe, often before the fight's `COMBAT_FIGHT` summary arrives. `0` switches all of it off at once (this key and the two below), which is the way to stop the extra traffic on a busy server. A fight that outlives `.bot run stop` is still followed to its end and recorded.
+Needs [`AiPlayerbot.Observability`](#aiplayerbotobservability) and `AiPlayerbot.CombatMonitor = 1`:
+
+- while a bound group fights, sends `COMBAT_EVENTS` every `EventGapMs`
+- each event carries start, pulls, deaths, taunts, interrupts, elite and boss casts, kill or wipe
+- events often arrive before the `COMBAT_FIGHT` summary
+- `0` stops events and positions at once (use it to cut traffic on a busy server)
+- a fight that outlives `.bot run stop` is still followed to its end and recorded
 
 </details>
 
@@ -325,7 +354,7 @@ How often a fighting commander group's positions are sent, in milliseconds.
 <details>
 <summary>How it works in detail</summary>
 
-While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim). The dashboard draws its dots in the past, interpolating between consecutive reports, so the world tick never waits on it and the dots never stop at a report: the whole report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line and the time left is extrapolated between the 2 s reports.
+While at least one bot of a bound group is in combat, the module sends one `COMMANDER_POS` datagram per group every this many milliseconds with the group's bots (place, facing, health, alive) and the enemies the lead's last 2 s report listed (place, health, victim). The report is a few field reads and one guid lookup per watched enemy, with no grid or world scan. Casts do not ride this report; their start arrives as a `COMBAT_EVENTS` line.
 
 Only acts with [`AiPlayerbot.ObservabilityRealtime`](#aiplayerbotobservabilityrealtime) on and needs [`AiPlayerbot.Observability`](#aiplayerbotobservability). At most 40 bots and 24 enemies per group per datagram.
 
@@ -353,7 +382,14 @@ Opt-in run recorder (`.bot trace`): a party's run as a `bt-trace` v1 JSONL file 
 <details>
 <summary>How it works in detail</summary>
 
-**Run trace (opt-in):** lets a GM, or the owner of the bots, record a party's run with `.bot trace start <run_id> [party\|bot <Name>]` as a `bt-trace` v1 JSONL file plus a `<run_id>.summary.json` (hp/power/position/target/strategy per bot, the hostiles they see and who they hold, every action with its result, deaths, combat edges, loot), scored offline by `tools/trace_score.py`. Costs nothing while no run is active; a run reads only what the bots already track and writes on its own thread. With `0` the command answers that it is off and a run in progress ends at the next tick. See [run trace](../run-trace.md) and [`.bot trace`](../../play/commands/bot-panel.md#bot-trace).
+**Run trace (opt-in):** records a party run for offline scoring:
+- who: a GM, or the player who controls (or commands) the bots
+- how: `.bot trace start <run_id> [party|bot <Name>]`
+- what: a `bt-trace` v1 JSONL file plus `<run_id>.summary.json` (hp, power, position, target, strategy, hostiles, actions, deaths, edges, loot)
+- score it with `tools/trace_score.py`
+- costs nothing while no run is active; writes on its own thread
+- with `0` the command answers that it is off, and a run in progress ends at the next tick
+- see [run trace](../run-trace.md) and [`.bot trace`](../../play/commands/bot-panel.md#bot-trace)
 
 </details>
 
@@ -416,10 +452,10 @@ Enabled logs opened in write mode (including `bot_events.csv` and startup travel
 ## AiPlayerbot.RaidBossDiagnostics
 
 Default: `0` (disabled). Set to `1` and include `bot_events.csv` in
-`AiPlayerbot.AllowedLogFiles` to record engaged raid bosses. `BossThreat` rows
+`AiPlayerbot.AllowedLogFiles` to record engaged raid bosses (living, in-combat, non-evading world bosses in a raid map). `BossThreat` rows
 sample the current victim and top five numeric threat entries at most once per
 two seconds per boss/instance. `BossSpellHit` rows record supported victim-session
-spell-damage packets, including Hateful Strike. `hp_sample` is sampled at packet
+spell-damage packets. `hp_sample` is sampled at packet
 send and `hp_est` is clamped subtraction of reported damage; neither guarantees
 exact post-hit health. Disable the option after collecting a diagnostic capture.
 See [column definitions and coverage](../../developers/host-api.md#csv-columns-unchanged-nine-column-layout).
