@@ -59,11 +59,17 @@ Shamans provide unmatched group utility through versatile totem sets, elemental 
 <summary>Totem orchestration details</summary>
 
 Shamans maintain 4-element totem sets tailored to group composition:
-- **Earth Totem:** Drops *Strength of Earth Totem* if melee allies are present and the spell is known; otherwise the slot stays empty. Reacts to fears with *Tremor Totem* and to runners with *Earthbind Totem*. A tank shaman drops no earth totem out of combat: the earth pick depends on the fight type, so it is decided once the fight starts.
-- **Fire Totem:** Drops *Searing Totem* on single targets; drops *Fire Nova Totem* on packs in detonation range (*Magma Totem* only while Nova cools down). A standing *Fire Nova Totem* counts as the slot being taken until it detonates: any fire totem dropped over it would unsummon it before its blast.
+- **Earth Totem:** Drops *Strength of Earth Totem* if melee allies are present and the spell is known; otherwise the slot stays empty.
+- Reacts to fears with *Tremor Totem* and to runners with *Earthbind Totem*.
+- A tank shaman drops no earth totem out of combat: the earth pick depends on the fight type, so it is decided once the fight starts.
+- **Fire Totem:** Drops *Searing Totem* on single targets; drops *Fire Nova Totem* on packs in detonation range (*Magma Totem* only while Nova cools down).
+- A standing *Fire Nova Totem* counts as the slot being taken until it detonates: any fire totem dropped over it would unsummon it before its blast.
 - **Water Totem:** Drops *Mana Spring Totem* if mana users are present; non-tank kits drop *Healing Stream Totem* otherwise. Reacts to poison and disease with cleansing totems.
 - **Air Totem:** Drops *Windfury Totem* for melee groups; drops *Tranquil Air Totem* or *Grace of Air Totem* for casters. Reacts to incoming enemy spells with *Grounding Totem*.
-- **Out of Combat:** Totems drop in combat and in the pre-pull window (ready check / rebuff) only — never otherwise out of combat, so a following bot leaves no totems behind in town. After the fight *Totemic Recall* refunds the standing set, and because nothing re-drops it out of combat the refund sticks until the next fight. `.bot totem` `mode manual` quiets the automatic rows (except *Stoneclaw Totem*, which still auto-drops on trash), and the reactive rows (*Tremor*, cleansing, *Grounding*, *Earthbind*) still fire on need.
+- **Out of Combat:** Totems drop in combat and in the pre-pull window (ready check / rebuff) only — never otherwise out of combat, so a following bot leaves no totems behind in town.
+- After the fight *Totemic Recall* refunds the standing set, and nothing re-drops it out of combat, so the refund sticks until the next fight.
+- `.bot totem` `mode manual` quiets the automatic rows (except *Stoneclaw Totem*, which still auto-drops on trash).
+- The reactive rows (*Tremor*, cleansing, *Grounding*, *Earthbind*) still fire on need.
 
 </details>
 
@@ -120,6 +126,16 @@ Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 
 **Shaman tank hiring switch:** [`AiPlayerbot.ShamanTankEnabled`](../server/settings/hiring.md#aiplayerbotshamantankenabled) (`1` default) offers the tank build at recruiters, by `.bot hire`, and to pool shamans. `0` withholds it from hiring, raids, and pool rolls. Bots that already run the tank build keep it.
 
-**When a shaman counts as a tank:** a bot with the tank spec or tank role always does. A player shaman counts as a tank when wearing a shield, with *Rockbiter Weapon* on the main hand and *Totemic Alignment* or *Spirit Armor* learned (from about level 25 with the tank levelling order), or after [`.bot role self tank`](../play/commands/roster-and-hiring.md#bot-role). A shaman tank also counts as a tank next to a warrior, paladin or druid tank. Hunter and warlock pets then stop taunting, healers treat the shaman as the tank, and the other bots keep their threat below it.
+**When a shaman counts as a tank:**
+- A bot with the tank spec or tank role always counts as a tank.
+- A player shaman counts as a tank when wearing a shield, with *Rockbiter Weapon* on the main hand and *Totemic Alignment* or *Spirit Armor* learned (from about level 25 with the tank levelling order), or after [`.bot role self tank`](../play/commands/roster-and-hiring.md#bot-role).
+- A shaman tank also counts as a tank next to a warrior, paladin or druid tank.
+- Hunter and warlock pets then stop taunting, healers treat the shaman as the tank, and the other bots keep their threat below it.
 
-**A bot that rolled the tank spec stays a tank.** The tank build is identified by its own talents — *Totemic Alignment* or *Spirit Armor* learned; only the `7.3` premade allocates either — so it is read from the character rather than from whatever role was handed out for the moment. A pool shaman that rolled `7.3` therefore keeps tanking across a server restart, after leaving a group, and after a dungeon-finder fill ends, all of which drop the in-memory role. Below level 25, where neither key talent is learned yet, the levelling layout carries the same identity: the `7.3` order spends its points in an allocation no other Shaman premade uses, so the spent talents identify it from level 15 on, and the dungeon finder takes it as a tank. Levels 10–14 share the Enhancement opener and run the Enhancement kit until the layouts diverge.
+**A bot that rolled the tank spec stays a tank.**
+- The tank build is identified by its own talents — *Totemic Alignment* or *Spirit Armor* learned; only the `7.3` premade allocates either.
+- So it is read from the character rather than from whatever role was handed out for the moment.
+- A pool shaman that rolled `7.3` keeps tanking across a server restart, after leaving a group, and after a dungeon-finder fill ends, all of which drop the in-memory role.
+- Below level 25, where neither key talent is learned yet, the levelling layout carries the same identity: the `7.3` order spends its points in an allocation no other Shaman premade uses.
+- The spent talents identify it from level 15 on, and the dungeon finder takes it as a tank.
+- Levels 10–14 share the Enhancement opener and run the Enhancement kit until the layouts diverge.

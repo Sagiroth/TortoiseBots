@@ -40,7 +40,12 @@ Bots cover all nine Vanilla classes. Each bot reads its spent talent points, pic
 
 The bot counts spent talent points in each of its three class trees. The tree with the most points picks the combat strategy. Hybrid classes also read stance, form, and gear to confirm the role.
 
-Players can use [`.bot role <Name|self>`](../play/commands/roster-and-hiring.md#bot-role) to override the result. Without an override, role detection uses party composition, stance or form, and tanking gear (a shaman needs a shield, *Rockbiter Weapon* and *Totemic Alignment* or *Spirit Armor*; a bot that rolled the tank build counts as a tank from its talents alone — see [Shaman tank](shaman.md#class-settings)). A detected shaman tank fights alongside a warrior, paladin, or druid tank instead of standing down.
+Players can use [`.bot role <Name|self>`](../play/commands/roster-and-hiring.md#bot-role) to override the result.
+Without an override, role detection uses:
+- Party composition, stance or form, and tanking gear.
+- A shaman needs a shield, *Rockbiter Weapon*, and *Totemic Alignment* or *Spirit Armor*.
+- A bot that rolled the tank build counts as a tank from its talents alone — see [Shaman tank](shaman.md#class-settings).
+- A detected shaman tank fights alongside a warrior, paladin, or druid tank instead of standing down.
 
 ---
 
@@ -101,12 +106,15 @@ Damage specs of hybrid classes get `offheal` by default (Shadow priests, Element
 | Druid (Cat/Balance) | *Regrowth*, then *Healing Touch* | *Regrowth* | - |
 
 Retribution's *Blessing of Protection* on an attacked ally sits in the same off-heal kit at critical priority.
-
 Off-heals outbid damage, so they fire the moment an ally enters a band; outside the bands the bot keeps its normal rotation. Out of combat only the low band (20–50%) heals. Off-heals use the same care as real heals (downranking, no wasteful casts at high health), and are never held back at or below 50% ally health (the `LowHealth` default).
 
 ### Switching off-spec behavior on and off
 
-Per bot, whisper the bot (`/w <BotName> co +offheal`, `/w <BotName> co -offdps`; `co ?` lists active combat strategies), or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy) for one bot, a role, or the party (`.bot strategy -offdps @heal`). Changes are saved per bot. Server admins can change the default for newly created bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off; players can still toggle it per bot).
+Per bot, whisper the bot or use [`.bot strategy`](../play/commands/party-actions.md#bot-strategy):
+- `/w <BotName> co +offheal` or `/w <BotName> co -offdps` (`co ?` lists active combat strategies).
+- `.bot strategy -offdps @heal` for one bot, a role, or the party.
+- Changes are saved per bot.
+- Server admins change the default for new bots with [`AiPlayerbot.EnableOffSpecStrategies`](../server/settings/class-behaviour.md#aiplayerbotenableoffspecstrategies) (`0` leaves the off-spec kit off; players can still toggle it per bot).
 
 ### Spell Downranking
 
