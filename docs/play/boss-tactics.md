@@ -237,6 +237,8 @@ Row added 2026-10-30 (`data/sql/world/20261030160000_world.sql`), read from `tor
 
 Step 1 of the walk-30 fixes (`data/sql/world/20261104150000_world.sql`): only kinds the module already runs. `burn_mana` and `ranged_only` need new C++ and ship in a later migration; Poison Stinger 25748 has no row (preventionType 2, not SILENCE, so the core kick cannot stop it).
 
+Both `until_tank` rows also need `AiPlayerbot.DungeonRunCharmYield` on: the episode opens when a creature-charmed tank cannot be the tank any more. The band on Ayamiss's row (`hp_min` 0, `hp_max` 70) keeps it shut in the air phase above the 70 % threat wipe (Taunt is melee range), so the row is still full for the landing.
+
 | Creature (entry) | Row | Data behind it |
 | :--- | :--- | :--- |
 | Kurinnaxx (15348) | `swap_on_aura` Mortal Wound 25646, 5 stacks, 2 tanks | `boss_kurinnaxx.cpp:61,120-126`: healing-taken aura 118, -10 % per stack, 10 stacks, recast every 8-10 s. The tanks rotate between the main tank and off-tank 1 at 5 stacks; the row is inert until the tank-swap consumer lands. |

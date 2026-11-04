@@ -762,18 +762,21 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(25176, ossirian["spell_id"])
         self.assertEqual((0, 25.0), (ossirian["priority"], ossirian["param"]))
         expected = {
-            (509, 15348, "swap_on_aura", 0, 25646): (2, 5.0, ""),
-            (509, 15339, "taunt_after_cast", 0, 0): (1, 4.0, "until_tank"),
-            (509, 15339, "dispel_priority", 0, 25195): (1, 0.0, "now"),
-            (509, 15340, "kill_first", 15527, 0): (1, 0.0, ""),
-            (509, 15369, "kill_first", 15934, 0): (2, 0.0, ""),
-            (509, 15369, "taunt_after_cast", 0, 0): (0, 4.0, "until_tank"),
-            (509, 15324, "linked_death", 15324, 0): (1, 5.0, ""),
+            (509, 15348, "swap_on_aura", 0, 25646): (2, 5.0, "", 0, 100),
+            (509, 15339, "taunt_after_cast", 0, 0): (1, 4.0, "until_tank", 0, 100),
+            (509, 15339, "dispel_priority", 0, 25195): (1, 0.0, "now", 0, 100),
+            (509, 15340, "kill_first", 15527, 0): (1, 0.0, "", 0, 100),
+            (509, 15369, "kill_first", 15934, 0): (2, 0.0, "", 0, 100),
+            # Ayamiss lands and wipes every player's threat at 70 % (boss_ayamiss.cpp:217-224). Taunt is melee range
+            # (spell 355 rangeIndex 2), so the air phase above it must not spend the row: the band opens it only at
+            # or below 70 %.
+            (509, 15369, "taunt_after_cast", 0, 0): (0, 4.0, "until_tank", 0, 70),
+            (509, 15324, "linked_death", 15324, 0): (1, 5.0, "", 0, 100),
         }
         for key, want in expected.items():
             self.assertIn(key, live, "missing AQ20 step-1 row %s" % (key,))
             row = live[key]
-            self.assertEqual(want, (row["priority"], row["param"], row["tactic_mode"]),
+            self.assertEqual(want, (row["priority"], row["param"], row["tactic_mode"], row["hp_min"], row["hp_max"]),
                              "AQ20 row %s drifted" % (key,))
             self.assertIsNone(new_kind_problem(row))
         glad = live[(509, 15324, "linked_death", 15324, 0)]
