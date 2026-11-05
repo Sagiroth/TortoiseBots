@@ -90,6 +90,11 @@ namespace ai
         int rideCar = 0;
         bool rideToTop = false;
         ObjectGuid rideCarGuid;
+        WorldPosition rideGoal;
+        // The lift and car this bot waits for at its level.
+        ai::MesaLift const* waitLift = nullptr;
+        bool waitFromTop = false;
+        int waitCar = 0;
     };
 
 }
