@@ -364,10 +364,10 @@ void WhyTraceService::NoteVerdict(uint64_t botRaw, Verdict const& verdict)
     if (!session_.active() || botRaw != botGuid_)
         return;
     // One tick cannot produce more useful verdicts than this; a runaway
-    // preresolved queue must not grow the trace's memory.
-    if (verdicts_.size() >= 128)
-        return;
-    verdicts_.push_back(verdict);
+    // preresolved queue must not grow the trace's memory. The verdict that
+    // ran is the diagnosis, so at the cap it displaces the oldest verdict
+    // that did not run instead of being dropped.
+    WhyTrace::PushCappedVerdict(verdicts_, verdict);
 }
 
 void WhyTraceService::NoteOrder(PlayerbotAI* ai, Player* from, std::string const& text)

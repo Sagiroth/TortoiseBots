@@ -32,6 +32,34 @@ constexpr size_t kMaxLostCandidates = 5;
 // Names are clipped to keep one tick on one bounded log line.
 constexpr size_t kMaxNameChars = 48;
 constexpr size_t kMaxOrderChars = 120;
+// One tick cannot produce more useful verdicts than this; a runaway queue
+// must not grow the trace's memory. The verdict that ran is the diagnosis:
+// at the cap it displaces the oldest verdict that did not run, while the
+// cap still drops further verdicts that did not run.
+constexpr size_t kMaxTickVerdicts = 128;
+// Bounded per-tick buffer shared with the service (runtime/WhyTrace.cpp).
+// The newcomer joins unless the buffer is full; a full buffer still takes
+// the verdict that ran in place of the oldest one that did not. Returns
+// false when the newcomer was dropped.
+template <typename Container, typename Verdict>
+bool PushCappedVerdict(Container& kept, Verdict const& verdict, size_t cap = kMaxTickVerdicts)
+{
+    if (kept.size() < cap)
+    {
+        kept.push_back(verdict);
+        return true;
+    }
+    if (!verdict.chosen)
+        return false;
+    for (auto it = kept.begin(); it != kept.end(); ++it)
+        if (!it->chosen)
+        {
+            kept.erase(it);
+            kept.push_back(verdict);
+            return true;
+        }
+    return false;
+}
 
 // What an action that did not run lost on. The first eight are the vocabulary
 // a GM reads for a boss attempt; the rest keep the engine's own gates

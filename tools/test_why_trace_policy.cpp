@@ -13,8 +13,8 @@
 
 #include "../runtime/WhyTracePolicy.h"
 
-#include <cstdio>
-#include <cstdlib>
+#include <string>
+#include <vector>
 
 using namespace TortoiseBots::WhyTrace;
 
@@ -285,6 +285,71 @@ int main()
         CHECK(summary.find("timeout") != std::string::npos);
         CHECK(summary.find("taunt") != std::string::npos);
     }
+    // --- capped verdict buffer: the verdict that ran is kept -------------------
+
+    // The overflow Codex caught: 128 rejected verdicts then the success must
+    // still leave the buffer holding the chosen action and its tally.
+    struct TickVerdict
+    {
+        std::string name;
+        float relevance = 0.0f;
+        bool chosen = false;
+    };
+    {
+        std::vector<TickVerdict> kept;
+        for (size_t i = 0; i < kMaxTickVerdicts; ++i)
+        {
+            TickVerdict loser;
+            loser.name = "loser" + std::to_string(i);
+            loser.relevance = 90.0f - static_cast<float>(i);
+            CHECK(PushCappedVerdict(kept, loser));
+        }
+        CHECK(kept.size() == kMaxTickVerdicts);
+        TickVerdict winner;
+        winner.name = "sunder armor";
+        winner.relevance = 45.0f;
+        winner.chosen = true;
+        CHECK(PushCappedVerdict(kept, winner));
+        CHECK(kept.size() == kMaxTickVerdicts);
+        bool hasChosen = false;
+        Session session;
+        session.Start(0, 30);
+        for (TickVerdict const& keptOne : kept)
+            if (keptOne.chosen)
+            {
+                hasChosen = true;
+                session.NoteChosen(keptOne.name, 100);
+            }
+        CHECK(hasChosen);
+        CHECK(session.chosenCount("sunder armor") == 1);
+    }
+    {
+        // Below the cap every verdict joins, rejected or chosen.
+        std::vector<TickVerdict> kept;
+        TickVerdict loser;
+        loser.name = "taunt";
+        CHECK(PushCappedVerdict(kept, loser));
+        TickVerdict winner;
+        winner.name = "sunder armor";
+        winner.chosen = true;
+        CHECK(PushCappedVerdict(kept, winner));
+        CHECK(kept.size() == 2);
+    }
+    {
+        // Past the cap, further rejected verdicts are the ones dropped.
+        std::vector<TickVerdict> kept;
+        for (size_t i = 0; i < kMaxTickVerdicts; ++i)
+        {
+            TickVerdict loser;
+            loser.name = "loser" + std::to_string(i);
+            CHECK(PushCappedVerdict(kept, loser));
+        }
+        TickVerdict late;
+        late.name = "late loser";
+        CHECK(!PushCappedVerdict(kept, late));
+        CHECK(kept.size() == kMaxTickVerdicts);
+    }
+
 
     if (g_failed)
     {
