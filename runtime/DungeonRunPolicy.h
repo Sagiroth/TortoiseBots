@@ -11524,7 +11524,8 @@ inline bool ApproachWalkStuck(Run& r, const Facts& f, float dist, float x, float
 // A boss hovering above the floor (its ranged reach picks an air point and launches nothing): the first such refusal
 // on a boss or pack is retried once as a body (melee) pull (`pull <guid> body`, the tank walking in on the target's
 // ground position) before the stand search - the firing position could not be reached, not the target. A refused body
-// pull, or a second refusal, takes the approach's way out as before. True: handled.
+// pull, or a second refusal, takes the approach's way out as before. Only an `unreachable` answer counts, ranged or
+// body: other refusals pause as usual. True: handled.
 inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const std::string& answer)
 {
     bool const ranged = order.compare(0, 9, "pullback ") == 0;
@@ -11534,7 +11535,9 @@ inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const s
     // Only the retry's own body pull is judged here: the run never sends another.
     if (body && (r.bodyPullOrder.empty() || order != r.bodyPullOrder))
         return false;
-    if (ranged && answer.compare(0, 11, "unreachable") != 0)
+    // Only a navigation refusal says the target or the firing position cannot be reached: a busy tank, no tank or a
+    // pull policy failure (ranged or body) takes the generic pause and rewrites no pull counter.
+    if (answer.compare(0, 11, "unreachable") != 0)
         return false;
     std::uint64_t const guid = std::strtoull(order.c_str() + (ranged ? 9 : 5), nullptr, 10);
     const PlanStep* s = Current(r);

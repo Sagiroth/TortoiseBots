@@ -31,6 +31,7 @@ namespace ai
         bool moving = false;         // the unit already reads as moving
         bool motionLaunched = false; // a point or chase movement generator is set
         bool airborne = false;       // the target hangs more than kAirbornePullFloorYd above the floor under it
+        bool reachAttempted = false; // "reach pull" ran for this order (it may have launched nothing)
         float distance = 0.0f;       // tank to the pull target
         float range = 0.0f;          // the pull's shooting range
     };
@@ -39,9 +40,11 @@ namespace ai
     {
         // An airborne target's launch comes on the next movement tick: judging it in the
         // order's own tick refused pulls whose reach had only to re-pick its firing
-        // position once more.
+        // position once more. That only holds once the reach was really attempted: airborne
+        // geometry alone is no proof that a walk was requested (the queued decision may have
+        // gone to another action).
         return !facts.hasTarget || facts.moving || facts.motionLaunched ||
-            facts.distance <= facts.range || facts.airborne;
+            facts.distance <= facts.range || (facts.airborne && facts.reachAttempted);
     }
 
     // What the order clears on the tank before its decisions. A pull often

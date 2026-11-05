@@ -936,6 +936,13 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             launchOnNextTick = ai::PullTargetAirborne(floor > INVALID_HEIGHT, pullTarget->GetPositionZ(), floor);
         }
 
+        // Whether "reach pull" ran for this order (the queued decision, or the direct retry below).
+        auto reachAttempted = [&]()
+        {
+            PullStrategy* strategy = PullStrategy::Get(ai);
+            return strategy && strategy->HasReachPullAttempted();
+        };
+
         // A point move is registered with the motion master at once but the
         // unit reads as moving only after the next movement tick, so a launched
         // point or chase motion counts as started (ai/playerbot/PullStartPolicy.h).
@@ -947,6 +954,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             facts.moving = sServerFacade.isMoving(executor);
             facts.motionLaunched = motion == POINT_MOTION_TYPE || motion == CHASE_MOTION_TYPE;
             facts.airborne = launchOnNextTick;
+            facts.reachAttempted = reachAttempted();
             if (facts.hasTarget)
                 facts.distance = executor->GetDistance(pullTarget);
             facts.range = pullRange;

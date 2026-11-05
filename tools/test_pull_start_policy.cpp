@@ -83,9 +83,44 @@ static void TestAirTargetPullCountsNextTickLaunch()
     facts.distance = 54.7f;
     facts.range = 29.5f;
     facts.airborne = true;
-    // Nothing launched yet: the next tick's launch is accepted.
+    facts.reachAttempted = true;
+    // The reach ran and launched nothing yet: the next tick's launch is accepted.
     CHECK(PullWalkStarted(facts));
     CHECK(!RetryPullWalk(facts, false));
+}
+
+// Codex review t1105c round 2 (medium): airborne geometry explains a deferred launch, it
+// does not prove the walk was attempted. When the queued decision never ran `reach pull`
+// (another action displaced it) the air target must not pass as started: the direct
+// retry runs, and only after it is the next tick's launch awaited.
+static void TestAirTargetNeedsAnAttemptedReach()
+{
+    PullStartFacts facts;
+    facts.distance = 54.7f;
+    facts.range = 29.5f;
+    facts.airborne = true;
+    facts.reachAttempted = false;
+    CHECK(!PullWalkStarted(facts));
+    CHECK(RetryPullWalk(facts, false));
+    CHECK(!RetryPullWalk(facts, true)); // a body pull is never judged
+    // After the direct reach pull ran, the air target gets the next tick.
+    facts.reachAttempted = true;
+    CHECK(PullWalkStarted(facts));
+    CHECK(!RetryPullWalk(facts, false));
+    // An attempted reach does not excuse a ground target.
+    facts.airborne = false;
+    CHECK(!PullWalkStarted(facts));
+    // No-attempt air target still passes when really moving, launched or in range.
+    facts.airborne = true;
+    facts.reachAttempted = false;
+    facts.moving = true;
+    CHECK(PullWalkStarted(facts));
+    facts.moving = false;
+    facts.motionLaunched = true;
+    CHECK(PullWalkStarted(facts));
+    facts.motionLaunched = false;
+    facts.distance = 20.0f;
+    CHECK(PullWalkStarted(facts));
 }
 
 static void TestReadyTankForPull()
@@ -110,6 +145,7 @@ int main()
 {
     TestWalkStartedAndRetry();
     TestAirTargetPullCountsNextTickLaunch();
+    TestAirTargetNeedsAnAttemptedReach();
     TestReadyTankForPull();
 
     std::cout << "pull start policy: ok\n";
