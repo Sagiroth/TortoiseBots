@@ -3697,6 +3697,9 @@ void Update(uint32_t diff)
                 {
                     if (!need.itemId || !need.count)
                         continue;
+                    // The giver brings a ticked material: no shop or auction resume for it.
+                    if (BringTickedBlocksLeg(snapshot.bringItems, need.itemId))
+                        continue;
                     if (NeedVendorAffordable(bot, online, need))
                     {
                         in.needVendorReady = true;
