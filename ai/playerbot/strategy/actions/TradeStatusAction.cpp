@@ -63,6 +63,12 @@ bool TradeStatusAction::Execute(Event& event)
         return false;
     }
 
+    // A running enchant order owns the window before any trade gate: the
+    // hook handles the giver's trades and refuses everyone else's. Without
+    // this, a trader the gates approve gets the generic accept.
+    if (HandleEnchantOrderTrade(event, trader))
+        return true;
+
     bool shouldTrade = true;
     if (!PlayerbotAIStorage::Instance().GetAI(trader))
     {
@@ -90,11 +96,6 @@ bool TradeStatusAction::Execute(Event& event)
 
     if (!shouldTrade)
     {
-        // Enchant rows bypass the master/group gate: the hook owns the
-        // packet (wrong-player cancel, trade checks, done) and returns
-        // true when it ran. Anything else falls into the cancel below.
-        if (HandleEnchantOrderTrade(event, trader))
-            return true;
         WorldPacket noTrade;
         uint32 noTradeStatus = 0;
         noTrade << noTradeStatus;
