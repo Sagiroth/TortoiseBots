@@ -743,8 +743,8 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 - before a pull over [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (or the row's smaller `max_bodies`), the run marks the row's own pack, one order a tick
 - order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
 - risky Fear and Scare Beast go last and only with this key's risky flag on
-- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit, and a `cc_never` entry of the plan
-- a non-elite unit neither counts toward the fight's engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do (the pre-pull body count still includes it, since it does come with the pull)
+- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit the plan does not list, and a `cc_never` entry of the plan
+- a non-elite unit neither counts toward the pre-pull body count nor the fight's engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do; a `cc_never` unit still counts as a body (it is dangerous even though it cannot be held)
 - the plan's `cc_never` list (`ai_dungeon_plan`) excludes those entries from the automatic pick entirely, before the pull, in the fight and on a re-send; the plan's own list with the key off is unchanged
 - in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
 - tanks and the lead bot never do crowd control; a healer only while 4 healers (1 in a party) stay free, holding one unit
@@ -760,7 +760,7 @@ How many bodies a pull may bring before the automatic crowd control starts.
 <details>
 <summary>How it works in detail</summary>
 
-**Threshold:** the run's body count is the ring estimate's count when it read the pull (`AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`), else the old joiner estimate with the target, else the row's own living pullable units. The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
+**Threshold:** the run's body count is the ring estimate's count when it read the pull (`AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`), else the old joiner estimate with the target, else the row's own living pullable units that are not non-elite (a NORMAL-rank unit is no body, and no mark unless the plan lists it). The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
 
 </details>
 

@@ -884,7 +884,8 @@ struct UnitFact
     std::uint32_t level = 0;
     float fleeRoomYd = -1.0f;
     // Its creature_template rank is CREATURE_ELITE_NORMAL: a dungeon's trivial trash is no automatic crowd control's
-    // candidate and no body of the fight's engaged count (AiPlayerbot.DungeonRunAutoCc). A rare is not normal.
+    // candidate (unless the plan lists it in cc_always/cc_priority) and no body of its count, before the pull or in
+    // the fight (AiPlayerbot.DungeonRunAutoCc). A rare is not normal.
     bool normalRank = false;
     // The core's creature type (kCreatureHumanoid ...): which run cc fits it
     // (CcFits). 0: not read, Polymorph only (the facts before #1159).
@@ -9126,9 +9127,22 @@ inline std::uint32_t RunAutoCcThreshold(const PlanStep& s, const Facts& f)
     return ceiling && ceiling < f.autoCcAbove ? ceiling : f.autoCcAbove;
 }
 
+// A unit the automatic crowd control leaves alone: an entry the plan lists in
+// cc_never, or a NORMAL-rank (non-elite) unit the plan does not list for crowd
+// control (cc_always/cc_priority: a plan's own unit is still a candidate, the
+// author's intent wins).
+inline bool RunCcSkipsUnit(const Run& r, const UnitFact& u)
+{
+    if (r.plan && r.plan->CcNever(u.entry))
+        return true;
+    return u.normalRank && !(r.plan && r.plan->CcRank(u.entry) >= 0);
+}
+
 // How many bodies the pull brings: the ring estimate's count when it read this
 // pick, else the old joiner estimate with the target, else the row's own
-// pullable pack.
+// pullable pack without its NORMAL-rank (non-elite) units: a trivial unit is no
+// body of the automatic crowd control's threshold. A cc_never unit is one still
+// (a unit the run may not mark is dangerous all the same).
 inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFact& pick)
 {
     if (f.aggroWalkRing && pick.joinersRead)
@@ -9137,7 +9151,7 @@ inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFac
         return pick.joiners + 1;
     std::uint32_t bodies = 0;
     for (const UnitFact& u : f.units)
-        if (Pullable(r, u))
+        if (Pullable(r, u) && !u.normalRank)
             ++bodies;
     return bodies;
 }
@@ -9377,15 +9391,16 @@ inline std::string RunAutoCcMarkNote(const Run& r, const UnitFact& u, const CcPi
 }
 
 // The note when an over-threshold pull has no free crowd control that fits its
-// pack: the pack's entries not marked yet, at most eight.
+// pack: the pack's entries not marked yet that the automatic crowd control
+// would mark (RunCcSkipsUnit), at most eight. Empty when there is no such
+// entry: a pack of trivial or cc_never units has no missing bot to report.
 inline std::string RunAutoCcNoBotNote(const Run& r, const Facts& f, std::uint32_t bodies, std::uint32_t threshold)
 {
     std::string entries;
     std::size_t shown = 0;
     for (const UnitFact& u : f.units)
     {
-        if (!Pullable(r, u) || r.ccSent.count(u.guid) || u.polymorphed || u.normalRank ||
-            (r.plan && r.plan->CcNever(u.entry)))
+        if (!Pullable(r, u) || r.ccSent.count(u.guid) || u.polymorphed || RunCcSkipsUnit(r, u))
             continue;
         std::string const entry = std::to_string(u.entry);
         if (entries.find(entry) != std::string::npos)
@@ -9398,6 +9413,8 @@ inline std::string RunAutoCcNoBotNote(const Run& r, const Facts& f, std::uint32_
         entries += (shown ? ", " : "") + entry;
         ++shown;
     }
+    if (!shown)
+        return std::string();
     return "auto cc: " + std::to_string(bodies) + " bodies over " + std::to_string(threshold) +
         ", no free crowd control fits (" + entries + ")";
 }
@@ -9504,9 +9521,9 @@ inline CcPick PickCcOrderPlan(const Run& r, const Facts& f, std::uint64_t pullGu
 // picking the bot. Never the pull target, the lead bot's target, a unit an
 // off-tank holds, the fight's focus, a kill_first or boss-step unit, a held
 // unit, one marked this step, one the party hits, a healer guard's add, a
-// NORMAL-rank (non-elite) trivial unit, or an entry the plan lists in cc_never.
-// Only the row's own pack is a candidate before the pull; joiners are the
-// fight tick's (RunAutoCcFightTick).
+// NORMAL-rank (non-elite) trivial unit the plan does not list, or an entry the
+// plan lists in cc_never. Only the row's own pack is a candidate before the
+// pull; joiners are the fight tick's (RunAutoCcFightTick).
 inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pullGuid)
 {
     CcPick pick;
@@ -9524,8 +9541,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
         auto const reapplied = r.ccReapplied.find(u.guid);
         if (u.guid == pullGuid || !Pullable(r, u) || r.ccSent.count(u.guid) || BossStepUnit(step, u.entry, u.formOf) ||
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
-            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits || u.normalRank ||
-            r.plan->CcNever(u.entry) ||
+            f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits || RunCcSkipsUnit(r, u) ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
             r.healerGuardAssigned.count(u.guid) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
@@ -9590,7 +9606,7 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
         if (r.ccOpenSent.count(entry->first) || r.ccLandedSeen.count(entry->first))
             continue; // sent once already, or its aura was seen: a break is RunCcReapplyTick's
         const UnitFact* const u = FightUnit(f, entry->first);
-        if (!u || u->polymorphed || u->normalRank || (r.plan && r.plan->CcNever(u->entry)) || !u->hostile ||
+        if (!u || u->polymorphed || RunCcSkipsUnit(r, *u) || !u->hostile ||
             !u->attackable || u->evading)
             continue;
         if (u->partyDots && entry->second.family != CcFamily::Banish && entry->second.family != CcFamily::Fear)
@@ -9650,8 +9666,9 @@ inline bool RunAutoCcPrePullOpenTick(Run& r, const Facts& f, std::uint32_t dt, s
 // the row's threshold of them fight, one auto cc order a tick (kRunCcFightGapMs
 // after the last one) on the best of them (RunAutoCcBetter, RunCcBotFor). The
 // lead bot's are never candidates (its tank holds them), only counted. A
-// NORMAL-rank (non-elite) unit is neither counted nor a candidate, and neither
-// is an entry the plan lists in cc_never. Returns
+// NORMAL-rank (non-elite) unit is neither counted nor a candidate; an entry the
+// plan lists in cc_never is no candidate either but still counts (a unit that
+// cannot be held is dangerous all the same). Returns
 // true when it sent one.
 inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::uint32_t dt, std::string& order)
 {
@@ -9675,7 +9692,8 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         return false;
     // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
     // union is by guid so a guid reaching the count from two lists still counts once). A NORMAL-rank (non-elite) unit
-    // is no body of it: the automatic crowd control does not spend a hold on one.
+    // is no body of it: the automatic crowd control does not spend a hold on one. A cc_never unit is one: a unit the
+    // run may not mark still makes the pack dangerous. Guids are all it reads, so no entry is needed here.
     std::uint32_t engaged = 0, held = 0;
     std::unordered_set<std::uint64_t> engagedGuids;
     auto const countEngaged = [&](std::uint64_t guid, bool polymorphed, bool normalRank)
@@ -9711,8 +9729,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         for (const UnitFact& u : *list)
         {
             auto const reapplied = r.ccReapplied.find(u.guid);
-            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || u.normalRank ||
-                (r.plan && r.plan->CcNever(u.entry)) ||
+            if (!u.guid || !u.hostile || !u.attackable || u.evading || u.polymorphed || RunCcSkipsUnit(r, u) ||
                 r.ccSent.count(u.guid) || u.partyHits || u.victimTank || u.guid == f.leadTargetGuid ||
                 u.guid == r.ccBreakGuid ||
                 (r.focusGuid && u.guid == r.focusGuid) ||
@@ -9795,7 +9812,7 @@ inline bool RunCcReapplyTick(Run& r, const Facts& f, std::uint32_t dt, std::stri
         if (!r.ccLandedSeen.count(entry.first))
             continue;
         const UnitFact* const u = FightUnit(f, entry.first);
-        if (!u || u->polymorphed || u->normalRank || (r.plan && r.plan->CcNever(u->entry)) || u->partyHits ||
+        if (!u || u->polymorphed || RunCcSkipsUnit(r, *u) || u->partyHits ||
             u->victimTank ||
             u->guid == f.leadTargetGuid || (r.focusGuid && u->guid == r.focusGuid))
             continue;
@@ -14701,8 +14718,8 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
                 ccPick = CcPick();
             else if (!ccPick.unit && !ccPick.noMarkEntry && over && !r.ccAutoNoBotNoted)
             {
-                r.ccAutoNoBotNoted = true;
                 autoCcNote = RunAutoCcNoBotNote(r, f, bodies, threshold);
+                r.ccAutoNoBotNoted = !autoCcNote.empty();
             }
         }
         std::size_t const sentBefore = r.ccSent.size();

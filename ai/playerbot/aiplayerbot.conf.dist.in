@@ -1336,9 +1336,10 @@ AiPlayerbot.DungeonRunStandDiscipline = 0
 # re-sends a crowd control that broke (twice a unit a step). The pack's own units are the only
 # pre-pull candidates; a tank, the lead bot, a healer while fewer than 4 healers (1 in a party)
 # would stay free, and the unit the tank or an off-tank holds are never marked. A non-elite
-# (NORMAL-rank) unit is never marked and does not count toward the engaged total that starts a
-# mark in the fight (the pre-pull body count still includes it: it does come with the pull); a
-# plan's cc_never list excludes its entries from the automatic marks entirely. With the key on
+# (NORMAL-rank) unit is no body of either pack count that starts a mark, before the pull or in
+# the fight, and it is never marked unless the plan lists it in cc_priority/cc_always; a plan's
+# cc_never list excludes its entries from the automatic marks entirely (a cc_never unit still
+# counts as a body: a unit that cannot be held is dangerous all the same). With the key on
 # the run uses seven marks (moon, square, diamond, triangle, star, circle, cross; skull stays
 # the fight's focus); a player's icon is never moved.
 # 0 - off, the plan's cc list only, as before (Default)
