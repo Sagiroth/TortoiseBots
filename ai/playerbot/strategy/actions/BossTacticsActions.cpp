@@ -4583,10 +4583,9 @@ void LogTauntAfter(PlayerbotAI* ai, Unit* subject, int tankIndex, const TauntAft
 BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     BossTauntAfter out;
-    // The row is only live with the charm yield on as well: the until_tank episode exists because a charmed victim
-    // cannot be its own tank, so applying the migration must not switch it on under AuraTactics alone (L8).
-    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
-        !sPlayerbotAIConfig.dungeonRunCharmYield)
+    // The row is live on aura tactics alone: a charm-like threat wipe (Arlokk's Vanish) needs no charm to recover from,
+    // and the charmed-tank skip below only narrows the pick when the yield key is on.
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
         return out;
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
         return out;
@@ -4595,15 +4594,18 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
         return out;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
     PruneTauntAfter(ai, bot->GetInstanceId(), nowMs);
-    // The role order drops a dead or absent tank; a creature-charmed one yields its AI, so it is as gone for the order
-    // as a dead one and the pick wraps past it (M5). The pure pick's wrap also covers a row naming an index past the
-    // end (fewer tanks than the row expects).
+    // The role order drops a dead or absent tank; with the yield key on a creature-charmed one yields its AI, so it is
+    // as gone for the order as a dead one and the pick wraps past it (M5). With the key off the charm never yields, so
+    // every listed tank stays usable. The pure pick's wrap also covers a row naming an index past the end (fewer tanks
+    // than the row expects).
     std::vector<bool> alive;
     alive.reserve(roles.tanks.size());
     for (Player* const tank : roles.tanks)
     {
         const ObjectGuid charmer = tank ? tank->GetCharmerGuid() : ObjectGuid();
-        alive.push_back(TauntAfterTankUsable(!charmer.IsEmpty(), charmer.IsPlayer()));
+        bool const charmedOut = sPlayerbotAIConfig.dungeonRunCharmYield &&
+            !charmer.IsEmpty() && !charmer.IsPlayer();
+        alive.push_back(!charmedOut);
     }
     for (const BossTacticRow* row : fight.rows)
     {

@@ -305,7 +305,7 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 - `taunt_after_cast`: sends a rotation tank to taunt a subject back inside a deadline
 - `swap_on_aura`: rotates two tanks at a stack count
 - the same key opens the row gates: a row whose `hp_min`/`hp_max` or `bot_aura` does not match is ignored while off
-- the `until_tank` mode also needs `AiPlayerbot.DungeonRunCharmYield`: a creature-charmed tank yields its AI and cannot take the taunt back
+- the `until_tank` mode runs on this key alone; a creature-charmed tank only leaves the order while `AiPlayerbot.DungeonRunCharmYield` is also on
 
 </details>
 

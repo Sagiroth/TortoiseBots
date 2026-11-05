@@ -82,7 +82,7 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 | `dispel_priority` * | Ranks aura removal. | Dispensers; needs `DungeonRunAuraTactics = 1` |
 | `flee_on_aura` * | The carrier leaves the group. | Carrier; needs `DungeonRunAuraTactics = 1` |
 | `freeze_on_aura` * | The carrier holds all actions but freeze. | Carrier; needs `DungeonRunAuraTactics = 1` |
-| `taunt_after_cast` * | Taunt on the trigger. Mode `until_tank`: while the subject stands on a non-tank, the row's `priority` tank by raid order taunts it back within `param` seconds (`spell_id` 0 legal for instant charms). Also needs `AiPlayerbot.DungeonRunCharmYield = 1`. | Tanks; needs `DungeonRunAuraTactics = 1` |
+| `taunt_after_cast` * | Taunt on the trigger. Mode `until_tank`: while the subject stands on a non-tank, the row's `priority` tank by raid order taunts it back within `param` seconds (`spell_id` 0 legal for instant charms). A creature-charmed tank only leaves the order while `AiPlayerbot.DungeonRunCharmYield = 1` is also on. | Tanks; needs `DungeonRunAuraTactics = 1` |
 | `swap_on_aura` * | Tank rotation. | Tanks; needs `DungeonRunAuraTactics = 1` |
 | `seek_aura` | The raid doses itself from a dying source before the boss's cycle spell lands. While the dose window is open (`window_s` seconds before due), bots lacking `spell_id` walk to the living source at the row's spot and stand within `param` yd; DPS bring it to `priority` % and stop until the gather is ready, then burn it so the cloud lands on the raid. Needs `AiPlayerbot.DungeonRunSeekAura = 1` (default `0`); main tank and first off-tank never seek. | every bot without the aura except the two tanks; second off-tank pulls and holds the source |
 | `pull_gate` | A run-leader gate, not a fight scan: while the boss wears `spell_id` above `priority` stacks the run leader never pulls it and notes the gate; after `param` seconds it ends the run. Needs `AiPlayerbot.DungeonRunPullGate = 1` (default `0`). | the run leader |
@@ -210,6 +210,7 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Venoxis | `interrupt` Holy Fire; ranged and healer stand set |
 | Thekal, Lor'Khan, Zath | `linked_death` group, hold 2 %, burn order Zealots then Thekal; Lor'Khan `interrupt` Greater Heal |
 | Hakkar the Soulflayer | `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 10 s. Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. |
+| Arlokk | `kill_first` Arlokk herself (1), then `kill_first` Zulian Prowler (2); `taunt_after_cast` mode `until_tank`, tank 1, 3 s on her Ambush/Gouge; `dps_hold_after` on panther transform 24190, 2 s. Needs aura tactics only (no charm key: the wipe is Vanish, not a charm). |
 
 ## AQ20 rows (map 509)
 
@@ -226,7 +227,7 @@ Only kinds the module already runs. Needs `DungeonRunCharmYield = 1` on the two 
 ## Hakkar the Soulflayer (map 309, entry 14834)
 
 Needs `DungeonRunPullGate`, `DungeonRunSeekAura`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. The five High Priests must be dead first, one stack of Hakkar Power per living priest; the run leader never pulls while he wears it and ends the run after 30 s.
-Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart; Cause Insanity is ignored and the first off-tank taunts him back while he stands on a non-tank.
+Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart; Cause Insanity is ignored and the first off-tank taunts him back while he stands on a non-tank (a creature-charmed tank only leaves the order with the charm key on, so the next live tank takes him instead).
 
 ## Known limits
 
