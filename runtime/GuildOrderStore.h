@@ -88,8 +88,10 @@ struct EnchantTradeSession
     uint32_t tries = 0;
     uint32_t replaceAskedMs = 0;
     bool replaceConfirmed = false;
+    uint32_t parkedItemGuidLow = 0; // the giver's item the enchant was cast on
 };
 EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow);
+void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow);
 void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs);
 void NoteEnchantTradeClosed(uint32_t botGuidLow);
 void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs);

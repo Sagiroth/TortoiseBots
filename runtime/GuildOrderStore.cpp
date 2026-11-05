@@ -161,7 +161,16 @@ public:
         out.tries = it->second.enchantTradeTries;
         out.replaceAskedMs = it->second.enchantReplaceAskedMs;
         out.replaceConfirmed = it->second.enchantReplaceConfirmed;
+        out.parkedItemGuidLow = it->second.enchantParkedItemLow;
         return out;
+    }
+
+    void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.enchantParkedItemLow = itemGuidLow;
     }
 
     void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)
@@ -2827,6 +2836,7 @@ private:
         // for this Enchanting leg, and the replace question state.
         uint32_t enchantTradeOpenedMs = 0;
         uint32_t enchantTradeTries = 0;
+        uint32_t enchantParkedItemLow = 0;
         uint32_t enchantReplaceAskedMs = 0;
         bool enchantReplaceConfirmed = false;
     };
@@ -3515,6 +3525,11 @@ uint32_t MeetFailedMs(uint32_t botGuidLow)
 EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)
 {
     return OrderStore::Instance().GetEnchantTrade(botGuidLow);
+}
+
+void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow)
+{
+    OrderStore::Instance().NoteEnchantParked(botGuidLow, itemGuidLow);
 }
 
 void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)

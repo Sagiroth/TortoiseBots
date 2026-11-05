@@ -807,6 +807,8 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             // Cast once, then accept: the core remembers the spell
             // (SetSpell) and applies it when both sides accept, taking the
             // bot's reagents. A cancelled trade consumes nothing.
+            if (Item* parked = trader->GetTradeData() ? trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) : nullptr)
+                TortoiseBots::GuildOrders::NoteEnchantParked(bot->GetGUIDLow(), parked->GetGUIDLow());
             if (bot->GetTradeData() && bot->GetTradeData()->GetSpell() == 0)
             {
                 // The client's own path: a cast aimed at the trader's

@@ -7,6 +7,7 @@
 // (include style mirrors GuildValues.cpp: playerbot/ prefix for AI headers,
 // runtime/ for store-adjacent ones).
 #include "playerbot/policy/guild/EnchantTradePolicy.h"
+#include "playerbot/GuildOrderEnchants.h"
 #include "runtime/EnchantCapital.h"
 #include "runtime/GuildOrderContract.h"
 #include "runtime/GuildOrderEnchantLifecyclePolicy.h"
@@ -16,6 +17,18 @@
 
 using namespace ai;
 using namespace TortoiseBots::GuildOrders;
+
+namespace
+{
+// True while the bags still hold one cast's reagents: the enchant was not paid yet.
+bool HasAllEnchantReagents(Player* bot, uint32_t spellId)
+{
+    for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(spellId))
+        if (bot->GetItemCount(reagent.itemId) < reagent.count)
+            return false;
+    return true;
+}
+} // namespace
 
 namespace
 {
@@ -149,6 +162,33 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     OrderState::Ready : order.state, OrderReason::None);
                 ClearMeet(bot->GetGUIDLow());
             }
+            return true;
+        }
+    }
+
+    // The trade completed on the giver's accept, not inside the bot's own:
+    // the item the enchant was cast on tells whether it landed.
+    if ((order.state == OrderState::Coming || order.state == OrderState::Enchanting) && !bot->GetTrader())
+    {
+        EnchantTradeSession session = GetEnchantTrade(bot->GetGUIDLow());
+        Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
+        Item* done = (giver && session.parkedItemGuidLow) ?
+            giver->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, session.parkedItemGuidLow)) : nullptr;
+        SpellEntry const* ordered = sServerFacade.LookupSpellInfo(order.itemId);
+        uint32_t want = 0;
+        if (ordered)
+            for (uint8_t e = 0; e < MAX_EFFECT_INDEX; ++e)
+                if (ordered->Effect[e] == SPELL_EFFECT_ENCHANT_ITEM)
+                    want = uint32_t(ordered->EffectMiscValue[e]);
+        if (done && EnchantDoneVerified(done->GetEnchantmentId(PERM_ENCHANTMENT_SLOT), want) &&
+            !HasAllEnchantReagents(bot, order.itemId))
+        {
+            SetState(bot->GetGUIDLow(), OrderState::Done, OrderReason::None);
+            NoteEnchantTradeClosed(bot->GetGUIDLow());
+            NoteEnchantParked(bot->GetGUIDLow(), 0);
+            ClearMeet(bot->GetGUIDLow());
+            ai->TellPlayerNoFacing(giver, "Enchanted, thank you.",
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             return true;
         }
     }
