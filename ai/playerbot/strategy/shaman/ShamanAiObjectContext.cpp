@@ -321,7 +321,6 @@ namespace ai
                 // NOTE: `call of the ...` triggers removed with their
                 // spell-less actions above (dead port only otherwise).
                 creators["totemic recall"] = [](PlayerbotAI* ai) { return new ReadyToRemoveTotemsTrigger(ai); };
-                creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new PartyTankEarthShieldTrigger(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new ChainLightningTrigger(ai); };
                 creators["tank chain lightning"] = [](PlayerbotAI* ai) { return new TankChainLightningTrigger(ai); };
                 creators["tank fight target"] = [](PlayerbotAI* ai) { return new TankFightTargetTrigger(ai); };
@@ -385,7 +384,6 @@ namespace ai
                 creators["healing wave on party"] = [](PlayerbotAI* ai) { return new CastHealingWaveOnPartyAction(ai); };
                 creators["lesser healing wave on party"] = [](PlayerbotAI* ai) { return new CastLesserHealingWaveOnPartyAction(ai); };
                 creators["earth shield"] = [](PlayerbotAI* ai) { return new CastEarthShieldAction(ai); };
-                creators["earth shield on party"] = [](PlayerbotAI* ai) { return new CastEarthShieldOnPartyAction(ai); };
                 creators["chain heal"] = [](PlayerbotAI* ai) { return new CastChainHealAction(ai); };
                 creators["earthshaker slam"] = [](PlayerbotAI* ai) { return new CastEarthshakerSlamAction(ai); };
                 creators["earthshaker slam on attacker"] = [](PlayerbotAI* ai) { return new CastEarthshakerSlamOnAttackerAction(ai); };
@@ -423,7 +421,6 @@ namespace ai
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateShamanRaidStrategiesAction(ai); };
-                creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new CastEarthShieldOnPartyTankAction(ai); };
             }
         };
     };

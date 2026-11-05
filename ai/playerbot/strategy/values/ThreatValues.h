@@ -34,4 +34,14 @@ namespace ai
     protected:
 	uint8 Calculate(Unit* target);
     };
+
+    // Whether the core makes this target immune to taunts: Creature::HasImmunityFlag(CREATURE_IMMUNITY_TAUNT) reads
+    // creature_template.immunity_flags 0x02, which Creature.cpp applies to SPELL_EFFECT_ATTACK_ME and
+    // SPELL_AURA_MOD_TAUNT (Hakkar 14834: no taunt has ever landed on him).
+    bool TargetTauntImmune(Unit* target);
+
+    // Whether the target's boss tactic data asks for a threat successor (ai_boss_tactic kind `threat_successor`):
+    // damage dealers are then measured against the assigned off-tanks' highest threat, so the second tank stays second
+    // for a threat reset. A taunt-immune target without the row keeps the highest tank.
+    bool ThreatSuccessorTarget(Unit* target);
 }
