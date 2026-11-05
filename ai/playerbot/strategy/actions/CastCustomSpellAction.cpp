@@ -832,6 +832,9 @@ bool GuildDisenchantServiceAction::isUseful()
         return false;
     bool hasWork = !SyncedServiceQueue(bot).empty();
     // Moving or mounted does not block: the cast stops and dismounts the bot.
+    if (hasWork && (bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false) || bot->GetTrader()))
+        sLog.outBasic("TBDEBUG disenchant blocked %s combat %u cast %u trader %u", bot->GetName(),
+            bot->IsInCombat() ? 1u : 0u, bot->IsNonMeleeSpellCasted(false) ? 1u : 0u, bot->GetTrader() ? 1u : 0u);
     return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), false,
         false, bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
 }
