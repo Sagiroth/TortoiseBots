@@ -1090,8 +1090,13 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
                 head.bagBefore[held->GetEntry()] += held->GetCount();
     }
     ItemQualifier itemQualifier(queued.itemId);
-    Event disenchantEvent = Event("guild disenchant service", "13262 " + chat->formatQItem(queued.itemId));
-    bool didCast = CastCustomSpellAction::Execute(disenchantEvent);
+    // Cast on the exact queued stack, not by a chat link: a link with a
+    // space in the item name never parsed to a bag item.
+    if (bot->IsMoving())
+        ai->StopMoving();
+    if (bot->IsMounted())
+        ai->Unmount();
+    bool didCast = ai->CastSpell(13262, bot, item);
     sLog.outBasic("TBDEBUG disenchant service %s cast %u -> %u", bot->GetName(), queued.itemId, didCast ? 1u : 0u);
     if (!didCast)
     {
