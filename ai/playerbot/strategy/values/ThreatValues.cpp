@@ -3,7 +3,9 @@
 #include "playerbot/playerbot.h"
 #include "ThreatValues.h"
 
+#include "Objects/Creature.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "Threat/ThreatManager.h"
 
 using namespace ai;
@@ -90,7 +92,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (!group)
         return 0;
 
-    float maxThreat = -1.0f;
+    std::vector<float> tankThreats;
 
     for (Player* player : LiveGroupMembers(group))
     {
@@ -98,14 +100,18 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
             continue;
 
         if (ai->IsTank(player))
-        {
-            float threat = sServerFacade.GetThreatManager(target).getThreat(player);
-            if (maxThreat < threat)
-                maxThreat = threat;
-        }
+            tankThreats.push_back(sServerFacade.GetThreatManager(target).getThreat(player));
     }
 
-    return maxThreat;
+    // A taunt-immune target cannot be pulled back, so the damage dealers are measured against the second-highest tank
+    // and that tank stays second (the off-tank takes the boss on the next threat reset).
+    return ThreatCapReference(tankThreats, TargetTauntImmune(target));
+}
+
+bool TargetTauntImmune(Unit* target)
+{
+    Creature* const creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    return creature && creature->HasImmunityFlag(CREATURE_IMMUNITY_TAUNT);
 }
 
 uint8 ThreatValue::Calculate(Unit* target)

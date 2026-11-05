@@ -80,7 +80,7 @@ When an enemy mob flees below 30% health (fleeing or fleeing for help, still in 
 
 ### Party Threat Back-Off
 
-In groups with the `threat` strategy active, damage dealers watch their threat against the tank. AoE threat at 50% of the tank's pauses area spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*) until threat stabilizes. Single-target threat pauses nukes only once it is climbing to pass the tank (at or above 80% with a rising trend), not on a flat 80% reading.
+In groups with the `threat` strategy active, damage dealers watch their threat against the tank. AoE threat at 50% of the tank's pauses area spells (*Volley*, *Multi-Shot*, *Blizzard*, *Flamestrike*, *Rain of Fire*, *Chain Lightning*) until threat stabilizes. Single-target threat pauses nukes only once it is climbing to pass the tank (at or above 80% with a rising trend), not on a flat 80% reading. On a target the game makes immune to taunts (Hakkar, and most raid bosses in this world data) no tank can take the mob back, so the reference is the second-highest tank's threat: damage dealers stay below the off-tank, and a threat reset hands the mob to that tank instead of to a damage dealer. There the back-off also holds in a commanded group while the mob hits a member; elsewhere it still yields.
 
 ### Healer Off-DPS (`offdps`)
 

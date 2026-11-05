@@ -34,4 +34,9 @@ namespace ai
     protected:
 	uint8 Calculate(Unit* target);
     };
+
+    // Whether the core makes this target immune to taunts: Creature::HasImmunityFlag(CREATURE_IMMUNITY_TAUNT) reads
+    // creature_template.immunity_flags 0x02, which Creature.cpp applies to SPELL_EFFECT_ATTACK_ME and
+    // SPELL_AURA_MOD_TAUNT (Hakkar 14834: no taunt has ever landed on him).
+    bool TargetTauntImmune(Unit* target);
 }

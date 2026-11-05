@@ -24,6 +24,11 @@ struct Unit {
     Unit* GetVictim() const { return victim; }
     Guid getObjectGuid() const { return guid; }
 };
+struct Creature : Unit {
+    bool immune = false;
+    bool HasImmunityFlag(int) const { return immune; }
+};
+enum { CREATURE_IMMUNITY_TAUNT = 0x02 };
 struct Player;
 struct Group { std::vector<Player*> members; };
 struct Player : Unit {
@@ -48,6 +53,9 @@ struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
+#include "ThreatCapPolicy.h"
+bool TargetTauntImmune(Unit* target);
+using namespace ai;
 """
         harness += methods + r"""
 int main() {
@@ -75,6 +83,7 @@ int main() {
             exe = pathlib.Path(folder) / "test"
             cpp.write_text(harness)
             subprocess.run(["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                            "-I", str(root / "ai/playerbot"),
                             str(cpp), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
