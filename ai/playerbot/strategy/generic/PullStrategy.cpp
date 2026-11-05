@@ -68,6 +68,7 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
 , preActionName(prePullAction)
 , pendingToStart(false)
 , pullActionCompleted(false)
+, reachPullAttempted(false)
 , pullStartTime(0)
 , approachHeadwayTime(0)
 , approachDistance(-1.0f)
@@ -436,6 +437,7 @@ void PullStrategy::OnPullEnded()
 {
     pendingToStart = false;
     pullActionCompleted = false;
+    reachPullAttempted = false;
     pullStartTime = 0;
     approachHeadwayTime = 0;
     approachDistance = -1.0f;
@@ -461,6 +463,7 @@ void PullStrategy::BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 
     commandPullback = pullback;
     commandRangedOrder = rangedOrder;
     commandBodyOrder = bodyOrder;
+    reachPullAttempted = false;
     // Until the target is known (RequestPull) the order's own words decide:
     // a pullback and a `ranged` order open from range, a plain pull walks in,
     // and a `body` order walks in whatever the mob is.

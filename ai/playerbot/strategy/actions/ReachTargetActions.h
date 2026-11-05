@@ -763,6 +763,10 @@ namespace ai
                 if (PullStrategy* strategy = PullStrategy::Get(ai))
                     strategy->NotePullApproach(target->GetDistance(bot), sServerFacade.isMoving(bot));
             }
+            // The order's start check reads this: an airborne target's launch waits for the next
+            // tick only after the reach really ran (commands/Action.cpp, PullWalkStarted).
+            if (PullStrategy* strategy = PullStrategy::Get(ai))
+                strategy->NoteReachPullAttempted();
             return ReachTargetAction::Execute(event);
         }
 

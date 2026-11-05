@@ -38,6 +38,10 @@ namespace ai
         void NotePullApproach(float distanceNow, bool moving);
         bool HasPullApproachExpired() const;
         bool HasPullActionCompleted() const { return pullActionCompleted; }
+        // "reach pull" ran for the current command (it may have launched nothing): the order's
+        // start check reads it before it lets an airborne target's launch wait for the next tick.
+        bool HasReachPullAttempted() const { return reachPullAttempted; }
+        void NoteReachPullAttempted() { reachPullAttempted = true; }
         // Ranged pull: the cast only opens the core's ranged auto-repeat, the
         // arrow flies a swing later (Unit::_UpdateAutoRepeatSpell) and any
         // other cast or movement cancels it. The pull action records the cast
@@ -125,6 +129,7 @@ namespace ai
         std::string preActionName;
         bool pendingToStart;
         bool pullActionCompleted;
+        bool reachPullAttempted;
         time_t pullStartTime;
         // Approach-headway clock: last time the walk closed in, and the
         // distance of that sample (-1 = none yet). See PullReachPolicy.h.

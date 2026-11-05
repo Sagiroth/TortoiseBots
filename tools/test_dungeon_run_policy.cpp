@@ -29013,7 +29013,8 @@ static void TestRefusedBossPullbackRetriesBodyPull()
     CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
     CHECK(r.approachStand == 2 && r.state == State::Running);
 
-    // A refused body pull is no retry either: straight to the approach's way out.
+    // A body pull refused for the firing position / path (unreachable) is no retry either:
+    // straight to the approach's way out.
     Run q = Start(&plan);
     q.restDue = false;
     Facts g = Party(0);
@@ -29021,9 +29022,48 @@ static void TestRefusedBossPullbackRetriesBodyPull()
     CHECK(FirstOrder(q, g) == "pullback 7");
     OrderRefused(q, "pullback 7", kFiringRefusal);
     CHECK(Tick(q, g) == "pull 7 body");
-    OrderRefused(q, "pull 7 body", "busy: the tank is pulling");
+    OrderRefused(q, "pull 7 body", "unreachable: the tank has no path to the target");
     CHECK(q.state == State::Running && q.approachStandWanted && q.bodyPullGuid == 0);
-    CHECK(q.note.find("cmd pull 7 body refused: busy: the tank is pulling") == 0);
+    CHECK(q.note.find("cmd pull 7 body refused: unreachable: the tank has no path to the target") == 0);
+}
+
+// Codex review t1105c round 2 (high): the body-pull retry treated EVERY refusal as an
+// unreachable target. A refusal that is no navigation failure (a busy tank, no tank, a pull
+// policy failure) says nothing of the target or the firing position: it takes the generic
+// pause, rewrites no pull counter and starts no stand search or deferral.
+static void TestRefusedBodyPullNotUnreachableTakesThePause()
+{
+    DungeonPlan plan;
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    for (const char* answer : {"tank-busy: the tank is pulling", "no-tank: no tank in the party",
+                               "pull-policy: The mature pullback strategy is unavailable."})
+    {
+        Run q = Start(&plan);
+        q.restDue = false;
+        Facts g = Party(0);
+        g.units = {Unit(7, 14517, 40)};
+        CHECK(FirstOrder(q, g) == "pullback 7");
+        OrderRefused(q, "pullback 7", kFiringRefusal);
+        CHECK(Tick(q, g) == "pull 7 body");
+        CHECK(q.pullTries[7] == 1 && q.phase == Phase::AwaitPull && q.pullGuid == 7);
+        OrderRefused(q, "pull 7 body", answer);
+        // The generic pause: no stand search, no deferral, the pull counters untouched.
+        CHECK(q.state == State::Paused);
+        CHECK(!q.approachStandWanted && q.approachStand == 0 && q.deferredPulls.empty());
+        CHECK(q.pullTries[7] == 1);
+        CHECK(!PullbackRefusedUnreachable(q, "pull 7 body", answer));
+    }
+    // The same for the ranged order's non-unreachable refusal (the existing gate).
+    Run q = Start(&plan);
+    q.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(q, g) == "pullback 7");
+    OrderRefused(q, "pullback 7", "tank-busy: the tank is pulling");
+    CHECK(q.state == State::Paused && !q.approachStandWanted && q.bodyPullGuid == 0);
 }
 
 // Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik's boss row carries the default
@@ -35221,6 +35261,7 @@ int main()
     TestStuckWalkThatIsNotTheHopStillPauses();
     TestRefusedFiringPositionSearchesAStandThenDefers();
     TestRefusedBossPullbackRetriesBodyPull();
+    TestRefusedBodyPullNotUnreachableTakesThePause();
     TestRefusedFiringPositionPullsFromTheStandThenDefers();
     TestRefusedFiringPositionAfterNoFiringStand();
     TestRefusedFiringPositionOfABossPausesAfterTheStandSearch();
