@@ -6,6 +6,7 @@
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace ai
@@ -17,9 +18,11 @@ namespace ai
     constexpr std::uint32_t kSeekForceMs = 15000;    // the burn is forced this long before due
     constexpr std::uint32_t kSeekGatherMaxMs = 8000; // a gather never waits longer than this
     constexpr float kSeekSpotYd = 8.0f;              // the source is "at B" within this
+    constexpr float kSeekFallbackYd = 35.0f;         // the seek's outer reach: a source beyond it is out of the fight
     constexpr float kSeekPickupYd = 60.0f;           // a source this near B may be pulled
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
+    constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
 
     // Cycle clock: the first sighting of the boss in combat with a victim starts it, and every accepted sighting of the
     // row's cycle spell on a group member restarts it. lastCycleMs 0 means no sighting yet.
@@ -58,6 +61,48 @@ namespace ai
         return keyOn && windowOpen && alive && !hasAura && !isBossVictim && !isExemptTank && !charmed;
     }
 
+    // A pet inside the siphon's radius is one full heal or damage tick of its own: the core reads the poison on every
+    // living unit, pets included. Hunters and warlocks dismiss theirs from this long before the due time until this
+    // long after it, and plainly while the siphon's dummy aura is on the bot. dueInMs is signed: negative once due.
+    constexpr int kSeekPetLeadMs = 5000;
+    constexpr int kSeekPetTailMs = 2000;
+
+    inline bool SeekPetMustLeave(int dueInMs, bool siphonActive)
+    {
+        return siphonActive || (dueInMs <= kSeekPetLeadMs && dueInMs >= -kSeekPetTailMs);
+    }
+
+    // A placement spell that leaves a totem behind: one more undosed unit to the siphon's hit, and its pulse outlives
+    // the cast. Every shaman totem spell is named "<element> totem" (the damage ones too), so the spell name decides.
+    inline bool SeekTotemSpell(const std::string& spell)
+    {
+        return spell.size() > 6 && spell.compare(spell.size() - 6, 6, " totem") == 0;
+    }
+
+    // When a class's pet has to be out of the fight: a hunter's pet only around the siphon (it waits in the current
+    // slot and is called back), a warlock's demon from the engage on — a new one costs a soul shard and a 10 s cast,
+    // so it is not resummoned once per siphon.
+    inline bool SeekClassPetMustLeave(bool warlock, int dueInMs, bool siphonActive)
+    {
+        return warlock || SeekPetMustLeave(dueInMs, siphonActive);
+    }
+
+    // A guardian a warlock's spell leaves behind (the Infernal of Inferno, a Doomguard): it fights for the whole
+    // window and is one more unit for the siphon's hit, so it is never summoned in the fight at all.
+    inline bool SeekGuardianSummonAction(const std::string& name)
+    {
+        return name == "summon inferno" || name == "inferno" || name == "summon doomguard";
+    }
+
+    // The class rotations' pet calls and demon summons: a pet is one more undosed unit to the same hit, and a
+    // warlock's new demon also costs a soul shard and a 10 s cast that would spend a whole siphon.
+    inline bool SeekPetCallAction(const std::string& name)
+    {
+        return name == "call pet" || name == "revive pet" || name == "initialize pet" || name == "summon imp" ||
+            name == "summon voidwalker" || name == "summon succubus" || name == "summon felhunter" ||
+            SeekGuardianSummonAction(name);
+    }
+
     // A cloud is the row's when its spell is the aura itself or the trigger spell of its effect.
     inline bool IsSoughtCloud(std::uint32_t dynSpellId, std::uint32_t effectTriggerSpell, std::uint32_t soughtAura)
     {
@@ -84,13 +129,62 @@ namespace ai
         return missing <= 0 || forceBurn || nowMs - gatherStartMs >= kSeekGatherMaxMs;
     }
 
-    // DPS may not damage a source outside the dose window at all; inside it they stop at the hold percent until the
-    // gather is ready, and the burn after readiness is not held again.
-    inline bool SeekSourceHeld(bool windowOpen, float hpPct, float holdPct, bool gatherReady)
+    // A source is a pick only while some seeker still misses the dose: once every group member carries the aura a
+    // kill buys nothing and spends a Son the next cycle needs. A Son that is not fighting is not a pick either: the
+    // gathered raid cannot make it come to the spot.
+    inline bool SeekSourceSelectable(bool inCombat, int seekers)
     {
-        if (!windowOpen)
+        return inCombat && seekers > 0;
+    }
+
+    // A source already at or below the hold percent and fighting the raid is the finishable pick: held until the next
+    // window, it reset and healed back to full.
+    inline bool SeekSourceFinishable(bool inCombat, float hpPct, float holdPct, int seekers)
+    {
+        return SeekSourceSelectable(inCombat, seekers) && hpPct <= holdPct;
+    }
+
+    // The same source inside the seek's reach of the row's spot: a Son farther out is never a kill pick (the gather
+    // cannot stand around it without leaving B, and a forced march would spend the window).
+    inline bool SeekFinishableInReach(bool inCombat, float hpPct, float holdPct, float distFromSpotYd, int seekers)
+    {
+        return SeekSourceFinishable(inCombat, hpPct, holdPct, seekers) && distFromSpotYd <= kSeekFallbackYd;
+    }
+
+    // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
+    // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
+    // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick
+    // spends the raid's only source for a later cycle, and a pick killed while the window is shut leaves the next
+    // siphon without its cloud (the poison lasts longer than the window). With no seeker left without the poison the
+    // raid is dosed: nothing is killed then, however the gather ran, until the siphon strips the aura again.
+    inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+        float holdPct, float distFromSpotYd, int seekers)
+    {
+        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
             return true;
-        return !gatherReady && hpPct <= holdPct;
+        if (seekers <= 0)
+            return true;
+        return hpPct <= holdPct && !gatherReady && !forceBurn;
+    }
+
+    // One living Son at an area action's point: how far it stands from the point (the action's target, or the bot when
+    // the action has none) and whether the hold rule holds it.
+    struct SeekAreaSon
+    {
+        float distToPointYd = 0.0f;
+        bool held = false;
+    };
+
+    // Whether an area action is held because any source inside its area is: an area cast aimed at the picked source
+    // also lands on a second, held Son standing beside it, and killing that one spends the raid's other source.
+    inline bool SeekAreaVeto(const std::vector<SeekAreaSon>& sons, float radiusYd)
+    {
+        for (const SeekAreaSon& son : sons)
+        {
+            if (son.distToPointYd <= radiusYd && son.held)
+                return true;
+        }
+        return false;
     }
 
     // The second off-tank pulls a new source while the window is open, no source is in the fight yet, enough seekers
@@ -99,6 +193,34 @@ namespace ai
     {
         return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
             nearestSourceToSpotYd <= kSeekPickupYd;
+    }
+
+    // A damage-over-time on a Son of the seek fight: a pure DoT (Corruption, Serpent Sting) and a channelled periodic
+    // cast (Mind Flay, Drain Life) tick through the hold percent and the shut window with no direct damage the
+    // rotation could stop, so they are held at any time; a spell that also lands direct damage (Fireball, Immolate,
+    // Moonfire) is a burst whose tail is acceptable on the Son the hold lets burn, and is held only while that Son is
+    // held (SeekHoldDecision). The caller supplies the spell's shape and the hold read.
+    inline bool SeekDotVeto(bool hasDirect, bool hasPeriodic, bool channelled, bool held)
+    {
+        if (!hasPeriodic)
+            return false;
+        return !hasDirect || channelled || held;
+    }
+
+    // The off-tank holding a source stops auto-attacking it once the window is shut and the Son stands at or below the
+    // hold percent plus a margin: its own swings would take the Son past the percent before the next window can spend
+    // it, and the Son is no longer being brought down anyway. The threat (and the taunt) stays; only the swings stop.
+    inline bool SeekTankSwingHeld(bool windowOpen, float hpPct, float holdPct)
+    {
+        return !windowOpen && hpPct <= holdPct + kSeekTankSwingMarginPct;
+    }
+
+    // The hold takes the tick only to stop a swing that is running on the held Son (bot->GetVictim() == son with
+    // UNIT_STAT_MELEE_ATTACKING, as the other melee holds read it): the engine runs one successful action a tick, so a
+    // hold that answered true on every tick left the tank's Shield Block, its shouts and its taunt no turn.
+    inline bool SeekTankHoldConsumesTick(bool swingingAtSon)
+    {
+        return swingingAtSon;
     }
 
     // The seek action takes this tick while it walks, and once more to stop a walk already under way. Standing at the
@@ -137,12 +259,25 @@ namespace ai
         return best;
     }
 
-    // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
-    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands).
-    constexpr float kSeekFallbackYd = 35.0f;
-
-    inline float SeekSourceSearchYd(bool thirdTank)
+    // The gather's latched source: the record's current one wins while its Son is alive inside the seek's reach (the
+    // caller checks that), whatever the current search radius or the damage between the two Sons; only a dead or
+    // out-of-reach Son repicks, and then the lowest health % (then lowest guid) of the search's sources.
+    inline std::uint64_t SeekLatchedGatherSource(bool latchInReach, std::uint64_t currentGuid,
+        const std::vector<SeekSourceChoice>& atSpot)
     {
+        if (latchInReach && currentGuid != 0)
+            return currentGuid;
+        return SeekKeepOrPickGatherSource(0, atSpot);
+    }
+
+    // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
+    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn or a source
+    // already at the hold percent reaches the fallback too, whatever the tank count: the off-spot Son has to die for
+    // its cloud, and waiting for a drag at the spot left it alive.
+    inline float SeekSourceSearchYd(bool thirdTank, bool forceBurn, bool belowHold)
+    {
+        if (forceBurn || belowHold)
+            return kSeekFallbackYd;
         return thirdTank ? kSeekSpotYd : kSeekFallbackYd;
     }
 

@@ -811,8 +811,8 @@ class HoldKillIsLogged(unittest.TestCase):
 
     def test_every_multiplier_zero_logs_its_veto(self):
         fn = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        # Six clauses and the seek_aura one, which logs its own veto kind ("seek").
-        self.assertEqual(fn.count("LogHoldKillVeto("), 7)
+        # Six clauses, the seek_aura one (which logs its own veto kind, "seek") and the seek DoT veto.
+        self.assertEqual(fn.count("LogHoldKillVeto("), 8)
         self.assertIn('const char* const veto = dpsAssist || tankAssist || singleTarget ? "assist"', fn)
         self.assertIn(': aoe || cleaveToggle ? "aoe"', fn)
         self.assertIn(': attackerDebuff ? "dot"', fn)
