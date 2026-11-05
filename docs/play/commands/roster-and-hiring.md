@@ -292,13 +292,14 @@ Opens a direct trading window with your targeted companion bot. Also available a
 
 ### `.bot order`
 
-Gives a guild bot an order to fetch items for real: it farms, buys or crafts them and brings them to the guild bank. One order per bot; a new order replaces the old one. Orders survive restarts, and an order on an offline bot runs when it comes back online (craft orders need the bot online: its recipes cannot be checked while it is offline, so those are refused with `norecipe`). Full guide: [Guild Orders](../guild-orders.md).
+Gives a guild bot an order to fetch items for real: it farms, buys or crafts them and brings them to the guild bank. One order per bot; a new order replaces the old one (except an unfinished enchant order of another giver: only that giver, the guild master, or a rank that may remove members replaces it; anyone else gets `busy`). Orders survive restarts, and an order on an offline bot runs when it comes back online (craft orders need the bot online: its recipes cannot be checked while it is offline, so those are refused with `norecipe`). Full guide: [Guild Orders](../guild-orders.md).
 
 ```text
 .bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel (cancelling a parent cancels its whole sub-order branch)
+.bot order <BotName> meet (enchant order: records a Meet press in the bot's capital)
 .bot order <BotName> preview <farm|craft> <item link or id> <amount>
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text> (the bot must be online to search)

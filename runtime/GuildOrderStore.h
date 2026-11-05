@@ -61,6 +61,20 @@ bool IsOrderProtectedItem(Player* bot, uint32_t itemId);
 // the stored keys already match, and clears the set for cancelled, finished
 // or absent orders. Only the finished set crosses the lock.
 void RefreshOrderProtectedSet(Player* bot);
+// A pending Meet press per bot, kept in memory only (a restart clears it,
+// and the giver presses Meet again). RequestMeet records the giver and the
+// world time; PendingMeet answers the stored giver (nullopt when none);
+// ClearMeet drops it. World thread only (the `.bot order` command and the
+// lead's lifecycle code).
+struct MeetRequest
+{
+    uint32_t giverGuidLow = 0;
+    uint32_t requestedMs = 0;
+};
+void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow);
+std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow);
+void ClearMeet(uint32_t botGuidLow);
+
 // A sub-order was placed or is already running: the giver becomes the
 // parent bot, the row goes live to the root giver. Called from a bot's
 // map-thread action; only the lock is touched there, the world thread does
