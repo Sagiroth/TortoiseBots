@@ -51,6 +51,14 @@ int main()
     // Healing is not a pick: the rule never gates a heal action, and a charmed member cannot be targeted by one
     // through the hostile cast paths anyway.
 
+    // A pet stands down for the whole charm, not only for the order that CanPetAttack already refuses: the core
+    // PetAI attacks back after the charmed member hits the owner or pet, and an attack already under way survives a
+    // refused order. Before this rule the pet kept swinging on the member (a swing is not lost to AttackStop).
+    CHECK(CharmedAllyParksPet(true, true));
+    CHECK(!CharmedAllyParksPet(false, true));
+    CHECK(!CharmedAllyParksPet(true, false));
+    CHECK(!CharmedAllyParksPet(false, false));
+
     std::cout << "All charm-yield policy tests passed.\n";
     return 0;
 }

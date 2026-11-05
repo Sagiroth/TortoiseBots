@@ -313,7 +313,8 @@ bool AttackAction::Attack(Player* requester, Unit* target, float maxDistance, bo
         Pet* pet = bot->GetPet();
         if (pet)
         {
-            if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+            // A charm hold owns the stance while a creature-charmed group member is up.
+            if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster() && !ai->IsCharmPetHoldActive())
             {
                 pet->SetReactState(REACT_DEFENSIVE);
             }

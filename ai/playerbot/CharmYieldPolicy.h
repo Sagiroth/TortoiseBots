@@ -36,6 +36,16 @@ namespace ai
         return keyOn && sameGroup && hasCharmer && !charmerIsPlayer;
     }
 
+    // Whether a pet stands down: while a creature is charming a group member, the pet cannot be trusted to stay off
+    // that member. The core's PetAI attacks back on its own when the charmed member hits the pet or its owner, and it
+    // keeps an attack it already started; refusing the PlayerbotAI's pet order is not enough, and the swing timer is
+    // not reset by AttackStop, so a per-tick stop alone would still let a swing through on every re-acquire. The pet
+    // (and the guardians) are therefore parked passive and their combat cleared for as long as such a member is up.
+    inline bool CharmedAllyParksPet(bool keyOn, bool charmedAllyUp)
+    {
+        return keyOn && charmedAllyUp;
+    }
+
     // Whether an area action stands down for the charmed member: its effect point (or the bot itself, for a
     // self-centred blast) lies within kCharmedAllyAreaYd of the member. `allyToPointYd` is only read for a
     // point-centred action and `allyToBotYd` only for a self-centred one.

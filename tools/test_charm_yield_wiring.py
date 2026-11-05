@@ -4,7 +4,8 @@ A bot a creature charms (Hakkar's Cause Insanity 24327) is hostile and still car
 charm handler gives a PlayerControlledAI to a player charmer only, so a creature charm leaves both AIs driving the same
 player. AiPlayerbot.DungeonRunCharmYield therefore makes the bot's AI yield entirely, stands down an area action that
 would land within 10 yd of a charmed group member and any harmful single-target action aimed at it, keeps every pick,
-attack order, interrupt and pet order off it, and lets the row's tank take the boss back (taunt_after_cast, mode
+attack order, interrupt and pet order off it, parks every pet and guardian passive with its combat cleared while such
+a member is up (the core's PetAI acquires targets on its own), and lets the row's tank take the boss back (taunt_after_cast, mode
 until_tank). The rules are pure in ai/playerbot/CharmYieldPolicy.h and ai/playerbot/BossTacticsPolicy.h
 (TauntAfterTankIndex, TauntAfterDue); their behaviour is tested in tools/test_charm_yield_policy.cpp and
 tools/test_boss_tactics_policy.cpp. These pins only prove the live code calls them, and that
@@ -39,6 +40,7 @@ INTERRUPT_VALUE = (ROOT / "ai/playerbot/strategy/values/InterruptTargetValue.cpp
 INTERRUPT_POLICY = (ROOT / "ai/playerbot/policy/combat/InterruptTargetPolicy.h").read_text()
 INTERRUPT_TEST = (ROOT / "tools/test_interrupt_target_policy.cpp").read_text()
 CAST_CUSTOM = (ROOT / "ai/playerbot/strategy/actions/CastCustomSpellAction.cpp").read_text()
+GENERIC_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericActions.cpp").read_text()
 
 # ServerFacade::IsCharmed byte for byte: its MANGOS branch counts player charmers only and other callers depend on it.
 CHARM_BODY = """        bool IsCharmed(Unit *unit)
@@ -75,6 +77,39 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertNotIn("StopMoving", block)
         self.assertNotIn("InterruptSpell", block)
         self.assertNotIn("DoNextAction", block)
+
+    def test_a_pet_stands_down_while_a_charmed_ally_is_up(self):
+        # The core's PetAI picks its own targets: a refusal in CanPetAttack neither stops the pet that reacts to the
+        # member on its own nor the attack it already had. The per-update hold parks the pet and guardians passive
+        # and clears their combat, before every engine and every early return in UpdateAI.
+        update = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)")
+        self.assertIn("UpdateCharmedAllyPetHold();", update)
+        self.assertLess(update.index("UpdateCharmedAllyPetHold();"), update.index("UpdateFaceTarget("))
+        hold = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::UpdateCharmedAllyPetHold()")
+        self.assertIn("CharmedAllyParksPet(sPlayerbotAIConfig.dungeonRunCharmYield, charmedAllyUp)", hold)
+        self.assertIn("for (Player* member : LiveGroupMembers(bot->GetGroup()))", hold)
+        self.assertIn("if (charmer.IsEmpty() || charmer.IsPlayer())", hold)
+        self.assertIn("member->GetMap() != bot->GetMap()", hold)
+        self.assertIn("pet->SetReactState(REACT_PASSIVE);", hold)
+        self.assertIn("pet->AttackStop();", hold)
+        self.assertIn("bot->CallForAllControlledUnits(ParkGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS)", hold)
+        self.assertIn("if (!creature || creature->IsTotem())", hold)
+        self.assertIn("creature->SetReactState(REACT_PASSIVE);", hold)
+        self.assertIn("creature->AttackStop();", hold)
+        # Only our own park is undone: the pull hold or the player owns a stance set meanwhile.
+        self.assertIn("pet->GetReactState() == REACT_PASSIVE", hold)
+        self.assertIn("pullHoldPetStance_ == kNoSavedStance", hold)
+        self.assertIn("pet->getObjectGuid() == charmHoldPetGuid_", hold)
+        # While the hold is up it owns the stance: no engine flips the parked pet back to defensive in the same tick.
+        self.assertIn("bool IsCharmPetHoldActive() const { return charmHoldActive_; }",
+                      (ROOT / "ai/playerbot/PlayerbotAI.h").read_text())
+        self.assertEqual(ATTACK_ACTION.count("&& !ai->IsCharmPetHoldActive()"), 1)
+        self.assertEqual(GENERIC_ACTIONS.count("&& !ai->IsCharmPetHoldActive()"), 1)
+        stance = body(GENERIC_ACTIONS, "bool SetPetStanceAction::Execute(Event& /*event*/)")
+        self.assertIn("if (ai->IsCharmPetHoldActive())", stance)
+        self.assertLess(stance.index("if (ai->IsCharmPetHoldActive())"), stance.index("pet->SetReactState(REACT_DEFENSIVE);"))
+        self.assertIn("CHECK(CharmedAllyParksPet(true, true));", CHARM_POLICY_TEST)
+        self.assertIn("CHECK(!CharmedAllyParksPet(false, true));", CHARM_POLICY_TEST)
 
     def test_success_facade_ischarmed_stays_player_only(self):
         start = SERVER_FACADE.index("        bool IsCharmed(Unit *unit)")

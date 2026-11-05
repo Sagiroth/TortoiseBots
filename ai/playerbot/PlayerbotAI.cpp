@@ -352,6 +352,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
 
+    // Before every engine and before any early return: a pet that reacted to the charmed member on its own, or kept
+    // an attack from before the charm, is stood down even while this bot's AI is throttled or yielding.
+    UpdateCharmedAllyPetHold();
+
     // Action log scope (AiPlayerbot.ActionLogScope = commanded): re-read at most
     // every 15 s per bot, here because the group, binding and hire lookups are
     // world-thread state. One branch while the log is off.
@@ -4715,6 +4719,97 @@ void PlayerbotAI::RestorePullHoldPet()
     if (pet->GetReactState() != REACT_PASSIVE)
         return;
     pet->SetReactState(stance);
+}
+
+void PlayerbotAI::UpdateCharmedAllyPetHold()
+{
+    if (!bot)
+        return;
+
+    bool charmedAllyUp = false;
+    if (sPlayerbotAIConfig.dungeonRunCharmYield && bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        {
+            if (!member || member == bot || !member->IsAlive() || !member->IsInWorld() ||
+                member->GetMap() != bot->GetMap())
+                continue;
+            ObjectGuid const charmer = member->GetCharmerGuid();
+            if (charmer.IsEmpty() || charmer.IsPlayer())
+                continue;
+            charmedAllyUp = true;
+            break;
+        }
+    }
+
+    if (!CharmedAllyParksPet(sPlayerbotAIConfig.dungeonRunCharmYield, charmedAllyUp))
+    {
+        if (!charmHoldActive_)
+            return;
+        charmHoldActive_ = false;
+
+        // Undo only our own park: a stance the pull hold or the player set meanwhile is not the charm's to touch.
+        if (charmHoldPetStance_ != kNoSavedStance)
+        {
+            Pet* pet = bot->GetPet();
+            if (pet && pet->getObjectGuid() == charmHoldPetGuid_ && pet->GetReactState() == REACT_PASSIVE &&
+                pullHoldPetStance_ == kNoSavedStance)
+                pet->SetReactState(static_cast<ReactStates>(charmHoldPetStance_));
+            charmHoldPetStance_ = kNoSavedStance;
+            charmHoldPetGuid_.Clear();
+        }
+
+        struct RestoreGuardian
+        {
+            std::map<ObjectGuid, int> const& saved;
+            void operator()(Unit* unit) const
+            {
+                Creature* creature = dynamic_cast<Creature*>(unit);
+                if (!creature || creature->IsTotem())
+                    return;
+                auto it = saved.find(creature->getObjectGuid());
+                if (it == saved.end() || creature->GetReactState() != REACT_PASSIVE)
+                    return;
+                creature->SetReactState(static_cast<ReactStates>(it->second));
+            }
+        };
+        bot->CallForAllControlledUnits(RestoreGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
+        charmHoldGuardianStances_.clear();
+        return;
+    }
+
+    charmHoldActive_ = true;
+
+    if (Pet* pet = bot->GetPet())
+    {
+        ObjectGuid const guid = pet->getObjectGuid();
+        if (pet->GetReactState() != REACT_PASSIVE && (charmHoldPetStance_ == kNoSavedStance || charmHoldPetGuid_ != guid))
+        {
+            charmHoldPetStance_ = static_cast<int>(pet->GetReactState());
+            charmHoldPetGuid_ = guid;
+        }
+        pet->SetReactState(REACT_PASSIVE);
+        // The stance keeps the core's PetAI from re-acquiring the member after this update; the stop takes the
+        // attack already under way now. Both are needed: AttackStop does not reset the strike timer.
+        pet->AttackStop();
+    }
+
+    struct ParkGuardian
+    {
+        std::map<ObjectGuid, int>& saved;
+        void operator()(Unit* unit) const
+        {
+            Creature* creature = dynamic_cast<Creature*>(unit);
+            if (!creature || creature->IsTotem())
+                return;
+            ObjectGuid const guid = creature->getObjectGuid();
+            if (creature->GetReactState() != REACT_PASSIVE && saved.find(guid) == saved.end())
+                saved[guid] = static_cast<int>(creature->GetReactState());
+            creature->SetReactState(REACT_PASSIVE);
+            creature->AttackStop();
+        }
+    };
+    bot->CallForAllControlledUnits(ParkGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
 }
 
 size_t PlayerbotAI::DropQueuedMovementOrders()

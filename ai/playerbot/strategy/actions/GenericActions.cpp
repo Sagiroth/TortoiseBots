@@ -713,6 +713,10 @@ bool SetPetStanceAction::Execute(Event& /*event*/)
     if (!pet)
         return false;
 
+    // The charm hold owns the stance while a creature-charmed group member is up: keep the pet parked.
+    if (ai->IsCharmPetHoldActive())
+        return true;
+
     pet->SetReactState(REACT_DEFENSIVE);
 
     struct ApplyStance
@@ -745,7 +749,7 @@ bool PetAttackAction::Execute(Event& event)
     if (!pet || !target)
         return false;
 
-    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
+    if (pet->GetReactState() == REACT_PASSIVE && !ai->GetMaster() && !ai->IsCharmPetHoldActive())
     {
         pet->SetReactState(REACT_DEFENSIVE);
     }
