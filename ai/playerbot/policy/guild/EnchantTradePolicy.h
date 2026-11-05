@@ -96,7 +96,7 @@ namespace ai
         return "notmaterial";
     }
 
-    struct ReagentNeed
+    struct EnchantReagentNeed
     {
         uint32_t itemId = 0;
         uint32_t stillNeeded = 0;
@@ -110,7 +110,7 @@ namespace ai
 
     struct MaterialsTradeState
     {
-        std::vector<ReagentNeed> allowed;
+        std::vector<EnchantReagentNeed> allowed;
         std::vector<OfferedStack> offered;
         uint32_t traderGold = 0;
     };
@@ -128,7 +128,7 @@ namespace ai
         for (OfferedStack const& stack : state.offered)
         {
             bool known = false;
-            for (ReagentNeed const& need : state.allowed)
+            for (EnchantReagentNeed const& need : state.allowed)
             {
                 if (need.itemId != 0 && need.itemId == stack.itemId)
                 {

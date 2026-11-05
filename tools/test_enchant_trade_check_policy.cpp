@@ -30,7 +30,7 @@ using ai::MaterialsTradeState;
 using ai::MaterialsTradeToken;
 using ai::MaterialsTradeVerdict;
 using ai::OfferedStack;
-using ai::ReagentNeed;
+using ai::EnchantReagentNeed;
 using ai::ReplaceAnswerIsYes;
 using ai::ReplaceWaitExpired;
 using ai::TradeTryAction;
@@ -53,7 +53,7 @@ static EnchantTradeState Enchant(bool giver, bool item, bool fits, bool enchante
     return state;
 }
 
-static MaterialsTradeState Materials(std::vector<ReagentNeed> const& allowed,
+static MaterialsTradeState Materials(std::vector<EnchantReagentNeed> const& allowed,
     std::vector<OfferedStack> const& offered, uint32_t gold = 0)
 {
     MaterialsTradeState state;
@@ -93,7 +93,7 @@ int main()
     std::cout << "  [PASS] bot-side window is out of scope\n";
 
     // 4. Materials trade: empty window and allowed reagents (even surplus) pass.
-    std::vector<ReagentNeed> needs = { { 12810, 2 }, { 11178, 1 } };
+    std::vector<EnchantReagentNeed> needs = { { 12810, 2 }, { 11178, 1 } };
     CHECK(CheckMaterialsTrade(Materials(needs, {})).verdict == MaterialsTradeVerdict::Accept);
     CHECK(CheckMaterialsTrade(Materials(needs, { { 12810, 3 } })).verdict == MaterialsTradeVerdict::Accept);
     CHECK(CheckMaterialsTrade(Materials(needs, { { 12810, 2 }, { 11178, 1 } })).verdict ==
