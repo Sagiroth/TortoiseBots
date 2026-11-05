@@ -16440,6 +16440,21 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+    // The timeline's boss: the plan's boss step, found among the engaged facts (a script-changed entry still matches
+    // through formOf); the first unit found is the fight's. A unit that reads another entry than the plan's is noted
+    // as the fight's phase here too, the same way the bound sampler does it (the run path never calls NoteFightBoss).
+    if (ctx.bossEntry)
+        for (DungeonRun::UnitFact const& u : facts.engagedUnits)
+        {
+            if (u.formOf == ctx.bossEntry && u.entry != ctx.bossEntry)
+                CombatMonitorService::Instance().NoteBossForm(binding.groupId, u.entry);
+            if (u.entry == ctx.bossEntry || u.formOf == ctx.bossEntry)
+            {
+                CombatMonitorService::Instance().NoteBossGuid(binding.groupId, u.guid);
+                break;
+            }
+        }
+    SampleFightTimeline(binding.groupId, lead);
 }
 
 // The fight's boss from data: world-boss rank, an instance-bind flag, or a
@@ -16483,7 +16498,26 @@ void NoteFightBoss(uint32 groupId, Player* anchor)
     int const picked = BoundFight::PickBoss(candidates);
     if (picked >= 0)
         CombatMonitorService::Instance().NoteBoss(groupId, candidates[picked].entry,
-            candidates[picked].name.c_str());
+            candidates[picked].name.c_str(), candidates[picked].guid);
+}
+
+// The boss timeline's sample: the boss unit's health and its current victim. The unit is resolved by guid, so a script
+// that changes the boss's entry mid-fight (Thekal) keeps the timeline on the same body.
+void SampleFightTimeline(uint32 groupId, Player* anchor)
+{
+    using namespace TortoiseBots;
+    CombatMonitorService& monitor = CombatMonitorService::Instance();
+    if (!monitor.TimelineEnabled() || !anchor)
+        return;
+    uint64_t const guid = monitor.BossGuid(groupId);
+    if (!guid)
+        return;
+    Unit* boss = ObjectAccessor::GetUnit(*anchor, ::ObjectGuid(guid));
+    if (!boss)
+        return;
+    Unit* victim = boss->GetVictim();
+    monitor.SampleTimeline(groupId, boss->IsAlive() ? boss->GetHealth() : 0, boss->GetMaxHealth(),
+        victim ? victim->GetGUIDLow() : 0, victim ? victim->GetName() : "", WorldTimer::getMSTime());
 }
 
 // The bound-group sampler (task R1): every standing binding whose run did not
@@ -16550,6 +16584,7 @@ static void SampleBoundFights(uint32 diff)
         if (!CombatMonitorService::Instance().InFight(binding->groupId))
             continue;
         NoteFightBoss(binding->groupId, lead);
+        SampleFightTimeline(binding->groupId, lead);
     }
     int64_t const us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started).count();

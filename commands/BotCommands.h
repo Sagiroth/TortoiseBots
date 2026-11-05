@@ -74,6 +74,9 @@ std::vector<CombatMonitor::MemberInfo> CombatMonitorMembersOf(std::vector<Player
 std::string BoundCommanderNameOfGroup(uint32_t groupId);
 bool GroupIsBound(uint32_t groupId);
 void NoteFightBoss(uint32_t groupId, Player* anchor);
+// The boss timeline's per-tick sample (AiPlayerbot.CombatTimeline): the fight boss's health and current victim. The
+// boss guid is the one NoteFightBoss picked (or the run's plan boss, NoteBossGuid); nothing when it is unknown.
+void SampleFightTimeline(uint32_t groupId, Player* anchor);
 // The G2 raid detail readers (ready facts, boss debuffs): the same per-bot reads the bound path does, shared so
 // CollectObservedRaids fills them at most every 5 s without duplicating the aura logic.
 void ReadRaidReadyFacts(Player* bot, CommanderTelemetry::BotExtra& extra, uint32_t nowMs);

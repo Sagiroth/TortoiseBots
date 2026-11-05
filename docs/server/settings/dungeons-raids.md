@@ -21,6 +21,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | :--- | :---: | :--- |
 | [`AiPlayerbot.AvoidCreatureAuras`](#aiplayerbotavoidcreatureauras) | `1` | Steers bots away from permanent damaging creature auras and hazardous monsters. |
 | [`AiPlayerbot.CombatMonitor`](#aiplayerbotcombatmonitor) | `0` | Per-fight combat numbers of every bound group for the observability dashboard (needs `AiPlayerbot.Observability`). |
+| [`AiPlayerbot.CombatTimeline`](#aiplayerbotcombattimeline) | `0` | The boss timeline in each fight record: health every 2 s, victim changes, watched auras (needs `AiPlayerbot.CombatMonitor`). |
 | [`AiPlayerbot.BombRunoutDistance`](#aiplayerbotbombrunoutdistance) | `30.0` | Distance in yards bomb debuff carriers run clear of the living group. |
 | [`AiPlayerbot.BotAreaTriggers`](#aiplayerbotbotareatriggers) | *(empty)* | Audited allowlist of scripted area triggers a bot party may fire (off when empty; opt in with `962`). |
 | [`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat) | `1` | A waiting group posts in LookingForGroup and invites a player who whispers "inv". |
@@ -121,6 +122,23 @@ Collects per-fight combat numbers of every bound group for the observability das
 - a player outside every bound group costs one atomic bit test (no lock); a member event takes the lock
 - past 500 distinct engaged creatures, the rest counts in `fight.dropped` (distinct guids; stops at 4096)
 - needs `AiPlayerbot.Observability`
+
+</details>
+
+### `AiPlayerbot.CombatTimeline`
+Adds the boss timeline to each finished fight record, so a fight can be replayed against the boss's health and its targets.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Needs `AiPlayerbot.CombatMonitor = 1` and `AiPlayerbot.Observability`. The fight record (the JSON behind the dashboard's fight detail and the `combat-fight-*.json` files a walk saves) gains three arrays, all times in ms since the fight's start:
+
+- `boss_hp`: `[t_ms, hp_pct, phase_entry]`, the fought boss's health each 2 s (one decimal) with the entry it reads then; at most 600 samples.
+- `victims`: `[t_ms, guid, name, role]`, one row per change of the boss's current victim; `guid` is the unit's low guid (the same value as a bot row's `guid`), and `role` is `tank`, `healer`, `dps`, or `none` for a player, a pet or nobody. At most 400 rows.
+- `auras`: `[t_ms, bot guid, spell id, 1/-1]`, an apply (`1`) or remove (`-1`) of a watched aura on a bot of the group. The watched spells are the rows of the world table `ai_combat_aura_watch` (one pass at startup), never spell ids in code. At most 1000 rows.
+
+Each cap drops the oldest row. Existing fields keep their place; a reader that does not know the arrays ignores them. A fight whose payload has to shrink drops the timeline before it shrinks below its other detail. The shipped rows are Zul'Gurub's Mark of Arlokk, Delusions of Jin'do, Banish, Poisonous Blood, Cause Insanity and Corrupted Blood; more auras are added with a migration.
 
 </details>
 

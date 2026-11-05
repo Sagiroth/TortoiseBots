@@ -2837,6 +2837,14 @@ AiPlayerbot.RaidBossDiagnostics = 0
 # 1 - on
 AiPlayerbot.CombatMonitor = 0
 
+# The boss timeline in every fight record (owner tool): the fought boss's health every 2 s with his entry (phase), each
+# change of his current victim (guid, name, that bot's role) and every apply/remove of a watched aura on our bots (the
+# spell ids of the world table ai_combat_aura_watch). Each array is capped (600 samples, 400 victim changes, 1000 aura
+# events, oldest dropped) and the timeline is left out of a payload that has to shrink. Needs AiPlayerbot.CombatMonitor.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.CombatTimeline = 0
+
 # Days of bot logs to keep. The live file is plain text; every hour and at server start it is packed into
 # <name>_<date>_<time>.csv.gz next to it (named after the time it was closed), and packs older than this
 # are deleted. 0 = never delete. Only files listed in AiPlayerbot.AllowedLogFiles above are written, so
