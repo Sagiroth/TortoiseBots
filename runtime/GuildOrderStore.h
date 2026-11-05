@@ -1,5 +1,6 @@
 #pragma once
 
+#include "runtime/GuildOrderDisenchantPolicy.h"
 #include "runtime/GuildOrderContract.h"
 #include "runtime/GuildOrderRelistPolicy.h"
 #include "runtime/GuildOrderStepHistoryPolicy.h"
@@ -74,6 +75,12 @@ struct MeetRequest
 void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow);
 std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow);
 void ClearMeet(uint32_t botGuidLow);
+// Disenchant drop-off window per bot (memory only, like the enchant trade
+// session): the whisper opens it, the trade intake consumes it. The window
+// reads its policy window from runtime/GuildOrderDisenchantPolicy.h.
+void NoteDisenchantDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs);
+void ClearDisenchantDropOff(uint32_t botGuidLow);
+std::optional<DisenchantDropOffWindow> PendingDisenchantDropOff(uint32_t botGuidLow);
 // Ends a meeting that did not enchant (giver idle or gone): starts the Meet cooldown.
 void ClearMeetFailed(uint32_t botGuidLow);
 // When the last failed meeting ended (world ms), 0 for none.

@@ -71,6 +71,11 @@ bool TradeStatusAction::Execute(Event& event)
     // this, a trader the gates approve gets the generic accept.
     if (HandleEnchantOrderTrade(event, trader))
         return true;
+    // Disenchant drop-off after the enchant hook, before the gates: only
+    // the member with an open window. The bot's own side always stays out:
+    // the intake refuses gold and non-traded items with a whisper.
+    if (HandleDisenchantDropOffTrade(event, trader))
+        return true;
 
     bool shouldTrade = true;
     if (!PlayerbotAIStorage::Instance().GetAI(trader))
@@ -982,5 +987,123 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             break;
         }
     }
+    return true;
+}
+bool TradeStatusAction::HandleDisenchantDropOffTrade(Event& event, Player* trader)
+{
+    (void)event;
+    if (!bot || !trader)
+        return false;
+    // Same-guild members only; bots without Enchanting never open one (the
+    // whisper hook already told them). Runs before the trade gates, so the
+    // member needs no group or master with the bot.
+    if (!bot->GetGuildId() || trader->GetGuildId() != bot->GetGuildId())
+        return false;
+    if (!ai->HasSkill(SKILL_ENCHANTING))
+        return false;
+    std::optional<TortoiseBots::GuildOrders::DisenchantDropOffWindow> window =
+        TortoiseBots::GuildOrders::PendingDisenchantDropOff(bot->GetGUIDLow());
+    if (!window || !TortoiseBots::GuildOrders::DisenchantDropOffOpen(
+            *window, trader->GetGUIDLow(), WorldTimer::getMSTime()))
+        return false;
+    bool open = bot->GetTradeData() != nullptr && trader->GetTradeData() != nullptr;
+    if (!open)
+        return false;
+    // The bot never puts anything of its own in: refuse outright when it did
+    // (an action or a macro placed something), like the mail path takes no
+    // gold and nothing of the bot's own. The window stays open either way:
+    // the member re-offers within the 2 minutes.
+    TradeData* ours = bot->GetTradeData();
+    bool botPlaced = ours->GetMoney() != 0 ||
+        trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) != nullptr;
+    for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT && !botPlaced; ++slot)
+        if (ours->GetItem(static_cast<TradeSlots>(slot)))
+            botPlaced = true;
+    if (botPlaced)
+    {
+        WorldPacket cancel;
+        uint32 cancelStatus = 0;
+        cancel << cancelStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
+        return true;
+    }
+    TortoiseBots::GuildOrders::DisenchantDropOffOffer offer;
+    for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
+        if (trader->GetTradeData()->GetItem(static_cast<TradeSlots>(slot)))
+            ++offer.itemCount;
+    offer.traderGold = trader->GetTradeData()->GetMoney() != 0;
+    uint32_t freeSlots = 0;
+    for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            ++freeSlots;
+    for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            if (pack->GetProto() && pack->GetProto()->SubClass == ITEM_SUBCLASS_CONTAINER)
+                freeSlots += pack->GetFreeSlots();
+    uint32_t waiting = 0;
+    for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
+        TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
+        if (!row.pendingResults)
+            ++waiting;
+    switch (TortoiseBots::GuildOrders::CheckDisenchantDropOff(offer, freeSlots, waiting))
+    {
+        case TortoiseBots::GuildOrders::DisenchantDropOffVerdict::HasGold:
+            ai->TellPlayerNoFacing(trader, "I take no gold for this.",
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            {
+                WorldPacket cancel;
+                uint32 cancelStatus = 0;
+                cancel << cancelStatus;
+                bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            }
+            return true;
+        case TortoiseBots::GuildOrders::DisenchantDropOffVerdict::Empty:
+            // Nothing offered yet: hold the window open, the member is still
+            // placing items. No verdict whisper, no cancel.
+            return true;
+        case TortoiseBots::GuildOrders::DisenchantDropOffVerdict::TooMany:
+            ai->TellPlayerNoFacing(trader,
+                TortoiseBots::GuildOrders::DisenchantDropOffRoomText(
+                    TortoiseBots::GuildOrders::DisenchantDropOffRoom(freeSlots, waiting)),
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            {
+                WorldPacket cancel;
+                uint32 cancelStatus = 0;
+                cancel << cancelStatus;
+                bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            }
+            return true;
+        case TortoiseBots::GuildOrders::DisenchantDropOffVerdict::Accept:
+            break;
+    }
+    if (!trader->GetTradeData()->IsAccepted())
+        return true;
+    // The member accepted: accept, and queue each offered item exactly like
+    // the mail intake (sender = the member). The accept hands the items to
+    // us under their trade guids, and the service works off its queue, so
+    // snapshot the live Item pointers first: a bag re-scan by entry could
+    // attach the row to our own older stack of the same item.
+    std::vector<std::pair<uint32_t, uint32_t>> offered;
+    for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
+        if (Item* item = trader->GetTradeData()->GetItem(static_cast<TradeSlots>(slot)))
+            if (item->GetProto())
+                offered.push_back({ item->GetGUIDLow(), item->GetEntry() });
+    WorldPacket accept;
+    uint32 acceptStatus = TRADE_STATUS_TRADE_ACCEPT;
+    accept << acceptStatus;
+    bot->GetSession()->HandleAcceptTradeOpcode(accept);
+    if (bot->GetTrader())
+        return true;
+    uint32_t senderLow = trader->GetGUIDLow();
+    for (std::pair<uint32_t, uint32_t> const& item : offered)
+    {
+        TortoiseBots::GuildOrders::DisenchantQueueEntry row;
+        row.botGuidLow = bot->GetGUIDLow();
+        row.senderGuidLow = senderLow;
+        row.itemGuidLow = item.first;
+        row.itemId = item.second;
+        TortoiseBots::GuildOrders::NoteDisenchantQueued(row);
+    }
+    TortoiseBots::GuildOrders::ClearDisenchantDropOff(bot->GetGUIDLow());
     return true;
 }
