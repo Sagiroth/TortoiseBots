@@ -6,6 +6,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "CheckMountStateAction.h"
+#include "../../../../runtime/GuildOrderDisenchantPolicy.h"
 
 using namespace ai;
 
@@ -767,8 +768,11 @@ bool DisenchantRandomItemAction::Execute(Event& event)
         }
 
         // Order stock is never disenchanted: the keep set already shields
-        // it from the usage list, this covers the id path.
+        // it from the usage list, this covers the id path. Queued service
+        // items wait for their own cast the same way.
         if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item))
+            continue;
+        if (bot->GetGuildId() && TortoiseBots::GuildOrders::DisenchantServiceHasItem(item))
             continue;
 
         ItemQualifier itemQualifier(item);
@@ -786,3 +790,90 @@ bool DisenchantRandomItemAction::Execute(Event& event)
 
     return false;
 };
+
+bool GuildDisenchantServiceAction::isUseful()
+{
+    if (!bot->GetGuildId())
+        return false;
+    bool hasWork = !TortoiseBots::GuildOrders::DisenchantServiceQueue().empty();
+    return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), bot->IsMoving(),
+        bot->IsMounted(), bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
+}
+
+// Mails one item back to its sender (the live bag stack: the intake moved it
+// there). No gold taken, nothing of the bot's own added; one item per mail
+// on the core side, the body naming the reason. False when the stack is
+// gone, so the stranded row drops instead of looping.
+namespace
+{
+bool MailServiceItemBack(Player* bot, uint32_t senderLow, Item* item, std::string const& subject,
+    std::string const& reason)
+{
+    if (!bot || !item)
+        return false;
+    Player* sender = sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, senderLow));
+    ObjectGuid receiverGuid = sender ? sender->getObjectGuid() : ObjectGuid(HIGHGUID_PLAYER, senderLow);
+    std::ostringstream body;
+    body << "Hello,\n\n";
+    if (reason.empty())
+        body << "Here are the materials from your disenchant request.\n\n";
+    else
+        body << "I could not disenchant this (" << item->GetProto()->Name1 << "): " << reason << ".\n\n";
+    body << bot->GetName() << '\n';
+    bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
+    item->DeleteFromInventoryDB();
+    item->SetOwnerGuid(receiverGuid);
+    if (item->GetState() != ITEM_NEW)
+        item->FSetState(ITEM_CHANGED);
+    item->SaveToDB();
+    MailDraft draft(subject, body.str());
+    draft.AddItem(item);
+    draft.SendMailTo(MailReceiver(sender, receiverGuid), MailSender(bot));
+    return true;
+}
+} // namespace
+
+bool GuildDisenchantServiceAction::Execute(Event& event)
+{
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    auto& queue = TortoiseBots::GuildOrders::DisenchantServiceQueue();
+    if (queue.empty())
+        return false;
+    TortoiseBots::GuildOrders::DisenchantServiceItem queued = queue.front();
+    queue.erase(queue.begin());
+    Item* item = bot->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, queued.itemGuidLow));
+    if (!item || item->GetEntry() != queued.itemId)
+        return false;
+    ItemPrototype const* proto = item->GetProto();
+    if (!proto)
+        return false;
+    // A bot without Enchanting mails everything back `noskill`: the member
+    // learns which bot to ask, and nothing of theirs is eaten.
+    if (!ai->HasSkill(SKILL_ENCHANTING))
+    {
+        MailServiceItemBack(bot, queued.senderLow, item, "Disenchant: noskill",
+            TortoiseBots::GuildOrders::DisenchantVerdictToken(
+                TortoiseBots::GuildOrders::DisenchantVerdict::NoSkill));
+        return true;
+    }
+    bool disenchantable = proto->DisenchantID != 0 &&
+        (proto->Class == ITEM_CLASS_WEAPON || proto->Class == ITEM_CLASS_ARMOR);
+    bool isEpic = proto->Quality >= ITEM_QUALITY_EPIC;
+    uint32_t skill = bot->GetSkillValue(SKILL_ENCHANTING);
+    TortoiseBots::GuildOrders::DisenchantVerdict verdict =
+        TortoiseBots::GuildOrders::ClassifyDisenchantItem(true, disenchantable,
+            proto->ItemLevel, proto->RequiredLevel, skill, isEpic);
+    if (verdict != TortoiseBots::GuildOrders::DisenchantVerdict::Ok)
+    {
+        std::string token = TortoiseBots::GuildOrders::DisenchantVerdictToken(verdict);
+        MailServiceItemBack(bot, queued.senderLow, item, "Disenchant: " + token, token);
+        return true;
+    }
+    ItemQualifier itemQualifier(queued.itemId);
+    Event disenchantEvent = Event("guild disenchant service", "13262 " + chat->formatQItem(queued.itemId));
+    bool didCast = CastCustomSpellAction::Execute(disenchantEvent);
+    if (didCast)
+        ai->TellPlayer(requester, "Disenchanting " + chat->formatItem(itemQualifier),
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+    return didCast;
+}

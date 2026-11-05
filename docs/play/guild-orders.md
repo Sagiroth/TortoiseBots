@@ -137,6 +137,13 @@ If the bot and other guild bots cannot get one of the materials, that item goes 
 - Bring items by trade, mail, or the guild bank. A guild bot takes member mail straight into its bags (a recipe in the bags gets learned) and returns mail from anyone else.
 - The order resumes when enough appears in its bags or mailbox, or in an accessible guild bank. The bank is re-checked about every 10 seconds. A shop or auction house re-check runs about every 10 minutes (a full ladder pass every third check). This wait counts toward neither the time nor the no-progress limit.
 
+## Disenchant by mail
+
+Mail items to a guild bot that has Enchanting with the subject `disenchant` and it breaks them down for you, no meeting needed.
+- The bot disenchants what its skill allows and mails the materials back; the rest comes back with a reason (`lowskill` when the item needs more skill, `cannot disenchant` for anything with no disenchant loot, `noskill` from a bot without Enchanting).
+- Mail from a guild member without that subject is taken into the bags as usual, never disenchanted.
+- Queued items are never sold, auctioned, equipped or used for anything else while they wait; the bot casts when it can (not in combat, moving or mounted) and mails every item back with no gold taken and nothing of its own added.
+
 ## Delivery
 
 When the amount is reached, the bot walks to a guild banker in a capital city and deposits into the guild bank.

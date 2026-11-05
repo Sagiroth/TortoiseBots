@@ -34,6 +34,13 @@ bool CheckMailAction::Execute(Event& event)
 
         if (IsGuildMail(mail, bot))
         {
+            // A guild member's `disenchant` mail queues for the service
+            // instead of the bags, shielded from every disposal path.
+            if (TortoiseBots::GuildOrders::IsDisenchantServiceSubject(mail->subject))
+            {
+                QueueDisenchantMail(mail);
+                continue;
+            }
             TakeGuildMail(mail);
             continue;
         }
@@ -168,6 +175,55 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
     CharacterDatabase.CommitTransaction();
 }
 
+// Takes a guild member's `disenchant` mail into the bags like guild mail,
+// but records every item on the service queue first, so the queued items
+// stay shielded from every disposal path and the service action knows whom
+// to mail back. Cash-on-delivery mail stays untouched like guild mail.
+void CheckMailAction::QueueDisenchantMail(Mail* mail)
+{
+    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+    if (!master || !CanTakeGuildMail(mail, master))
+        return;
+    bool moved = false;
+    while (!mail->items.empty())
+    {
+        uint32_t infoGuid = mail->items[0].item_guid;
+        Item* item = master->GetMItem(infoGuid);
+        if (!item)
+            break;
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        uint32_t itemId = item->GetEntry();
+        uint32_t itemGuidLow = item->GetGUIDLow();
+        uint32_t senderLow = mail->sender;
+        mail->RemoveItem(infoGuid);
+        mail->removedItems.push_back(infoGuid);
+        master->RemoveMItem(infoGuid);
+        item->SetState(ITEM_UNCHANGED);
+        bot->MoveItemToInventory(dest, item, true);
+        TortoiseBots::GuildOrders::QueueDisenchantServiceItem(senderLow, itemGuidLow, itemId);
+        moved = true;
+    }
+    if (!moved)
+        return;
+    Mail* current = master->GetMail(mail->messageID);
+    if (!current)
+        return;
+    if (current->items.empty() && current->money == 0)
+    {
+        CharacterDatabase.PExecute("DELETE FROM mail WHERE id = '%u'", mail->messageID);
+        CharacterDatabase.PExecute("DELETE FROM mail_items WHERE mail_id = '%u'", mail->messageID);
+        master->RemoveMail(mail->messageID);
+    }
+    else
+        current->state = MAIL_STATE_CHANGED;
+    master->MarkMailsUpdated();
+    CharacterDatabase.BeginTransaction(bot->GetGUIDLow());
+    bot->SaveInventoryAndGoldToDB();
+    master->SaveMails();
+    CharacterDatabase.CommitTransaction();
+}
 
 void CheckMailAction::ProcessMail(Mail* mail, Player* owner)
 {

@@ -3,6 +3,7 @@
 
 #include "playerbot/strategy/Action.h"
 #include "QuestAction.h"
+#include "../../../../runtime/GuildOrderDisenchantPolicy.h"
 
 class MasterPlayer;
 
@@ -33,5 +34,6 @@ namespace ai
         static bool IsGuildMail(Mail* mail, Player* bot);
         void TakeGuildMail(Mail* mail);
         bool CanTakeGuildMail(Mail* mail, MasterPlayer* master);
+        void QueueDisenchantMail(Mail* mail);
     };
 }

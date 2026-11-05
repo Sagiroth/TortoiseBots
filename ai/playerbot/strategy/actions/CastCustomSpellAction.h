@@ -69,6 +69,17 @@ namespace ai
         virtual bool Execute(Event& event) override;
     };
 
+    // Disenchants items queued from guild `disenchant` mail and mails every
+    // item back: the results, or the item with a reason. Only when idle (no
+    // combat, move, mount, cast, trader), one queued item per tick.
+    class GuildDisenchantServiceAction : public CastCustomSpellAction
+    {
+    public:
+        GuildDisenchantServiceAction(PlayerbotAI* ai) : CastCustomSpellAction(ai, "guild disenchant service") {}
+        virtual bool isUseful() override;
+        virtual bool Execute(Event& event) override;
+    };
+
     class EnchantRandomItemAction : public CastRandomSpellAction
     {
     public:
