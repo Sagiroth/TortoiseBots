@@ -13,6 +13,11 @@
 - A fast-respawning unit at its own spawn that hits nobody in the party (Jin'do's pit trolls) no longer holds a fight open or a regroup's gather spot; a unit that attacks the party is always fought (AiPlayerbot.DungeonRunRespawnNest, default on).
 - Jin'do in Zul'Gurub: when Banish throws the tank onto the pit's trolls, the off-tank takes the boss back instead of letting him chase the tank to the pit rim.
 - Fixed: warrior tanks use Charge/Intercept to start a pull and to rescue a healer, #1529.
+- Changed: the new Sap approach (AiPlayerbot.SapApproachAvoidPack), warrior Charge/Intercept (AiPlayerbot.WarriorGapCloser) and respawn-nest (AiPlayerbot.DungeonRunRespawnNest) keys now default to off, like every new key.
+- Fixed: a warrior no longer Charges a target the boss tactics hold damage on (Hakkar's opening hold) or a boss in a pullback or stand seat, and a tank holding a boss no longer leaves its stance to Intercept a Son off a healer.
+- Fixed: Jin'do's second Banish no longer hands the taunt window to the banished tank; while Hakkar's off-tanks are away on Sons the damage dealers are capped by the main tank again, not frozen at the off-tanks' leftover threat.
+- Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
+- taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
 ## v1.15.1 (2026-11-03)
 

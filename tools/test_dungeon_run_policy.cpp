@@ -27586,6 +27586,11 @@ static void TestTotemFocusMayInterrupt()
     CHECK(!TotemFocusTargetHostile(false, true, false));  // no unit guid, friendly selection
     CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, TotemFocusTargetHostile(true, false, false)));
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2050, false, true, TotemFocusTargetHostile(true, false, false)));
+    // A cast already aimed at the focused totem is not cut (a Fireball in flight at it); the same cast on another unit is.
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true, true));
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false, false, true, true));
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true, false));
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true));
 }
 
 // M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back

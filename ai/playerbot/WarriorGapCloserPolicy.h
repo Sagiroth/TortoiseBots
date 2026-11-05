@@ -46,6 +46,9 @@ namespace ai
         bool targetCrowdControlled = false;
         bool targetHeldCcMark = false; // a group CC mark the party leaves alone
         bool lineOfSight = true;
+        bool dpsHeld = false;          // the boss-tactics `dps hold` (IsDpsHeld) holds this bot off the target
+        bool bossPullbackOrStand = false; // the target is a boss-tactics boss in a pullback or in a stand seat: it is placed, not charged
+        bool tankHoldsBoss = false;    // the warrior is the victim of a boss-tactics boss or a rank 3 elite (rescue only)
         bool pullAllowed = true;       // WarriorGapCloserPullAllowed
         bool chargeKnown = false;
         bool chargeReady = false;
@@ -84,6 +87,12 @@ namespace ai
             return WarriorGapCloser::None;
         if (f.targetCrowdControlled || f.targetHeldCcMark)
             return WarriorGapCloser::None;
+        // The boss tactics' dps hold wins over a Charge into the held target.
+        if (f.dpsHeld)
+            return WarriorGapCloser::None;
+        // A boss the tactics pull back or seat the raid around is placed, not charged.
+        if (f.bossPullbackOrStand)
+            return WarriorGapCloser::None;
         if (!f.lineOfSight || !WarriorGapCloserInRange(f.combatDistance))
             return WarriorGapCloser::None;
 
@@ -95,8 +104,9 @@ namespace ai
         }
 
         // In combat only a tank closes in, and only to take a mob off a
-        // non-tank member; the rest of the fight walks.
-        if (f.isTank && f.rescue && f.interceptKnown && f.interceptReady &&
+        // non-tank member; the rest of the fight walks. A tank holding a boss
+        // stays in Defensive Stance on it: only a tank without one rescues.
+        if (f.isTank && f.rescue && !f.tankHoldsBoss && f.interceptKnown && f.interceptReady &&
             WarriorCanAffordIntercept(f.inBerserkerStance, f.rage, f.tmRank))
             return WarriorGapCloser::Intercept;
         return WarriorGapCloser::None;

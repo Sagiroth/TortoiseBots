@@ -5538,7 +5538,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
                 bool const ready = taunt && tankAi->CanCastSpell(taunt, unit);
                 available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);
-                canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);
+                canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready, victim == tank);
                 canTaunt[i] = TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,
                     tank && tank->GetSelectionGuid() == unit->GetObjectGuid(), victim == tank,
                     tank && tank->CanReachWithMeleeAutoAttack(unit));

@@ -212,6 +212,52 @@ int main()
     std::cout << "  [PASS] rescue picks the mob on the member, never the Sapped one\n";
 
 
+    // A DPS hold keeps the warrior off the target: Hakkar's opening hold must
+    // not be broken by a DPS warrior's Charge. With no hold nothing changes.
+    {
+        WarriorGapCloserFacts f = Base();
+        f.isTank = false;
+        CHECK(ChooseWarriorGapCloser(f) == WarriorGapCloser::Charge);
+        f.dpsHeld = true;
+        CHECK(ChooseWarriorGapCloser(f) == WarriorGapCloser::None);
+        WarriorGapCloserFacts tank = Base();
+        tank.dpsHeld = true;
+        CHECK(ChooseWarriorGapCloser(tank) == WarriorGapCloser::None);
+    }
+    std::cout << "  [PASS] a dps-held target is not charged\n";
+
+    // A boss in a pullback or a stand seat is placed by the boss tactics, not
+    // charged or intercepted.
+    {
+        WarriorGapCloserFacts f = Base();
+        f.bossPullbackOrStand = true;
+        CHECK(ChooseWarriorGapCloser(f) == WarriorGapCloser::None);
+        WarriorGapCloserFacts rescue = Base();
+        rescue.warriorInCombat = true;
+        rescue.rescue = true;
+        rescue.rage = 40;
+        CHECK(ChooseWarriorGapCloser(rescue) == WarriorGapCloser::Intercept);
+        rescue.bossPullbackOrStand = true;
+        CHECK(ChooseWarriorGapCloser(rescue) == WarriorGapCloser::None);
+    }
+    std::cout << "  [PASS] a boss in a pullback or stand seat is left alone\n";
+
+    // A tank that holds a boss does not leave Defensive Stance to Intercept a
+    // Son off a healer (Hakkar). A tank without a boss still rescues.
+    {
+        WarriorGapCloserFacts f = Base();
+        f.warriorInCombat = true;
+        f.rescue = true;
+        f.rage = 40;
+        CHECK(ChooseWarriorGapCloser(f) == WarriorGapCloser::Intercept);
+        f.tankHoldsBoss = true;
+        CHECK(ChooseWarriorGapCloser(f) == WarriorGapCloser::None);
+        // The pick falls through to the next candidate, none here.
+        std::vector<WarriorGapCloserFacts> c = { f };
+        CHECK(PickWarriorGapCloserTarget(c) == 1);
+    }
+    std::cout << "  [PASS] a tank holding a boss does not Intercept to rescue\n";
+
     std::cout << "All warrior gap closer policy checks PASSED!\n";
     return 0;
 }

@@ -25,10 +25,10 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
-| [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `1` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
+| [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `0` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
 | [`AiPlayerbot.WarlockRaidRotation`](#aiplayerbotwarlockraidrotation) | `0` | Stops warlock DoTs, curses and Drain Soul from wasting casts on targets that are about to die. |
-| [`AiPlayerbot.WarriorGapCloser`](#aiplayerbotwarriorgapcloser) | `1` | Warriors Charge to open a fight and tanks Intercept to rescue a party member, swapping stance for it. |
+| [`AiPlayerbot.WarriorGapCloser`](#aiplayerbotwarriorgapcloser) | `0` | Warriors Charge to open a fight and tanks Intercept to rescue a party member, swapping stance for it. |
 
 ## Settings
 
@@ -97,7 +97,7 @@ Vanish is prioritized below Feint so a ready Feint is always attempted first. Wh
 
 ### `AiPlayerbot.SapApproachAvoidPack`
 Makes a rogue that Saps its crowd control mark before the pull approach from the side away from the mob's pack-mates instead of walking straight through them.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -146,7 +146,7 @@ Manual curse strategies a player turns on (`.bot strategy +curse …`) are playe
 
 ### `AiPlayerbot.WarriorGapCloser`
 Lets warriors close distance with *Charge* and *Intercept*, swapping stance for it, instead of walking in.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>

@@ -315,7 +315,8 @@ class SeekRolesWiring(unittest.TestCase):
         # tanks[1] stalling on a Son stalls the cap reference: the row names what the first off-tank is fighting.
         values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
         self.assertIn("offtank_target=%s", values)
-        self.assertIn("roles.tanks[1]->GetVictim()", values)
+        self.assertIn("offTankPlayer && offTankPlayer->IsInWorld() ? offTankPlayer->GetVictim() : nullptr", values)
+        self.assertIn("offTankVictim && offTankVictim->IsInWorld() ? offTankVictim : nullptr", values)
         self.assertIn("LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);", values)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):

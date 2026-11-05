@@ -3,7 +3,8 @@
 // The threat reference a damage dealer's threat percentage is measured against (ThreatValue::GetTankThreat): the
 // highest tank's threat. On a boss whose tactic data asks for a successor (ai_boss_tactic kind `threat_successor`,
 // Hakkar) the second tank has to stay second so the boss turns to it on a threat reset: there the reference is the
-// highest threat among the assigned off-tanks on the target, as soon as that is above a tiny absolute floor. The
+// highest threat among the assigned off-tanks on the target, as soon as that is above a tiny absolute floor while an
+// off-tank holds the boss (while none does, the old half share of the main tank's threat). The
 // trigger is data, never the creature's taunt immunity: most raid bosses in this world data are taunt-immune and must
 // keep the highest tank, or a zero reference would read as "the tank has no threat" and veto every damage action.
 // Tested in tools/test_threat_cap_policy.cpp; the caller resolves the raid's tank order into plain numbers, so this
@@ -21,6 +22,7 @@ namespace ai
     {
         float threat = 0.0f;
         bool offTank = false;
+        bool onBoss = false; // the boss is this tank's victim (it holds the boss right now)
     };
 
     // The off-tank floor, as an absolute amount rather than a share of the highest tank's threat: the reference is
@@ -31,6 +33,11 @@ namespace ai
     // threat just deleted) from capping the damage dealers at almost nothing.
     constexpr float kThreatCapOffTankMinShare = 0.01f;
     constexpr float kThreatCapOffTankMinThreat = 100.0f;
+
+    // The floor while no assigned off-tank has the boss as its victim (Hakkar's off-tanks are away on Sons): their
+    // threat is only what an earlier hold left, and a floor that low would freeze the damage dealers while the main
+    // tank holds the boss, so the old share of the highest tank's threat applies.
+    constexpr float kThreatCapOffTankAwayShare = 0.5f;
 
     // The reference and which kind of tank it is: `offTank` is the `threat_successor` cap standing on an assigned
     // off-tank, false when the highest tank is the reference.
@@ -57,15 +64,21 @@ namespace ai
         if (!successorCap)
             return pick;
         bool haveOffTank = false;
+        bool offTankOnBoss = false;
         float offTank = 0.0f;
         for (const ThreatCapTank& tank : tanks)
         {
+            if (tank.offTank && tank.onBoss)
+                offTankOnBoss = true;
             if (!tank.offTank || tank.threat <= 0.0f)
                 continue;
             offTank = haveOffTank ? std::max(offTank, tank.threat) : tank.threat;
             haveOffTank = true;
         }
-        const float floor = std::max(highest * kThreatCapOffTankMinShare, kThreatCapOffTankMinThreat);
+        // An off-tank on the boss is the successor and the absolute floor applies; with every off-tank away the main
+        // tank's reference stands unless one still stands above the old half share.
+        const float floor = offTankOnBoss ? std::max(highest * kThreatCapOffTankMinShare, kThreatCapOffTankMinThreat)
+                                          : highest * kThreatCapOffTankAwayShare;
         if (!haveOffTank || offTank <= floor)
             return pick;
         pick.threat = offTank;

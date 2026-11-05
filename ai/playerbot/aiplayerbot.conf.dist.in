@@ -906,10 +906,10 @@ AiPlayerbot.RogueDungeonThreatDrops = 1
 # each pack-mate's stealth detection range (plus the range in which it turns
 # to look, plus a margin), going round the pack if it must. Without Stealth up
 # it waits. If no such spot and path exist the rogue skips that Sap for 30
-# seconds and the tank pulls. On by default.
-# 0 - walk straight to the rogue's side of the mob (old behaviour)
-# 1 - approach around the pack, skip the Sap when no safe route exists (Default)
-AiPlayerbot.SapApproachAvoidPack = 1
+# seconds and the tank pulls. Off by default.
+# 0 - walk straight to the rogue's side of the mob (old behaviour) (Default)
+# 1 - approach around the pack, skip the Sap when no safe route exists
+AiPlayerbot.SapApproachAvoidPack = 0
 
 # Warrior gap closers.
 # Out of combat a warrior (tank or dps) whose target is 8-25 yards away and in
@@ -921,12 +921,12 @@ AiPlayerbot.SapApproachAvoidPack = 1
 # 8-25 yards away when the rage left after the stance swap (Tactical Mastery)
 # pays for it, then swaps back to Defensive Stance and taunts; with too little
 # rage it runs in. Inside a dungeon or raid an unengaged mob is only charged
-# when it is the target of a melee pull order or an attack order. On by
+# when it is the target of a melee pull order or an attack order. Off by
 # default; with 0 only the old rows remain (Charge only from the stance the
 # warrior is already in, as the walk in closes).
-# 0 - no stance swap for Charge or Intercept
-# 1 - Charge to open, tank Intercept to rescue a party member (Default)
-AiPlayerbot.WarriorGapCloser = 1
+# 0 - no stance swap for Charge or Intercept (Default)
+# 1 - Charge to open, tank Intercept to rescue a party member
+AiPlayerbot.WarriorGapCloser = 0
 
 # Hunter Aspect of the Viper on low mana.
 # A hunter that has learned Aspect of the Viper (Turtle 1.18.1 spell 45651,
@@ -1017,9 +1017,9 @@ AiPlayerbot.DungeonRunAuraTactics = 0
 AiPlayerbot.DungeonRunAuraGatedTargets = 0
 
 # Respawn nests: a unit that comes back within a minute and stands at its spawn point (Jin'do's Sacrificed Trolls) and hits nobody in the party does not hold a fight open, and a regroup never gathers on one. A unit that attacks the party is always a real fight and a guard target; the plan's own boss, hold and pull units are never a nest.
-# 0 - off
-# 1 - on (Default)
-AiPlayerbot.DungeonRunRespawnNest = 1
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.DungeonRunRespawnNest = 0
 
 # The kill_first candidates come from a grid search of the row's entries within 40 yd too, not only from each bot's attackers list (which "focus rti targets" collapses to the raid mark).
 AiPlayerbot.DungeonRunKillFirstGrid = 0

@@ -169,11 +169,15 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         ObjectGuid const charmer = player->GetCharmerGuid();
         if (!charmer.IsEmpty() && !charmer.IsPlayer())
             continue;
-        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1});
+        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
+            player->GetVictim() == target});
     }
 
     const ThreatCapPick pick = ThreatCapPickReference(tanks, true);
-    Unit* const offTankTarget = roles.tanks.size() >= 2 && roles.tanks[1] ? roles.tanks[1]->GetVictim() : nullptr;
+    // roles.tanks[1] can be dead or out of the world: read its victim only when it stands in the world.
+    Player* const offTankPlayer = roles.tanks.size() >= 2 ? roles.tanks[1] : nullptr;
+    Unit* const offTankVictim = offTankPlayer && offTankPlayer->IsInWorld() ? offTankPlayer->GetVictim() : nullptr;
+    Unit* const offTankTarget = offTankVictim && offTankVictim->IsInWorld() ? offTankVictim : nullptr;
     LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);
     return pick.threat;
 }

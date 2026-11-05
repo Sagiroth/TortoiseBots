@@ -23,8 +23,11 @@
 // tick, and writes JSONL fixtures rather than live log lines, so it is not the
 // path used here.
 //
-// Threading: every entry point is the world thread (the AI update, the command
-// queue and the world hook all are). One trace per server at a time.
+// Threading: Start, Stop and Update run on the world thread (the command queue
+// and the world hook). The engine tick entry points (DoNextAction, TickScope)
+// run on map threads, and they are safe without a lock because the world
+// thread never runs while the maps tick, and only the traced bot writes the
+// trace state from its own tick. One trace per server at a time.
 
 #include "WhyTracePolicy.h"
 

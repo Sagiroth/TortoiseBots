@@ -3049,8 +3049,8 @@ static bool TotemFocusResurrects(SpellEntry const* info)
 
 // Cuts one current spell slot by the totem focus' rule (TotemFocusMayInterrupt): only a generic cast or a channel, only
 // an offensive cast on a hostile target, and only a spell the fight does not need. A delayed generic spell is left
-// alone, as InterruptNonMeleeSpells left it.
-static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
+// alone, as InterruptNonMeleeSpells left it. A cast whose unit guid is already the focus' target guid is left alone too.
+static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot, ObjectGuid focusGuid)
 {
     TortoiseBots::DungeonRun::TotemFocusSpell kind;
     if (slot == CURRENT_GENERIC_SPELL)
@@ -3078,7 +3078,8 @@ static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
     if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
             TotemFocusResurrects(spell->m_spellInfo), spell->m_spellInfo->IsPositiveSpell(),
             TortoiseBots::DungeonRun::TotemFocusTargetHostile(!castGuid.IsEmpty(), target != nullptr,
-                target && bot->IsHostileTo(target))))
+                target && bot->IsHostileTo(target)),
+            !castGuid.IsEmpty() && castGuid == focusGuid))
         return;
     bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
 }
@@ -3088,8 +3089,8 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
     ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
     // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
     // and the hearthstone are never cut (TotemFocusMayInterrupt).
-    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL);
-    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL);
+    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL, targetGuid);
+    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL, targetGuid);
     selectionOwner->SetSelectionGuid(targetGuid);
     bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
     if (attacked)

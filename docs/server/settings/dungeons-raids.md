@@ -34,7 +34,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
-| [`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `1` | `1`: a fight held only by fast-respawning units at their spawn, none hitting the party, is no fight; a regroup never gathers on one. |
+| [`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `0` | `1`: a fight held only by fast-respawning units at their spawn, none hitting the party, is no fight; a regroup never gathers on one. |
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
 | [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
@@ -342,7 +342,7 @@ Leaves a unit a `needs_aura` boss-tactic row gates to the bots that carry the ro
 
 ### `AiPlayerbot.DungeonRunRespawnNest`
 Keeps the run leader out of fights that only a fast-respawning spawn holds open.
-**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>

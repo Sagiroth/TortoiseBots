@@ -3,6 +3,9 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/TargetValue.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossTacticsStand.h"
 
 #include <algorithm>
 #include <vector>
@@ -18,6 +21,40 @@ namespace
             return true;
         PullStrategy const* pull = PullStrategy::Get(ai);
         return pull && pull->IsCommandActive() && !pull->CommandWantsRanged() && pull->GetTarget() == target;
+    }
+
+    // A boss as the boss tactics and the threat rules define it: a creature with boss-tactics rows on this map, or a
+    // rank 3 (world boss) elite.
+    bool IsBossUnit(Unit* unit)
+    {
+        Creature* creature = unit ? dynamic_cast<Creature*>(unit) : nullptr;
+        if (!creature)
+            return false;
+        return creature->IsWorldBoss() || GetBossTactics().Rows(creature->GetMapId(), creature->GetEntry()) != nullptr;
+    }
+
+    // The tank is the victim of a boss among the fight's attackers (it holds one).
+    bool TankHoldsBoss(PlayerbotAI* ai, Player* bot)
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+        {
+            Unit* attacker = ai->GetUnit(guid);
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == bot && IsBossUnit(attacker))
+                return true;
+        }
+        return false;
+    }
+
+    // The target is a boss the tactics place the raid around: a pullback of it is running, or the bot has a stand seat.
+    bool BossPullbackOrStand(PlayerbotAI* ai, Player* bot, Unit* target)
+    {
+        if (!IsBossUnit(target))
+            return false;
+        PullStrategy const* pull = PullStrategy::Get(ai);
+        if (pull && pull->IsCommandActive() && pull->IsCommandPullback() && pull->GetTarget() == target)
+            return true;
+        return FindBossStand(ai, bot).valid;
     }
 }
 
@@ -49,6 +86,8 @@ WarriorGapCloser ai::DecideWarriorGapCloser(PlayerbotAI* ai, Unit** chosen)
     unsigned const tmRank = TacticalMasteryRank(bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_1),
         bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_2), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_3),
         bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_4), bot->HasSpell(WARRIOR_TACTICAL_MASTERY_RANK_5));
+    // Only a tank rescue in combat reads it; computed once, after the cheap exits.
+    bool const tankHoldsBoss = inCombat && isTank && rescueTarget && TankHoldsBoss(ai, bot);
     Map* map = bot->GetMap();
     bool const inInstance = map && (map->IsDungeon() || map->IsRaid());
 
@@ -74,6 +113,9 @@ WarriorGapCloser ai::DecideWarriorGapCloser(PlayerbotAI* ai, Unit** chosen)
         f.targetCrowdControlled = FindNonCcTargetStrategy::IsCrowdControlled(ai, unit);
         f.targetHeldCcMark = ccGuard.IsHeldCcMark(unit);
         f.lineOfSight = bot->IsWithinLOSInMap(unit, true);
+        f.dpsHeld = IsDpsHeld(ai, bot, unit);
+        f.bossPullbackOrStand = BossPullbackOrStand(ai, bot, unit);
+        f.tankHoldsBoss = tankHoldsBoss;
         f.pullAllowed = WarriorGapCloserPullAllowed(unit->IsInCombat(), inInstance, OrderedMeleePullOf(ai, unit));
         f.chargeKnown = chargeId != 0;
         f.chargeReady = chargeId && sServerFacade.IsSpellReady(bot, chargeId);

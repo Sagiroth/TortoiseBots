@@ -49,11 +49,11 @@ class RaidConfigWiringTest(unittest.TestCase):
         # live by default; the glue feeds Facts::respawnNest and reads whether an engaged unit hits the party.
         keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
         self.assertIn(
-            'dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", true);', keys)
-        self.assertIn("bool dungeonRunRespawnNest = true;", HEADER)
-        self.assertIn("AiPlayerbot.DungeonRunRespawnNest = 1", TEMPLATE)
+            'dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", false);', keys)
+        self.assertIn("bool dungeonRunRespawnNest = false;", HEADER)
+        self.assertIn("AiPlayerbot.DungeonRunRespawnNest = 0", TEMPLATE)
         self.assertIn("### `AiPlayerbot.DungeonRunRespawnNest`", SETTINGS)
-        self.assertIn("[`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `1`", SETTINGS)
+        self.assertIn("[`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `0`", SETTINGS)
         code = strip_comments(COMMANDER)
         self.assertIn("f.respawnNest = sPlayerbotAIConfig.dungeonRunRespawnNest;", code)
         self.assertIn("if (f.respawnNest && slot.run.regroup", code)
