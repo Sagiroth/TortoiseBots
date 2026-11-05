@@ -38,14 +38,14 @@ int main()
         CHECK(!SeekWindowOpen(87001, due, 80000));
     }
 
-    // SeekWindowStaysOpenWhenOverdue: once the due time passes with no 24324 sighting (walk 40 missed two, leaving
-    // 184-185 s gaps) the window stays open until the sighting restarts the clock, instead of shutting at due - 3 s
-    // and leaving the Son held at the spot with the siphon undosed. The last three seconds before due stay shut.
+    // SeekWindowStaysOpenWhenOverdue: the raw window does not shut at due - 3 s when the 24324 is not seen (walk 40
+    // missed two, leaving 184-185 s gaps); it is open past the due time, and the caller's overdue read
+    // (SeekRolledDueMs) decides how long. The last three seconds before due stay shut.
     {
         const std::uint32_t due = 90000;
         CHECK(!SeekWindowOpen(87001, due, 80000));
         CHECK(SeekWindowOpen(90000, due, 80000));   // due with no sighting: open
-        CHECK(SeekWindowOpen(184000, due, 80000));  // a 184 s missed-sighting gap: still open
+        CHECK(SeekWindowOpen(184000, due, 80000));  // still open on the raw due: the caller rolls it
         CHECK(SeekForceBurn(184000, due));
         // The sighting moves the due time a cycle ahead: the window shuts and waits for the next one.
         CHECK(!SeekWindowOpen(184000, 274000, 80000));
@@ -54,23 +54,24 @@ int main()
     }
 
     // SeekWindowShutsAfterTheOverdueGrace: a due time nobody saw the siphon for is stale, and the window must not stay
-    // open for the rest of the fight (the quiet group stood at the spot and the Son was held there). The overdue part
-    // is due + kSeekOverdueGraceMs at most; past it the estimate rolls forward one cycle at a time, and the window
-    // shuts until the rolled cycle's own window.
+    // open for the rest of the fight (the quiet group stood at the spot and the Son was held there). Hakkar's row is a
+    // 90 s cycle with an 80 s window, so the grace has to stay under the 10 s between the roll and the rolled window:
+    // the window stays open up to due + 8 s, the estimate then rolls one cycle (due += 90 s) and the window is shut
+    // from due + 8 s until due_new - 80 s = due + 10 s, where the rolled cycle's own window opens.
     {
         const std::uint32_t due = 90000;
-        CHECK(kSeekOverdueGraceMs == 45000);
-        CHECK(SeekRolledDueMs(134000, due, 90000) == due);         // still the overdue grace
-        CHECK(SeekRolledDueMs(135000, due, 90000) == due);         // due + 45 s, inclusive
-        CHECK(SeekRolledDueMs(135001, due, 90000) == due + 90000); // rolled one cycle (due += 90 s)
-        CHECK(SeekRolledDueMs(135001, due, 90000) != due);         // not the stale due
-        // A cycle longer than the lead and the grace: the rolled due shuts the window until its own lead.
-        const std::uint32_t rolled = SeekRolledDueMs(135001, due, 300000);
-        CHECK(rolled == due + 300000);
-        CHECK(!SeekWindowOpen(135001, rolled, 80000));             // shut right after the grace
-        CHECK(!SeekWindowOpen(rolled - 80001, rolled, 80000));     // still shut before the next window
-        CHECK(SeekWindowOpen(rolled - 80000, rolled, 80000));      // the rolled cycle's window opens
-        CHECK(!SeekForceBurn(135001, rolled));                     // and the burn waits for it
+        const std::uint32_t cycle = 90000;
+        const std::uint32_t lead = 80000;
+        CHECK(kSeekOverdueGraceMs == 8000);
+        CHECK(SeekRolledDueMs(due + 7999, due, cycle) == due);   // still the overdue grace
+        CHECK(SeekRolledDueMs(due + 8000, due, cycle) == due);   // due + 8 s, inclusive
+        CHECK(SeekRolledDueMs(due + 8001, due, cycle) == due + cycle); // rolled one cycle (due += 90 s)
+        const std::uint32_t rolled = SeekRolledDueMs(due + 8001, due, cycle);
+        CHECK(rolled != due);                                   // not the stale due
+        CHECK(!SeekWindowOpen(due + 8001, rolled, lead));       // shut right after the roll
+        CHECK(!SeekWindowOpen(rolled - lead - 1, rolled, lead)); // due + 9.999 s: still shut
+        CHECK(SeekWindowOpen(rolled - lead, rolled, lead));     // due + 10 s: the rolled window opens
+        CHECK(!SeekForceBurn(due + 8001, rolled));              // and the burn waits for it
         CHECK(SeekForceBurn(rolled - 15000, rolled));
         // A clock that is never sighted keeps rolling: a 94 s overdue gap is due + one cycle, a 184 s one two cycles.
         CHECK(SeekRolledDueMs(184000, due, 90000) == 180000);

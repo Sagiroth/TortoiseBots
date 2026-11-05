@@ -61,7 +61,9 @@ namespace ai
     // How long the window stays overdue after a due time nobody saw the siphon for. Past it the due time is stale and
     // the estimate rolls forward (SeekRolledDueMs), so the window does not stay open for the rest of the fight: it
     // shuts until the rolled cycle's own window, and the forced burn follows the rolled due instead of firing forever.
-    constexpr std::uint32_t kSeekOverdueGraceMs = 45000;
+    // It has to stay below cycle - lead or the roll would land inside a window already open: Hakkar's 90 s cycle with
+    // an 80 s lead leaves 10 s, and 8 s shuts the window for the 2 s before the rolled one opens at due + 90 - 80.
+    constexpr std::uint32_t kSeekOverdueGraceMs = 8000;
 
     // The due time a fight reads: unchanged until the overdue grace runs out, then rolled one cycle at a time until it
     // is current again (due += cycle). A clock that is never sighted ends with the due time just ahead of now, so the
