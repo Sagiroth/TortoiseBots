@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <cstring>
 #include <iomanip>
+#include <utility>
 
 #include "Engine.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -10,6 +11,7 @@
 #include "playerbot/BotActionLog.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "../../../runtime/ObservabilityEmitter.h"
+#include "../../../runtime/WhyTrace.h"
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
@@ -309,6 +311,21 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     aiObjectContext->GetValue<bool>("manual bool", "force rebuff buff pending")->Set(false);
     ProcessTriggers(minimal);
     PushDefaultActions();
+
+    // `.bot why`: the tick's candidate set, taken before the loop so the work
+    // the loop pushes itself (continuers, prerequisite requeues) is not
+    // reported as an action that lost.
+    if (TortoiseBots::WhyTraceService::Instance().Traces(ai))
+    {
+        std::vector<PendingAction> pending;
+        queue.Snapshot(pending, 64);
+        std::vector<std::pair<std::string, float>> snapshot;
+        snapshot.reserve(pending.size());
+        for (PendingAction const& entry : pending)
+            snapshot.emplace_back(entry.name, entry.relevance);
+        TortoiseBots::WhyTraceService::Instance().NoteTickStart(
+            ai->GetBot()->GetObjectGuid().GetRawValue(), snapshot);
+    }
 
     std::vector<Action*> modifiedActions;
     // Actions a multiplier VETOED (factor 0) in this tick. modifiedActions above exempts an
