@@ -110,7 +110,10 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
             mounts.InitMounts();
     }
 
-    if (freeLearn && sPlayerbotAIConfig.autoLearnQuestSpells)
+    // Player alts (own-account and autonomous alt bots) get only the class-quest
+    // spells, and only when the owner opts in; everything else stays pool-only.
+    if ((freeLearn && sPlayerbotAIConfig.autoLearnQuestSpells) ||
+        (!freeLearn && sPlayerbotAIConfig.autoLearnQuestSpellsAlts))
         LearnQuestSpells(out);
 
     if (freeLearn && sPlayerbotAIConfig.autoLearnTrainerSpells)

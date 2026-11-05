@@ -109,8 +109,10 @@ class CharmYieldWiring(unittest.TestCase):
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
         self.assertIn("TauntAfterTankPick(usable, canTaunt, wanted)", ACTIONS)
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs,", ACTIONS)
+        self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", ACTIONS)
         self.assertIn("deadlineMs, victimIsAssigned);", ACTIONS)
+        # A subject the game makes immune to taunts opens no episode: the tank keeps the attack and the taunt.
+        self.assertIn("bool tauntable,", POLICY)
         # Only until_tank is implemented; blink and the spell triggers stay parsed and ignored.
         self.assertIn("row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank", ACTIONS)
         self.assertIn("bool BossTacticsTauntAfterTrigger::IsActive()", TRIGGERS)
@@ -118,6 +120,22 @@ class CharmYieldWiring(unittest.TestCase):
         # The class taunt set of the 1.12 cores, the Gluth pattern.
         self.assertIn('return "taunt";', ACTIONS)
         self.assertIn('return "growl";', ACTIONS)
+
+    def test_the_taunt_immune_skip_is_logged_once_per_fight(self):
+        # A taunt-immune subject opens no episode, so before this the row looked applied while the game refused every
+        # taunt (walk 40: 108 TauntAfter rows, taunted=0). The scan now says why, once per fight per subject and row.
+        scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
+        self.assertIn('sLog.outString("taunt_after skipped: target taunt-immune (map %u, entry %u)",', scan)
+        self.assertIn("const bool tauntable = !TargetTauntImmune(unit);", scan)
+        self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", scan)
+        self.assertLess(scan.index("if (!tauntable)"), scan.index("TauntEpisodeTick(tauntable"))
+        # Once per fight: the report lives in its own map keyed like the episode (no bot in the key, so the other
+        # tanks' scans of the same subject stay quiet), it is kept alive while the fight reads it, and it is pruned
+        # with the episodes when the subject leaves the fight.
+        self.assertIn("std::map<TauntAfterKey, std::uint32_t> g_tauntAfterImmune;", ACTIONS)
+        self.assertIn("auto const reported = g_tauntAfterImmune.find(key);", scan)
+        self.assertIn("if (reported == g_tauntAfterImmune.end())", scan)
+        self.assertIn("g_tauntAfterImmune.erase(it)", ACTIONS)
 
     def test_taunt_after_log_row(self):
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntAfter", info1, info2);', ACTIONS)
@@ -127,7 +145,7 @@ class CharmYieldWiring(unittest.TestCase):
         # retarget never hands the off-tank a second full window.
         scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
         # The episode's transitions are the pure machine's; a tank having the subject back ends it early.
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs,", scan)
+        self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", scan)
         self.assertIn("TauntEpisodeStep::Regained", scan)
         self.assertIn("state = TauntAfterEpisode();", scan)
         # One tank holds a window while its deadline runs (the pick is not re-read mid-window), and only one tank

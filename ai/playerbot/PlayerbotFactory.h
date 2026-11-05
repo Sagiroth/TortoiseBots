@@ -1,10 +1,13 @@
 #pragma once
 
+#include <functional>
+
 #include "../../runtime/PlayerbotAIStorage.h"
 
 #include <vector>
 
 class Player;
+class Pet;
 class ChatHandler;
 class Item;
 struct ItemPrototype;
@@ -168,6 +171,14 @@ public:
     // (the hire path, issue #1043: one pet save per hire, not three racing).
     void InitPet(bool saveToDb = true);
     void InitPetSpells();
+    // AiPlayerbot.PetAutoTrain (pool bots and hires) / PetAutoTrainAlts
+    // (the player's alts): whether the module trains this bot's pet.
+    static bool PetAutoTrainAllowed(Player* bot);
+    // Hunter pet: the family's best build within its training points and 4
+    // active slots. Pool pets are rebuilt to the plan; an alt's pet keeps
+    // what its player taught and only gains or ranks up. With apply=false it
+    // only answers whether anything would change.
+    static bool TrainHunterPet(Player* bot, Pet* pet, bool apply, std::function<bool(uint32)> const& autocastDefault);
 
 private:
     void Shuffle(std::vector<uint32>& items);

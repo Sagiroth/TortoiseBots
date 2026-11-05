@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
@@ -68,15 +69,18 @@ float ThreatMultiplier::GetValue(Action* action)
     {
         // In a commanded party a mob already hitting the healer or a damage
         // bot is off the tank: backing off it leaves it there
-        // (RemoteCommander::CommandedBackoffYields).
+        // (RemoteCommander::CommandedBackoffYields). On a taunt-immune target
+        // the back-off is never yielded: the tank cannot take it back, so the
+        // damage has to stop for the tanks' threat to pass the member.
         Unit* target = AI_VALUE(Unit*, "current target");
         Unit* victim = target ? target->GetVictim() : nullptr;
         Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
         bool const hitsMember = victimPlayer && bot->GetGroup() && bot->GetGroup()->IsMember(victimPlayer->GetObjectGuid());
         if (hitsMember && TortoiseBots::RemoteCommander::CommandedBackoffYields(
-                TortoiseBots::BotCommands::IsInCommandedGroup(bot), true, PlayerbotAI::IsTank(victimPlayer)))
+                TortoiseBots::BotCommands::IsInCommandedGroup(bot), true, PlayerbotAI::IsTank(victimPlayer),
+                TargetTauntImmune(target)))
             return 1.0f;
-        return 0.0;
+        return 0.0f;
     }
 
     return 1.0f;

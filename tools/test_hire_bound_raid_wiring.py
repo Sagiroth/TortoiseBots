@@ -45,6 +45,32 @@ class HireBoundRaidWiringTest(unittest.TestCase):
         self.assertIn("seatFacts.boundRaidSeatsTaken = boundRaid.members + MusteringOutsideBoundRaid(m_pending, requester);", hire)
         self.assertIn("HireSeatVerdict::RaidFull ? HireStatus::GroupFull : HireStatus::CapReached", hire)
 
+    def test_limit_refusal_retries_another_account(self):
+        create = body(HIRE_SRC, "bool HireProvisionService::CreateCandidate(", "bool HireProvisionService::EnsureGrouped(")
+        eligible = create.index("HireAccountHasRoom(")
+        cache = create.index("sObjectMgr.GetPlayerDataForAccount(")
+        team = create.index("Player::TeamForRace(c->uiRace)")
+        retry = create.index("HireCreateRetryable(")
+        full = create.index("fullAccounts.insert(chosenAccount)")
+        skip = create.index("if (fullAccounts.count(id))")
+        outer = create.index("for (uint32_t limitAttempt")
+        detail = create.index("hire account %u full at create")
+        hint = create.index("m_raidAccountHint = 0;")
+        self.assertLess(eligible, retry)
+        self.assertLess(cache, retry)
+        self.assertLess(team, retry)
+        # selection skips refused accounts, then the refusal records them: all inside the retry loop
+        self.assertLess(outer, skip)
+        self.assertLess(skip, retry)
+        self.assertLess(retry, full)
+        self.assertLess(retry, detail)
+        self.assertLess(retry, hint)
+        # the refusal abandons this account and retries the outer loop, it never fails the hire here
+        tail = create[retry:]
+        self.assertLess(tail.index("break;"), tail.index("return false;", tail.index("hire CreateCharacter %s")))
+        # no departing credit: the core counts a dismissed hire's row until it is deleted
+        self.assertNotIn("departing", create)
+
     def test_hire_raid_plans_forty_for_the_bound_commander_only(self):
         raid = body(HIRE_SRC, "HireRaidOutcome HireProvisionService::HireRaid(", "void HireProvisionService::StepRaidJobs(")
         self.assertIn("HireMaxCompanions(sPlayerbotAIConfig.hireMaxBotsPerPlayer, intoBoundRaid)", raid)

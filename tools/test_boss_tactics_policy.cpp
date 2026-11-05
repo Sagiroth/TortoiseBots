@@ -2310,22 +2310,22 @@ int main()
         // The window's state machine: the rising edge opens it, a tank has it back as regained and the episode ends,
         // and at the deadline the run-out is reported once while the next window opens at once.
         {
-            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, 0, 10000, false);
+            TauntEpisodeRead edge = TauntEpisodeTick(true, true, false, false, 0, 10000, false);
             CHECK(edge.starts && edge.open && !edge.missed && edge.step == TauntEpisodeStep::Due);
-            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, 5000, 10000, false);
+            TauntEpisodeRead due = TauntEpisodeTick(true, true, false, true, 5000, 10000, false);
             CHECK(!due.starts && due.open && !due.missed && due.step == TauntEpisodeStep::Due);
             // The assigned tank has it back: the episode ends, the next charm starts clean.
-            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, 5000, 10000, true);
+            TauntEpisodeRead assigned = TauntEpisodeTick(true, false, true, true, 5000, 10000, true);
             CHECK(!assigned.open && assigned.step == TauntEpisodeStep::Regained);
             // The deadline instant is still the old window's taunt; only the next millisecond reports the run-out
             // and opens the new window.
-            TauntEpisodeRead last = TauntEpisodeTick(true, false, true, 10000, 10000, false);
+            TauntEpisodeRead last = TauntEpisodeTick(true, true, false, true, 10000, 10000, false);
             CHECK(!last.starts && last.open && !last.missed && last.step == TauntEpisodeStep::Due);
-            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, 10001, 10000, false);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, true, false, true, 10001, 10000, false);
             CHECK(miss.starts && miss.open && miss.missed && miss.step == TauntEpisodeStep::Due);
-            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, 4000, 10000, false);
+            TauntEpisodeRead regained = TauntEpisodeTick(true, false, true, true, 4000, 10000, false);
             CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open);
-            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, 4000, 10000, false);
+            TauntEpisodeRead between = TauntEpisodeTick(true, false, false, true, 4000, 10000, false);
             CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
         }
 
@@ -2347,7 +2347,7 @@ int main()
                 int const assigned = (opening || !usable[holderSlot])
                     ? TauntAfterTankPick(usable, canTaunt, wanted)
                     : holderSlot;
-                TauntEpisodeRead const out = TauntEpisodeTick(true, false, open, sinceMs, 10000, false);
+                TauntEpisodeRead const out = TauntEpisodeTick(true, true, false, open, sinceMs, 10000, false);
                 if (out.starts)
                 {
                     startMs = now;
@@ -2376,7 +2376,7 @@ int main()
             for (std::uint32_t now = 0; now < 40000; now += 1000)
             {
                 std::uint32_t const since = open ? now - startMs : 0;
-                TauntEpisodeRead const read = TauntEpisodeTick(true, false, open, since, 10000, false);
+                TauntEpisodeRead const read = TauntEpisodeTick(true, true, false, open, since, 10000, false);
                 if (read.starts)
                 {
                     ++windows;
@@ -2470,7 +2470,7 @@ int main()
                         int const assigned = (opening || !holderUsable)
                             ? TauntAfterTankPick(usable, canTaunt, wanted) : holderSlot;
                         TauntEpisodeRead const read =
-                            TauntEpisodeTick(!victimIsTank, victimIsTank, open, sinceMs, 10000, false);
+                            TauntEpisodeTick(true, !victimIsTank, victimIsTank, open, sinceMs, 10000, false);
                         if (read.missed)
                             ++missedRows;
                         if (read.starts)
@@ -2493,6 +2493,18 @@ int main()
             CHECK(missedRows == 2);  // 10 s and 20 s: one row for each window that ran out, not one per tank
             CHECK(regainedRows == 1); // 25 s: one row, from the single writer
             CHECK(acts == 250);      // every tick up to the regained 25 s has exactly one acting tank
+
+        // TauntAfterImmuneSubjectIsIgnored: a subject the core makes immune to taunts (Hakkar: creature_template 14834
+        // immunity_flags 6 keeps CREATURE_IMMUNITY_TAUNT) can never be taken back, so the row opens no episode there
+        // and the tank spends no attack or GCD on it (walk 40: 108 TauntAfter rows, taunted=0).
+        {
+            TauntEpisodeRead immune = TauntEpisodeTick(false, true, false, false, 0, 10000, false);
+            CHECK(!immune.starts && !immune.open && immune.step == TauntEpisodeStep::None);
+            TauntEpisodeRead immuneOpen = TauntEpisodeTick(false, true, false, true, 1000, 10000, false);
+            CHECK(!immuneOpen.starts && !immuneOpen.open && immuneOpen.step == TauntEpisodeStep::None);
+            CHECK(TauntEpisodeTick(false, false, true, true, 1000, 10000, true).step ==
+                  TauntEpisodeStep::None);
+        }
         }
 
         // The widest live spread row wins, never narrower than the fallback.
@@ -2635,6 +2647,47 @@ int main()
             CHECK(Near(table.RangedOnlyGap(509, 15369), 8.0f));   // RangedOnlyGapFromTheBossRow
             CHECK(Near(table.RangedOnlyGap(509, 15934), 12.0f));  // RangedOnlyGapFromAnEntryRow
             CHECK(Near(table.RangedOnlyGap(531, 15369), 0.0f));
+        }
+    }
+
+    // T4 threat_successor: the boss itself (target_entry 0), no mode word and no gate. The row turns the damage
+    // dealers' threat cap into the assigned off-tanks' highest (ThreatCapPolicy.h) and is read straight from the table
+    // by ThreatValue::GetTankThreat, so a gate could never be answered.
+    CHECK(ParseBossTacticKind("threat_successor") == BossTacticKind::ThreatSuccessor); // ParseThreatSuccessorKind
+    CHECK(static_cast<int>(BossTacticKind::ThreatSuccessor) == 22);
+    {
+        BossTacticRow cap = Row(309, 14834, BossTacticKind::ThreatSuccessor);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(cap));                        // ThreatSuccessorRowAccepted
+        }
+        {
+            BossTacticRow entryTarget = cap;
+            entryTarget.targetEntry = 11357;
+            BossTacticTable table;
+            CHECK(!table.Add(entryTarget));               // ThreatSuccessorRowRefusedWithTarget
+        }
+        {
+            BossTacticRow withMode = cap;
+            withMode.mode = TacticMode::UntilTank;
+            BossTacticTable table;
+            CHECK(!table.Add(withMode));                  // ThreatSuccessorRowRefusedWithMode
+        }
+        {
+            BossTacticRow withBand = cap;
+            withBand.hpMin = 50;
+            BossTacticTable table;
+            CHECK(!table.Add(withBand));                  // ThreatSuccessorRowRefusedWithGate
+        }
+        // The reference reads the row by the target's own map and entry, never by the row's boss.
+        {
+            BossTacticTable table;
+            CHECK(!table.HasThreatSuccessor(309, 14834)); // not sealed yet
+            CHECK(table.Add(cap));
+            table.Seal();
+            CHECK(table.HasThreatSuccessor(309, 14834));  // ThreatSuccessorByEntry
+            CHECK(!table.HasThreatSuccessor(309, 11357));
+            CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
         }
     }
 
