@@ -22,6 +22,14 @@ using namespace TortoiseBots::GuildOrders;
 namespace
 {
 // True while the bags still hold one cast's reagents: the enchant was not paid yet.
+bool HoldsAnyEnchantReagent(Player* bot, uint32_t spellId)
+{
+    for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(spellId))
+        if (bot->GetItemCount(reagent.itemId))
+            return true;
+    return false;
+}
+
 bool GiverShareHeld(Player* bot, OrderRecord const& order)
 {
     for (NeedItem const& given : order.given)
@@ -111,7 +119,8 @@ bool GuildEnchantOrderAction::isUseful()
     // A cancelled enchant still holding the giver's materials: mail them
     // back now, without waiting for the bank walk.
     if (order->cancelled)
-        return order->type == OrderType::Enchant && GiverShareHeld(bot, *order);
+        return order->type == OrderType::Enchant &&
+            (GiverShareHeld(bot, *order) || !HoldsAnyEnchantReagent(bot, order->itemId));
     if (order->type != OrderType::Enchant || IsFinished(order->state))
         return false;
     // Working/Waiting rows gather on the ladder; the action only owns the
@@ -133,12 +142,18 @@ bool GuildEnchantOrderAction::Execute(Event& event)
         return false;
     if (stored->cancelled)
     {
-        if (stored->type != OrderType::Enchant || !GiverShareHeld(bot, *stored))
+        if (stored->type != OrderType::Enchant)
             return false;
-        std::vector<std::pair<uint32_t, uint32_t>> reagents;
-        for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(stored->itemId))
-            reagents.push_back({ reagent.itemId, 0 });
-        ReturnEnchantSurplus(bot, reagents);
+        if (GiverShareHeld(bot, *stored))
+        {
+            std::vector<std::pair<uint32_t, uint32_t>> reagents;
+            for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(stored->itemId))
+                reagents.push_back({ reagent.itemId, 0 });
+            ReturnEnchantSurplus(bot, reagents);
+        }
+        // Nothing left for the guild bank either: the cancel is finished.
+        if (!HoldsAnyEnchantReagent(bot, stored->itemId))
+            FinishEnchantDeposit(bot->GetGUIDLow());
         return true;
     }
     if (stored->type != OrderType::Enchant || IsFinished(stored->state))
