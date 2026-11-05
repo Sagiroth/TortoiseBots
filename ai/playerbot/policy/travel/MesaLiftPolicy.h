@@ -186,12 +186,12 @@ namespace ai
 
     // Freewind NPCs stand at z 89-90, the needles floor below at z -60..-45.
     // Thunder Bluff NPCs stand at z 120-170, the Mulgore ground around it and
-    // the lower lift stations at z 69 and below. Undercity creatures stand at
+    // the lower lift stations at z 69 and below. Undercity creatures stand at x 1246-1814, y 20-479,
     // z -85..-23 under the Ruins of Lordaeron (z 55-69).
     inline constexpr Mesa kMesas[] = {
         { 1, -5430.0f, -2450.0f, 150.0f, 60.0f, false, kFreewindLifts, 1 },
         { 1, -1200.0f, 50.0f, 350.0f, 85.0f, false, kThunderBluffLifts, 2 },
-        { 0, 1530.0f, 250.0f, 320.0f, -15.0f, true, kUndercityLifts, 3 },
+        { 0, 1530.0f, 250.0f, 400.0f, -15.0f, true, kUndercityLifts, 3 },
     };
 
     inline bool InMesa(Mesa const& mesa, uint32_t mapId, float x, float y, float z)

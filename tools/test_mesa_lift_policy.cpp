@@ -127,6 +127,8 @@ int main()
     CHECK(MesaLiftFor(0, 1567.2f, 240.6f, 57.6f, 0, 0, 2260.0f, 290.0f, 34.0f, 0).dir == MesaLiftDir::None);
     // Brill to the city: to the lift as well.
     CHECK(MesaLiftFor(0, 2260.0f, 290.0f, 34.0f, 0, 0, 1542.4f, 255.2f, -56.8f, 0).dir == MesaLiftDir::Down);
+    // A city corner (live: a bot went up for a goal at 1780 44 -61): walk.
+    CHECK(MesaLiftFor(0, 1609.7f, 187.2f, -56.8f, 0, 0, 1780.0f, 44.0f, -61.0f, 0).dir == MesaLiftDir::None);
     // The ruins courtyard outside the throne room: down.
     CHECK(MesaLiftFor(0, 1700.0f, 240.0f, 62.0f, 0, 0, 1542.4f, 255.2f, -56.8f, 0).dir == MesaLiftDir::Down);
 
