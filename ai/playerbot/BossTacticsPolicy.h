@@ -1980,10 +1980,11 @@ namespace ai
     }
 
     // The tank of one until_tank window: the first usable tank at or after `priority` that can taunt the subject right
-    // now (in melee, targeting it, and not its victim) counts before one that cannot, wrapping to the front; else the
-    // first usable tank, which walks in and takes the next window. It is read once per window, when the window opens
-    // or its tank can no longer take the taunt, so one tank holds the window while its deadline runs. -1 when no tank
-    // is usable.
+    // now (TauntAfterTankCanTaunt) counts before one that cannot, wrapping to the front; else the first usable tank,
+    // which walks in and takes the next window. It is read once per window, when the window opens or its tank can no
+    // longer take the taunt, so one tank holds the window while its deadline runs; `priority` is one past the previous
+    // holder for a window whose taunt was cast and failed, so a resisted taunt hands the next one to another tank. -1
+    // when no tank is usable.
     inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt, int wanted)
     {
         int const count = static_cast<int>(usable.size());
@@ -1996,6 +1997,48 @@ namespace ai
                 return index;
         }
         return TauntAfterTankIndex(usable, wanted);
+    }
+
+    // Whether a tank can take a taunt back right now: in control (a stun, a fear, a confuse or a charm means no cast),
+    // not silenced or pacified, its taunt known and castable (off cooldown, in range, its stance), in melee of the
+    // subject, with it as its target, and not its victim.
+    inline bool TauntAfterTankCanTaunt(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
+        bool targetingSubject, bool isVictim, bool inMelee)
+    {
+        return inControl && !silencedOrPacified && hasTaunt && tauntReady && targetingSubject && !isVictim && inMelee;
+    }
+
+    // The slot of `guid` in the raid order, -1 when it is no tank of it any more: a window's holder is kept by guid,
+    // since a slot stored from one bot's order can name a different tank after the order changed.
+    inline int TankSlotOf(const std::vector<std::uint64_t>& guids, std::uint64_t guid)
+    {
+        if (guid == 0)
+            return -1;
+        for (std::size_t i = 0; i < guids.size(); ++i)
+        {
+            if (guids[i] == guid)
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    // The one tank that advances a window's shared state: its holder while that tank can still take the taunt, else the
+    // first usable tank at or after `wanted` (TauntAfterTankIndex). -1 when no tank is usable.
+    inline int TauntWindowOwner(const std::vector<bool>& usable, int holder, int wanted)
+    {
+        if (holder >= 0 && holder < static_cast<int>(usable.size()) && usable[holder])
+            return holder;
+        return TauntAfterTankIndex(usable, wanted);
+    }
+
+    // Whether one tank's read is the window's single writer: the owner's own read, or any read once the owner has not
+    // advanced the state for `silentMs` (it stands out of the fight's scan, so its window would never end).
+    inline bool TauntWindowAdvance(int owner, int reader, std::uint32_t nowMs, std::uint32_t advancedMs,
+        std::uint32_t silentMs)
+    {
+        if (owner >= 0 && owner == reader)
+            return true;
+        return nowMs - advancedMs >= silentMs;
     }
 
     // The taunt_after_cast deadline: `triggered` is a window that is open, `sinceMs` how long ago it opened and

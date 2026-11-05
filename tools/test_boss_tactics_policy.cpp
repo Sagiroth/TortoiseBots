@@ -2359,6 +2359,102 @@ int main()
         CHECK(TauntAfterTankPick({}, {}, 0) == -1);
         CHECK(TauntAfterTankPick({true}, {true}, -1) == -1);
 
+        // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
+        // cooldown cannot take the subject back now: it is skipped for a tank that can.
+        CHECK(TauntAfterTankCanTaunt(true, false, true, true, true, false, true));
+        CHECK(!TauntAfterTankCanTaunt(false, false, true, true, true, false, true)); // stunned, feared, confused or hexed
+        CHECK(!TauntAfterTankCanTaunt(true, true, true, true, true, false, true));   // silenced or pacified
+        CHECK(!TauntAfterTankCanTaunt(true, false, false, true, true, false, true)); // no taunt known
+        CHECK(!TauntAfterTankCanTaunt(true, false, true, false, true, false, true)); // the taunt is on cooldown
+        CHECK(!TauntAfterTankCanTaunt(true, false, true, true, false, false, true)); // not on the subject
+        CHECK(!TauntAfterTankCanTaunt(true, false, true, true, true, true, true));   // its victim: no taunt needed
+        CHECK(!TauntAfterTankCanTaunt(true, false, true, true, true, false, false)); // out of melee
+        {
+            // Jin'do: the hexed main tank and the silenced off-tank are skipped, the third takes the window; its taunt
+            // is resisted, so the next window starts one past it (wrapping) instead of hammering it again.
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const canTaunt = {
+                TauntAfterTankCanTaunt(false, false, true, true, true, false, true),  // hexed
+                TauntAfterTankCanTaunt(true, true, true, true, true, false, true),    // silenced
+                TauntAfterTankCanTaunt(true, false, true, true, true, false, true)};  // ready
+            CHECK(TauntAfterTankPick(usable, canTaunt, 0) == 2);
+            CHECK(TauntAfterTankPick(usable, canTaunt, 3) == 2); // one past the last wraps to it again: the only one
+            std::vector<bool> const allCan = {true, true, true};
+            CHECK(TauntAfterTankPick(usable, allCan, 1) == 1); // a resisted window hands the next to the next tank
+        }
+
+        // One tank advances a window's shared state: its holder while it can still take the taunt, else the order's
+        // first usable tank; a holder nobody read for a second hands the advance to the reader. Three tanks reading
+        // every tick write one row per window that ran out and one when a tank has the subject back.
+        {
+            std::vector<std::uint64_t> const guids = {11, 22, 33};
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const canTaunt = {true, true, true};
+            CHECK(TankSlotOf(guids, 22) == 1);
+            CHECK(TankSlotOf(guids, 44) == -1); // left the order: the slot no longer names it
+            CHECK(TankSlotOf(guids, 0) == -1);
+            CHECK(TauntWindowOwner(usable, 1, 0) == 1);                 // the holder keeps the advance
+            CHECK(TauntWindowOwner(usable, -1, 2) == 2);                // none yet: the order's first usable tank
+            CHECK(TauntWindowOwner({false, true, false}, 0, 1) == 1);   // its holder died: the next usable one
+            CHECK(TauntWindowOwner({false, false, false}, 0, 0) == -1);
+            CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));          // the owner's own read
+            CHECK(!TauntWindowAdvance(1, 2, 5000, 4500, 1000));         // a rival, the owner just read
+            CHECK(TauntWindowAdvance(1, 2, 5000, 4000, 1000));          // the owner went quiet: anyone advances
+            CHECK(TauntWindowAdvance(-1, 0, 5000, 4000, 1000));         // no usable owner: the reader advances
+
+            bool open = false;
+            std::uint32_t startMs = 0;
+            std::uint32_t advancedMs = 0;
+            std::uint64_t holder = 0;
+            int missedRows = 0;
+            int acts = 0;
+            int regainedRows = 0;
+            // 30 s on a non-tank at a 10 s deadline, every tank reading every 100 ms tick; the victim is a tank again
+            // at 25 s.
+            for (std::uint32_t now = 0; now < 30000; now += 100)
+            {
+                bool const victimIsTank = now >= 25000;
+                int actsThisTick = 0;
+                for (std::uint64_t const reader : guids)
+                {
+                    int const readerSlot = TankSlotOf(guids, reader);
+                    int const holderSlot = TankSlotOf(guids, holder);
+                    bool const holderUsable = holderSlot >= 0 && usable[holderSlot];
+                    int const owner = TauntWindowOwner(usable, holderSlot, 0);
+                    if (TauntWindowAdvance(owner, readerSlot, now, advancedMs, 1000))
+                    {
+                        advancedMs = now;
+                        std::uint32_t const sinceMs = open ? now - startMs : 0;
+                        bool const opening = !open || sinceMs >= 10000;
+                        int const wanted = (opening && open && holderSlot >= 0) ? holderSlot + 1 : 0;
+                        int const assigned = (opening || !holderUsable)
+                            ? TauntAfterTankPick(usable, canTaunt, wanted) : holderSlot;
+                        TauntEpisodeRead const read =
+                            TauntEpisodeTick(!victimIsTank, victimIsTank, open, sinceMs, 10000, false);
+                        if (read.missed)
+                            ++missedRows;
+                        if (read.starts)
+                            startMs = now;
+                        open = read.open;
+                        holder = guids[assigned];
+                        if (read.step == TauntEpisodeStep::Regained)
+                        {
+                            ++regainedRows;
+                            open = false;
+                            holder = 0;
+                        }
+                    }
+                    if (open && holder == reader && !victimIsTank && TauntAfterDue(true, now - startMs, 10000, false))
+                        ++actsThisTick;
+                }
+                CHECK(actsThisTick <= 1); // one holder acts, never two tanks at once
+                acts += actsThisTick;
+            }
+            CHECK(missedRows == 2);  // 10 s and 20 s: one row for each window that ran out, not one per tank
+            CHECK(regainedRows == 1); // 25 s: one row, from the single writer
+            CHECK(acts == 250);      // every tick up to the regained 25 s has exactly one acting tank
+        }
+
         // The widest live spread row wins, never narrower than the fallback.
         CHECK(WidestSpreadYd({10.0f}, 10.0f) == 10.0f);
         CHECK(WidestSpreadYd({10.0f, 12.0f, 11.0f}, 10.0f) == 12.0f);

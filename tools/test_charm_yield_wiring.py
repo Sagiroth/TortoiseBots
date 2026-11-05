@@ -108,8 +108,9 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn('"boss tactics taunt after",\n        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));',
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
-        self.assertIn("TauntAfterTankPick(usable, canTaunt, static_cast<int>(row->priority))", ACTIONS)
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned)", ACTIONS)
+        self.assertIn("TauntAfterTankPick(usable, canTaunt, wanted)", ACTIONS)
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs,", ACTIONS)
+        self.assertIn("deadlineMs, victimIsAssigned);", ACTIONS)
         # Only until_tank is implemented; blink and the spell triggers stay parsed and ignored.
         self.assertIn("row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank", ACTIONS)
         self.assertIn("bool BossTacticsTauntAfterTrigger::IsActive()", TRIGGERS)
@@ -126,12 +127,21 @@ class CharmYieldWiring(unittest.TestCase):
         # retarget never hands the off-tank a second full window.
         scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
         # The episode's transitions are the pure machine's; a tank having the subject back ends it early.
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs, deadlineMs, victimIsAssigned)", scan)
+        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, sinceMs,", scan)
         self.assertIn("TauntEpisodeStep::Regained", scan)
         self.assertIn("state = TauntAfterEpisode();", scan)
-        # One tank holds a window while its deadline runs (the pick is not re-read mid-window).
-        self.assertIn("int const holder = state.tankIndex;", scan)
-        self.assertIn("state.tankIndex = assigned;", scan)
+        # One tank holds a window while its deadline runs (the pick is not re-read mid-window), and only one tank
+        # advances the shared state, so each transition and its row happen once.
+        self.assertIn("int const holderSlot = TankSlotOf(guids, state.holder);", scan)
+        self.assertIn("state.holder = guids[assigned];", scan)
+        self.assertIn("TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs)", scan)
+        self.assertIn("int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));", scan)
+        self.assertIn("if (missed)\n                LogTauntAfter(ai, unit, windowSlot, closed, false);", scan)
+        self.assertIn("if (regained)\n                LogTauntAfter(ai, unit, windowSlot, closed, true);", scan)
+        # A tank that cannot cast now (stunned, hexed, silenced, taunt on cooldown) never holds a window.
+        self.assertIn("TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,", scan)
+        self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", scan)
+        self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", scan)
         # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
         self.assertIn("TauntAfterTankUsable(", scan)
         self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
@@ -142,6 +152,9 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);", POLICY_TEST)
         self.assertIn("CHECK(TauntAfterTankPick({true, true}, {false, true}, 0) == 1);", POLICY_TEST)
         self.assertIn("CHECK(!TauntAfterDue(true, 10000, 10000, false));", POLICY_TEST)
+        self.assertIn("CHECK(!TauntAfterTankCanTaunt(false, false, true, true, true, false, true));", POLICY_TEST)
+        self.assertIn("CHECK(TankSlotOf(guids, 22) == 1);", POLICY_TEST)
+        self.assertIn("CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));", POLICY_TEST)
 
 
 if __name__ == '__main__':
