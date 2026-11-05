@@ -2309,21 +2309,33 @@ int main()
         // The episode's state machine: the rising edge opens it, the deadline turns a non-tank into one miss, a tank
         // has it back as regained, and a spent charm does not reopen before a tank does.
         {
-            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, false, 0, 10000, false);
+            TauntEpisodeRead edge = TauntEpisodeTick(true, true, false, false, false, 0, 10000, false);
             CHECK(edge.starts && edge.open && !edge.spent && edge.step == TauntEpisodeStep::Due);
-            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, false, 5000, 10000, false);
+            TauntEpisodeRead due = TauntEpisodeTick(true, true, false, true, false, 5000, 10000, false);
             CHECK(!due.starts && due.open && due.step == TauntEpisodeStep::Due);
             // The assigned tank has it back: the episode ends, the next charm starts clean.
-            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, false, 5000, 10000, true);
+            TauntEpisodeRead assigned = TauntEpisodeTick(true, false, true, true, false, 5000, 10000, true);
             CHECK(!assigned.open && !assigned.spent && assigned.step == TauntEpisodeStep::Regained);
-            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, false, 10000, 10000, false);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, true, false, true, false, 10000, 10000, false);
             CHECK(!miss.open && miss.spent && miss.step == TauntEpisodeStep::Miss);
-            TauntEpisodeRead spent = TauntEpisodeTick(true, false, false, true, 0, 10000, false);
+            TauntEpisodeRead spent = TauntEpisodeTick(true, true, false, false, true, 0, 10000, false);
             CHECK(!spent.starts && !spent.open && spent.spent && spent.step == TauntEpisodeStep::None);
-            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, false, 4000, 10000, false);
+            TauntEpisodeRead regained = TauntEpisodeTick(true, false, true, true, false, 4000, 10000, false);
             CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
-            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, false, 4000, 10000, false);
+            TauntEpisodeRead between = TauntEpisodeTick(true, false, false, true, false, 4000, 10000, false);
             CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // TauntAfterImmuneSubjectIsIgnored: a subject the core makes immune to taunts (Hakkar: creature_template 14834
+        // immunity_flags 6 keeps CREATURE_IMMUNITY_TAUNT) can never be taken back, so the row opens no episode there
+        // and the tank spends no attack or GCD on it (walk 40: 108 TauntAfter rows, taunted=0).
+        {
+            TauntEpisodeRead immune = TauntEpisodeTick(false, true, false, false, false, 0, 10000, false);
+            CHECK(!immune.starts && !immune.open && immune.step == TauntEpisodeStep::None);
+            TauntEpisodeRead immuneOpen = TauntEpisodeTick(false, true, false, true, false, 1000, 10000, false);
+            CHECK(!immuneOpen.starts && !immuneOpen.open && immuneOpen.step == TauntEpisodeStep::None);
+            CHECK(TauntEpisodeTick(false, false, true, true, false, 1000, 10000, true).step ==
+                  TauntEpisodeStep::None);
         }
 
         // The widest live spread row wins, never narrower than the fallback.

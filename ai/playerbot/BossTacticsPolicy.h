@@ -2013,11 +2013,15 @@ namespace ai
 
     // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
     // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
-    // and one between victims (a pet, a transition) keeps its deadline.
-    inline TauntEpisodeRead TauntEpisodeTick(bool onNonTank, bool victimIsTank, bool open, bool spent,
+    // and one between victims (a pet, a transition) keeps its deadline. `tauntable` is false for a subject the core
+    // makes immune to taunts (Creature::HasImmunityFlag(CREATURE_IMMUNITY_TAUNT)): no taunt of the row's tank can
+    // land on it, so the row opens no episode and spends no attack or taunt there.
+    inline TauntEpisodeRead TauntEpisodeTick(bool tauntable, bool onNonTank, bool victimIsTank, bool open, bool spent,
         std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         TauntEpisodeRead out;
+        if (!tauntable)
+            return out;
         out.open = open;
         out.spent = spent;
         if (onNonTank)

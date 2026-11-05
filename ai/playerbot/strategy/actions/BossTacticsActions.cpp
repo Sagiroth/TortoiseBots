@@ -35,6 +35,7 @@
 #include "FollowActions.h"
 #include "ReachTargetActions.h"
 #include "playerbot/strategy/values/NearestGameObjects.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "EnemyAreaSpell.h"
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -5120,7 +5121,8 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
                 state.lastReadMs = nowMs;
                 std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                const TauntEpisodeRead read = TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,
+                const TauntEpisodeRead read = TauntEpisodeTick(!TargetTauntImmune(unit), onNonTank, victimIsTank,
+                    state.open, state.spent,
                     sinceMs, deadlineMs, victimIsAssigned);
                 if (read.starts)
                 {
