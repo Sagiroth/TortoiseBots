@@ -31,23 +31,40 @@ int main()
     // The dose window is [due - lead, due - 3 s]: the first 10 s of the cycle are the previous siphon's tail and the
     // last 3 s are too late for the dose to be on at the siphon.
     {
-        const std::uint32_t due = SeekDueMs(0, 0, 90000);
-        CHECK(due == 90000);
+        const std::uint32_t due = 90000;
         CHECK(!SeekWindowOpen(9999, due, 80000));
         CHECK(SeekWindowOpen(10000, due, 80000));
         CHECK(SeekWindowOpen(87000, due, 80000));
         CHECK(!SeekWindowOpen(87001, due, 80000));
     }
 
+    // SeekFirstSiphonIsCountedFromThePull: before any siphon is seen the due time is the fight's combat start plus one
+    // cycle, since the core's 90 s timer only runs in combat, so cycle 1 gets the same 80 s window and 15 s forced
+    // burn as every later cycle. An observed siphon resyncs the cadence to itself, and a fight with no combat start
+    // yet has no due time.
+    {
+        const std::uint32_t start = 1000;
+        const std::uint32_t first = SeekCycleDueMs(start, 0, 90000);
+        CHECK(first == 91000);
+        CHECK(!SeekWindowOpen(10999, first, 80000)); // opens at start + 10 s
+        CHECK(SeekWindowOpen(11000, first, 80000));
+        CHECK(SeekWindowOpen(88000, first, 80000));
+        CHECK(!SeekWindowOpen(88001, first, 80000));
+        CHECK(!SeekForceBurn(75999, first)); // forced 15 s before due
+        CHECK(SeekForceBurn(76000, first));
+        CHECK(SeekCycleDueMs(start, 92000, 90000) == 182000);
+        CHECK(SeekCycleDueMs(0, 0, 90000) == 0);
+    }
+
     // A sighting starts a new cycle only half a cycle after the last accepted one: every bot sees the same siphon
     // within a few hundred ms, so the second sighting must not push the due time again.
     {
         CHECK(SeekCycleAccepts(0, 91000, 90000));
-        CHECK(SeekDueMs(0, 91000, 90000) == 181000);
+        CHECK(SeekCycleDueMs(1000, 91000, 90000) == 181000);
         CHECK(!SeekCycleAccepts(91000, 95000, 90000));
-        CHECK(SeekDueMs(0, 91000, 90000) == 181000);
+        CHECK(SeekCycleDueMs(1000, 91000, 90000) == 181000);
         CHECK(SeekCycleAccepts(91000, 136000, 90000));
-        CHECK(SeekDueMs(0, 136000, 90000) == 226000);
+        CHECK(SeekCycleDueMs(1000, 136000, 90000) == 226000);
     }
 
     // The walk aims kSeekCloudInsetYd inside the cloud's edge and pays the decision latency first: at 14 yd from an

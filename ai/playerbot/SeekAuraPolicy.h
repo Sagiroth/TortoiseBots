@@ -24,11 +24,16 @@ namespace ai
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
     constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
 
-    // Cycle clock: the first sighting of the boss in combat with a victim starts it, and every accepted sighting of the
-    // row's cycle spell on a group member restarts it. lastCycleMs 0 means no sighting yet.
-    inline std::uint32_t SeekDueMs(std::uint32_t engageMs, std::uint32_t lastCycleMs, std::uint32_t cycleMs)
+    // Cycle clock: the fight's combat start (the first read that sees the boss in combat with the group) starts it, and
+    // every accepted sighting of the row's cycle spell on a group member restarts it: an observed siphon wins over the
+    // estimate. The core arms BloodSiphon_Timer at the cycle length and only counts it down in combat, so the first
+    // siphon lands one cycle after the fight starts, the same rule as every later one. lastSiphonMs 0 means no
+    // sighting yet; combatStartMs 0 means the fight is not known yet (no due time).
+    inline std::uint32_t SeekCycleDueMs(std::uint32_t combatStartMs, std::uint32_t lastSiphonMs, std::uint32_t cycleMs)
     {
-        return (lastCycleMs ? lastCycleMs : engageMs) + cycleMs;
+        if (lastSiphonMs)
+            return lastSiphonMs + cycleMs;
+        return combatStartMs ? combatStartMs + cycleMs : 0;
     }
 
     // A sighting starts a new cycle only when no cycle is known or it is at least half a cycle after the last one: all

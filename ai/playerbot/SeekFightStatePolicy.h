@@ -7,9 +7,9 @@
 // so nothing in it may dereference the row it came from.
 //
 // A reload replaces the tactic table with a freshly loaded one. The records survive it only while their row is still
-// there with the same cycle columns (`cycle_spell`, `cycle_s`, `window_s`): then the engage (t0), the last accepted
-// siphon (t1) and the dose window stay untouched, so a reload between two siphons does not restart the poison cycle.
-// A record whose row was removed or retimed is dropped (the new row's clock is a new fight).
+// there with the same cycle columns (`cycle_spell`, `cycle_s`, `window_s`): then the combat start (t0), the last
+// accepted siphon (t1) and the dose window stay untouched, so a reload between two siphons does not restart the
+// poison cycle. A record whose row was removed or retimed is dropped (the new row's clock is a new fight).
 //
 // No core includes: tested in tools/test_seek_fight_state_policy.cpp.
 
@@ -25,7 +25,7 @@ namespace ai
 {
     struct SeekCycleRecord
     {
-        std::uint32_t engageMs = 0;     // the first sighting of the boss in combat with a victim
+        std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
         std::uint32_t lastCycleMs = 0;  // the last accepted cycle spell sighting (0: none)
         std::uint32_t lastSeenMs = 0;
         // The row's own clock, copied at every read: the record outlives the row pointer, and SeekCycleSnapshot reads
@@ -110,8 +110,8 @@ namespace ai
         return nullptr;
     }
 
-    // A record outlives a reload only when its row still exists and its clock columns did not change. The engage and
-    // the last siphon are the record's own: the caller keeps them as they are.
+    // A record outlives a reload only when its row still exists and its clock columns did not change. The combat start
+    // and the last siphon are the record's own: the caller keeps them as they are.
     inline bool SeekRecordSurvivesReload(const SeekCycleRecord& record, const BossTacticRow& row)
     {
         return record.cycleSpell == row.cycleSpell && record.cycleMs == SeekSecondsToMs(row.cycleSec) &&

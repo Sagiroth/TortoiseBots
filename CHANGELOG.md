@@ -286,6 +286,7 @@
 - Fixed: in the Hakkar fight no damage over time goes on a Son of Hakkar at any time — its ticks would run through the hold and the shut window and kill it — and the off-tank holding the Son stops auto-attacking it once it is near the hold percent with the window shut, keeping the threat.
 - Fixed: in the Hakkar fight an area cast no longer kills a second Son of Hakkar standing beside the picked one — if the cast reaches any Son that is held, it is stood down, so the group's spare source survives.
 - Fixed: with the whole raid already carrying Poisonous Blood, the Hakkar fight picks and kills no new Son of Hakkar until the next siphon strips the aura, and a Son that is not fighting is never picked, so no source is spent on a cloud nobody needs.
+- Fixed: the first Blood Siphon is countered too — the Hakkar fight now counts its 90 seconds from the moment the boss is first seen in combat, so the group gathers and doses itself before the first siphon just as it does before every later one, pets and totems included.
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.

@@ -111,7 +111,7 @@ int main()
         CHECK(kept.ready);
         CHECK(kept.siphonCycle == 1 && kept.siphonDosed == 12 && kept.siphonUndosed == 3);
 
-        std::uint32_t const due = SeekDueMs(kept.engageMs, kept.lastCycleMs, kept.cycleMs);
+        std::uint32_t const due = SeekCycleDueMs(kept.engageMs, kept.lastCycleMs, kept.cycleMs);
         CHECK(due == 131000);
         CHECK(SeekWindowOpen(52000, due, kept.leadMs));
         CHECK(!SeekWindowOpen(30000, due, kept.leadMs)); // before the window: not a reload's effect, the fight's

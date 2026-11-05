@@ -1152,7 +1152,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             g_seekRecords.erase(it);
             return false;
         }
-        if (record.engageMs == 0 && boss->GetVictim())
+        // The fight's combat start: the first read that sees the boss in combat with the group. The core arms
+        // BloodSiphon_Timer at the cycle length and only counts it down in combat, so cycle 1 is due a cycle after
+        // this. The victim is read too: a boss in combat with the group can be without one for a tick.
+        if (record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim()))
             record.engageMs = nowMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
         // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
@@ -1181,7 +1184,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
         }
-        dueMs = record.engageMs == 0 ? 0 : SeekDueMs(record.engageMs, record.lastCycleMs, cycleMs);
+        dueMs = SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs);
         cycleNo = record.cycleNo;
     }
     out.live = true;
@@ -4538,7 +4541,7 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         if (record.engageMs == 0 || record.cycleMs == 0)
             continue;
         out.valid = true;
-        out.dueMs = SeekDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
+        out.dueMs = SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;

@@ -125,7 +125,7 @@ class SeekWalkWiring(unittest.TestCase):
 
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
-        for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
+        for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver("):
@@ -136,6 +136,16 @@ class SeekWalkWiring(unittest.TestCase):
 
 class FightStateWiring(unittest.TestCase):
     """One record per fight, exported to the run leader, swept and erased on an evade."""
+
+    def test_the_first_siphon_is_counted_from_the_combat_start(self):
+        # The core's 90 s siphon timer only runs in combat, so cycle 1 is due a cycle after the boss is first seen in
+        # combat with the group. The victim alone is not enough: a boss in combat with the group can be without one on
+        # that tick, and then no due time exists and cycle 1 gets no window.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim())", read)
+        self.assertIn("SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs)", read)
+        # The exported fight state times cycle 1 the same way for the run leader.
+        self.assertIn("SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs)", ACTIONS)
 
     def test_the_state_is_shared_keyed_and_swept(self):
         state = body(ACTIONS, "namespace\n{\n// The seek_aura fight state", "\n// A record nobody evaluated")
