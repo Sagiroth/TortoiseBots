@@ -490,6 +490,7 @@ private:
             RunEnchantDeposit(request, *stored, bot, ai, guild, banker);
             return;
         }
+        uint32_t& emptyPasses = m_emptyPasses[request.botGuidLow];
         bool mailedAny = stored->reason == OrderReason::NoBank;
         uint32_t delivered = stored->delivered;
         // Anything already banked or mailed reached the guild during this
