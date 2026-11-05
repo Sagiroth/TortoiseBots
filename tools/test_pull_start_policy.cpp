@@ -14,10 +14,11 @@ using ai::PullStartFacts;
 using ai::PullWalkStarted;
 using ai::PullReadyFacts;
 using ai::PullReadySteps;
+using ai::PullTargetAirborne;
 using ai::ReadyTankForPull;
 using ai::RetryPullWalk;
 
-int main()
+static void TestWalkStartedAndRetry()
 {
     // Mob 38 yd away, pull range 30, tank standing, nothing launched: not started.
     PullStartFacts facts;
@@ -48,6 +49,48 @@ int main()
     facts.distance = 99.0f;
     CHECK(PullWalkStarted(facts));
 
+    // A ranged pull not started after the decisions: one direct reach pull.
+    facts = PullStartFacts();
+    facts.distance = 54.7f;
+    facts.range = 29.5f;
+    CHECK(RetryPullWalk(facts, false));
+    // A body pull is never judged, and a started walk needs no retry.
+    CHECK(!RetryPullWalk(facts, true));
+    facts.motionLaunched = true;
+    CHECK(!RetryPullWalk(facts, false));
+
+    // A ground target in the same state still fails the check.
+    facts = PullStartFacts();
+    facts.distance = 54.7f;
+    facts.range = 29.5f;
+    CHECK(!PullWalkStarted(facts));
+}
+
+// Zul'Gurub walk 41: High Priestess Jeklik hovers 10.3 yd over her altar, 51 yd from the
+// tank. The ranged pullback's reach picked an air point for its firing position, the core
+// dropped the move, and the order judged "walk started" in the same tick refused the pull
+// ("The tank could not start moving to a firing position for the pull") into a pause whose
+// stand search was empty by construction. The launch comes on the next AI tick: an
+// airborne target's pull is accepted, not refused.
+static void TestAirTargetPullCountsNextTickLaunch()
+{
+    // The floor under the target is the step's floor; the target hangs above it.
+    CHECK(PullTargetAirborne(true, 144.6f, 134.3f));
+    CHECK(!PullTargetAirborne(true, 134.3f, 134.3f));
+    CHECK(!PullTargetAirborne(true, 135.0f, 134.3f)); // within the 5 yd bound
+    CHECK(!PullTargetAirborne(false, 200.0f, 0.0f));  // no floor read: not aloft
+
+    PullStartFacts facts;
+    facts.distance = 54.7f;
+    facts.range = 29.5f;
+    facts.airborne = true;
+    // Nothing launched yet: the next tick's launch is accepted.
+    CHECK(PullWalkStarted(facts));
+    CHECK(!RetryPullWalk(facts, false));
+}
+
+static void TestReadyTankForPull()
+{
     // Uldaman run (build 19z11): the pullback came a second after the fight,
     // the tank sitting with the meal cast (24005) live. The order interrupts
     // the cast and stands the tank up before its decisions.
@@ -62,16 +105,13 @@ int main()
     ready.seated = true;
     steps = ReadyTankForPull(ready);
     CHECK(!steps.interrupt && steps.stand);
+}
 
-    // A ranged pull not started after the decisions: one direct reach pull.
-    facts = PullStartFacts();
-    facts.distance = 54.7f;
-    facts.range = 29.5f;
-    CHECK(RetryPullWalk(facts, false));
-    // A body pull is never judged, and a started walk needs no retry.
-    CHECK(!RetryPullWalk(facts, true));
-    facts.motionLaunched = true;
-    CHECK(!RetryPullWalk(facts, false));
+int main()
+{
+    TestWalkStartedAndRetry();
+    TestAirTargetPullCountsNextTickLaunch();
+    TestReadyTankForPull();
 
     std::cout << "pull start policy: ok\n";
     return 0;

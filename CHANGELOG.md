@@ -1,5 +1,6 @@
 # Changelog
 
+- A tank pulling a target that hovers above the floor no longer has the pull refused before its walk can start.
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
 
 ## v1.15.1 (2026-11-03)

@@ -923,6 +923,17 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             pullRange = probe->GetRange();
         }
 
+        // An airborne target (a hovering boss, a flier) is judged on the next movement
+        // tick: its walk's point move lands on an air point and launches nothing in this
+        // one (ai/playerbot/PullStartPolicy.h, PullTargetAirborne).
+        bool launchOnNextTick = false;
+        if (pullTarget && pullTarget->IsInWorld() && pullTarget->GetMap())
+        {
+            float const floor = pullTarget->GetMap()->GetHeight(pullTarget->GetPositionX(),
+                pullTarget->GetPositionY(), pullTarget->GetPositionZ(), true);
+            launchOnNextTick = ai::PullTargetAirborne(floor > INVALID_HEIGHT, pullTarget->GetPositionZ(), floor);
+        }
+
         // A point move is registered with the motion master at once but the
         // unit reads as moving only after the next movement tick, so a launched
         // point or chase motion counts as started (ai/playerbot/PullStartPolicy.h).
@@ -933,6 +944,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             facts.hasTarget = pullTarget && pullTarget->IsInWorld();
             facts.moving = sServerFacade.isMoving(executor);
             facts.motionLaunched = motion == POINT_MOTION_TYPE || motion == CHASE_MOTION_TYPE;
+            facts.airborne = launchOnNextTick;
             if (facts.hasTarget)
                 facts.distance = executor->GetDistance(pullTarget);
             facts.range = pullRange;
