@@ -980,6 +980,10 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
             TortoiseBots::GuildOrders::OrderState::Cant, OrderReason::NoRecipe);
         return;
     }
+    if (order.type == OrderType::Enchant)
+        sLog.outBasic("TBDEBUG ladder %s cand %u count %u craft %u blocked %u need %u", bot->GetName(),
+            firstMissing.itemId, firstMissing.count, firstMissing.craft ? 1u : 0u, firstMissing.blocked ? 1u : 0u,
+            uint32_t(current.needItems.size()));
     if (firstMissing.blocked)
     {
         // Nothing supplyable is left and the item the walk stopped at is the
