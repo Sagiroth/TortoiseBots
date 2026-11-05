@@ -198,6 +198,91 @@ inline bool DisenchantIntakeHasRoom(uint32_t freeSlots, uint32_t waitingItems)
 {
     return freeSlots >= 2 + waitingItems;
 }
+// Disenchant drop-off by trade: a guild member whispers `disenchant`, then
+// opens a trade with only items in the normal slots. Memory only (no row):
+// the trade intake writes NoteDisenchantQueued rows exactly like the mail
+// intake, and the window holder below mirrors the meet-request shape.
+inline bool IsDisenchantDropOffWhisper(std::string const& message)
+{
+    return TrimDisenchantSubject(message) == "disenchant";
+}
+
+// Two minutes in server uptime ms, matching the order-trade try budget.
+inline constexpr uint32_t kDisenchantDropOffWindowMs = 2u * 60u * 1000u;
+
+struct DisenchantDropOffWindow
+{
+    uint32_t memberGuidLow = 0; // who may drop off, 0 = none open
+    uint32_t openedMs = 0;      // server uptime ms the whisper opened it
+};
+
+// Still open for this member: correct member and the window not elapsed.
+inline bool DisenchantDropOffOpen(DisenchantDropOffWindow const& window,
+    uint32_t memberGuidLow, uint32_t nowMs)
+{
+    if (!window.memberGuidLow || window.memberGuidLow != memberGuidLow)
+        return false;
+    return nowMs - window.openedMs < kDisenchantDropOffWindowMs;
+}
+
+// The offer the bot accepts: normal slots only, no gold, and at least one
+// item. Extras (a non-traded slot or the bot's own side) stay the caller's
+// read; the intake runs before the generic trade gates.
+struct DisenchantDropOffOffer
+{
+    uint32_t itemCount = 0; // trader's normal-slot stacks, in slot order
+    bool traderGold = false;
+};
+
+enum class DisenchantDropOffVerdict : uint8_t
+{
+    Accept,   // the whole offer fits the room check
+    Empty,    // no items offered
+    HasGold,  // gold in the window
+    TooMany,  // offer exceeds the free room: refuse, the whisper names it
+};
+
+inline char const* DisenchantDropOffToken(DisenchantDropOffVerdict verdict)
+{
+    switch (verdict)
+    {
+        case DisenchantDropOffVerdict::Accept:  return "accept";
+        case DisenchantDropOffVerdict::Empty:   return "empty";
+        case DisenchantDropOffVerdict::HasGold: return "gold";
+        case DisenchantDropOffVerdict::TooMany: return "toomany";
+    }
+    return "empty";
+}
+
+// How many more items the intake can take: each one fills a bag slot and
+// keeps a result slot free, exactly like the mail intake. 0 when not even
+// one more fits.
+inline uint32_t DisenchantDropOffRoom(uint32_t freeSlots, uint32_t waitingItems)
+{
+    if (freeSlots < 2 + waitingItems)
+        return 0;
+    return (freeSlots - waitingItems - 2) / 2 + 1;
+}
+
+// A trade accept takes the whole offer at once, so an offer past the room
+// is refused outright (the member re-offers fewer): never a partial take.
+inline DisenchantDropOffVerdict CheckDisenchantDropOff(DisenchantDropOffOffer const& offer,
+    uint32_t freeSlots, uint32_t waitingItems)
+{
+    if (offer.traderGold)
+        return DisenchantDropOffVerdict::HasGold;
+    if (offer.itemCount == 0)
+        return DisenchantDropOffVerdict::Empty;
+    if (offer.itemCount > DisenchantDropOffRoom(freeSlots, waitingItems))
+        return DisenchantDropOffVerdict::TooMany;
+    return DisenchantDropOffVerdict::Accept;
+}
+
+inline std::string DisenchantDropOffRoomText(uint32_t room)
+{
+    return "I only have room for " + std::to_string(room) + " item" +
+        (room == 1 ? "." : "s.");
+}
 
 // One work list per bot, touched only on that bot's own map thread; the
 // lock covers the lookup, map nodes keep their address.

@@ -144,6 +144,7 @@ Mail items to a guild bot that has Enchanting with the subject `disenchant` and 
 - The bot disenchants what its skill allows, loots the results itself, and mails exactly what that cast made back (`Disenchanted: <item>`); the rest comes back with a reason (`lowskill` when the item needs more skill, `cannot disenchant` for anything with no disenchant loot, `noskill` from a bot without Enchanting).
 - Mail from a guild member without that subject is taken into the bags as usual, never disenchanted.
 - Queued items and landed results are never sold, auctioned, equipped or used for anything else while they wait; the bot casts when it can (not in combat, moving or mounted), collects at a mailbox, and mails every item back with no gold taken and nothing of its own added. A restart re-queues instead of losing the item.
+- **Disenchant by trade:** whisper the bot `disenchant`, then trade it within 2 minutes and put the items in the normal trade slots. The offer must be items only (no gold, nothing of the bot's own) and fit its free room ("I only have room for N items" otherwise); each item is queued exactly like mailed ones and the materials come back by mail. A bot without Enchanting answers "I can't disenchant." instead. A running enchant order's trade with its giver still comes first: the drop-off only applies outside that window.
 
 ## Delivery
 

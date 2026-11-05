@@ -303,20 +303,10 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 // open askreplace question even when they never grouped with
                 // the bot (meet in the capital), so this runs before the
                 // master/group gate below. Giver-only, Enchanting only.
-                if (msgtype == CHAT_MSG_WHISPER)
-                    sLog.outBasic("TBDEBUG whisper to %s lang %u text [%s]", bot->GetName(), uint32(lang), message.c_str());
                 if (msgtype == CHAT_MSG_WHISPER && lang != LANG_ADDON)
                 {
                     if (Player* sender = sObjectAccessor.FindPlayer(guid1))
                     {
-                        {
-                            auto r = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
-                            auto ses = TortoiseBots::GuildOrders::GetEnchantTrade(bot->GetGUIDLow());
-                            sLog.outBasic("TBDEBUG whisper gate row %u state %s giverMatch %u asked %u confirmed %u yes %u",
-                                r ? 1u : 0u, r ? TortoiseBots::GuildOrders::StateToken(r->state) : "-",
-                                (r && sender->getObjectGuid() == ObjectGuid(HIGHGUID_PLAYER, r->giverGuidLow)) ? 1u : 0u,
-                                ses.replaceAskedMs, ses.replaceConfirmed ? 1u : 0u, ai::ReplaceAnswerIsYes(message) ? 1u : 0u);
-                        }
                         std::optional<TortoiseBots::GuildOrders::OrderRecord> enchantRow =
                             TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
                         TortoiseBots::GuildOrders::EnchantTradeSession enchantSession =
@@ -328,6 +318,29 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                         {
                             if (ai::ReplaceAnswerIsYes(message))
                                 TortoiseBots::GuildOrders::NoteEnchantReplaceConfirmed(bot->GetGUIDLow());
+                        }
+                        // Disenchant drop-off: a guild member whispers
+                        // `disenchant` (colour codes stripped), opening a
+                        // 2-minute window for a trade of items only. A bot
+                        // without Enchanting answers at once and does nothing.
+                        if (TortoiseBots::GuildOrders::IsDisenchantDropOffWhisper(
+                                ai::StripChatColours(message)) &&
+                            isRealPlayer_Helper(sender) && bot->GetGuildId() &&
+                            sender->GetGuildId() == bot->GetGuildId())
+                        {
+                            if (!HasSkill(SKILL_ENCHANTING))
+                            {
+                                // Telling needs the world thread (this hook
+                                // runs on it through the deferred chat queue).
+                                TellPlayer(sender, "I can't disenchant.",
+                                    PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                            }
+                            else
+                            {
+                                TortoiseBots::GuildOrders::NoteDisenchantDropOff(
+                                    bot->GetGUIDLow(), sender->GetGUIDLow(),
+                                    WorldTimer::getMSTime());
+                            }
                         }
                     }
                 }

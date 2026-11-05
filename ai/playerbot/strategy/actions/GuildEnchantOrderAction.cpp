@@ -155,7 +155,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             WorldPacket cancel;
             uint32 status = 0;
             cancel << status;
-            sLog.outBasic("TBDEBUG enchant action cancel site 0 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
             if (order.state == OrderState::Enchanting || order.state == OrderState::Coming)
             {
                 SetState(bot->GetGUIDLow(), order.state == OrderState::Enchanting ?

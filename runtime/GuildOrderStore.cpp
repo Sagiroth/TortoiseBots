@@ -229,6 +229,30 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         m_meet.erase(botGuidLow);
     }
+    // A pending drop-off window per bot: the whisper opens it for one
+    // member, the trade intake closes it after taking the offer.
+    void SetDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!botGuidLow || !memberGuidLow)
+            return;
+        m_dropOff[botGuidLow] = DisenchantDropOffWindow{ memberGuidLow, nowMs };
+    }
+
+    std::optional<DisenchantDropOffWindow> GetDropOff(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_dropOff.find(botGuidLow);
+        if (it == m_dropOff.end())
+            return std::nullopt;
+        return it->second;
+    }
+
+    void DropDropOff(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_dropOff.erase(botGuidLow);
+    }
 
     void NoteMeetFailed(uint32_t botGuidLow, uint32_t nowMs)
     {
@@ -2966,6 +2990,9 @@ private:
     // it so the giver presses Meet again.
     std::unordered_map<uint32_t, MeetRequest> m_meet;
     std::unordered_map<uint32_t, uint32_t> m_meetFailedMs; // last meeting that ended without the enchant
+    // A pending disenchant drop-off window per bot, memory only like the
+    // meet map above: a restart drops it, the member whispers again.
+    std::unordered_map<uint32_t, DisenchantDropOffWindow> m_dropOff;
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     // Last request the drain gave planner time to: the next drain starts
     // after it, so one request cannot spend every tick's evaluation budget.
@@ -3507,6 +3534,27 @@ void ClearMeet(uint32_t botGuidLow)
     if (!botGuidLow)
         return;
     OrderStore::Instance().DropMeet(botGuidLow);
+}
+
+void NoteDisenchantDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs)
+{
+    if (!botGuidLow || !memberGuidLow)
+        return;
+    OrderStore::Instance().SetDropOff(botGuidLow, memberGuidLow, nowMs);
+}
+
+void ClearDisenchantDropOff(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropDropOff(botGuidLow);
+}
+
+std::optional<DisenchantDropOffWindow> PendingDisenchantDropOff(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return std::nullopt;
+    return OrderStore::Instance().GetDropOff(botGuidLow);
 }
 
 void ClearMeetFailed(uint32_t botGuidLow)

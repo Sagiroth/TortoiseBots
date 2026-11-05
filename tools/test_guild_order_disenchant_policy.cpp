@@ -1,6 +1,6 @@
 // Standalone test for runtime/GuildOrderDisenchantPolicy.h: the
-// disenchant-by-mail decisions (subject match, skill thresholds, batching).
-//
+// disenchant decisions by mail and by trade (subject match, skill thresholds,
+// batching, drop-off window and room check).
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra -pedantic tools/test_guild_order_disenchant_policy.cpp -o /tmp/test_guild_order_disenchant_policy
 //   /tmp/test_guild_order_disenchant_policy
@@ -64,7 +64,36 @@ int main()
     CHECK(!DisenchantIntakeHasRoom(1, 0));
     CHECK(DisenchantIntakeHasRoom(5, 3));
     CHECK(!DisenchantIntakeHasRoom(4, 3));
-    // Each bot has its own list; the intake ignores empty ids and duplicates.
+    // Drop-off whisper: same match as the mail subject; trade talk around it
+    // must not open a window.
+    CHECK(IsDisenchantDropOffWhisper("disenchant"));
+    CHECK(IsDisenchantDropOffWhisper(" Disenchant "));
+    CHECK(IsDisenchantDropOffWhisper("DISENCHANT"));
+    CHECK(!IsDisenchantDropOffWhisper("disenchant now"));
+    CHECK(!IsDisenchantDropOffWhisper("please disenchant this"));
+    CHECK(!IsDisenchantDropOffWhisper(""));
+    // Window: right member and a fresh whisper; wrong member, empty, stale.
+    CHECK(DisenchantDropOffOpen({11, 1000}, 11, 1000 + 60 * 1000));
+    CHECK(!DisenchantDropOffOpen({11, 1000}, 12, 1000 + 60 * 1000));
+    CHECK(!DisenchantDropOffOpen({0, 1000}, 11, 1000 + 60 * 1000));
+    CHECK(!DisenchantDropOffOpen({11, 1000}, 11, 1000 + kDisenchantDropOffWindowMs));
+    CHECK(!DisenchantDropOffOpen({11, 1000}, 11, 1000 + kDisenchantDropOffWindowMs + 1));
+    // Room: two slots per further item (its slot plus its result slot).
+    CHECK(DisenchantDropOffRoom(2, 0) == 1);
+    CHECK(DisenchantDropOffRoom(1, 0) == 0);
+    CHECK(DisenchantDropOffRoom(5, 3) == 1);
+    CHECK(DisenchantDropOffRoom(6, 3) == 1);
+    CHECK(DisenchantDropOffRoom(7, 3) == 2);
+    // Offer verdicts: gold or empty never records, too many takes nothing.
+    CHECK(CheckDisenchantDropOff({1, true}, 10, 0) == DisenchantDropOffVerdict::HasGold);
+    CHECK(CheckDisenchantDropOff({0, false}, 10, 0) == DisenchantDropOffVerdict::Empty);
+    CHECK(CheckDisenchantDropOff({2, false}, 2, 0) == DisenchantDropOffVerdict::TooMany);
+    CHECK(CheckDisenchantDropOff({1, false}, 2, 0) == DisenchantDropOffVerdict::Accept);
+    CHECK(CheckDisenchantDropOff({2, false}, 7, 3) == DisenchantDropOffVerdict::Accept);
+    CHECK(CheckDisenchantDropOff({3, false}, 7, 3) == DisenchantDropOffVerdict::TooMany);
+    CHECK(DisenchantDropOffRoomText(1) == "I only have room for 1 item.");
+    CHECK(DisenchantDropOffRoomText(0) == "I only have room for 0 items.");
+    CHECK(DisenchantDropOffToken(DisenchantDropOffVerdict::Accept) == std::string("accept"));
     auto& queueA = DisenchantServiceQueue(1);
     auto& queueB = DisenchantServiceQueue(2);
     QueueDisenchantServiceItem(queueA, 0, 7, 9);
