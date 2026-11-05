@@ -98,8 +98,8 @@ For the auction house step the bot picks one auction house and walks there.
   - The recipe has a long cooldown (transmutes, Mooncloth).
 - The Professions view marks each recipe `ok` or with the reason; the search shows the same verdict.
 - **Hours:** optional whole hours 1-24. No hours given (or `inf`) means no time limit. When the time runs out, the bot still brings what it has to the guild bank (or mails it to the guild master). The order ends as `cant` with reason `timeout`.
-- **Keep:** add `keep` before an optional `gold=<copper>`. The order does not end after delivery: it watches the guild bank. When the bank holds fewer than ordered, the bot brings the missing amount again. Each new round gets the full hours again. Keep needs a working bank: a round that ends mailed, `cant` or `noskill` ends the keep.
 - **Guild gold cap:** add `gold=<copper>` after the other options. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
+- **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
   - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables.
   - Never shown: recipes, conjured items, random-drop gear. At most 30 matches.
@@ -174,9 +174,9 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 ```text
 .bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
-.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>] [bring=<item>,<item>]
 .bot order <BotName> cancel
-.bot order <BotName> preview <farm|craft> <item link or id> <amount>
+.bot order <BotName> preview <farm|craft> <item link or id> <amount> [bring=<item>,<item>]
 .bot order <BotName> steps
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>

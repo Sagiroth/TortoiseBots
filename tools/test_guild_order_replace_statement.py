@@ -61,6 +61,7 @@ EXPECTED = [
     ("created_at", "t"),
     ("updated_at", "t"),
     ("carried", "u"),
+    ("bring", "s"),
 ]
 
 VALUE = {"u": "'%u'", "s": "'%s'", "t": "FROM_UNIXTIME('%u')"}
@@ -161,11 +162,11 @@ class GuildOrderReplaceStatementTest(unittest.TestCase):
                 else:
                     self.assertNotRegex(arg, STRING_ARG, "a numeric placeholder needs a number")
 
-    def test_carried_binds_the_reported_carry_last(self):
+    def test_bring_binds_the_bring_token_last(self):
         columns, values, _fmt, args = replace_parts()
-        self.assertEqual(columns[-1], "carried")
-        self.assertEqual(_split_top(values)[-1], "'%u'")
-        self.assertEqual(args[-1], "record.reportedCarry")
+        self.assertEqual(columns[-1], "bring")
+        self.assertEqual(_split_top(values)[-1], "'%s'")
+        self.assertIn("BringItemsToken(record.bringItems)", args[-1])
 
 
 if __name__ == "__main__":
