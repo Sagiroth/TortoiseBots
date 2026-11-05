@@ -44,6 +44,7 @@
 #include "Spells/SpellMgr.h"
 #include "Database/DBCStores.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
+#include "playerbot/strategy/values/PeriodicDamageAura.h"
 
 using namespace ai;
 
@@ -1395,6 +1396,34 @@ Unit* SeekSourceInAction(const SeekFight& state, Unit* target)
     return IsSeekSource(state, target) ? target : nullptr;
 }
 
+// Whether the action would leave a damage-over-time on one of the fight's Sons: the spell applies a periodic damage
+// aura (the damage tick, the leech, the percent-of-max tick). A DoT cannot be stood down once it lands, so its ticks
+// would run through the hold percent and the shut window and kill the Son for the next cycle. Any Son counts, the
+// picked one included: the burn has to be a steady damage the action can stop.
+bool SeekDotOnSource(const SeekFight& state, Action* action)
+{
+    CastSpellAction* const cast = dynamic_cast<CastSpellAction*>(action);
+    if (!cast)
+        return false;
+    const bool son = IsSeekSource(state, action->GetTarget());
+    if (!son)
+        return false;
+    SpellEntry const* const info = sServerFacade.LookupSpellInfo(cast->GetSpellID());
+    bool periodic = false;
+    if (info)
+    {
+        for (std::uint32_t i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
+            {
+                periodic = true;
+                break;
+            }
+        }
+    }
+    return SeekDotHeld(son, periodic);
+}
+
 // The held source inside an area action's area: every living Son of the read is judged by the same hold rule at its
 // distance from the action's point (or from the bot when the action has none), and any held Son inside the radius
 // stands the cast down. The selected Son may be burnable while a second Son beside it is held; one cast would kill both.
@@ -1421,6 +1450,24 @@ Unit* SeekHeldSourceInArea(const SeekFight& state, Unit* around)
             return units[i];
     }
     return nullptr;
+}
+
+// Whether the holding off-tank's own attack on `target` has to stand down: the third off-tank's Son is at or below the
+// hold percent plus the margin with the window shut, so its swings would spend the Son before the next window can. The
+// tank action stops the swing; this keeps the assist (the "tank target" pick, which re-arms it every tick) off as well.
+// Every other bot and every other target answers false before the fight read.
+bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!ai || !bot || !target || !PlayerbotAI::IsTank(bot) || target->GetVictim() != bot)
+        return false;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.tanks.size() < 3 || roles.tanks[2] != bot)
+        return false;
+    SeekFight state;
+    if (!ReadSeekFightCached(ai, bot, state) || !IsSeekSource(state, target))
+        return false;
+    return SeekTankSwingHeld(state.windowOpen, target->GetHealthPercent(),
+                             static_cast<float>(state.row->priority));
 }
 }  // namespace
 
@@ -2864,7 +2911,12 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     // The seek_aura hold also answers a plain swing or bolt on the held source (H2: the first swing slipped through;
     // L6: the third tank's own rotation on the Son it holds). Heals are never single-target damage.
     const bool seekSingle = seeksRow && !area && IsSingleTargetDamageAction(action);
-    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget && !seekSingle)
+    // A DoT can land through any target value, and once it is on a Son it ticks through the hold and the shut window:
+    // every damage cast is judged, not only the ones aimed at the current target.
+    const bool seekDot = seeksRow && dynamic_cast<CastHealingSpellAction*>(action) == nullptr &&
+        dynamic_cast<CastSpellAction*>(action) != nullptr;
+    if (!dpsAssist && !tankAssist && !aoe && !area && !attackerDebuff && !cleaveToggle && !singleTarget && !seekSingle &&
+        !seekDot)
         return 1.0f;
     const auto countNear = [botAi = ai](std::uint32_t entry) { return HoldKillBlockers(botAi, entry); };
     // The log row's veto kind: the action class that was stood down, replaced by "sole" wherever the one_at_a_time
@@ -2881,6 +2933,11 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
+            if (SeekDotOnSource(state, action))
+            {
+                LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
+                return 0.0f;
+            }
             Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
                 : aoe ? AI_VALUE(Unit*, "dps aoe target")
                 : attackerDebuff ? action->GetTarget()
@@ -4563,9 +4620,13 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     }
     if (onTank)
     {
-        // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then).
+        // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then). With the
+        // window shut and the Son already close to the hold percent the tank's swings would spend it before the next
+        // window: the tank stops auto-attacking it, and keeps only the threat.
         task.valid = true;
         task.source = onTank;
+        task.holdSwing = SeekTankSwingHeld(state.windowOpen, onTank->GetHealthPercent(),
+                                           static_cast<float>(state.row->priority));
         if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
             task.walkToSpot = true;
         return task;
@@ -4705,6 +4766,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         hasLast = true;
         return true;
     }
+    if (task.holdSwing)
+    {
+        // AttackStop leaves the threat list alone, so the Son stays on the tank and the tank stays at the spot; true
+        // keeps the rotation from re-arming the swing for this tick, and the next tick asks the same question.
+        hasLast = false;
+        bot->AttackStop();
+        return true;
+    }
     return false;
 }
 
@@ -4726,12 +4795,15 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
         return 1.0f;
     if (!dynamic_cast<MovementAction*>(action))
         return 1.0f;
-    // The seek walk itself, the freeze, the flee and the avoid_cast walk must all run. An attack only picks a target:
-    // holding it would stop the pre-damage and the burn (the trap hold's rule).
+    // The seek walk itself, the freeze, the flee and the avoid_cast walk must all run.
     if (dynamic_cast<BossTacticsSeekAction*>(action) || dynamic_cast<BossTacticsFreezeAction*>(action) ||
-        dynamic_cast<BossTacticsFleeAction*>(action) || dynamic_cast<BossTacticsAvoidCastAction*>(action) ||
-        dynamic_cast<AttackAction*>(action))
+        dynamic_cast<BossTacticsFleeAction*>(action) || dynamic_cast<BossTacticsAvoidCastAction*>(action))
         return 1.0f;
+    // An attack only picks a target: holding it would stop the pre-damage and the burn (the trap hold's rule). The one
+    // exception is the holding off-tank's own swing on a Son already close to the hold with the window shut: the tank
+    // action stops the swing, and this keeps the "tank target" pick from re-arming it every tick.
+    if (dynamic_cast<AttackAction*>(action))
+        return SeekTankHoldsSwing(ai, bot, action->GetTarget()) ? 0.0f : 1.0f;
     if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()) ||
         !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
         return 1.0f;

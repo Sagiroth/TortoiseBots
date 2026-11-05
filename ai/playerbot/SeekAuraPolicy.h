@@ -22,6 +22,7 @@ namespace ai
     constexpr float kSeekPickupYd = 60.0f;           // a source this near B may be pulled
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
+    constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
 
     // Cycle clock: the first sighting of the boss in combat with a victim starts it, and every accepted sighting of the
     // row's cycle spell on a group member restarts it. lastCycleMs 0 means no sighting yet.
@@ -192,6 +193,22 @@ namespace ai
     {
         return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
             nearestSourceToSpotYd <= kSeekPickupYd;
+    }
+
+    // A damage-over-time on a Son of the seek fight is always held: once the aura is on, its ticks cannot be called
+    // back, so they would run through the hold percent and the shut window and kill the Son for the next cycle. The
+    // caller supplies the two reads.
+    inline bool SeekDotHeld(bool isSeekSource, bool spellAppliesPeriodicDamage)
+    {
+        return isSeekSource && spellAppliesPeriodicDamage;
+    }
+
+    // The off-tank holding a source stops auto-attacking it once the window is shut and the Son stands at or below the
+    // hold percent plus a margin: its own swings would take the Son past the percent before the next window can spend
+    // it, and the Son is no longer being brought down anyway. The threat (and the taunt) stays; only the swings stop.
+    inline bool SeekTankSwingHeld(bool windowOpen, float hpPct, float holdPct)
+    {
+        return !windowOpen && hpPct <= holdPct + kSeekTankSwingMarginPct;
     }
 
     // The seek action takes this tick while it walks, and once more to stop a walk already under way. Standing at the

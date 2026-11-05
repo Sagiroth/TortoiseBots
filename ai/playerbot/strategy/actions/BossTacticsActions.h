@@ -550,7 +550,8 @@ namespace ai
     Unit* FindBossSeekKill(PlayerbotAI* ai, Player* bot);
 
     // The second off-tank's job: take a source that fights, pull one while the gather still needs it, and hold it at
-    // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B.
+    // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B,
+    // and `holdSwing` the window-shut stop of the tank's own auto-attack on a Son already close to the hold percent.
     struct SeekTankTask
     {
         bool valid = false;
@@ -559,6 +560,7 @@ namespace ai
         bool take = false;
         bool pull = false;
         bool walkToSpot = false;
+        bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;
     };
     SeekTankTask FindBossSeekTank(PlayerbotAI* ai, Player* bot);

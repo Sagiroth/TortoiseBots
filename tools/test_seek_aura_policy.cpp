@@ -117,6 +117,21 @@ int main()
         CHECK(!SeekAreaVeto({}, 10.0f));
     }
 
+    // SeekDoTsAreNeverCastOnASon: a plain DoT on the boss is fine, but one that would land on any Son of the seek fight
+    // is held at any time, the picked Son included: its ticks would run through the hold percent and the shut window.
+    CHECK(SeekDotHeld(true, true));
+    CHECK(!SeekDotHeld(false, true));
+    CHECK(!SeekDotHeld(true, false));
+    CHECK(!SeekDotHeld(false, false));
+
+    // SeekOffTankStopsSwingingATiredSon: with the window shut the holding off-tank stops auto-attacking a Son already
+    // at or below the hold percent plus 10 (a 30 % hold: 40 % and below); inside the open window it swings as usual,
+    // and a healthier Son stays with the rotation.
+    CHECK(SeekTankSwingHeld(false, 40.0f, 30.0f));
+    CHECK(SeekTankSwingHeld(false, 12.0f, 30.0f));
+    CHECK(!SeekTankSwingHeld(false, 41.0f, 30.0f));
+    CHECK(!SeekTankSwingHeld(true, 12.0f, 30.0f));
+
     // At the gather the seek action stops a walk once, then leaves the tick to the rotation, the heals and the burn:
     // a seek that kept consuming every tick at the spot froze the seekers (H1).
     CHECK(SeekActionConsumesTick(false, false)); // still walking
