@@ -84,10 +84,19 @@ namespace ai
         return missing <= 0 || forceBurn || nowMs - gatherStartMs >= kSeekGatherMaxMs;
     }
 
-    // DPS may not damage a source outside the dose window at all; inside it they stop at the hold percent until the
-    // gather is ready, and the burn after readiness is not held again.
-    inline bool SeekSourceHeld(bool windowOpen, float hpPct, float holdPct, bool gatherReady)
+    // A source already at or below the hold percent and fighting the raid may be finished wherever it stands: held
+    // until the next window, it reset and healed back to full.
+    inline bool SeekSourceFinishable(bool inCombat, float hpPct, float holdPct)
     {
+        return inCombat && hpPct <= holdPct;
+    }
+
+    // DPS may not damage a source outside the dose window at all; inside it they stop at the hold percent until the
+    // gather is ready, and the burn after readiness is not held again. A finishable source is never held.
+    inline bool SeekSourceHeld(bool windowOpen, float hpPct, float holdPct, bool gatherReady, bool finishable = false)
+    {
+        if (finishable)
+            return false;
         if (!windowOpen)
             return true;
         return !gatherReady && hpPct <= holdPct;
@@ -138,11 +147,15 @@ namespace ai
     }
 
     // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
-    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands).
+    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn or a source
+    // already at the hold percent reaches the fallback too, whatever the tank count: the off-spot Son has to die for
+    // its cloud, and waiting for a drag at the spot left it alive.
     constexpr float kSeekFallbackYd = 35.0f;
 
-    inline float SeekSourceSearchYd(bool thirdTank)
+    inline float SeekSourceSearchYd(bool thirdTank, bool forceBurn, bool belowHold)
     {
+        if (forceBurn || belowHold)
+            return kSeekFallbackYd;
         return thirdTank ? kSeekSpotYd : kSeekFallbackYd;
     }
 

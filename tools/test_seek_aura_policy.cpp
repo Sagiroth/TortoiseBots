@@ -110,9 +110,28 @@ int main()
     }
 
     // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
-    CHECK(SeekSourceSearchYd(true) == kSeekSpotYd);
-    CHECK(SeekSourceSearchYd(false) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(false, false, false) == kSeekFallbackYd);
     CHECK(kSeekFallbackYd == 35.0f);
+
+    // SeekForcedBurnReachesOffSpotSource: with three tanks the search used to stay at the spot's 8 yd, so a Son 11 yd
+    // out could never become the gather source and was held for the whole fight. A forced burn widens the reach to
+    // 35 yd, and the source the gather then stands around is not held once the gather is ready.
+    CHECK(SeekSourceSearchYd(true, true, false) == kSeekFallbackYd);
+    CHECK(11.0f <= SeekSourceSearchYd(true, true, false));
+    CHECK(!SeekSourceHeld(true, 80.0f, 30.0f, true));
+
+    // SeekBelowHoldSourceNotHeldOutsideWindow: a source already at or below the hold percent and fighting the raid
+    // may be finished even with the dose window shut (held, it healed back from 14 % to full). Any other source still
+    // waits for the window, and a finishable one outside it is not a gather.
+    CHECK(SeekSourceFinishable(true, 14.0f, 30.0f));
+    CHECK(!SeekSourceFinishable(false, 14.0f, 30.0f));
+    CHECK(!SeekSourceFinishable(true, 31.0f, 30.0f));
+    CHECK(SeekSourceSearchYd(true, false, true) == kSeekFallbackYd);
+    CHECK(!SeekSourceHeld(false, 14.0f, 30.0f, false, true));
+    CHECK(SeekSourceHeld(false, 40.0f, 30.0f, false, false));
+    CHECK(SeekSourceHeld(true, 14.0f, 30.0f, false, false));
+
 
     // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
     CHECK(SeekClockStartOver(false, 0, 5000));

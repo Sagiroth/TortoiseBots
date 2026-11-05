@@ -1122,18 +1122,41 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         }
     }
     out.seekers = out.windowOpen ? CountSeekWanted(ai, bot, boss, *row, out.windowOpen, nullptr, 0.0f) : 0;
+    // A source already at or below the hold percent that fights the raid is the kill pick wherever it stands: waiting
+    // for the next window let the off-spot Son reset (read from the fight's units, before the grid walk below).
+    bool belowHold = false;
+    for (Unit* unit : fight.units)
+    {
+        if (unit->GetEntry() == row->targetEntry &&
+            SeekSourceFinishable(unit->IsInCombat(), unit->GetHealthPercent(), holdPct))
+        {
+            belowHold = true;
+            break;
+        }
+    }
     // The source the gather stands around: one pick for the whole raid. The record's current source wins while it still
     // stands at the spot; with two Sons there every bot else would pick its own and flip the shared latch. Without the
-    // third tank the search reaches 35 yd, so the gather goes to the source wherever it stands.
+    // third tank, or with the burn forced or a source already at the hold percent, the search reaches 35 yd, so the
+    // gather goes to the source wherever it stands and the below-hold or lowest one is the pick.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3);
+    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold);
     const std::vector<Creature*> sources =
         SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
     std::vector<SeekSourceChoice> atSpot;
+    std::vector<SeekSourceChoice> finishable;
     atSpot.reserve(sources.size());
     for (Creature* candidate : sources)
-        atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
-    const std::uint64_t chosenGuid = SeekKeepOrPickGatherSource(gatherGuid, atSpot);
+    {
+        const SeekSourceChoice choice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()};
+        atSpot.push_back(choice);
+        if (SeekSourceFinishable(candidate->IsInCombat(), choice.hpPct, holdPct))
+            finishable.push_back(choice);
+    }
+    // A source already at the hold percent and fighting is the kill pick before any other: the lowest of them wins,
+    // and the record's current source may not hold it back.
+    const std::uint64_t chosenGuid = !finishable.empty()
+        ? SeekKeepOrPickGatherSource(0, finishable)
+        : SeekKeepOrPickGatherSource(out.forceBurn || belowHold ? 0 : gatherGuid, atSpot);
     Unit* source = nullptr;
     for (Creature* candidate : sources)
     {
@@ -1217,15 +1240,18 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
 
 // Whether the row holds the damage on this source: every source but the one at the spot (a Son dragged or patrolling
 // elsewhere must not be killed away from B), and the one at the spot outside the dose window or at the hold percent
-// until the gather is ready.
+// until the gather is ready. A source already at the hold percent and fighting the raid is never held: it is the
+// finishable pick wherever it stands.
 bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 {
     if (!IsSeekSource(state, unit))
         return false;
+    const float holdPct = static_cast<float>(state.row->priority);
+    const bool finishable =
+        SeekSourceFinishable(unit->IsInCombat(), unit->GetHealthPercent(), holdPct);
     if (unit != state.source)
-        return true;
-    return SeekSourceHeld(state.windowOpen, unit->GetHealthPercent(), static_cast<float>(state.row->priority),
-                          state.ready);
+        return !finishable;
+    return SeekSourceHeld(state.windowOpen, unit->GetHealthPercent(), holdPct, state.ready, finishable);
 }
 
 // The source a damage action would hit: its own target, or (area actions) the row's source inside the area of the
@@ -4252,10 +4278,11 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return nullptr;
-    if (!state.windowOpen || !state.source)
+    if (!state.source)
         return nullptr;
-    // Outside the window nothing damages a source; inside it the pre-damage stops at the row's percent until the
-    // gather is ready, and the burn runs on after (SeekHoldsUnit). A source anywhere but the spot is held too.
+    // Outside the window nothing damages a source unless it already stands at the hold percent and fights (the
+    // finishable pick); inside it the pre-damage stops at the row's percent until the gather is ready, and the burn
+    // runs on after (SeekHoldsUnit).
     if (SeekHoldsUnit(state, state.source))
         return nullptr;
     return state.source;
