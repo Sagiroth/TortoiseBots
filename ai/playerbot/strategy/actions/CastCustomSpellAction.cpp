@@ -1096,7 +1096,14 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
         ai->StopMoving();
     if (bot->IsMounted())
         ai->Unmount();
-    bool didCast = ai->CastSpell(13262, bot, item);
+    // The client's own cast with the stack as the item target; PlayerbotAI's
+    // CastSpell would pass it as the casting item and the core refuses that.
+    WorldPacket cast(CMSG_CAST_SPELL, 4 + 2 + 9);
+    cast << uint32(13262);
+    cast << uint16(TARGET_FLAG_ITEM);
+    cast << item->GetObjectGuid().WriteAsPacked();
+    bot->GetSession()->HandleCastSpellOpcode(cast);
+    bool didCast = bot->IsNonMeleeSpellCasted(false);
     sLog.outBasic("TBDEBUG disenchant service %s cast %u -> %u", bot->GetName(), queued.itemId, didCast ? 1u : 0u);
     if (!didCast)
     {
