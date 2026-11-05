@@ -1301,26 +1301,31 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     // the grid walk below). A Son farther than the reach is not counted: it can neither widen the search nor drop the
     // gather latch, since the gather cannot stand around it without leaving B.
     bool belowHold = false;
+    bool engagedSon = false;
     for (Unit* unit : fight.units)
     {
         if (unit->GetEntry() != row->targetEntry)
             continue;
         const float distFromSpotYd = unit->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
-        if (SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
-        {
+        // A Son already fighting inside the seek's reach is the pick wherever it stands (the one left on the healers
+        // at 11-25 yd from the spot was never selected at the spot's radius).
+        if (unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd)
+            engagedSon = true;
+        if (!belowHold &&
+            SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
             belowHold = true;
+        if (belowHold && engagedSon)
             break;
-        }
     }
     // The source the gather stands around: one pick for the whole raid. The latch holds across the reads: the
     // record's current source wins while its Son is alive and inside the seek's reach, even when the search shrinks
     // back to the spot's radius or the burn is forced — two Sons near the spot with damage spread between them would
     // otherwise flip the pick and restart the gather's readiness every read. Only a dead or out-of-reach source
     // repicks, and then the lowest health % (then lowest guid) of the search's sources is the new one. Without the
-    // third tank, or with the burn forced or a source already at the hold percent, the search reaches 35 yd, so the
-    // gather goes to the source wherever it stands.
+    // third tank, or with the burn forced, a source already at the hold percent or one already fighting inside the
+    // reach, the search reaches 35 yd, so the gather goes to the source wherever it stands.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold);
+    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold, engagedSon);
     const std::vector<Creature*> sources =
         SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
     std::vector<SeekSourceChoice> atSpot;

@@ -249,7 +249,11 @@ class SeekRolesWiring(unittest.TestCase):
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the
         # fallback (M3).
         read = body(ACTIONS, "bool ReadSeekFight(")
-        self.assertIn("SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold)", read)
+        self.assertIn("SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold, engagedSon)", read)
+        # A Son already fighting inside the reach is the pick wherever it stands (11-25 yd from the spot on the
+        # healers was never selected at the spot's radius).
+        self.assertIn("engagedSon = true", read)
+        self.assertIn("unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd", read)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the

@@ -228,15 +228,23 @@ int main()
     }
 
     // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
-    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
-    CHECK(SeekSourceSearchYd(false, false, false) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(false, false, false, false) == kSeekFallbackYd);
     CHECK(kSeekFallbackYd == 35.0f);
+
+    // SeekInCombatOffSpotSonIsPicked: with three tanks a Son already fighting 11-25 yd from the spot (on the healers)
+    // used to stay outside the spot's 8 yd search and was never picked; an engaged Son inside the 35 yd reach now
+    // widens the search, so the gather and the tank's drag take it.
+    CHECK(SeekSourceSearchYd(true, false, false, true) == kSeekFallbackYd);
+    CHECK(18.0f <= SeekSourceSearchYd(true, false, false, true));
+    CHECK(SeekSourceSelectable(true, 5));
+    CHECK(!SeekSourceSelectable(false, 5)); // an idle Son is still not a pick
 
     // SeekForcedBurnReachesOffSpotSource: with three tanks the search used to stay at the spot's 8 yd, so a Son 11 yd
     // out could never become the gather source and was held for the whole fight. A forced burn widens the reach to
     // 35 yd, and the source the gather then stands around is not held once the gather is ready.
-    CHECK(SeekSourceSearchYd(true, true, false) == kSeekFallbackYd);
-    CHECK(11.0f <= SeekSourceSearchYd(true, true, false));
+    CHECK(SeekSourceSearchYd(true, true, false, false) == kSeekFallbackYd);
+    CHECK(11.0f <= SeekSourceSearchYd(true, true, false, false));
     CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 11.0f, 5));
 
     // SeekBelowHoldSourceStillWaits: a low Son only widens the search while it stands inside the seek's reach and
@@ -244,7 +252,7 @@ int main()
     CHECK(SeekSourceFinishable(true, 14.0f, 30.0f, 5));
     CHECK(!SeekSourceFinishable(false, 14.0f, 30.0f, 5));
     CHECK(!SeekSourceFinishable(true, 31.0f, 30.0f, 5));
-    CHECK(SeekSourceSearchYd(true, false, true) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, true, false) == kSeekFallbackYd);
     CHECK(SeekHoldDecision(true, false, false, false, 14.0f, 30.0f, 5.0f, 5));
     CHECK(SeekHoldDecision(true, false, false, false, 40.0f, 30.0f, 5.0f, 5));
     CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));
@@ -256,7 +264,7 @@ int main()
     CHECK(!SeekFinishableInReach(true, 14.0f, 30.0f, 36.0f, 5));
     CHECK(!SeekFinishableInReach(true, 31.0f, 30.0f, 10.0f, 5));
     CHECK(!SeekFinishableInReach(false, 14.0f, 30.0f, 10.0f, 5));
-    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(true, false, false, false) == kSeekSpotYd);
     // A picked Son beyond the reach is held even inside the window with the gather ready: the gather cannot stand
     // around it inside the row's radius.
     CHECK(SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 36.0f, 5));

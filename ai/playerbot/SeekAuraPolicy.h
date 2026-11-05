@@ -328,12 +328,13 @@ namespace ai
     }
 
     // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
-    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn or a source
-    // already at the hold percent reaches the fallback too, whatever the tank count: the off-spot Son has to die for
-    // its cloud, and waiting for a drag at the spot left it alive.
-    inline float SeekSourceSearchYd(bool thirdTank, bool forceBurn, bool belowHold)
+    // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn, a source
+    // already at the hold percent, or a Son already fighting inside that reach reaches the fallback too, whatever the
+    // tank count: the off-spot Son has to die for its cloud, and a Son left fighting the healers at 11-25 yd from the
+    // spot was never selected, so it kept hitting them until the raid burned it too late.
+    inline float SeekSourceSearchYd(bool thirdTank, bool forceBurn, bool belowHold, bool engagedSon)
     {
-        if (forceBurn || belowHold)
+        if (forceBurn || belowHold || engagedSon)
             return kSeekFallbackYd;
         return thirdTank ? kSeekSpotYd : kSeekFallbackYd;
     }
