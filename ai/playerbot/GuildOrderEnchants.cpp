@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <vector>
 
+using namespace TortoiseBots::GuildOrders;
+
 namespace ai
 {
 namespace
