@@ -1,6 +1,7 @@
 # Changelog
 
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+- Fixed: a dungeon party told to kill a totem keeps hitting it until it dies, instead of drifting off after one burst and leaving it almost dead.
 
 ## v1.15.1 (2026-11-03)
 

@@ -1621,7 +1621,8 @@ static void TestRestFightFocusLeavesTheLeadOffStay()
     f.leadStaying = false; // the focus ended the tank's stay
     for (int i = 0; i < 5; ++i)
     {
-        CHECK(Tick(r, f).empty());
+        std::string const order = Tick(r, f);
+        CHECK(order.empty() || order == "focus 77"); // the held focus is re-sent while it lives
         CHECK(!LeadStayDueWhileResting(r, true, false, f.leadStaying, false, f.staleCombat));
     }
 }
@@ -8038,9 +8039,13 @@ static void TestChannellerQualificationOnABossStep()
     CHECK(q.focusGuid == 0 && q.state == State::Running);
     std::uint64_t const refusedAt = q.runMs;
     CHECK(Tick(q, f) == "focus " + std::to_string(e96));
-    // Past the ignore window e94 may be picked again, but e96 (the same rank, focused) keeps the focus while it lives (2b).
+    // Past the ignore window e94 may be picked again, but e96 (the same rank, focused) keeps the focus while it lives
+    // (2b); that focus is re-sent every kTotemRefocusMs and nothing else goes out.
     while (q.runMs < refusedAt + kFocusRefusedIgnoreMs + kTickMs)
-        CHECK(Tick(q, f).empty() && q.focusGuid == e96);
+    {
+        std::string const order = Tick(q, f);
+        CHECK((order.empty() || order == "focus " + std::to_string(e96)) && q.focusGuid == e96);
+    }
     // e96 is gone (it died, or its channel stopped): the refused e94 is taken again, the refusal did not ban it.
     f.killFirst = {ch};
     CHECK(Tick(q, f) == "focus " + std::to_string(e94));
@@ -8105,19 +8110,25 @@ static void TestKillFirstBoundDoesNotFlipFlop()
     // A 5650 (rank 1) far, a 7247 (rank 2) near: the near one.
     f.killFirst = {Engaged(Unit(30, 5650, 30)), Engaged(Unit(3, 7247, 5))};
     CHECK(Tick(r, f) == "focus 3");
-    int focuses = 0;
+    int switches = 0;
+    std::uint64_t last = r.focusGuid;
     for (int i = 0; i < 40; ++i)
     {
         // The 5650 drifts in and out across the bound.
         f.killFirst[0].distLead = (i % 2) ? kKillFirstMaxYd - 2.0f : kKillFirstMaxYd + 2.0f;
-        if (Tick(r, f).compare(0, 6, "focus ") == 0)
-            ++focuses;
+        Tick(r, f);
+        if (r.focusGuid != last)
+        {
+            last = r.focusGuid;
+            ++switches;
+        }
     }
-    // One switch to the better rank once it came in, then it holds.
-    CHECK(focuses == 1 && r.focusGuid == 30);
+    // One switch to the better rank once it came in, then it holds (its re-sends name the same unit).
+    CHECK(switches == 1 && r.focusGuid == 30);
     // The focused 5650 steps out of the bound again: still the focus.
     f.killFirst[0].distLead = 30;
-    CHECK(Tick(r, f).empty() && r.focusGuid == 30);
+    std::string const held = Tick(r, f);
+    CHECK((held.empty() || held == "focus 30") && r.focusGuid == 30);
 }
 
 // A focus is never dropped for distance: no order takes it back (the skull and
@@ -8139,7 +8150,10 @@ static void TestHeldFocusEndsOnlyWhenItsUnitIsGone()
     f.leadStaying = false;
     f.killFirst[0].distLead = 40; // back toward its camp
     for (int i = 0; i < 10; ++i)
-        CHECK(Tick(r, f).empty() && r.focusGuid == 30);
+    {
+        std::string const order = Tick(r, f);
+        CHECK((order.empty() || order == "focus 30") && r.focusGuid == 30); // held out of the bound, its re-sends only
+    }
     // Alive but not pickable (evading): still held, the guard still watches.
     f.killFirst[0].evading = true;
     CHECK(Tick(r, f).empty() && r.focusGuid == 30);
@@ -8367,7 +8381,7 @@ static void TestACrowdControlledFocusTakesItsSkullOff()
 }
 
 // Scholomance r30 slot C t 1521.6-1530.7 2b: the two swap places but the focus holds. Failing case on the old
-// code: focuses == 20, the CHECK after the loop.
+// code: a new focus every tick (20 moves); the held unit's re-sends name the same unit and are no move.
 static void TestKillFirstKeepsItsUnitAgainstAnEqualRank()
 {
     DungeonPlan plan = ZfPlan();
@@ -8378,15 +8392,20 @@ static void TestKillFirstKeepsItsUnitAgainstAnEqualRank()
     f.anyInCombat = true;
     f.killFirst = {Engaged(Unit(30, 5650, 6)), Engaged(Unit(31, 5650, 12))};
     CHECK(Tick(r, f) == "focus 30");
-    int focuses = 0;
+    int moves = 0;
+    std::uint64_t last = r.focusGuid;
     for (int i = 0; i < 20; ++i)
     {
         f.killFirst[0].distLead = (i % 2) ? 6.0f : 13.0f;
         f.killFirst[1].distLead = (i % 2) ? 12.0f : 4.0f;
-        if (Tick(r, f).compare(0, 6, "focus ") == 0)
-            ++focuses;
+        Tick(r, f); // the pick's re-sends name the same unit; the focus itself never moves
+        if (r.focusGuid != last)
+        {
+            last = r.focusGuid;
+            ++moves;
+        }
     }
-    CHECK(focuses == 0 && r.focusGuid == 30);
+    CHECK(moves == 0 && r.focusGuid == 30);
     f.killFirst = {Engaged(Unit(31, 5650, 4))};
     CHECK(Tick(r, f) == "focus 31");
 }
@@ -8533,16 +8552,17 @@ static void TestGuardWatchesAfterAFocusWipe2Replay()
     CHECK(Tick(r, f) == "attack 50 Tanky");
     CHECK(r.guardOrders == 1);
     CHECK(r.note.find("picks up 5649 off the healer") != std::string::npos);
-    // No focus is re-sent: the pick-up does not change the kill_first pick.
-    CHECK(Tick(r, f).empty() && r.focusGuid == 30);
+    // The pick-up does not change the kill_first pick; the focus' only orders are its re-sends, the same unit.
+    std::string const held = Tick(r, f);
+    CHECK((held.empty() || held == "focus 30") && r.focusGuid == 30);
 }
 
 // The order rate in the new state (focus on, the tank off its stay): healer
 // attackers whose nearest changes every tick give at most kGuardOrdersPerFight
-// pick-ups, each kGuardRepeatMs after the last order, and the focus is never
-// re-sent. The same ten units hit the healer from the first tick: none joins
-// later, so the budget is not refilled (CheckGuard; the refill has its own
-// tests, TestGuardRefill*).
+// pick-ups, each kGuardRepeatMs after the last order. The held focus only ever
+// re-sends its own unit (kTotemRefocusMs), never another one. The same ten
+// units hit the healer from the first tick: none joins later, so the budget is
+// not refilled (CheckGuard; the refill has its own tests, TestGuardRefill*).
 static void TestGuardAfterAFocusIsRateBounded()
 {
     DungeonPlan plan = ZfPlan();
@@ -8576,13 +8596,16 @@ static void TestGuardAfterAFocusIsRateBounded()
             sinceLast = 0;
         }
         else if (o.compare(0, 6, "focus ") == 0)
+        {
+            CHECK(o == "focus 30"); // a re-send of the held focus, never a new pick
             ++focuses;
+        }
         else if (!o.empty())
             ++other;
     }
     CHECK(pickups == static_cast<int>(kGuardOrdersPerFight));
     CHECK(minGap >= kGuardRepeatMs);
-    CHECK(focuses == 0 && other == 0);
+    CHECK(focuses > 0 && other == 0); // the held focus re-sends (its own cadence, the dedicated test's)
 }
 
 // Deadmines r12-19z29 step 118, t 2207.9-2237: the kill_first 622 3569 was
@@ -26384,7 +26407,10 @@ static void TestRaidHealerGuardPassesOverAHeldUnit()
     f.killFirst = {Engaged(Unit(50022, 11368, 10))};
     r.focusGuid = 50022; // the focus takes every bot; the guard does not fight it
     for (int k = 0; k < 3; ++k)
-        CHECK(GuardTick(r, f).empty());
+    {
+        std::string const order = GuardTick(r, f);
+        CHECK(order.empty() || order == "focus 50022"); // the held focus' re-send, never a guard pick-up
+    }
     CHECK(r.focusGuid == 50022);
     CHECK(r.healerGuardDps.empty());
     // A run cc hold on the unit is the same.
@@ -26706,6 +26732,39 @@ static void TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick()
     CHECK(Tick(r, f) == "focus 501");
     CHECK(r.focusGuid == 501);
     CHECK(r.focusIconGuid == 0); // the skull stays where it is (T5)
+}
+
+// A totem one volley left at 11 % keeps the focus, but no new order went out while the pick stayed the same, so the
+// DPS that drifted off after the burst never came back (ZG walk 41: 0 bots on it for 75 s). The focus is sent again
+// every kTotemRefocusMs while the totem lives, and that is the only order it gets.
+static void TestTotemFocusRefiresWhileTotemLives()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    // The next 3 s of the same pick: one re-send, at the 3 s mark and never another order.
+    int resends = 0;
+    for (int tick = 0; tick < 3; ++tick)
+    {
+        std::string const order = Tick(r, f);
+        if (order.empty())
+            continue;
+        CHECK(order == "focus 501");
+        ++resends;
+    }
+    CHECK(resends == 1);
+    CHECK(r.focusGuid == 501);
+    CHECK(r.focusIconGuid == 0); // a re-send moves no mark either
 }
 
 // T2: the totem focus runs at the top of the fight branch, so the automatic crowd control (or the hp hold, the guard)
@@ -35698,6 +35757,7 @@ int main()
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
+    TestTotemFocusRefiresWhileTotemLives();
     TestTotemFocusFiresBeforeTheAutoCcTick();
     TestTotemFocusLeavesTheSkullOnTheBoss();
     TestTotemFocusMayInterrupt();
