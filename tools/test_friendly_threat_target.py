@@ -16,11 +16,13 @@ class FriendlyThreatTargetTest(unittest.TestCase):
         harness = r"""
 #include <cassert>
 #include <vector>
-struct Guid { bool player = false; bool IsPlayer() const { return player; } };
+struct Guid { bool player = false; bool empty = true; bool IsPlayer() const { return player; } bool IsEmpty() const { return empty; } };
+using ObjectGuid = Guid;
 struct Unit {
     virtual ~Unit() = default;
-    unsigned map = 1; bool friendly = false; Unit* victim = nullptr; Guid guid;
+    unsigned map = 1; unsigned entry = 1; bool friendly = false; Unit* victim = nullptr; Guid guid;
     unsigned GetMapId() const { return map; }
+    unsigned GetEntry() const { return entry; }
     Unit* GetVictim() const { return victim; }
     Guid getObjectGuid() const { return guid; }
 };
@@ -32,9 +34,10 @@ enum { CREATURE_IMMUNITY_TAUNT = 0x02 };
 struct Player;
 struct Group { std::vector<Player*> members; };
 struct Player : Unit {
-    Group* group = nullptr; bool tank = false, alive = true, safe = true;
+    Group* group = nullptr; bool tank = false, alive = true, safe = true; Guid charmer;
     bool IsBeingTeleported() const { return false; }
     Group* GetGroup() const { return group; }
+    Guid GetCharmerGuid() const { return charmer; }
 };
 struct PlayerbotAI {
     Player* bot;
@@ -43,6 +46,21 @@ struct PlayerbotAI {
     bool IsTank(Player* p) const { return p->tank; }
 };
 struct ThreatManager { float getThreat(Player*) const { return 42; } };
+struct RaidTankRoles { std::vector<Player*> tanks; };
+RaidTankRoles GetRaidTankRoles(PlayerbotAI* ai)
+{
+    RaidTankRoles roles;
+    Player* bot = ai->GetBot();
+    if (bot->tank)
+        roles.tanks.push_back(bot);
+    if (bot->group)
+        for (Player* member : bot->group->members)
+            if (member != bot && member->tank)
+                roles.tanks.push_back(member);
+    return roles;
+}
+struct BossTacticsStub { bool HasThreatSuccessor(unsigned, unsigned) const { return false; } };
+BossTacticsStub GetBossTactics() { return {}; }
 struct Facade {
     bool IsFriendlyTo(Unit* unit, Player*) const { return unit->friendly; }
     bool IsAlive(Player* p) const { return p->alive; }
@@ -54,7 +72,7 @@ struct ThreatValue {
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
-namespace ai { bool TargetTauntImmune(Unit* target); }
+namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
 using namespace ai;
 """
         harness += methods + r"""
