@@ -18,6 +18,7 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura"}
@@ -680,6 +681,19 @@ class BossTacticsSql(unittest.TestCase):
                          (taunt["priority"], taunt["param"], taunt["tactic_mode"], taunt["hp_min"], taunt["hp_max"]),
                          "the Berserker taunt_after_cast row drifted")
         self.assertIsNone(new_kind_problem(taunt))
+    def test_berserker_row_is_documented(self):
+        # docs/play/boss-tactics.md lists every live ZG taunt row with its
+        # toggles; the Berserker row needs DungeonRunAuraTactics and
+        # DungeonRunCharmYield. A spell-less until_tank row recurs on every
+        # threat reset, so Known limits no longer demands a cast trigger.
+        with open(DOC, encoding="utf-8") as handle:
+            doc = handle.read()
+        rows = [line for line in doc.splitlines() if "Gurubashi Berserker" in line]
+        self.assertTrue(rows, "the Berserker row is missing from the ZG table")
+        self.assertTrue(any("11352" in line for line in rows), "the Berserker row names no entry")
+        self.assertTrue(any("DungeonRunCharmYield" in line for line in rows),
+                        "the Berserker row names no charm-yield toggle")
+        self.assertIn("spell-less `taunt_after_cast` mode `until_tank` covers a scripted threat reset", doc)
 
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
