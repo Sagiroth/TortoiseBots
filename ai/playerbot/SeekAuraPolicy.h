@@ -166,6 +166,26 @@ namespace ai
         return hpPct <= holdPct && !gatherReady && !forceBurn;
     }
 
+    // One living Son at an area action's point: how far it stands from the point (the action's target, or the bot when
+    // the action has none) and whether the hold rule holds it.
+    struct SeekAreaSon
+    {
+        float distToPointYd = 0.0f;
+        bool held = false;
+    };
+
+    // Whether an area action is held because any source inside its area is: an area cast aimed at the picked source
+    // also lands on a second, held Son standing beside it, and killing that one spends the raid's other source.
+    inline bool SeekAreaVeto(const std::vector<SeekAreaSon>& sons, float radiusYd)
+    {
+        for (const SeekAreaSon& son : sons)
+        {
+            if (son.distToPointYd <= radiusYd && son.held)
+                return true;
+        }
+        return false;
+    }
+
     // The second off-tank pulls a new source while the window is open, no source is in the fight yet, enough seekers
     // still miss the aura, and a source stands near the spot.
     inline bool SeekTankPullDue(bool windowOpen, bool sourceInFight, int missing, float nearestSourceToSpotYd)

@@ -708,6 +708,7 @@ struct SeekFight
     int missing = 0;   // seekers outside the gather radius while the gather runs
     int seekers = 0;   // living seekers that lack the poison (the pull rule's count)
     Unit* source = nullptr; // the living source at the row's spot
+    std::vector<Unit*> sons; // every living source of the fight the area veto judges (one bounded walk per read)
 };
 
 struct SeekTickCache
@@ -1268,6 +1269,20 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             continue;
         atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
     }
+    // The area veto's subjects: every living Son the fight sees (the bot's own and its group's attackers) and the ones
+    // the source walk found around the spot, so an area cast beside a Son whose only victim is another group member is
+    // still judged. The list is built from the tick's read, never from a grid search per action.
+    out.sons.reserve(fight.units.size() + sources.size());
+    for (Unit* unit : fight.units)
+    {
+        if (unit->GetEntry() == row->targetEntry && std::find(out.sons.begin(), out.sons.end(), unit) == out.sons.end())
+            out.sons.push_back(unit);
+    }
+    for (Creature* candidate : sources)
+    {
+        if (std::find(out.sons.begin(), out.sons.end(), static_cast<Unit*>(candidate)) == out.sons.end())
+            out.sons.push_back(candidate);
+    }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
         latched->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) <= kSeekFallbackYd;
@@ -1371,19 +1386,41 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
                             unit->GetHealthPercent(), holdPct, distFromSpotYd, state.seekers);
 }
 
-// The source a damage action would hit: its own target, or (area actions) the row's source inside the area of the
-// action's target point or of the bot. The read's source is the only one asked: a grid search per action would put a
-// world scan in the multiplier's path, and the source the raid damages is the one the gather stands around.
-Unit* SeekSourceInAction(Player* bot, Action* action, const SeekFight& state, Unit* target, bool area)
+// The source a single-target damage action would hit: its own target. The read's source alone used to answer the area
+// clause too, so an area cast aimed at the picked Son also reached a second, held Son standing beside it unseen.
+Unit* SeekSourceInAction(const SeekFight& state, Unit* target)
 {
-    if (!action || !state.live || !state.row)
+    if (!state.live || !state.row)
         return nullptr;
-    if (IsSeekSource(state, target))
-        return target;
-    if (!area || !state.source || !sServerFacade.IsAlive(state.source))
+    return IsSeekSource(state, target) ? target : nullptr;
+}
+
+// The held source inside an area action's area: every living Son of the read is judged by the same hold rule at its
+// distance from the action's point (or from the bot when the action has none), and any held Son inside the radius
+// stands the cast down. The selected Son may be burnable while a second Son beside it is held; one cast would kill both.
+Unit* SeekHeldSourceInArea(const SeekFight& state, Unit* around)
+{
+    if (!around)
         return nullptr;
-    Unit* around = target ? target : bot;
-    return state.source->GetDistance(around) <= kHoldKillAoeNearYd ? state.source : nullptr;
+    std::vector<SeekAreaSon> sons;
+    std::vector<Unit*> units;
+    sons.reserve(state.sons.size());
+    units.reserve(state.sons.size());
+    for (Unit* son : state.sons)
+    {
+        if (!IsSeekSource(state, son))
+            continue;
+        sons.push_back(SeekAreaSon{son->GetDistance(around), SeekHoldsUnit(state, son)});
+        units.push_back(son);
+    }
+    if (!SeekAreaVeto(sons, kHoldKillAoeNearYd))
+        return nullptr;
+    for (std::size_t i = 0; i < sons.size(); ++i)
+    {
+        if (sons[i].held && sons[i].distToPointYd <= kHoldKillAoeNearYd)
+            return units[i];
+    }
+    return nullptr;
 }
 }  // namespace
 
@@ -2848,10 +2885,14 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
                 : aoe ? AI_VALUE(Unit*, "dps aoe target")
                 : attackerDebuff ? action->GetTarget()
                 : AI_VALUE(Unit*, "current target");
-            Unit* source = SeekSourceInAction(bot, action, state, picked, area);
-            if (source && SeekHoldsUnit(state, source))
+            Unit* source = SeekSourceInAction(state, picked);
+            Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
+            // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it down.
+            if (!heldSource && area)
+                heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
+            if (heldSource)
             {
-                LogHoldKillVeto(ai, bot, "seek", source);
+                LogHoldKillVeto(ai, bot, "seek", heldSource);
                 return 0.0f;
             }
         }

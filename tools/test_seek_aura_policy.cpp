@@ -105,6 +105,18 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
+    // SeekAreaHoldsASonBesideThePick: an area action's area is judged Son by Son, so the selected Son may be burnable
+    // while a second, held Son standing beside it is not: the cast reaches both, so it is vetoed. When the area reaches
+    // only the non-selected (held) Son the cast is vetoed too, and it stands when nothing inside it is held.
+    {
+        CHECK(SeekAreaVeto({{12.0f, false}, {8.0f, true}}, 10.0f));  // only the held Son is in the area
+        CHECK(SeekAreaVeto({{6.0f, false}, {8.0f, true}}, 10.0f));   // the pick is in it too
+        CHECK(!SeekAreaVeto({{6.0f, false}, {8.0f, true}}, 7.0f));   // the held Son is outside the radius
+        CHECK(!SeekAreaVeto({{6.0f, false}, {12.0f, true}}, 10.0f)); // a held Son beyond the cast
+        CHECK(!SeekAreaVeto({{0.0f, false}}, 10.0f));
+        CHECK(!SeekAreaVeto({}, 10.0f));
+    }
+
     // At the gather the seek action stops a walk once, then leaves the tick to the rotation, the heals and the burn:
     // a seek that kept consuming every tick at the spot froze the seekers (H1).
     CHECK(SeekActionConsumesTick(false, false)); // still walking
