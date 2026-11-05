@@ -40,6 +40,7 @@ namespace ai
         int missing = 0;
         std::uint32_t siphonAtMs = 0;   // the +1 s dose count is due then (0: none pending)
         std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
+        std::uint32_t siphonThirdAtMs = 0;  // the +9 s read, after the 8 s heal has run its course
         std::uint32_t siphonSeenMs = 0;     // the cycle's first 24324 sighting: the note's clock starts here
         std::uint32_t siphonCycle = 0;
         int siphonDosed = 0;            // the +1 s read, which the run line reports
@@ -49,7 +50,8 @@ namespace ai
     };
 
     // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside
-    // it. The second read settles a heal the first cannot explain and must never erase the first.
+    // it. The second read settles a heal the first cannot explain and must never erase the first; the +9 s read (the
+    // end of the 8 s heal) is the log's own and replaces neither.
     inline void SeekStoreSiphonRead(SeekCycleRecord& record, std::uint32_t atSec, int dosed, int undosed)
     {
         if (atSec <= 1)
@@ -57,7 +59,7 @@ namespace ai
             record.siphonDosed = dosed;
             record.siphonUndosed = undosed;
         }
-        else
+        else if (atSec <= 3)
         {
             record.siphonLateDosed = dosed;
             record.siphonLateUndosed = undosed;

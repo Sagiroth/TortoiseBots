@@ -849,10 +849,12 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting and again two seconds later, both far inside the 8 s the dummy
-// aura lasts: the second read settles a heal the first one cannot explain (a pet, the boss's own stack count).
+// The siphon count runs one second after the sighting and again two seconds later, and the boss's health is read once
+// more nine seconds after it: the 8 s heal has run its course by then, so that read sees the heal the +1 s and +3 s
+// reads under-count. The first two settle a heal the counts alone cannot explain (a pet, the boss's own stack count).
 const std::uint32_t kSeekSiphonReadMs = 1000;
 const std::uint32_t kSeekSiphonSecondMs = 3000;
+const std::uint32_t kSeekSiphonThirdMs = 9000;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -1228,6 +1230,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             ++record.cycleNo;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
+            record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
             record.siphonCycle = record.cycleNo;
         }
@@ -1246,6 +1249,14 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
+        }
+        else if (record.siphonThirdAtMs != 0 && nowMs >= record.siphonThirdAtMs)
+        {
+            pendingSiphon = true;
+            pendingSiphonAtSec = 9;
+            pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingCycle = record.siphonCycle;
+            record.siphonThirdAtMs = 0;
         }
         dueMs = SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs);
         cycleNo = record.cycleNo;

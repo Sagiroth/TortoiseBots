@@ -197,14 +197,20 @@ int main()
     CHECK(SeekSiphonAtLabel(3004) == "at=+3004ms");
 
     // SeekSiphonSecondReadKept: the +3 s read lands beside the +1 s one; the record's siphonDosed/siphonUndosed (the
-    // run line's) are never overwritten by it.
+    // run line's) are never overwritten by it. The +9 s read (the end of the 8 s heal) only logs: it replaces neither.
     {
         SeekCycleRecord record;
         SeekStoreSiphonRead(record, 1, 12, 3);
         SeekStoreSiphonRead(record, 3, 14, 1);
         CHECK(record.siphonDosed == 12 && record.siphonUndosed == 3);
         CHECK(record.siphonLateDosed == 14 && record.siphonLateUndosed == 1);
+        SeekStoreSiphonRead(record, 9, 0, 0);
+        CHECK(record.siphonDosed == 12 && record.siphonUndosed == 3);
+        CHECK(record.siphonLateDosed == 14 && record.siphonLateUndosed == 1);
     }
+
+    // SeekSiphonAtLabel at the third read: the label carries the real elapsed time of the +9 s read.
+    CHECK(SeekSiphonAtLabel(9007) == "at=+9007ms");
 
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;

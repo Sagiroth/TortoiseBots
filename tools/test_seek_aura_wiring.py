@@ -209,6 +209,10 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("hakkar_stacks=%u,", ACTIONS)
         self.assertIn("hakkar_dmg=%u", ACTIONS)
         self.assertIn("kSeekSiphonSecondMs", ACTIONS)
+        # A third read nine seconds after the sighting sees the whole 8 s heal, which the +1/+3 reads under-count.
+        self.assertIn("kSeekSiphonThirdMs = 9000", ACTIONS)
+        self.assertIn("record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;", ACTIONS)
+        self.assertIn("pendingSiphonAtSec = 9;", ACTIONS)
         # The note's clock is the real elapsed time since the cycle's first sighting, and the +3 s read is kept beside
         # the +1 s one instead of overwriting the run line's counts.
         self.assertIn("SeekSiphonAtLabel(elapsedMs)", ACTIONS)
