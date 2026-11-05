@@ -957,6 +957,20 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
         {
             ObjectGuid lootGuid = bot->GetLootGuid();
             Loot* loot = sLootMgr.GetLoot(bot);
+            if (lootGuid.IsEmpty() || !loot)
+            {
+                // Still casting: wait. Cast broke off with the item still in
+                // the bags: try it again instead of dropping the row.
+                if (bot->IsNonMeleeSpellCasted(false))
+                    return true;
+                if (bot->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, head.itemGuidLow)))
+                {
+                    head.collectLootOpen = false;
+                    head.pendingResults = false;
+                    head.bagBefore.clear();
+                    return false;
+                }
+            }
             if (!lootGuid.IsEmpty() && loot)
             {
                 for (uint8_t i = 0; i < MAX_NR_LOOT_ITEMS; ++i)
@@ -1104,6 +1118,11 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
     cast << item->GetObjectGuid().WriteAsPacked();
     bot->GetSession()->HandleCastSpellOpcode(cast);
     bool didCast = bot->IsNonMeleeSpellCasted(false);
+    // Hold the bot still for the cast: the next action would walk off and
+    // interrupt it.
+    if (didCast)
+        if (SpellEntry const* disenchant = sServerFacade.LookupSpellInfo(13262))
+            SetDuration(GetSpellCastTime(disenchant) + 500);
     sLog.outBasic("TBDEBUG disenchant service %s cast %u -> %u", bot->GetName(), queued.itemId, didCast ? 1u : 0u);
     if (!didCast)
     {
