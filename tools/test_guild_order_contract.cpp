@@ -11,7 +11,7 @@ static int failures = 0;
 
 int main()
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Enchanting); ++i)
     {
         OrderState back = OrderState::Working;
         CHECK(ParseState(StateToken(OrderState(i)), back) && back == OrderState(i));
@@ -21,6 +21,10 @@ int main()
         OrderReason back = OrderReason::None;
         CHECK(ParseReason(ReasonToken(OrderReason(i)), back) && back == OrderReason(i));
     }
+    OrderType type = OrderType::Farm;
+    CHECK(ParseType("enchant", type) && type == OrderType::Enchant);
+    CHECK(std::string(TypeToken(OrderType::Enchant)) == "enchant");
+    CHECK(!IsFinished(OrderState::Ready) && !IsFinished(OrderState::Coming) && !IsFinished(OrderState::Enchanting));
     CHECK(std::string(ReasonToken(OrderReason::Timeout)) == "timeout");
     CHECK(StateForReason(OrderReason::Timeout) == OrderState::Cant);
     CHECK(std::string(ReasonToken(OrderReason::NoProgress)) == "noprogress");

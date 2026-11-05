@@ -125,7 +125,7 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         return false;
 
     OrderType orderType = OrderType::Farm;
-    if (!ParseType(type, orderType))
+    if (!ParseType(type, orderType) || orderType == OrderType::Enchant)
     {
         SendActionError(handler, "order", "invalid", "Usage: .bot order search <bot> <farm|buy|craft> [cat=<kind>] <text>");
         return true;

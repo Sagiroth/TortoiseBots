@@ -13,9 +13,12 @@ namespace GuildOrders
 // Guild orders given with `.bot order`. The tokens below are the addon
 // contract: TBM parses them, so a rename changes the addon as well.
 
-enum class OrderType : uint8_t { Farm, Buy, Craft };
+enum class OrderType : uint8_t { Farm, Buy, Craft, Enchant };
 
-enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked };
+// Ready, Coming and Enchanting belong to enchant orders only: materials are
+// reserved and the bot waits for Meet, walks to the giver, or has the enchant
+// trade open.
+enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked, Ready, Coming, Enchanting };
 
 enum class SupplyStep : uint8_t { None, Bags, Bank, AuctionHouse, Farm, Craft, Sub, Need, Deliver };
 
@@ -97,6 +100,7 @@ inline char const* TypeToken(OrderType type)
         case OrderType::Farm:  return "farm";
         case OrderType::Buy:   return "buy";
         case OrderType::Craft: return "craft";
+        case OrderType::Enchant: return "enchant";
     }
     return "farm";
 }
@@ -106,6 +110,7 @@ inline bool ParseType(std::string const& token, OrderType& out)
     if (token == "farm")  { out = OrderType::Farm;  return true; }
     if (token == "buy")   { out = OrderType::Buy;   return true; }
     if (token == "craft") { out = OrderType::Craft; return true; }
+    if (token == "enchant") { out = OrderType::Enchant; return true; }
     return false;
 }
 
@@ -121,13 +126,16 @@ inline char const* StateToken(OrderState state)
         case OrderState::NoSkill:    return "noskill";
         case OrderState::Cant:       return "cant";
         case OrderState::Stocked:    return "stocked";
+        case OrderState::Ready:      return "ready";
+        case OrderState::Coming:     return "coming";
+        case OrderState::Enchanting: return "enchanting";
     }
     return "working";
 }
 
 inline bool ParseState(std::string const& token, OrderState& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Enchanting); ++i)
         if (token == StateToken(OrderState(i))) { out = OrderState(i); return true; }
     return false;
 }

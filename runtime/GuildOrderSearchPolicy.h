@@ -112,6 +112,8 @@ inline bool OrderSearchShows(OrderType type, OrderItemFacts const& item)
             return item.craftable;
         case OrderType::Buy:
             return item.material || item.craftable || (item.sources & gathered);
+        case OrderType::Enchant:
+            return false;
     }
     return false;
 }

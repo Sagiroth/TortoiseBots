@@ -178,6 +178,11 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         OrderError(handler, "invalid", "Unknown order type: use farm, buy or craft.");
         return true;
     }
+    if (type == OrderType::Enchant)
+    {
+        OrderError(handler, "invalid", "Enchant orders are not available yet.");
+        return true;
+    }
     typeToken = lowerType;
     if (GuildOrders::PlayerBuyOrderRefused(type, sPlayerbotAIConfig.guildOrderPlayerBuy))
     {

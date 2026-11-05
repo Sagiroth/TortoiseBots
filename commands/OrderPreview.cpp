@@ -255,7 +255,7 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
     OrderType type = OrderType::Farm;
     std::string lowerType = typeToken;
     std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
-    if (!GuildOrders::ParseType(lowerType, type) || type == OrderType::Buy)
+    if (!GuildOrders::ParseType(lowerType, type) || type == OrderType::Buy || type == OrderType::Enchant)
     {
         SendActionError(handler, "order", "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount>.");
         return true;
