@@ -8455,6 +8455,24 @@ uint32 RunRespawnSec(Unit* unit)
     return SpawnRespawnSec(creature->HasStaticDBSpawnData(), creature->GetRespawnDelay());
 }
 
+// How far a creature stands from its own spawn point (DungeonRun::UnitFact::homeYd): the core's home position
+// (Creature::GetRespawnCoord), the read the evade diagnostic makes too. -1 for a player or a unit with no static DB
+// spawn of its own (a summon, a pet): the respawn-nest rule needs both halves and leaves those alone.
+float RunHomeYd(Unit* unit)
+{
+    if (!unit || !unit->IsCreature())
+        return -1.0f;
+    Creature* const creature = static_cast<Creature*>(unit);
+    if (!creature->HasStaticDBSpawnData())
+        return -1.0f;
+    float homeX = 0.0f, homeY = 0.0f, homeZ = 0.0f;
+    creature->GetRespawnCoord(homeX, homeY, homeZ);
+    float const dx = unit->GetPositionX() - homeX;
+    float const dy = unit->GetPositionY() - homeY;
+    float const dz = unit->GetPositionZ() - homeZ;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
 // any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
@@ -8660,6 +8678,10 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         fact.health = other->GetHealth();
         fact.maxHealth = other->GetMaxHealth();
         fact.partyHits = ep && ep->victims.count(fact.guid) != 0;
+        fact.respawnSec = RunRespawnSec(other);
+        // The nest read: only a fast respawn needs its home position (InRespawnNest).
+        if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
+            fact.homeYd = RunHomeYd(other);
         out.push_back(fact);
     };
     for (Unit* attacker : unit->GetAttackers())
@@ -9431,6 +9453,9 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.polymorphed = RunCcHeld(nearestHit);
             fact.engaged = true;
             fact.hitting = true;
+            fact.respawnSec = RunRespawnSec(nearestHit);
+            if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
+                fact.homeYd = RunHomeYd(nearestHit); // a nest unit is no engage target (EngageTarget)
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
             f.leadHasAttacker = true;
         }
@@ -9506,6 +9531,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
+            if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
+                fact.homeYd = RunHomeYd(attacker); // ... and in its nest no guard or engage target (InRespawnNest)
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;
@@ -12072,6 +12099,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
+                    if (TortoiseBots::DungeonRun::RespawnsQuickly(unit.respawnSec))
+                        unit.homeYd = RunHomeYd(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -12335,6 +12364,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
+                    if (TortoiseBots::DungeonRun::RespawnsQuickly(unit.respawnSec))
+                        unit.homeYd = RunHomeYd(creature);
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -12909,6 +12940,8 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
+            if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
+                fact.homeYd = RunHomeYd(attacker); // ... and in its nest no guard or engage target (InRespawnNest)
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;

@@ -34384,6 +34384,110 @@ static void TestHealerGuardSkipsCcHolders()
 }
 
 
+// A unit that comes back within a minute and stands within kNestYd of its own spawn point is in its respawn nest
+// (InRespawnNest): the kill ends with it back in seconds at the same spot, so the guards never send anyone at it. ZG
+// Jin'do's pit: ten Sacrificed Trolls 14826 (respawnSec 10) around their spawns, one Banish drops a bot on them and
+// the whole raid's guard and off-tanks used to be spent there pull after pull.
+static void TestHealerGuardSkipsUnitInRespawnNest()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact dps = Mem("NearDps", 24);
+    dps.ranged = true;
+    dps.rangedDps = true;
+    f.members = {tank, dps};
+    UnitFact troll = Hitter(49078, 14826, 47, true); // on a healer, 47 yd from the lead bot (the pit)
+    troll.respawnSec = 10;
+    troll.homeYd = 3.0f;
+    f.partyAttackers = {troll};
+    for (int i = 0; i < 5; ++i)
+        CHECK(GuardTick(r, f).empty());
+    CHECK(r.healerGuardAssigned.count(49078) == 0);
+    // The same unit out of its nest is a normal add.
+    f.partyAttackers[0].homeYd = 40.0f;
+    CHECK(GuardTick(r, f) == "attack 49078 NearDps");
+}
+
+// A fast respawning unit that left its nest (chasing a bot into the raid, > kNestYd from home) is still a target: the
+// rule is about the nest, not the respawn. A unit that does not respawn quickly is unchanged wherever it stands.
+static void TestHealerGuardTakesFastRespawnUnitThatLeftHome()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact dps = Mem("NearDps", 20);
+    dps.ranged = true;
+    dps.rangedDps = true;
+    f.members = {tank, dps};
+    UnitFact troll = Hitter(49081, 14826, 18, true);
+    troll.respawnSec = 10;
+    troll.homeYd = kNestYd; // at the edge it still counts as in its nest
+    f.partyAttackers = {troll};
+    for (int i = 0; i < 5; ++i)
+        CHECK(GuardTick(r, f).empty());
+    f.partyAttackers[0].homeYd = kNestYd + 1.0f;
+    CHECK(GuardTick(r, f) == "attack 49081 NearDps");
+}
+
+// The raid boss fight's off-tank guard (RaidGuardTick) skips a nest unit too: with the main tank on the boss the
+// off-tank used to be spent on the pit's trolls and was not free to take Jin'do back when the tank was Banished.
+static void TestOffTankGuardSkipsUnitInRespawnNest()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    UnitFact troll = Hitter(45001, 14826, 20, true);
+    troll.respawnSec = 10;
+    troll.homeYd = 2.0f;
+    f.partyAttackers = {troll};
+    for (int i = 0; i < 20; ++i)
+        CHECK(Tick(r, f).empty());
+    CHECK(r.note.find("the off-tank") == std::string::npos);
+    f.partyAttackers[0].homeYd = 40.0f; // out of its nest: a normal add
+    std::string order;
+    for (int i = 0; i < 20 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The engage on arrival (EngageTarget) skips a nest unit as well, the tank's own mob and a healer's attacker alike:
+// the tank would walk into the nest and the fight would never end.
+static void TestEngageOnArrivalSkipsUnitInRespawnNest()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    UnitFact troll = Hitter(49078, 14826, 6, true);
+    troll.respawnSec = 10;
+    troll.homeYd = 3.0f;
+    f.partyAttackers = {troll};
+    CHECK(EngageTarget(r, f) == nullptr);
+    f.partyAttackers[0].homeYd = 40.0f;
+    CHECK(EngageTarget(r, f) == &f.partyAttackers[0]);
+    // The tank's own mob in melee reach: the same rule.
+    Facts t = f;
+    t.partyAttackers.clear();
+    t.leadHasAttacker = true;
+    t.leadAttacker = Hitter(49079, 14826, 2);
+    t.leadAttacker.respawnSec = 10;
+    t.leadAttacker.homeYd = 4.0f;
+    CHECK(EngageTarget(r, t) == nullptr);
+    t.leadAttacker.homeYd = 40.0f;
+    CHECK(EngageTarget(r, t) == &t.leadAttacker);
+    // No fast respawn: today's rule, wherever it stands.
+    t.leadAttacker.respawnSec = 0;
+    t.leadAttacker.homeYd = 0.0f;
+    CHECK(EngageTarget(r, t) == &t.leadAttacker);
+}
+
+
 // RunCcBotFor never picks a bot the run holds still (its return hold or the glue's revive hold), one a freeze_on_aura
 // row holds every action of, or one too far from the pack for its spell: the order could not land, and the mark would
 // stay on it for CheckCc to re-send and count.
@@ -34941,6 +35045,10 @@ int main()
     TestBossDownEndsTheRowThoughTrollsKeepFighting();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
+    TestHealerGuardSkipsUnitInRespawnNest();
+    TestHealerGuardTakesFastRespawnUnitThatLeftHome();
+    TestOffTankGuardSkipsUnitInRespawnNest();
+    TestEngageOnArrivalSkipsUnitInRespawnNest();
     TestRunCcFamilyTableKeyOffOrder();
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();

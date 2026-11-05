@@ -896,6 +896,10 @@ struct UnitFact
     // spawn of its own or a read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control
     // target and no body of the pull the order is for (RespawnsQuickly).
     std::uint32_t respawnSec = 0;
+    // How far it stands from its own spawn point (Creature::GetRespawnCoord): -1 not read, or a unit with no static
+    // spawn of its own. With respawnSec it makes a respawn nest the guards and the engage on arrival keep out of
+    // (InRespawnNest).
+    float homeYd = -1.0f;
     // Kill-first candidates (Facts::killFirst): in combat with a party member,
     // or summoned / owned (a healing ward) by a unit that is.
     bool engaged = false;
@@ -1257,6 +1261,16 @@ constexpr std::uint32_t kRunCcMinRespawnSec = 60;
 inline bool RespawnsQuickly(std::uint32_t respawnSec)
 {
     return respawnSec >= 1 && respawnSec <= kRunCcMinRespawnSec;
+}
+// A unit in its respawn nest: its spawn comes back within kRunCcMinRespawnSec and it stands within kNestYd of that
+// spawn point (UnitFact::homeYd, the core's Creature::GetRespawnCoord). The guards and the engage on arrival leave
+// it alone: the kill ends with the unit back in seconds at the same spot, so a party that fights there fights
+// forever (ZG Jin'do's pit: ten Sacrificed Trolls 14826, 10 s). A fast-respawning unit that walked out of its nest
+// (chasing a bot into the raid) is a normal target. kNestYd is the trolls' 18 yd aggro reach plus a 4 yd margin.
+constexpr float kNestYd = 22.0f;
+inline bool InRespawnNest(const UnitFact& u)
+{
+    return RespawnsQuickly(u.respawnSec) && u.homeYd >= 0.0f && u.homeYd <= kNestYd;
 }
 // The respawn delay the run's facts carry: only a unit with a spawn of its own has one. A temporary summon's delay
 // is its lifetime (TemporarySummon), not a respawn, so read as one a 15 s scripted add (Gandling's Risen Guardians,
@@ -17669,6 +17683,7 @@ inline bool RaidHealerGuard(Run& r, const Facts& f, std::uint32_t dt, std::strin
     for (const UnitFact& u : f.partyAttackers)
     {
         if (!u.victimHealer || !u.hostile || !u.attackable || !u.hitting || u.evading || u.polymorphed ||
+            InRespawnNest(u) ||
             GuardSkipsUnit(r.plan, f, u) ||
             u.distLead > kRaidBossGuardYd || PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) ||
             GuardLeavesCampAlone(u) ||
@@ -17777,7 +17792,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!PlanBossEntry(r, u.entry) || LinkedDeathMemberEntry(r, f, u.entry) || !u.hostile || !u.attackable ||
-                !u.hitting || u.evading || GuardSkipsUnit(r.plan, f, u) ||
+                !u.hitting || u.evading || GuardSkipsUnit(r.plan, f, u) || InRespawnNest(u) ||
                 u.polymorphed || u.victimTank || u.victimPet || u.distLead > kRaidBossGuardYd ||
                 RaidGuardUnitCapped(r, u))
                 continue;
@@ -17797,7 +17812,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-                GuardSkipsUnit(r.plan, f, u) || u.distLead > kRaidBossGuardYd)
+                GuardSkipsUnit(r.plan, f, u) || InRespawnNest(u) || u.distLead > kRaidBossGuardYd)
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
@@ -17915,7 +17930,8 @@ inline bool RaidBossLeadJoin(Run& r, const Facts& f, std::uint32_t dt, std::stri
 // to a hold's area.
 inline bool GuardEligible(const UnitFact& u, float holdRadius, const Run* capped, const Run* ccRun, bool raidTrash)
 {
-    if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd)
+    if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting || u.distLead > kGuardYd ||
+        InRespawnNest(u))
         return false;
     // A mob an off-tank holds is not loose: the raid trash guard never sends the main tank off its stand for it.
     if (raidTrash && u.victimTank)
@@ -18179,6 +18195,7 @@ inline const UnitFact* EngageTarget(const Run& r, const Facts& f)
     auto const engageable = [&r, &f](const UnitFact& u)
     {
         return u.hostile && u.attackable && !u.evading && !u.polymorphed && u.hitting && u.distLead <= kGuardYd &&
+            !InRespawnNest(u) &&
             !GuardSkipsUnit(r.plan, f, u) && !GuardUnitCapped(r, u.guid) && !GuardLeavesCampAlone(u) && !CcOrderOut(r, u.guid);
     };
     const UnitFact* best = nullptr;
