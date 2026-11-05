@@ -36,7 +36,8 @@ namespace ai
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
-        std::uint32_t siphonAtMs = 0;   // the dosed/undosed count is due then (0: none pending)
+        std::uint32_t siphonAtMs = 0;   // the +1 s dose count is due then (0: none pending)
+        std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
         std::uint32_t siphonCycle = 0;
         int siphonDosed = 0;
         int siphonUndosed = 0;

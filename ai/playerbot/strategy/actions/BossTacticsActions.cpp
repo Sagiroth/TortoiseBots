@@ -847,8 +847,10 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting, far inside the 8 s the dummy aura lasts.
+// The siphon count runs one second after the sighting and again two seconds later, both far inside the 8 s the dummy
+// aura lasts: the second read settles a heal the first one cannot explain (a pet, the boss's own stack count).
 const std::uint32_t kSeekSiphonReadMs = 1000;
+const std::uint32_t kSeekSiphonSecondMs = 3000;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -985,17 +987,68 @@ int CountSeekWanted(PlayerbotAI* ai, Player* bot, Unit* boss, const BossTacticRo
     return count;
 }
 
-// One siphon row per accepted cycle: the dosed and undosed counts one second after the sighting, and the boss's health
-// then. A no-op unless bot_events.csv is in AiPlayerbot.AllowedLogFiles.
-void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, int dosed, int undosed, Unit* boss)
+// The group's living pets on either side of the siphon: each one is a unit of its own to the core's hit, so an
+// undosed pet is a full heal and a dosed one a full damage tick; the group count alone never saw them.
+void CountSiphonPets(Player* bot, int& heal, int& dmg)
+{
+    const auto judge = [&](Player* member)
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            return;
+        Pet* pet = member->GetPet();
+        if (!pet || !pet->IsInWorld() || !sServerFacade.IsAlive(pet))
+            return;
+        heal += pet->HasAura(kHakkarSiphonUndosedSpell) ? 1 : 0;
+        dmg += pet->HasAura(kHakkarSiphonDosedSpell) ? 1 : 0;
+    };
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+            judge(member);
+    }
+    else
+        judge(bot);
+}
+
+// Hakkar's own side of the siphon: the shared heal holder's stack count (one stack per undosed unit, capped at 20)
+// and the number of damage holders (one per dosed caster). The group counts alone could not explain a siphon that
+// healed through them.
+void CountHakkarSiphonAuras(Unit* boss, int& healStacks, int& dmgHolders)
+{
+    if (!boss)
+        return;
+    for (const auto& held : boss->GetSpellAuraHolderMap())
+    {
+        if (!held.second)
+            continue;
+        if (held.first == kHakkarSiphonUndosedSpell)
+            healStacks += static_cast<int>(held.second->GetStackAmount());
+        else if (held.first == kHakkarSiphonDosedSpell)
+            ++dmgHolders;
+    }
+}
+
+// One siphon row per accepted cycle, read one and three seconds after the sighting: the group members dosed and not,
+// the pets on either side, and the boss's own heal stacks and damage holders. A no-op unless bot_events.csv is in
+// AiPlayerbot.AllowedLogFiles.
+void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, int atSec, int dosed, int undosed, int petHeal,
+               int petDmg, int healStacks, int dmgHolders, Unit* boss)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
-    char info1[128];
-    snprintf(info1, sizeof(info1), "cycle=%u,dosed=%u,undosed=%u,hakkar_hp=%u", cycle,
-             static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
+    char info1[192];
+    snprintf(info1, sizeof(info1),
+             "cycle=%u,at=+%ds,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,hakkar_stacks=%u,hakkar_dmg=%u,"
+             "hakkar_hp=%u",
+             cycle, atSec, static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
+             static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg),
+             static_cast<unsigned>(healStacks), static_cast<unsigned>(dmgHolders),
              boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
-    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSiphon", info1, "");
+    char info2[192];
+    snprintf(info2, sizeof(info2),
+             "Hakkar siphon %u @+%ds: %d dosed, %d not, pets %d heal/%d dmg, hakkar heal stacks %d, dmg holders %d",
+             cycle, atSec, dosed, undosed, petHeal, petDmg, healStacks, dmgHolders);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSiphon", info1, info2);
 }
 
 // One seek row per bot and 5 s: the phase, whether the bot carries the poison, the distance to the cloud or the source
@@ -1044,6 +1097,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint32_t dueMs = 0;
     std::uint32_t cycleNo = 0;
     bool pendingSiphon = false;
+    int pendingSiphonAtSec = 0;
     std::uint32_t pendingCycle = 0;
     std::uint64_t gatherGuid = 0;
     {
@@ -1079,13 +1133,22 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             record.lastCycleMs = nowMs;
             ++record.cycleNo;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
+            record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
             record.siphonCycle = record.cycleNo;
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
         {
             pendingSiphon = true;
+            pendingSiphonAtSec = 1;
             pendingCycle = record.siphonCycle;
             record.siphonAtMs = 0;
+        }
+        else if (record.siphonSecondAtMs != 0 && nowMs >= record.siphonSecondAtMs)
+        {
+            pendingSiphon = true;
+            pendingSiphonAtSec = 3;
+            pendingCycle = record.siphonCycle;
+            record.siphonSecondAtMs = 0;
         }
         dueMs = record.engageMs == 0 ? 0 : SeekDueMs(record.engageMs, record.lastCycleMs, cycleMs);
         cycleNo = record.cycleNo;
@@ -1116,7 +1179,14 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
                 undosed += member->HasAura(kHakkarSiphonUndosedSpell) ? 1 : 0;
             }
         }
-        LogSiphon(ai, bot, pendingCycle, dosed, undosed, boss);
+        int petHeal = 0;
+        int petDmg = 0;
+        int healStacks = 0;
+        int dmgHolders = 0;
+        CountSiphonPets(bot, petHeal, petDmg);
+        CountHakkarSiphonAuras(boss, healStacks, dmgHolders);
+        LogSiphon(ai, bot, pendingCycle, pendingSiphonAtSec, dosed, undosed, petHeal, petDmg, healStacks, dmgHolders,
+                  boss);
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
         if (it != g_seekRecords.end())

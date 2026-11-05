@@ -281,6 +281,7 @@
 - Zul'Gurub: the ranged and the healers spread out around High Priest Venoxis (22-23 yards from the spot he fights from, at least 11 yards apart, checked so he is always 15-30 yards away wherever he stands while they hold position) instead of stacking under him, so his chaining Holy Wrath no longer reaches the casters — the last walk lost nine bots in one second to it — and his Holy Fire joins the interrupt list in place of the useless Renew entry.
 - Fixed: in the Hakkar fight a Son of Hakkar that stood away from the group's killing spot is now brought down once its health is already low or the next siphon is close, instead of being spared until it healed back to full and the siphon healed the boss.
 - New: hunters' and warlocks' pets step out of the siphon for a few seconds before each Blood Siphon and may come back after it, so an undosed pet no longer gives Hakkar a full heal of its own.
+- The Blood Siphon note now counts pets on either side of the siphon and reports the healing Hakkar itself carries and the damage links the raid landed, read once and again three seconds after each siphon.
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.

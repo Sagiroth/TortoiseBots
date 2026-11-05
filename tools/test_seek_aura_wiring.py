@@ -183,6 +183,10 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("24323", ACTIONS)
         self.assertIn("24322", ACTIONS)
         self.assertIn("dosed=%u,undosed=%u", ACTIONS.replace("\\n", ""))
+        # The pet side and the boss's own auras, read again two seconds later.
+        self.assertIn("pets_heal=%u,pets_dmg=%u", ACTIONS)
+        self.assertIn("hakkar_stacks=%u,hakkar_dmg=%u", ACTIONS)
+        self.assertIn("kSeekSiphonSecondMs", ACTIONS)
 
 
 class SeekRolesWiring(unittest.TestCase):
