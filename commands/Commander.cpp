@@ -8414,6 +8414,16 @@ bool HasAnyAura(Unit const* unit, uint32 const (&spells)[N])
     return false;
 }
 
+// The creature's rank is CREATURE_ELITE_NORMAL (DungeonRun::UnitFact::normalRank): a dungeon's trivial trash is no
+// automatic crowd control's candidate and no body of its engaged count (AiPlayerbot.DungeonRunAutoCc). A rare (rank
+// 4) is not normal: the core's IsElite() would call one non-elite, the automatic pick must keep handling it.
+bool RunNormalRank(Unit* unit)
+{
+    Creature* const creature = unit ? unit->ToCreature() : nullptr;
+    CreatureInfo const* const info = creature ? creature->GetCreatureInfo() : nullptr;
+    return info && info->rank == CREATURE_ELITE_NORMAL;
+}
+
 // The run cc families a creature is immune to (DungeonRun::UnitFact::ccImmune):
 // the mechanic of each family's first rank against its creature_template
 // mechanic_immune_mask (Creature::IsImmuneToSpell's test) or a live mechanic
@@ -9443,8 +9453,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 !sServerFacade.IsFriendlyTo(attacker, lead) &&
                 !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
-                f.leadAttackers.push_back(
-                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker), RunRespawnSec(attacker)});
+                f.leadAttackers.push_back({attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker),
+                    RunNormalRank(attacker), RunRespawnSec(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -9505,6 +9515,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
@@ -10009,6 +10020,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         m.noAggro = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO);
         m.noAssist = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST);
         m.patroller = c->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+        m.normalRank = RunNormalRank(c); // the automatic cc counts only the elite bodies it estimates
         if (CreatureGroup* group = c->GetCreatureGroup())
             if (group->HasGroupFlag(OPTION_AGGRO_TOGETHER))
                 m.groupId = static_cast<uint32>(group->GetOriginalLeaderGuid().GetCounter());
@@ -10065,6 +10077,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             if (TortoiseBots::DungeonRun::PullUnitEstimate const* done = estimates.Find(stepIndex, stepPass, unit.guid))
             {
                 unit.estBodies = done->bodies;
+                unit.estBodiesElite = done->eliteBodies;
                 unit.estGuids = done->guids;
                 unit.estLosBudget = done->losBudgetSpent;
                 unit.joiners = done->bodies > 0 ? done->bodies - 1 : 0;
@@ -10148,11 +10161,13 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             unit.joiners = estimate.joiners;
             unit.joinersPatrol = estimate.patrolIsTheCause;
         }
+        unit.estBodiesElite = estimate.bodiesElite;
         if (walkRing)
         {
             TortoiseBots::DungeonRun::PullUnitEstimate& store = estimates.At(stepIndex, stepPass, unit.guid);
             store.read = true;
             store.bodies = unit.estBodies;
+            store.eliteBodies = unit.estBodiesElite;
             store.guids = unit.estGuids;
             store.losBudgetSpent = unit.estLosBudget;
         }
@@ -12071,6 +12086,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
@@ -12334,6 +12350,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
@@ -12908,6 +12925,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)

@@ -41,6 +41,7 @@ Plans are read at startup into a cache, one pass per table, and nothing reads th
 | `cc_priority` | Comma entry list, `''` for none. |
 | `cc_always` | Comma entry list, `''` for none. |
 | `kill_first` | Comma entry list, `''` for none. |
+| `cc_never` | Comma entry list, `''` for none: entries the automatic crowd control under `AiPlayerbot.DungeonRunAutoCc` never marks (trivial non-elite units need no list, their rank excludes them, unless the plan itself lists them in `cc_priority`/`cc_always`). |
 | `source` | Where the rows came from, for the reader. |
 | `comment` | Free text. |
 

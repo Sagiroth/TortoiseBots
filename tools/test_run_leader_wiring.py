@@ -337,8 +337,10 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("CONTROLLED_TOTEMS | CONTROLLED_GUARDIANS", kill)
         self.assertIn("EngagedWithParty(summoner, party);", kill)
         loader = (ROOT / "ai/playerbot/DungeonPlanMgr.cpp").read_text()
-        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first` FROM `ai_dungeon_plan`", loader)
-        self.assertIn("table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString())", loader)
+        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never` FROM `ai_dungeon_plan`", loader)
+        self.assertRegex(loader,
+                         r"table\.SetUnits\(plan,\s*fields\[2\]\.GetCppString\(\),\s*fields\[3\]\.GetCppString\(\),\s*"
+                         r"fields\[4\]\.GetCppString\(\),\s*fields\[5\]\.GetCppString\(\)\)")
 
     def test_auto_cc_is_wired(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
@@ -2151,6 +2153,19 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertLess(players.index("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))"),
                         players.index("TortoiseBots::DungeonRun::UnitFact fact;"))
         self.assertIn("if (f.auraGatedTargets)\n                fact.auraGated =", players)
+
+
+    def test_the_automatic_cc_counts_only_elite_estimated_bodies(self):
+        # ReadPullJoiners records each creature's rank into the estimate and carries the elite body count on the
+        # unit and in the row's cache (both estimator paths) for RunAutoCcBodies: the automatic cc's threshold
+        # never counts normal-rank trash an estimate brings.
+        self.assertIn("m.normalRank = RunNormalRank(c);", COMMANDS)
+        self.assertIn("unit.estBodiesElite = estimate.bodiesElite;", COMMANDS)
+        self.assertIn("unit.estBodiesElite = done->eliteBodies;", COMMANDS)
+        self.assertIn("store.eliteBodies = unit.estBodiesElite;", COMMANDS)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        bodies_fn = body(policy, "inline std::uint32_t RunAutoCcBodies(", "\n}\n")
+        self.assertIn("return pick.estBodiesElite;", bodies_fn)
 
 
 if __name__ == "__main__":

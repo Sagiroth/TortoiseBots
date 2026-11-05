@@ -418,16 +418,17 @@ static void TestLongHops()
 }
 
 // Issue #999 item 5: the plan-wide unit lists (ai_dungeon_plan cc_priority,
-// cc_always, kill_first) and their ranks.
+// cc_always, kill_first, cc_never) and their ranks.
 static void TestPlanUnits()
 {
     DungeonPlanTable table;
     CHECK(table.AddPlan("zulfarrak", 209));
-    CHECK(!table.SetUnits("nope", "", "", ""));
-    CHECK(!table.SetUnits("zulfarrak", "5650,x", "", "")); // not a list: none kept
-    CHECK(table.SetUnits("zulfarrak", "5650,7247,7246,5648", "5650,7246,9999", "8179,5650,7247"));
+    CHECK(!table.SetUnits("nope", "", "", "", ""));
+    CHECK(!table.SetUnits("zulfarrak", "5650,x", "", "", "")); // not a list: none kept
+    CHECK(!table.SetUnits("zulfarrak", "", "", "", "5650,x")); // cc_never is a list too
+    CHECK(table.SetUnits("zulfarrak", "5650,7247,7246,5648", "5650,7246,9999", "8179,5650,7247", "7246,5648"));
     table.Seal();
-    CHECK(!table.SetUnits("zulfarrak", "", "", ""));
+    CHECK(!table.SetUnits("zulfarrak", "", "", "", ""));
     const DungeonPlan* plan = table.Find("zulfarrak");
     CHECK(plan && plan->ccPriority.size() == 4 && plan->killFirst.size() == 3);
     // cc_always first in its own order (5650, 7246, 9999), then the
@@ -441,12 +442,16 @@ static void TestPlanUnits()
     zf.ccAlways = {7246};
     CHECK(zf.CcRank(7246) == 0 && zf.CcRank(7247) == 1 && zf.CcRank(5648) == 2);
     CHECK(plan->KillFirstRank(8179) == 0 && plan->KillFirstRank(7247) == 2 && plan->KillFirstRank(7246) == -1);
+    // cc_never names the entries the automatic crowd control leaves alone.
+    CHECK(plan->ccNever.size() == 2 && plan->CcNever(7246) && plan->CcNever(5648));
+    CHECK(!plan->CcNever(5650) && !plan->CcNever(1));
 
     // No lists (the columns' default ''): nothing ranked.
     DungeonPlanTable bare;
-    CHECK(bare.AddPlan("u", 70) && bare.SetUnits("u", "", "", ""));
+    CHECK(bare.AddPlan("u", 70) && bare.SetUnits("u", "", "", "", ""));
     bare.Seal();
-    CHECK(bare.Find("u")->CcRank(5650) == -1 && bare.Find("u")->KillFirstRank(8179) == -1);
+    CHECK(bare.Find("u")->CcRank(5650) == -1 && bare.Find("u")->KillFirstRank(8179) == -1 &&
+        !bare.Find("u")->CcNever(5650));
 }
 
 static void TestBossEntries()

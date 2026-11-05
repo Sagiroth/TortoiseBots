@@ -333,6 +333,9 @@ namespace ai
         std::vector<std::uint32_t> ccPriority; // what the run leader's crowd control takes in a pack
         std::vector<std::uint32_t> ccAlways;   // ... taken first whenever one is in the pack (ahead of ccPriority)
         std::vector<std::uint32_t> killFirst;  // killed first in a fight (the run leader focuses them)
+        // Entries the automatic crowd control never marks, whatever else it would pick
+        // (AiPlayerbot.DungeonRunAutoCc; a trivial unit needs no list: its NORMAL rank excludes it).
+        std::vector<std::uint32_t> ccNever;
 
         // An entry's crowd-control rank (0 best), or -1 when it is not to be
         // crowd-controlled: cc_always entries first, in their order (one of
@@ -364,6 +367,12 @@ namespace ai
                 if (killFirst[i] == entry)
                     return static_cast<int>(i);
             return -1;
+        }
+
+        // Whether the automatic crowd control must leave the entry alone (cc_never).
+        bool CcNever(std::uint32_t entry) const
+        {
+            return std::find(ccNever.begin(), ccNever.end(), entry) != ccNever.end();
         }
         // The leg's name, or "" when it has no ai_dungeon_leg row.
         const std::string& LegName(std::uint8_t leg) const
@@ -633,20 +642,21 @@ namespace ai
         // empty is none). False after the seal, for an unknown plan, or when a
         // list is not a valid entry list (the plan then keeps none of them).
         bool SetUnits(const std::string& planName, const std::string& ccPriority, const std::string& ccAlways,
-            const std::string& killFirst)
+            const std::string& killFirst, const std::string& ccNever)
         {
             if (Sealed())
                 return false;
             auto it = plans_.find(planName);
             if (it == plans_.end())
                 return false;
-            std::vector<std::uint32_t> prio, always, kill;
+            std::vector<std::uint32_t> prio, always, kill, never;
             if (!ParsePlanEntries(ccPriority, prio) || !ParsePlanEntries(ccAlways, always) ||
-                !ParsePlanEntries(killFirst, kill))
+                !ParsePlanEntries(killFirst, kill) || !ParsePlanEntries(ccNever, never))
                 return false;
             it->second.ccPriority = std::move(prio);
             it->second.ccAlways = std::move(always);
             it->second.killFirst = std::move(kill);
+            it->second.ccNever = std::move(never);
             return true;
         }
 
