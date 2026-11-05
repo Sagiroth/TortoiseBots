@@ -6644,7 +6644,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         std::string option;
         if (parts.empty() || parts.size() > (pull ? 3u : scoped ? 2u : 1u))
         {
-            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds] [ranged]" : scoped ? " [bot]" : "");
+            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds] [ranged|body]" : scoped ? " [bot]" : "");
             SendActionError(handler, intent, "invalid", message.c_str());
             return true;
         }
@@ -6676,7 +6676,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             if (!ai::ParsePullOrderOption(words, parsed))
             {
                 SendActionError(handler, intent, "invalid",
-                    "After the guid: the join delay (0-60 seconds) and/or the word ranged, in either order.");
+                    "After the guid: the join delay (0-60 seconds) and/or the word ranged or body, once each.");
                 return true;
             }
             option = PullOptionText(parsed);

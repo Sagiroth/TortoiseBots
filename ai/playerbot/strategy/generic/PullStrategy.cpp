@@ -75,6 +75,7 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
 , commandPullback(false)
 , commandActive(false)
 , commandRangedOrder(false)
+, commandBodyOrder(false)
 , commandWantsRanged(false)
 , openingReason(PullOpeningReason::BodyPull)
 , pathReachable(true)
@@ -182,7 +183,7 @@ std::string PullStrategy::GetPullActionName() const
     // an order that says `ranged`, and a mob nobody can walk to (or that is
     // too far to walk to) open from range - see DecideOpening. The tank's own
     // automatic pulls always do.
-    if (commandActive && !commandWantsRanged)
+    if (commandActive && (commandBodyOrder || !commandWantsRanged))
         return "reach pull";
 
     // Select the faerie fire based on druid strategy
@@ -442,6 +443,7 @@ void PullStrategy::OnPullEnded()
     commandActive = false;
     commandPullback = false;
     commandRangedOrder = false;
+    commandBodyOrder = false;
     commandWantsRanged = false;
     openingReason = PullOpeningReason::BodyPull;
     pathReachable = true;
@@ -452,15 +454,19 @@ void PullStrategy::OnPullEnded()
     SetTarget(nullptr);
 }
 
-void PullStrategy::BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds, bool rangedOrder)
+void PullStrategy::BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds, bool rangedOrder,
+    bool bodyOrder)
 {
     commandActive = true;
     commandPullback = pullback;
     commandRangedOrder = rangedOrder;
+    commandBodyOrder = bodyOrder;
     // Until the target is known (RequestPull) the order's own words decide:
-    // a pullback and a `ranged` order open from range, a plain pull walks in.
-    commandWantsRanged = pullback || rangedOrder;
-    openingReason = rangedOrder ? PullOpeningReason::Explicit
+    // a pullback and a `ranged` order open from range, a plain pull walks in,
+    // and a `body` order walks in whatever the mob is.
+    commandWantsRanged = !bodyOrder && (pullback || rangedOrder);
+    openingReason = bodyOrder ? PullOpeningReason::BodyPull
+        : rangedOrder ? PullOpeningReason::Explicit
         : pullback ? PullOpeningReason::Pullback : PullOpeningReason::BodyPull;
     pathReachable = true;
     hadPullBack = hadPullBackStrategy;
@@ -505,6 +511,15 @@ void PullStrategy::DecideOpening(Unit* target)
     Player* bot = ai->GetBot();
     if (!bot || !target)
         return;
+
+    // An order that said `body` walks in: the automatic far/unreachable rule
+    // never turns it back into a ranged pull.
+    if (commandBodyOrder)
+    {
+        commandWantsRanged = false;
+        openingReason = PullOpeningReason::BodyPull;
+        return;
+    }
 
     PullOpeningInput input;
     input.pullback = commandPullback;

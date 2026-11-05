@@ -235,13 +235,15 @@ bool ExecuteInterruptAction(ChatHandler* handler, BotCommandContext const& conte
     return accepted;
 }
 
-// The canonical text of a parsed pull order's words, "[seconds][ ranged]": what
-// RunPullOrder takes as its option.
+// The canonical text of a parsed pull order's words, "[seconds][ ranged|body]":
+// what RunPullOrder takes as its option.
 std::string PullOptionText(ai::PullOrderOption const& parsed)
 {
     std::string text = parsed.hasSeconds ? std::to_string(parsed.seconds) : std::string();
     if (parsed.ranged)
         text += text.empty() ? "ranged" : " ranged";
+    if (parsed.body)
+        text += text.empty() ? "body" : " body";
     return text;
 }
 
@@ -792,7 +794,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     uint32 joinDelay = pullback
         ? sPlayerbotAIConfig.pullBackDpsJoinDelay
         : sPlayerbotAIConfig.pullDpsJoinDelay;
-    // option is "[seconds][ ranged]" (PullOptionText).
+    // option is "[seconds][ ranged|body]" (PullOptionText).
     ai::PullOrderOption pullWords;
     ai::ParsePullOrderOption(option, pullWords);
     if (pullWords.hasSeconds)
@@ -802,7 +804,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
     // PullStrategy (never sticky). The tank's default is restored when the pull
     // ends.
     PullModeSnapshot pullModeBefore = SavePullMode(ai);
-    if (!ConfigurePullMode(ai, pullback, joinDelay, pullWords.ranged))
+    if (!ConfigurePullMode(ai, pullback, joinDelay, pullWords.ranged, pullWords.body))
     {
         char const* message = pullback
             ? "The mature pullback strategy is unavailable."
@@ -923,6 +925,17 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             pullRange = probe->GetRange();
         }
 
+        // An airborne target (a hovering boss, a flier) is judged on the next movement
+        // tick: its walk's point move lands on an air point and launches nothing in this
+        // one (ai/playerbot/PullStartPolicy.h, PullTargetAirborne).
+        bool launchOnNextTick = false;
+        if (pullTarget && pullTarget->IsInWorld() && pullTarget->GetMap())
+        {
+            float const floor = pullTarget->GetMap()->GetHeight(pullTarget->GetPositionX(),
+                pullTarget->GetPositionY(), pullTarget->GetPositionZ(), true);
+            launchOnNextTick = ai::PullTargetAirborne(floor > INVALID_HEIGHT, pullTarget->GetPositionZ(), floor);
+        }
+
         // A point move is registered with the motion master at once but the
         // unit reads as moving only after the next movement tick, so a launched
         // point or chase motion counts as started (ai/playerbot/PullStartPolicy.h).
@@ -933,6 +946,7 @@ bool RunPullOrder(ChatHandler* handler, BotCommandContext const& context, Player
             facts.hasTarget = pullTarget && pullTarget->IsInWorld();
             facts.moving = sServerFacade.isMoving(executor);
             facts.motionLaunched = motion == POINT_MOTION_TYPE || motion == CHASE_MOTION_TYPE;
+            facts.airborne = launchOnNextTick;
             if (facts.hasTarget)
                 facts.distance = executor->GetDistance(pullTarget);
             facts.range = pullRange;
@@ -1011,7 +1025,7 @@ bool HandleAction(ChatHandler* handler, char const* args)
             if (intent.empty())
                 intent = "unknown";
         }
-        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged]/pullback [seconds] [ranged]/end pull/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
+        SendActionError(handler, intent, "invalid", "Usage: .bot action attack/interrupt/stop/pull [seconds] [ranged|body]/pullback [seconds] [ranged|body]/end pull/come/stay/hold/follow/flee/guard/free/stance <near|tank|turnback|behind>/rebuff/focus skull/cc <mark> [bot]/cc clear [bot]/auto cc [on/off/status]/autocc [on/off/status]/sap [on/off] [bot]/aoe [on/off/status]/loot [on/off/status]/repair/sell/rest/drink/eat/release/corpse run/learn/trade/ready/raid [status/tankface/douse/custom status/custom on/custom off]");
         return true;
     }
     if (!requester->IsInWorld() || !requester->IsAlive() || requester->IsBeingTeleported())

@@ -53,10 +53,14 @@ namespace ai
         // Per-command mode: true while a pull/pullback command owns this pull.
         // The return leg follows the intent snapshotted by RequestPull, not the
         // strategy set at evaluation time.
-        void BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds = 0, bool rangedOrder = false);
+        void BeginCommand(bool pullback, bool hadPullBackStrategy, uint32 joinDelaySeconds = 0, bool rangedOrder = false,
+            bool bodyOrder = false);
         bool IsCommandActive() const { return commandActive; }
         bool IsCommandPullback() const { return commandPullback; }
         bool IsCommandRangedOrder() const { return commandRangedOrder; }
+        // The order said `body`: walk in whatever the mob does (DecideOpening's
+        // automatic far/unreachable rule cannot turn it back into a ranged pull).
+        bool IsCommandBodyOrder() const { return commandBodyOrder; }
         // How the commanded pull opens (decided on the first RequestPull):
         // wanted from range or not, and why. What the tank can actually do
         // about it is GetRangedBlocker / GetPullActionName.
@@ -82,6 +86,7 @@ namespace ai
             uint32 joinDelay;
             time_t returnStartTime;
             bool rangedOrder;
+            bool bodyOrder;
             bool wantsRanged;
             PullOpeningReason reason;
             bool pathReachable;
@@ -89,7 +94,7 @@ namespace ai
         CommandState SaveCommand() const
         {
             return { commandActive, commandPullback, hadPullBack, commandJoinDelay, returnStartTime,
-                commandRangedOrder, commandWantsRanged, openingReason, pathReachable };
+                commandRangedOrder, commandBodyOrder, commandWantsRanged, openingReason, pathReachable };
         }
         void RestoreCommand(CommandState const& state)
         {
@@ -99,6 +104,7 @@ namespace ai
             commandJoinDelay = state.joinDelay;
             returnStartTime = state.returnStartTime;
             commandRangedOrder = state.rangedOrder;
+            commandBodyOrder = state.bodyOrder;
             commandWantsRanged = state.wantsRanged;
             openingReason = state.reason;
             pathReachable = state.pathReachable;
@@ -134,6 +140,7 @@ namespace ai
         // The order said `ranged`; and the opening decided from it, the
         // config and the mob (DecideOpening). Both live and die with the command.
         bool commandRangedOrder;
+        bool commandBodyOrder;
         bool commandWantsRanged;
         PullOpeningReason openingReason;
         bool pathReachable;

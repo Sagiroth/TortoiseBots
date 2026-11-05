@@ -64,6 +64,24 @@ static Facts Party(float x = 0)
     return f;
 }
 
+// The refused ranged pullback's one body-pull retry (PullbackRefusedUnreachable): the next
+// tick sends `pull <guid>`; a pull that starts no fight for kPullNoFightMs spends it, and the
+// unit is picked again as a `pullback` in that same tick. Returns that order.
+static std::string BodyPullRunsOut(Run& r, Facts& f)
+{
+    std::string order;
+    for (std::uint32_t ms = 0; ms <= kPullNoFightMs && order.empty(); ms += kTickMs)
+        order = Tick(r, f, kTickMs);
+    return order;
+}
+
+static std::string SpendBodyRetry(Run& r, Facts& f)
+{
+    CHECK(Tick(r, f).compare(0, 5, "pull ") == 0);
+    return BodyPullRunsOut(r, f);
+}
+
+
 // A living member `yd` from the lead bot, standing on the x axis at that
 // distance (the stand-still watch reads its position).
 static MemberFact Mem(const std::string& name, float yd, float dz = 0.0f)
@@ -19575,6 +19593,9 @@ static void TestStepUnitRefusalAfterResiduePullKeepsTheApproach()
     CHECK(Tick(r, f) == "pullback 49155");
     CHECK(r.residuePullGuid == 0);
     OrderRefused(r, "pullback 49155", kWalk5Refusal);
+    CHECK(!r.approachStandWanted && r.bodyPullGuid == 0xc003); // the body-pull retry first
+    CHECK(SpendBodyRetry(r, f) == "pullback 49155");
+    OrderRefused(r, "pullback 49155", kWalk5Refusal);
     CHECK(r.approachStandWanted && r.approachStandStep == 0);
 }
 
@@ -28949,9 +28970,100 @@ static DungeonPlan FiringPlan(std::uint32_t flags = 0)
     return plan;
 }
 
+// Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik hovers 10 yd over her altar; the
+// pullback's reach picked an air point for its firing position and launched nothing, the
+// order was refused *unreachable* and the run paused in a stand search that was empty by
+// construction. A refused ranged pullback on a boss or pack row now retries once as a body
+// (melee) pull (`pull <guid>`): the tank walks in on the target's ground position (the
+// reach projects the target onto the floor under it). Only a refused body pull, or a
+// second refusal, takes the approach's way out (the stand search).
+static void TestRefusedBossPullbackRetriesBodyPull()
+{
+    DungeonPlan plan;
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    // The refused ranged pull counts no pull and no stand search yet: one body pull first.
+    CHECK(r.state == State::Running && r.step == 0 && !r.approachStandWanted);
+    CHECK(r.pullGuid == 0 && r.pulls == 0 && r.pullTries[7] == 0 && r.phase == Phase::Begin);
+    CHECK(r.bodyPullGuid == 7 && r.bodyPullStep == r.step);
+    CHECK(r.note == std::string(kFiringWhy) + ": retrying once as a body pull");
+    // The next tick sends it: a body pull, the tank walking in (no stand rule, no walk back).
+    CHECK(Tick(r, f) == "pull 7 body");
+    CHECK(r.bodyPullGuid == 0 && r.bodyPullOrder == "pull 7 body");
+    // The retry is no pull of the step (the pull cap and the fruitless count read real pulls), but it
+    // is a try on the unit.
+    CHECK(r.phase == Phase::AwaitPull && r.pullGuid == 7 && r.pulls == 0 && r.pullTries[7] == 1);
+    CHECK(r.bodyPullStep == r.step);
+    CHECK(Has(r.note, "body pull"));
+    // The body pull starts no fight: after kPullNoFightMs the ranged pull goes out again,
+    // and its refusal now takes the approach's way out (the retry is spent).
+    CHECK(BodyPullRunsOut(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == r.step);
+    CHECK(r.bodyPullGuid == 0 && r.bodyPullStep == r.step); // spent: no second retry
+    CHECK(r.note == std::string(kFiringWhy) + ": looking for a stand within 25.0 yd of it");
+    // The boss's own ring (15-25 yd) takes a stand 20 yd out.
+    CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
+    CHECK(r.approachStand == 2 && r.state == State::Running);
+
+    // A refused body pull is no retry either: straight to the approach's way out.
+    Run q = Start(&plan);
+    q.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(q, g) == "pullback 7");
+    OrderRefused(q, "pullback 7", kFiringRefusal);
+    CHECK(Tick(q, g) == "pull 7 body");
+    OrderRefused(q, "pull 7 body", "busy: the tank is pulling");
+    CHECK(q.state == State::Running && q.approachStandWanted && q.bodyPullGuid == 0);
+    CHECK(q.note.find("cmd pull 7 body refused: busy: the tank is pulling") == 0);
+}
+
+// Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik's boss row carries the default
+// radius 30, and the stand search's inner ring was radius + 5 = 35 yd against its 25 yd
+// outer bound: empty by construction, so every approach pause around her said "no safe
+// stand 35.0-25.0 yd from it" and the run could never stand anywhere near her. A boss
+// row's radius is its spawn-search reach, not a pull band: its ring is 15-25 yd like any
+// other stand, and a stand inside it is taken; a pull row keeps its pull band.
+static void TestBossRowApproachStandRingNotEmpty()
+{
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    CHECK(b.radius == 30.0f);                            // the default boss radius
+    CHECK(ApproachStandMinRing(b) == kApproachStandMinYd);
+    CHECK(ApproachStandMinRing(b) <= kApproachStandYd);  // the ring is not empty
+    PlanStep p = PullStep(40, {1});
+    CHECK(p.radius == 15.0f && ApproachStandMinRing(p) == 20.0f);
+    PlanStep wide = PullStep(40, {1});
+    wide.radius = 22.0f;
+    CHECK(ApproachStandMinRing(wide) == 27.0f);          // past the 25 yd bound: the search finds none, as before
+
+    // The search itself: a boss step whose approach found no way asks for a stand, and
+    // one 20 yd from it (inside the old empty ring) is taken.
+    DungeonPlan plan;
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    ApproachNoWay(r, f, b, "no walkable path toward the boss at 40.0 0.0 0.0");
+    CHECK(r.state == State::Running && r.approachStandWanted && r.approachStand == 1);
+    CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
+    CHECK(r.approachStand == 2 && r.state == State::Running);
+}
+
 // Stormwrought Ruins r36 slot J step 553 / Windhorn Canyon r36 slot G step 1854: the step's
 // pull went out with the pack in sight but out of the tank's shot, its firing stands spent;
-// the refused pull counts no pull and gets the approach stand search, then (none found) the deferral.
+// the refused pull counts no pull, gets its one body-pull retry, then the approach stand
+// search, then (none found) the deferral.
 static void TestRefusedFiringPositionSearchesAStandThenDefers()
 {
     DungeonPlan plan = FiringPlan();
@@ -28962,8 +29074,14 @@ static void TestRefusedFiringPositionSearchesAStandThenDefers()
     CHECK(PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
-    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == 0);
+    CHECK(r.state == State::Running && !r.approachStandWanted && r.bodyPullGuid == 7);
     CHECK(r.pullGuid == 0 && r.pulls == 0 && r.pullTries[7] == 0 && r.phase == Phase::Begin);
+    CHECK(r.note == std::string(kFiringWhy) + ": retrying once as a body pull");
+    // The body pull that starts no fight is spent: the next refusal searches the stand.
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == 0);
+    CHECK(r.pullGuid == 0 && r.pullTries[7] == 1 && r.phase == Phase::Begin);
     CHECK(r.note == std::string(kFiringWhy) + ": looking for a stand within 25.0 yd of it");
     // The next tick (the pack still in sight) is the stand's: no second pullback before the glue's answer.
     CHECK(Tick(r, f).empty());
@@ -28986,13 +29104,15 @@ static void TestRefusedFiringPositionPullsFromTheStandThenDefers()
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty());
     CHECK(ApproachStandFound(r, f, true, 20, 0, 0));          // 20 yd from the pack
     CHECK(Tick(r, f) == "move 20.0 0.0 0.0");                 // the walk to the stand, no pullback
     f.leadX = 20;
     f.units[0].distLead = 20;
     CHECK(FirstOrder(r, f) == "pullback 7");                  // from the stand
-    CHECK(r.pullTries[7] == 1);                               // the refused one was not counted
+    CHECK(r.pullTries[7] == 2);                               // neither refused pull was counted
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.step == 1 && !r.approachStandWanted);
     CHECK(r.deferredPulls == std::vector<std::size_t>{0} && r.note.find("pack at 40.0 0.0 0.0 deferred") == 0);
@@ -29013,11 +29133,14 @@ static void TestRefusedFiringPositionAfterNoFiringStand()
     CHECK(Has(r.note, "no firing stand found"));
     CHECK(r.shotStandTries[7] == kShotStandTries);
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && !r.approachStandWanted && r.bodyPullGuid == 7);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.approachStandWanted);
     CHECK(r.shotStandTries[7] == kShotStandTries);          // no firing-stand stage (1c)
 }
 
-// A boss is never deferred: the stand search, then the approach pause.
+// A boss is never deferred: the body-pull retry, the stand search, then the approach pause.
 static void TestRefusedFiringPositionOfABossPausesAfterTheStandSearch()
 {
     DungeonPlan plan;
@@ -29030,6 +29153,8 @@ static void TestRefusedFiringPositionOfABossPausesAfterTheStandSearch()
     Facts f = Party(0);
     f.units = {Unit(7, 4832, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.approachStandWanted);
     CHECK(Tick(r, f).empty());
@@ -29048,6 +29173,8 @@ static void TestRefusedFiringPositionOnARetryIsGivenUp()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.step == 2 && !r.approachStandWanted);
     CHECK(r.notCleared.count(0) && r.deferGivenUp == std::vector<std::size_t>{0});
@@ -29197,12 +29324,12 @@ static void TestRefusedFiringPositionNeverLoops()
     };
     int first = 0;
     drive(first);
-    CHECK(first == 2 && r.state == State::Paused && r.note == kFiringWhy);
+    CHECK(first == 3 && r.state == State::Paused && r.note == kFiringWhy); // before the retry, after it, from the stand
     CHECK(r.approachPauseKnown && r.approachPauseX == 20.0f);
     CHECK(Resume(r));
     int second = 0;
     drive(second);
-    CHECK(second >= 1 && second <= 2 && r.state == State::Paused);
+    CHECK(second == 3 && r.state == State::Paused);
 }
 
 // scarlet_graveyard step 32: the step's fight left the tank on a 3 yd navmesh island at the foot of a
@@ -29218,6 +29345,8 @@ static void TestRefusedFiringPositionFromAnIslandHopsOffFirst()
     f.units = {Unit(7, 1, 40)};
     CHECK(!PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
@@ -29248,6 +29377,8 @@ static void TestIslandSuspectDroppedWhenTheLeadMoved()
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
     island.leadIsland = true;
@@ -29266,6 +29397,8 @@ static void TestIslandSuspectDroppedWhenTheLeadMoved()
     g.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(s, g) == "pullback 7");
     OrderRefused(s, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(s, g) == "pullback 7");
+    OrderRefused(s, "pullback 7", kFiringRefusal);
     CHECK(Tick(s, g).empty() && s.approachStandWanted);
     Facts stay = g;
     stay.leadIsland = true;
@@ -29283,6 +29416,8 @@ static void TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts notIsland = f;
@@ -29304,6 +29439,8 @@ static void TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     r.islandEscapes = kIslandEscapes;   // the caps of two hops off it, spent and the lead bot still there
@@ -29328,6 +29465,8 @@ static void TestRefusedFiringPositionFromAnIslandPastTheCapsDefers()
     f.units = {Unit(7, 1, 40)};
     CHECK(PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     r.islandEscapes = kIslandEscapes;
@@ -29354,7 +29493,7 @@ static void TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer()
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     int noSpots = 0;
-    for (int i = 0; i < 40 && r.state == State::Running && r.deferredPulls.empty(); ++i)
+    for (int i = 0; i < 120 && r.state == State::Running && r.deferredPulls.empty(); ++i)
     {
         std::string const o = Tick(r, f);
         if (r.approachStandWanted)
@@ -29389,7 +29528,7 @@ static void TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded()
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     int hops = 0;
-    for (int i = 0; i < 60 && r.state == State::Running; ++i)
+    for (int i = 0; i < 150 && r.state == State::Running; ++i)
     {
         std::string const o = Tick(r, f);
         if (r.approachStandWanted)
@@ -29424,6 +29563,8 @@ static void TestRefusedFiringPositionFromAnIslandResetsTheShotStand()
     f.shotStandGuid = 7;                   // the glue's read answers every request: none known
     CHECK(FirstOrder(r, f) == "pullback 7");
     CHECK(Has(r.note, "no firing stand found") && r.shotStandTries[7] == kShotStandTries);
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
@@ -35435,6 +35576,7 @@ int main()
     TestApproachHopCapCountsHopsWithoutProgress();
     TestApproachCapTriesAStandNearThePackBeforeThePause();
     TestApproachStandIsASafeRingSpot();
+    TestBossRowApproachStandRingNotEmpty();
     TestApproachStandWalkIsAHopAndRewindsForgetIt();
     TestUnreachablePackIsDeferredThenPulledOnTheWay();
     TestDeferredPackNeverReachedIsSkippedAtTheLegEnd();
@@ -35451,6 +35593,7 @@ int main()
     TestStuckWalkDuringAWalkBackStaysAPlainPause();
     TestStuckWalkThatIsNotTheHopStillPauses();
     TestRefusedFiringPositionSearchesAStandThenDefers();
+    TestRefusedBossPullbackRetriesBodyPull();
     TestRefusedFiringPositionPullsFromTheStandThenDefers();
     TestRefusedFiringPositionAfterNoFiringStand();
     TestRefusedFiringPositionOfABossPausesAfterTheStandSearch();

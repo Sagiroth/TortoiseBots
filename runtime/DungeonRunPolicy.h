@@ -2309,6 +2309,12 @@ struct Run
     // ... residue units left for this step, out of the party's reach, and why (PullbackRefusedUnreachable: its
     // pullback refused unreachable; PackResidueTick: a flier the re-pulls did not bring down). Named in the clear note.
     std::unordered_map<std::uint64_t, std::string> residueOutOfReach;
+    // The one body-pull retry of a refused ranged pullback on a boss or pack (PullbackRefusedUnreachable): the step
+    // that used it, the unit the next tick sends `pull <guid>` for, and the order it went out as (its refusal takes
+    // the approach's way out, never a second retry). ResetStep clears all three.
+    std::size_t bodyPullStep = static_cast<std::size_t>(-1);
+    std::uint64_t bodyPullGuid = 0;
+    std::string bodyPullOrder;
     std::unordered_set<std::uint64_t> patrolSeen; // ... the patrollers this step saw (a pass of one is remembered run-wide)
     // The straggler pull (AiPlayerbot.DungeonRunStragglerPull, StragglerPullTick): the unit the acting tank goes for,
     // the tank, the try in progress (1 the acting tank, 2 the off-tank's), the tanks already tried, the try's clock,
@@ -3648,6 +3654,9 @@ inline void ResetStep(Run& r)
     r.pulls = 0;
     r.pullTries.clear();
     r.passed.clear();
+    r.bodyPullStep = static_cast<std::size_t>(-1);
+    r.bodyPullGuid = 0;
+    r.bodyPullOrder.clear();
     r.pullHop = false;
     r.openAtLastPull = 0;
     r.fruitlessPulls = 0;
@@ -7878,12 +7887,16 @@ inline void OrderRefused(Run& r, const std::string& order, const std::string& an
     // is left out for the run; the step goes on with what is left. An `unreachable` one of the step's own pull goes the
     // approach's way (PullbackRefusedUnreachable); other refusals of a pullback (a busy tank, no tank, the lead bot
     // unavailable) pause as before.
-    if (order.compare(0, 9, "pullback ") == 0 && answer.compare(0, 14, "invalid-target") == 0)
+    bool const rangedPullOrder = order.compare(0, 9, "pullback ") == 0;
+    bool const bodyPullOrder = !r.bodyPullOrder.empty() && order == r.bodyPullOrder;
+    if ((rangedPullOrder || bodyPullOrder) && answer.compare(0, 14, "invalid-target") == 0)
     {
-        std::uint64_t const guid = std::strtoull(order.c_str() + 9, nullptr, 10);
+        std::uint64_t const guid = std::strtoull(order.c_str() + (rangedPullOrder ? 9 : 5), nullptr, 10);
         r.unreachable.insert(guid);
         if (r.pullGuid == guid)
             r.pullGuid = 0;
+        r.bodyPullGuid = 0;
+        r.bodyPullOrder.clear();
         EnterPhase(r, Phase::Begin);
         r.note = "pull refused (" + answer + "): that unit is left out";
         return;
@@ -10876,8 +10889,11 @@ inline bool BossGateTick(Run& r, const Facts& f, std::uint32_t entry, std::uint3
 // where the tank stands now: a unit around a corner is left too, and fights
 // when the party walks by. After a regroup cleared the set, the same rule
 // leaves a still unshootable unit out again without any pull.
+// `body`: a body (melee) pull - `pull <guid>`, the tank walking in - instead of the
+// ranged `pullback <guid>`. Only the refused-ranged-pull retry sends one
+// (PullbackRefusedUnreachable): the firing stand and its rules do not apply.
 inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& order, const UnitFact* cc = nullptr,
-    bool walkBack = false, std::uint32_t dt = kTickMs, bool hop = false)
+    bool walkBack = false, std::uint32_t dt = kTickMs, bool hop = false, bool body = false)
 {
     hop = hop || walkBack;
     // The pull gate: a boss that wears its stake aura above the row's band is never the pull's target. The run holds
@@ -11014,10 +11030,10 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // authored stand-pull step's own pull runs it with the clearance key
     // (PullStandRuleOn); its hop and walk-back pulls never take it.
     // The stand-pull gate's authorization covers only the unit it picked in shot.
-    bool const authored = f.standClearance && !hop && AuthoredStandStep(r);
+    bool const authored = !body && f.standClearance && !hop && AuthoredStandStep(r);
     // AiPlayerbot.DungeonRunStandDiscipline alone: the plan's stand is enforced for a pull row with an authored approach.
-    bool const discipline = f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;
-    if ((f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)
+    bool const discipline = !body && f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;
+    if (!body && (f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)
     {
         auto const done = r.pullTries.find(u.guid);
         if ((done == r.pullTries.end() || done->second < kMaxPullsPerTarget) && HoldForShot(r, f, u, dt, order, hop))
@@ -11045,7 +11061,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     // pull's pack holds the row up to kStandDisciplineWaitMs (ZG walk 28 step 323: the OT stood 3 yd from the next
     // pack while the MT pulled). Then the row fires and its note names who was out of place.
     std::string outOfPlace;
-    if (f.standDiscipline && !hop && StandDisciplineOutOfPlace(r, f, outOfPlace))
+    if (!body && f.standDiscipline && !hop && StandDisciplineOutOfPlace(r, f, outOfPlace))
     {
         if (r.standDisciplineGuid != u.guid)
         {
@@ -11081,7 +11097,10 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         return;
     }
     ++tries;
-    ++(walkBack ? r.walkBackPulls : r.pulls);
+    // The body-pull retry is no pull of the step (Run::pulls), the way a refused order is none: the
+    // step's fruitless count and its pull cap read the pulls that started a fight.
+    if (!body)
+        ++(walkBack ? r.walkBackPulls : r.pulls);
     r.pullGuid = u.guid;
     // The pulled pack, recorded by guid now: a unit that dies, evades or leaves
     // the read is still pack, and the joiners are read against this set.
@@ -11103,8 +11122,10 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
     EndBigWalk(r);
     EnterPhase(r, Phase::AwaitPull);
     r.note = "pulling " + std::to_string(u.entry);
-    order = "pullback " + std::to_string(u.guid);
-    if (f.pullStand || authored || discipline)
+    order = body ? "pull " + std::to_string(u.guid) + " body" : "pullback " + std::to_string(u.guid);
+    if (body)
+        r.note += " (" + GuidArg(u.guid) + " body pull)" + (outOfPlace.empty() ? std::string() : outOfPlace);
+    if (!body && (f.pullStand || authored || discipline))
     {
         // Each order its own status line (the trace keeps only changes): the
         // target's guid, the how-many-th order to it, and how its shot stood.
@@ -11125,7 +11146,7 @@ inline void PullUnit(Run& r, const Facts& f, const UnitFact& u, std::string& ord
         r.note += "; " + std::to_string(u.estBodies) + " bodies expected";
     else if (f.joinerCeiling > 0 && u.joinersRead)
         r.note += "; " + std::to_string(u.joiners) + " joiners expected";
-    if (!outOfPlace.empty())
+    if (!body && !outOfPlace.empty())
         r.note += outOfPlace;
 }
 
@@ -11148,13 +11169,19 @@ inline void AwaitPull(Run& r)
         r.neverCame.insert(r.pullGuid);
     r.pullGuid = 0;
     r.pullHop = false;
+    r.bodyPullOrder.clear(); // a body-pull retry whose pull ended is no order refused later
     EnterPhase(r, Phase::Begin);
 }
 
 // The innermost ring of the stand search: kApproachStandMinYd, or the step's pull radius
 // plus kApproachStandPullMarginYd when that is more (none when that is past kApproachStandYd).
+// A boss row's radius is the reach of its spawn search, not a pull band: its inner ring
+// stays kApproachStandMinYd (a hovering boss with the default radius 30 left the ring
+// [35, 25] empty by construction, so every stand search around a boss found none).
 inline float ApproachStandMinRing(const PlanStep& s)
 {
+    if (s.kind == PlanStepKind::Boss)
+        return kApproachStandMinYd;
     return std::max(kApproachStandMinYd, s.radius + kApproachStandPullMarginYd);
 }
 
@@ -11290,12 +11317,23 @@ inline bool ApproachWalkStuck(Run& r, const Facts& f, float dist, float x, float
 // the same pause, and the stop rule ended four runs. Now such a refusal of the step's own pull (a pull or boss step in
 // AwaitPull for that unit; not a hop pull, a walk back's or an event's) counts no pull and takes the approach's way out
 // (ApproachNoWay): a retry given up; the stand search once a step; then the deferral (PullMayBeDeferred's gate); then
-// the approach pause. At most two such refusals a step (before and after the stand). True: handled.
+// the approach pause. At most two such refusals a step (before and after the stand).
+// A boss hovering above the floor (its ranged reach picks an air point and launches nothing): the first such refusal
+// on a boss or pack is retried once as a body (melee) pull (`pull <guid> body`, the tank walking in on the target's
+// ground position) before the stand search - the firing position could not be reached, not the target. A refused body
+// pull, or a second refusal, takes the approach's way out as before. True: handled.
 inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const std::string& answer)
 {
-    if (order.compare(0, 9, "pullback ") != 0 || answer.compare(0, 11, "unreachable") != 0)
+    bool const ranged = order.compare(0, 9, "pullback ") == 0;
+    bool const body = order.compare(0, 5, "pull ") == 0;
+    if (!ranged && !body)
         return false;
-    std::uint64_t const guid = std::strtoull(order.c_str() + 9, nullptr, 10);
+    // Only the retry's own body pull is judged here: the run never sends another.
+    if (body && (r.bodyPullOrder.empty() || order != r.bodyPullOrder))
+        return false;
+    if (ranged && answer.compare(0, 11, "unreachable") != 0)
+        return false;
+    std::uint64_t const guid = std::strtoull(order.c_str() + (ranged ? 9 : 5), nullptr, 10);
     const PlanStep* s = Current(r);
     if (!s || (s->kind != PlanStepKind::Pull && s->kind != PlanStepKind::Boss) || r.walkBack || r.pullHop ||
         r.phase != Phase::AwaitPull || r.pullGuid != guid || InEvent(r))
@@ -11304,9 +11342,11 @@ inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const s
     auto const tried = r.pullTries.find(guid);
     if (tried != r.pullTries.end() && tried->second > 0)
         --tried->second;
-    if (r.pulls > 0)
+    // A refused body pull was no pull of the step (PullUnit, `body`): only a ranged one was counted.
+    if (ranged && r.pulls > 0)
         --r.pulls;
     r.pullGuid = 0;
+    r.bodyPullOrder.clear();
     EnterPhase(r, Phase::Begin);
     std::string text = answer;
     if (!text.empty() && text.back() == '.')
@@ -11329,6 +11369,17 @@ inline bool PullbackRefusedUnreachable(Run& r, const std::string& order, const s
     here.leadX = r.leadLastX;
     here.leadY = r.leadLastY;
     here.leadZ = r.leadLastZ;
+    // A refused ranged pullback on this step's boss or pack: one body pull first, before the
+    // stand search (FightStep sends `pull <guid>` on the next tick from the unit's ground
+    // position). The firing position was out of the tank's reach, not the target; a pack on
+    // another floor still ends at the approach's way out when the body pull starts no fight.
+    if (ranged && r.bodyPullStep != r.step)
+    {
+        r.bodyPullStep = r.step;
+        r.bodyPullGuid = guid;
+        r.note = why + ": retrying once as a body pull";
+        return true;
+    }
     ApproachNoWay(r, here, *s, why);
     if (r.state == State::Running && r.approachStandWanted)
         r.refusedPullStandStep = r.step;
@@ -14832,6 +14883,26 @@ inline void FightStep(Run& r, const Facts& f, const PlanStep& s, const std::vect
         AwaitPull(r);
         if (r.phase == Phase::AwaitPull)
             return;
+    }
+    // The refused ranged pullback's one body-pull retry (PullbackRefusedUnreachable): the
+    // tank walks in on the unit's ground position instead of firing from a stand, before
+    // the stand search. Once it was sent, a second refusal takes the approach's way out
+    // (bodyPullStep stays set).
+    if (r.bodyPullGuid && r.bodyPullStep == r.step && !f.anyInCombat)
+    {
+        std::uint64_t const retry = r.bodyPullGuid;
+        const UnitFact* unit = StepUnit(f, retry);
+        if (unit && Pullable(r, *unit))
+        {
+            PullUnit(r, f, *unit, order, nullptr, false, dt, false, true);
+            if (order.compare(0, 5, "pull ") == 0)
+            {
+                r.bodyPullGuid = 0;
+                r.bodyPullOrder = order;
+            }
+            return; // the tick is the retry's: a hold here (a gather, the way back read) is no other pull
+        }
+        r.bodyPullGuid = 0; // gone from the read (dead, evading, left out): the step goes on as usual
     }
     // A step for the other team (flags 2/4):
     //   - a pack is skipped without a look, unless the party already stands
