@@ -180,6 +180,7 @@ Hunters follow standard class progression: hunters own no pets below level 10. U
 - Pool bots and hired companions learn every class spell and rank for free the moment they level up ([`AiPlayerbot.AutoLearnTrainerSpells`](../server/settings/world-population.md#aiplayerbotautolearntrainerspells), on).
 - They also learn the spells from class quests ([`AiPlayerbot.AutoLearnQuestSpells`](../server/settings/world-population.md#aiplayerbotautolearnquestspells), on).
 - Your own alts do not get this: take them to a trainer and train them yourself ([`trainer`](../play/commands/whispers.md#w--trainer)).
+- You can let your alts learn the class-quest spells on level-up with [`AiPlayerbot.AutoLearnQuestSpellsAlts`](../server/settings/world-population.md#aiplayerbotautolearnquestspellsalts) (off by default). Trainer spells stay paid.
 
 ### Initial skills & professions
 Seeding runs once per fresh bot (skipped if primary professions exist or played time is recorded); learned professions and skill ranks save as permanent character data and are never re-rolled:

@@ -2057,6 +2057,7 @@ void ObservabilityEmitter::EmitServerInfo()
        << ",\"ah_market\":\"" << flag(sPlayerbotAIConfig.ahMarketEnabled) << "\""
        << ",\"auto_learn_trainer_spells\":\"" << flag(sPlayerbotAIConfig.autoLearnTrainerSpells) << "\""
        << ",\"auto_learn_quest_spells\":\"" << flag(sPlayerbotAIConfig.autoLearnQuestSpells) << "\""
+       << ",\"auto_learn_quest_spells_alts\":\"" << flag(sPlayerbotAIConfig.autoLearnQuestSpellsAlts) << "\""
        << ",\"level_up_mounts\":\"" << flag(sPlayerbotAIConfig.levelUpMounts) << "\""
        << ",\"turtle_mount_at_level\":" << sPlayerbotAIConfig.turtleMountAtLevel
        << ",\"remote_commander\":\"" << flag(sPlayerbotAIConfig.remoteCommander) << "\""

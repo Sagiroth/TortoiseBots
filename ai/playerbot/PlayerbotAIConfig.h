@@ -903,6 +903,7 @@ public:
     std::string autoPickTalents;
     bool autoLearnTrainerSpells;
     bool autoLearnQuestSpells;
+    bool autoLearnQuestSpellsAlts;
     bool autoLearnDroppedSpells;
     bool autoDoQuests;
     bool autoShareConjuredOnTrade;
