@@ -640,6 +640,11 @@ public:
     }
     bool Cancel(uint32_t botGuidLow)
     {
+        {
+            // A Meet belongs to the order it was pressed for.
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_meet.erase(botGuidLow);
+        }
         if (!botGuidLow)
             return false;
         uint32_t bagCount = 0;

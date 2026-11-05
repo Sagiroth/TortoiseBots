@@ -466,6 +466,8 @@ bool HandleOrderEnchantGive(ChatHandler* handler, Player* requester, std::string
     record.hasGoldCap = hasGoldCap;
     record.bringItems = bring;
     record.state = OrderState::Working;
+    // A new order starts without the previous order's Meet.
+    GuildOrders::ClearMeet(record.botGuidLow);
     if (!GuildOrders::Give(record))
     {
         OrderError(handler, "invalid", "The order could not be stored.");
@@ -782,6 +784,8 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         }
     }
 
+    // A new order starts without the previous order's Meet.
+    GuildOrders::ClearMeet(record.botGuidLow);
     if (!GuildOrders::Give(record))
     {
         OrderError(handler, "invalid", "The order could not be stored.");
