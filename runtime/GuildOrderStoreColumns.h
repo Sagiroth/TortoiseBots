@@ -57,9 +57,12 @@ inline constexpr char const* kSelect[] = {
     "last_bank_check",
     "created_at",
     "updated_at",
-    // The carry column came last: it stays last so the columns read before
-    // it existed keep the position they always had.
+    // The carry column came last: the columns read before it existed keep
+    // the position they always had. `bring` and `given` append after it for
+    // the same reason: every earlier index stays put.
     "carried",
+    "bring",
+    "given",
 };
 
 inline constexpr size_t kCount = sizeof(kSelect) / sizeof(kSelect[0]);
@@ -108,6 +111,8 @@ enum Index : size_t
     ColCreatedAt,
     ColUpdatedAt,
     ColCarried,
+    ColBring,
+    ColGiven,
 };
 
 inline std::string SelectList()

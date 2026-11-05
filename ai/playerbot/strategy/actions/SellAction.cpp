@@ -211,7 +211,8 @@ bool SellAction::Sell(Player* requester, Item* item)
             Player* owner = ai->GetBot();
             std::unordered_set<uint32_t> kept;
             TortoiseBots::GuildOrders::CollectOrderProtectedItems(order->itemId, false,
-                order->type == TortoiseBots::GuildOrders::OrderType::Craft, order->supplyItemId,
+                order->type == TortoiseBots::GuildOrders::OrderType::Craft ||
+                    order->type == TortoiseBots::GuildOrders::OrderType::Enchant, order->supplyItemId,
                 [owner](uint32_t parent) { return ai::KnownReagentsFor(owner, parent); },
                 [](uint32_t vendorItemId)
                 {

@@ -59,8 +59,12 @@ void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord
     SupplyOptions options;
     options.bankAttempted = true;
     options.auctionHouseAttempted = true;
-    options.selfCanFarm = (order.type == OrderType::Craft && IsUnlimitedVendorItem(order.supplyItemId)) ||
-        (plan.verdict == OrderReason::None && !plan.zones.empty());
+    // Enchant reagents are never farmed or delegated: past the counter only
+    // the need list remains.
+    options.selfCanFarm = order.type != OrderType::Enchant &&
+        ((order.type == OrderType::Craft && IsUnlimitedVendorItem(order.supplyItemId)) ||
+        (plan.verdict == OrderReason::None && !plan.zones.empty()));
+    options.subAttempted = order.type == OrderType::Enchant;
     SupplyStep next = NextSupplyStep(options);
     if (next == SupplyStep::Sub)
     {
@@ -523,6 +527,13 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     bool result = taken > 0;
     if (taken)
     {
+        std::optional<OrderRecord> live = Find(bot->GetGUIDLow());
+        if (live && !live->cancelled &&
+            (live->type == OrderType::Craft || live->type == OrderType::Enchant) &&
+            live->giverGuidLow && live->itemId && itemId != live->itemId)
+            for (TakenMailSender const& sender : TakeTakenMailSenders(itemId))
+                if (sender.senderLow == live->giverGuidLow && sender.count)
+                    TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), itemId, sender.count);
         NoteSupplyGain(bot->GetGUIDLow(), itemId, taken);
         NoteSupplyProgress(bot->GetGUIDLow());
     }

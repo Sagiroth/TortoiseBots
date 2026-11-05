@@ -1,4 +1,7 @@
 #pragma once
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 #include <cstdint>
 
@@ -10,6 +13,9 @@ namespace GuildOrders
 // World-thread drain for queued guild-order deliveries. Called from the
 // world-thread order update, after the store tick.
 void UpdateDeliveries();
+// A finished enchant: books the reagents the cast used against the giver's
+// share, then mails what is left of the giver's materials back to them.
+void ReturnEnchantSurplus(Player* bot, std::vector<std::pair<uint32_t, uint32_t>> const& usedReagents);
 
 void UpdateSupplyWithdrawals();
 void OnSupplyOrderGone(uint32_t botGuidLow);

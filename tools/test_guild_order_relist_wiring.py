@@ -146,7 +146,7 @@ class GuildOrderRelistWiringTest(unittest.TestCase):
         save = body(STORE, "bool SaveRelist(", "\n    bool DeleteRelist(")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", save)
         self.assertIn("REPLACE INTO `tortoise_bots_guild_relist`", save)
-        delete = body(STORE, "bool DeleteRelist(", "\n    // The received rows")
+        delete = body(STORE, "bool DeleteRelist(", "\n    // One queued disenchant row")
         self.assertIn("if (!CharacterDatabase.DirectPExecute(", delete)
         self.assertIn("DELETE FROM `tortoise_bots_guild_relist`", delete)
         # Every ledger write is checked and synchronous, posting, claiming and

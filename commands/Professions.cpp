@@ -5,9 +5,11 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/GuildOrderCraftPolicy.h"
+#include "../runtime/GuildOrderSearchPolicy.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
+#include "../ai/playerbot/GuildOrderEnchants.h"
 
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
@@ -22,10 +24,16 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Spells/SpellMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Mail/Mail.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "MapNodes/MasterPlayer.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAI.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -58,106 +66,51 @@ std::unordered_map<uint32_t, std::vector<SkillLineAbilityEntry const*>> const& A
     return index;
 }
 
-// Spell teaching a recipe item teaches: first lowest-entry item whose use
-// spell learns that spell. Trained-from-trainer rows have no item and stay 0.
-uint32_t RecipeItemFor(uint32_t spellId)
+// Required skill of a known recipe, by the same rule the missing-recipe list
+// uses: the skill-line row's own value is 1 for trainer recipes. Cached, the
+// recipe item lookup scans the whole item table.
+uint32_t KnownRecipeReqSkill(uint32_t spellId, uint32_t fallback)
 {
-    uint32_t found = 0;
-    for (uint32 id = 0; id < sItemStorage.GetMaxEntry(); ++id)
+    static std::unordered_map<uint32_t, uint32_t> cache;
+    auto found = cache.find(spellId);
+    if (found != cache.end())
+        return found->second;
+    uint32_t reqSkill = ai::GuildOrderEnchantReqSkill(spellId, ai::GuildOrderRecipeItemFor(spellId));
+    if (!reqSkill)
+        reqSkill = fallback;
+    cache.emplace(spellId, reqSkill);
+    return reqSkill;
+}
+
+
+// Bags plus mailbox of one item, the same two places the order's own stock
+// check counts before naming a need. Duplicated from the preview: the two
+// files share no helpers beyond CommandShared.
+uint32_t SnapshotMailItems(Player* bot, uint32_t itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32_t count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
     {
-        ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(id);
-        if (!proto || proto->Class != ITEM_CLASS_RECIPE)
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
             continue;
-        for (uint32 e = 0; e < MAX_ITEM_PROTO_SPELLS; ++e)
-        {
-            if (!proto->Spells[e].SpellId)
-                continue;
-            SpellEntry const* use = sSpellMgr.GetSpellEntry(proto->Spells[e].SpellId);
-            if (!use)
-                continue;
-            for (uint32 f = 0; f < MAX_EFFECT_INDEX; ++f)
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end();
+            ++itemItr)
+            if (itemItr->item_template == itemId)
             {
-                if (use->Effect[f] != SPELL_EFFECT_LEARN_SPELL || !use->EffectTriggerSpell[f])
-                    continue;
-                if (use->EffectTriggerSpell[f] == spellId && (!found || id < found))
-                    found = id;
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
             }
-        }
     }
-    return found;
-}
-
-// Lowest required skill among this trainer's rows that teach the spell.
-bool TaughtByTrainer(uint32_t spellId, uint32_t trainerType,
-    TrainerSpellData const* spells, uint32_t& reqSkill)
-{
-    if (!spells || trainerType != TRAINER_TYPE_TRADESKILLS)
-        return false;
-    bool found = false;
-    for (auto const& entry : spells->spellList)
-    {
-        TrainerSpell const* tSpell = &entry.second;
-        if (!tSpell || !tSpell->spell)
-            continue;
-        bool teaches = tSpell->spell == spellId;
-        if (SpellEntry const* teaching = sSpellMgr.GetSpellEntry(tSpell->spell))
-            for (uint32 e = 0; e < MAX_EFFECT_INDEX && !teaches; ++e)
-                teaches = teaching->Effect[e] == SPELL_EFFECT_LEARN_SPELL &&
-                    teaching->EffectTriggerSpell[e] == spellId;
-        if (!teaches)
-            continue;
-        if (!found || tSpell->reqSkillValue < reqSkill)
-            reqSkill = tSpell->reqSkillValue;
-        found = true;
-    }
-    return found;
-}
-
-// Any trade-skill trainer anywhere teaching this spell (the bot visits the
-// trainer to learn it; reachability is the travel layer's job, not this
-// listing's). Cached per run like the factory's trainer sweeps.
-bool TaughtByAnyTrainer(uint32_t spellId, uint32_t& reqSkill)
-{
-    struct TrainerCache
-    {
-        uint32_t trainerType = 0;
-        TrainerSpellData const* spells = nullptr;
-    };
-    static std::vector<TrainerCache> tradeskillTrainers;
-    static bool cached = false;
-    if (!cached)
-    {
-        for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
-        {
-            CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
-            if (!co || co->trainer_type != TRAINER_TYPE_TRADESKILLS)
-                continue;
-            uint32 trainerId = co->trainer_id ? co->trainer_id : co->entry;
-            TrainerSpellData const* spells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
-            if (!spells)
-                spells = sObjectMgr.GetNpcTrainerSpells(trainerId);
-            if (!spells)
-                continue;
-            bool known = false;
-            for (TrainerCache const& cachedTrainer : tradeskillTrainers)
-                if (cachedTrainer.spells == spells)
-                    known = true;
-            if (!known)
-                tradeskillTrainers.push_back({ co->trainer_type, spells });
-        }
-        cached = true;
-    }
-    bool found = false;
-    for (TrainerCache const& entry : tradeskillTrainers)
-    {
-        uint32_t need = 0;
-        if (!TaughtByTrainer(spellId, entry.trainerType, entry.spells, need))
-            continue;
-        if (!found || need < reqSkill)
-            reqSkill = need;
-        found = true;
-    }
-    return found;
+    return count;
 }
 
 void FillAbilityRow(AbilityRow& row, SkillLineAbilityEntry const* ability, Player* bot)
@@ -169,7 +122,6 @@ void FillAbilityRow(AbilityRow& row, SkillLineAbilityEntry const* ability, Playe
     row.maxValue = ability->max_value;
     row.known = bot->HasSpell(ability->spellId);
     row.passive = IsPassiveSpell(ability->spellId);
-    row.learnOnGetSkill = ability->learnOnGetSkill != 0;
     SpellEntry const* spell = sSpellMgr.GetSpellEntry(ability->spellId);
     if (!spell)
         return;
@@ -253,18 +205,14 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
             uint32_t recipeItem = 0;
             auto cached = recipeItemCache.find(row.spellId);
             if (cached == recipeItemCache.end())
-                cached = recipeItemCache.emplace(row.spellId, RecipeItemFor(row.spellId)).first;
+                cached = recipeItemCache.emplace(row.spellId, ai::GuildOrderRecipeItemFor(row.spellId)).first;
             recipeItem = cached->second;
             uint32_t trainerSkill = 0;
-            bool const fromTrainer = TaughtByAnyTrainer(row.spellId, trainerSkill);
+            bool const fromTrainer = ai::GuildOrderTaughtByAnyTrainer(row.spellId, trainerSkill);
             ItemPrototype const* recipeProto = recipeItem ? sObjectMgr.GetItemPrototype(recipeItem) : nullptr;
             uint32_t const itemSkill = recipeProto ? recipeProto->RequiredSkillRank : 0;
-            if (fromTrainer && recipeProto)
-                row.reqSkillValue = std::min(trainerSkill, itemSkill);
-            else if (fromTrainer)
-                row.reqSkillValue = trainerSkill;
-            else if (recipeProto)
-                row.reqSkillValue = itemSkill;
+            row.reqSkillValue = GuildOrders::EnchantReqSkillCombine(fromTrainer, trainerSkill,
+                recipeProto != nullptr, itemSkill);
             if (!IsMissingRecipe(row, skillMax[skillId], fromTrainer, recipeItem))
                 continue;
             missing.push_back({ row.skillId, row.spellId, row.createdItemId,
@@ -277,6 +225,131 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
 }
 
 } // namespace
+
+// Every known recipe of the bot that may be ordered as Craft and whose made
+// item name matches the search words: the spell, the made item, the
+// profession skill and its value, the required skill, and the distinct
+// reagents with what the bot holds (bags plus mailbox). The name check runs
+// before the bag/mail walks, so non-matching recipes cost an item lookup,
+// never a mailbox scan; the created item is known from the ability row, so
+// FillAbilityRow only runs for matches. Snapshotted live (spell map, bags,
+// mail) for the guild-wide who-search; the caller only maps it onto names,
+// so no core state escapes this file.
+std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot, std::vector<std::string> const& words)
+{
+    std::vector<CraftRecipeSnapshot> recipes;
+    if (!bot)
+        return recipes;
+    std::unordered_set<uint32_t> professionSkills;
+    for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
+    {
+        SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
+        if (!skill || !ProfessionSnapshotPolicy::IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
+            continue;
+        if (bot->HasSkill(skill->id))
+            professionSkills.insert(skill->id);
+    }
+    std::unordered_map<uint32_t, std::vector<SkillLineAbilityEntry const*>> const& bySkill = AbilityBySkill();
+    for (uint32_t skillId : professionSkills)
+    {
+        auto found = bySkill.find(skillId);
+        if (found == bySkill.end())
+            continue;
+        for (SkillLineAbilityEntry const* ability : found->second)
+        {
+            if (!ability || !ability->spellId || !bot->HasSpell(ability->spellId))
+                continue;
+            SpellEntry const* spell = sSpellMgr.GetSpellEntry(ability->spellId);
+            if (!spell)
+                continue;
+            uint32_t createdItemId = 0;
+            for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
+            {
+                if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[e])
+                {
+                    createdItemId = spell->EffectItemType[e];
+                    break;
+                }
+            }
+            if (!createdItemId)
+                continue;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(createdItemId);
+            if (!proto)
+                continue;
+            std::string lower = proto->Name1;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                [](unsigned char c) { return char(std::tolower(c)); });
+            if (!GuildOrders::SearchNameMatches(lower, words))
+                continue;
+            AbilityRow row;
+            FillAbilityRow(row, ability, bot);
+            if (!IsKnownRecipe(row) || !row.createsItem || row.isEnchant ||
+                CraftOrderField(row) != GuildOrders::CraftOrderToken(GuildOrders::OrderReason::None))
+                continue;
+            CraftRecipeSnapshot recipe;
+            recipe.spellId = row.spellId;
+            recipe.itemId = row.createdItemId;
+            recipe.skillId = row.skillId;
+            recipe.skillValue = bot->GetSkillValue(row.skillId);
+            recipe.reqSkillValue = KnownRecipeReqSkill(row.spellId, row.reqSkillValue);
+            for (uint32 e = 0; e < MAX_SPELL_REAGENTS; ++e)
+            {
+                if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
+                    continue;
+                CraftRecipeReagent reagent;
+                reagent.itemId = uint32_t(spell->Reagent[e]);
+                reagent.need = uint32_t(spell->ReagentCount[e]);
+                reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
+                recipe.reagents.push_back(reagent);
+            }
+            recipes.push_back(std::move(recipe));
+        }
+    }
+    return recipes;
+}
+
+// Every catalogue enchant the bot knows whose name or slot matches the
+// search words: the spell, the slot, the Enchanting value, the required
+// skill, and the reagents with what the bot holds (bags plus mailbox).
+// Unknown enchants never list (a per-bot search shows only this bot's
+// book); skill too low still lists with a noskill verdict at the caller.
+std::vector<EnchantSnapshot> OrderableEnchantSpells(Player* bot, std::vector<std::string> const& words)
+{
+    std::vector<EnchantSnapshot> spells;
+    if (!bot || !ai::GuildOrderEnchantsReady())
+        return spells;
+    if (!bot->HasSkill(333))
+        return spells;
+    uint32_t skillValue = bot->GetSkillValue(333);
+    for (TortoiseBots::GuildOrders::EnchantEntry const& entry : ai::GuildOrderEnchants())
+    {
+        if (!entry.spellId || !bot->HasSpell(entry.spellId))
+            continue;
+        if (!TortoiseBots::GuildOrders::EnchantSearchMatches(entry, words))
+            continue;
+        EnchantSnapshot snapshot;
+        snapshot.spellId = entry.spellId;
+        snapshot.slot = entry.slot;
+        snapshot.skillValue = skillValue;
+        snapshot.reqSkillValue = entry.reqSkill;
+        SpellEntry const* spell = sSpellMgr.GetSpellEntry(entry.spellId);
+        if (spell)
+        {
+            for (uint32 e = 0; e < MAX_SPELL_REAGENTS; ++e)
+            {
+                if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
+                    continue;
+                CraftRecipeReagent reagent;
+                reagent.itemId = uint32_t(spell->Reagent[e]);
+                reagent.need = uint32_t(spell->ReagentCount[e]);
+                reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
+                snapshot.reagents.push_back(reagent);
+            }
+        }
+        spells.push_back(std::move(snapshot));
+    }
+    return spells;
+}
 
 bool HandleProfessions(ChatHandler* handler, char const* args)
 {

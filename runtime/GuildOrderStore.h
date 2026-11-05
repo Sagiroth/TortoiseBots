@@ -1,5 +1,6 @@
 #pragma once
 
+#include "runtime/GuildOrderDisenchantPolicy.h"
 #include "runtime/GuildOrderContract.h"
 #include "runtime/GuildOrderRelistPolicy.h"
 #include "runtime/GuildOrderStepHistoryPolicy.h"
@@ -61,6 +62,48 @@ bool IsOrderProtectedItem(Player* bot, uint32_t itemId);
 // the stored keys already match, and clears the set for cancelled, finished
 // or absent orders. Only the finished set crosses the lock.
 void RefreshOrderProtectedSet(Player* bot);
+// A pending Meet press per bot, kept in memory only (a restart clears it,
+// and the giver presses Meet again). RequestMeet records the giver and the
+// world time; PendingMeet answers the stored giver (nullopt when none);
+// ClearMeet drops it. World thread only (the `.bot order` command and the
+// lead's lifecycle code).
+struct MeetRequest
+{
+    uint32_t giverGuidLow = 0;
+    uint32_t requestedMs = 0;
+};
+void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow);
+std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow);
+void ClearMeet(uint32_t botGuidLow);
+// Disenchant drop-off window per bot (memory only, like the enchant trade
+// session): the whisper opens it, the trade intake consumes it. The window
+// reads its policy window from runtime/GuildOrderDisenchantPolicy.h.
+void NoteDisenchantDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs);
+void ClearDisenchantDropOff(uint32_t botGuidLow);
+std::optional<DisenchantDropOffWindow> PendingDisenchantDropOff(uint32_t botGuidLow);
+// Ends a meeting that did not enchant (giver idle or gone): starts the Meet cooldown.
+void ClearMeetFailed(uint32_t botGuidLow);
+// When the last failed meeting ended (world ms), 0 for none.
+uint32_t MeetFailedMs(uint32_t botGuidLow);
+// Enchant-order trade window (memory only, a restart drops it): the lead
+// tracks the current window and the replace question through these. Counted
+// windows opened this Enchanting leg (1 for the first), or 0 when none was
+// tracked yet.
+struct EnchantTradeSession
+{
+    uint32_t openedMs = 0;
+    uint32_t tries = 0;
+    uint32_t replaceAskedMs = 0;
+    bool replaceConfirmed = false;
+    uint32_t parkedItemGuidLow = 0; // the giver's item the enchant was cast on
+};
+EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow);
+void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow);
+void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs);
+void NoteEnchantTradeClosed(uint32_t botGuidLow);
+void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs);
+void NoteEnchantReplaceConfirmed(uint32_t botGuidLow);
+
 // A sub-order was placed or is already running: the giver becomes the
 // parent bot, the row goes live to the root giver. Called from a bot's
 // map-thread action; only the lock is touched there, the world thread does
@@ -136,12 +179,38 @@ uint32_t BranchGoldCapRemaining(uint32_t botGuidLow);
 void RefundGuildGold(uint32_t botGuidLow, uint32_t deposited);
 void NoteSupplyGain(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
 void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The giver handed base materials to the bot (trade or member mail taken in
+// by the order intake): the giver's share grows. Craft and enchant order
+// consumption spends the giver's share first, so the split at the end only
+// returns what the bot did not use. World thread only (the drains) or the
+// bot's map-thread action.
+void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The order consumed base materials: the giver's share shrinks first, then
+// the order-caused gain ledger. Same threads as NoteSupplySpent.
+void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The stashed sender counts for one item take, oldest first, drained.
+struct TakenMailSender
+{
+    uint32_t senderLow = 0;
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+};
+// The take-mail action lifted order stock from a member's mail: stash the
+// per-mail counts on the map thread, then drain them with the row's giver
+// check after the take. Memory only (a restart drops the stash with the
+// mail still in the mailbox).
+void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count);
+std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId);
 // A bank, AH, mail or vendor pickup landed: the no-progress watchdog starts
 // over, like any farmed item. World thread only (the drains) or the bot's
 // map-thread action.
 void NoteSupplyProgress(uint32_t botGuidLow);
-// A banker visit found none of the item: skip the bank leg for it until the
-// cooldown. A move clears the marker. World thread only (the drains).
+// The enchant ready whisper went out: a relapse to working and back never
+// repeats it. Memory-only (never persisted); map thread only (the ladder).
+void NoteEnchantReadyWhispered(uint32_t botGuidLow);
+// An enchant deposit delivery ran dry: a cancelled row disappears, a timed
+// out one ends cant with its reason. World thread only (the delivery drain).
+void FinishEnchantDeposit(uint32_t botGuidLow);
 void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
 void ClearBankEmpty(uint32_t botGuidLow);
 // A mailbox search came back empty for the item: skip its mail leg until
@@ -223,8 +292,23 @@ bool SaveRelistRow(RelistLedgerEntry const& row);
 // Drops one ledger row the same way. World thread only (the relist drain).
 bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq);
 // The received rows a bank trip has to pay out, oldest first. Any thread:
-// the bank action checks what the bot can pay now, the drain pays it.
+// the bank action checks what it can pay now, the drain pays it.
 std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow);
+
+// Disenchant service queue, persisted next to the order rows: one row per
+// item a member mailed for disenchanting. The intake writes it with the
+// checked synchronous execute before the item reaches the bags, so a
+// restart re-queues instead of stranding the item; the service drain
+// rewrites on landing results and deletes on mailing them back. Map thread
+// only (the intake and the service action).
+void NoteDisenchantQueued(DisenchantQueueEntry const& entry);
+// The bot's queued service items, oldest first. Any thread.
+std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow);
+// Rewrite one queued row (landed results, consumed item): same checked
+// write, false leaves memory untouched. Map thread only.
+bool SaveDisenchantRow(DisenchantQueueEntry const& entry);
+// Drop one queued row the same way. Map thread only.
+bool DeleteDisenchantRow(uint32_t botGuidLow, uint32_t itemGuidLow);
 
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();

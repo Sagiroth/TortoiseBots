@@ -49,10 +49,10 @@ class GuildOrderStepHistoryWiringTest(unittest.TestCase):
     def test_stored_keeps_the_history(self):
         self.assertIn("OrderStepHistory steps;", stored_struct())
 
-    def test_format_order_line_unchanged(self):
+    def test_format_order_line_only_appends_bring(self):
         body = format_order_body()
         self.assertIn('NeedItemsToken(order.needItems) + "|" +', body)
-        self.assertTrue(body.rstrip().endswith("std::to_string(carry);"))
+        self.assertTrue(body.rstrip().endswith('std::to_string(carry) + "|" + BringItemsToken(order.bringItems);'))
         self.assertNotIn("OrderStep", body)
 
     def test_command_records_steps_read_only(self):

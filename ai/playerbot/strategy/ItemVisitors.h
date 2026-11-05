@@ -3,6 +3,7 @@
 #include "../../runtime/PlayerbotAIStorage.h" // Headless storage, not Player::GetPlayerbotAI
 #include "values/ItemUsageValue.h"
 #include "../../runtime/GuildOrderStore.h"
+#include "../../runtime/GuildOrderDisenchantPolicy.h"
 
 char * strstri (const char* str1, const char* str2);
 
@@ -10,15 +11,18 @@ namespace ai
 {
     // True when the item is reserved for the bot's unfinished guild order and
     // must never be consumed (eaten, drunk, bandaged, potion): the order item
-    // itself, the current supply item, or a craft-order reagent through the
-    // bot's known recipes. A set lookup in the store, safe on any thread
+    // itself, the current supply item, a craft-order reagent through the
+    // bot's known recipes, or a disenchant service item or result waiting
+    // for the mailbox. A set lookup in the store, safe on any thread
     // (the world-thread market service posts through here), and it always
     // protects the live order and supply items even before the map-thread
     // refresh recomputed the set. Mirrors the ITEM_USAGE_GUILD_TASK gate in
     // ItemUsageValue so the eat/drink/potion pickers agree with it.
     inline bool GuildOrderConsumesItem(Player* bot, uint32 itemId)
     {
-        return TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId);
+        return TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId) ||
+            TortoiseBots::GuildOrders::DisenchantRowsHoldItem(
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()), itemId);
     }
     class IterateItemsVisitor
     {

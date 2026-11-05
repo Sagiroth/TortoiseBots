@@ -7,6 +7,9 @@
 #include "Guild/Guild.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
+
+#include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderStore.h"
 using namespace ai;
 
 bool CheckMailAction::Execute(Event& event)
@@ -34,6 +37,13 @@ bool CheckMailAction::Execute(Event& event)
 
         if (IsGuildMail(mail, bot))
         {
+            // A guild member's `disenchant` mail queues for the service
+            // instead of the bags, shielded from every disposal path.
+            if (TortoiseBots::GuildOrders::IsDisenchantServiceSubject(mail->subject))
+            {
+                QueueDisenchantMail(mail);
+                continue;
+            }
             TakeGuildMail(mail);
             continue;
         }
@@ -119,7 +129,9 @@ bool CheckMailAction::IsGuildMail(Mail* mail, Player* bot)
 // alone instead of retrying it every tick.
 bool CheckMailAction::CanTakeGuildMail(Mail* mail, MasterPlayer* master)
 {
-    if (mail->COD || mail->deliver_time > time(nullptr))
+    // A guild member's mail is taken at once, without the core's one-hour
+    // item delivery delay: guild orders and the disenchant service run on it.
+    if (mail->COD)
         return false;
     if (mail->money)
         return true;
@@ -135,6 +147,7 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
     MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
     if (!master || !CanTakeGuildMail(mail, master))
         return;
+    uint32_t senderLow = mail ? mail->sender : 0;
     bool taken = false;
     if (mail->money)
     {
@@ -148,6 +161,8 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
         Item* item = master->GetMItem(itemGuid);
         if (!item)
             break;
+        uint32_t itemId = item->GetEntry();
+        uint32_t count = item->GetCount();
         ItemPosCountVec dest;
         if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
             break;
@@ -157,6 +172,17 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
         item->SetState(ITEM_UNCHANGED);
         bot->MoveItemToInventory(dest, item, true);
         taken = true;
+        if (senderLow)
+        {
+            std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+            if (order && !order->cancelled &&
+                (order->type == TortoiseBots::GuildOrders::OrderType::Craft ||
+                    order->type == TortoiseBots::GuildOrders::OrderType::Enchant) &&
+                order->giverGuidLow && senderLow == order->giverGuidLow &&
+                order->itemId && itemId != order->itemId)
+                TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), itemId, count);
+        }
     }
     if (!taken)
         return;
@@ -168,6 +194,78 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
     CharacterDatabase.CommitTransaction();
 }
 
+// Takes a guild member's `disenchant` mail into the bags like guild mail,
+// but records every item on the service queue first, so the queued items
+// stay shielded from every disposal path and the service action knows whom
+// to mail back. Cash-on-delivery mail stays untouched like guild mail.
+void CheckMailAction::QueueDisenchantMail(Mail* mail)
+{
+    MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
+    if (!master || !CanTakeGuildMail(mail, master))
+        return;
+    bool moved = false;
+    uint32_t freeSlots = 0;
+    for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            ++freeSlots;
+    for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            if (pack->GetProto() && pack->GetProto()->SubClass == ITEM_SUBCLASS_CONTAINER)
+                freeSlots += pack->GetFreeSlots();
+    uint32_t waiting = 0;
+    for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
+        TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
+        if (!row.pendingResults)
+            ++waiting;
+    while (!mail->items.empty())
+    {
+        if (!TortoiseBots::GuildOrders::DisenchantIntakeHasRoom(freeSlots, waiting))
+            break;
+        uint32_t infoGuid = mail->items[0].item_guid;
+        Item* item = master->GetMItem(infoGuid);
+        if (!item)
+            break;
+        ItemPosCountVec dest;
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            break;
+        uint32_t itemId = item->GetEntry();
+        uint32_t itemGuidLow = item->GetGUIDLow();
+        uint32_t senderLow = mail->sender;
+        mail->RemoveItem(infoGuid);
+        mail->removedItems.push_back(infoGuid);
+        master->RemoveMItem(infoGuid);
+        item->SetState(ITEM_UNCHANGED);
+        bot->MoveItemToInventory(dest, item, true);
+        TortoiseBots::GuildOrders::DisenchantQueueEntry entry;
+        entry.botGuidLow = bot->GetGUIDLow();
+        entry.senderGuidLow = senderLow;
+        entry.itemGuidLow = itemGuidLow;
+        entry.itemId = itemId;
+        TortoiseBots::GuildOrders::NoteDisenchantQueued(entry);
+        if (freeSlots)
+            --freeSlots;
+        ++waiting;
+        moved = true;
+    }
+    if (!moved)
+        return;
+    Mail* current = master->GetMail(mail->messageID);
+    if (!current)
+        return;
+    if (current->items.empty() && current->money == 0)
+    {
+        CharacterDatabase.PExecute("DELETE FROM mail WHERE id = '%u'", mail->messageID);
+        CharacterDatabase.PExecute("DELETE FROM mail_items WHERE mail_id = '%u'", mail->messageID);
+        master->RemoveMail(mail->messageID);
+    }
+    else
+        current->state = MAIL_STATE_CHANGED;
+    master->MarkMailsUpdated();
+    CharacterDatabase.BeginTransaction(bot->GetGUIDLow());
+    bot->SaveInventoryAndGoldToDB();
+    master->SaveMails();
+    CharacterDatabase.CommitTransaction();
+}
 
 void CheckMailAction::ProcessMail(Mail* mail, Player* owner)
 {
