@@ -128,7 +128,7 @@ class SeekWalkWiring(unittest.TestCase):
         for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
-                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullRoleOf(",
+                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullNeeded(", "SeekPullRoleOf(",
                      "SeekPullHitExempt(", "SeekRolledDueMs("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
@@ -247,7 +247,7 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("kSeekTankArriveYd", find)
         # The pull branch walks the Son down with the attack's reach form; it used to set the target and give the
         # tick back, so the tank never moved and the Son never aggroed.
-        self.assertIn("SeekTankPullStep(", tank)
+        self.assertIn("SeekTankPullNeeded(", tank)
         self.assertIn("Attack(bot, task.source, kSeekPickupYd)", tank)
         self.assertIn("DoSpecificAction(\"shoot\", event, true)", tank)
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the

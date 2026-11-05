@@ -24,7 +24,6 @@ namespace ai
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
     constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
-    constexpr float kSeekPullReachYd = 5.0f;         // the pulling tank's own swing reaches this far (melee contact)
 
     // Cycle clock: the fight's combat start (the first read that sees the boss in combat with the group) starts it, and
     // every accepted sighting of the row's cycle spell on a group member restarts it: an observed siphon wins over the
@@ -247,24 +246,14 @@ namespace ai
             nearestSourceToSpotYd <= kSeekFallbackYd;
     }
 
-    // The pull branch's step: a Son that stands out of the fight stays its target until the pulling tank's own swing
-    // puts it in combat. The branch used to set the target and give the tick back, so the tank never moved and the
-    // rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). "Walk" is the reach action's
-    // walk (the attack order carries it); "Hit" is the swing at contact; "Done" hands the Son to the take/drag
-    // branches once it fights or follows.
-    enum class SeekPullStep : std::uint8_t
+    // The pull branch's own step: a Son that stands out of the fight stays its target until the pulling tank's own
+    // swing puts it in combat. The branch used to set the target and give the tick back, so the tank never moved and
+    // the rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). The attack order carries the
+    // walk and the swing alike (its reach form), so only the branch's end is a decision: once the Son fights or follows
+    // the tank, the take/drag branches own it.
+    inline bool SeekTankPullNeeded(bool sonInCombat, bool sonOnTank)
     {
-        Walk = 0,
-        Hit = 1,
-        Done = 2,
-    };
-
-    // The step itself keeps the pull's name; the enum is SeekPullStep so the two do not hide each other.
-    inline SeekPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
-    {
-        if (sonInCombat || sonOnTank)
-            return SeekPullStep::Done;
-        return tankToSonYd <= kSeekPullReachYd ? SeekPullStep::Hit : SeekPullStep::Walk;
+        return !sonInCombat && !sonOnTank;
     }
 
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive

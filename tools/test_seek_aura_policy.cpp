@@ -165,15 +165,14 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
-    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to, not dropped after one target
-    // set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son in
-    // combat). Inside the swing's reach it is hit; once it fights, or follows the tank, the take/drag branch owns it.
-    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekPullStep::Walk);
-    CHECK(SeekTankPullStep(false, false, 60.0f) == SeekPullStep::Walk);
-    CHECK(SeekTankPullStep(false, false, 5.0f) == SeekPullStep::Hit);
-    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekPullStep::Hit);
-    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekPullStep::Done);
-    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekPullStep::Done);
+    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to and hit, not dropped after one
+    // target set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son
+    // in combat). The attack order carries the walk and the swing itself; once the Son fights, or follows the tank,
+    // the take/drag branch owns it.
+    CHECK(SeekTankPullNeeded(false, false));
+    CHECK(!SeekTankPullNeeded(true, false));
+    CHECK(!SeekTankPullNeeded(false, true));
+    CHECK(!SeekTankPullNeeded(true, true));
 
     // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
     // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.

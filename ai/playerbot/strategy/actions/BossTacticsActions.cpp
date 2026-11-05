@@ -4906,9 +4906,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     if (task.pull)
     {
         hasLast = false;
-        const SeekPullStep step = SeekTankPullStep(task.source->IsInCombat(), task.source->GetVictim() == bot,
-                                                       bot->GetDistance(task.source));
-        if (step == SeekPullStep::Done)
+        if (!SeekTankPullNeeded(task.source->IsInCombat(), task.source->GetVictim() == bot))
             return false;
         if (task.rangedPull)
         {
