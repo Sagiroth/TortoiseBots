@@ -664,6 +664,10 @@ static void HireCreateRetryable_limitCodes()
     CHECK(HireCreateRetryable(53, 2));
     CHECK(!HireCreateRetryable(53, 3));
     CHECK(!HireCreateRetryable(49, 0));
+    CHECK(kHireCreatePvpTeamsViolation == 51);
+    CHECK(HireCreateRetryable(51, 0));
+    CHECK(HireCreateRetryable(51, 2));
+    CHECK(!HireCreateRetryable(51, 3));
 }
 
 

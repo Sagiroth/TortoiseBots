@@ -817,6 +817,7 @@ inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread c
 // refuses until the row is deleted), so there is no departing credit.
 constexpr uint8_t kHireCreateServerLimit = 52;
 constexpr uint8_t kHireCreateAccountLimit = 53;
+constexpr uint8_t kHireCreatePvpTeamsViolation = 51;
 constexpr uint32_t kHireCreateAccountRetries = 3;
 
 inline bool HireAccountHasRoom(uint32_t sqlCount, uint32_t cacheCount, uint32_t limit)
@@ -825,14 +826,15 @@ inline bool HireAccountHasRoom(uint32_t sqlCount, uint32_t cacheCount, uint32_t 
     return seen < limit;
 }
 
-// A limit refusal means the core's COUNT saw a full account this COUNT missed: another account (or a
-// fresh one) may still have room. Every other non-name error stays terminal. attempt counts the limit
-// refusals so far; at most kHireCreateAccountRetries retries.
+// A full-account or opposite-faction refusal means the core saw an account state this COUNT missed:
+// another account (or a fresh one) may still have room. Every other non-name error stays terminal.
+// attempt counts the refusals so far; at most kHireCreateAccountRetries retries.
 inline bool HireCreateRetryable(uint8_t result, uint32_t attempt)
 {
     if (attempt >= kHireCreateAccountRetries)
         return false;
-    return result == kHireCreateServerLimit || result == kHireCreateAccountLimit;
+    return result == kHireCreateServerLimit || result == kHireCreateAccountLimit ||
+        result == kHireCreatePvpTeamsViolation;
 }
 
 } // namespace TortoiseBots
