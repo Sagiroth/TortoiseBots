@@ -175,15 +175,17 @@ int main()
     CHECK(SeekTankPullStep(true, false, 30.0f) == SeekPullStep::Done);
     CHECK(SeekTankPullStep(false, true, 30.0f) == SeekPullStep::Done);
 
-    // SeekTankPullHitNotHeld: the pulling tank's own hit on a Son at 100 % that is not fighting is exempt from the
-    // seek hold, or the hold would stand the swing down and the Son would never aggro; once the Son fights, the hold
-    // rule applies to it like to any other Son.
-    CHECK(SeekPullHitExempt(true, false));
-    CHECK(!SeekPullHitExempt(true, true));
-    CHECK(!SeekPullHitExempt(false, false));
-    CHECK(!SeekPullHitExempt(false, true));
+    // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
+    // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.
+    CHECK(SeekPullHitExempt(true, true, false));
+    // Only the picked Son: a puller's hit on another Son stays held, so the spare source is not damaged.
+    CHECK(!SeekPullHitExempt(true, false, false));
+    // Once the Son fights the hold applies to it like to any other Son; a bot that is not the puller never exempts.
+    CHECK(!SeekPullHitExempt(true, true, true));
+    CHECK(!SeekPullHitExempt(false, true, false));
+    CHECK(!SeekPullHitExempt(false, false, true));
     // The hold itself still answers true for a Son that is not the pick: the exemption is the caller's, on the puller's
-    // own strike against a Son that has not joined the fight.
+    // own strike against the Son it has not engaged yet.
     CHECK(SeekHoldDecision(false, true, false, false, 100.0f, 30.0f, 30.0f, 5));
 
     // SeekPullFallsBackToHunter: with fewer than three tanks alive the third off-tank's pull is a hunter's shot, then

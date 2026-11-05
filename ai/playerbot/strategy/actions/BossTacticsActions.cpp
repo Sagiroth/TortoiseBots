@@ -711,6 +711,10 @@ struct SeekFight
     int seekers = 0;   // living seekers that lack the poison (the pull rule's count)
     Unit* source = nullptr; // the living source at the row's spot
     std::vector<Unit*> sons; // every living source of the fight the area veto judges (one bounded walk per read)
+    // The pull, read once for the tick: whether this bot is the one opening a Son, and the one Son its shot goes to.
+    // The hold exemption compares against this pick, so another Son stays held even under the puller's own hit.
+    bool puller = false;
+    Unit* pullTarget = nullptr;
 };
 
 struct SeekTickCache
@@ -1010,20 +1014,6 @@ Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles
         case SeekPullRole::Ranged: return ranged;
         default: return nullptr;
     }
-}
-
-// Whether this bot opens a Son that is not fighting yet: the third off-tank, or its fallback while fewer than three
-// tanks live. The hold exemption reads it, so a puller's own strike goes through the seek hold.
-bool IsSeekPuller(PlayerbotAI* ai, Player* bot, const SeekFight& state)
-{
-    if (!ai || !bot || !state.live || !state.row || !state.windowOpen || state.seekers < kSeekPullMinMissing)
-        return false;
-    const RaidTankRoles roles = GetRaidTankRoles(ai);
-    if (roles.tanks.size() >= 3)
-        return roles.tanks[2] == bot;
-    if (!SeekFallbackPullBranch(roles.tanks.size()))
-        return false;
-    return FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) == bot;
 }
 
 // The seekers of this fight: every living group member that SeekWanted would send (no poison, not the boss's victim,
@@ -1372,6 +1362,38 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     {
         if (std::find(out.sons.begin(), out.sons.end(), static_cast<Unit*>(candidate)) == out.sons.end())
             out.sons.push_back(candidate);
+    }
+    // The pull's own pick, read once for the tick: the tank roles are rebuilt here (not in every action's hold check,
+    // which asks this state), and only the one Son a pull may go to is exempt from the hold under the puller's hit. The
+    // pull rule decides whether a pull runs at all, so nothing is exempt while a Son already fights.
+    if (out.windowOpen && out.seekers >= kSeekPullMinMissing)
+    {
+        const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
+        const bool fallback = !thirdTank && SeekFallbackPullBranch(roles.tanks.size()) &&
+            FindSeekFallbackPuller(ai, bot, roles, boss, *row) == bot;
+        out.puller = thirdTank || fallback;
+        if (out.puller)
+        {
+            Unit* nearest = nullptr;
+            float nearestYd = std::numeric_limits<float>::max();
+            bool anyInCombat = false;
+            for (Creature* candidate : SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ,
+                    kSeekPickupYd))
+            {
+                const float toSpot = candidate->GetDistance2dToCenter(row->spotX, row->spotY);
+                if (candidate->IsInCombat())
+                    anyInCombat = true;
+                if (toSpot < nearestYd)
+                {
+                    nearest = candidate;
+                    nearestYd = toSpot;
+                }
+            }
+            const bool pullDue = thirdTank
+                ? SeekTankPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd)
+                : SeekFallbackPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd);
+            out.pullTarget = pullDue ? nearest : nullptr;
+        }
     }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
@@ -1989,10 +2011,11 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
-            // The fallback puller's target is the Son it is about to shoot: dropping it would re-pick the boss every
-            // tick and the shot would never go out (the hold answers true for a Son that is not the pick).
+            // The puller's target is the one Son it is about to shoot: dropping it would re-pick the boss every tick
+            // and the shot would never go out (the hold answers true for a Son that is not the pick). Any other Son,
+            // and the pick once it fights, is dropped like before.
             const bool pullHit = IsSeekSource(state, current) &&
-                SeekPullHitExempt(IsSeekPuller(ai, bot, state), current->IsInCombat());
+                SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat());
             if (!pullHit && SeekHoldsUnit(state, current))
                 return current;
         }
@@ -3028,19 +3051,20 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
-            // The puller's own strike on a Son that is not fighting yet is the pull itself: the hold answers true for
-            // every Son that is not the picked source, so it would stand the tank's swing (or the fallback's shot)
-            // down and the Son would never aggro. Once it fights, the hold applies to it like to any other Son.
+            // The puller's own strike on the one Son it is fetching, before that Son fights, is the pull itself: the
+            // hold answers true for every Son that is not the picked source, so it would stand the tank's swing (or
+            // the fallback's shot) down and the Son would never aggro. A DoT is exempt from none of this: its ticks
+            // run through the hold, so it is vetoed even on the pull target (SeekDotVeto).
             Unit* const struck = action->GetTarget();
+            if (SeekDotOnSource(state, action))
+            {
+                LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
+                return 0.0f;
+            }
             const bool pullHit = IsSeekSource(state, struck) &&
-                SeekPullHitExempt(IsSeekPuller(ai, bot, state), struck->IsInCombat());
+                SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat());
             if (!pullHit)
             {
-                if (SeekDotOnSource(state, action))
-                {
-                    LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
-                    return 0.0f;
-                }
                 Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
                     : aoe ? AI_VALUE(Unit*, "dps aoe target")
                     : action->GetTarget();

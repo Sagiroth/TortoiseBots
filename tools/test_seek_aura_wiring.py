@@ -285,6 +285,23 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
 
+    def test_only_the_pulled_son_is_exempt_from_the_hold(self):
+        # The puller's identity and its one Son are read once per tick with the rest of the seek fight (the tank roles
+        # are rebuilt there, not in every action's hold check), and the exemption names that Son: another Son, a Son
+        # already fighting and every non-puller keep the hold. A DoT is checked before the exemption, so its ticks
+        # never run through the hold on the pick.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("const RaidTankRoles roles = GetRaidTankRoles(ai);", read)
+        self.assertIn("out.puller = thirdTank || fallback;", read)
+        self.assertIn("out.pullTarget = pullDue ? nearest : nullptr;", read)
+        self.assertNotIn("IsSeekPuller(", ACTIONS)
+        hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat())", hold)
+        self.assertLess(hold.index("SeekDotOnSource(state, action)"), hold.index("SeekPullHitExempt("))
+        drop = body(ACTIONS, "Unit* ai::FindBossHoldKill(")
+        self.assertIn("SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat())", drop)
+        self.assertIn("inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)", POLICY)
+
     def test_the_dot_and_off_tank_holds_answer_every_damage_cast(self):
         # A melee debuff on the attacker ("rend on attacker") resolves to "attacker without aura", so it reaches the
         # seek block through the every-damage-cast clause, and the classification is the policy's.
