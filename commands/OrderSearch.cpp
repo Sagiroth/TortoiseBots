@@ -3,6 +3,7 @@
 #include "BotCommandHandlers.h"
 #include "CommandShared.h"
 
+#include "../ai/playerbot/GuildOrderEnchants.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
 #include "../runtime/GuildOrderContract.h"
@@ -116,6 +117,80 @@ bool IsBrowsableCategory(OrderItemCategory category)
            category == OrderItemCategory::Leather || category == OrderItemCategory::Fish ||
            category == OrderItemCategory::Cloth;
 }
+
+// `.bot order search <BotName> enchant <text>`: the permanent enchants
+// this bot knows whose catalogue name or slot matches. One
+// TBM:ORDER_ENCHANT row each, verdict ok or noskill; unknown enchants never
+// list. Reagents count bags plus mailbox, like the craft search. Sorted by
+// required skill, then name.
+bool HandleOrderEnchantSearch(ChatHandler* handler, Player* bot, std::string const& text)
+{
+    std::string query = Trim(text);
+    if (query.size() < kMinSearchChars)
+    {
+        SendActionError(handler, "order", "invalid", "Search text needs at least 3 characters.");
+        return true;
+    }
+    if (!ai::GuildOrderEnchantsReady())
+    {
+        SendActionError(handler, "order", "disabled", "Enchant catalogue is not ready yet.");
+        return true;
+    }
+    std::vector<std::string> aliased;
+    for (std::string const& word : SplitQueryWords(ToLower(query)))
+        aliased.push_back(TortoiseBots::GuildOrders::EnchantSlotAlias(word));
+    std::vector<EnchantSnapshot> snapshots = OrderableEnchantSpells(bot, aliased);
+    struct EnchantRow
+    {
+        TortoiseBots::GuildOrders::EnchantEntry entry;
+        TortoiseBots::GuildOrders::OrderReason verdict = TortoiseBots::GuildOrders::OrderReason::None;
+        std::vector<CraftRecipeReagent> reagents;
+    };
+    std::vector<EnchantRow> rows;
+    rows.reserve(snapshots.size());
+    for (EnchantSnapshot const& snapshot : snapshots)
+    {
+        TortoiseBots::GuildOrders::EnchantEntry entry;
+        for (TortoiseBots::GuildOrders::EnchantEntry const& catalogue : ai::GuildOrderEnchants())
+            if (catalogue.spellId == snapshot.spellId)
+            {
+                entry = catalogue;
+                break;
+            }
+        if (!entry.spellId)
+            continue;
+        EnchantRow row;
+        row.entry = entry;
+        row.verdict = TortoiseBots::GuildOrders::EnchantSearchVerdict(true, snapshot.skillValue,
+            snapshot.reqSkillValue);
+        row.reagents = snapshot.reagents;
+        rows.push_back(std::move(row));
+    }
+    std::sort(rows.begin(), rows.end(), [](EnchantRow const& a, EnchantRow const& b)
+    {
+        return TortoiseBots::GuildOrders::EnchantSortLess(a.entry, b.entry);
+    });
+    if (rows.size() > kMaxSearchResults)
+        rows.resize(kMaxSearchResults);
+    handler->PSendSysMessage("%s",
+        TortoiseBots::GuildOrders::FormatEnchantsBegin(uint32_t(rows.size())).c_str());
+    for (EnchantRow const& row : rows)
+    {
+        std::vector<TortoiseBots::GuildOrders::EnchantSearchReagent> reagents;
+        reagents.reserve(row.reagents.size());
+        for (CraftRecipeReagent const& reagent : row.reagents)
+            reagents.push_back({ reagent.itemId, reagent.need, reagent.have });
+        std::string const reagentsToken = TortoiseBots::GuildOrders::FormatEnchantReagents(
+            reagents.empty() ? nullptr : reagents.data(), reagents.size());
+        handler->PSendSysMessage("%s",
+            TortoiseBots::GuildOrders::FormatEnchantRow(row.entry.spellId,
+                ProtocolSafe(row.entry.name), row.entry.slot, row.entry.reqSkill, row.verdict,
+                reagentsToken).c_str());
+    }
+    handler->PSendSysMessage("%s", TortoiseBots::GuildOrders::FormatEnchantsEnd().c_str());
+    return true;
+}
+
 } // namespace
 
 bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std::string const& type,
@@ -125,11 +200,13 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         return false;
 
     OrderType orderType = OrderType::Farm;
-    if (!ParseType(type, orderType) || orderType == OrderType::Enchant)
+    if (!ParseType(type, orderType))
     {
-        SendActionError(handler, "order", "invalid", "Usage: .bot order search <bot> <farm|buy|craft> [cat=<kind>] <text>");
+        SendActionError(handler, "order", "invalid", "Usage: .bot order search <bot> <farm|buy|craft|enchant> [cat=<kind>] <text>");
         return true;
     }
+    if (orderType == OrderType::Enchant)
+        return HandleOrderEnchantSearch(handler, bot, text);
 
     std::string query = Trim(text);
     OrderItemCategory category = OrderItemCategory::Other;

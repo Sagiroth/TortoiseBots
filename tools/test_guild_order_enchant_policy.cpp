@@ -118,6 +118,80 @@ int main()
     EnchantTargetFacts plainWeapon{ 2, 196083, 0, true, 9999 };
     CHECK(!EnchantFitsItem(plainWeapon, { 4, 1, 16 }));
 
+    // Match: name words plus slot-token and alias words. "bracer" matches by
+    // slot even when the name says nothing about it; "wrist" aliases there.
+    EnchantEntry stamina;
+    stamina.name = "Enchant Bracer - Stamina";
+    stamina.lowerName = "enchant bracer - stamina";
+    stamina.slot = EnchantSlot::Bracer;
+    CHECK(EnchantSearchMatches(stamina, { "stamina" }));
+    CHECK(EnchantSearchMatches(stamina, { "bracer", "stamina" }));
+    CHECK(!EnchantSearchMatches(stamina, { "cloak", "stamina" }));
+    CHECK(EnchantSearchMatches(stamina, { "wrist" }));
+    CHECK(EnchantSearchMatches(stamina, { "wrist", "stamina" }));
+    CHECK(!EnchantSearchMatches(stamina, { "q" }));
+    CHECK(!EnchantSearchMatches(stamina, { "stamina", "cloak" }));
+
+    // Verdict: known + skilled is ok; known but too low is noskill; unknown
+    // is norecipe; zero requirement is always usable.
+    CHECK(EnchantSearchVerdict(true, 300, 250) == OrderReason::None);
+    CHECK(EnchantSearchVerdict(true, 100, 250) == OrderReason::NoSkill);
+    CHECK(EnchantSearchVerdict(false, 300, 250) == OrderReason::NoRecipe);
+    CHECK(EnchantSearchVerdict(true, 0, 0) == OrderReason::None);
+    CHECK(std::string(EnchantVerdictToken(OrderReason::None)) == "ok");
+    CHECK(std::string(EnchantVerdictToken(OrderReason::NoSkill)) == "noskill");
+
+    // Wire rows: the per-match line, the begin/end framing, the reagents.
+    CHECK(FormatEnchantRow(7428, "Enchant Bracer - Stamina", EnchantSlot::Bracer, 265,
+        OrderReason::None, "10940:1:3") == "TBM:ORDER_ENCHANT|7428|Enchant Bracer - Stamina|bracer|265|ok|10940:1:3");
+    CHECK(FormatEnchantRow(7428, "Enchant Bracer - Stamina", EnchantSlot::Bracer, 265,
+        OrderReason::NoSkill, "") == "TBM:ORDER_ENCHANT|7428|Enchant Bracer - Stamina|bracer|265|noskill|-");
+    CHECK(FormatEnchantsBegin(2) == "TBM:ORDER_ENCHANTS_BEGIN|2");
+    CHECK(FormatEnchantsEnd() == "TBM:ORDER_ENCHANTS_END");
+    EnchantSearchReagent reagents[] = { { 12811, 1, 1 }, { 11137, 2, 0 } };
+    CHECK(FormatEnchantReagents(reagents, 2) == "12811:1:1;11137:2:0");
+    CHECK(FormatEnchantReagents(nullptr, 0) == "-");
+    CHECK(FormatEnchantReagents(reagents, 0) == "-");
+
+    // Spell token: a bare id or a shift-clicked spell link.
+    uint32_t spellId = 0;
+    CHECK(ParseEnchantSpellToken("7428", spellId) && spellId == 7428);
+    CHECK(ParseEnchantSpellToken("|cffffffff|Hspell:7428|h[Stamina]|h|r", spellId) && spellId == 7428);
+    CHECK(!ParseEnchantSpellToken("0", spellId));
+    CHECK(!ParseEnchantSpellToken("enchant", spellId));
+    CHECK(!ParseEnchantSpellToken("", spellId));
+    CHECK(!ParseEnchantSpellToken("12345678901", spellId));
+
+    // Give verdicts: unknown or off-catalogue is norecipe, low skill is
+    // noskill, keep is refused, anything else may be stored.
+    CHECK(EnchantGiveVerdict({ true, true, true, false }) == OrderReason::None);
+    CHECK(EnchantGiveVerdict({ false, true, true, false }) == OrderReason::NoRecipe);
+    CHECK(EnchantGiveVerdict({ true, false, true, false }) == OrderReason::NoRecipe);
+    CHECK(EnchantGiveVerdict({ true, true, false, false }) == OrderReason::NoSkill);
+    CHECK(EnchantGiveVerdict({ true, true, true, true }) == OrderReason::Enchant);
+    CHECK(std::string(EnchantGiveRefusal(OrderReason::NoSkill)) ==
+        "The bot's Enchanting skill is too low for that enchant.");
+    CHECK(std::string(EnchantGiveRefusal(OrderReason::Enchant)) ==
+        "Keep orders are not available for enchants.");
+    CHECK(std::string(EnchantGiveRefusal(OrderReason::NoRecipe)) == "The bot does not know that enchant.");
+
+    // Hours and gold cap share the farm/craft shapes: 1-24 or inf, copper.
+    uint32_t hours = 99;
+    CHECK(ParseEnchantHours("inf", hours) && hours == 0);
+    CHECK(ParseEnchantHours("INF", hours) && hours == 0);
+    CHECK(ParseEnchantHours("5", hours) && hours == 5);
+    CHECK(!ParseEnchantHours("0", hours));
+    CHECK(!ParseEnchantHours("25", hours));
+    CHECK(!ParseEnchantHours("abc", hours));
+    CHECK(IsEnchantHoursToken("5") && IsEnchantHoursToken("24"));
+    CHECK(!IsEnchantHoursToken("inf") && !IsEnchantHoursToken(""));
+    uint32_t cap = 0;
+    CHECK(ParseEnchantGoldCap("0", cap) && cap == 0);
+    CHECK(ParseEnchantGoldCap("4294967295", cap) && cap == 4294967295u);
+    CHECK(!ParseEnchantGoldCap("", cap));
+    CHECK(!ParseEnchantGoldCap("4294967296", cap));
+    CHECK(!ParseEnchantGoldCap("abc", cap));
+
     if (failures == 0)
         std::printf("test_guild_order_enchant_policy ok\n");
     return failures ? 1 : 0;

@@ -8,6 +8,9 @@
 // (tools/test_guild_order_enchant_policy.cpp). All inputs are plain
 // caller-resolved facts; core enum values are mirrored as documented
 // literals so this header never includes a core header.
+#include "GuildOrderContract.h"
+
+#include <stdexcept>
 
 #include <cstdint>
 #include <string>
@@ -205,6 +208,208 @@ inline uint32_t EnchantReqSkillCombine(bool fromTrainer, uint32_t trainerSkill,
     if (hasRecipeItem)
         return itemSkill;
     return 0;
+}
+
+// Per-bot enchant search match: catalogue name match plus slot-token and
+// slot-alias words. Every query word must match either the name or the slot;
+// a single-letter word never counts as a slot hit, so "a" does not match
+// every weapon enchant through the "a" in "weapon".
+inline bool EnchantSearchMatches(EnchantEntry const& entry, std::vector<std::string> const& words)
+{
+    std::string const slot = EnchantSlotToken(entry.slot);
+    for (std::string const& word : words)
+    {
+        bool nameHit = entry.lowerName.find(word) != std::string::npos;
+        bool slotHit = word.size() > 1 && (word == slot || EnchantSlotAlias(word) == slot);
+        if (!nameHit && !slotHit)
+            return false;
+    }
+    return true;
+}
+
+// Per-bot search verdict: every listed enchant is known (unknown ones never
+// reach the list), so the only question is whether the bot's Enchanting
+// skill covers the requirement. A zero requirement is always usable.
+inline OrderReason EnchantSearchVerdict(bool known, uint32_t skillValue, uint32_t reqSkill)
+{
+    if (!known)
+        return OrderReason::NoRecipe;
+    if (reqSkill > 0 && skillValue < reqSkill)
+        return OrderReason::NoSkill;
+    return OrderReason::None;
+}
+
+// Wire verdict token for TBM:ORDER_ENCHANT: "ok" or the reason token.
+inline char const* EnchantVerdictToken(OrderReason verdict)
+{
+    return verdict == OrderReason::None ? "ok" : ReasonToken(verdict);
+}
+
+// One TBM:ORDER_ENCHANT per-match row: spell, name, slot token, required
+// skill, verdict and reagents (itemId:need:have per reagent, ";" between,
+// "-" when the cast needs none). The name crosses already pipe-sanitized.
+inline std::string FormatEnchantRow(uint32_t spellId, std::string const& name, EnchantSlot slot,
+    uint32_t reqSkill, OrderReason verdict, std::string const& reagents)
+{
+    return "TBM:ORDER_ENCHANT|" + std::to_string(spellId) + "|" + name + "|" +
+        EnchantSlotToken(slot) + "|" + std::to_string(reqSkill) + "|" +
+        EnchantVerdictToken(verdict) + "|" + (reagents.empty() ? "-" : reagents);
+}
+
+inline std::string FormatEnchantsBegin(uint32_t count)
+{
+    return "TBM:ORDER_ENCHANTS_BEGIN|" + std::to_string(count);
+}
+
+inline std::string FormatEnchantsEnd()
+{
+    return "TBM:ORDER_ENCHANTS_END";
+}
+
+// One per-bot reagent token: itemId:need:have (have = bags + mail), ";"
+// between reagents, "-" when the cast needs nothing.
+struct EnchantSearchReagent
+{
+    uint32_t itemId = 0;
+    uint32_t need = 0;
+    uint32_t have = 0;
+};
+
+inline std::string FormatEnchantReagents(EnchantSearchReagent const* reagents, size_t count)
+{
+    std::string out;
+    if (!reagents)
+        return "-";
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (!reagents[i].itemId || !reagents[i].need)
+            continue;
+        if (!out.empty())
+            out += ';';
+        out += std::to_string(reagents[i].itemId) + ":" + std::to_string(reagents[i].need) +
+            ":" + std::to_string(reagents[i].have);
+    }
+    return out.empty() ? "-" : out;
+}
+
+// Give-path spell argument: an enchant spell id or spell link ("Hspell:").
+// At most 10 digits: longer input cannot fit uint32 and must fail, not throw.
+inline bool ParseEnchantSpellToken(std::string const& token, uint32_t& spellId)
+{
+    spellId = 0;
+    size_t link = token.find("Hspell:");
+    if (link != std::string::npos)
+    {
+        size_t begin = link + 7;
+        size_t end = begin;
+        while (end < token.size() && token[end] >= '0' && token[end] <= '9')
+            ++end;
+        if (begin == end || end - begin > 10)
+            return false;
+        unsigned long parsed = std::stoul(token.substr(begin, end - begin));
+        if (parsed == 0 || parsed > 0xFFFFFFFFul)
+            return false;
+        spellId = static_cast<uint32_t>(parsed);
+        return true;
+    }
+    if (token.empty() || token.size() > 10)
+        return false;
+    for (char c : token)
+        if (c < '0' || c > '9')
+            return false;
+    unsigned long parsed = std::stoul(token);
+    if (parsed == 0 || parsed > 0xFFFFFFFFul)
+        return false;
+    spellId = static_cast<uint32_t>(parsed);
+    return true;
+}
+
+// Give-path argument decisions: the reason the enchant order is refused, or
+// None when the order may be stored. Only argument facts cross the boundary
+// (the command resolves catalogue membership, recipe knowledge and skill);
+// permission, busy, gold cap, hours and bring parsing stay in the command.
+struct EnchantGiveArgs
+{
+    bool knownByBot = false;
+    bool inCatalogue = false;
+    bool skillEnough = false;
+    bool keep = false;
+};
+
+inline OrderReason EnchantGiveVerdict(EnchantGiveArgs const& args)
+{
+    if (!args.knownByBot || !args.inCatalogue)
+        return OrderReason::NoRecipe;
+    if (!args.skillEnough)
+        return OrderReason::NoSkill;
+    if (args.keep)
+        return OrderReason::Enchant;
+    return OrderReason::None;
+}
+
+// Plain refusal lines for `.bot order <bot> enchant` give, one per reason.
+inline char const* EnchantGiveRefusal(OrderReason verdict)
+{
+    switch (verdict)
+    {
+        case OrderReason::NoSkill:  return "The bot's Enchanting skill is too low for that enchant.";
+        case OrderReason::Enchant:  return "Keep orders are not available for enchants.";
+        default:                    return "The bot does not know that enchant.";
+    }
+}
+
+// Give-path hours word: "inf" or a whole 1-24 count, sharing the farm/craft
+// range. Zero stores as no time limit, like every other order type.
+inline bool IsEnchantHoursToken(std::string const& lower)
+{
+    if (lower.empty() || lower.size() > 2)
+        return false;
+    for (char c : lower)
+        if (c < '0' || c > '9')
+            return false;
+    return true;
+}
+
+inline bool ParseEnchantHours(std::string const& token, uint32_t& hours)
+{
+    hours = 0;
+    std::string lower = token;
+    for (char& c : lower)
+        c = char(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+    if (lower == "inf")
+        return true;
+    unsigned long parsed = 0;
+    try
+    {
+        size_t pos = 0;
+        parsed = std::stoul(token, &pos);
+        if (pos != token.size())
+            return false;
+    }
+    catch (...)
+    {
+        return false;
+    }
+    if (parsed < 1 || parsed > 24)
+        return false;
+    hours = static_cast<uint32_t>(parsed);
+    return true;
+}
+
+// Give-path gold cap: copper 0 to 4294967295, like every other order type.
+inline bool ParseEnchantGoldCap(std::string const& token, uint32_t& goldCap)
+{
+    goldCap = 0;
+    if (token.empty() || token.size() > 10)
+        return false;
+    for (char c : token)
+        if (c < '0' || c > '9')
+            return false;
+    unsigned long parsed = std::stoul(token);
+    if (parsed > 0xFFFFFFFFul)
+        return false;
+    goldCap = static_cast<uint32_t>(parsed);
+    return true;
 }
 
 } // namespace GuildOrders

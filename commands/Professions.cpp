@@ -308,6 +308,49 @@ std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot, std::vector<
     return recipes;
 }
 
+// Every catalogue enchant the bot knows whose name or slot matches the
+// search words: the spell, the slot, the Enchanting value, the required
+// skill, and the reagents with what the bot holds (bags plus mailbox).
+// Unknown enchants never list (a per-bot search shows only this bot's
+// book); skill too low still lists with a noskill verdict at the caller.
+std::vector<EnchantSnapshot> OrderableEnchantSpells(Player* bot, std::vector<std::string> const& words)
+{
+    std::vector<EnchantSnapshot> spells;
+    if (!bot || !ai::GuildOrderEnchantsReady())
+        return spells;
+    if (!bot->HasSkill(333))
+        return spells;
+    uint32_t skillValue = bot->GetSkillValue(333);
+    for (TortoiseBots::GuildOrders::EnchantEntry const& entry : ai::GuildOrderEnchants())
+    {
+        if (!entry.spellId || !bot->HasSpell(entry.spellId))
+            continue;
+        if (!TortoiseBots::GuildOrders::EnchantSearchMatches(entry, words))
+            continue;
+        EnchantSnapshot snapshot;
+        snapshot.spellId = entry.spellId;
+        snapshot.slot = entry.slot;
+        snapshot.skillValue = skillValue;
+        snapshot.reqSkillValue = entry.reqSkill;
+        SpellEntry const* spell = sSpellMgr.GetSpellEntry(entry.spellId);
+        if (spell)
+        {
+            for (uint32 e = 0; e < MAX_SPELL_REAGENTS; ++e)
+            {
+                if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
+                    continue;
+                CraftRecipeReagent reagent;
+                reagent.itemId = uint32_t(spell->Reagent[e]);
+                reagent.need = uint32_t(spell->ReagentCount[e]);
+                reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
+                snapshot.reagents.push_back(reagent);
+            }
+        }
+        spells.push_back(std::move(snapshot));
+    }
+    return spells;
+}
+
 bool HandleProfessions(ChatHandler* handler, char const* args)
 {
     Player* requester = Requester(handler);
