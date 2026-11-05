@@ -907,12 +907,22 @@ bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float&
         return true;
     }
 
-    // Board with a second to spare; otherwise wait at the shaft.
+    // Walk onto the parked car with a second to spare; otherwise wait at
+    // the shaft for the next one.
     uint32 const parkedLeft = ai::LiftParkedLeft(car, now, fromTop);
-    if (parkedLeft < 1000)
+    float const step = std::hypot(bot->GetPositionX() - car.x, bot->GetPositionY() - car.y);
+    uint32 const walkMs = step > 1.5f ? uint32(step / std::max(bot->GetSpeed(MOVE_RUN), 1.0f) * 1000.0f) + 300 : 0;
+    if (parkedLeft < walkMs + 1000)
     {
         uint32 const wait = parkedLeft ? parkedLeft : ai::LiftUntilParked(car, now, fromTop);
         SetDuration(std::min<uint32>(wait + 100, 2000));
+        return true;
+    }
+    if (walkMs)
+    {
+        bot->GetMotionMaster()->MovePoint(ai::kMesaLiftMapId, car.x, car.y,
+            car.z + ai::LiftCarOffset(car, now), MOVE_RUN_MODE);
+        SetDuration(walkMs);
         return true;
     }
 
@@ -964,11 +974,17 @@ bool MoveToTravelTargetAction::ContinueMesaLiftRide()
     }
     if (placeable)
     {
-        WorldPosition off(ai::kMesaLiftMapId, car.x, car.y, ai::LiftLevelZ(car, top));
-        if (off.isMmapLoaded(bot->GetInstanceId()))
-            off.ClosestCorrectPoint(8.0f, 6.0f, bot->GetInstanceId());
-        bot->GetMap()->PlayerRelocation(bot, off.getX(), off.getY(), off.getZ(), bot->GetOrientation());
+        // Off the car where it stands, then walk onto the station floor.
+        float const levelZ = ai::LiftLevelZ(car, top);
+        bot->GetMap()->PlayerRelocation(bot, car.x, car.y, levelZ, bot->GetOrientation());
         bot->SendHeartBeat();
+        WorldPosition off(ai::kMesaLiftMapId, car.x, car.y, levelZ);
+        if (off.isMmapLoaded(bot->GetInstanceId()) && off.ClosestCorrectPoint(8.0f, 6.0f, bot->GetInstanceId()))
+        {
+            float const step = std::hypot(off.getX() - car.x, off.getY() - car.y);
+            bot->GetMotionMaster()->MovePoint(off.GetMapId(), off.getX(), off.getY(), off.getZ(), MOVE_RUN_MODE);
+            SetDuration(uint32(step / std::max(bot->GetSpeed(MOVE_RUN), 1.0f) * 1000.0f) + 300);
+        }
     }
     sPlayerbotAIConfig.logEvent(ai, "MesaLift", rideLift->name, std::string(arrived ? (top ? "arrived-up:" : "arrived-down:") : "aborted:") +
         LiftLogPos(WorldPosition(bot)) + ">" + LiftLogPos(rideGoal));
