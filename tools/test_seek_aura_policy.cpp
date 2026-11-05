@@ -38,6 +38,21 @@ int main()
         CHECK(!SeekWindowOpen(87001, due, 80000));
     }
 
+    // SeekWindowStaysOpenWhenOverdue: once the due time passes with no 24324 sighting (walk 40 missed two, leaving
+    // 184-185 s gaps) the window stays open until the sighting restarts the clock, instead of shutting at due - 3 s
+    // and leaving the Son held at the spot with the siphon undosed. The last three seconds before due stay shut.
+    {
+        const std::uint32_t due = 90000;
+        CHECK(!SeekWindowOpen(87001, due, 80000));
+        CHECK(SeekWindowOpen(90000, due, 80000));   // due with no sighting: open
+        CHECK(SeekWindowOpen(184000, due, 80000));  // a 184 s missed-sighting gap: still open
+        CHECK(SeekForceBurn(184000, due));
+        // The sighting moves the due time a cycle ahead: the window shuts and waits for the next one.
+        CHECK(!SeekWindowOpen(184000, 274000, 80000));
+        CHECK(SeekWindowOpen(194000, 274000, 80000));
+        CHECK(!SeekWindowOpen(1000, 0, 80000));     // no due time yet
+    }
+
     // SeekFirstSiphonIsCountedFromThePull: before any siphon is seen the due time is the fight's combat start plus one
     // cycle, since the core's 90 s timer only runs in combat, so cycle 1 gets the same 80 s window and 15 s forced
     // burn as every later cycle. An observed siphon resyncs the cadence to itself, and a fight with no combat start

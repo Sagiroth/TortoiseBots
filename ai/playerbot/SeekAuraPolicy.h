@@ -47,10 +47,15 @@ namespace ai
         return seenMs >= lastCycleMs + cycleMs / 2;
     }
 
-    // The dose window [due - lead, due - kSeekCloseMs], both ends inclusive.
+    // The dose window [due - lead, due - kSeekCloseMs], both ends inclusive. The last three seconds before the due
+    // time are too late for the dose to be on at the siphon — but once the due time passes with no sighting (a missed
+    // 24324; walk 40 had two 184-185 s gaps) the window stays open until the sighting restarts the clock, instead of
+    // shutting for the rest of the fight with the Son held at the spot and the siphon undosed.
     inline bool SeekWindowOpen(std::uint32_t nowMs, std::uint32_t dueMs, std::uint32_t leadMs)
     {
-        return nowMs + leadMs >= dueMs && nowMs + kSeekCloseMs <= dueMs;
+        if (dueMs == 0 || nowMs + leadMs < dueMs)
+            return false;
+        return nowMs + kSeekCloseMs <= dueMs || nowMs >= dueMs;
     }
 
     // The burn is forced once the window is about to close.
