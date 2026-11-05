@@ -21,7 +21,8 @@ namespace ai
     inline bool GuildOrderConsumesItem(Player* bot, uint32 itemId)
     {
         return TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId) ||
-            TortoiseBots::GuildOrders::DisenchantServiceHasItem(itemId);
+            TortoiseBots::GuildOrders::DisenchantRowsHoldItem(
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()), itemId);
     }
     class IterateItemsVisitor
     {

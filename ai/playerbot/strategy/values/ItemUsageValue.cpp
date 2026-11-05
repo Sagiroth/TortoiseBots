@@ -130,7 +130,8 @@ ItemUsage ItemUsageValue::Calculate()
             return ItemUsage::ITEM_USAGE_GUILD_TASK;
         // Disenchant service results wait for the mailbox: same shield as
         // order stock, so nothing sells or uses them meanwhile.
-        if (TortoiseBots::GuildOrders::DisenchantServiceHasItem(itemId))
+        if (TortoiseBots::GuildOrders::DisenchantRowsHoldItem(
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()), itemId))
             return ItemUsage::ITEM_USAGE_GUILD_TASK;
     }
 

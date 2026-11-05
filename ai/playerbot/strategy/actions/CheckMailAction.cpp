@@ -208,7 +208,6 @@ void CheckMailAction::QueueDisenchantMail(Mail* mail)
         entry.itemGuidLow = itemGuidLow;
         entry.itemId = itemId;
         TortoiseBots::GuildOrders::NoteDisenchantQueued(entry);
-        TortoiseBots::GuildOrders::QueueDisenchantServiceItem(senderLow, itemGuidLow, itemId);
         moved = true;
     }
     if (!moved)

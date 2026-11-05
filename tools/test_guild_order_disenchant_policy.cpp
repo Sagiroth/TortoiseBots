@@ -58,28 +58,33 @@ int main()
     CHECK(!DisenchantCastReady(false, false, false, false, true, true));
     CHECK(!DisenchantCastReady(false, false, false, false, false, false));
 
-    // The shared queue holds the sender with each item.
-    DisenchantServiceQueue().clear();
-    QueueDisenchantServiceItem(0, 7, 9);
-    CHECK(DisenchantServiceQueue().empty());
-    QueueDisenchantServiceItem(11, 7, 9);
-    CHECK(DisenchantServiceQueue().size() == 1);
-    CHECK(DisenchantServiceQueue().front().senderLow == 11);
-    CHECK(DisenchantServiceQueue().front().itemId == 9);
-    CHECK(DisenchantServiceHasItem(9));
-    CHECK(!DisenchantServiceHasItem(10));
-    CHECK(!DisenchantServiceHasItem(0));
+    // Each bot has its own list; the intake ignores empty ids and duplicates.
+    auto& queueA = DisenchantServiceQueue(1);
+    auto& queueB = DisenchantServiceQueue(2);
+    QueueDisenchantServiceItem(queueA, 0, 7, 9);
+    CHECK(queueA.empty());
+    QueueDisenchantServiceItem(queueA, 11, 7, 9);
+    QueueDisenchantServiceItem(queueA, 11, 7, 9);
+    CHECK(queueA.size() == 1);
+    CHECK(queueB.empty());
+    CHECK(queueA.front().senderLow == 11);
+    CHECK(queueA.front().itemId == 9);
     CHECK(DisenchantServiceMailSubject("Copper Axe") == "Disenchanted: Copper Axe");
     CHECK(DisenchantServiceMailSubject("") == "Disenchanted");
-    // Results of a landed cast shield from disposal the same way.
-    DisenchantServiceQueue().front().results.push_back({1234, 2});
-    CHECK(DisenchantServiceHasItem(1234));
+    // Queued items and landed results shield from disposal, read from the rows.
+    struct Row { uint32_t itemId; std::string results; };
+    std::vector<Row> rows = { { 9, "" }, { 15, "1234:2" } };
+    CHECK(DisenchantRowsHoldItem(rows, 9));
+    CHECK(DisenchantRowsHoldItem(rows, 1234));
+    CHECK(!DisenchantRowsHoldItem(rows, 10));
+    CHECK(!DisenchantRowsHoldItem(rows, 0));
+    queueA.front().results.push_back({1234, 2});
     CHECK(DisenchantResultBatches(2) == 2);
-    CHECK(FormatDisenchantResults(DisenchantServiceQueue().front().results) == "1234:2");
+    CHECK(FormatDisenchantResults(queueA.front().results) == "1234:2");
     CHECK(ParseDisenchantResults("1234:2;12:3").size() == 2);
     CHECK(ParseDisenchantResults("bogus;1234:2").size() == 1);
     CHECK(ParseDisenchantResults("").empty());
-    DisenchantServiceQueue().clear();
+    queueA.clear();
 
     if (failures == 0)
         std::printf("test_guild_order_disenchant_policy ok\n");

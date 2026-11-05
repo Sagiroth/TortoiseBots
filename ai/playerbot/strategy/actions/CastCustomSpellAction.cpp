@@ -778,7 +778,8 @@ bool DisenchantRandomItemAction::Execute(Event& event)
         // items wait for their own cast the same way.
         if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item))
             continue;
-        if (bot->GetGuildId() && TortoiseBots::GuildOrders::DisenchantServiceHasItem(item))
+        if (bot->GetGuildId() && TortoiseBots::GuildOrders::DisenchantRowsHoldItem(
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()), item))
             continue;
 
         ItemQualifier itemQualifier(item);
@@ -797,12 +798,41 @@ bool DisenchantRandomItemAction::Execute(Event& event)
     return false;
 };
 
+namespace
+{
+// The bot's work list, topped up from its persisted rows: the mail intake
+// and a restart only write rows, the list picks them up here.
+std::vector<TortoiseBots::GuildOrders::DisenchantServiceItem>& SyncedServiceQueue(Player* bot)
+{
+    auto& queue = TortoiseBots::GuildOrders::DisenchantServiceQueue(bot->GetGUIDLow());
+    for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
+        TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
+    {
+        bool known = false;
+        for (auto const& queued : queue)
+            known = known || queued.itemGuidLow == row.itemGuidLow;
+        if (known)
+            continue;
+        TortoiseBots::GuildOrders::DisenchantServiceItem item;
+        item.senderLow = row.senderGuidLow;
+        item.itemGuidLow = row.itemGuidLow;
+        item.itemId = row.itemId;
+        item.itemName = row.itemName;
+        item.pendingResults = row.pendingResults;
+        item.results = TortoiseBots::GuildOrders::ParseDisenchantResults(row.results);
+        queue.push_back(item);
+    }
+    return queue;
+}
+} // namespace
+
 bool GuildDisenchantServiceAction::isUseful()
 {
     if (!bot->GetGuildId())
         return false;
-    bool hasWork = !TortoiseBots::GuildOrders::DisenchantServiceQueue().empty();
-    return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), bot->IsMoving(),
+    bool hasWork = !SyncedServiceQueue(bot).empty();
+    // Moving does not block: Execute stops the bot first, like the loot disenchant.
+    return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), false,
         bot->IsMounted(), bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
 }
 
@@ -911,35 +941,13 @@ void MailServiceResultsBack(Player* bot, TortoiseBots::GuildOrders::DisenchantSe
 bool GuildDisenchantServiceAction::Execute(Event& event)
 {
     (void)event;
-    // The store owns the queue (persisted per row): mirror it into the
-    // process list once per session, so a restart re-queues instead of
-    // stranding the item. From here on the head below is the unit of work.
-    static uint32_t mirroredForBot = 0;
-    if (mirroredForBot != bot->GetGUIDLow())
-    {
-        mirroredForBot = bot->GetGUIDLow();
-        auto& local = TortoiseBots::GuildOrders::DisenchantServiceQueue();
-        local.clear();
-        for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
-            TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
-        {
-            TortoiseBots::GuildOrders::DisenchantServiceItem item;
-            item.senderLow = row.senderGuidLow;
-            item.itemGuidLow = row.itemGuidLow;
-            item.itemId = row.itemId;
-            item.itemName = row.itemName;
-            item.pendingResults = row.pendingResults;
-            item.results = TortoiseBots::GuildOrders::ParseDisenchantResults(row.results);
-            local.push_back(item);
-        }
-    }
-    auto& queue = TortoiseBots::GuildOrders::DisenchantServiceQueue();
+    auto& queue = SyncedServiceQueue(bot);
     if (queue.empty())
         return false;
     // The cast leaves its results in a loot window on the item for the bot
     // itself: the collect tick below takes it there, so a cast never
     // reports success before its loot exists. Pending results ride the
-    // queue head until one mailbox visit mails them back.
+    // queue head until they are mailed back.
     TortoiseBots::GuildOrders::DisenchantServiceItem& head = queue.front();
     if (head.pendingResults)
     {

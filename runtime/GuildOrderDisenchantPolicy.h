@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -190,36 +191,49 @@ struct DisenchantServiceItem
     std::vector<DisenchantServiceResult> results;
 };
 
-inline std::vector<DisenchantServiceItem>& DisenchantServiceQueue()
+// One work list per bot, touched only on that bot's own map thread; the
+// lock covers the lookup, map nodes keep their address.
+inline std::vector<DisenchantServiceItem>& DisenchantServiceQueue(uint32_t botGuidLow)
 {
-    static std::vector<DisenchantServiceItem> queue;
-    return queue;
+    static std::mutex lock;
+    static std::unordered_map<uint32_t, std::vector<DisenchantServiceItem>> queues;
+    std::lock_guard<std::mutex> guard(lock);
+    auto found = queues.find(botGuidLow);
+    if (found == queues.end())
+        found = queues.emplace(botGuidLow, std::vector<DisenchantServiceItem>()).first;
+    return found->second;
 }
 
-inline void QueueDisenchantServiceItem(uint32_t senderLow, uint32_t itemGuidLow, uint32_t itemId)
+inline void QueueDisenchantServiceItem(std::vector<DisenchantServiceItem>& queue, uint32_t senderLow,
+    uint32_t itemGuidLow, uint32_t itemId)
 {
     if (!senderLow || !itemGuidLow || !itemId)
         return;
+    for (DisenchantServiceItem const& queued : queue)
+        if (queued.itemGuidLow == itemGuidLow)
+            return;
     DisenchantServiceItem queued;
     queued.senderLow = senderLow;
     queued.itemGuidLow = itemGuidLow;
     queued.itemId = itemId;
-    DisenchantServiceQueue().push_back(queued);
+    queue.push_back(queued);
 }
 // True while the item waits for its own service cast, or its results wait
 // for the mailbox: the maintenance disenchant skips it, and the usage gate
 // shields the results, next to the order-stock guard (matches the item id:
 // the queued guid is the mail attachment, the live guid the bag stack after
 // the intake move).
-inline bool DisenchantServiceHasItem(uint32_t itemId)
+// Reads the persisted rows (store copy, any thread), not the map-thread list.
+template <typename Rows>
+inline bool DisenchantRowsHoldItem(Rows const& rows, uint32_t itemId)
 {
     if (!itemId)
         return false;
-    for (DisenchantServiceItem const& queued : DisenchantServiceQueue())
+    for (auto const& row : rows)
     {
-        if (queued.itemId == itemId)
+        if (row.itemId == itemId)
             return true;
-        for (DisenchantServiceResult const& result : queued.results)
+        for (DisenchantServiceResult const& result : ParseDisenchantResults(row.results))
             if (result.itemId == itemId)
                 return true;
     }
