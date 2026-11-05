@@ -22,6 +22,14 @@ using namespace TortoiseBots::GuildOrders;
 namespace
 {
 // True while the bags still hold one cast's reagents: the enchant was not paid yet.
+bool GiverShareHeld(Player* bot, OrderRecord const& order)
+{
+    for (NeedItem const& given : order.given)
+        if (given.count && bot->GetItemCount(given.itemId))
+            return true;
+    return false;
+}
+
 bool HasAllEnchantReagents(Player* bot, uint32_t spellId)
 {
     for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(spellId))
@@ -98,8 +106,12 @@ bool GuildEnchantOrderAction::isUseful()
     if (!ai::OrderBotMayTravel(ai, bot))
         return false;
     std::optional<OrderRecord> order = Find(bot->GetGUIDLow());
-    if (!order || order->guildId != bot->GetGuildId() || order->cancelled)
+    if (!order || order->guildId != bot->GetGuildId())
         return false;
+    // A cancelled enchant still holding the giver's materials: mail them
+    // back now, without waiting for the bank walk.
+    if (order->cancelled)
+        return order->type == OrderType::Enchant && GiverShareHeld(bot, *order);
     if (order->type != OrderType::Enchant || IsFinished(order->state))
         return false;
     // Working/Waiting rows gather on the ladder; the action only owns the
@@ -117,8 +129,18 @@ bool GuildEnchantOrderAction::Execute(Event& event)
 {
     (void)event;
     std::optional<OrderRecord> stored = Find(bot->GetGUIDLow());
-    if (!stored || stored->guildId != bot->GetGuildId() || stored->cancelled)
+    if (!stored || stored->guildId != bot->GetGuildId())
         return false;
+    if (stored->cancelled)
+    {
+        if (stored->type != OrderType::Enchant || !GiverShareHeld(bot, *stored))
+            return false;
+        std::vector<std::pair<uint32_t, uint32_t>> reagents;
+        for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(stored->itemId))
+            reagents.push_back({ reagent.itemId, 0 });
+        ReturnEnchantSurplus(bot, reagents);
+        return true;
+    }
     if (stored->type != OrderType::Enchant || IsFinished(stored->state))
         return false;
     OrderRecord order = *stored;
