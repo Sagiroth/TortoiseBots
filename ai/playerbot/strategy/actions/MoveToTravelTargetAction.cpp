@@ -15,6 +15,7 @@
 #include "playerbot/TravelRepickPolicy.h"
 #include "playerbot/policy/travel/FlightErrandPolicy.h"
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
+#include "playerbot/policy/travel/MesaLiftPolicy.h"
 #include "playerbot/policy/travel/UndercityLiftPolicy.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
@@ -791,6 +792,19 @@ bool MoveToTravelTargetAction::TryStepTowardTarget(WorldPosition const& location
     return false;
 }
 
+// Lift teleports are for masterless pool bots and autonomous alt-bots
+// (issue #872, the pool's same-map stuck recovery C22), never hired ones, and
+// only when the bot is free to move.
+static bool MayRideLift(PlayerbotAI* ai, Player* bot)
+{
+    if (!bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsBeingTeleported() || bot->GetTransport())
+        return false;
+    return !ai->HasRealPlayerMaster() &&
+        (TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()) ||
+         (!ai->IsOwnedBot() && sRandomBotFacade.IsRandomBot(bot))) &&
+        !TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid());
+}
+
 // Undercity lifts (UndercityLiftPolicy.h): a pool bot between the ruins and
 // the city below with its destination on the other level rides a teleport
 // instead of the elevator it never boards. Same guards as the service rescue:
@@ -802,13 +816,7 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
         location.GetMapId(), location.getX(), location.getY(), location.getZ());
     if (lift == ai::UndercityLift::None)
         return false;
-    if (!bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsBeingTeleported() || bot->GetTransport())
-        return false;
-    // Issue #872: an alt-bot gets the pool's same-map stuck recovery (C22).
-    if (ai->HasRealPlayerMaster() ||
-        (!TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid()) &&
-         (ai->IsOwnedBot() || !sRandomBotFacade.IsRandomBot(bot))) ||
-        TortoiseBots::HireLifecycle::Instance().IsHired(bot->GetObjectGuid()))
+    if (!MayRideLift(ai, bot))
         return false;
 
     // Once per ten minutes: a route that walks through the city (sewer canals
@@ -839,6 +847,55 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
     noProgressArmed = false;
     sPlayerbotAIConfig.logEvent(ai, "UndercityLift", lift == ai::UndercityLift::Down ? "down" : "up",
         std::to_string((int32)landing.distance(location)));
+    return true;
+}
+
+
+// Mesa lifts (MesaLiftPolicy.h): a trip between a mesa top and the ground
+// walks to the lift station first, then rides a teleport to the other
+// station. Same guards as the Undercity lift. A bot at the station waits
+// while someone watches either end. `staged` puts the walk on the station.
+bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float& x, float& y, float& z, bool& staged)
+{
+    ai::MesaLiftPick const pick = ai::MesaLiftFor(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+        location.GetMapId(), location.getX(), location.getY(), location.getZ());
+    if (pick.dir == ai::MesaLiftDir::None || !MayRideLift(ai, bot))
+        return false;
+
+    bool const up = pick.dir == ai::MesaLiftDir::Up;
+    ai::MesaLift const& lift = *pick.lift;
+    WorldPosition enter(ai::kMesaLiftMapId, up ? lift.footX : lift.topX, up ? lift.footY : lift.topY, up ? lift.footZ : lift.topZ);
+    WorldPosition leave(ai::kMesaLiftMapId, up ? lift.topX : lift.footX, up ? lift.topY : lift.footY, up ? lift.topZ : lift.footZ);
+    // The car spot is the shaft; the floor beside it is the station.
+    if (enter.isMmapLoaded(bot->GetInstanceId()))
+        enter.ClosestCorrectPoint(15.0f, 10.0f, bot->GetInstanceId());
+
+    staged = true;
+    WorldPosition const botPos(bot);
+    if (botPos.distance(enter) > 6.0f)
+    {
+        x = enter.getX();
+        y = enter.getY();
+        z = enter.getZ();
+        return false;
+    }
+
+    // Short cooldown: a bot whose destination flips between the levels
+    // would otherwise ride every tick.
+    AiObjectContext* context = ai->GetAiObjectContext();
+    time_t const now = time(0);
+    if (AI_VALUE2(time_t, "manual time", "mesa lift") + 30 > now)
+        return false;
+    if (!leave.isMmapLoaded(bot->GetInstanceId()) || !leave.ClosestCorrectPoint(15.0f, 10.0f, bot->GetInstanceId()))
+        return false;
+    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(leave, sPlayerbotAIConfig.reactDistance))
+        return false;
+    if (!bot->TeleportTo(leave.GetMapId(), leave.getX(), leave.getY(), leave.getZ(), leave.GetAngleTo(location)))
+        return false;
+
+    SET_AI_VALUE2(time_t, "manual time", "mesa lift", now);
+    noProgressArmed = false;
+    sPlayerbotAIConfig.logEvent(ai, "MesaLift", lift.name, up ? "up" : "down");
     return true;
 }
 
@@ -936,6 +993,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         }
         hasFlightPlan = ReadFlightPlan(ai, planFrom, planTo);
     }
+
+    bool liftStaged = false;
+    if (!hasFlightPlan && TryMesaLift(location, x, y, z, liftStaged))
+        return true;
 
     Group* group = bot->GetGroup();
     if (ai->IsGroupLeader() && !urand(0, 1) && !bot->IsInCombat())
@@ -1045,10 +1106,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
         return true;
     }
 
-    // With a flight plan the bot walks to the master (x/y/z/mapId staged
-    // above), so the arrival jitter below must not re-aim at the final
-    // destination - that would walk past the master.
-    if (!hasFlightPlan && botLocation.GetMapId() == location.GetMapId() && botLocation.sqDistance2d(location) < 10000.0f)
+    // With a flight plan or a lift ride the bot walks to the master or the
+    // lift station (x/y/z/mapId staged above), so the arrival jitter below
+    // must not re-aim at the final destination.
+    if (!hasFlightPlan && !liftStaged && botLocation.GetMapId() == location.GetMapId() && botLocation.sqDistance2d(location) < 10000.0f)
     {
         float maxDistance = target->GetDestination()->GetRadiusMin();
 
