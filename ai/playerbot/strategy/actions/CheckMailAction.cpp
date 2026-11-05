@@ -185,8 +185,23 @@ void CheckMailAction::QueueDisenchantMail(Mail* mail)
     if (!master || !CanTakeGuildMail(mail, master))
         return;
     bool moved = false;
+    uint32_t freeSlots = 0;
+    for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            ++freeSlots;
+    for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            if (pack->GetProto() && pack->GetProto()->SubClass == ITEM_SUBCLASS_CONTAINER)
+                freeSlots += pack->GetFreeSlots();
+    uint32_t waiting = 0;
+    for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
+        TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
+        if (!row.pendingResults)
+            ++waiting;
     while (!mail->items.empty())
     {
+        if (!TortoiseBots::GuildOrders::DisenchantIntakeHasRoom(freeSlots, waiting))
+            break;
         uint32_t infoGuid = mail->items[0].item_guid;
         Item* item = master->GetMItem(infoGuid);
         if (!item)
@@ -208,6 +223,9 @@ void CheckMailAction::QueueDisenchantMail(Mail* mail)
         entry.itemGuidLow = itemGuidLow;
         entry.itemId = itemId;
         TortoiseBots::GuildOrders::NoteDisenchantQueued(entry);
+        if (freeSlots)
+            --freeSlots;
+        ++waiting;
         moved = true;
     }
     if (!moved)

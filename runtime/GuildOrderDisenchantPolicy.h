@@ -191,6 +191,14 @@ struct DisenchantServiceItem
     std::vector<DisenchantServiceResult> results;
 };
 
+// Room to take one more mailed item: a slot for it and one for its result,
+// on top of the result slot every item already waiting for its cast needs.
+// Whatever does not fit stays in the mailbox for a later pass.
+inline bool DisenchantIntakeHasRoom(uint32_t freeSlots, uint32_t waitingItems)
+{
+    return freeSlots >= 2 + waitingItems;
+}
+
 // One work list per bot, touched only on that bot's own map thread; the
 // lock covers the lookup, map nodes keep their address.
 inline std::vector<DisenchantServiceItem>& DisenchantServiceQueue(uint32_t botGuidLow)

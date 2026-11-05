@@ -58,6 +58,12 @@ int main()
     CHECK(!DisenchantCastReady(false, false, false, false, true, true));
     CHECK(!DisenchantCastReady(false, false, false, false, false, false));
 
+    // A mailed item needs its own slot plus one for its result, and each
+    // item already waiting keeps one result slot free.
+    CHECK(DisenchantIntakeHasRoom(2, 0));
+    CHECK(!DisenchantIntakeHasRoom(1, 0));
+    CHECK(DisenchantIntakeHasRoom(5, 3));
+    CHECK(!DisenchantIntakeHasRoom(4, 3));
     // Each bot has its own list; the intake ignores empty ids and duplicates.
     auto& queueA = DisenchantServiceQueue(1);
     auto& queueB = DisenchantServiceQueue(2);
