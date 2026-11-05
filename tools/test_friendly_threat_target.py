@@ -54,7 +54,7 @@ struct ThreatValue {
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
-bool TargetTauntImmune(Unit* target);
+namespace ai { bool TargetTauntImmune(Unit* target); }
 using namespace ai;
 """
         harness += methods + r"""

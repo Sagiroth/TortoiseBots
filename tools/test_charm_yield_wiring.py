@@ -109,7 +109,9 @@ class CharmYieldWiring(unittest.TestCase):
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
         self.assertIn("TauntAfterTankIndex(alive, static_cast<int>(row->priority))", ACTIONS)
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", ACTIONS)
+        self.assertIn("TauntEpisodeTick(!TargetTauntImmune(unit), onNonTank, victimIsTank,", ACTIONS)
+        # A subject the game makes immune to taunts opens no episode: the tank keeps the attack and the taunt.
+        self.assertIn("bool tauntable,", POLICY)
         # Only until_tank is implemented; blink and the spell triggers stay parsed and ignored.
         self.assertIn("row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank", ACTIONS)
         self.assertIn("bool BossTacticsTauntAfterTrigger::IsActive()", TRIGGERS)
@@ -126,7 +128,7 @@ class CharmYieldWiring(unittest.TestCase):
         # retarget never hands the off-tank a second full window.
         scan = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
         # The episode's transitions are the pure machine's; a tank having the subject back ends it early.
-        self.assertIn("TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,", scan)
+        self.assertIn("TauntEpisodeTick(!TargetTauntImmune(unit), onNonTank, victimIsTank,", scan)
         self.assertIn("TauntEpisodeStep::Regained", scan)
         self.assertIn("state = TauntAfterEpisode();", scan)
         # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).

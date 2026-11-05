@@ -108,7 +108,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     return ThreatCapReference(tankThreats, TargetTauntImmune(target));
 }
 
-bool TargetTauntImmune(Unit* target)
+bool ai::TargetTauntImmune(Unit* target)
 {
     Creature* const creature = target ? dynamic_cast<Creature*>(target) : nullptr;
     return creature && creature->HasImmunityFlag(CREATURE_IMMUNITY_TAUNT);
