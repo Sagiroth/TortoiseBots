@@ -12,6 +12,7 @@
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "SetCraftAction.h"
 #include "playerbot/policy/guild/EnchantTradePolicy.h"
 #include "playerbot/GuildOrderEnchants.h"
 #include "playerbot/GuildOrderCraft.h"
@@ -804,7 +805,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             // bot's reagents. A cancelled trade consumes nothing.
             uint32_t duration = 0;
             if (!bot->GetTradeData() || bot->GetTradeData()->GetSpell() == 0)
-                ai->CastSpell(order.itemId, nullptr, nullptr, true, &duration);
+                ai->CastSpell(order.itemId, static_cast<Unit*>(nullptr), nullptr, true, &duration);
             if (trader->GetTradeData() && trader->GetTradeData()->IsAccepted())
             {
                 // The giver accepted last: snapshot the parked item's guid
