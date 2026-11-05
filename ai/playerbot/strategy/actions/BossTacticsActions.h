@@ -252,8 +252,10 @@ namespace ai
     };
 
     // AiPlayerbot.DungeonRunCharmYield: an area action that would land within kCharmedAllyAreaYd of a creature-charmed
-    // group member is stood down. Not a boss-tactics rule: the key alone decides, on any map, so the class is
-    // registered on the always-on combat strategies (the TrapHoldMultiplier placement), not on BossTacticsStrategy.
+    // group member is stood down, and so is a harmful single-target action (attack, damage/interrupt/CC cast, taunt,
+    // pet order) aimed at the member itself; healing stays allowed. Not a boss-tactics rule: the key alone decides, on
+    // any map, so the class is registered on the always-on combat strategies (the TrapHoldMultiplier placement), not
+    // on BossTacticsStrategy.
     class CharmedAllyHoldMultiplier : public Multiplier
     {
     public:

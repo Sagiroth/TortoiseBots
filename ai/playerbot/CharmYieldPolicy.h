@@ -25,6 +25,17 @@ namespace ai
         return keyOn && hasCharmer && !charmerIsPlayer;
     }
 
+    // Whether a group member a creature is charming is off limits to this bot: never a target pick, an attack, a
+    // harmful cast (damage, interrupt, stun, silence, CC) or a pet order. The core turns the member hostile for the
+    // ten seconds of the charm, so the ordinary friendly and attacker checks let the raid kill it (Hakkar's Cause
+    // Insanity 24327: five charmed DPS were killed by their own raid 3-7 s after the charm). Only a creature's charm
+    // counts: a player's mind control is a PvP case outside the dungeon rows. Healing such a member stays allowed,
+    // and a member of another group is an ordinary enemy.
+    inline bool CharmedAllyIsOffLimits(bool keyOn, bool sameGroup, bool hasCharmer, bool charmerIsPlayer)
+    {
+        return keyOn && sameGroup && hasCharmer && !charmerIsPlayer;
+    }
+
     // Whether an area action stands down for the charmed member: its effect point (or the bot itself, for a
     // self-centred blast) lies within kCharmedAllyAreaYd of the member. `allyToPointYd` is only read for a
     // point-centred action and `allyToBotYd` only for a self-centred one.

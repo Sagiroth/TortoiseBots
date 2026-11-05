@@ -13,6 +13,7 @@
 #include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/AttackersValue.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
 #include "GenericActions.h"
@@ -182,6 +183,11 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
 
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsValidAttackTarget(target))
+        return false;
+
+    // AiPlayerbot.DungeonRunCharmYield: the pet never takes the raid's charmed member either; the owner's own attack
+    // is refused on the same rule.
+    if (AttackersValue::CharmedAllyOffLimits(target, bot))
         return false;
 
     // Don't send the pet to attack if waiting for attack
@@ -419,6 +425,20 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target, float maxDista
             std::ostringstream msg;
             msg << target->GetName();
             msg << " is friendly to me";
+            ai->TellPlayerNoFacing(requester, msg.str());
+        }
+
+        return false;
+    }
+    else if (AttackersValue::CharmedAllyOffLimits(target, bot))
+    {
+        // AiPlayerbot.DungeonRunCharmYield: a creature's charm makes a group member hostile for ten seconds; the
+        // raid still never attacks it, whatever ordered the pick.
+        if (verbose)
+        {
+            std::ostringstream msg;
+            msg << target->GetName();
+            msg << " is a charmed group member";
             ai->TellPlayerNoFacing(requester, msg.str());
         }
 

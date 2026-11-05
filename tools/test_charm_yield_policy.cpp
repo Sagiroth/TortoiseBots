@@ -36,6 +36,21 @@ int main()
     CHECK(!CharmedAllyInArea(9.0f, 50.0f, true));
     CHECK(CharmedAllyInArea(9.0f, 10.0f, true));
 
+    // A charmed raid member is never a dps or tank pick: the attackers list, the possible attack targets and the
+    // tank's victim all ask this rule before a tournament sees the member. Today (key on, a creature charm) the mage
+    // is picked and killed by its own raid 3-7 s later, so the first case fails before the fix.
+    auto picked = [](bool keyOn, bool sameGroup, bool hasCharmer, bool charmerIsPlayer)
+    {
+        return !CharmedAllyIsOffLimits(keyOn, sameGroup, hasCharmer, charmerIsPlayer);
+    };
+    CHECK(!picked(true, true, true, false));   // Hakkar's Cause Insanity 24327 on a raid mage
+    CHECK(picked(false, true, true, false));   // key off: today's pick
+    CHECK(picked(true, false, true, false));   // an enemy player outside the group is an ordinary target
+    CHECK(picked(true, true, true, true));     // a player's mind control is the core's business
+    CHECK(picked(true, true, false, false));   // not charmed at all
+    // Healing is not a pick: the rule never gates a heal action, and a charmed member cannot be targeted by one
+    // through the hostile cast paths anyway.
+
     std::cout << "All charm-yield policy tests passed.\n";
     return 0;
 }

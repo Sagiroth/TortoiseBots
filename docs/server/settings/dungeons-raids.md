@@ -35,7 +35,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
-| [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no area action lands on a charmed group member (needs no rows or tactics). |
+| [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no action (area or targeted) lands on a charmed group member (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
 | [`AiPlayerbot.DungeonRunKillFirstGrid`](#aiplayerbotdungeonrunkillfirstgrid) | `0` | `1`: the boss tactics find a kill-first unit (a ward on the boss, a Shade) by a grid search when no bot's attacker list shows it. |
@@ -670,13 +670,13 @@ Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subje
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`
-Whether a bot a creature charms yields its AI, and area actions stand down near a charmed group member.
+Whether a bot a creature charms yields its AI, and no action lands on a charmed group member.
 **Default:** `0` · **Values:** `0` off (bots play as before), `1` on (needs no rows or tactics) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
-**Charm yield:** while the key is on, a bot a creature has charmed yields its AI to the charmer (no engine runs, no move goes out), so nothing it does fights the core's own charm control; a bot a player charms is the core's business and is left alone. On any map, while a group member has a non-player charmer, every area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the Sweeping Strikes and Blade Flurry toggles, and damage-dealer area damage) whose target point — or the bot itself, for a self-centred one — lies within 10 yd of such a member stands down. Bots never take a charmed group member as a target, and healers keep healing: a hostile charmed tank cannot be healed or targeted by them anyway. Hakkar's Cause Insanity 24327 is why (his victim fights the raid for 10 s), and the same yield covers Will of Hakkar 24178, which only the Zul'Gurub trash-pile Guru casts.
+**Charm yield:** while the key is on, a bot a creature has charmed yields its AI to the charmer (no engine runs, no move goes out), so nothing it does fights the core's own charm control; a bot a player charms is the core's business and is left alone. On any map, while a group member has a non-player charmer, every area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the Sweeping Strikes and Blade Flurry toggles, and damage-dealer area damage) whose target point — or the bot itself, for a self-centred one — lies within 10 yd of such a member stands down. The same member is never a target: the damage-dealer and tank picks skip it (the attacker list, the possible targets, an explicit order and a raid mark), an attack order on it is refused, a pet is never sent at it, its cast is never interrupted, and a harmful single-target action aimed at it (a swing, a taunt, a damage, interrupt or crowd-control cast, a wand shot) stands down. A target already held is dropped on the next tick. Healing, buffing, curing and protecting the member stay allowed. Hakkar's Cause Insanity 24327 is why (his victim fights the raid for 10 s, and five charmed damage dealers were killed by their own raid within 3-7 s), and the same yield covers Will of Hakkar 24178, which only the Zul'Gurub trash-pile Guru casts.
 
 </details>
 
