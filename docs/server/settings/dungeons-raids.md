@@ -34,8 +34,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
-| [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
-| [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no area action lands on a charmed group member (needs no rows or tactics). |
+| [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
 | [`AiPlayerbot.DungeonRunKillFirstGrid`](#aiplayerbotdungeonrunkillfirstgrid) | `0` | `1`: the boss tactics find a kill-first unit (a ward on the boss, a Shade) by a grid search when no bot's attacker list shows it. |
@@ -608,6 +607,16 @@ Whether the boss tactics widen the ranged raid's spacing while a `spread` row's 
 <summary>How it works in detail</summary>
 
 **Boss spread:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while a row's boss is in the fight the ranged bots and the healers keep the row's `param` yards apart instead of the ordinary spacing, and a stay order no longer exempts a bot from spreading. The row's spell only documents the splash the spacing answers (Hakkar's row: Corrupted Blood 24328 hits 10 yd around a random attacker, the row keeps 12). Melee and tanks never spread.
+
+</details>
+### `AiPlayerbot.DungeonRunAvoidCastAll`
+Whether an `avoid_cast` row in mode `all` also clears the tanks while its spell is cast.
+**Default:** `0` · **Values:** `0` off (the row holds like a default row: a tank the caster is on stays in the blast), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Avoid-cast all:** the AI boss tactics table's `avoid_cast` mode `all` (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while the row's spell is in its cast window no bot holds the caster, so every tank walks out of that blast too. The Zul'Gurub Bat Rider instakills itself, so there is no threat to keep. A binary without the mode turns the word into an invalid row and skips it, so the row ships in the same change as the code.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

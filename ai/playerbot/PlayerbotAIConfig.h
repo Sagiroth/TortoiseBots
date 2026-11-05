@@ -645,6 +645,10 @@ public:
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
+    // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
+    // gate; default off).
+    bool dungeonRunAvoidCastAll = false;
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;

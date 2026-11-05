@@ -1009,6 +1009,17 @@ AiPlayerbot.DungeonRunCharmYield = 0
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 
+# An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
+# tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
+# With the key off the row behaves like a default row (a tank the caster is on still holds it). This is its own
+# key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because the mode changes what the tanks
+# do mid-fight. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: `all` rows hold casters like default rows (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAvoidCastAll = 0
+
+# A bot charmed by a creature yields its AI to the charmer, and no area action lands on a charmed group member.
+AiPlayerbot.DungeonRunCharmYield = 0
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills

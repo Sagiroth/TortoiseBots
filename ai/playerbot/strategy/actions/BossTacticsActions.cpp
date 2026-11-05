@@ -1829,7 +1829,15 @@ bool BotHoldsCaster(PlayerbotAI* ai, Player* bot, Unit* caster, const ActiveBoss
     // so the reaction engine pays for the value on the one caster whose blast this tank may hold, not every caster.
     const bool botTargetsCaster = AI_VALUE(Unit*, "current target") == caster ||
         (casterTankHoldRow && PlayerbotAI::IsTank(bot) && AI_VALUE(Unit*, "tank target") == caster);
-    return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow);
+    // An `all` blast clears every tank while its spell is cast (F4-A: the Rider instakills itself, so there is no
+    // threat to keep). Only with the key on; the slot ids are the caster's own current generic and channelled casts.
+    uint32 genericId = 0;
+    uint32 channeledId = 0;
+    CurrentCastIds(caster, genericId, channeledId);
+    const bool allRowCasting = sPlayerbotAIConfig.dungeonRunAvoidCastAll &&
+        AvoidCastAllRow(active, caster->GetEntry(), genericId, channeledId);
+    return HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow,
+                       allRowCasting);
 }
 }
 

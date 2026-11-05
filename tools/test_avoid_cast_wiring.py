@@ -98,9 +98,13 @@ class AvoidCastWiring(unittest.TestCase):
         self.assertIn('(casterTankHoldRow && PlayerbotAI::IsTank(bot) && AI_VALUE(Unit*, "tank target") == caster)',
                       helper)
         self.assertLess(helper.index("HasTankHold(active, caster->GetEntry())"), helper.index('"tank target"'))
-        self.assertIn(
-            "HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster, casterTankHoldRow)",
-            helper)
+        # F4-A: an `all` blast clears every tank while its spell is cast (the Rider instakills itself, so there is
+        # no threat to keep). Only with AiPlayerbot.DungeonRunAvoidCastAll (off: the row holds like a default row).
+        self.assertIn("sPlayerbotAIConfig.dungeonRunAvoidCastAll", helper)
+        self.assertIn("AvoidCastAllRow(active, caster->GetEntry(), genericId, channeledId)", helper)
+        self.assertIn("HoldsCaster(PlayerbotAI::IsTank(bot), casterIsOnBot, casterIsOnNonTank, botTargetsCaster,",
+                      helper)
+        self.assertIn("casterTankHoldRow,\n                       allRowCasting)", helper)
         # The held casters' blasts are left out of the zones the hold and the walk-out read.
         zones = body(ACTIONS, "std::vector<CastDangerZone> ai::CastDangerZones(")
         self.assertIn("BotHoldsCaster(ai, bot, unit, fight.rows)", zones)

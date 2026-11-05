@@ -31,6 +31,7 @@ MODE_WORDS = {
     "dps_hold_after": {"engage", "blink", "until_tank"},
     "taunt_after_cast": {"engage", "blink", "until_tank"},
     "use_object": {"tank_anchor"},
+    "avoid_cast": {"all"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -459,9 +460,12 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
 
         # Every row written before the new columns takes their defaults, so adding the columns changes no existing
-        # row's behaviour. Rows from 20261103010000 onward carry their own mode and gate by design.
+        # row's behaviour. Rows from 20261103010000 onward carry their own mode and gate by design. The F4-A
+        # migration (20261107100000) sets mode `all` and the early-zone priority on the pre-existing Bat Rider
+        # row, so that key is exempt.
         for key, row in live.items():
-            if key[2] != "linked_death" and row[0] < "20261103010000_world.sql":
+            if key[2] != "linked_death" and row[0] < "20261103010000_world.sql" and \
+                    key != (309, 14750, "avoid_cast", 0, 24024):
                 self.assertEqual((0, 100, 0, "", 7.0), (row[9], row[10], row[11], row[12], row[13]),
                                  "%s carries a gate, mode or window unexpectedly" % (key,))
 
@@ -717,10 +721,18 @@ class BossTacticsSql(unittest.TestCase):
         # every enemy within 10 yd (radius index 13). A kick cannot stop it (preventionType 0,
         # interruptFlags 9) and the template is stun-immune, so the row is avoid_cast and its
         # radius is the blast's 10 yd plus 3.
-        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): float(row[7]) for row in effective_rows()}
-        self.assertIn((309, 14750, "avoid_cast", 0, 24024), live)
-        self.assertGreaterEqual(live[(309, 14750, "avoid_cast", 0, 24024)], 13.0)
-        self.assertNotIn((309, 14750, "interrupt", 0, 24024), live)
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): row for row in effective_rows()}
+        key = (309, 14750, "avoid_cast", 0, 24024)
+        self.assertIn(key, live)
+        row = live[key]
+        self.assertGreaterEqual(float(row[7]), 13.0)
+        # F4-A: mode `all` clears the tanks too while the spell is cast; F4-B data: `priority` 50 is the
+        # caster's own health % at or below which the zone is already live. The pinned values stop a
+        # new migration from silently dropping either half.
+        self.assertEqual("all", row[12], "the Bat Rider row lost mode `all`")
+        self.assertEqual(50, int(row[6]), "the Bat Rider row lost the early-zone health (F4-B priority 50)")
+        self.assertNotIn((309, 14750, "interrupt", 0, 24024),
+                         {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()})
 
     def test_venoxis_mad_servant_and_voidwalker_rows(self):
         # Zul'Gurub (309), the High Priest Venoxis leg's Mad Servant / Mad Voidwalker wall. A dying Mad
