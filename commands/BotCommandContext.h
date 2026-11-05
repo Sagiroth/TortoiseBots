@@ -88,7 +88,8 @@ void PausePartyDpsForPull(BotCommandContext const& context, Player* executor, ui
 // Records the per-command return mode (plus join delay) on the PullStrategy;
 // PullEndAction restores the tank's default when the pull ends. rangedOrder is
 // the `ranged` word of the order: open from range on any pull.
-bool ConfigurePullMode(PlayerbotAI* ai, bool pullback, uint32 joinDelaySeconds = 0, bool rangedOrder = false);
+bool ConfigurePullMode(PlayerbotAI* ai, bool pullback, uint32 joinDelaySeconds = 0, bool rangedOrder = false,
+    bool bodyOrder = false);
 // Resolve one live executor with a currently usable interrupt action. The
 // action name comes from the mature class/pet action graph, not a duplicated
 // class-to-spell table. Explicitly targeted bots never fall back to another

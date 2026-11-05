@@ -168,12 +168,20 @@ int main()
         std::cout << "  [PASS] reasons and blockers have stable names\n";
     }
 
-    // The words of a pull order: [seconds] [ranged].
+    // The words of a pull order: [seconds] [ranged|body].
     {
         PullOrderOption o;
-        CHECK(ParsePullOrderOption("", o) && !o.hasSeconds && !o.ranged);
-        CHECK(ParsePullOrderOption("10", o) && o.hasSeconds && o.seconds == 10 && !o.ranged);
-        CHECK(ParsePullOrderOption("ranged", o) && !o.hasSeconds && o.ranged);
+        CHECK(ParsePullOrderOption("", o) && !o.hasSeconds && !o.ranged && !o.body);
+        CHECK(ParsePullOrderOption("10", o) && o.hasSeconds && o.seconds == 10 && !o.ranged && !o.body);
+        CHECK(ParsePullOrderOption("ranged", o) && !o.hasSeconds && o.ranged && !o.body);
+        // `body`: walk in whatever the mob does, and it excludes `ranged`.
+        CHECK(ParsePullOrderOption("body", o) && !o.hasSeconds && o.body && !o.ranged);
+        CHECK(ParsePullOrderOption("0 BODY", o) && o.hasSeconds && o.seconds == 0 && o.body && !o.ranged);
+        CHECK(ParsePullOrderOption("15 body", o) && o.seconds == 15 && o.body);
+        CHECK(!ParsePullOrderOption("body body", o));
+        CHECK(!ParsePullOrderOption("ranged body", o));
+        CHECK(!ParsePullOrderOption("body 5 ranged", o));
+        CHECK(!ParsePullOrderOption("bodyx", o));
         CHECK(ParsePullOrderOption("  0   RANGED ", o) && o.hasSeconds && o.seconds == 0 && o.ranged);
         CHECK(ParsePullOrderOption("60 ranged", o) && o.seconds == 60 && o.ranged);
         CHECK(ParsePullOrderOption("007", o) && o.seconds == 7);
@@ -190,7 +198,7 @@ int main()
         CHECK(!ParsePullOrderOption("ranged ranged", o));
         CHECK(!ParsePullOrderOption("5 ranged now", o));
         CHECK(!ParsePullOrderOption("rangedx", o));
-        std::cout << "  [PASS] pull order words: seconds and ranged, either order, each once\n";
+        std::cout << "  [PASS] pull order words: seconds, ranged and body, once each\n";
     }
 
     std::cout << "All pull opening policy tests passed.\n";

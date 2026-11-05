@@ -39,7 +39,7 @@ namespace ai
     {
         // An airborne target's launch comes on the next movement tick: judging it in the
         // order's own tick refused pulls whose reach had only to re-pick its firing
-        // position once more (ZG walk 41, Jeklik hovering 10 yd over her altar).
+        // position once more.
         return !facts.hasTarget || facts.moving || facts.motionLaunched ||
             facts.distance <= facts.range || facts.airborne;
     }

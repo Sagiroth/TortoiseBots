@@ -66,12 +66,11 @@ static void TestWalkStartedAndRetry()
     CHECK(!PullWalkStarted(facts));
 }
 
-// Zul'Gurub walk 41: High Priestess Jeklik hovers 10.3 yd over her altar, 51 yd from the
-// tank. The ranged pullback's reach picked an air point for its firing position, the core
-// dropped the move, and the order judged "walk started" in the same tick refused the pull
-// ("The tank could not start moving to a firing position for the pull") into a pause whose
-// stand search was empty by construction. The launch comes on the next AI tick: an
-// airborne target's pull is accepted, not refused.
+// A boss hovering over her altar (10 yd above the floor, 51 yd from the tank): the ranged
+// pullback's reach picked an air point for its firing position, the core dropped the move,
+// and the order judged "walk started" in the same tick refused the pull ("The tank could
+// not start moving to a firing position for the pull") into a pause. The launch comes on
+// the next AI tick: an airborne target's pull is accepted, not refused.
 static void TestAirTargetPullCountsNextTickLaunch()
 {
     // The floor under the target is the step's floor; the target hangs above it.
