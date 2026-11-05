@@ -128,29 +128,40 @@ namespace ai
         return missing <= 0 || forceBurn || nowMs - gatherStartMs >= kSeekGatherMaxMs;
     }
 
+    // A source is a pick only while some seeker still misses the dose: once every group member carries the aura a
+    // kill buys nothing and spends a Son the next cycle needs. A Son that is not fighting is not a pick either: the
+    // gathered raid cannot make it come to the spot.
+    inline bool SeekSourceSelectable(bool inCombat, int seekers)
+    {
+        return inCombat && seekers > 0;
+    }
+
     // A source already at or below the hold percent and fighting the raid is the finishable pick: held until the next
     // window, it reset and healed back to full.
-    inline bool SeekSourceFinishable(bool inCombat, float hpPct, float holdPct)
+    inline bool SeekSourceFinishable(bool inCombat, float hpPct, float holdPct, int seekers)
     {
-        return inCombat && hpPct <= holdPct;
+        return SeekSourceSelectable(inCombat, seekers) && hpPct <= holdPct;
     }
 
     // The same source inside the seek's reach of the row's spot: a Son farther out is never a kill pick (the gather
     // cannot stand around it without leaving B, and a forced march would spend the window).
-    inline bool SeekFinishableInReach(bool inCombat, float hpPct, float holdPct, float distFromSpotYd)
+    inline bool SeekFinishableInReach(bool inCombat, float hpPct, float holdPct, float distFromSpotYd, int seekers)
     {
-        return SeekSourceFinishable(inCombat, hpPct, holdPct) && distFromSpotYd <= kSeekFallbackYd;
+        return SeekSourceFinishable(inCombat, hpPct, holdPct, seekers) && distFromSpotYd <= kSeekFallbackYd;
     }
 
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
     // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick
     // spends the raid's only source for a later cycle, and a pick killed while the window is shut leaves the next
-    // siphon without its cloud (the poison lasts longer than the window).
+    // siphon without its cloud (the poison lasts longer than the window). With no seeker left without the poison the
+    // raid is dosed: nothing is killed then, however the gather ran, until the siphon strips the aura again.
     inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
-        float holdPct, float distFromSpotYd)
+        float holdPct, float distFromSpotYd, int seekers)
     {
         if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
+            return true;
+        if (seekers <= 0)
             return true;
         return hpPct <= holdPct && !gatherReady && !forceBurn;
     }

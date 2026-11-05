@@ -283,6 +283,7 @@
 - New: hunters' pets step out of the siphon for a few seconds before each Blood Siphon and come back after it, and warlocks dismiss their demon once at Hakkar and do not resummon it during the fight, so an undosed pet no longer gives Hakkar a full heal of its own.
 - New: in the Hakkar fight shaman bots take their totems down for a few seconds around each Blood Siphon and place none until it has landed, and warlocks never summon an Infernal or a Doomguard, because every totem and guardian inside the hit is one more full heal for Hakkar.
 - The Blood Siphon note now counts pets and totems/guardians on either side of the siphon and reports the healing Hakkar itself carries and the damage links the raid landed, read once and again three seconds later; each row is labelled with the real time since the siphon was first seen, and the second read is kept beside the first instead of replacing it.
+- Fixed: with the whole raid already carrying Poisonous Blood, the Hakkar fight picks and kills no new Son of Hakkar until the next siphon strips the aura, and a Son that is not fighting is never picked, so no source is spent on a cloud nobody needs.
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.

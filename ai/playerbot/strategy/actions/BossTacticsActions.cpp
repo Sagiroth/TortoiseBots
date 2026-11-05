@@ -1238,7 +1238,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (unit->GetEntry() != row->targetEntry)
             continue;
         const float distFromSpotYd = unit->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
-        if (SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd))
+        if (SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
         {
             belowHold = true;
             break;
@@ -1258,7 +1258,16 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::vector<SeekSourceChoice> atSpot;
     atSpot.reserve(sources.size());
     for (Creature* candidate : sources)
+    {
+        // The search walk is bounded by the row's own radius; what it brings is the pick only while the Son fights and
+        // the raid still misses the dose (SeekSourceSelectable). A dosed raid picks nothing new: the current latch, if
+        // any, is kept by SeekLatchedGatherSource and the hold rule leaves it alone.
+        if (candidate->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) > searchYd)
+            continue;
+        if (!SeekSourceSelectable(candidate->IsInCombat(), out.seekers))
+            continue;
         atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
+    }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
         latched->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) <= kSeekFallbackYd;
@@ -1359,7 +1368,7 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
     const float holdPct = static_cast<float>(state.row->priority);
     const float distFromSpotYd = unit->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
-                            unit->GetHealthPercent(), holdPct, distFromSpotYd);
+                            unit->GetHealthPercent(), holdPct, distFromSpotYd, state.seekers);
 }
 
 // The source a damage action would hit: its own target, or (area actions) the row's source inside the area of the
