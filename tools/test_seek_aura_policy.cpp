@@ -64,13 +64,28 @@ int main()
     CHECK(SeekGatherReady(0, 0, 0, false));
     CHECK(SeekGatherReady(2, 0, 0, true));
 
-    // DPS may not damage a source outside the window, and inside it only below the hold percent until the gather is
-    // ready; the burn after readiness is not held again.
-    CHECK(SeekSourceHeld(true, 29.0f, 30.0f, false));
-    CHECK(!SeekSourceHeld(true, 29.0f, 30.0f, true));
-    CHECK(!SeekSourceHeld(true, 31.0f, 30.0f, false));
-    CHECK(SeekSourceHeld(false, 90.0f, 30.0f, false));
-    CHECK(SeekSourceHeld(true, 30.0f, 30.0f, false));
+    // SeekOnlyThePickedSourceIsDamageable: the low-health exception belongs to the one picked source. With two Sons
+    // at or below the hold percent only the selected one may be damaged; every other Son stays held wherever it
+    // stands, so a second low Son is not spent beside the pick.
+    CHECK(!SeekHoldDecision(true, true, true, false, 20.0f, 30.0f, 5.0f, 5));
+    CHECK(SeekHoldDecision(false, true, true, false, 20.0f, 30.0f, 5.0f, 5));
+
+    // SeekPickedSourceStillHoldsAtPercent: inside the window the picked source still stops at the hold percent until
+    // the gather is ready (the old bypass finished a 14 % Son before the raid stood around it).
+    CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));
+    CHECK(!SeekHoldDecision(true, true, true, false, 14.0f, 30.0f, 5.0f, 5));
+    CHECK(SeekHoldDecision(true, true, false, false, 29.0f, 30.0f, 5.0f, 5)); // 29 <= 30: still the hold
+    CHECK(!SeekHoldDecision(true, true, false, false, 31.0f, 30.0f, 5.0f, 5)); // above the hold: burn it down
+
+    // SeekKillPickOnlyInsideTheWindow: with the window shut (due - 3 s through the siphon and its tail) the picked
+    // Son is held at whatever health it has, so it serves the next siphon; a 12 % Son is not a kill pick.
+    CHECK(SeekHoldDecision(true, false, true, false, 12.0f, 30.0f, 5.0f, 5));
+    CHECK(SeekHoldDecision(true, false, false, true, 12.0f, 30.0f, 5.0f, 5));
+
+    // SeekForcedBurnReleasesTheHold: the forced burn (the window is about to close) releases the picked source even
+    // before the gather is ready, and the gather row's readiness release is the same rule.
+    CHECK(!SeekHoldDecision(true, true, false, true, 14.0f, 30.0f, 5.0f, 5));
+    CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 5.0f, 5));
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
@@ -89,6 +104,46 @@ int main()
     CHECK(!SeekTankPullDue(true, false, 3, 61.0f));
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
+
+    // SeekAreaHoldsASonBesideThePick: an area action's area is judged Son by Son, so the selected Son may be burnable
+    // while a second, held Son standing beside it is not: the cast reaches both, so it is vetoed. When the area reaches
+    // only the non-selected (held) Son the cast is vetoed too, and it stands when nothing inside it is held.
+    {
+        CHECK(SeekAreaVeto({{12.0f, false}, {8.0f, true}}, 10.0f));  // only the held Son is in the area
+        CHECK(SeekAreaVeto({{6.0f, false}, {8.0f, true}}, 10.0f));   // the pick is in it too
+        CHECK(!SeekAreaVeto({{6.0f, false}, {8.0f, true}}, 7.0f));   // the held Son is outside the radius
+        CHECK(!SeekAreaVeto({{6.0f, false}, {12.0f, true}}, 10.0f)); // a held Son beyond the cast
+        CHECK(!SeekAreaVeto({{0.0f, false}}, 10.0f));
+        CHECK(!SeekAreaVeto({}, 10.0f));
+    }
+
+    // SeekDoTsAreNeverCastOnASon: a plain DoT on the boss is fine, but one that would land on any Son of the seek fight
+    // is held: its ticks would run through the hold percent and the shut window. A spell that also lands direct damage
+    // is a burst the rotation can stop, so its periodic tail is held only while that Son is held; a channelled
+    // periodic cast (Mind Flay, Drain Life) cannot be stopped once it runs and stays held always.
+    CHECK(SeekDotVeto(false, true, false, false));  // Corruption, Serpent Sting: no direct part to stop
+    CHECK(SeekDotVeto(false, true, false, true));
+    CHECK(SeekDotVeto(true, true, false, true));    // Fireball, Immolate on a held Son
+    CHECK(!SeekDotVeto(true, true, false, false));  // ... and on the Son the hold lets burn
+    CHECK(SeekDotVeto(true, true, true, false));    // Mind Flay, Drain Life: channelled ticks
+    CHECK(SeekDotVeto(false, true, true, true));
+    CHECK(!SeekDotVeto(true, false, false, false)); // a plain nuke
+    CHECK(!SeekDotVeto(false, false, false, true));
+    CHECK(!SeekDotVeto(true, false, true, false));  // a channel with no damage tick (Arcane Missiles)
+
+    // SeekOffTankStopsSwingingATiredSon: with the window shut the holding off-tank stops auto-attacking a Son already
+    // at or below the hold percent plus 10 (a 30 % hold: 40 % and below); inside the open window it swings as usual,
+    // and a healthier Son stays with the rotation.
+    CHECK(SeekTankSwingHeld(false, 40.0f, 30.0f));
+    CHECK(SeekTankSwingHeld(false, 12.0f, 30.0f));
+    CHECK(!SeekTankSwingHeld(false, 41.0f, 30.0f));
+    CHECK(!SeekTankSwingHeld(true, 12.0f, 30.0f));
+
+    // SeekOffTankHoldLeavesTheTickToTheRotation: with no swing on the held Son there is nothing to stop, and the tank
+    // action must not take the tick: Shield Block, the shouts and the taunt only ran on the ticks it left (one
+    // successful action a tick). It takes the tick only to stop the swing that is running on the Son.
+    CHECK(SeekTankHoldConsumesTick(true));
+    CHECK(!SeekTankHoldConsumesTick(false));
 
     // At the gather the seek action stops a walk once, then leaves the tick to the rotation, the heals and the burn:
     // a seek that kept consuming every tick at the spot froze the seekers (H1).
@@ -109,10 +164,114 @@ int main()
         CHECK(SeekKeepOrPickGatherSource(0, {}) == 0);
     }
 
+    // SeekLatchSurvivesDamageSpread: two Sons near the spot, the raid's damage spreads between them, and the pick is
+    // the latched one for the whole window — also through a forced burn or once the search shrinks back (the caller
+    // checks the latch against the 35 yd reach, not the current radius). It repicks only when the Son is gone or out
+    // of reach, and then the lowest health % (then lowest guid) wins.
+    {
+        const std::vector<SeekSourceChoice> spread = {{0x2000, 22.0f}, {0x1000, 18.0f}};
+        CHECK(SeekLatchedGatherSource(true, 0x2000, spread) == 0x2000);
+        const std::vector<SeekSourceChoice> flipped = {{0x2000, 12.0f}, {0x1000, 25.0f}};
+        CHECK(SeekLatchedGatherSource(true, 0x2000, flipped) == 0x2000);
+        const std::vector<SeekSourceChoice> dragged = {{0x2000, 40.0f}, {0x1000, 25.0f}};
+        CHECK(SeekLatchedGatherSource(false, 0x2000, dragged) == 0x1000);
+        CHECK(SeekLatchedGatherSource(true, 0x2000, dragged) == 0x2000);
+        CHECK(SeekLatchedGatherSource(true, 0x2000, {}) == 0x2000); // alive in reach, outside the search radius
+        CHECK(SeekLatchedGatherSource(false, 0x2000, {}) == 0);     // gone with nothing to repick
+        CHECK(SeekLatchedGatherSource(false, 0, spread) == 0x1000); // no latch yet: the lowest health %
+    }
+
     // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
-    CHECK(SeekSourceSearchYd(true) == kSeekSpotYd);
-    CHECK(SeekSourceSearchYd(false) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(false, false, false) == kSeekFallbackYd);
     CHECK(kSeekFallbackYd == 35.0f);
+
+    // SeekForcedBurnReachesOffSpotSource: with three tanks the search used to stay at the spot's 8 yd, so a Son 11 yd
+    // out could never become the gather source and was held for the whole fight. A forced burn widens the reach to
+    // 35 yd, and the source the gather then stands around is not held once the gather is ready.
+    CHECK(SeekSourceSearchYd(true, true, false) == kSeekFallbackYd);
+    CHECK(11.0f <= SeekSourceSearchYd(true, true, false));
+    CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 11.0f, 5));
+
+    // SeekBelowHoldSourceStillWaits: a low Son only widens the search while it stands inside the seek's reach and
+    // fights; it is picked and held to the hold percent like any other until the gather is ready.
+    CHECK(SeekSourceFinishable(true, 14.0f, 30.0f, 5));
+    CHECK(!SeekSourceFinishable(false, 14.0f, 30.0f, 5));
+    CHECK(!SeekSourceFinishable(true, 31.0f, 30.0f, 5));
+    CHECK(SeekSourceSearchYd(true, false, true) == kSeekFallbackYd);
+    CHECK(SeekHoldDecision(true, false, false, false, 14.0f, 30.0f, 5.0f, 5));
+    CHECK(SeekHoldDecision(true, false, false, false, 40.0f, 30.0f, 5.0f, 5));
+    CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));
+
+    // SeekFarSonNeverWidensTheSearch: a Son fighting at or below the hold percent widens the search only while it
+    // stands inside the seek's 35 yd of the spot. One farther out is not the below-hold pick, so it cannot flip the
+    // gather onto it or drop the latch; the search stays at the spot's radius with three tanks.
+    CHECK(SeekFinishableInReach(true, 14.0f, 30.0f, 34.0f, 5));
+    CHECK(!SeekFinishableInReach(true, 14.0f, 30.0f, 36.0f, 5));
+    CHECK(!SeekFinishableInReach(true, 31.0f, 30.0f, 10.0f, 5));
+    CHECK(!SeekFinishableInReach(false, 14.0f, 30.0f, 10.0f, 5));
+    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    // A picked Son beyond the reach is held even inside the window with the gather ready: the gather cannot stand
+    // around it inside the row's radius.
+    CHECK(SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 36.0f, 5));
+
+    // SeekDosedRaidPicksNothing: while every seeker already carries 24321 (seekers 0, after the cloud landed and before
+    // the siphon strips it) no new Son is picked and the picked one is not killed, however the gather ran and even at a
+    // forced burn; a Son that is not fighting is never picked either. The pick resumes with the next siphon. Tested on
+    // the second Son in reach: low on health and inside the 35 yd reach, it is neither the below-hold pick nor a kill.
+    CHECK(!SeekSourceSelectable(true, 0));
+    CHECK(SeekSourceSelectable(true, 1));
+    CHECK(!SeekSourceSelectable(false, 1));
+    CHECK(!SeekSourceFinishable(true, 20.0f, 30.0f, 0));
+    CHECK(SeekSourceFinishable(true, 20.0f, 30.0f, 1));
+    CHECK(!SeekFinishableInReach(true, 20.0f, 30.0f, 34.0f, 0));
+    CHECK(SeekFinishableInReach(true, 20.0f, 30.0f, 34.0f, 1));
+    CHECK(SeekHoldDecision(true, true, true, false, 20.0f, 30.0f, 5.0f, 0));
+    CHECK(SeekHoldDecision(true, true, true, true, 20.0f, 30.0f, 5.0f, 0));
+    CHECK(!SeekHoldDecision(true, true, true, false, 20.0f, 30.0f, 5.0f, 2));
+
+    // Pets leave the siphon: one pet inside the 100 yd hit is a full 8 000 heal because the core reads the poison on
+    // every living unit. The window starts 5 s before the due time and lasts until 2 s after it; the dummy aura that
+    // marks a siphon in progress holds it too, and a pet may be called again once the window is over.
+    CHECK(!SeekPetMustLeave(6000, false));
+    CHECK(SeekPetMustLeave(5000, false));
+    CHECK(SeekPetMustLeave(1, false));
+    CHECK(SeekPetMustLeave(0, false));
+    CHECK(SeekPetMustLeave(-1000, false));
+    CHECK(SeekPetMustLeave(-2000, false));
+    CHECK(!SeekPetMustLeave(-2001, false));
+    CHECK(SeekPetMustLeave(90000, true));
+    CHECK(SeekPetMustLeave(-30000, true));
+
+    // SeekTotemsAndGuardiansLeaveTheSiphon: a shaman's placements are named "<element> totem" (the damage ones
+    // too), and the rotations' pet calls and demon summons are their own names. Each leaves one more undosed unit to
+    // the siphon's hit, so the hold rule reads the spell/action name rather than the class alone.
+    CHECK(SeekTotemSpell("stoneskin totem"));
+    CHECK(SeekTotemSpell("fire nova totem"));
+    CHECK(SeekTotemSpell("disease cleansing totem"));
+    CHECK(!SeekTotemSpell("totemic recall"));
+    CHECK(!SeekTotemSpell("lightning bolt"));
+    CHECK(!SeekTotemSpell("totem"));
+    CHECK(SeekPetCallAction("call pet"));
+    CHECK(SeekPetCallAction("summon imp"));
+    CHECK(SeekPetCallAction("summon inferno"));
+    CHECK(SeekPetCallAction("inferno"));
+    CHECK(!SeekPetCallAction("lightning bolt"));
+    // The warlock's guardians are never summoned in the fight at all, not only around the window.
+    CHECK(SeekGuardianSummonAction("summon inferno"));
+    CHECK(SeekGuardianSummonAction("inferno"));
+    CHECK(SeekGuardianSummonAction("summon doomguard"));
+    CHECK(!SeekGuardianSummonAction("summon imp"));
+    CHECK(!SeekGuardianSummonAction("call pet"));
+
+    // SeekWarlockDemonLeavesOnce: a warlock's demon goes at the engage and does not come back — the class rule is
+    // true at any time in the fight, so the dismiss runs once and the summon hold stays up all fight. A hunter keeps
+    // the window cycle and its pet waits in the current slot for the call back.
+    CHECK(SeekClassPetMustLeave(true, 90000, false));
+    CHECK(SeekClassPetMustLeave(true, -30000, false));
+    CHECK(!SeekClassPetMustLeave(false, 6000, false));
+    CHECK(SeekClassPetMustLeave(false, 5000, false));
+    CHECK(!SeekClassPetMustLeave(false, -2001, false));
 
     // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
     CHECK(SeekClockStartOver(false, 0, 5000));

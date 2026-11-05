@@ -191,6 +191,21 @@ int main()
         CHECK(records[second].engageMs == 2000);
     }
 
+    // SeekSiphonAtLabelShowsRealElapsed: the note's clock is the real time since the cycle's first 24324 sighting,
+    // not the nominal +1 s / +3 s of the read.
+    CHECK(SeekSiphonAtLabel(1012) == "at=+1012ms");
+    CHECK(SeekSiphonAtLabel(3004) == "at=+3004ms");
+
+    // SeekSiphonSecondReadKept: the +3 s read lands beside the +1 s one; the record's siphonDosed/siphonUndosed (the
+    // run line's) are never overwritten by it.
+    {
+        SeekCycleRecord record;
+        SeekStoreSiphonRead(record, 1, 12, 3);
+        SeekStoreSiphonRead(record, 3, 14, 1);
+        CHECK(record.siphonDosed == 12 && record.siphonUndosed == 3);
+        CHECK(record.siphonLateDosed == 14 && record.siphonLateUndosed == 1);
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }
