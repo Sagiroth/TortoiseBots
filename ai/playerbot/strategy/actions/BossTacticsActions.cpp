@@ -2105,12 +2105,24 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     candidates.reserve(fight.units.size());
     units.reserve(fight.units.size());
     std::unordered_set<std::uint64_t> seen;
+    std::unordered_map<std::uint64_t, std::size_t> index; // guid -> candidates slot, for the grid pass's merge
     for (Unit* unit : fight.units)
     {
         TacticCandidate c;
         c.entry = unit->GetEntry();
         c.distance = bot->GetDistance(unit);
         c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+        // The attackers path sets the victim's role itself: a Shade found here is in `seen`, so the grid pass below
+        // never reaches it (a Shade eating a healer would rank as one eating a damage dealer).
+        {
+            Unit* const victim = unit->GetVictim();
+            Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+            Group* const group = bot->GetGroup();
+            c.victimHealer = victimPlayer && dynamic_cast<Player*>(victim) &&
+                (victimPlayer == bot || (group && group->IsMember(victimPlayer->GetObjectGuid()))) &&
+                PlayerbotAI::IsHeal(victimPlayer);
+        }
+        index.emplace(unit->GetObjectGuid().GetRawValue(), candidates.size());
         candidates.push_back(c);
         units.push_back(unit);
         seen.insert(unit->GetObjectGuid().GetRawValue());
@@ -2140,6 +2152,13 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 "kill first grid units", static_cast<int32>(entry));
             for (const KillFirstGridUnit& hit : grid)
             {
+                // A hit the attackers path already took keeps its candidate; the grid read's victim role joins it.
+                auto const known = index.find(hit.guid);
+                if (known != index.end())
+                {
+                    MergeVictimHealer(candidates[known->second], hit.victimHealer);
+                    continue;
+                }
                 if (!KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
                         ownerInFight(hit.owner)) ||
                     !seen.insert(hit.guid).second)
@@ -2151,6 +2170,8 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 c.entry = hit.entry;
                 c.distance = bot->GetDistance(unit);
                 c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+                c.victimHealer = hit.victimHealer;
+                index.emplace(hit.guid, candidates.size());
                 candidates.push_back(c);
                 units.push_back(unit);
             }

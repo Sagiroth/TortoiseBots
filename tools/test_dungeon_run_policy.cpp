@@ -8409,6 +8409,42 @@ static void TestKillFirstKeepsItsUnitAgainstAnEqualRank()
     CHECK(Tick(r, f) == "focus 31");
 }
 
+// Zul'Gurub's Jin'do the Hexxer: the Powerful Healing Ward 14987 heals him about as much as the raid deals, so the
+// plan ranks it before the Brain Wash Totem 15112. A focus held on the totem must not outlast the ward's arrival:
+// the ward stands at a better rank, and a better rank takes the focus. (The exported plan's kill_first order carries
+// that ranking; this is the policy's side of it.)
+static void TestKillFirstNewWardPreemptsHeldTotem()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 11380;
+    boss.entries = {11380};
+    plan.steps = {boss};
+    plan.killFirst = {14987, 15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    std::uint64_t const jindo = 500;
+    UnitFact totem = Unit(501, 15112, 4);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = jindo;
+    totem.ownerEngaged = true;
+    UnitFact ward = Unit(502, 14987, 6);
+    ward.owner = jindo;
+    ward.ownerEngaged = true;
+    f.killFirst = {totem};
+    r.focusGuid = 501; // held on the totem after one volley left it at 11 %
+    CHECK(PickKillFirst(r, f) == &f.killFirst[0]);
+    // The ward stands up: it is ranked first, so the focus moves to it although the totem still lives.
+    f.killFirst.push_back(ward);
+    CHECK(PickKillFirst(r, f) == &f.killFirst[1]);
+    CHECK(Tick(r, f) == "focus 502");
+    // The ward dies: back on the totem that is still up.
+    f.killFirst.pop_back();
+    CHECK(Tick(r, f) == "focus 501");
+}
+
 // r30 t 398.8 2c: the tank leaves a caster at its camp alone. Common start per the spec.
 static void TestGuardLeavesACasterAtItsCamp()
 {
@@ -26694,6 +26730,111 @@ static void TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick()
     CHECK(r.focusIconGuid == 0); // the skull stays where it is (T5)
 }
 
+// A totem one volley left at 11 % keeps the focus, but no new order went out while the pick stayed the same, so the
+// DPS that drifted off after the burst never came back (ZG walk 41: 0 bots on it for 75 s). The focus is sent again
+// every kTotemRefocusMs while the totem lives, and that is the only order it gets.
+static void TestTotemFocusRefiresWhileTotemLives()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    // The next 3 s of the same pick: one re-send, at the 3 s mark and never another order.
+    int resends = 0;
+    for (int tick = 0; tick < 3; ++tick)
+    {
+        std::string const order = Tick(r, f);
+        if (order.empty())
+            continue;
+        CHECK(order == "focus 501");
+        ++resends;
+    }
+    CHECK(resends == 1);
+    CHECK(r.focusGuid == 501);
+    CHECK(r.focusIconGuid == 0); // a re-send moves no mark either
+}
+
+// The re-send is for a totem nobody is hitting: while a damage dealer attacks the held totem no order goes out (every
+// focus order cancels the commander's tasks and takes the bots off stay), and the first tick after the last damage
+// dealer left it sends the focus. Failing case before the dpsOnIt gate: a re-send every 3 s whoever was on it.
+static void TestTotemFocusIsNotResentWhileADpsAttacksIt()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    totem.dpsOnIt = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    for (int tick = 0; tick < 12; ++tick)
+        CHECK(Tick(r, f).empty()); // a damage dealer is on it: nothing goes out, however long
+    f.killFirst[0].dpsOnIt = false;
+    CHECK(Tick(r, f) == "focus 501"); // the burst ended: the order is due at once
+    CHECK(Tick(r, f).empty());        // and not again before the next 3 s
+}
+
+// A kill_first unit that is no totem (a healer, a Shade) is focused when the pick changes and never re-sent, the
+// totem key on or off: its focus order is the heavy one (the tanks and healers go to the skull).
+static void TestGeneralKillFirstFocusIsNeverResent()
+{
+    for (bool const totemKey : {false, true})
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Boss)};
+        plan.killFirst = {5650};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.anyInCombat = true;
+        f.totemFocus = totemKey;
+        f.killFirst = {Engaged(Unit(30, 5650, 6))};
+        CHECK(Tick(r, f) == "focus 30");
+        for (int tick = 0; tick < 20; ++tick)
+            CHECK(Tick(r, f).empty());
+    }
+}
+
+// The totem re-send is sent at the end of the fight branch, so a tick that re-sends still ran everything before it: the
+// fight ceiling pauses the run on that tick instead of the order skipping it. Failing case with the early return: the
+// run was still Running on the re-send tick.
+static void TestTotemResendTickStillRunsTheFightBranch()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    for (int tick = 0; tick < 2; ++tick)
+        Tick(r, f);
+    // The next tick is the re-send tick (3 s after the order) and also the one the fight ceiling is crossed on.
+    r.fightMs = kBossFightCapMs + 1;
+    Tick(r, f);
+    CHECK(r.state == State::Paused);
+}
+
 // T2: the totem focus runs at the top of the fight branch, so the automatic crowd control (or the hp hold, the guard)
 // never spends the tick first. Key off: today's order, the auto-CC first.
 static void TestTotemFocusFiresBeforeTheAutoCcTick()
@@ -35735,6 +35876,7 @@ int main()
     TestANewFocusMovesTheSkullWithNoClear();
     TestACrowdControlledFocusTakesItsSkullOff();
     TestKillFirstKeepsItsUnitAgainstAnEqualRank();
+    TestKillFirstNewWardPreemptsHeldTotem();
     TestGuardLeavesACasterAtItsCamp();
     TestGuardTakesACasterWithNoCampByIt();
     TestGuardTakesACampCasterWithinAStep();
@@ -36177,6 +36319,10 @@ int main()
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
+    TestTotemFocusRefiresWhileTotemLives();
+    TestTotemFocusIsNotResentWhileADpsAttacksIt();
+    TestGeneralKillFirstFocusIsNeverResent();
+    TestTotemResendTickStillRunsTheFightBranch();
     TestTotemFocusFiresBeforeTheAutoCcTick();
     TestTotemFocusLeavesTheSkullOnTheBoss();
     TestTotemFocusMayInterrupt();
