@@ -8391,6 +8391,42 @@ static void TestKillFirstKeepsItsUnitAgainstAnEqualRank()
     CHECK(Tick(r, f) == "focus 31");
 }
 
+// Zul'Gurub's Jin'do the Hexxer: the Powerful Healing Ward 14987 heals him about as much as the raid deals, so the
+// plan ranks it before the Brain Wash Totem 15112. A focus held on the totem must not outlast the ward's arrival:
+// the ward stands at a better rank, and a better rank takes the focus. (The exported plan's kill_first order carries
+// that ranking; this is the policy's side of it.)
+static void TestKillFirstNewWardPreemptsHeldTotem()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 11380;
+    boss.entries = {11380};
+    plan.steps = {boss};
+    plan.killFirst = {14987, 15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    std::uint64_t const jindo = 500;
+    UnitFact totem = Unit(501, 15112, 4);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = jindo;
+    totem.ownerEngaged = true;
+    UnitFact ward = Unit(502, 14987, 6);
+    ward.owner = jindo;
+    ward.ownerEngaged = true;
+    f.killFirst = {totem};
+    r.focusGuid = 501; // held on the totem after one volley left it at 11 %
+    CHECK(PickKillFirst(r, f) == &f.killFirst[0]);
+    // The ward stands up: it is ranked first, so the focus moves to it although the totem still lives.
+    f.killFirst.push_back(ward);
+    CHECK(PickKillFirst(r, f) == &f.killFirst[1]);
+    CHECK(Tick(r, f) == "focus 502");
+    // The ward dies: back on the totem that is still up.
+    f.killFirst.pop_back();
+    CHECK(Tick(r, f) == "focus 501");
+}
+
 // r30 t 398.8 2c: the tank leaves a caster at its camp alone. Common start per the spec.
 static void TestGuardLeavesACasterAtItsCamp()
 {
@@ -35219,6 +35255,7 @@ int main()
     TestANewFocusMovesTheSkullWithNoClear();
     TestACrowdControlledFocusTakesItsSkullOff();
     TestKillFirstKeepsItsUnitAgainstAnEqualRank();
+    TestKillFirstNewWardPreemptsHeldTotem();
     TestGuardLeavesACasterAtItsCamp();
     TestGuardTakesACasterWithNoCampByIt();
     TestGuardTakesACampCasterWithinAStep();
