@@ -328,14 +328,16 @@ namespace ai
         return SeekPullRole::None;
     }
 
-    // The puller's own hit on the Son it is fetching, while that Son has not joined the fight yet, is the pull and not
-    // damage on a held source: the hold answers true for every Son that is not the picked source, so without this the
-    // swing or the shot never lands and the Son never aggroes. Any other hit keeps the hold: another Son (a puller
-    // does not damage a Son it is not fetching), a Son that already fights, and every DoT, whose ticks would run
-    // through the hold (SeekDotVeto) even on the pick.
-    inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)
+    // The puller's own hit on the Son its pull latched is the pull, not damage on a held source: the hold answers true
+    // for every Son that is not the picked source, so without this the swing (or the fallback's shot) never lands and
+    // the Son never aggroes. The latch names that Son — it rides the fight record from the pull's start, through the
+    // pickup radius and past the Son joining the fight — so the exemption follows the pull itself rather than one
+    // tick's search (walk 41: another Son in the fight left the pull target unset and the hold vetoed the puller's own
+    // full-health hits). Any other Son keeps the hold, and every DoT keeps it too (SeekDotVeto): its ticks would run
+    // through the hold on the pick.
+    inline bool SeekPullHitExemptOnLatch(bool puller, bool latchedTarget)
     {
-        return puller && picked && !sonInCombat;
+        return puller && latchedTarget;
     }
 
     // A damage-over-time on a Son of the seek fight: a pure DoT (Corruption, Serpent Sting) and a channelled periodic

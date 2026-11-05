@@ -131,7 +131,7 @@ class SeekWalkWiring(unittest.TestCase):
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
-                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
+                     "SeekPullRoleOf(", "SeekPullHitExemptOnLatch(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
                      "SeekTakeFightingSonOnHealer("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
@@ -329,9 +329,9 @@ class SeekRolesWiring(unittest.TestCase):
 
     def test_only_the_pulled_son_is_exempt_from_the_hold(self):
         # The puller's identity and its one Son are read once per tick with the rest of the seek fight (the tank roles
-        # are rebuilt there, not in every action's hold check), and the exemption names that Son: another Son, a Son
-        # already fighting and every non-puller keep the hold. A DoT is checked before the exemption, so its ticks
-        # never run through the hold on the pick.
+        # are rebuilt there, not in every action's hold check), and the exemption names that Son: another Son and every
+        # non-puller keep the hold. A DoT is checked before the exemption, so its ticks never run through the hold on
+        # the pick.
         read = body(ACTIONS, "bool ReadSeekFight(")
         self.assertIn("const RaidTankRoles roles = GetRaidTankRoles(ai);", read)
         self.assertIn("out.puller = thirdTank || fallback;", read)
@@ -342,11 +342,14 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("out.pullTarget = pullDue ? nearest : nullptr;", read)
         self.assertNotIn("IsSeekPuller(", ACTIONS)
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
-        self.assertIn("SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat())", hold)
-        self.assertLess(hold.index("SeekDotOnSource(state, action)"), hold.index("SeekPullHitExempt("))
+        self.assertIn("SeekPullHitExemptOnLatch(state.puller, struck == state.pullTarget)", hold)
+        self.assertLess(hold.index("SeekDotOnSource(state, action)"), hold.index("SeekPullHitExemptOnLatch("))
         drop = body(ACTIONS, "Unit* ai::FindBossHoldKill(")
-        self.assertIn("SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat())", drop)
-        self.assertIn("inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)", POLICY)
+        self.assertIn("SeekPullHitExemptOnLatch(state.puller, current == state.pullTarget)", drop)
+        # The latch is the same record the hold reads, so the exemption outlives the tick's search and the Son joining
+        # the fight.
+        self.assertIn("inline bool SeekPullHitExemptOnLatch(bool puller, bool latchedTarget)", POLICY)
+        self.assertIn("pullTargetGuid", STATE_POLICY)
 
     def test_the_fallback_pull_is_the_auto_shot_and_casts_no_dot(self):
         # The fallback puller's one hit must leave nothing ticking on the Son: a DoT's ticks run through the hold and

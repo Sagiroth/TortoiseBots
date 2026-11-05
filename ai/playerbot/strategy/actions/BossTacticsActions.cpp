@@ -2135,11 +2135,11 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
-            // The puller's target is the one Son it is about to shoot: dropping it would re-pick the boss every tick
-            // and the shot would never go out (the hold answers true for a Son that is not the pick). Any other Son,
-            // and the pick once it fights, is dropped like before.
+            // The puller's target is the Son its pull latched: dropping it would re-pick the boss every tick and the
+            // swing or the shot would never go out (the hold answers true for a Son that is not the pick). Any other
+            // Son is dropped like before.
             const bool pullHit = IsSeekSource(state, current) &&
-                SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat());
+                SeekPullHitExemptOnLatch(state.puller, current == state.pullTarget);
             if (!pullHit && SeekHoldsUnit(state, current))
                 return current;
         }
@@ -3175,10 +3175,10 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
-            // The puller's own strike on the one Son it is fetching, before that Son fights, is the pull itself: the
-            // hold answers true for every Son that is not the picked source, so it would stand the tank's swing (or
-            // the fallback's shot) down and the Son would never aggro. A DoT is exempt from none of this: its ticks
-            // run through the hold, so it is vetoed even on the pull target (SeekDotVeto).
+            // The puller's own strike on the Son its pull latched is the pull itself, before and after that Son joins
+            // the fight: the hold answers true for every Son that is not the picked source, so it would stand the
+            // tank's swing (or the fallback's shot) down and the Son would never come to the spot. A DoT is exempt
+            // from none of this: its ticks run through the hold, so it is vetoed even on the pull target (SeekDotVeto).
             Unit* const struck = action->GetTarget();
             if (SeekDotOnSource(state, action))
             {
@@ -3186,7 +3186,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
                 return 0.0f;
             }
             const bool pullHit = IsSeekSource(state, struck) &&
-                SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat());
+                SeekPullHitExemptOnLatch(state.puller, struck == state.pullTarget);
             if (!pullHit)
             {
                 Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")

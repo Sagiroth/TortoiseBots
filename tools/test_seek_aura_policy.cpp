@@ -211,17 +211,16 @@ int main()
     // The pickup rule still refuses a fresh pull past its own radius; the latch is what keeps a running one.
     CHECK(!SeekTankPullDue(true, false, 3, 75.0f));
 
-    // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
-    // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.
-    CHECK(SeekPullHitExempt(true, true, false));
-    // Only the picked Son: a puller's hit on another Son stays held, so the spare source is not damaged.
-    CHECK(!SeekPullHitExempt(true, false, false));
-    // Once the Son fights the hold applies to it like to any other Son; a bot that is not the puller never exempts.
-    CHECK(!SeekPullHitExempt(true, true, true));
-    CHECK(!SeekPullHitExempt(false, true, false));
-    CHECK(!SeekPullHitExempt(false, false, true));
+    // SeekPullHitExemptOnLatchedTarget: the pulling tank's own hit on the Son its pull latched is exempt from the seek
+    // hold — before it fights and after, or the hold would stand the swing down and the Son would never come to the
+    // spot. Only that Son: a puller's hit on another Son stays held, so the spare source is not damaged, and a bot
+    // that is not the puller never exempts.
+    CHECK(SeekPullHitExemptOnLatch(true, true));
+    CHECK(!SeekPullHitExemptOnLatch(true, false));
+    CHECK(!SeekPullHitExemptOnLatch(false, true));
+    CHECK(!SeekPullHitExemptOnLatch(false, false));
     // The hold itself still answers true for a Son that is not the pick: the exemption is the caller's, on the puller's
-    // own strike against the Son it has not engaged yet.
+    // own strike against the Son its latch names.
     CHECK(SeekHoldDecision(false, true, false, false, 100.0f, 30.0f, 30.0f, 5));
 
     // SeekPullFallsBackToHunter: with fewer than three tanks alive the third off-tank's pull is a hunter's shot, then
