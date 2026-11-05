@@ -312,7 +312,8 @@ public:
     // a stale one until the map thread recomputes it: over-protecting for a
     // tick is harmless, a gap would let the world-thread AH list a reagent.
     // A set lookup under the lock, safe on any thread; cancelled or finished
-    // rows protect nothing.
+    // rows protect nothing, except a cancelled enchant row still walking its
+    // reagents to the bank.
     bool IsProtectedItem(Player* bot, uint32_t itemId)
     {
         if (!bot || !itemId || !bot->GetGuildId())
@@ -323,7 +324,10 @@ public:
             return false;
         Stored& stored = it->second;
         OrderRecord const& record = stored.record;
-        if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+        // A cancelled enchant row on its deposit delivery still owns its
+        // reagents until the drain reports back.
+        bool depositing = record.type == OrderType::Enchant && record.state == OrderState::Delivering;
+        if ((record.cancelled && !depositing) || record.guildId != bot->GetGuildId() || IsFinished(record.state))
             return false;
         if (itemId == record.itemId || itemId == record.supplyItemId)
             return true;
@@ -337,7 +341,8 @@ public:
     // is safe to read there). Snapshots the keys under the lock, walks the
     // tree outside it, then swaps in the finished set under the lock with
     // a key re-check. No-op when the keys already match; clears the set
-    // for cancelled, finished or absent rows.
+    // for cancelled, finished or absent rows, except a cancelled enchant
+    // row still walking its reagents to the bank.
     void RefreshProtectedSet(Player* bot)
     {
         if (!bot || !bot->GetGuildId())
@@ -352,18 +357,19 @@ public:
             if (it == m_orders.end())
                 return;
             OrderRecord const& record = it->second.record;
-            if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+            bool depositing = record.type == OrderType::Enchant && record.state == OrderState::Delivering;
+            if ((record.cancelled && !depositing) || record.guildId != bot->GetGuildId() || IsFinished(record.state))
             {
                 it->second.kept = OrderProtectedSet{};
                 return;
             }
             if (it->second.kept.valid && it->second.kept.orderItemId == record.itemId &&
                 it->second.kept.supplyItemId == record.supplyItemId &&
-                it->second.kept.orderIsCraft == (record.type == OrderType::Craft))
+                it->second.kept.orderIsCraft == (record.type == OrderType::Craft || record.type == OrderType::Enchant))
                 return;
             orderItemId = record.itemId;
             supplyItemId = record.supplyItemId;
-            orderIsCraft = record.type == OrderType::Craft;
+            orderIsCraft = record.type == OrderType::Craft || record.type == OrderType::Enchant;
         }
         if (!orderItemId)
             return;
@@ -383,7 +389,7 @@ public:
                 return;
             }
             if (record.itemId != orderItemId || record.supplyItemId != supplyItemId ||
-                (record.type == OrderType::Craft) != orderIsCraft)
+                (record.type == OrderType::Craft || record.type == OrderType::Enchant) != orderIsCraft)
                 return;
             it->second.kept.items = std::move(kept);
             it->second.kept.orderItemId = orderItemId;
@@ -539,9 +545,37 @@ public:
                 ClearQueuedSubOrdersLocked(botGuidLow);
                 detachedDeposit = true;
             }
+            else if (it->second.record.type == OrderType::Enchant && it->second.record.cancelled &&
+                it->second.record.state == OrderState::Delivering)
+            {
+                // A deposit delivery already runs: keep it, the drain erases
+                // the row once nothing is due.
+                parked = true;
+            }
+            else if (it->second.record.type == OrderType::Enchant && !it->second.record.cancelled)
+            {
+                // In any state: the reagents walk to the guild bank through
+                // the delivery leg instead of stranding in the bags. The
+                // drain erases the row once nothing is due; the reagents
+                // stay protected until then.
+                it->second.record.cancelled = true;
+                it->second.record.state = OrderState::Delivering;
+                it->second.record.reason = OrderReason::None;
+                it->second.record.supplyStep = SupplyStep::Deliver;
+                it->second.record.supplyItemId = it->second.record.itemId;
+                it->second.record.supplyCount = 0;
+                it->second.record.supplyGoldCount = 0;
+                it->second.record.supplyReturnStep = SupplyStep::None;
+                it->second.record.needItems.clear();
+                it->second.record.needWhispered = false;
+                it->second.record.needBankDenied = false;
+                it->second.record.reportedHave = 0;
+                MarkDirtyLocked(it->second);
+                parked = true;
+                ClearQueuedSubOrdersLocked(botGuidLow);
+            }
             else if (it->second.record.guildGoldHeld > 0)
             {
-                it->second.record.cancelled = true;
                 it->second.record.state = OrderState::Working;
                 it->second.record.reason = OrderReason::None;
                 it->second.record.supplyStep = SupplyStep::None;
@@ -568,6 +602,48 @@ public:
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
         return true;
+    }
+
+    // A finished enchant deposit delivery: drop the row in memory and in the
+    // table, like Cancel's erase path. Only the drain calls this, once no
+    // reagent is due.
+    void EraseRow(uint32_t botGuidLow)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_orders.find(botGuidLow);
+            if (it == m_orders.end())
+                return;
+            m_orders.erase(it);
+            ClearQueuedSubOrdersLocked(botGuidLow);
+        }
+        CharacterDatabase.DirectPExecute(
+            "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
+    }
+
+    // A deposit delivery that banked the reagents but still owes guild gold:
+    // park the row as a refund stub (same shape as Cancel's), so the refund
+    // drain collects it at the next banker visit.
+    void ParkRefundStub(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.record.cancelled = true;
+        it->second.record.state = OrderState::Working;
+        it->second.record.reason = OrderReason::None;
+        it->second.record.supplyStep = SupplyStep::None;
+        it->second.record.supplyItemId = 0;
+        it->second.record.supplyCount = 0;
+        it->second.record.supplyGoldCount = 0;
+        it->second.record.supplyReturnStep = SupplyStep::None;
+        it->second.record.needItems.clear();
+        it->second.record.needWhispered = false;
+        it->second.record.needBankDenied = false;
+        it->second.record.reportedHave = 0;
+        MarkDirtyLocked(it->second);
+        ClearQueuedSubOrdersLocked(botGuidLow);
     }
 
     // Map-thread requests keyed by parent and item: one parent can hold
@@ -1125,6 +1201,16 @@ public:
         it->second.record.workedNoGainSec = 0;
         it->second.record.workedSinceNewItemSec = 0;
         MarkDirtyLocked(it->second);
+    }
+
+    void NoteEnchantReadyWhispered(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        // Memory-only: no row write, the flag need not survive a restart.
+        it->second.record.readyWhispered = true;
     }
 
     bool ShouldCheckNeedBank(uint32_t botGuidLow, uint32_t nowMs)
@@ -2040,6 +2126,7 @@ public:
         bool scanned = false;      // bag/mailbox walks ran this pass
         uint32_t bagCount = 0;       // order item in bags (delivery gate, reporting)
         uint32_t mailboxCount = 0;   // order item in the mailbox
+        bool enchantDepositDue = false; // an enchant row holds reagents a timeout must walk to the bank
         uint32_t farmItemId = 0;     // item actually farmed (0 = the order item)
         uint32_t farmBagCount = 0;   // farm-leg item in bags (no-progress clock)
         uint32_t bankCount = 0;      // guild bank stock, valid when bankChecked
@@ -2242,10 +2329,13 @@ public:
                 {
                     // The farm time ran out: what the bot holds still goes to
                     // the guild (bags now, mailbox via the mail leg), and the
-                    // order ends once the delivery drain reports back. With
+                    // order ends once the delivery drain reports back. An
+                    // enchant row holds no output item, but its reagents walk
+                    // the same delivery leg instead of stranding. With
                     // nothing held at all it ends right away, and a keep round
                     // ends the keep with it.
-                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0 ||
+                        (record.type == OrderType::Enchant && in.enchantDepositDue))
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::Timeout;
@@ -2282,8 +2372,10 @@ public:
                 else if (IsOrderNoProgress(record.workedNoGainSec))
                 {
                     // Same deliver-first end as the timeout: the bot brings
-                    // what it holds, then the order ends cant/noprogress.
-                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    // what it holds, then the order ends cant/noprogress. An
+                    // enchant row's reagents ride along the same way.
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0 ||
+                        (record.type == OrderType::Enchant && in.enchantDepositDue))
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::NoProgress;
@@ -3064,7 +3156,11 @@ void SendNeedWhisper(OrderRecord const& order)
         return;
 
     ItemPrototype const* output = sObjectMgr.GetItemPrototype(order.itemId);
-    std::string message = "To make " + (output ? output->Name1 : std::to_string(order.itemId)) + " I still need ";
+    std::string outputName = output ? output->Name1 : std::to_string(order.itemId);
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            outputName = enchant->SpellName[0].c_str();
+    std::string message = "To make " + outputName + " I still need ";
     for (NeedItem const& need : order.needItems)
     {
         if (message.back() != ' ')
@@ -3408,6 +3504,33 @@ void NoteSupplyProgress(uint32_t botGuidLow)
     OrderStore::Instance().NoteSupplyProgress(botGuidLow);
 }
 
+void NoteEnchantReadyWhispered(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantReadyWhispered(botGuidLow);
+}
+
+void FinishEnchantDeposit(uint32_t botGuidLow)
+{
+    // A cancelled row disappears with the reagents banked; a timed-out one
+    // ends cant with its reason. Unspent guild gold still owed turns the
+    // row into a refund stub instead of erasing it, so the refund drain
+    // collects it at the next banker visit.
+    std::optional<OrderRecord> row = Find(botGuidLow);
+    if (!row || row->type != OrderType::Enchant || row->state != OrderState::Delivering)
+        return;
+    if (!row->cancelled)
+    {
+        SetState(botGuidLow, OrderState::Cant, row->reason);
+        return;
+    }
+    if (row->guildGoldHeld > 0)
+    {
+        OrderStore::Instance().ParkRefundStub(botGuidLow);
+        return;
+    }
+    OrderStore::Instance().EraseRow(botGuidLow);
+}
+
 void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
 {
     OrderStore::Instance().NoteBankEmpty(botGuidLow, itemId);
@@ -3587,6 +3710,10 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
     std::string itemName = proto ? proto->Name1 : "?";
+    // An enchant row carries the spell id: the addon shows the enchant name.
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            itemName = enchant->SpellName[0].c_str();
     std::string zone = ZoneName(order.farmZoneId);
     if (order.type == OrderType::Buy && zone == "-")
         zone = "Auction House";
@@ -3692,6 +3819,16 @@ void Update(uint32_t diff)
         in.farmItemId = (snapshot.type == OrderType::Craft && snapshot.farmItemId) ? snapshot.farmItemId : 0;
         in.farmBagCount = scanDue && online && in.farmItemId ? bot->GetItemCount(in.farmItemId) :
             (in.farmItemId ? 0 : in.bagCount);
+        // A timed-out enchant row banks its reagents instead of ending bare:
+        // any reagent held counts, capped at one cast further down the line.
+        in.enchantDepositDue = false;
+        if (scanDue && online && snapshot.type == OrderType::Enchant && snapshot.itemId)
+            for (uint32_t reagentId : ::ai::EnchantReagentsFor(snapshot.itemId))
+                if (reagentId && bot->GetItemCount(reagentId))
+                {
+                    in.enchantDepositDue = true;
+                    break;
+                }
         in.workedMs = diff;
         in.nowMs = now;
         // Direct children still in progress (a running row, or a queued

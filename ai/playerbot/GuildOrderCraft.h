@@ -78,8 +78,29 @@ inline uint32 CraftAffordableCasts(SpellEntry const* pSpellInfo, uint32 casts, H
     }
     return affordable;
 }
+// Reagents of an enchant spell for the order keep set: an enchant order's
+// record holds the spell id, so the protected walk below reaches the
+// materials through this instead of a create-item recipe. Empty for anything
+// that is not an enchant spell.
+inline std::vector<uint32> EnchantReagentsFor(uint32 spellId)
+{
+    std::vector<uint32> reagents;
+    const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+    if (!pSpellInfo || pSpellInfo->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+        return reagents;
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!pSpellInfo->ReagentCount[i] || pSpellInfo->Reagent[i] <= 0)
+            continue;
+        reagents.push_back(uint32(pSpellInfo->Reagent[i]));
+    }
+    return reagents;
+}
+
 // Direct reagents of an item through recipes the bot knows, for the order
-// keep set: one spell-map scan per item. Callers cache per order (the set
+// keep set: one spell-map scan per item. An enchant spell id resolves to its
+// own reagents when the bot knows it, so the protected walk covers enchant
+// materials through the same callback. Callers cache per order (the set
 // below), never per item tick.
 inline std::vector<uint32> KnownReagentsFor(Player* bot, uint32 itemId)
 {
@@ -107,6 +128,10 @@ inline std::vector<uint32> KnownReagentsFor(Player* bot, uint32 itemId)
         }
         return reagents;
     }
+    // No create-item recipe makes this: it may be an enchant spell the bot
+    // knows, whose reagents the order reserves the same way.
+    if (bot->HasSpell(itemId))
+        return EnchantReagentsFor(itemId);
     return reagents;
 }
 

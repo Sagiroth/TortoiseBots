@@ -154,8 +154,12 @@ void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
 // over, like any farmed item. World thread only (the drains) or the bot's
 // map-thread action.
 void NoteSupplyProgress(uint32_t botGuidLow);
-// A banker visit found none of the item: skip the bank leg for it until the
-// cooldown. A move clears the marker. World thread only (the drains).
+// The enchant ready whisper went out: a relapse to working and back never
+// repeats it. Memory-only (never persisted); map thread only (the ladder).
+void NoteEnchantReadyWhispered(uint32_t botGuidLow);
+// An enchant deposit delivery ran dry: a cancelled row disappears, a timed
+// out one ends cant with its reason. World thread only (the delivery drain).
+void FinishEnchantDeposit(uint32_t botGuidLow);
 void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId);
 void ClearBankEmpty(uint32_t botGuidLow);
 // A mailbox search came back empty for the item: skip its mail leg until
