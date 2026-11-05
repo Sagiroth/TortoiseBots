@@ -211,18 +211,19 @@ namespace ai
     // rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). "Walk" is the reach action's
     // walk (the attack order carries it); "Hit" is the swing at contact; "Done" hands the Son to the take/drag
     // branches once it fights or follows.
-    enum class SeekTankPullStep : std::uint8_t
+    enum class SeekPullStep : std::uint8_t
     {
         Walk = 0,
         Hit = 1,
         Done = 2,
     };
 
-    inline SeekTankPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
+    // The step itself keeps the pull's name; the enum is SeekPullStep so the two do not hide each other.
+    inline SeekPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
     {
         if (sonInCombat || sonOnTank)
-            return SeekTankPullStep::Done;
-        return tankToSonYd <= kSeekPullReachYd ? SeekTankPullStep::Hit : SeekTankPullStep::Walk;
+            return SeekPullStep::Done;
+        return tankToSonYd <= kSeekPullReachYd ? SeekPullStep::Hit : SeekPullStep::Walk;
     }
 
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive

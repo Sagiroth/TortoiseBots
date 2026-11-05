@@ -140,12 +140,12 @@ int main()
     // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to, not dropped after one target
     // set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son in
     // combat). Inside the swing's reach it is hit; once it fights, or follows the tank, the take/drag branch owns it.
-    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekTankPullStep::Walk);
-    CHECK(SeekTankPullStep(false, false, 60.0f) == SeekTankPullStep::Walk);
-    CHECK(SeekTankPullStep(false, false, 5.0f) == SeekTankPullStep::Hit);
-    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekTankPullStep::Hit);
-    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekTankPullStep::Done);
-    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekTankPullStep::Done);
+    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 60.0f) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 5.0f) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekPullStep::Done);
+    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekPullStep::Done);
 
     // SeekTankPullHitNotHeld: the pulling tank's own hit on a Son at 100 % that is not fighting is exempt from the
     // seek hold, or the hold would stand the swing down and the Son would never aggro; once the Son fights, the hold
