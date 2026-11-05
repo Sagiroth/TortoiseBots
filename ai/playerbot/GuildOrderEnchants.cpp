@@ -47,10 +47,132 @@ std::string ToLower(std::string value)
 
 } // namespace
 
+// Spell teaching a recipe item teaches: first lowest-entry item whose use
+// spell learns that spell. Trained-from-trainer rows have no item and stay 0.
+// Shared with the Professions missing-recipe line (commands/Professions.cpp).
+uint32_t GuildOrderRecipeItemFor(uint32_t spellId)
+{
+    uint32_t found = 0;
+    for (uint32 id = 0; id < sItemStorage.GetMaxEntry(); ++id)
+    {
+        ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(id);
+        if (!proto || proto->Class != ITEM_CLASS_RECIPE)
+            continue;
+        for (uint32 e = 0; e < MAX_ITEM_PROTO_SPELLS; ++e)
+        {
+            if (!proto->Spells[e].SpellId)
+                continue;
+            SpellEntry const* use = sSpellMgr.GetSpellEntry(proto->Spells[e].SpellId);
+            if (!use)
+                continue;
+            for (uint32 f = 0; f < MAX_EFFECT_INDEX; ++f)
+            {
+                if (use->Effect[f] != SPELL_EFFECT_LEARN_SPELL || !use->EffectTriggerSpell[f])
+                    continue;
+                if (use->EffectTriggerSpell[f] == spellId && (!found || id < found))
+                    found = id;
+            }
+        }
+    }
+    return found;
+}
+
+// Lowest required skill among this trainer's rows that teach the spell.
+bool GuildOrderTaughtByTrainer(uint32_t spellId, uint32_t trainerType,
+    TrainerSpellData const* spells, uint32_t& reqSkill)
+{
+    if (!spells || trainerType != TRAINER_TYPE_TRADESKILLS)
+        return false;
+    bool found = false;
+    for (auto const& entry : spells->spellList)
+    {
+        TrainerSpell const* tSpell = &entry.second;
+        if (!tSpell || !tSpell->spell)
+            continue;
+        bool teaches = tSpell->spell == spellId;
+        if (SpellEntry const* teaching = sSpellMgr.GetSpellEntry(tSpell->spell))
+            for (uint32 e = 0; e < MAX_EFFECT_INDEX && !teaches; ++e)
+                teaches = teaching->Effect[e] == SPELL_EFFECT_LEARN_SPELL &&
+                    teaching->EffectTriggerSpell[e] == spellId;
+        if (!teaches)
+            continue;
+        if (!found || tSpell->reqSkillValue < reqSkill)
+            reqSkill = tSpell->reqSkillValue;
+        found = true;
+    }
+    return found;
+}
+
+// Any trade-skill trainer anywhere teaching this spell (the bot visits the
+// trainer to learn it; reachability is the travel layer's job, not this
+// listing's). Cached per run like the factory's trainer sweeps.
+bool GuildOrderTaughtByAnyTrainer(uint32_t spellId, uint32_t& reqSkill)
+{
+    struct TrainerCache
+    {
+        uint32_t trainerType = 0;
+        TrainerSpellData const* spells = nullptr;
+    };
+    static std::vector<TrainerCache> tradeskillTrainers;
+    static bool cached = false;
+    if (!cached)
+    {
+        for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+        {
+            CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
+            if (!co || co->trainer_type != TRAINER_TYPE_TRADESKILLS)
+                continue;
+            uint32 trainerId = co->trainer_id ? co->trainer_id : co->entry;
+            TrainerSpellData const* spells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
+            if (!spells)
+                spells = sObjectMgr.GetNpcTrainerSpells(trainerId);
+            if (!spells)
+                continue;
+            bool known = false;
+            for (TrainerCache const& cachedTrainer : tradeskillTrainers)
+                if (cachedTrainer.spells == spells)
+                    known = true;
+            if (!known)
+                tradeskillTrainers.push_back({ co->trainer_type, spells });
+        }
+        cached = true;
+    }
+    bool found = false;
+    for (TrainerCache const& entry : tradeskillTrainers)
+    {
+        uint32_t need = 0;
+        if (!GuildOrderTaughtByTrainer(spellId, entry.trainerType, entry.spells, need))
+            continue;
+        if (!found || need < reqSkill)
+            reqSkill = need;
+        found = true;
+    }
+    return found;
+}
+
+// Required skill to learn the spell: the same rule as the Professions
+// missing-recipe line — the lowest trainer requirement teaching it, and the
+// recipe item's RequiredSkillRank; the lower wins when both exist.
+uint32_t GuildOrderEnchantReqSkill(uint32_t spellId, uint32_t recipeItem)
+{
+    uint32_t trainerSkill = 0;
+    bool const fromTrainer = GuildOrderTaughtByAnyTrainer(spellId, trainerSkill);
+    ItemPrototype const* recipeProto = recipeItem ? sObjectMgr.GetItemPrototype(recipeItem) : nullptr;
+    uint32_t const itemSkill = recipeProto ? recipeProto->RequiredSkillRank : 0;
+    if (fromTrainer && recipeProto)
+        return std::min(trainerSkill, itemSkill);
+    if (fromTrainer)
+        return trainerSkill;
+    if (recipeProto)
+        return itemSkill;
+    return 0;
+}
+
 // One scan over the Enchanting skill line: rows whose spell is a permanent
 // enchant (any effect SPELL_EFFECT_ENCHANT_ITEM, nothing created) join the
-// catalogue; oils, wands and rods fall out. The lowest min_value over the
-// rows teaching a spell is its required skill; reagents are read off the
+// catalogue; oils, wands and rods fall out. The required skill comes from
+// the same sources as the Professions missing-recipe line (lowest trainer
+// requirement, recipe item's RequiredSkillRank); reagents are read off the
 // spell in slot order and the rods off its totem list.
 void BuildGuildOrderEnchantIndex()
 {
@@ -66,7 +188,6 @@ void BuildGuildOrderEnchantIndex()
             continue;
         bySpell[ability->spellId].push_back(ability);
     }
-    std::vector<EnchantEntry>& index = EnchantIndex();
     for (auto const& [spellId, rows] : bySpell)
     {
         SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
@@ -106,8 +227,7 @@ void BuildGuildOrderEnchantIndex()
             entry.name = spell->SpellName[0];
         entry.lowerName = ToLower(entry.name);
         entry.slot = slot;
-        for (SkillLineAbilityEntry const* ability : rows)
-            EnchantReqSkillFor(ability->skillId, ability->min_value, entry.reqSkill);
+        entry.reqSkill = GuildOrderEnchantReqSkill(spellId, GuildOrderRecipeItemFor(spellId));
         for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
             if (spell->ReagentCount[i] && spell->Reagent[i] > 0)
                 entry.reagents.emplace_back(uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]));

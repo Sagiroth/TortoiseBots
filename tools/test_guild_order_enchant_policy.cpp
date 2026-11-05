@@ -67,13 +67,20 @@ int main()
     CHECK(!IsCatalogueEnchantRow(333, true, false, false, 36)); // learn spell
     CHECK(!IsCatalogueEnchantRow(333, true, false, false, 44)); // skill step effect
 
-    // Required skill: the lowest min_value over the teaching rows on the
-    // Enchanting line; other lines never lower it.
-    uint32_t best = 0;
-    CHECK(EnchantReqSkillFor(333, 265, best) && best == 265);
-    CHECK(EnchantReqSkillFor(333, 320, best) && best == 265);
-    CHECK(EnchantReqSkillFor(333, 200, best) && best == 200);
-    CHECK(!EnchantReqSkillFor(164, 10, best) && best == 200);
+    // Required skill mirrors the Professions missing-recipe line: the lower
+    // of the trainer requirement and the recipe item's RequiredSkillRank.
+    // Trainer-taught enchants take the trainer value (Minor Stamina 50,
+    // Lesser Stamina 130, Stamina 170); formula-taught ones take the item
+    // rank (Greater Stamina 245, Superior Stamina 300); both present takes
+    // the lower; neither gives 0.
+    CHECK(EnchantReqSkillCombine(true, 50, false, 0) == 50);
+    CHECK(EnchantReqSkillCombine(true, 130, false, 0) == 130);
+    CHECK(EnchantReqSkillCombine(true, 170, false, 0) == 170);
+    CHECK(EnchantReqSkillCombine(false, 0, true, 245) == 245);
+    CHECK(EnchantReqSkillCombine(false, 0, true, 300) == 300);
+    CHECK(EnchantReqSkillCombine(true, 200, true, 245) == 200);
+    CHECK(EnchantReqSkillCombine(true, 250, true, 245) == 245);
+    CHECK(EnchantReqSkillCombine(false, 0, false, 0) == 0);
 
     // Sort: required skill ascending, then name.
     CHECK(EnchantSortLess(Entry("b", 100), Entry("a", 200)));

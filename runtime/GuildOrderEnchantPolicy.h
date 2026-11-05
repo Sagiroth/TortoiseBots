@@ -188,18 +188,23 @@ inline bool IsCatalogueEnchantRow(uint32_t skillId, bool hasPermanentEnchantEffe
     return hasPermanentEnchantEffect && !createsItem;
 }
 
-// Required skill for one catalogue row: the ability's min_value (the yellow
-// threshold, the skill the formula is aimed at). Vanilla enchant rows carry
-// req_skill_value 1 (trainers gate by rank instead); sorting or gating on it
-// would put every vanilla enchant at 1, so the catalogue uses min_value.
-// Take the lowest min over the rows teaching the spell.
-inline bool EnchantReqSkillFor(uint32_t rowSkillId, uint32_t rowMinValue, uint32_t& best)
+// Required skill to learn the spell, mirroring the Professions missing-recipe
+// line (commands/Professions.cpp): the lowest trainer requirement teaching
+// it, and the recipe item's RequiredSkillRank; the lower wins when both
+// exist, 0 when neither names one. The core-data builder in
+// ai/playerbot/GuildOrderEnchants.cpp resolves fromTrainer/trainerSkill off
+// the trainer tables and itemSkill off the recipe item's prototype, then
+// calls this; the unit test covers the combine directly.
+inline uint32_t EnchantReqSkillCombine(bool fromTrainer, uint32_t trainerSkill,
+    bool hasRecipeItem, uint32_t itemSkill)
 {
-    if (rowSkillId != 333)
-        return false;
-    if (best == 0 || rowMinValue < best)
-        best = rowMinValue;
-    return true;
+    if (fromTrainer && hasRecipeItem)
+        return trainerSkill < itemSkill ? trainerSkill : itemSkill;
+    if (fromTrainer)
+        return trainerSkill;
+    if (hasRecipeItem)
+        return itemSkill;
+    return 0;
 }
 
 } // namespace GuildOrders
