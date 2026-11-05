@@ -28948,6 +28948,39 @@ static DungeonPlan FiringPlan(std::uint32_t flags = 0)
     return plan;
 }
 
+// Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik's boss row carries the default
+// radius 30, and the stand search's inner ring was radius + 5 = 35 yd against its 25 yd
+// outer bound: empty by construction, so every approach pause around her said "no safe
+// stand 35.0-25.0 yd from it" and the run could never stand anywhere near her. A boss
+// row's radius is its spawn-search reach, not a pull band: its ring is 15-25 yd like any
+// other stand, and a stand inside it is taken; a pull row keeps its pull band.
+static void TestBossRowApproachStandRingNotEmpty()
+{
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    CHECK(b.radius == 30.0f);                            // the default boss radius
+    CHECK(ApproachStandMinRing(b) == kApproachStandMinYd);
+    CHECK(ApproachStandMinRing(b) <= kApproachStandYd);  // the ring is not empty
+    PlanStep p = PullStep(40, {1});
+    CHECK(p.radius == 15.0f && ApproachStandMinRing(p) == 20.0f);
+    PlanStep wide = PullStep(40, {1});
+    wide.radius = 22.0f;
+    CHECK(ApproachStandMinRing(wide) == 27.0f);          // past the 25 yd bound: the search finds none, as before
+
+    // The search itself: a boss step whose approach found no way asks for a stand, and
+    // one 20 yd from it (inside the old empty ring) is taken.
+    DungeonPlan plan;
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    ApproachNoWay(r, f, b, "no walkable path toward the boss at 40.0 0.0 0.0");
+    CHECK(r.state == State::Running && r.approachStandWanted && r.approachStand == 1);
+    CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
+    CHECK(r.approachStand == 2 && r.state == State::Running);
+}
+
 // Stormwrought Ruins r36 slot J step 553 / Windhorn Canyon r36 slot G step 1854: the step's
 // pull went out with the pack in sight but out of the tank's shot, its firing stands spent;
 // the refused pull counts no pull and gets the approach stand search, then (none found) the deferral.
@@ -35062,6 +35095,7 @@ int main()
     TestApproachHopCapCountsHopsWithoutProgress();
     TestApproachCapTriesAStandNearThePackBeforeThePause();
     TestApproachStandIsASafeRingSpot();
+    TestBossRowApproachStandRingNotEmpty();
     TestApproachStandWalkIsAHopAndRewindsForgetIt();
     TestUnreachablePackIsDeferredThenPulledOnTheWay();
     TestDeferredPackNeverReachedIsSkippedAtTheLegEnd();

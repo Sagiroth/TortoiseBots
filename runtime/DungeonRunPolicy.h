@@ -11122,8 +11122,13 @@ inline void AwaitPull(Run& r)
 
 // The innermost ring of the stand search: kApproachStandMinYd, or the step's pull radius
 // plus kApproachStandPullMarginYd when that is more (none when that is past kApproachStandYd).
+// A boss row's radius is the reach of its spawn search, not a pull band: its inner ring
+// stays kApproachStandMinYd (a hovering boss with the default radius 30 left the ring
+// [35, 25] empty by construction, so every stand search around a boss found none).
 inline float ApproachStandMinRing(const PlanStep& s)
 {
+    if (s.kind == PlanStepKind::Boss)
+        return kApproachStandMinYd;
     return std::max(kApproachStandMinYd, s.radius + kApproachStandPullMarginYd);
 }
 
