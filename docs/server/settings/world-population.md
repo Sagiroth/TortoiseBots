@@ -909,7 +909,7 @@ Lets your own alts learn class-quest spells on level-up, the same way pool bots 
 <details>
 <summary>How it works in detail</summary>
 
-Covers characters you add with `.bot add` and autonomous alt bots. On each level-up (or talent change) the alt learns every class-quest spell it is old enough for, plus the quest's reward item (for example shaman totems). It does not depend on `AiPlayerbot.AutoLearnQuestSpells`. Trainer spells stay paid: take the alt to a trainer as usual. The spells stay on the character when you log in to it yourself.
+Covers characters you add with `.bot add` and autonomous alt bots. When the alt logs in, and on each level-up or talent change, it learns every class-quest spell it is old enough for, plus the quest's reward item (for example shaman totems). It does not depend on `AiPlayerbot.AutoLearnQuestSpells`. Trainer spells stay paid: take the alt to a trainer as usual. The spells stay on the character when you log in to it yourself.
 
 </details>
 
