@@ -278,10 +278,40 @@ public:
             } while (relists->NextRow());
         }
 
+        // Disenchant queue rows ride with the order store: an item taken for
+        // disenchanting survives a restart and is re-queued instead of being
+        // eaten by the maintenance disenchant.
+        m_disenchant.clear();
+        std::unique_ptr<QueryResult> queued(CharacterDatabase.Query(
+            "SELECT `bot_guid`, `sender_guid`, `item_guid`, `item_entry`, `item_name`, "
+            "`pending`, `results`, `created_at` FROM `tortoise_bots_guild_disenchant`"));
+        size_t queuedCount = 0;
+        if (queued)
+        {
+            do
+            {
+                Field* fields = queued->Fetch();
+                DisenchantQueueEntry entry;
+                entry.botGuidLow = fields[0].GetUInt32();
+                entry.senderGuidLow = fields[1].GetUInt32();
+                entry.itemGuidLow = fields[2].GetUInt32();
+                entry.itemId = fields[3].GetUInt32();
+                entry.itemName = fields[4].GetCppString();
+                entry.pendingResults = fields[5].GetUInt32() != 0;
+                entry.results = fields[6].GetCppString();
+                if (!entry.botGuidLow || !entry.senderGuidLow || !entry.itemId)
+                    continue;
+                m_disenchant[entry.botGuidLow].push_back(entry);
+                ++queuedCount;
+            } while (queued->NextRow());
+        }
+
         m_initialized = true;
         TB_LOG_BASIC("TortoiseBots: loaded %zu guild order(s) from database.", m_orders.size());
         if (relistCount)
             TB_LOG_BASIC("TortoiseBots: loaded %zu guild relist ledger row(s).", relistCount);
+        if (queuedCount)
+            TB_LOG_BASIC("TortoiseBots: loaded %zu disenchant queue row(s).", queuedCount);
     }
 
     // The pool reads the store before the startup sequence may have loaded
@@ -1723,7 +1753,7 @@ public:
     }
 
     // The received rows the bank trip has to pay out, oldest first. Any
-    // thread: the bank action checks what it can pay, the drain pays it.
+    // thread: the bank action checks what it can pay now, the drain pays it.
     std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1735,6 +1765,92 @@ public:
             if (RelistNeedsDeposit(entry))
                 out.push_back(entry);
         return out;
+    }
+
+    // One queued disenchant row: the table write lands before memory
+    // changes, so a restart never loses an item the table holds. Map thread
+    // only (the intake and the service action).
+    void NoteDisenchantQueued(DisenchantQueueEntry const& entry)
+    {
+        if (!entry.botGuidLow || !entry.senderGuidLow || !entry.itemId)
+            return;
+        DisenchantQueueEntry row = entry;
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_disenchant` (`bot_guid`, `sender_guid`, `item_guid`, "
+                "`item_entry`, `item_name`, `pending`, `results`, `created_at`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s', FROM_UNIXTIME('%u'))",
+                row.botGuidLow, row.senderGuidLow, row.itemGuidLow, row.itemId, row.itemName.c_str(),
+                row.pendingResults ? 1u : 0u, row.results.c_str(),
+                static_cast<uint32_t>(std::time(nullptr))))
+            return;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
+        for (DisenchantQueueEntry& existing : rows)
+        {
+            if (existing.itemGuidLow == row.itemGuidLow || existing.itemId == row.itemId)
+            {
+                existing = row;
+                return;
+            }
+        }
+        rows.push_back(row);
+    }
+
+    std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_disenchant.find(botGuidLow);
+        if (it == m_disenchant.end())
+            return {};
+        return it->second;
+    }
+
+    bool SaveDisenchant(DisenchantQueueEntry const& row)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_disenchant` (`bot_guid`, `sender_guid`, `item_guid`, "
+                "`item_entry`, `item_name`, `pending`, `results`, `created_at`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s', FROM_UNIXTIME('%u'))",
+                row.botGuidLow, row.senderGuidLow, row.itemGuidLow, row.itemId, row.itemName.c_str(),
+                row.pendingResults ? 1u : 0u, row.results.c_str(),
+                static_cast<uint32_t>(std::time(nullptr))))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
+        for (DisenchantQueueEntry& existing : rows)
+        {
+            if (existing.itemGuidLow == row.itemGuidLow || existing.itemId == row.itemId)
+            {
+                existing = row;
+                return true;
+            }
+        }
+        rows.push_back(row);
+        return true;
+    }
+
+    bool DeleteDisenchant(uint32_t botGuidLow, uint32_t itemGuidLow)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "DELETE FROM `tortoise_bots_guild_disenchant` WHERE `bot_guid` = '%u' AND `item_guid` = '%u'",
+                botGuidLow, itemGuidLow))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_disenchant.find(botGuidLow);
+        if (it == m_disenchant.end())
+            return true;
+        std::vector<DisenchantQueueEntry>& rows = it->second;
+        for (auto row = rows.begin(); row != rows.end(); ++row)
+        {
+            if (row->itemGuidLow == itemGuidLow)
+            {
+                rows.erase(row);
+                break;
+            }
+        }
+        if (rows.empty())
+            m_disenchant.erase(it);
+        return true;
     }
 
     // One stale sweep a minute, not one per world tick.
@@ -2734,6 +2850,9 @@ private:
     // Relisted auction surplus per bot, oldest first: the guild-funded value
     // that is still on the auction house, in the mail or in the bot's hands.
     std::unordered_map<uint32_t, std::vector<RelistLedgerEntry>> m_relist;
+    // Disenchant service queue per bot, oldest first: items a member mailed
+    // for disenchanting, with the landed results once the cast made them.
+    std::unordered_map<uint32_t, std::vector<DisenchantQueueEntry>> m_disenchant;
     uint64_t m_lastRelistExpireSec = 0;
     // A pending Meet press per bot (giver guid, request time in server
     // uptime ms), memory only: the lead consumes it, and a restart drops
@@ -3682,6 +3801,26 @@ bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq)
 std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
 {
     return OrderStore::Instance().RelistDeposits(botGuidLow);
+}
+
+void NoteDisenchantQueued(DisenchantQueueEntry const& entry)
+{
+    OrderStore::Instance().NoteDisenchantQueued(entry);
+}
+
+std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().DisenchantQueued(botGuidLow);
+}
+
+bool SaveDisenchantRow(DisenchantQueueEntry const& entry)
+{
+    return OrderStore::Instance().SaveDisenchant(entry);
+}
+
+bool DeleteDisenchantRow(uint32_t botGuidLow, uint32_t itemGuidLow)
+{
+    return OrderStore::Instance().DeleteDisenchant(botGuidLow, itemGuidLow);
 }
 
 void NoteBagsFull(uint32_t botGuidLow)

@@ -6,6 +6,13 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "CheckMountStateAction.h"
+#include "MailAction.h"
+#include "Mail/Mail.h"
+#include "../../../../runtime/GuildOrderDisenchantPolicy.h"
+#include "../../../../runtime/GuildOrderStore.h"
+
+#include <unordered_map>
+#include <vector>
 
 using namespace ai;
 
@@ -767,8 +774,11 @@ bool DisenchantRandomItemAction::Execute(Event& event)
         }
 
         // Order stock is never disenchanted: the keep set already shields
-        // it from the usage list, this covers the id path.
+        // it from the usage list, this covers the id path. Queued service
+        // items wait for their own cast the same way.
         if (bot->GetGuildId() && GuildOrderConsumesItem(bot, item))
+            continue;
+        if (bot->GetGuildId() && TortoiseBots::GuildOrders::DisenchantServiceHasItem(item))
             continue;
 
         ItemQualifier itemQualifier(item);
@@ -786,3 +796,316 @@ bool DisenchantRandomItemAction::Execute(Event& event)
 
     return false;
 };
+
+bool GuildDisenchantServiceAction::isUseful()
+{
+    if (!bot->GetGuildId())
+        return false;
+    bool hasWork = !TortoiseBots::GuildOrders::DisenchantServiceQueue().empty();
+    return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), bot->IsMoving(),
+        bot->IsMounted(), bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
+}
+
+// Mails one stack back to its sender (the live bag stack: the intake moved
+// it there). No gold taken, nothing of the bot's own added; one item per
+// mail on the core side. False when the stack is gone, so the stranded row
+// drops instead of looping.
+namespace ai
+{
+namespace
+{
+bool MailServiceStackBack(Player* bot, uint32_t senderLow, Item* item, std::string const& subject,
+    std::string const& reason)
+{
+    if (!bot || !item)
+        return false;
+    Player* sender = sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, senderLow));
+    ObjectGuid receiverGuid = sender ? sender->getObjectGuid() : ObjectGuid(HIGHGUID_PLAYER, senderLow);
+    std::ostringstream body;
+    body << "Hello,\n\n";
+    if (reason.empty())
+        body << "Here are the materials from your disenchant request.\n\n";
+    else
+        body << "I could not disenchant this (" << item->GetProto()->Name1 << "): " << reason << ".\n\n";
+    body << bot->GetName() << '\n';
+    bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);
+    item->DeleteFromInventoryDB();
+    item->SetOwnerGuid(receiverGuid);
+    if (item->GetState() != ITEM_NEW)
+        item->FSetState(ITEM_CHANGED);
+    item->SaveToDB();
+    MailDraft draft(subject, body.str());
+    draft.AddItem(item);
+    draft.SendMailTo(MailReceiver(sender, receiverGuid), MailSender(bot));
+    return true;
+}
+
+// Mails exactly what one cast made back to the member: one item per mail on
+// the core side, the subject naming the disenchanted item. Counts shrink
+// live off the bag stacks as each piece is mailed, so an interrupted batch
+// keeps the remainder queued for the next mailbox visit.
+void MailServiceResultsBack(Player* bot, TortoiseBots::GuildOrders::DisenchantServiceItem& queued)
+{
+    for (TortoiseBots::GuildOrders::DisenchantServiceResult& result : queued.results)
+    {
+        while (result.count > 0)
+        {
+            // Exactly what this cast made, never the bot's own stock: prefer
+            // a whole stack that fits, else split one down to the remainder
+            // with a core split packet so the mail holds only service loot.
+            Item* stack = nullptr;
+            Item* splitter = nullptr;
+            for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && !stack && !splitter; ++slot)
+            {
+                Item* candidate = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (!candidate || candidate->GetEntry() != result.itemId)
+                    continue;
+                if (candidate->GetCount() <= result.count)
+                    stack = candidate;
+                else if (!splitter)
+                    splitter = candidate;
+            }
+            for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !stack && !splitter; ++bag)
+            {
+                Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+                if (!pack)
+                    continue;
+                for (uint32_t slot = 0; slot < pack->GetBagSize() && !stack && !splitter; ++slot)
+                {
+                    Item* candidate = pack->GetItemByPos(uint8_t(slot));
+                    if (!candidate || candidate->GetEntry() != result.itemId)
+                        continue;
+                    if (candidate->GetCount() <= result.count)
+                        stack = candidate;
+                    else if (!splitter)
+                        splitter = candidate;
+                }
+            }
+            if (!stack && splitter)
+            {
+                ItemPosCountVec dest;
+                uint32_t splitCount = splitter->GetCount() - result.count;
+                if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, result.itemId, splitCount) == EQUIP_ERR_OK &&
+                    !dest.empty())
+                {
+                    uint32_t before = bot->GetItemCount(result.itemId);
+                    bot->SplitItem((splitter->GetBagSlot() << 8) | splitter->GetSlot(),
+                        dest.front().pos, splitCount);
+                    if (bot->GetItemCount(result.itemId) == before)
+                        stack = splitter;
+                }
+            }
+            if (!stack)
+                break;
+            uint32_t mailed = stack->GetCount();
+            std::string subject =
+                TortoiseBots::GuildOrders::DisenchantServiceMailSubject(queued.itemName);
+            if (!MailServiceStackBack(bot, queued.senderLow, stack, subject, ""))
+                break;
+            result.count = mailed >= result.count ? 0 : result.count - mailed;
+        }
+    }
+} // namespace
+} // namespace ai
+
+bool GuildDisenchantServiceAction::Execute(Event& event)
+{
+    (void)event;
+    // The store owns the queue (persisted per row): mirror it into the
+    // process list once per session, so a restart re-queues instead of
+    // stranding the item. From here on the head below is the unit of work.
+    static uint32_t mirroredForBot = 0;
+    if (mirroredForBot != bot->GetGUIDLow())
+    {
+        mirroredForBot = bot->GetGUIDLow();
+        auto& local = TortoiseBots::GuildOrders::DisenchantServiceQueue();
+        local.clear();
+        for (TortoiseBots::GuildOrders::DisenchantQueueEntry const& row :
+            TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()))
+        {
+            TortoiseBots::GuildOrders::DisenchantServiceItem item;
+            item.senderLow = row.senderGuidLow;
+            item.itemGuidLow = row.itemGuidLow;
+            item.itemId = row.itemId;
+            item.itemName = row.itemName;
+            item.pendingResults = row.pendingResults;
+            item.results = TortoiseBots::GuildOrders::ParseDisenchantResults(row.results);
+            local.push_back(item);
+        }
+    }
+    auto& queue = TortoiseBots::GuildOrders::DisenchantServiceQueue();
+    if (queue.empty())
+        return false;
+    // The cast leaves its results in a loot window on the item for the bot
+    // itself: the collect tick below takes it there, so a cast never
+    // reports success before its loot exists. Pending results ride the
+    // queue head until one mailbox visit mails them back.
+    TortoiseBots::GuildOrders::DisenchantServiceItem& head = queue.front();
+    if (head.pendingResults)
+    {
+        if (head.collectLootOpen)
+        {
+            ObjectGuid lootGuid = bot->GetLootGuid();
+            Loot* loot = sLootMgr.GetLoot(bot);
+            if (!lootGuid.IsEmpty() && loot)
+            {
+                for (uint8_t i = 0; i < MAX_NR_LOOT_ITEMS; ++i)
+                {
+                    LootItem* lootItem = loot->LootItemInSlot(i, bot->GetGUIDLow());
+                    if (!lootItem || lootItem->is_looted)
+                        continue;
+                    WorldPacket packet(CMSG_AUTOSTORE_LOOT_ITEM, 1);
+                    packet << i;
+                    bot->GetSession()->HandleAutostoreLootItemOpcode(packet);
+                }
+                head.results.clear();
+                std::unordered_map<uint32_t, uint32_t> after;
+                for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+                    if (Item* held = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                        after[held->GetEntry()] += held->GetCount();
+                for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+                {
+                    Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+                    if (!pack)
+                        continue;
+                    for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
+                        if (Item* held = pack->GetItemByPos(uint8_t(slot)))
+                            after[held->GetEntry()] += held->GetCount();
+                }
+                for (auto const& counted : after)
+                {
+                    uint32_t had = 0;
+                    auto found = head.bagBefore.find(counted.first);
+                    if (found != head.bagBefore.end())
+                        had = found->second;
+                    if (counted.second > had)
+                        head.results.push_back({counted.first, counted.second - had});
+                }
+                head.bagBefore.clear();
+                WorldPacket release(CMSG_LOOT_RELEASE, 8);
+                release << lootGuid;
+                bot->GetSession()->HandleLootReleaseOpcode(release);
+                {
+                    TortoiseBots::GuildOrders::DisenchantQueueEntry row;
+                    row.botGuidLow = bot->GetGUIDLow();
+                    row.senderGuidLow = head.senderLow;
+                    row.itemGuidLow = head.itemGuidLow;
+                    row.itemId = head.itemId;
+                    row.itemName = head.itemName;
+                    row.pendingResults = true;
+                    row.results = TortoiseBots::GuildOrders::FormatDisenchantResults(head.results);
+                    TortoiseBots::GuildOrders::SaveDisenchantRow(row);
+                }
+            }
+            head.collectLootOpen = false;
+        }
+        // Server-side mail, like the refusals: the bot need not stand at a mailbox.
+        MailServiceResultsBack(bot, head);
+        bool leftover = false;
+        for (TortoiseBots::GuildOrders::DisenchantServiceResult const& result : head.results)
+            if (result.count > 0)
+                leftover = true;
+        if (!leftover)
+        {
+            TortoiseBots::GuildOrders::DeleteDisenchantRow(bot->GetGUIDLow(), head.itemGuidLow);
+            queue.erase(queue.begin());
+        }
+        else
+        {
+            TortoiseBots::GuildOrders::DisenchantQueueEntry row;
+            row.botGuidLow = bot->GetGUIDLow();
+            row.senderGuidLow = head.senderLow;
+            row.itemGuidLow = head.itemGuidLow;
+            row.itemId = head.itemId;
+            row.itemName = head.itemName;
+            row.pendingResults = true;
+            row.results = TortoiseBots::GuildOrders::FormatDisenchantResults(head.results);
+            TortoiseBots::GuildOrders::SaveDisenchantRow(row);
+        }
+        return true;
+    }
+    TortoiseBots::GuildOrders::DisenchantServiceItem queued = head;
+    Item* item = bot->GetItemByGuid(ObjectGuid(HIGHGUID_ITEM, queued.itemGuidLow));
+    if (!item || item->GetEntry() != queued.itemId)
+    {
+        TortoiseBots::GuildOrders::DeleteDisenchantRow(bot->GetGUIDLow(), queued.itemGuidLow);
+        queue.erase(queue.begin());
+        return false;
+    }
+    ItemPrototype const* proto = item->GetProto();
+    if (!proto)
+    {
+        TortoiseBots::GuildOrders::DeleteDisenchantRow(bot->GetGUIDLow(), queued.itemGuidLow);
+        queue.erase(queue.begin());
+        return false;
+    }
+    // A bot without Enchanting mails everything back `noskill`: the member
+    // learns which bot to ask, and nothing of theirs is eaten.
+    if (!ai->HasSkill(SKILL_ENCHANTING))
+    {
+        MailServiceStackBack(bot, queued.senderLow, item, "Disenchant: noskill",
+            TortoiseBots::GuildOrders::DisenchantVerdictToken(
+                TortoiseBots::GuildOrders::DisenchantVerdict::NoSkill));
+        TortoiseBots::GuildOrders::DeleteDisenchantRow(bot->GetGUIDLow(), queued.itemGuidLow);
+        queue.erase(queue.begin());
+        return true;
+    }
+    bool disenchantable = proto->DisenchantID != 0 &&
+        (proto->Class == ITEM_CLASS_WEAPON || proto->Class == ITEM_CLASS_ARMOR);
+    bool isEpic = proto->Quality >= ITEM_QUALITY_EPIC;
+    uint32_t skill = bot->GetSkillValue(SKILL_ENCHANTING);
+    TortoiseBots::GuildOrders::DisenchantVerdict verdict =
+        TortoiseBots::GuildOrders::ClassifyDisenchantItem(true, disenchantable,
+            proto->ItemLevel, proto->RequiredLevel, skill, isEpic);
+    if (verdict != TortoiseBots::GuildOrders::DisenchantVerdict::Ok)
+    {
+        std::string token = TortoiseBots::GuildOrders::DisenchantVerdictToken(verdict);
+        MailServiceStackBack(bot, queued.senderLow, item, "Disenchant: " + token, token);
+        TortoiseBots::GuildOrders::DeleteDisenchantRow(bot->GetGUIDLow(), queued.itemGuidLow);
+        queue.erase(queue.begin());
+        return true;
+    }
+    std::string sourceName = proto->Name1;
+    head.bagBefore.clear();
+    for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        if (Item* held = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            head.bagBefore[held->GetEntry()] += held->GetCount();
+    for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+    {
+        Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+        if (!pack)
+            continue;
+        for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
+            if (Item* held = pack->GetItemByPos(uint8_t(slot)))
+                head.bagBefore[held->GetEntry()] += held->GetCount();
+    }
+    ItemQualifier itemQualifier(queued.itemId);
+    Event disenchantEvent = Event("guild disenchant service", "13262 " + chat->formatQItem(queued.itemId));
+    bool didCast = CastCustomSpellAction::Execute(disenchantEvent);
+    if (!didCast)
+    {
+        head.bagBefore.clear();
+        return false;
+    }
+    // The cast only started: the results arrive in the loot window on a
+    // later tick, so mark the head pending and let the collect pass above
+    // finish it instead of reading the bags too early.
+    head.collectLootOpen = true;
+    head.itemName = sourceName;
+    head.pendingResults = true;
+    {
+        TortoiseBots::GuildOrders::DisenchantQueueEntry row;
+        row.botGuidLow = bot->GetGUIDLow();
+        row.senderGuidLow = head.senderLow;
+        row.itemGuidLow = head.itemGuidLow;
+        row.itemId = head.itemId;
+        row.itemName = head.itemName;
+        row.pendingResults = true;
+        TortoiseBots::GuildOrders::SaveDisenchantRow(row);
+    }
+    Player* requester = event.GetOwner() ? event.GetOwner() : GetMaster();
+    ai->TellPlayer(requester, "Disenchanting " + chat->formatItem(itemQualifier),
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+    return true;
+}
+} // namespace ai

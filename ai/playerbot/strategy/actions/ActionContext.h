@@ -247,6 +247,7 @@ namespace ai
             creators["craft random item"] = [](PlayerbotAI* ai) { return new CraftRandomItemAction(ai); };
             creators["smart destroy item"] = [](PlayerbotAI* ai) { return new SmartDestroyItemAction(ai); };
             creators["disenchant random item"] = [](PlayerbotAI* ai) { return new DisenchantRandomItemAction(ai); };
+            creators["guild disenchant service"] = [](PlayerbotAI* ai) { return new GuildDisenchantServiceAction(ai); };
             creators["enchant random item"] = [](PlayerbotAI* ai) { return new EnchantRandomItemAction(ai); };
             creators["reset instances"] = [](PlayerbotAI* ai) { return new ResetInstancesAction(ai); };
             creators["reset raids"] = [](PlayerbotAI* ai) { return new ResetRaidsAction(ai); };

@@ -241,8 +241,23 @@ bool SaveRelistRow(RelistLedgerEntry const& row);
 // Drops one ledger row the same way. World thread only (the relist drain).
 bool DeleteRelistRow(uint32_t botGuidLow, uint32_t seq);
 // The received rows a bank trip has to pay out, oldest first. Any thread:
-// the bank action checks what the bot can pay now, the drain pays it.
+// the bank action checks what it can pay now, the drain pays it.
 std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow);
+
+// Disenchant service queue, persisted next to the order rows: one row per
+// item a member mailed for disenchanting. The intake writes it with the
+// checked synchronous execute before the item reaches the bags, so a
+// restart re-queues instead of stranding the item; the service drain
+// rewrites on landing results and deletes on mailing them back. Map thread
+// only (the intake and the service action).
+void NoteDisenchantQueued(DisenchantQueueEntry const& entry);
+// The bot's queued service items, oldest first. Any thread.
+std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow);
+// Rewrite one queued row (landed results, consumed item): same checked
+// write, false leaves memory untouched. Map thread only.
+bool SaveDisenchantRow(DisenchantQueueEntry const& entry);
+// Drop one queued row the same way. Map thread only.
+bool DeleteDisenchantRow(uint32_t botGuidLow, uint32_t itemGuidLow);
 
 // Drop parked refund stubs whose gold is back. World thread only (Update).
 void FinishRepaid();
