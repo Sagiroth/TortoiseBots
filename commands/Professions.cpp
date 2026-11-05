@@ -167,6 +167,30 @@ bool TaughtByAnyTrainer(uint32_t spellId, uint32_t& reqSkill)
     return found;
 }
 
+// Required skill of a known recipe, by the same rule the missing-recipe list
+// uses: the skill-line row's own value is 1 for trainer recipes. Cached, the
+// recipe item lookup scans the whole item table.
+uint32_t KnownRecipeReqSkill(uint32_t spellId, uint32_t fallback)
+{
+    static std::unordered_map<uint32_t, uint32_t> cache;
+    auto found = cache.find(spellId);
+    if (found != cache.end())
+        return found->second;
+    uint32_t reqSkill = fallback;
+    uint32_t trainerSkill = 0;
+    bool const fromTrainer = TaughtByAnyTrainer(spellId, trainerSkill);
+    uint32_t const recipeItem = RecipeItemFor(spellId);
+    ItemPrototype const* recipeProto = recipeItem ? sObjectMgr.GetItemPrototype(recipeItem) : nullptr;
+    if (fromTrainer && recipeProto)
+        reqSkill = std::min(trainerSkill, uint32_t(recipeProto->RequiredSkillRank));
+    else if (fromTrainer)
+        reqSkill = trainerSkill;
+    else if (recipeProto)
+        reqSkill = recipeProto->RequiredSkillRank;
+    cache.emplace(spellId, reqSkill);
+    return reqSkill;
+}
+
 // Bags plus mailbox of one item, the same two places the order's own stock
 // check counts before naming a need. Duplicated from the preview: the two
 // files share no helpers beyond CommandShared.
@@ -380,7 +404,7 @@ std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot, std::vector<
             recipe.itemId = row.createdItemId;
             recipe.skillId = row.skillId;
             recipe.skillValue = bot->GetSkillValue(row.skillId);
-            recipe.reqSkillValue = row.reqSkillValue;
+            recipe.reqSkillValue = KnownRecipeReqSkill(row.spellId, row.reqSkillValue);
             for (uint32 e = 0; e < MAX_SPELL_REAGENTS; ++e)
             {
                 if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
