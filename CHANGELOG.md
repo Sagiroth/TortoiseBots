@@ -5,6 +5,7 @@
 - A run leader can now find a standing spot near a boss (the search around bosses was empty, so a boss whose pull failed always paused the run).
 - A tank pulling a target that hovers above the floor no longer has the pull refused before its walk can start.
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+- Fixed: rogue bots no longer walk through the pack to Sap a marked target, #1527.
 
 ## v1.15.1 (2026-11-03)
 
