@@ -216,7 +216,8 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/commands/BotCommandContext.cpp"
     "${TORTOISEBOTS_ROOT}/commands/Order.cpp"
     "${TORTOISEBOTS_ROOT}/commands/OrderPreview.cpp"
-    "${TORTOISEBOTS_ROOT}/commands/OrderSearch.cpp")
+    "${TORTOISEBOTS_ROOT}/commands/OrderSearch.cpp"
+    "${TORTOISEBOTS_ROOT}/commands/OrderWhoSearch.cpp")
 
   # These are the module-owned runtime and mature AI foundations. The donor
   # manager/login sources are intentionally absent from this list and are
