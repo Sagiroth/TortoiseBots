@@ -38,6 +38,7 @@
 
 #include "playerbot/TravelMgr.h"
 #include "playerbot/GuildOrderSources.h"
+#include "playerbot/GuildOrderEnchants.h"
 
 #include <iostream>
 #include <numeric>
@@ -1162,6 +1163,7 @@ bool PlayerbotAIConfig::Initialize()
 
     sLog.outString("Loading guild order sources.");
     ai::BuildGuildOrderSourceIndex();
+    ai::BuildGuildOrderEnchantIndex();
 
     sLog.outString("Loading taxi node zones.");
     sTravelMgr.LoadTaxiNodeZones();

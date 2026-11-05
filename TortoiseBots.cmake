@@ -264,6 +264,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/ai/playerbot/TravelMgr.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/TravelNode.cpp"
     "${TORTOISEBOTS_ROOT}/ai/playerbot/GuildOrderSources.cpp"
+    "${TORTOISEBOTS_ROOT}/ai/playerbot/GuildOrderEnchants.cpp"
     "${TORTOISEBOTS_ROOT}/ai/botpch.cpp")
 
   set(TORTOISEBOTS_STRATEGY_SRC)
