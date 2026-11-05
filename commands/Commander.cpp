@@ -11457,24 +11457,28 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
     // A lead bot off the floor is no summon point: Banish 24466 leaves a bot 12.3 yd over the ZG pit floor and, with no
-    // client, nothing makes it fall; the summon then parked the party beside it. Read with the teleport landing's own
-    // feet probe (DungeonRun::LeadOffFloor); a map without the mesh cannot judge, so the flag stays clear.
+    // client, nothing makes it fall; the summon then parked the party beside it. The floor is read the way the teleport
+    // landing reads it (PlayerbotAI::HandleTeleportAck): the map's floor, and the feet probe only when that floor is
+    // more than kLandingYd under the feet, the higher of the two winning. A map without the mesh cannot judge, so the
+    // flag stays clear.
     {
-        bool probeFound = false;
-        float probeZ = lead->GetPositionZ();
+        float const leadZ = lead->GetPositionZ();
+        float mapFloorZ = leadZ;
+        lead->UpdateAllowedPositionZ(lead->GetPositionX(), lead->GetPositionY(), mapFloorZ);
         ai::WorldPosition feet(lead->GetMapId(), lead->GetPositionX(), lead->GetPositionY(),
-            lead->GetPositionZ() - ai::TeleportLandingPolicy::kFeetProbeDepth);
+            leadZ - ai::TeleportLandingPolicy::kFeetProbeDepth);
         bool const mmapLoaded = feet.isMmapLoaded(lead->GetInstanceId());
-        if (mmapLoaded && feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
+        bool probeFound = false;
+        float probeZ = leadZ;
+        if (mmapLoaded && leadZ - mapFloorZ > ai::TeleportLandingPolicy::kLandingYd &&
+            feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
                 ai::TeleportLandingPolicy::kFeetProbeDepth, lead->GetInstanceId()))
         {
             probeZ = feet.getZ();
             probeFound = true;
         }
-        // A lead bot in water is not hovering: the probe excludes water polys, so its own depth would read as off the
-        // floor. A summon into water is survivable and the run's water rules handle it.
-        f.leadOffFloor = mmapLoaded && !lead->IsInWater() && !lead->IsUnderwater() &&
-            TortoiseBots::DungeonRun::LeadOffFloor(lead->GetPositionZ(), probeFound, probeZ);
+        f.leadOffFloor = mmapLoaded && TortoiseBots::DungeonRun::LeadOffFloor(leadZ, mapFloorZ, probeFound, probeZ,
+            lead->IsInWater() || lead->IsUnderwater());
     }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
     // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in

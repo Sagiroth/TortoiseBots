@@ -4298,15 +4298,21 @@ inline void PauseOtherPart(Run& r, const Facts& f, OtherPartBlock why)
 }
 
 // The lead bot's summon point: a near teleport can end in mid-air (Jin'do's Banish 24466 lands a bot 12.3 yd over the
-// ZG pit floor) and a bot has no client to make it fall, so it hovers there. `probeFound`/`probeZ` are the teleport
-// landing's own feet probe under the lead bot (centred kFeetProbeDepth below its feet and kFeetProbeRange wide, so
-// only ground at or under it is found): no walkable polygon in that box, or ground more than kOffFloorYd under its
-// feet, and the lead bot stands off the floor. The map's floor is not read here: a summon drops the member at the lead
-// bot's exact position, and a spot the mesh does not know is one the party cannot walk away from.
+// ZG pit floor) and a bot has no client to make it fall, so it hovers there. The floor is read the way the teleport
+// landing reads it: the map's floor under the feet (`mapFloorZ`), and, only when that floor is more than kLandingYd
+// down, the landing's own feet probe (centred kFeetProbeDepth below the feet and kFeetProbeRange wide, so only ground
+// at or under it is found). The higher walkable floor wins: the probe can answer with a lower storey under the deck
+// the lead bot stands on. More than kOffFloorYd of air between the feet and that floor, and the lead bot stands off
+// it. A lead bot in water is not hovering: the probe excludes water polygons, so the water's own depth would read as a
+// floor gap, and a summon into water is survivable (the run's water rules handle it). The caller leaves the flag clear
+// for a map whose mesh is not loaded: nothing there can judge.
 constexpr float kOffFloorYd = 3.0f;
-inline bool LeadOffFloor(float leadZ, bool probeFound, float probeZ)
+inline bool LeadOffFloor(float leadZ, float mapFloorZ, bool probeFound, float probeZ, bool inWater)
 {
-    return !probeFound || leadZ - probeZ > kOffFloorYd;
+    if (inWater)
+        return false;
+    float const floorZ = probeFound ? std::max(mapFloorZ, probeZ) : mapFloorZ;
+    return leadZ - floorZ > kOffFloorYd;
 }
 
 // Whether a member may be brought to the lead bot now, with the note when not: a summon puts it at the lead bot's
@@ -4824,11 +4830,13 @@ inline bool WedgedSummon(Run& r, const Facts& f, std::uint32_t dt, std::string& 
     }
     if (!pick)
         return false;
-    if (!SummonLeadFloorOk(r, f, pick->name))
-        return false;
     bool const fetched = FetchFar(r, f, *pick) && QueueFetch(r, pick->name);
+    // The floor guard is the summon's: a teleport return puts the member on another spot (FarReturnPoint), so a lead
+    // bot off the floor does not hold it back.
     if (!fetched)
     {
+        if (!SummonLeadFloorOk(r, f, pick->name))
+            return false;
         order = "summon " + pick->name;
         MarkSummoned(r, pick->name);
         HoldForReturn(r, pick->name);
@@ -13029,9 +13037,13 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
         // done only once the bot stands within kReturnArriveYd of the lead bot: one
         // the portal dropped, or not there in kReviveSummonWaitMs, goes out again
         // (kStrandSummonTries a bot). One farther than the teleport return's reach
-        // is teleported instead (FarReturnTick), in a fight or not.
+        // is teleported instead (FarReturnTick), in a fight or not. The wait counts
+        // from the first tick: a summon the lead bot's own floor holds back is a bot
+        // left behind like one in a fight, so it runs out and pauses too.
+        r.strandSummonMs += dt;
         const MemberFact* busy = nullptr;
         const MemberFact* pending = nullptr;
+        bool leadNoFloor = false;
         for (const MemberFact& m : f.members)
         {
             if (m.name.empty() || m.name == f.carrier || m.frozen || r.strandArrived.count(m.name))
@@ -13072,7 +13084,14 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
                 continue;
             }
             if (!SummonLeadFloorOk(r, f, m.name))
-                return true; // the left-behind bots wait: the lead bot's own landing comes first
+            {
+                // The lead bot's own landing comes first: the bot stays left behind and is waited for like one in a
+                // fight, so the pause below still comes.
+                leadNoFloor = true;
+                if (!pending)
+                    pending = &m;
+                continue;
+            }
             r.strandSummoned[m.name] = 0;
             ++r.strandSummonTries[m.name];
             MarkSummoned(r, m.name);
@@ -13087,19 +13106,25 @@ inline bool StrandedTeleportTick(Run& r, const Facts& f, std::uint32_t dt, std::
             r.strandSummonMs = 0;
             return false;
         }
-        r.strandSummonMs += dt;
         const MemberFact* const late = busy ? busy : pending;
         if (r.strandSummonMs >= kStrandSummonWaitMs)
         {
-            Pause(r, "the lead bot was teleported to " + target + ", but " + late->name +
-                (busy ? " stayed in a fight " : " did not arrive, ") +
-                Num(late->yd) + " yd from it at " + Num(late->x) + " " + Num(late->y) + " " + Num(late->z) + " for " +
+            std::string const why = busy ? " stayed in a fight "
+                : leadNoFloor ? " could not be summoned (the lead bot has no floor under it), "
+                              : " did not arrive, ";
+            Pause(r, "the lead bot was teleported to " + target + ", but " + late->name + why + Num(late->yd) +
+                " yd from it at " + Num(late->x) + " " + Num(late->y) + " " + Num(late->z) + " for " +
                 std::to_string(kStrandSummonWaitMs / 1000) + " s: bring it to the lead bot, then .bot run resume");
             return true;
         }
-        r.note = busy ? "the lead bot was teleported to " + target + ": waiting for " + busy->name + " (left behind, " +
-                Num(busy->yd) + " yd from it) to leave its fight before summoning it"
-                      : "the lead bot was teleported to " + target + ": waiting for " + pending->name + " (" +
+        if (busy)
+            r.note = "the lead bot was teleported to " + target + ": waiting for " + busy->name + " (left behind, " +
+                Num(busy->yd) + " yd from it) to leave its fight before summoning it";
+        else if (leadNoFloor)
+            r.note = "the lead bot was teleported to " + target + " and has no floor under it: " + pending->name + " (" +
+                Num(pending->yd) + " yd from it) stays left behind until its own landing";
+        else
+            r.note = "the lead bot was teleported to " + target + ": waiting for " + pending->name + " (" +
                 Num(pending->yd) + " yd from it) to arrive";
         return true;
     }
@@ -19381,7 +19406,9 @@ inline void UpdateHold(Run& r, const Facts& f)
 // held while the party walks back without it. A held bot
 // in a fight leaves the hold at once (the guard and the gather see it). Not while paused, walking back (a direct
 // step's own summon wait owns the hold then), in an event, with the lead bot dead or in another part, or while
-// the stranded lead bot's teleport runs. True when it set a summon.
+// the stranded lead bot's teleport runs. A lead bot off the floor is no summon point: the bot stays held and this
+// answers false, so the tick's step machine (the lead bot's own landing or rescue) runs instead of holding it.
+// True when it set a summon.
 inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
 {
     r.hold.erase(std::remove_if(r.hold.begin(), r.hold.end(), [&](const std::string& name)
@@ -19439,7 +19466,7 @@ inline bool SummonHeldToLead(Run& r, const Facts& f, std::string& order)
             continue; // sent, its answer not in yet, or given up: it stays held
         std::string const name = *it;
         if (!SummonLeadFloorOk(r, f, name))
-            return true; // it stays held: the lead bot has no floor to bring it to right now
+            return false; // it stays held, and the tick's step machine runs (the lead bot's own landing or rescue)
         Run::HeldSummon& summon = r.heldSummons[name];
         summon.ms = r.runMs;
         summon.pending = true;

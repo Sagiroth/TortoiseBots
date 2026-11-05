@@ -916,7 +916,7 @@ How far (yards) a party bot may be from the lead bot before the run leader bring
 - when the lead bot stands in an unpulled pack's reach, the bot lands at the nearest clear point beside it (same floor, in sight, outside every pack's reach)
 - not within 10 yd after 5 s: sent again; after three tries the run names it and never tells it to walk back
 - not toward a dead or separated lead bot, not while the lead bot's own rescue is due, not with a plan boss engaged
-- never onto a lead bot that stands off the floor (no walkable ground under it, read with the teleport landing's feet probe): the bot is brought to the nearest member out of combat instead, or holds
+- never onto a lead bot that stands off the floor (more than 3 yards of air under it, read with the teleport landing's own floor: the map's floor and the feet probe, the higher one winning): the bot is brought to the nearest member out of combat instead, or holds
 
 </details>
 

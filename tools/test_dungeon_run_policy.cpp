@@ -21075,16 +21075,24 @@ static void TestNoSummonTowardALeadInAnotherPart()
 
 // Jin'do: a lead bot off the floor is no summon point. Banish 24466 leaves a bot hovering at z 90 over the ZG pit
 // floor (77.68) and, with no client, nothing makes it fall; the run leader used to summon the party to it (ZG walk 38
-// Rhan at 117 s, the whole raid after the fight). The landing fix's feet probe cannot reach a floor 12.3 yd down, so
-// LeadOffFloor is set and no summon or teleport return goes toward the lead bot: its own landing and rescue handle it.
+// Rhan at 117 s, the whole raid after the fight). LeadOffFloor is set and no summon goes toward the lead bot: its own
+// landing and rescue handle it.
 static void TestNoSummonOntoALeadOffTheFloor()
 {
-    // The probe's answer: a floor at the feet is on the floor, one more than kOffFloorYd under them, or none in the
-    // probe's box, is off it.
-    CHECK(!LeadOffFloor(77.68f, true, 77.68f));
-    CHECK(!LeadOffFloor(77.68f, true, 75.5f));
-    CHECK(LeadOffFloor(90.0f, true, 86.0f));
-    CHECK(LeadOffFloor(90.0f, false, 90.0f)); // the pit floor 12.3 yd down is outside the landing probe's box
+    // The floor is read the way the teleport landing reads it: the map's floor, and the feet probe only when that
+    // floor is more than kLandingYd under the feet, the higher of the two winning.
+    CHECK(!LeadOffFloor(77.68f, 77.68f, false, 77.68f, false)); // at its floor already: nothing below
+    CHECK(!LeadOffFloor(77.68f, 75.5f, true, 75.5f, false));   // 2.2 yd down: a step, not a hover
+    // A deck over a lower storey: the map answers with the terrain 30 yd down, the probe with the deck at the feet.
+    CHECK(!LeadOffFloor(90.0f, 60.0f, true, 90.0f, false));
+    // Banish's hover: the pit floor 12.3 yd down is outside the probe's box (it spans 4 yd under the feet), so the
+    // map's floor decides, and it is off the floor.
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false));
+    // The probe's own answer: 4 yd down is off the floor, 2.5 yd is not.
+    CHECK(LeadOffFloor(90.0f, 77.68f, true, 86.0f, false));
+    CHECK(!LeadOffFloor(90.0f, 77.68f, true, 87.5f, false));
+    // A swimmer: the probe excludes water polygons, so its own depth is no hover.
+    CHECK(!LeadOffFloor(90.0f, 60.0f, false, 60.0f, true));
 
     // The walk of ZG walk 38: the lead bot hovers at z 90 over the pit floor, Rhan stands 68 yd away on that floor.
     auto offFloorFacts = [](bool offFloor)
@@ -21169,6 +21177,215 @@ static void TestNoSummonOntoALeadOffTheFloor()
         CHECK(FarReturnPoint(on, due, point, why) && point.x == 0.0f); // the lead bot's own spot
     }
 }
+
+// Every summon site that reads the lead bot's floor: with the lead bot off the floor no summon goes out and nothing is
+// spent, so the same summon goes out once it lands. The sites the Jin'do fix reached later: RunawaySummon, the gather
+// ceiling's own two summons, a revived bot's summon, the stranded lead bot's summons and the direct step's follower.
+static void TestNoSummonOntoAnOffFloorLeadAtEverySite()
+{
+    // A raid bot left far behind (RunawaySummon): waited out, not summoned; once the lead bot lands, summoned.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.raid.on = true;
+        f.total = 5;
+        f.alive = 5;
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 150)};
+        std::string order;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.runawaySummons == 0 && r.summoned.empty()); // not spent: it can go once the lead bot lands
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(RunawaySummon(r, on, kTickMs, order) && order == "summon Rhan");
+    }
+    // The gather ceiling's own summon (the farthest bot that does not come closer): waits, no pause.
+    {
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 68)};
+        f.maxMemberYd = 68;
+        r.still["Rhan"].ms = kStillMs;
+        std::string order;
+        GatherCeiling(r, f, order, "the party did not gather");
+        CHECK(order.empty() && r.state == State::Running && r.phase == Phase::Gather);
+        CHECK(r.note.find("no floor") != std::string::npos && r.summoned.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        r2.still["Rhan"].ms = kStillMs;
+        GatherCeiling(r2, on, order, "the party did not gather");
+        CHECK(order == "summon Rhan");
+    }
+    // The direct step's gather, the bot summoned already this step: summoned again only once the lead bot lands.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::MoveDirect, 5)};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        MarkSummoned(r, "Jinkla");
+        r.summoned.insert("Jinkla");
+        r.runMs = 90000; // past kDirectResummonMs since the summon at runMs 0
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Jinkla", 68)};
+        f.maxMemberYd = 68;
+        std::string order;
+        GatherCeiling(r, f, order, "the party did not gather", true);
+        CHECK(order.empty() && r.state == State::Running && r.phase == Phase::Gather);
+        CHECK(r.note.find("no floor") != std::string::npos);
+        Facts on = f;
+        on.leadOffFloor = false;
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        MarkSummoned(r2, "Jinkla");
+        r2.summoned.insert("Jinkla");
+        r2.runMs = 90000;
+        GatherCeiling(r2, on, order, "the party did not gather", true);
+        CHECK(order == "summon Jinkla");
+    }
+    // A bot alive again far from the lead bot (SummonRevived): held back, no try spent.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 200)};
+        Run r = Start(&plan);
+        r.waitFor.insert("Fyran");
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+        std::string order;
+        CHECK(!SummonRevived(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty() && r.reviveSummons.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(SummonRevived(r, on, order) && order == "summon Fyran");
+    }
+    // A direct step's follower left behind (Run::summonDue, TickBody): the summon waits and is kept for later.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::MoveDirect, 200)};
+        Run r = Start(&plan, 1);
+        r.summonDue = "Fyran";
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 30)};
+        std::string const off = Tick(r, f);
+        CHECK(off.compare(0, 7, "summon ") != 0);
+        CHECK(r.summonDue == "Fyran" && r.summonWait.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(Tick(r, on) == "summon Fyran");
+    }
+}
+
+// H1: an off-floor lead bot never leaves the tick handled with no order and no clock. The stranded lead bot's summons
+// wait for the bot left behind, so the kStrandSummonWaitMs pause still comes; the held party's summon falls through to
+// the step machine, so the regroup's own timers (and the lead bot's rescue) run.
+static void TestOffFloorLeadNeverStallsTheTick()
+{
+    // The stranded lead bot: its teleport landed on a point where it hovers over the pit floor, Rhan is left behind.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200)};
+        Run r = Start(&plan, 1);
+        r.strandSummon = true;
+        r.strandIdx = 0;
+        r.strandX = 10.0f;
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 68)};
+        std::string order;
+        CHECK(StrandedTeleportTick(r, f, kTickMs, order) && order.empty());
+        CHECK(r.strandSummonMs == kTickMs); // the clock runs while the floor holds the summon back
+        CHECK(r.note.find("no floor") != std::string::npos && r.note.find("Rhan") != std::string::npos);
+        CHECK(r.summoned.empty() && r.strandSummoned.empty());
+        for (std::uint32_t ms = kTickMs; ms < kStrandSummonWaitMs && r.state == State::Running; ms += kTickMs)
+        {
+            order.clear();
+            CHECK(StrandedTeleportTick(r, f, kTickMs, order) && order.empty());
+        }
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot was teleported to the last reached point (step 1), but Rhan could not be summoned "
+            "(the lead bot has no floor under it), 68.0 yd from it at 68.0 0.0 0.0 for 120 s: bring it to the lead bot, "
+            "then .bot run resume");
+        CHECK(r.summoned.empty());
+    }
+    // The held party: the summon falls through to the step machine, so the regroup's gather and walk back run.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+        Run r = Start(&plan, 2);
+        BeginRegroup(r);
+        r.walkBackDue = true;
+        r.hold = {"Fyran"};
+        Facts f = Party(-90);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 305)};
+        f.maxMemberYd = 305;
+        std::string order;
+        CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+        CHECK(r.hold.size() == 1 && r.heldSummons.empty() && r.summoned.empty());
+        std::string seen;
+        for (std::uint32_t ms = 0; ms <= kStrandSummonWaitMs && seen.empty() && r.state == State::Running; ms += kTickMs)
+            seen = Tick(r, f);
+        CHECK(!seen.empty() || r.state == State::Paused); // the walk back starts or the run pauses: no infinite hold
+        CHECK(r.summoned.empty());
+    }
+}
+
+// L1: the wedged member's teleport return is no summon and does not land at the lead bot's feet, so a lead bot off the
+// floor does not hold it back; the summon it replaces still does.
+static void TestWedgedMemberIsStillTeleportedBackOffTheFloor()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    auto wedged = [](float yd, float dz)
+    {
+        Facts f = Party(0);
+        f.raid.on = true;
+        f.leadOffFloor = true;
+        f.teleportReturnYd = 30.0f; // AiPlayerbot.RunTeleportReturnYd, a bot-only party
+        f.members = {Mem("Tanky", 0), Mem("Rhan", yd, dz)};
+        return f;
+    };
+    auto run = [&]()
+    {
+        Run r = Start(&plan);
+        r.fetchOn = true;
+        r.still["Rhan"].ms = kWedgedMs;
+        return r;
+    };
+    {
+        Run r = run();
+        Facts f = wedged(60.0f, -20.0f); // far enough for the teleport return
+        std::string order;
+        CHECK(WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.fetch.count("Rhan") && r.wedgedSummoned.count("Rhan") && r.wedgedSummons == 1);
+        CHECK(r.note.find("teleported back") != std::string::npos);
+        CHECK(r.summoned.empty());
+    }
+    {
+        Run r = run();
+        Facts f = wedged(25.0f, -20.0f); // within the teleport return's reach: a summon, held back
+        std::string order;
+        CHECK(!WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.wedgedSummoned.empty() && r.wedgedSummons == 0 && r.fetch.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(WedgedSummon(r, on, kTickMs, order) && order == "summon Rhan");
+    }
+}
+
 
 // The island hop never starts for a lead bot in another part: the pause says why.
 static void TestNoIslandHopForALeadInAnotherPart()
@@ -35416,6 +35633,9 @@ int main()
     TestIslandEscapeInOtherPartRescues();
     TestNoSummonTowardALeadInAnotherPart();
     TestNoSummonOntoALeadOffTheFloor();
+    TestNoSummonOntoAnOffFloorLeadAtEverySite();
+    TestOffFloorLeadNeverStallsTheTick();
+    TestWedgedMemberIsStillTeleportedBackOffTheFloor();
     TestNoIslandHopForALeadInAnotherPart();
     TestScarletLibraryR20Replay();
     TestRevivedBotSummonedBeforeWalking();
