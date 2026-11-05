@@ -129,7 +129,7 @@ class SeekWalkWiring(unittest.TestCase):
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullRoleOf(",
-                     "SeekPullHitExempt("):
+                     "SeekPullHitExempt(", "SeekRolledDueMs("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)

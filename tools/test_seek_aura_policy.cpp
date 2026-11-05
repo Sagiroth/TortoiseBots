@@ -53,6 +53,34 @@ int main()
         CHECK(!SeekWindowOpen(1000, 0, 80000));     // no due time yet
     }
 
+    // SeekWindowShutsAfterTheOverdueGrace: a due time nobody saw the siphon for is stale, and the window must not stay
+    // open for the rest of the fight (the quiet group stood at the spot and the Son was held there). The overdue part
+    // is due + kSeekOverdueGraceMs at most; past it the estimate rolls forward one cycle at a time, and the window
+    // shuts until the rolled cycle's own window.
+    {
+        const std::uint32_t due = 90000;
+        CHECK(kSeekOverdueGraceMs == 45000);
+        CHECK(SeekRolledDueMs(134000, due, 90000) == due);         // still the overdue grace
+        CHECK(SeekRolledDueMs(135000, due, 90000) == due);         // due + 45 s, inclusive
+        CHECK(SeekRolledDueMs(135001, due, 90000) == due + 90000); // rolled one cycle (due += 90 s)
+        CHECK(SeekRolledDueMs(135001, due, 90000) != due);         // not the stale due
+        // A cycle longer than the lead and the grace: the rolled due shuts the window until its own lead.
+        const std::uint32_t rolled = SeekRolledDueMs(135001, due, 300000);
+        CHECK(rolled == due + 300000);
+        CHECK(!SeekWindowOpen(135001, rolled, 80000));             // shut right after the grace
+        CHECK(!SeekWindowOpen(rolled - 80001, rolled, 80000));     // still shut before the next window
+        CHECK(SeekWindowOpen(rolled - 80000, rolled, 80000));      // the rolled cycle's window opens
+        CHECK(!SeekForceBurn(135001, rolled));                     // and the burn waits for it
+        CHECK(SeekForceBurn(rolled - 15000, rolled));
+        // A clock that is never sighted keeps rolling: a 94 s overdue gap is due + one cycle, a 184 s one two cycles.
+        CHECK(SeekRolledDueMs(184000, due, 90000) == 180000);
+        CHECK(SeekRolledDueMs(184000, due, 90000) == due + 90000);
+        CHECK(SeekRolledDueMs(274000, due, 90000) == 270000);
+        // No due time (no combat start yet) stays 0; a zero cycle cannot roll.
+        CHECK(SeekRolledDueMs(184000, 0, 90000) == 0);
+        CHECK(SeekRolledDueMs(184000, due, 0) == due);
+    }
+
     // SeekFirstSiphonIsCountedFromThePull: before any siphon is seen the due time is the fight's combat start plus one
     // cycle, since the core's 90 s timer only runs in combat, so cycle 1 gets the same 80 s window and 15 s forced
     // burn as every later cycle. An observed siphon resyncs the cadence to itself, and a fight with no combat start

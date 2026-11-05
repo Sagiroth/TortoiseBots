@@ -49,13 +49,30 @@ namespace ai
 
     // The dose window [due - lead, due - kSeekCloseMs], both ends inclusive. The last three seconds before the due
     // time are too late for the dose to be on at the siphon — but once the due time passes with no sighting (a missed
-    // 24324; walk 40 had two 184-185 s gaps) the window stays open until the sighting restarts the clock, instead of
-    // shutting for the rest of the fight with the Son held at the spot and the siphon undosed.
+    // 24324; walk 40 had two 184-185 s gaps) the window stays open for a while, instead of shutting for the rest of the
+    // fight with the Son held at the spot and the siphon undosed.
     inline bool SeekWindowOpen(std::uint32_t nowMs, std::uint32_t dueMs, std::uint32_t leadMs)
     {
         if (dueMs == 0 || nowMs + leadMs < dueMs)
             return false;
         return nowMs + kSeekCloseMs <= dueMs || nowMs >= dueMs;
+    }
+
+    // How long the window stays overdue after a due time nobody saw the siphon for. Past it the due time is stale and
+    // the estimate rolls forward (SeekRolledDueMs), so the window does not stay open for the rest of the fight: it
+    // shuts until the rolled cycle's own window, and the forced burn follows the rolled due instead of firing forever.
+    constexpr std::uint32_t kSeekOverdueGraceMs = 45000;
+
+    // The due time a fight reads: unchanged until the overdue grace runs out, then rolled one cycle at a time until it
+    // is current again (due += cycle). A clock that is never sighted ends with the due time just ahead of now, so the
+    // next window is the estimate's own, not the missed siphon's.
+    inline std::uint32_t SeekRolledDueMs(std::uint32_t nowMs, std::uint32_t dueMs, std::uint32_t cycleMs)
+    {
+        if (dueMs == 0 || cycleMs == 0)
+            return dueMs;
+        while (nowMs > dueMs + kSeekOverdueGraceMs)
+            dueMs += cycleMs;
+        return dueMs;
     }
 
     // The burn is forced once the window is about to close.

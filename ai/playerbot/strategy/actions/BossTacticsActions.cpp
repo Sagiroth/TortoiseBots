@@ -1259,7 +1259,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingCycle = record.siphonCycle;
             record.siphonThirdAtMs = 0;
         }
-        dueMs = SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs);
+        // A due time nobody saw the siphon for is stale: past the overdue grace it rolls a cycle at a time, so the
+        // window and the forced burn follow the estimate instead of the missed siphon's past due.
+        dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs), cycleMs);
         cycleNo = record.cycleNo;
     }
     out.live = true;
@@ -4638,7 +4640,8 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         if (record.engageMs == 0 || record.cycleMs == 0)
             continue;
         out.valid = true;
-        out.dueMs = SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
+        out.dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs),
+                                    record.cycleMs);
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;
