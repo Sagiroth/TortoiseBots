@@ -3062,12 +3062,23 @@ static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
     Spell* const spell = bot->GetCurrentSpell(slot);
     if (!spell || !spell->m_spellInfo)
         return;
-    // The cast's own target; a destination-targeted spell (Rain of Fire) carries no unit target, so the bot's
-    // selection stands in for it.
-    Unit* const target = spell->m_targets.getUnitTarget() ? spell->m_targets.getUnitTarget() : bot->GetSelectedUnit();
+    // The cast's own target, looked up by guid on the bot's map. SpellCastTargets::m_unitTarget (getUnitTarget) is a
+    // raw pointer the map thread refreshes only in the caster's next Spell::update, and Map::Remove frees a dead
+    // totem at the end of the map tick, so on this World thread it can point at a freed unit: it is never read here.
+    // getUnitTargetGuid() is a value (Spell.h SpellCastTargets). A guid whose unit is gone (or out of the world) means
+    // the cast's target no longer exists, and the cut is right. A destination-targeted spell (Rain of Fire) carries
+    // no unit guid, so the bot's selection stands in for it (Player::GetSelectedUnit is itself a map lookup by guid).
+    Map* const map = bot->GetMap();
+    ObjectGuid const castGuid = spell->m_targets.getUnitTargetGuid();
+    Unit* target = nullptr;
+    if (map)
+        target = castGuid ? map->GetUnit(castGuid) : bot->GetSelectedUnit();
+    if (target && !target->IsInWorld())
+        target = nullptr;
     if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
             TotemFocusResurrects(spell->m_spellInfo), spell->m_spellInfo->IsPositiveSpell(),
-            target && bot->IsHostileTo(target)))
+            TortoiseBots::DungeonRun::TotemFocusTargetHostile(!castGuid.IsEmpty(), target != nullptr,
+                target && bot->IsHostileTo(target))))
         return;
     bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
 }

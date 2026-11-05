@@ -27577,6 +27577,15 @@ static void TestTotemFocusMayInterrupt()
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true, false, true));    // any resurrect effect
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false, false, true));       // Auto Shot
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false, false, true));     // Shoot (a wand's shot)
+    // The cast's target looked up by guid: a guid whose unit is gone (a freed totem) counts as a target to cut at.
+    CHECK(TotemFocusTargetHostile(true, false, false));   // named unit gone
+    CHECK(TotemFocusTargetHostile(true, true, true));     // named unit alive and hostile
+    CHECK(!TotemFocusTargetHostile(true, true, false));   // named unit alive, friendly
+    CHECK(!TotemFocusTargetHostile(false, false, false)); // no unit guid and no selection
+    CHECK(TotemFocusTargetHostile(false, true, true));    // no unit guid, hostile selection
+    CHECK(!TotemFocusTargetHostile(false, true, false));  // no unit guid, friendly selection
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, TotemFocusTargetHostile(true, false, false)));
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2050, false, true, TotemFocusTargetHostile(true, false, false)));
 }
 
 // M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back

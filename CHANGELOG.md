@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: a world-server crash when a Brain Wash Totem died while the run moved its focus.
 - A run leader whose tank cannot get a ranged pull going now walks in and pulls instead of pausing the run.
 - Pull orders take the word `body` (`.bot action pull`, `.bot action pullback`, `.bot cmd pull`, `.bot cmd pullback`): the tank walks in and pulls in melee whatever the target is.
 - A run leader can now find a standing spot near a boss (the search around bosses was empty, so a boss whose pull failed always paused the run).

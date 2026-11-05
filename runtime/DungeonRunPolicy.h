@@ -10474,6 +10474,17 @@ inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, 
     return !RunCcSpellId(spellId);
 }
 
+// Whether the totem focus counts the cast's target as one to cut at. The target is looked up by guid (never through the
+// core's raw m_unitTarget pointer, which can point at a freed unit on the World thread): a cast that names a unit guid
+// whose unit is gone or out of the world has no target left, so the cut is right; a cast with no unit guid (a
+// destination spell) answers by the bot's selection, hostile only when that unit is found and hostile.
+inline bool TotemFocusTargetHostile(bool castNamesUnit, bool unitFound, bool unitHostile)
+{
+    if (castNamesUnit && !unitFound)
+        return true;
+    return unitFound && unitHostile;
+}
+
 // Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
 // like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
 // no order budget spent on it.
