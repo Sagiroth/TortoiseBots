@@ -221,6 +221,19 @@ public:
         m_meet.erase(botGuidLow);
     }
 
+    void NoteMeetFailed(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meetFailedMs[botGuidLow] = nowMs;
+    }
+
+    uint32_t MeetFailedMs(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_meetFailedMs.find(botGuidLow);
+        return it == m_meetFailedMs.end() ? 0 : it->second;
+    }
+
     // Row write outside the store mutex (the caller snapshotted it out of
     // Tick): a failed write re-marks the row dirty for the next pass.
     void WriteAndRescue(OrderRecord const& record)
@@ -2942,6 +2955,7 @@ private:
     // uptime ms), memory only: the lead consumes it, and a restart drops
     // it so the giver presses Meet again.
     std::unordered_map<uint32_t, MeetRequest> m_meet;
+    std::unordered_map<uint32_t, uint32_t> m_meetFailedMs; // last meeting that ended without the enchant
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     // Last request the drain gave planner time to: the next drain starts
     // after it, so one request cannot spend every tick's evaluation budget.
@@ -3483,6 +3497,19 @@ void ClearMeet(uint32_t botGuidLow)
     if (!botGuidLow)
         return;
     OrderStore::Instance().DropMeet(botGuidLow);
+}
+
+void ClearMeetFailed(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropMeet(botGuidLow);
+    OrderStore::Instance().NoteMeetFailed(botGuidLow, WorldTimer::getMSTime());
+}
+
+uint32_t MeetFailedMs(uint32_t botGuidLow)
+{
+    return botGuidLow ? OrderStore::Instance().MeetFailedMs(botGuidLow) : 0;
 }
 
 EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)

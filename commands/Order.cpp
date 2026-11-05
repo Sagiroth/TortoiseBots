@@ -235,8 +235,28 @@ bool HandleOrderMeet(ChatHandler* handler, Player* requester, std::string const&
     facts.giverInCapital = giverInCapital;
     facts.botTiedUp = botTiedUp;
     facts.gathering = gathering;
+    if (row->state == OrderState::Waiting && row->reason == OrderReason::NeedItems)
+    {
+        facts.nothingToBring = true;
+        for (GuildOrders::NeedItem const& need : row->needItems)
+            if (need.itemId && requester->GetItemCount(need.itemId) > 0)
+                facts.nothingToBring = false;
+    }
+    facts.cooldownLeftMs = GuildOrders::MeetCooldownLeftMs(WorldTimer::getMSTime(),
+        GuildOrders::MeetFailedMs(guid.GetCounter()));
     switch (GuildOrders::DecideMeet(facts))
     {
+        case GuildOrders::MeetVerdict::Cooldown:
+        {
+            uint32_t const minutes = (facts.cooldownLeftMs + 59999) / 60000;
+            std::string text = "I just came for nothing. Try again in " + std::to_string(minutes) + " min.";
+            OrderError(handler, "cooldown", text.c_str());
+            return true;
+        }
+        case GuildOrders::MeetVerdict::NothingToBring:
+            OrderError(handler, "nothingtobring",
+                "I still need materials you do not carry. Bring them, or mail them to me.");
+            return true;
         case GuildOrders::MeetVerdict::NoOrder:
             OrderError(handler, "noorder", "That bot has no enchant order from you.");
             return true;

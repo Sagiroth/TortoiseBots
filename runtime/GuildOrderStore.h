@@ -74,6 +74,10 @@ struct MeetRequest
 void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow);
 std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow);
 void ClearMeet(uint32_t botGuidLow);
+// Ends a meeting that did not enchant (giver idle or gone): starts the Meet cooldown.
+void ClearMeetFailed(uint32_t botGuidLow);
+// When the last failed meeting ended (world ms), 0 for none.
+uint32_t MeetFailedMs(uint32_t botGuidLow);
 // Enchant-order trade window (memory only, a restart drops it): the lead
 // tracks the current window and the replace question through these. Counted
 // windows opened this Enchanting leg (1 for the first), or 0 when none was

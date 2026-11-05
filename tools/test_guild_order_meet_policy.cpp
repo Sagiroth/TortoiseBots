@@ -12,6 +12,18 @@ static int failures = 0;
 
 int main()
 {
+    {
+        MeetFacts f; f.liveEnchantOrder = true; f.giverInCapital = true;
+        f.cooldownLeftMs = 1000;
+        CHECK(DecideMeet(f) == MeetVerdict::Cooldown);
+        f.cooldownLeftMs = 0; f.nothingToBring = true;
+        CHECK(DecideMeet(f) == MeetVerdict::NothingToBring);
+        f.nothingToBring = false;
+        CHECK(DecideMeet(f) == MeetVerdict::Coming);
+        CHECK(MeetCooldownLeftMs(1000, 0) == 0);
+        CHECK(MeetCooldownLeftMs(1000 + kMeetFailCooldownMs, 1000) == 0);
+        CHECK(MeetCooldownLeftMs(61000, 1000) == kMeetFailCooldownMs - 60000);
+    }
     // Capitals split by faction.
     CHECK(EnchantCapitalZone(true) == 1519);
     CHECK(EnchantCapitalZone(false) == 1637);

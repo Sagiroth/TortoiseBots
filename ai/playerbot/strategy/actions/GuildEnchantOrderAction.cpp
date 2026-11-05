@@ -181,7 +181,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                 bool need = order.reason == OrderReason::NeedItems;
                 SetState(bot->GetGUIDLow(), need ? OrderState::Waiting : OrderState::Ready,
                     need ? OrderReason::NeedItems : OrderReason::None);
-                ClearMeet(bot->GetGUIDLow());
+                ClearMeetFailed(bot->GetGUIDLow());
                 return true;
             }
             case EnchantLifecycleStep::OpenTrade:
@@ -242,7 +242,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             if (next == TradeTryAction::GiveUp)
             {
                 SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
-                ClearMeet(bot->GetGUIDLow());
+                ClearMeetFailed(bot->GetGUIDLow());
             }
             return true;
         }

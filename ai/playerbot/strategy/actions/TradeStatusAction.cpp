@@ -750,7 +750,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
                     TortoiseBots::GuildOrders::OrderState::Ready,
                 need ? TortoiseBots::GuildOrders::OrderReason::NeedItems :
                     TortoiseBots::GuildOrders::OrderReason::None);
-            TortoiseBots::GuildOrders::ClearMeet(bot->GetGUIDLow());
+            TortoiseBots::GuildOrders::ClearMeetFailed(bot->GetGUIDLow());
             return true;
         }
         case ai::TradeTryAction::KeepWaiting:
