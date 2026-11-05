@@ -175,7 +175,7 @@ nodes:
   - id: server-settings-class-behaviour
     path: server/settings/class-behaviour.md
     category: server
-    summary: Configuration flags controlling class-specific AI decisions for hunters, paladins, rogues, and warlocks.
+    summary: Configuration flags controlling class-specific AI decisions for hunters, paladins, rogues, warlocks, and warriors.
   - id: server-settings-dungeons-raids
     path: server/settings/dungeons-raids.md
     category: server

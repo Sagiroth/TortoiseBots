@@ -900,6 +900,23 @@ AiPlayerbot.WarlockRaidRotation = 0
 # 1 - Feint on medium threat, Vanish on critical threat in 5-man dungeons (Default)
 AiPlayerbot.RogueDungeonThreatDrops = 1
 
+# Warrior gap closers.
+# Out of combat a warrior (tank or dps) whose target is 8-25 yards away and in
+# sight swaps to Battle Stance if needed and uses Charge; a tank swaps back to
+# Defensive Stance once in combat. A tank uses it on a mob already hitting a
+# party member first (the pack a rogue or a healer pulled) and never on a
+# crowd-controlled or held crowd-control mark. In combat a tank uses Intercept
+# (Berserker Stance) on a mob hitting the healer or another non-tank member
+# 8-25 yards away when the rage left after the stance swap (Tactical Mastery)
+# pays for it, then swaps back to Defensive Stance and taunts; with too little
+# rage it runs in. Inside a dungeon or raid an unengaged mob is only charged
+# when it is the target of a melee pull order or an attack order. On by
+# default; with 0 only the old rows remain (Charge only from the stance the
+# warrior is already in, as the walk in closes).
+# 0 - no stance swap for Charge or Intercept
+# 1 - Charge to open, tank Intercept to rescue a party member (Default)
+AiPlayerbot.WarriorGapCloser = 1
+
 # Hunter Aspect of the Viper on low mana.
 # A hunter that has learned Aspect of the Viper (Turtle 1.18.1 spell 45651,
 # trainer level 56) switches to it in combat when its mana drops below 20

@@ -96,9 +96,18 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "enemy out of melee",
         NextAction::array(0, new NextAction("charge", ACTION_MOVE + 7), NULL)));
 
-    // No Intercept rows: Intercept needs Berserker Stance, and the donor tank
-    // never leaves Defensive Stance to close a gap (charge / reach melee and
-    // taunt cover it).
+    // Gap closers through a stance swap, back to Defensive Stance by the
+    // "defensive stance" row above: Charge out of combat (opening a pull, or
+    // the pack already on a party member), Intercept in combat for a mob on a
+    // non-tank member when the post-swap rage pays it. Above "taunt on
+    // attacker" (INTERRUPT+1), whose Defensive Stance prerequisite would
+    // otherwise swap back between the stance swap and the cast.
+    triggers.push_back(new TriggerNode(
+        "warrior gap closer charge",
+        NextAction::array(0, new NextAction("gap closer charge", ACTION_INTERRUPT + 2), NULL)));
+    triggers.push_back(new TriggerNode(
+        "warrior gap closer intercept",
+        NextAction::array(0, new NextAction("gap closer intercept", ACTION_INTERRUPT + 2), NULL)));
 
     // Intervene a focused party member (donor TankWarriorStrategy fires at
     // EMERGENCY): Intervene 45595 is a real learnable 1.18.1 spell

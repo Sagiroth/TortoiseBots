@@ -591,6 +591,7 @@ public:
     bool warlockRaidRotation;
     // Rogue Feint (and Vanish as the last resort) on medium/high threat in 5-man dungeons (opt-in).
     bool rogueDungeonThreatDrops;
+    bool warriorGapCloser;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
     // Paladin bots keep Judgement of Wisdom / Light up on the boss in groups (opt-in).
