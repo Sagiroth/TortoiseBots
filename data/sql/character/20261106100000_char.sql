@@ -10,10 +10,11 @@
 CREATE TABLE IF NOT EXISTS `tortoise_bots_guild_disenchant` (
   `bot_guid` int unsigned NOT NULL,
   `sender_guid` int unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
   `item_entry` int unsigned NOT NULL,
   `item_name` varchar(128) NOT NULL DEFAULT '',
   `results` varchar(512) NOT NULL DEFAULT '',
   `pending` tinyint unsigned NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL,
-  PRIMARY KEY (`bot_guid`, `sender_guid`, `item_entry`, `created_at`)
+  PRIMARY KEY (`bot_guid`, `item_guid`)
 );
