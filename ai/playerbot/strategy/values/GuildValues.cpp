@@ -9,6 +9,7 @@
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderBringPolicy.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderReagentTree.h"
@@ -474,6 +475,16 @@ private:
 SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot, FarmableVerdict* farmable)
 {
+    // A ticked material is the giver's to bring: the bot never sources it
+    // itself, so the ladder names it for the need list straight away. The
+    // bank leg stays open for it: the giver delivers by trade, mail or the
+    // guild bank, and a banked delivery is collected like any other need
+    // item's. Bags and mailbox still count through the normal need path
+    // below (the whole-tree shortfall nets them).
+    if (order.type == OrderType::Craft &&
+        TortoiseBots::GuildOrders::BringTickedBlocksLeg(order.bringItems, candidate.itemId) &&
+        !(order.supplyItemId == candidate.itemId && order.supplyStep == SupplyStep::Bank))
+        return SupplyStep::Need;
     if (candidate.craft)
         return SupplyStep::Craft;
     SupplySnapshot local;
@@ -599,6 +610,12 @@ void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Su
 void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplyStep step, SupplyStep returnStep = SupplyStep::None, SupplySnapshot* snapshot = nullptr)
 {
+    // A ticked material never spawns a sub-order: it joins the need list
+    // even when the ladder otherwise delegates. Belt and braces next to the
+    // ChooseSourceStep routing above.
+    if (step == SupplyStep::Sub && order.type == OrderType::Craft &&
+        TortoiseBots::GuildOrders::BringTickedBlocksLeg(order.bringItems, candidate.itemId))
+        step = SupplyStep::Need;
     if (step == SupplyStep::Sub)
     {
         if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count))

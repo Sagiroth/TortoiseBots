@@ -2,6 +2,10 @@
 #include "CommandShared.h"
 
 #include "../runtime/BotManager.h"
+#include "../runtime/GuildOrderBringPolicy.h"
+#include "../runtime/GuildOrderReagentTree.h"
+#include "../ai/playerbot/GuildOrderCraft.h"
+#include "../ai/playerbot/ServerFacade.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
@@ -195,21 +199,39 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    // Trailing options pop in either order: gold=<copper> caps the guild
+    // gold the order may take, bring=<item>,<item> names base reagents the
+    // giver delivers themselves (craft only).
     bool hasGoldCap = false;
     uint32_t goldCap = 0;
-    size_t goldSpace = itemPart.rfind(' ');
-    std::string maybeGold = goldSpace == std::string::npos ? itemPart : itemPart.substr(goldSpace + 1);
-    std::string lowerGold = maybeGold;
-    std::transform(lowerGold.begin(), lowerGold.end(), lowerGold.begin(), ::tolower);
-    if (lowerGold.rfind("gold=", 0) == 0)
+    std::vector<uint32_t> bring;
+    for (int pass = 0; pass < 2; ++pass)
     {
-        if (!ParseUintToken(maybeGold.substr(5), goldCap))
+        size_t optionSpace = itemPart.rfind(' ');
+        std::string maybeOption = optionSpace == std::string::npos ? itemPart : itemPart.substr(optionSpace + 1);
+        std::string lowerOption = maybeOption;
+        std::transform(lowerOption.begin(), lowerOption.end(), lowerOption.begin(), ::tolower);
+        if (lowerOption.rfind("gold=", 0) == 0)
         {
-            OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
-            return true;
+            if (hasGoldCap || !ParseUintToken(maybeOption.substr(5), goldCap))
+            {
+                OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+                return true;
+            }
+            hasGoldCap = true;
+            itemPart = optionSpace == std::string::npos ? std::string() : itemPart.substr(0, optionSpace);
         }
-        hasGoldCap = true;
-        itemPart = goldSpace == std::string::npos ? std::string() : itemPart.substr(0, goldSpace);
+        else if (lowerOption.rfind("bring=", 0) == 0)
+        {
+            if (!bring.empty() || !GuildOrders::ParseBringList(maybeOption.substr(6), bring))
+            {
+                OrderError(handler, "invalid", "Bring list must be item ids joined by commas: bring=<item>,<item>.");
+                return true;
+            }
+            itemPart = optionSpace == std::string::npos ? std::string() : itemPart.substr(0, optionSpace);
+        }
+        else
+            break;
     }
     // A trailing `keep` word marks a keep-in-stock order; hours still sit
     // between the amount and keep.
@@ -329,6 +351,12 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
 
+    if (!bring.empty() && type != OrderType::Craft)
+    {
+        OrderError(handler, "invalid", "bring= needs a craft order.");
+        return true;
+    }
+
     OrderRecord record;
     record.botGuidLow = guid.GetCounter();
     record.guildId = guildId;
@@ -342,6 +370,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.stockTarget = keep ? amount : 0;
     record.goldCap = goldCap;
     record.hasGoldCap = hasGoldCap;
+    record.bringItems = bring;
 
     if (type == OrderType::Craft && !bot)
     {
@@ -370,6 +399,48 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         }
         if (type == OrderType::Buy && record.farmZoneId == 0)
             record.farmZoneId = bot->GetTeam() == ALLIANCE ? kStormwindZone : kOrgrimmarZone;
+        if (type == OrderType::Craft && !record.bringItems.empty())
+        {
+            // Only base reagents of this craft survive: anything else was
+            // never the bot's to source. The bot is online here (craft
+            // needs its spellbook), so the tree walk sees its recipes.
+            auto recipeFor = [bot](uint32_t recipeItemId, GuildOrders::Recipe& out) -> bool
+            {
+                uint32_t spellId = ai::FindCraftSpellFor(bot, recipeItemId);
+                if (!spellId)
+                    return false;
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+                if (!spell)
+                    return false;
+                uint32_t effect = ai::FindCraftEffectFor(spellId, recipeItemId);
+                out.yieldPerCast = TortoiseBots::CraftOrderPolicy::MinYieldPerCast(
+                    spell->EffectBasePoints[effect], spell->EffectBaseDice[effect],
+                    spell->EffectDieSides[effect]);
+                for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                {
+                    if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+                        continue;
+                    out.reagents.push_back({ uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]) });
+                }
+                return true;
+            };
+            auto held = [](uint32_t heldId) -> uint32_t
+            {
+                // The full base set, not the current shortfall: stock in the
+                // bags still counts at the ladder, but must not shrink which
+                // ids the set names.
+                (void)heldId;
+                return 0;
+            };
+            std::vector<GuildOrders::ReagentNeed> base =
+                GuildOrders::CollectBaseReagents(itemId, amount, recipeFor, held);
+            std::vector<uint32_t> baseIds;
+            baseIds.reserve(base.size());
+            for (GuildOrders::ReagentNeed const& need : base)
+                baseIds.push_back(need.itemId);
+            record.bringItems = GuildOrders::FilterBringToBaseReagents(record.bringItems,
+                baseIds.data(), baseIds.size());
+        }
     }
 
     if (!GuildOrders::Give(record))
@@ -729,10 +800,19 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         std::string typeToken, itemToken, amountToken;
         if (!(in >> typeToken >> itemToken >> amountToken))
         {
-            OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount>.");
+            OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount> [bring=<item>,<item>].");
             return true;
         }
-        return HandleOrderPreview(handler, requester, first, typeToken, itemToken, amountToken);
+        std::string bringToken, extra;
+        if (in >> bringToken)
+        {
+            if (in >> extra)
+            {
+                OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount> [bring=<item>,<item>].");
+                return true;
+            }
+        }
+        return HandleOrderPreview(handler, requester, first, typeToken, itemToken, amountToken, bringToken);
     }
 
 

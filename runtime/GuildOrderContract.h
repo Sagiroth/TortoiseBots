@@ -270,6 +270,7 @@ struct OrderRecord
     bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
     uint32_t goldCap = 0;      // maximum guild copper this order may withdraw
     bool hasGoldCap = false;
+    std::vector<uint32_t> bringItems; // base reagents the giver brings (bring=): never sourced, counted from bags+mail only
     uint32_t guildGoldWithdrawn = 0;
     uint32_t guildGoldHeld = 0;
     bool cancelled = false; // cancel kept the row: unspent guild gold is still owed to the bank

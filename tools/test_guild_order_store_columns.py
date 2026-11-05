@@ -17,7 +17,7 @@ STORE = (ROOT / "runtime/GuildOrderStore.cpp").read_text()
 HEADER = (ROOT / "runtime/GuildOrderStoreColumns.h").read_text()
 
 # Columns the UPDATE never touches: set once by the REPLACE (or the key).
-IMMUTABLE = {"bot_guid", "guild_id", "type", "item_id", "created_at"}
+IMMUTABLE = {"bot_guid", "guild_id", "type", "item_id", "created_at", "bring"}
 
 
 def select_columns():
@@ -56,7 +56,12 @@ class GuildOrderStoreColumnsTest(unittest.TestCase):
         self.assertEqual(select_columns().count("carried"), 1)
         self.assertEqual(replace_columns().count("carried"), 1)
         self.assertEqual(update_columns().count("carried"), 1)
-        self.assertEqual(select_columns()[-1], "carried")
+
+    def test_bring_trails_the_row_and_is_replace_only(self):
+        self.assertEqual(select_columns().count("bring"), 1)
+        self.assertEqual(replace_columns().count("bring"), 1)
+        self.assertEqual(update_columns().count("bring"), 0)
+        self.assertEqual(select_columns()[-1], "bring")
 
 
 if __name__ == "__main__":

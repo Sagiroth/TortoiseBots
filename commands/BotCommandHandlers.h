@@ -79,7 +79,8 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
 // `.bot order <bot> preview`: read-only, needs the bot online; the order
 // command resolves the bot and the tokens, then hands them over.
 bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string const& botName,
-    std::string const& type, std::string const& item, std::string const& amount);
+    std::string const& type, std::string const& item, std::string const& amount,
+    std::string const& bring);
 bool HandleLootLog(ChatHandler* handler, char const* args);
 bool HandleRepair(ChatHandler* handler, char const* args);
 bool HandleSell(ChatHandler* handler, char const* args);
