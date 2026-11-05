@@ -9599,6 +9599,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         m.noAggro = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO);
         m.noAssist = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST);
         m.patroller = c->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+        m.normalRank = RunNormalRank(c); // the automatic cc counts only the elite bodies it estimates
         if (CreatureGroup* group = c->GetCreatureGroup())
             if (group->HasGroupFlag(OPTION_AGGRO_TOGETHER))
                 m.groupId = static_cast<uint32>(group->GetOriginalLeaderGuid().GetCounter());
@@ -9655,6 +9656,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             if (TortoiseBots::DungeonRun::PullUnitEstimate const* done = estimates.Find(stepIndex, stepPass, unit.guid))
             {
                 unit.estBodies = done->bodies;
+                unit.estBodiesElite = done->eliteBodies;
                 unit.estGuids = done->guids;
                 unit.estLosBudget = done->losBudgetSpent;
                 unit.joiners = done->bodies > 0 ? done->bodies - 1 : 0;
@@ -9738,11 +9740,13 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             unit.joiners = estimate.joiners;
             unit.joinersPatrol = estimate.patrolIsTheCause;
         }
+        unit.estBodiesElite = estimate.bodiesElite;
         if (walkRing)
         {
             TortoiseBots::DungeonRun::PullUnitEstimate& store = estimates.At(stepIndex, stepPass, unit.guid);
             store.read = true;
             store.bodies = unit.estBodies;
+            store.eliteBodies = unit.estBodiesElite;
             store.guids = unit.estGuids;
             store.losBudgetSpent = unit.estLosBudget;
         }

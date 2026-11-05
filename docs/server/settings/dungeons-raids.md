@@ -760,7 +760,7 @@ How many bodies a pull may bring before the automatic crowd control starts.
 <details>
 <summary>How it works in detail</summary>
 
-**Threshold:** the run's body count is the ring estimate's count when it read the pull (`AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`), else the old joiner estimate with the target, else the row's own living pullable units that are not non-elite (a NORMAL-rank unit is no body, and no mark unless the plan lists it). The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
+**Threshold:** the run's body count is the elite bodies of the pull's estimate when it read the pull (either the ring estimate under `AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`, or the joiner estimate with the target), else the row's own living pullable units that are not non-elite (a NORMAL-rank unit is no body, and no mark unless the plan lists it). The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
 
 </details>
 

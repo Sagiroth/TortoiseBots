@@ -16245,6 +16245,7 @@ static void TestRePullWithoutAFreshRingReadKeepsNoEstimate()
     // A tick that reads the ring again says its bodies.
     f.units[0].joinersRead = true;
     f.units[0].estBodies = 15;
+    f.units[0].estBodiesElite = 15;
     CHECK(RunAutoCcBodies(r, f, f.units[0]) == 15);
     // The key off: the row's own pack is counted.
     f.aggroWalkRing = false;
@@ -32874,6 +32875,47 @@ static void TestAutoCcPrePullBodyCountSkipsNormalRank()
     }
 }
 
+// The estimated counts are elite-only too (RunAutoCcBodies): ReadPullJoiners' ring estimate and its flat joiner
+// estimate both bring every living hostile, so the bodies the automatic crowd control counts must be the ones not
+// NORMAL-rank. Eight estimated bodies of which seven are non-elite are one body: no order, from either estimate.
+// Mutation: return pick.estBodies / pick.joiners + 1 from RunAutoCcBodies and both first runs send "cc moon 2 ...".
+static void TestAutoCcEstimatedBodyCountSkipsNormalRank()
+{
+    DungeonPlan plan = CcPlan({});
+    for (bool ring : {false, true})
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.aggroWalkRing = ring;
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact pick = AutoHumanoid(1, 10);
+        pick.joinersRead = true;
+        pick.estBodies = 8;
+        pick.estBodiesElite = 1;
+        pick.joiners = 7;
+        f.units = {pick, AutoHumanoid(2, 30)};
+        CHECK(RunAutoCcBodies(r, f, pick) == 1);
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+    }
+    // The control: the same read with eight elite bodies marks the pack.
+    for (bool ring : {false, true})
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.aggroWalkRing = ring;
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact pick = AutoHumanoid(1, 10);
+        pick.joinersRead = true;
+        pick.estBodies = 8;
+        pick.estBodiesElite = 8;
+        pick.joiners = 7;
+        f.units = {pick, AutoHumanoid(2, 30)};
+        CHECK(RunAutoCcBodies(r, f, pick) == 8);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
 // In the fight (RunAutoCcFightTick) a non-elite attacker is no candidate: the two non-elite attackers are farther and
 // higher level than the elite, so RunAutoCcBetter would take guid 1 without the skip. No partyHits on them: that
 // filter would hide the one under test.
@@ -34137,6 +34179,7 @@ int main()
     TestAutoCcNeverPicksFreezingTrap();
     TestAutoCcSkipsDottedUnits();
     TestAutoCcPrePullBodyCountSkipsNormalRank();
+    TestAutoCcEstimatedBodyCountSkipsNormalRank();
     TestAutoCcFightCandidateSkipsNormalRank();
     TestAutoCcOpeningResendSkipsNormalRankAndCcNever();
     TestAutoCcReapplySkipsNormalRankAndCcNever();

@@ -2148,5 +2148,18 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertIn("if (f.auraGatedTargets)\n                fact.auraGated =", players)
 
 
+    def test_the_automatic_cc_counts_only_elite_estimated_bodies(self):
+        # ReadPullJoiners records each creature's rank into the estimate and carries the elite body count on the
+        # unit and in the row's cache (both estimator paths) for RunAutoCcBodies: the automatic cc's threshold
+        # never counts normal-rank trash an estimate brings.
+        self.assertIn("m.normalRank = RunNormalRank(c);", COMMANDS)
+        self.assertIn("unit.estBodiesElite = estimate.bodiesElite;", COMMANDS)
+        self.assertIn("unit.estBodiesElite = done->eliteBodies;", COMMANDS)
+        self.assertIn("store.eliteBodies = unit.estBodiesElite;", COMMANDS)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        bodies_fn = body(policy, "inline std::uint32_t RunAutoCcBodies(", "\n}\n")
+        self.assertIn("return pick.estBodiesElite;", bodies_fn)
+
+
 if __name__ == "__main__":
     unittest.main()

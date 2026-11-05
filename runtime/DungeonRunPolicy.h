@@ -943,6 +943,9 @@ struct UnitFact
     // The ring estimate (Facts::aggroWalkRing, ai::EstimateAggroRing): the bodies that come if this one is
     // pulled, the target included, with their guids and whether its sight budget ran out.
     std::uint32_t estBodies = 0;
+    // ... how many of those bodies are not CREATURE_ELITE_NORMAL (either estimate path): the automatic crowd
+    // control's threshold counts only them.
+    std::uint32_t estBodiesElite = 0;
     std::vector<std::uint64_t> estGuids;
     bool estLosBudget = false;
     // Pull step and hop units, when Facts::pullStand is set: the lead bot sees
@@ -3112,6 +3115,7 @@ struct PullUnitEstimate
 {
     bool read = false;
     std::uint32_t bodies = 0;
+    std::uint32_t eliteBodies = 0;
     std::vector<std::uint64_t> guids;
     bool losBudgetSpent = false;
 };
@@ -9138,17 +9142,14 @@ inline bool RunCcSkipsUnit(const Run& r, const UnitFact& u)
     return u.normalRank && !(r.plan && r.plan->CcRank(u.entry) >= 0);
 }
 
-// How many bodies the pull brings: the ring estimate's count when it read this
-// pick, else the old joiner estimate with the target, else the row's own
-// pullable pack without its NORMAL-rank (non-elite) units: a trivial unit is no
-// body of the automatic crowd control's threshold. A cc_never unit is one still
-// (a unit the run may not mark is dangerous all the same).
+// How many bodies the pull brings: the estimate's elite bodies when it read this pick (either estimator: only a
+// NORMAL-rank (non-elite) unit is no body of the automatic crowd control's threshold), else the row's own pullable
+// pack without its NORMAL-rank units. A cc_never unit is one still (a unit the run may not mark is dangerous all the
+// same).
 inline std::uint32_t RunAutoCcBodies(const Run& r, const Facts& f, const UnitFact& pick)
 {
-    if (f.aggroWalkRing && pick.joinersRead)
-        return pick.estBodies;
     if (pick.joinersRead)
-        return pick.joiners + 1;
+        return pick.estBodiesElite;
     std::uint32_t bodies = 0;
     for (const UnitFact& u : f.units)
         if (Pullable(r, u) && !u.normalRank)
