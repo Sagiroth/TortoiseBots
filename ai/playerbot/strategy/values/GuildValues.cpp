@@ -790,6 +790,9 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     // capital before the ladder names bank or auction legs.
     if (order.type == OrderType::Enchant)
     {
+        sLog.outBasic("TBDEBUG gather %s spell %u state %s cap %u step %s", bot->GetName(), order.itemId,
+            TortoiseBots::GuildOrders::StateToken(order.state), TortoiseBots::EnchantCapital::BotInCapital(bot) ? 1u : 0u,
+            TortoiseBots::GuildOrders::SupplyStepToken(order.supplyStep));
         if (RefreshEnchantOrderGathering(ai, bot, order))
             return;
         if (order.state != TortoiseBots::GuildOrders::OrderState::Working ||
