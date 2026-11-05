@@ -17,6 +17,7 @@ namespace ai
     constexpr std::uint32_t kSeekForceMs = 15000;    // the burn is forced this long before due
     constexpr std::uint32_t kSeekGatherMaxMs = 8000; // a gather never waits longer than this
     constexpr float kSeekSpotYd = 8.0f;              // the source is "at B" within this
+    constexpr float kSeekFallbackYd = 35.0f;         // the seek's outer reach: a source beyond it is out of the fight
     constexpr float kSeekPickupYd = 60.0f;           // a source this near B may be pulled
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
@@ -95,22 +96,31 @@ namespace ai
         return missing <= 0 || forceBurn || nowMs - gatherStartMs >= kSeekGatherMaxMs;
     }
 
-    // A source already at or below the hold percent and fighting the raid may be finished wherever it stands: held
-    // until the next window, it reset and healed back to full.
+    // A source already at or below the hold percent and fighting the raid is the finishable pick: held until the next
+    // window, it reset and healed back to full.
     inline bool SeekSourceFinishable(bool inCombat, float hpPct, float holdPct)
     {
         return inCombat && hpPct <= holdPct;
     }
 
-    // DPS may not damage a source outside the dose window at all; inside it they stop at the hold percent until the
-    // gather is ready, and the burn after readiness is not held again. A finishable source is never held.
-    inline bool SeekSourceHeld(bool windowOpen, float hpPct, float holdPct, bool gatherReady, bool finishable = false)
+    // The same source inside the seek's reach of the row's spot: a Son farther out is never a kill pick (the gather
+    // cannot stand around it without leaving B, and a forced march would spend the window).
+    inline bool SeekFinishableInReach(bool inCombat, float hpPct, float holdPct, float distFromSpotYd)
     {
-        if (finishable)
-            return false;
-        if (!windowOpen)
+        return SeekSourceFinishable(inCombat, hpPct, holdPct) && distFromSpotYd <= kSeekFallbackYd;
+    }
+
+    // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
+    // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
+    // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick
+    // spends the raid's only source for a later cycle, and a pick killed while the window is shut leaves the next
+    // siphon without its cloud (the poison lasts longer than the window).
+    inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+        float holdPct, float distFromSpotYd)
+    {
+        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
             return true;
-        return !gatherReady && hpPct <= holdPct;
+        return hpPct <= holdPct && !gatherReady && !forceBurn;
     }
 
     // The second off-tank pulls a new source while the window is open, no source is in the fight yet, enough seekers
@@ -161,8 +171,6 @@ namespace ai
     // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn or a source
     // already at the hold percent reaches the fallback too, whatever the tank count: the off-spot Son has to die for
     // its cloud, and waiting for a drag at the spot left it alive.
-    constexpr float kSeekFallbackYd = 35.0f;
-
     inline float SeekSourceSearchYd(bool thirdTank, bool forceBurn, bool belowHold)
     {
         if (forceBurn || belowHold)

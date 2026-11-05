@@ -64,13 +64,23 @@ int main()
     CHECK(SeekGatherReady(0, 0, 0, false));
     CHECK(SeekGatherReady(2, 0, 0, true));
 
-    // DPS may not damage a source outside the window, and inside it only below the hold percent until the gather is
-    // ready; the burn after readiness is not held again.
-    CHECK(SeekSourceHeld(true, 29.0f, 30.0f, false));
-    CHECK(!SeekSourceHeld(true, 29.0f, 30.0f, true));
-    CHECK(!SeekSourceHeld(true, 31.0f, 30.0f, false));
-    CHECK(SeekSourceHeld(false, 90.0f, 30.0f, false));
-    CHECK(SeekSourceHeld(true, 30.0f, 30.0f, false));
+    // SeekOnlyThePickedSourceIsDamageable: the low-health exception belongs to the one picked source. With two Sons
+    // at or below the hold percent only the selected one may be damaged; every other Son stays held wherever it
+    // stands, so a second low Son is not spent beside the pick.
+    CHECK(!SeekHoldDecision(true, true, true, false, 20.0f, 30.0f, 5.0f));
+    CHECK(SeekHoldDecision(false, true, true, false, 20.0f, 30.0f, 5.0f));
+
+    // SeekPickedSourceStillHoldsAtPercent: inside the window the picked source still stops at the hold percent until
+    // the gather is ready (the old bypass finished a 14 % Son before the raid stood around it).
+    CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f));
+    CHECK(!SeekHoldDecision(true, true, true, false, 14.0f, 30.0f, 5.0f));
+    CHECK(SeekHoldDecision(true, true, false, false, 29.0f, 30.0f, 5.0f)); // 29 <= 30: still the hold
+    CHECK(!SeekHoldDecision(true, true, false, false, 31.0f, 30.0f, 5.0f)); // above the hold: burn it down
+
+    // SeekForcedBurnReleasesTheHold: the forced burn (the window is about to close) releases the picked source even
+    // before the gather is ready, and the gather row's readiness release is the same rule.
+    CHECK(!SeekHoldDecision(true, true, false, true, 14.0f, 30.0f, 5.0f));
+    CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 5.0f));
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
@@ -119,18 +129,17 @@ int main()
     // 35 yd, and the source the gather then stands around is not held once the gather is ready.
     CHECK(SeekSourceSearchYd(true, true, false) == kSeekFallbackYd);
     CHECK(11.0f <= SeekSourceSearchYd(true, true, false));
-    CHECK(!SeekSourceHeld(true, 80.0f, 30.0f, true));
+    CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 11.0f));
 
-    // SeekBelowHoldSourceNotHeldOutsideWindow: a source already at or below the hold percent and fighting the raid
-    // may be finished even with the dose window shut (held, it healed back from 14 % to full). Any other source still
-    // waits for the window, and a finishable one outside it is not a gather.
+    // SeekBelowHoldSourceStillWaits: a low Son only widens the search while it stands inside the seek's reach and
+    // fights; it is picked and held to the hold percent like any other until the gather is ready.
     CHECK(SeekSourceFinishable(true, 14.0f, 30.0f));
     CHECK(!SeekSourceFinishable(false, 14.0f, 30.0f));
     CHECK(!SeekSourceFinishable(true, 31.0f, 30.0f));
     CHECK(SeekSourceSearchYd(true, false, true) == kSeekFallbackYd);
-    CHECK(!SeekSourceHeld(false, 14.0f, 30.0f, false, true));
-    CHECK(SeekSourceHeld(false, 40.0f, 30.0f, false, false));
-    CHECK(SeekSourceHeld(true, 14.0f, 30.0f, false, false));
+    CHECK(SeekHoldDecision(true, false, false, false, 14.0f, 30.0f, 5.0f));
+    CHECK(SeekHoldDecision(true, false, false, false, 40.0f, 30.0f, 5.0f));
+    CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f));
 
     // Pets leave the siphon: one pet inside the 100 yd hit is a full 8 000 heal because the core reads the poison on
     // every living unit. The window starts 5 s before the due time and lasts until 2 s after it; the dummy aura that

@@ -1313,20 +1313,17 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
 }
 
-// Whether the row holds the damage on this source: every source but the one at the spot (a Son dragged or patrolling
-// elsewhere must not be killed away from B), and the one at the spot outside the dose window or at the hold percent
-// until the gather is ready. A source already at the hold percent and fighting the raid is never held: it is the
-// finishable pick wherever it stands.
+// Whether the row holds the damage on this source: every Son but the one selected source, always, and the selected
+// source outside the dose window or beyond the seek's reach, and at the hold percent until the gather is ready or the
+// burn is forced. The decision itself is the policy's (SeekHoldDecision).
 bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 {
     if (!IsSeekSource(state, unit))
         return false;
     const float holdPct = static_cast<float>(state.row->priority);
-    const bool finishable =
-        SeekSourceFinishable(unit->IsInCombat(), unit->GetHealthPercent(), holdPct);
-    if (unit != state.source)
-        return !finishable;
-    return SeekSourceHeld(state.windowOpen, unit->GetHealthPercent(), holdPct, state.ready, finishable);
+    const float distFromSpotYd = unit->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
+    return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
+                            unit->GetHealthPercent(), holdPct, distFromSpotYd);
 }
 
 // The source a damage action would hit: its own target, or (area actions) the row's source inside the area of the

@@ -10,7 +10,7 @@ the row's key reaches a consumer:
  - the seek trigger runs in the combat and the reaction engine (a run-held bot, a bot in a pull's join window) and
    the move hold keeps the walk from being undone;
  - the second off-tank drags a source to the spot, a free DPS bot pre-damages and burns it, and nobody burns it at
-   the wrong time (SeekSourceHeld);
+   the wrong time (SeekHoldDecision);
  - the spread row widens the ranged spacing and also applies to a bot the run holds on a stay.
 
 AiPlayerbot.DungeonRunBossSpread arms the spread row. AiPlayerbot.DungeonRunCharmYield is W3's and
@@ -126,7 +126,7 @@ class SeekWalkWiring(unittest.TestCase):
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
         for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
-                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekSourceHeld(",
+                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekKeepOrPickGatherSource(",
                      "SeekSourceSearchYd(", "SeekClockStartOver("):
             self.assertIn(rule, ACTIONS, rule)
@@ -230,7 +230,7 @@ class SeekRolesWiring(unittest.TestCase):
                       body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers("))
         kill = body(ACTIONS, "Unit* ai::FindBossSeekKill(")
         self.assertIn("IsFreeDps(ai, bot)", kill)
-        # Every source but the one at the spot is held all window, and the one at the spot obeys SeekSourceHeld.
+        # Every source but the selected one is held all fight, and the selected one obeys SeekHoldDecision.
         self.assertIn("SeekHoldsUnit(state, state.source)", kill)
 
     def test_the_sources_are_held_by_the_dps_hold_multiplier(self):
