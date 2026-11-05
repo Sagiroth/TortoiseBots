@@ -1018,9 +1018,6 @@ AiPlayerbot.DungeonRunBossSpread = 0
 # 1 - on
 AiPlayerbot.DungeonRunAvoidCastAll = 0
 
-# A bot charmed by a creature yields its AI to the charmer, and no area action lands on a charmed group member.
-AiPlayerbot.DungeonRunCharmYield = 0
-# Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills
 # the bosses and opens the doors, and pauses on 3 dead, on any player order and
