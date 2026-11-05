@@ -1387,6 +1387,18 @@ namespace ai
         }
     };
 
+    class TankRootedTrigger : public Trigger
+    {
+    public:
+        TankRootedTrigger(PlayerbotAI* ai) : Trigger(ai, "tank rooted") {}
+
+        bool IsActive() override
+        {
+            Unit* target = AI_VALUE(Unit*, "tank to remove roots");
+            return target != nullptr;
+        }
+    };
+
     class PartyMemberRootedTrigger : public Trigger
     {
     public:

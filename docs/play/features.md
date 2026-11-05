@@ -90,6 +90,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | Paladin: keep Judgements up on bosses | Yes | [`AiPlayerbot.PaladinJudgementUpkeep`](../server/settings/class-behaviour.md#aiplayerbotpaladinjudgementupkeep) | [Paladin](../classes/paladin.md#utility--interrupts) |
 | Rogue: Feint and Vanish to drop threat | Yes | [`AiPlayerbot.RogueDungeonThreatDrops`](../server/settings/class-behaviour.md#aiplayerbotroguedungeonthreatdrops) | [Rogue](../classes/rogue.md#utility--interrupts) |
 | Warlock: demon picked by spec | Yes | [`AiPlayerbot.WarlockPetBySpec`](../server/settings/class-behaviour.md#aiplayerbotwarlockpetbyspec) | [Warlock](../classes/warlock.md#utility--interrupts) |
+| Warlock: DoTs and Drain Soul skip targets that are about to die | No | [`AiPlayerbot.WarlockRaidRotation`](../server/settings/class-behaviour.md#aiplayerbotwarlockraidrotation) | [Warlock](../classes/warlock.md#class-settings) |
 
 ## Dungeons & Raids
 

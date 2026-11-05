@@ -84,6 +84,18 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics taunt after",
         NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));
 
+    // A burn_mana row's boss stands above the row's start % of mana and this bot is one of its burners: the drain
+    // cast goes out above the ordinary damage rotation, below every survival and avoid action.
+    triggers.push_back(new TriggerNode(
+        "boss tactics burn mana",
+        NextAction::array(0, new NextAction("boss tactics burn mana", ACTION_HIGH + 3), NULL)));
+
+    // A ranged_only row's subject stands out of this melee bot's reach: it drops the pick for the adds, beside the
+    // hold_kill drop and above the assist rows that would re-pick the boss.
+    triggers.push_back(new TriggerNode(
+        "boss tactics ranged only",
+        NextAction::array(0, new NextAction("boss tactics ranged only", ACTION_HIGH + 2), NULL)));
+
     // A listed blast is being cast and this bot stands in it: the walk out comes first, above the generic step out of
     // a ground effect (avoid aoe, ACTION_EMERGENCY + 5), since the blast kills in one hit.
     triggers.push_back(new TriggerNode(

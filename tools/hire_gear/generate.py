@@ -243,6 +243,13 @@ HAND_OVERRIDES = {
     (7, "tank", 2, 13): 61816,
     (7, "tank", 3, 13): 18406,
     (7, "tank", 3, 12): 58244,
+    # warlock t2 first trinket: BIS rank 1 (19812 Rune of the Dawn) only
+    # boosts spell damage against the Undead, which the tier's content
+    # (Zul'Gurub and the level 60 dungeons) is not; the mage t2 kit's Eye of
+    # the Beast (13968, 2% spell crit) fits the slot.
+    (9, "affliction", 2, 13): 13968,
+    (9, "demonology", 2, 13): 13968,
+    (9, "destruction", 2, 13): 13968,
 }
 
 UNIQUENESS_FLAG = 0  # item_template Flags bit for Unique-equip (0x20000?)

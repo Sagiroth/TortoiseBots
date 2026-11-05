@@ -256,3 +256,22 @@ bool BossTacticsTauntAfterTrigger::IsActive()
         return false;
     return FindBossTauntAfter(ai, bot, ScanBossTactics(ai, bot)).valid;
 }
+
+bool BossTacticsBurnManaTrigger::IsActive()
+{
+    if (!Ready(ai, bot) || !sPlayerbotAIConfig.dungeonRunBurnMana)
+        return false;
+    return FindBossBurnMana(ai, bot, ScanBossTactics(ai, bot)) != nullptr;
+}
+
+bool BossTacticsRangedOnlyTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    Unit* current = AI_VALUE(Unit*, "current target");
+    float gapYd = 0.0f;
+    if (!current || !IsRangedOnlyHeld(ai, bot, current, &gapYd))
+        return false;
+    LogBossRangedOnly(ai, bot, current, gapYd);
+    return true;
+}
