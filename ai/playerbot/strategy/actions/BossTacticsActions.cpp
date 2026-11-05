@@ -1197,13 +1197,17 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         }
     }
     out.seekers = out.windowOpen ? CountSeekWanted(ai, bot, boss, *row, out.windowOpen, nullptr, 0.0f) : 0;
-    // A source already at or below the hold percent that fights the raid is the kill pick wherever it stands: waiting
-    // for the next window let the off-spot Son reset (read from the fight's units, before the grid walk below).
+    // A source already at or below the hold percent that fights the raid is the kill pick wherever it stands inside
+    // the seek's reach: waiting for the next window let the off-spot Son reset (read from the fight's units, before
+    // the grid walk below). A Son farther than the reach is not counted: it can neither widen the search nor drop the
+    // gather latch, since the gather cannot stand around it without leaving B.
     bool belowHold = false;
     for (Unit* unit : fight.units)
     {
-        if (unit->GetEntry() == row->targetEntry &&
-            SeekSourceFinishable(unit->IsInCombat(), unit->GetHealthPercent(), holdPct))
+        if (unit->GetEntry() != row->targetEntry)
+            continue;
+        const float distFromSpotYd = unit->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
+        if (SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd))
         {
             belowHold = true;
             break;

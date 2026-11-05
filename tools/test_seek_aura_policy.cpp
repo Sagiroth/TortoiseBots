@@ -146,6 +146,18 @@ int main()
     CHECK(SeekHoldDecision(true, false, false, false, 40.0f, 30.0f, 5.0f));
     CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f));
 
+    // SeekFarSonNeverWidensTheSearch: a Son fighting at or below the hold percent widens the search only while it
+    // stands inside the seek's 35 yd of the spot. One farther out is not the below-hold pick, so it cannot flip the
+    // gather onto it or drop the latch; the search stays at the spot's radius with three tanks.
+    CHECK(SeekFinishableInReach(true, 14.0f, 30.0f, 34.0f));
+    CHECK(!SeekFinishableInReach(true, 14.0f, 30.0f, 36.0f));
+    CHECK(!SeekFinishableInReach(true, 31.0f, 30.0f, 10.0f));
+    CHECK(!SeekFinishableInReach(false, 14.0f, 30.0f, 10.0f));
+    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    // A picked Son beyond the reach is held even inside the window with the gather ready: the gather cannot stand
+    // around it inside the row's radius.
+    CHECK(SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 36.0f));
+
     // Pets leave the siphon: one pet inside the 100 yd hit is a full 8 000 heal because the core reads the poison on
     // every living unit. The window starts 5 s before the due time and lasts until 2 s after it; the dummy aura that
     // marks a siphon in progress holds it too, and a pet may be called again once the window is over.
