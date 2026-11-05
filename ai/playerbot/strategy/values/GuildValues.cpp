@@ -1108,7 +1108,7 @@ GuildOrder GuildOrderValue::Calculate()
         // AI struct: no farm item, no craft cast, so the type stays None.
         case TortoiseBots::GuildOrders::OrderType::Enchant:
             break;
-    order.itemId = stored->itemId;
+    }
     order.amount = stored->amount;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
     order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
