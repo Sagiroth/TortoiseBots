@@ -37,6 +37,15 @@ int main()
     // Two off-tanks, the higher of them stands.
     CHECK(ThreatCapReference({{1000.0f, false}, {400.0f, true}, {700.0f, true}}, true) == 700.0f);
 
+    // ThreatCapIgnoresATinyOffTankThreat: an off-tank below half the highest tank's threat on the target is not the
+    // successor — capping the damage dealers there would sit the cap at almost nothing and stop all damage, so the
+    // highest tank's threat stands instead. A main tank at 1000 with a 600 off-tank still caps at 600; a 50 one does
+    // not; a charmed main tank whose threat is gone leaves the off-tank's 600 as the reference.
+    CHECK(kThreatCapOffTankFloor == 0.5f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}}, true) == 600.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {50.0f, true}}, true) == 1000.0f);
+    CHECK(ThreatCapReference({{0.0f, false}, {600.0f, true}}, true) == 600.0f);
+
     // ThreatCapWithoutAZeroReference: an off-tank with no threat on the target (dead, not yet engaged, or its threat
     // deleted) never becomes the reference: a zero reads as "the tank has no threat" and vetoes every damage action
     // (Hakkar's Cause Insanity zeroing the main tank was the bug). The highest tank stands instead.

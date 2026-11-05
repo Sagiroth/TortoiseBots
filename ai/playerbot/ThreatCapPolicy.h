@@ -22,10 +22,16 @@ namespace ai
         bool offTank = false;
     };
 
+    // An off-tank counts as the successor reference only when it carries at least this share of the highest tank's
+    // threat on the target: an off-tank that has barely engaged (or whose threat a reset just deleted) must not cap the
+    // damage dealers at almost nothing, which would stop all damage where the highest tank is what keeps them going.
+    constexpr float kThreatCapOffTankFloor = 0.5f;
+
     // -1 when no tank is on the target (the caller's own "no reference" answer, kept from the previous max scan).
     // Without the successor cap: the highest tank, as always. With it: the highest threat among the off-tanks that are
-    // on the target (threat > 0), and the highest tank when no off-tank is: a zero reference is never returned while a
-    // tank stands, since the caller reads that as "the tank has no threat" and stops all damage.
+    // on the target (threat > 0) and carry at least kThreatCapOffTankFloor of the highest tank's threat, and the
+    // highest tank when no off-tank does: a zero reference is never returned while a tank stands, since the caller
+    // reads that as "the tank has no threat" and stops all damage.
     inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap)
     {
         if (tanks.empty())
@@ -44,6 +50,8 @@ namespace ai
             offTank = haveOffTank ? std::max(offTank, tank.threat) : tank.threat;
             haveOffTank = true;
         }
-        return haveOffTank ? offTank : highest;
+        if (!haveOffTank || offTank < highest * kThreatCapOffTankFloor)
+            return highest;
+        return offTank;
     }
 }
