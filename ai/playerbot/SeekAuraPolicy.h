@@ -23,6 +23,7 @@ namespace ai
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
     constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
+    constexpr float kSeekPullReachYd = 5.0f;         // the pulling tank's own swing reaches this far (melee contact)
 
     // Cycle clock: the fight's combat start (the first read that sees the boss in combat with the group) starts it, and
     // every accepted sighting of the row's cycle spell on a group member restarts it: an observed siphon wins over the
@@ -198,6 +199,57 @@ namespace ai
     {
         return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
             nearestSourceToSpotYd <= kSeekPickupYd;
+    }
+
+    // The pull branch's step: a Son that stands out of the fight stays its target until the pulling tank's own swing
+    // puts it in combat. The branch used to set the target and give the tick back, so the tank never moved and the
+    // rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). "Walk" is the reach action's
+    // walk (the attack order carries it); "Hit" is the swing at contact; "Done" hands the Son to the take/drag
+    // branches once it fights or follows.
+    enum class SeekTankPullStep : std::uint8_t
+    {
+        Walk = 0,
+        Hit = 1,
+        Done = 2,
+    };
+
+    inline SeekTankPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
+    {
+        if (sonInCombat || sonOnTank)
+            return SeekTankPullStep::Done;
+        return tankToSonYd <= kSeekPullReachYd ? SeekTankPullStep::Hit : SeekTankPullStep::Walk;
+    }
+
+    // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive
+    // the off-tank (tanks[1]) takes the Son over instead, and the raid's nearest hunter pulls it with one ranged shot;
+    // without a hunter the nearest ranged damage dealer does. Nobody pulls when there is no off-tank to take it over.
+    enum class SeekPullRole : std::uint8_t
+    {
+        None = 0,
+        ThirdTank = 1,
+        Hunter = 2,
+        Ranged = 3,
+    };
+
+    inline SeekPullRole SeekPullRoleOf(bool thirdTankAlive, bool offTankAlive, bool hunterAlive, bool rangedAlive)
+    {
+        if (thirdTankAlive)
+            return SeekPullRole::ThirdTank;
+        if (!offTankAlive)
+            return SeekPullRole::None;
+        if (hunterAlive)
+            return SeekPullRole::Hunter;
+        if (rangedAlive)
+            return SeekPullRole::Ranged;
+        return SeekPullRole::None;
+    }
+
+    // The puller's own hit on a Son it has not engaged yet is the pull, not damage on a held source: the hold answers
+    // true for every Son that is not the picked source, so without this the swing never lands and the Son never
+    // aggroes. Once the Son fights, the hold rule applies to it like to any other Son.
+    inline bool SeekPullHitExempt(bool puller, bool sonInCombat)
+    {
+        return puller && !sonInCombat;
     }
 
     // A damage-over-time on a Son of the seek fight: a pure DoT (Corruption, Serpent Sting) and a channelled periodic

@@ -552,6 +552,8 @@ namespace ai
     // The second off-tank's job: take a source that fights, pull one while the gather still needs it, and hold it at
     // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B,
     // and `holdSwing` the window-shut stop of the tank's own auto-attack on a Son already close to the hold percent.
+    // With fewer than three tanks alive the off-tank (tanks[1]) takes the Son over and the raid's nearest hunter (else
+    // a ranged damage dealer) pulls it with one ranged shot (`rangedPull`).
     struct SeekTankTask
     {
         bool valid = false;
@@ -559,6 +561,7 @@ namespace ai
         Unit* source = nullptr;
         bool take = false;
         bool pull = false;
+        bool rangedPull = false; // the fallback's one shot, instead of the tank's walk-in and swing
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

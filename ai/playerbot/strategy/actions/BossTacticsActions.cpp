@@ -956,6 +956,69 @@ bool IsSeekExemptTank(const RaidTankRoles& roles, Player* member)
     return false;
 }
 
+// The fallback puller when the third off-tank is not there: the living hunter nearest the row's spot, else the nearest
+// living ranged damage dealer that is not a tank or a healer. Null when no off-tank is alive to take the Son over or
+// nobody in the raid can shoot it.
+Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const BossTacticRow& row)
+{
+    Player* hunter = nullptr;
+    float hunterYd = 0.0f;
+    Player* ranged = nullptr;
+    float rangedYd = 0.0f;
+    const auto judge = [&](Player* member)
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+            !sServerFacade.IsAlive(member) || IsSeekExemptTank(roles, member))
+            return;
+        const float yd = member->GetDistance2dToCenter(row.spotX, row.spotY);
+        if (member->GetClass() == CLASS_HUNTER)
+        {
+            if (!hunter || yd < hunterYd)
+            {
+                hunter = member;
+                hunterYd = yd;
+            }
+            return;
+        }
+        if (ai->IsRanged(member) && !PlayerbotAI::IsHeal(member))
+        {
+            if (!ranged || yd < rangedYd)
+            {
+                ranged = member;
+                rangedYd = yd;
+            }
+        }
+    };
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+            judge(member);
+    }
+    else
+        judge(bot);
+    const bool offTankAlive = roles.tanks.size() >= 2 && roles.tanks.size() < 3;
+    switch (SeekPullRoleOf(false, offTankAlive, hunter != nullptr, ranged != nullptr))
+    {
+        case SeekPullRole::Hunter: return hunter;
+        case SeekPullRole::Ranged: return ranged;
+        default: return nullptr;
+    }
+}
+
+// Whether this bot opens a Son that is not fighting yet: the third off-tank, or its fallback while fewer than three
+// tanks live. The hold exemption reads it, so a puller's own strike goes through the seek hold.
+bool IsSeekPuller(PlayerbotAI* ai, Player* bot, const SeekFight& state)
+{
+    if (!ai || !bot || !state.live || !state.row || !state.windowOpen || state.seekers < kSeekPullMinMissing)
+        return false;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.tanks.size() >= 3)
+        return roles.tanks[2] == bot;
+    if (roles.tanks.size() < 2)
+        return false;
+    return FindSeekFallbackPuller(ai, bot, roles, *state.row) == bot;
+}
+
 // The seekers of this fight: every living group member that SeekWanted would send (no poison, not the boss's victim,
 // not one of the three tanks, not charmed). With `source` only those outside `gatherYd` of it count (the gather's
 // `missing`, SeekGatherReady); without it all of them do (the second off-tank's pull, SeekTankPullDue).
@@ -2935,23 +2998,33 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
-            if (SeekDotOnSource(state, action))
+            // The puller's own strike on a Son that is not fighting yet is the pull itself: the hold answers true for
+            // every Son that is not the picked source, so it would stand the tank's swing (or the fallback's shot)
+            // down and the Son would never aggro. Once it fights, the hold applies to it like to any other Son.
+            Unit* const struck = action->GetTarget();
+            const bool pullHit = IsSeekSource(state, struck) &&
+                SeekPullHitExempt(IsSeekPuller(ai, bot, state), struck->IsInCombat());
+            if (!pullHit)
             {
-                LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
-                return 0.0f;
-            }
-            Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
-                : aoe ? AI_VALUE(Unit*, "dps aoe target")
-                : action->GetTarget();
-            Unit* source = SeekSourceInAction(state, picked);
-            Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
-            // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it down.
-            if (!heldSource && area)
-                heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
-            if (heldSource)
-            {
-                LogHoldKillVeto(ai, bot, "seek", heldSource);
-                return 0.0f;
+                if (SeekDotOnSource(state, action))
+                {
+                    LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
+                    return 0.0f;
+                }
+                Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
+                    : aoe ? AI_VALUE(Unit*, "dps aoe target")
+                    : action->GetTarget();
+                Unit* source = SeekSourceInAction(state, picked);
+                Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
+                // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it
+                // down.
+                if (!heldSource && area)
+                    heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
+                if (heldSource)
+                {
+                    LogHoldKillVeto(ai, bot, "seek", heldSource);
+                    return 0.0f;
+                }
             }
         }
     }
@@ -4582,15 +4655,25 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekTankTask task;
     if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunSeekAura)
         return task;
-    if (!PlayerbotAI::IsTank(bot))
-        return task;
-    const RaidTankRoles roles = GetRaidTankRoles(ai);
-    if (roles.tanks.size() < 3 || roles.tanks[2] != bot)
-        return task;
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return task;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    // The third off-tank pulls a Son that is not fighting; with fewer than three tanks alive its fallback does (the
+    // raid's nearest hunter, else a ranged damage dealer) and tanks[1] takes the Son over. Every other bot answers
+    // false before the fight read.
+    const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
+    const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
+    if (!thirdTank && !pickupTank)
+    {
+        if (roles.tanks.size() < 2 || roles.tanks.size() >= 3)
+            return task;
+        if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
+            return task;
+    }
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
+        return task;
+    if (!thirdTank && !pickupTank && FindSeekFallbackPuller(ai, bot, roles, *state.row) != bot)
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -4602,6 +4685,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     Unit* fighting = nullptr;
     Unit* nearest = nullptr;
     float nearestToSpot = 0.0f;
+    bool anyInCombat = false;
     for (Creature* candidate : SeekSourcesNear(bot, state.row->targetEntry, state.row->spotX, state.row->spotY,
             state.row->spotZ, kSeekPickupYd))
     {
@@ -4611,6 +4695,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             nearest = candidate;
             nearestToSpot = toSpot;
         }
+        if (candidate->IsInCombat())
+            anyInCombat = true;
         if (candidate->GetVictim() == bot)
         {
             if (!onTank)
@@ -4619,31 +4705,48 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         else if (candidate->IsInCombat() && !fighting)
             fighting = candidate;
     }
-    if (onTank)
+    if (thirdTank || pickupTank)
     {
-        // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then). With the
-        // window shut and the Son already close to the hold percent the tank's swings would spend it before the next
-        // window: the tank stops auto-attacking it, and keeps only the threat.
-        task.valid = true;
-        task.source = onTank;
-        task.holdSwing = SeekTankSwingHeld(state.windowOpen, onTank->GetHealthPercent(),
-                                           static_cast<float>(state.row->priority));
-        if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
-            task.walkToSpot = true;
+        if (onTank)
+        {
+            // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then). With
+            // the window shut and the Son already close to the hold percent the tank's swings would spend it before
+            // the next window: the tank stops auto-attacking it, and keeps only the threat.
+            task.valid = true;
+            task.source = onTank;
+            task.holdSwing = SeekTankSwingHeld(state.windowOpen, onTank->GetHealthPercent(),
+                                               static_cast<float>(state.row->priority));
+            if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
+                task.walkToSpot = true;
+            return task;
+        }
+        if (fighting)
+        {
+            task.valid = true;
+            task.source = fighting;
+            task.take = true;
+            return task;
+        }
+        // Only the third off-tank's own pull walks the Son down; the off-tank of a two-tank raid stands at the spot
+        // for the fallback's shot to arrive.
+        if (thirdTank &&
+            SeekTankPullDue(state.windowOpen, anyInCombat, state.seekers,
+                            nearest ? nearestToSpot : std::numeric_limits<float>::max()))
+        {
+            task.valid = true;
+            task.source = nearest;
+            task.pull = true;
+        }
         return task;
     }
-    if (fighting)
-    {
-        task.valid = true;
-        task.source = fighting;
-        task.take = true;
-        return task;
-    }
-    if (SeekTankPullDue(state.windowOpen, false, state.seekers, nearest ? nearestToSpot : std::numeric_limits<float>::max()))
+    // The fallback lifts a Son that stands out of the fight with one shot; once it fights, the off-tank takes it.
+    if (SeekTankPullDue(state.windowOpen, anyInCombat, state.seekers,
+                        nearest ? nearestToSpot : std::numeric_limits<float>::max()))
     {
         task.valid = true;
         task.source = nearest;
         task.pull = true;
+        task.rangedPull = true;
     }
     return task;
 }
@@ -4712,7 +4815,6 @@ bool TauntAuraGated(Player* bot, Unit* subject)
 
 bool BossTacticsSeekTankAction::Execute(Event& event)
 {
-    (void)event;
     AiObjectContext* context = ai->GetAiObjectContext();
     const SeekTankTask task = FindBossSeekTank(ai, bot);
     if (!task.valid)
@@ -4748,9 +4850,29 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     if (task.pull)
     {
         hasLast = false;
-        if (AI_VALUE(Unit*, "current target") != task.source)
-            return Attack(bot, task.source);
-        return false;
+        const SeekTankPullStep step = SeekTankPullStep(task.source->IsInCombat(), task.source->GetVictim() == bot,
+                                                       bot->GetDistance(task.source));
+        if (step == SeekTankPullStep::Done)
+            return false;
+        if (task.rangedPull)
+        {
+            // The shot is aimed at the Son: the attack order sets it as the target and carries the walk into range
+            // with it (the reach action). One ranged shot opens the Son for the off-tank's pickup: the hunter's own
+            // pull spell (its class pull is Serpent Sting, HunterAiObjectContext) or, for any ranged bot, the shoot
+            // action, which resolves the equipped weapon (wand, bow, gun, crossbow, thrown) itself. Out of range the
+            // tick is left to the walk and the next read tries again.
+            if (AI_VALUE(Unit*, "current target") != task.source)
+                return Attack(bot, task.source, kSeekPickupYd);
+            if (bot->GetClass() == CLASS_HUNTER && ai->CanCastSpell("serpent sting", task.source) &&
+                ai->CastSpell("serpent sting", task.source))
+                return true;
+            if (ai->DoSpecificAction("shoot", event, true))
+                return true;
+            return false;
+        }
+        // The attack order carries the walk to the Son with it (the reach action) and the swing at contact arms the
+        // fight. The branch used to return false once the target was set, so the tank never moved.
+        return Attack(bot, task.source, kSeekPickupYd);
     }
     if (task.walkToSpot)
     {

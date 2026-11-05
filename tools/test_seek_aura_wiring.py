@@ -128,7 +128,8 @@ class SeekWalkWiring(unittest.TestCase):
         for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
-                     "SeekSourceSearchYd(", "SeekClockStartOver("):
+                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullRoleOf(",
+                     "SeekPullHitExempt("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -228,15 +229,23 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("FindBossSeekTank(ai, bot)", tank)
         self.assertIn("MoveTo(", tank)
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
-        # Only tanks[2] owns the job.
+        # The third off-tank owns the job, and with fewer than three tanks alive the off-tank takes the Son over while
+        # the raid's nearest hunter (else a ranged dealer) pulls it.
         self.assertIn("GetRaidTankRoles(ai)", find)
-        self.assertIn("tanks.size() < 3", find)
         self.assertIn("tanks[2]", find)
+        self.assertIn("tanks[1]", find)
+        self.assertIn("FindSeekFallbackPuller(", find)
+        self.assertIn("SeekPullRoleOf(", POLICY)
         # The pull rule and the gather radius are the policy's.
         self.assertIn("SeekTankPullDue(", find)
         # The pickup search and the drag's arrival are the policy's own distances.
         self.assertIn("kSeekPickupYd", find)
         self.assertIn("kSeekTankArriveYd", find)
+        # The pull branch walks the Son down with the attack's reach form; it used to set the target and give the
+        # tick back, so the tank never moved and the Son never aggroed.
+        self.assertIn("SeekTankPullStep(", tank)
+        self.assertIn("Attack(bot, task.source, kSeekPickupYd)", tank)
+        self.assertIn("DoSpecificAction(\"shoot\", event, true)", tank)
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the
         # fallback (M3).
         read = body(ACTIONS, "bool ReadSeekFight(")

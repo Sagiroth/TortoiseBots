@@ -122,6 +122,35 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
+    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to, not dropped after one target
+    // set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son in
+    // combat). Inside the swing's reach it is hit; once it fights, or follows the tank, the take/drag branch owns it.
+    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekTankPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 60.0f) == SeekTankPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 5.0f) == SeekTankPullStep::Hit);
+    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekTankPullStep::Hit);
+    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekTankPullStep::Done);
+    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekTankPullStep::Done);
+
+    // SeekTankPullHitNotHeld: the pulling tank's own hit on a Son at 100 % that is not fighting is exempt from the
+    // seek hold, or the hold would stand the swing down and the Son would never aggro; once the Son fights, the hold
+    // rule applies to it like to any other Son.
+    CHECK(SeekPullHitExempt(true, false));
+    CHECK(!SeekPullHitExempt(true, true));
+    CHECK(!SeekPullHitExempt(false, false));
+    CHECK(!SeekPullHitExempt(false, true));
+    // The hold itself still answers true for a Son that is not the pick: the exemption is the caller's, on the puller's
+    // own strike against a Son that has not joined the fight.
+    CHECK(SeekHoldDecision(false, true, false, false, 100.0f, 30.0f, 30.0f, 5));
+
+    // SeekPullFallsBackToHunter: with fewer than three tanks alive the third off-tank's pull is a hunter's shot, then
+    // a ranged damage dealer's; nobody pulls without an off-tank (tanks[1]) to take the Son over.
+    CHECK(SeekPullRoleOf(true, true, true, true) == SeekPullRole::ThirdTank);
+    CHECK(SeekPullRoleOf(false, true, true, true) == SeekPullRole::Hunter);
+    CHECK(SeekPullRoleOf(false, true, false, true) == SeekPullRole::Ranged);
+    CHECK(SeekPullRoleOf(false, true, false, false) == SeekPullRole::None);
+    CHECK(SeekPullRoleOf(false, false, true, true) == SeekPullRole::None);
+
     // SeekAreaHoldsASonBesideThePick: an area action's area is judged Son by Son, so the selected Son may be burnable
     // while a second, held Son standing beside it is not: the cast reaches both, so it is vetoed. When the area reaches
     // only the non-selected (held) Son the cast is vetoed too, and it stands when nothing inside it is held.
