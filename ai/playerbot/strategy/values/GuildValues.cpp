@@ -648,8 +648,8 @@ void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Su
     // order amount less delivered (which double-counts what is already held).
     SupplySnapshot local;
     SupplySnapshot& snap = snapshot ? *snapshot : local;
-    uint32_t outputHave = order.delivered + SnapshotBags(ai, snap, order.itemId) +
-        SnapshotMail(bot, snap, order.itemId);
+    uint32_t outputHave = order.type == OrderType::Enchant ? 0 : order.delivered +
+        SnapshotBags(ai, snap, order.itemId) + SnapshotMail(bot, snap, order.itemId);
     uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
     uint32_t count = candidate.count;
     std::vector<NeedItem> missing;
@@ -831,8 +831,11 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
         return;
     }
-    uint32_t carried = SnapshotBags(ai, snapshot, order.itemId);
-    uint32_t mailed = SnapshotMail(bot, snapshot, order.itemId);
+    // An enchant has no output item: its key is a spell id, which may also
+    // be some item's id in the bags.
+    bool const enchantRow = order.type == OrderType::Enchant;
+    uint32_t carried = enchantRow ? 0 : SnapshotBags(ai, snapshot, order.itemId);
+    uint32_t mailed = enchantRow ? 0 : SnapshotMail(bot, snapshot, order.itemId);
     // The bought oversized stack is in the bags: the auction leg runs again,
     // this time only to relist the surplus. Buying more waits until it is
     // posted (or the relist gives up and the delivery leftover path takes it).
