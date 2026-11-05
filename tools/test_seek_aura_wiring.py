@@ -131,7 +131,7 @@ class SeekWalkWiring(unittest.TestCase):
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
-                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs("):
+                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs(", "SeekLateEngagedBurn("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -279,6 +279,14 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("kSeekPullLatchYd", POLICY)
         self.assertIn("kSeekPullLatchMs", POLICY)
         self.assertIn("kSeekPullHitYd", POLICY)
+
+    def test_the_late_engaged_son_forces_the_burn(self):
+        # A picked Son that joins the fight with the siphon close is burnt at once: the read forces the burn from the
+        # pick, and the gather's own logic then spends it (SeekLateEngagedBurn).
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs)", read)
+        self.assertIn("out.forceBurn = true;", read)
+        self.assertIn("inline bool SeekLateEngagedBurn(", POLICY)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the

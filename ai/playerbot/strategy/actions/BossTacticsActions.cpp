@@ -1487,6 +1487,11 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     if (!source && latched && latchInReach && latched->GetObjectGuid().GetRawValue() == chosenGuid)
         source = latched;
     out.source = source;
+    // A picked Son that joined the fight with the siphon due inside 30 s is burnt at once, not at the forced burn's
+    // 15 s: the pick (the gather's latched one, else this read's) is too late to be walked down otherwise.
+    Unit* const pickedSon = latched && latchInReach ? static_cast<Unit*>(latched) : source;
+    if (SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs))
+        out.forceBurn = true;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);

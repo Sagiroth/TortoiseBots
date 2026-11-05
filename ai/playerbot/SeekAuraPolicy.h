@@ -83,6 +83,16 @@ namespace ai
         return nowMs + kSeekForceMs >= dueMs;
     }
 
+    // A picked Son that only joins the fight with the siphon close is burnt at once, not at the forced burn's 15 s: walk
+    // 41 left three such Sons at 67-90 % a few seconds before the siphon (mh1 -27 s, th1 -23 s, th4 -11 s), so the
+    // cloud was never earned. A pick already overdue (dueInMs 0) is late by definition; no due time is not.
+    constexpr std::uint32_t kSeekLateEngageMs = 30000;
+
+    inline bool SeekLateEngagedBurn(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs)
+    {
+        return sourceInCombat && dueMs != 0 && dueInMs <= kSeekLateEngageMs;
+    }
+
     // Who seeks: every living bot that lacks the aura, except the boss's victim (the main tank) and the two tanks kept
     // off the poison (the cause-insanity backup), and never a charmed bot.
     inline bool SeekWanted(bool keyOn, bool windowOpen, bool hasAura, bool isBossVictim, bool isExemptTank, bool charmed,

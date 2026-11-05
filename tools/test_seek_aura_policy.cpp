@@ -148,6 +148,18 @@ int main()
     CHECK(!SeekHoldDecision(true, true, false, true, 14.0f, 30.0f, 5.0f, 5));
     CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 5.0f, 5));
 
+    // SeekLateEngagedSonForcesBurn: a picked Son that only joins the fight with the siphon due inside 30 s is burnt at
+    // once, not at the forced burn's own 15 s, so its cloud still lands in time (walk 41 left three such Sons at 67-90 %
+    // seconds before the siphon). A Son that is not fighting, a due time further out, and a fight with no due time do
+    // not force it; an overdue pick is late by definition.
+    CHECK(kSeekLateEngageMs == 30000);
+    CHECK(SeekLateEngagedBurn(true, 91000, 25000));
+    CHECK(SeekLateEngagedBurn(true, 91000, 30000));
+    CHECK(!SeekLateEngagedBurn(true, 91000, 30001));
+    CHECK(!SeekLateEngagedBurn(false, 91000, 25000));
+    CHECK(!SeekLateEngagedBurn(true, 0, 0));
+    CHECK(SeekLateEngagedBurn(true, 91000, 0));
+
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
     CHECK(!SeekWanted(true, true, false, false, true, false, true));
