@@ -24,7 +24,7 @@ class GuildOrderHoursWiringTest(unittest.TestCase):
         self.assertIn('ReasonToken(order.reason) + "|" + BotCommands::ProtocolSafe(zone) + "|" + difficulty', STORE)
 
     def test_addon_documents_row_shape(self):
-        self.assertIn("`TBM:ORDER\\|<bot>\\|<type>\\|<itemId>\\|<item>\\|<have>\\|<want>\\|<state>\\|<reason>\\|<zone>\\|<difficulty>\\|<hours>\\|<keep>\\|<parent>\\|<goldCap>\\|<step>\\|<need>\\|<carry>`", ADDON)
+        self.assertIn("`TBM:ORDER\\|<bot>\\|<type>\\|<itemId>\\|<item>\\|<have>\\|<want>\\|<state>\\|<reason>\\|<zone>\\|<difficulty>\\|<hours>\\|<keep>\\|<parent>\\|<goldCap>\\|<step>\\|<need>\\|<carry>\\|<bring>`", ADDON)
 
     def test_addon_documents_inf_hours(self):
         self.assertIn("`inf`", ADDON)

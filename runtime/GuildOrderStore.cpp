@@ -2,6 +2,7 @@
 #include "GuildOrderStoreColumns.h"
 
 #include "GuildOrderAuctionPolicy.h"
+#include "GuildOrderBringPolicy.h"
 #include "GuildOrderCancelDepositPolicy.h"
 #include "GuildOrderDelivery.h"
 #include "GuildOrderGiveUpPolicy.h"
@@ -208,6 +209,7 @@ public:
                 record.createdAt = fields[StoreColumns::ColCreatedAt].GetUInt64();
                 record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
                 record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
+                record.bringItems = ParseBringItemsToken(fields[StoreColumns::ColBring].GetCppString());
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -418,10 +420,10 @@ public:
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`, `carried`) "
+                "`created_at`, `updated_at`, `carried`, `bring`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u')",
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u', '%s')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
@@ -437,7 +439,7 @@ public:
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
-                record.reportedCarry))
+                record.reportedCarry, BringItemsToken(record.bringItems).c_str()))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -3558,7 +3560,7 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
            SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems) + "|" +
-           std::to_string(carry);
+           std::to_string(carry) + "|" + BringItemsToken(order.bringItems);
 }
 
 void Initialize()

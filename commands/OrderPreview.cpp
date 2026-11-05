@@ -17,6 +17,7 @@
 #include "../ai/playerbot/ServerFacade.h"
 #include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../runtime/BotManager.h"
+#include "../runtime/GuildOrderBringPolicy.h"
 #include "../runtime/GuildOrderContract.h"
 #include "../runtime/GuildOrderCraftPolicy.h"
 #include "../runtime/GuildOrderPreviewPolicy.h"
@@ -218,7 +219,8 @@ std::string PreviewZoneName(uint32_t zoneId)
 // the bot's guild with giver rights, like give. Buy previews are refused:
 // they would promise finished goods the gate refuses.
 bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string const& botName,
-    std::string const& typeToken, std::string const& itemToken, std::string const& amountToken)
+    std::string const& typeToken, std::string const& itemToken, std::string const& amountToken,
+    std::string const& bringToken)
 {
     Player* bot = nullptr;
     ObjectGuid guid;
@@ -261,6 +263,22 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
         return true;
     }
     uint32_t itemId = 0;
+    std::vector<uint32_t> bring;
+    if (!bringToken.empty())
+    {
+        std::string lower = bringToken;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.rfind("bring=", 0) != 0 || !GuildOrders::ParseBringList(bringToken.substr(6), bring))
+        {
+            SendActionError(handler, "order", "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount> [bring=<item>,<item>].");
+            return true;
+        }
+        if (type != OrderType::Craft)
+        {
+            SendActionError(handler, "order", "invalid", "bring= needs a craft preview.");
+            return true;
+        }
+    }
     if (!PreviewParseItem(itemToken, itemId))
     {
         SendActionError(handler, "order", "invalid", "Unknown item: shift-click an item link or pass its id.");
@@ -368,6 +386,45 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
     // lookups. A vendor-unlimited row is bought at a shop, never farmed or
     // delegated; a row the bot can farm or make itself never becomes a
     // sub-order; the rest is what the player must send.
+    // Only base reagents of this craft survive in the tick set, like the
+    // give path filters: anything else was never the bot's to source. The
+    // walk uses zero stock so the set names the craft's full base list,
+    // not the current shortfall (the rows above net stock themselves).
+    {
+        std::vector<uint32_t> fullBase;
+        if (type == OrderType::Craft)
+        {
+            auto fullRecipeFor = [bot](uint32_t recipeItemId, GuildOrders::Recipe& out) -> bool
+            {
+                uint32_t spellId = ai::FindCraftSpellFor(bot, recipeItemId);
+                if (!spellId || PreviewVendorUnlimited(recipeItemId))
+                    return false;
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+                if (!spell)
+                    return false;
+                uint32_t effect = ai::FindCraftEffectFor(spellId, recipeItemId);
+                out.yieldPerCast = TortoiseBots::CraftOrderPolicy::MinYieldPerCast(
+                    spell->EffectBasePoints[effect], spell->EffectBaseDice[effect],
+                    spell->EffectDieSides[effect]);
+                for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                {
+                    if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+                        continue;
+                    out.reagents.push_back({ uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]) });
+                }
+                return true;
+            };
+            auto noStock = [](uint32_t heldId) -> uint32_t
+            {
+                (void)heldId;
+                return 0;
+            };
+            for (GuildOrders::ReagentNeed const& need :
+                GuildOrders::CollectBaseReagents(itemId, amount, fullRecipeFor, noStock))
+                fullBase.push_back(need.itemId);
+        }
+        bring = GuildOrders::FilterBringToBaseReagents(bring, fullBase.data(), fullBase.size());
+    }
     std::vector<PreviewReagent> rows;
     std::unordered_map<uint32_t, uint32_t> bankCache;
     std::unordered_set<uint32_t> branch;
@@ -381,18 +438,25 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
     {
         if (!needId || !needCount)
             continue;
+        // A ticked material is the giver's to bring: no bank, auction,
+        // vendor, farm or sub-order lane, so the whole shortfall past the
+        // bot's own bags and mailbox lands in the player column.
+        bool ticked = GuildOrders::BringTickedBlocksLeg(bring, needId);
         PreviewReagent row;
         row.itemId = needId;
         row.required = needCount;
         row.inBags = PreviewBags(bot, needId);
         row.inMail = PreviewMail(bot, needId);
-        auto bankFound = bankCache.find(needId);
-        if (bankFound == bankCache.end())
-            bankFound = bankCache.emplace(needId, PreviewBank(guildId, needId)).first;
-        row.inBank = bankFound->second;
+        if (!ticked)
+        {
+            auto bankFound = bankCache.find(needId);
+            if (bankFound == bankCache.end())
+                bankFound = bankCache.emplace(needId, PreviewBank(guildId, needId)).first;
+            row.inBank = bankFound->second;
+        }
         uint32_t held = row.inBags + row.inMail + row.inBank;
         uint32_t shortfall = held >= needCount ? 0 : needCount - held;
-        if (!shortfall)
+        if (!shortfall || ticked)
         {
             rows.push_back(row);
             continue;
@@ -446,10 +510,11 @@ bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string con
     std::string zone = "-";
     if (!plan.zones.empty())
         zone = BotCommands::ProtocolSafe(PreviewZoneName(plan.zones[0].zoneId));
-    handler->PSendSysMessage("TBM:ORDER_PREVIEW|%s|%s|%u|%s|%u|%u|%s|%s|%s|%u|%s",
+    handler->PSendSysMessage("TBM:ORDER_PREVIEW|%s|%s|%u|%s|%u|%u|%s|%s|%s|%u|%s|%s",
         botNameSafe.c_str(), TypeToken(type), itemId, itemNameSafe.c_str(), amount,
         outputMissing, difficulty.c_str(), zone.c_str(), PreviewReagentsToken(rows).c_str(),
-        minutes, hasGoldCap ? std::to_string(goldCap).c_str() : "-");
+        minutes, hasGoldCap ? std::to_string(goldCap).c_str() : "-",
+        GuildOrders::BringItemsToken(bring).c_str());
     return true;
 }
 
