@@ -229,6 +229,17 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     ObjectGuid(HIGHGUID_PLAYER, meet->giverGuidLow)) : nullptr;
                 if (giver && giver->IsInWorld())
                 {
+                    // Every window counts as a try, also one the giver closes
+                    // at once: after the last one the bot gives up for now.
+                    if (GetEnchantTrade(bot->GetGUIDLow()).tries >= kEnchantTradeMaxTries)
+                    {
+                        ai->TellPlayerNoFacing(giver, kTradeGiveUpText,
+                            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                        SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
+                        ClearMeetFailed(bot->GetGUIDLow());
+                        return true;
+                    }
+                    NoteEnchantTradeOpened(bot->GetGUIDLow(), WorldTimer::getMSTime());
                     WorldPacket packet(CMSG_INITIATE_TRADE, 8);
                     packet << giver->GetObjectGuid();
                     bot->GetSession()->HandleInitiateTradeOpcode(packet);
@@ -247,6 +258,14 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     ObjectGuid(HIGHGUID_PLAYER, meet->giverGuidLow)) : nullptr;
                 if (!giver || !giver->IsInWorld())
                     return false;
+                // Across the city: hop next to the giver, like the inn teleport.
+                if (bot->GetDistance(giver) > 60.0f && bot->GetMapId() == giver->GetMapId())
+                {
+                    ai->StopMoving();
+                    bot->NearTeleportTo(giver->GetPositionX() + 1.5f, giver->GetPositionY(),
+                        giver->GetPositionZ(), giver->GetOrientation());
+                    return true;
+                }
                 if (bot->IsMoving())
                     return true;
                 MoveTo(giver, 3.0f);
