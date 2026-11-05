@@ -944,6 +944,8 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
     auto& queue = SyncedServiceQueue(bot);
     if (queue.empty())
         return false;
+    sLog.outBasic("TBDEBUG disenchant service %s head item %u pending %u loot %u", bot->GetName(),
+        queue.front().itemId, queue.front().pendingResults ? 1u : 0u, queue.front().collectLootOpen ? 1u : 0u);
     // The cast leaves its results in a loot window on the item for the bot
     // itself: the collect tick below takes it there, so a cast never
     // reports success before its loot exists. Pending results ride the
@@ -1090,6 +1092,7 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
     ItemQualifier itemQualifier(queued.itemId);
     Event disenchantEvent = Event("guild disenchant service", "13262 " + chat->formatQItem(queued.itemId));
     bool didCast = CastCustomSpellAction::Execute(disenchantEvent);
+    sLog.outBasic("TBDEBUG disenchant service %s cast %u -> %u", bot->GetName(), queued.itemId, didCast ? 1u : 0u);
     if (!didCast)
     {
         head.bagBefore.clear();
