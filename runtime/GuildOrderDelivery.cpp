@@ -579,6 +579,30 @@ private:
         if (!bot->IsAlive() || bot->IsInCombat())
             return;
         ::PlayerbotAI* ai = ::PlayerbotAIStorage::Instance().GetAI(bot);
+        // The giver's own materials go back by server mail at once: that
+        // needs no banker. Only the rest walks to the guild bank.
+        if (stored->type == OrderType::Enchant)
+        {
+            std::string orderName = OrderDisplayName(*stored);
+            ObjectGuid giverGuid(HIGHGUID_PLAYER, stored->giverGuidLow);
+            for (EnchantDepositRow const& row : EnchantDepositQuotas(bot, stored->itemId))
+            {
+                uint32_t giverShare = GiverRemaining(*stored, row.itemId);
+                if (!giverShare)
+                    continue;
+                GiverSurplusSplit split = SplitGiverSurplus(row.itemId, bot->GetItemCount(row.itemId), giverShare);
+                uint32_t mailed = MailGiverSurplus(bot, row.itemId, split.giverReturn, giverGuid, orderName);
+                if (mailed)
+                    NoteGivenSpent(stored->botGuidLow, row.itemId, mailed);
+            }
+            if (EnchantDepositQuotas(bot, stored->itemId).empty())
+            {
+                FinishEnchantDeposit(request.botGuidLow);
+                m_emptyPasses.erase(request.botGuidLow);
+                ExpireTargetFor(ai);
+                return;
+            }
+        }
         Unit* banker = FindNearbyGuildBanker(bot, ai);
         bool mailLeg = !banker && DeliveryMailsAfterNoBanker(NoBankerSearches(ai));
         if (!banker && !mailLeg)
