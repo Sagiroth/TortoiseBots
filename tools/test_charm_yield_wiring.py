@@ -136,6 +136,9 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("state.holder = guids[assigned];", scan)
         self.assertIn("TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs)", scan)
         self.assertIn("int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));", scan)
+        # The window's holder is handed over on the one deadline boundary the taunt itself reads, never at the
+        # deadline instant.
+        self.assertIn("bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);", scan)
         self.assertIn("if (missed)\n                LogTauntAfter(ai, unit, windowSlot, closed, false);", scan)
         self.assertIn("if (regained)\n                LogTauntAfter(ai, unit, windowSlot, closed, true);", scan)
         # A tank that cannot cast now (stunned, hexed, silenced, taunt on cooldown) never holds a window.
@@ -151,7 +154,8 @@ class CharmYieldWiring(unittest.TestCase):
         # The pure cases are pinned in the policy test file too.
         self.assertIn("CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);", POLICY_TEST)
         self.assertIn("CHECK(TauntAfterTankPick({true, true}, {false, true}, 0) == 1);", POLICY_TEST)
-        self.assertIn("CHECK(!TauntAfterDue(true, 10000, 10000, false));", POLICY_TEST)
+        self.assertIn("CHECK(TauntAfterDue(true, 10000, 10000, false));", POLICY_TEST)
+        self.assertIn("CHECK(!TauntAfterDue(true, 10001, 10000, false));", POLICY_TEST)
         self.assertIn("CHECK(!TauntAfterTankCanTaunt(false, false, true, true, true, false, true));", POLICY_TEST)
         self.assertIn("CHECK(TankSlotOf(guids, 22) == 1);", POLICY_TEST)
         self.assertIn("CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));", POLICY_TEST)
