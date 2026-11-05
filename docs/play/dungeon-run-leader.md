@@ -162,7 +162,7 @@ The run protects itself with these rules:
 - It gathers the party before a pull and pulls only what is near.
 - It guards from the stand, attacking mobs that hit the party.
 - It never sends the guard, an off-tank or the tank's arrival order at a unit standing in its own respawn nest (it comes back within a minute and is within 22 yd of its spawn point): the kill is undone in seconds, so the guard keeps its post. A fast-respawning unit that left its nest, chasing a bot, is a normal target.
--
+- A bot whose only enemies are such nest units is not in a fight: the regroup starts and the step goes on without it. A gather never stands within 30 yd of a nest: the party gathers at the current step's point instead of on a dead tank's body at the nest's rim.
 - It never pulls what a later step owns.
 - It ends a pull or boss step past the 180 s fight ceiling once the game confirms that step's own units are dead or gone from the map (a unit that merely dropped out of the run's reads is not dead) and lets the walk go on, even while unrelated mobs (respawning trash, a patrol that walked in) still fight: those are fought by the bots' ordinary combat and do not hold the step. A boss step ends as soon as the boss's corpse is confirmed, whatever keeps the party in the combat afterwards. Younger fights, a combat flag with nothing engaged, and a row with its own units left keep the rules as before.
 - It judges no unseen pack or boss, only what the lead bot sees within 60 yd.
@@ -209,6 +209,7 @@ The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), s
 
 - A stale flag gets 20 s grace, then the ceiling runs.
 - An unattackable-only fight is let go, with no ceiling.
+- A fight only a respawn nest holds is no fight either: a bot left on the respawns does not keep the party in combat, and a pause for the fight ceiling goes on by itself.
 - Charmed and fake-death units read as cannot-attack.
 - A game-event-gated boss is skipped, not paused.
 - Off-plan-map bots never hold fights, and bots never leave the plan map by follow, flee, or trigger.

@@ -1272,6 +1272,9 @@ inline bool InRespawnNest(const UnitFact& u)
 {
     return RespawnsQuickly(u.respawnSec) && u.homeYd >= 0.0f && u.homeYd <= kNestYd;
 }
+// A gather's own spot is never this close to a nest unit's home: a regroup that gathers on a banished lead bot's
+// corpse at the pit rim stands in the trolls' respawn nest (GatherAnchorInNest tells the gather to use the step point).
+constexpr float kNestGatherYd = 30.0f;
 // The respawn delay the run's facts carry: only a unit with a spawn of its own has one. A temporary summon's delay
 // is its lifetime (TemporarySummon), not a respawn, so read as one a 15 s scripted add (Gandling's Risen Guardians,
 // Arlokk's Prowlers, Mandokir's Ohgan) would look like a fast respawn and lose its crowd control and its place in
@@ -1552,6 +1555,11 @@ struct Facts
     // (engagedRead) by the glue on every tick in combat; a policy test that does not set it keeps the old rules.
     std::vector<UnitFact> engagedUnits;
     bool engagedRead = false;
+    // A regroup's gather spot against the respawn nests (GatherAnchorInNest): the living hostile units the glue read
+    // within kNestGatherYd + kNestYd of the lead bot that stand in their own nest (InRespawnNest), read on the tick a
+    // regroup would gather and no other. Empty: none read.
+    std::vector<UnitFact> nestUnits;
+    bool nestUnitsRead = false;
     // ... the party's own bots under an enemy's charm (Dominate Mind, Mind Control) that fight the party: never
     // engaged units, but named in the note when nothing else is engaged (EngagedUnitsNote).
     std::vector<std::string> charmedFighting;
@@ -5142,14 +5150,35 @@ inline bool LeadOffAnchor(Run& r, const Facts& f)
     return CheckAnchor(r, f) == AnchorState::Off;
 }
 
+// Whether a gather at (x, y, z) stands in a respawn nest: within kNestGatherYd of a nest unit the glue read
+// (Facts::nestUnits, read only on the tick a regroup gathers). A regroup that gathered on a dead tank's body at
+// the rim of a nest stood the party on it and the only fights left were respawns (ZG Jin'do's pit: the tank was
+// Banished onto the trolls, died at the rim, and the survivors gathered on the corpse).
+inline bool GatherAnchorInNest(const Facts& f, float x, float y, float z)
+{
+    for (const UnitFact& u : f.nestUnits)
+        if (InRespawnNest(u) && ai::PlanDistance(x, y, z, u.x, u.y, u.z) <= kNestGatherYd)
+            return true;
+    return false;
+}
+
 // Sends a gather: the lead bot holds where it stands and the others form up on
 // it; a lead bot off the anchor walks back to the anchor first and the party
 // gathers there (19z5 step 83: a gather on the lead's own spot pinned the party
-// on a hilltop with no path down).
+// on a hilltop with no path down). A lead bot standing in a respawn nest walks
+// the party to the step point instead (GatherAnchorInNest).
 inline void SendGather(Run& r, const Facts& f, std::string& order)
 {
-    order = LeadOffAnchor(r, f) ? MoveOrder(r.anchorX, r.anchorY, r.anchorZ, false)
-                                : MoveOrder(f.leadX, f.leadY, f.leadZ, false);
+    const PlanStep* const step = Current(r);
+    if (LeadOffAnchor(r, f))
+        order = MoveOrder(r.anchorX, r.anchorY, r.anchorZ, false);
+    else if (step && GatherAnchorInNest(f, f.leadX, f.leadY, f.leadZ))
+    {
+        order = MoveOrder(step->x, step->y, step->z, false);
+        r.note += (r.note.empty() ? "" : "; ") + std::string("the gather stands at the step point, off the respawn nest");
+    }
+    else
+        order = MoveOrder(f.leadX, f.leadY, f.leadZ, false);
     r.gatherOrder = order;
     SampleMembers(r, f);
 }
@@ -19452,6 +19481,43 @@ inline bool UnattackableOnlyFight(const Facts& f)
     return true;
 }
 
+// The party's combat is held by respawn nests alone: in combat, and every unit any member (or its pet) is engaged
+// with is a nest unit (InRespawnNest). Such a fight is no fight either: each kill comes back in seconds at the same
+// spot, so the party walks out and the run goes on (Tick clears the combat flags on this view, and FightOn says no
+// fight to the ceiling pause's own resume). A member whose engaged read is missing leaves the fight as it is, and
+// the run's own engaged read answers when the member lists carry none (a policy test's bare Facts). ZG Jin'do's
+// pit: a Banish drops a bot on the ten Sacrificed Trolls and the bot fights them alone, which used to hold the
+// regroup "fighting on" and then gather the party on the rim for troll-only fights.
+inline bool NestOnlyCombat(const Facts& f)
+{
+    if (!f.anyInCombat)
+        return false;
+    // A real player in a fight is a fight of its own: the run never walks out on him.
+    for (const PlayerFact& p : f.players)
+        if (p.alive && p.inCombat)
+            return false;
+    bool saw = false;
+    for (const MemberFact& m : f.members)
+    {
+        if (!m.inCombat)
+            continue;
+        if (!m.engagedRead)
+            return false;
+        saw = saw || !m.engaged.empty();
+        for (const UnitFact& u : m.engaged)
+            if (!InRespawnNest(u))
+                return false;
+    }
+    if (saw)
+        return true;
+    if (!f.engagedRead || f.engagedUnits.empty())
+        return false;
+    for (const UnitFact& u : f.engagedUnits)
+        if (!InRespawnNest(u))
+            return false;
+    return true;
+}
+
 // An entry the plan fights as a boss (a boss step's own entry) or as an event's unit (a hold step's entries),
 // wherever in the plan that step stands.
 inline bool PlanBossOrHoldEntry(const Run& r, std::uint32_t entry)
@@ -19908,6 +19974,13 @@ inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)
 inline bool FightOn(Run& r, const Facts& f, std::uint32_t dt)
 {
     if (f.anyInCombat && OffMapUnitsOnly(f))
+    {
+        r.unattackableSet.clear();
+        r.unattackableMs = 0;
+        return false;
+    }
+    // A combat only a respawn nest holds is no fight (NestOnlyCombat): a ceiling pause's own resume goes on.
+    if (NestOnlyCombat(f))
     {
         r.unattackableSet.clear();
         r.unattackableMs = 0;
@@ -20511,7 +20584,10 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     // have stood so for the grace (UnattackableGraceTick): the step runs on a view with the combat flags cleared.
     bool const unattackable = UnattackableGraceTick(r, in, dt);
     Facts quiet;
-    if (unattackable)
+    // A combat only a respawn nest holds is no fight, at once: the step runs on the same quiet view (NestOnlyCombat),
+    // so a bot left fighting the pit's trolls does not hold the regroup ("13 dead: fighting on") or a walk.
+    bool const nestOnly = !unattackable && NestOnlyCombat(in);
+    if (unattackable || nestOnly)
     {
         quiet = in;
         quiet.anyInCombat = false;
@@ -20521,7 +20597,7 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     // The bots held by such units only: their combat is dropped after the same grace (CombatDropTick), and a
     // gather's ceiling waits for them meanwhile (HeldStragglerWait).
     std::string const dropNote = CombatDropTick(r, in, dt);
-    const Facts& f = unattackable ? quiet : in;
+    const Facts& f = (unattackable || nestOnly) ? quiet : in;
     if (!f.anyInCombat)
     {
         r.hpWatch.clear(); // HpHeldTick watches one fight

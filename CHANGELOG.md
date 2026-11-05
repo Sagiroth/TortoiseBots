@@ -2,6 +2,7 @@
 
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
 - Run leaders no longer send the guard, the off-tanks or the tank's arrival order at a unit standing in its own respawn nest: it comes back within a minute at the same spot, so the party fought it forever.
+- A bot left fighting such a fast-respawning nest no longer holds the run, and the party gathers at the step's own point instead of on the nest.
 
 ## v1.15.1 (2026-11-03)
 

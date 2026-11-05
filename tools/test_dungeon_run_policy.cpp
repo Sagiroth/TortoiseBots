@@ -3492,6 +3492,102 @@ static void TestRegroupFightsFirst()
     CHECK(w.regroup && w.autoRegroups == 1);
 }
 
+// A bot left in combat with a respawn nest (its kills come back in seconds at the same spot) does not hold the
+// run: the wipe's regroup starts at once instead of "13 dead: fighting on, a regroup follows", and after the revive
+// the gather's move goes out while the bot still swings at the nest. ZG Jin'do's pit: a Banish dropped a bot on the
+// trolls and its troll-only fight held the regroup.
+static void TestRegroupIgnoresRespawnNestCombat()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {14826})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.total = 20;
+    f.alive = 7;
+    f.dead = 13;
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    f.engagedUnits = {nest};
+    for (int i = 0; i < 3; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), static_cast<float>(i));
+        m.inCombat = true;
+        m.engagedRead = true;
+        m.engaged = {nest};
+        f.members.push_back(m);
+    }
+    f.maxMemberYd = 3.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.regroup);
+    CHECK(r.note.find("fighting on") == std::string::npos);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    // The dead are up; the three are still in combat with the nest alone and one is 30 yd off: the gather goes out.
+    f.dead = 0;
+    f.alive = 20;
+    f.maxMemberYd = 30.0f;
+    f.members[2].yd = 30.0f;
+    std::string order;
+    for (int i = 0; i < 4 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "move 0.0 0.0 0.0");
+    CHECK(r.regroupGatherSent);
+    // A member in the same position fighting a normal mob still holds the run: the fight is the party's.
+    Run q = Start(&plan);
+    Facts g = f;
+    g.dead = 13;
+    g.alive = 7;
+    g.engagedRead = true;
+    g.engagedUnits[0].respawnSec = 0; // an ordinary mob
+    g.engagedUnits[0].homeYd = 0.0f;
+    for (MemberFact& m : g.members)
+        m.engaged = g.engagedUnits;
+    CHECK(Tick(q, g).empty());
+    CHECK(!q.regroup && q.note.find("fighting on") != std::string::npos);
+}
+
+// A regroup never gathers inside a respawn nest (kNestGatherYd): the dead tank's body at the rim of the pit was the
+// gather spot, and the party stood on the trolls' spawns. With a nest unit within 30 yd of the lead bot the gather
+// goes to the step point; a unit that left its nest is no reason to leave the spot.
+static void TestRegroupAnchorAvoidsRespawnNest()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {14826})};
+    Facts f = Party(0);
+    f.members = {Mem("Tanky", 0), Mem("Magey", 25)};
+    f.maxMemberYd = 25.0f;
+    UnitFact troll = Unit(49078, 14826, 10);
+    troll.respawnSec = 10;
+    troll.homeYd = 2.0f; // in its nest, 10 yd from the lead bot
+    f.nestUnits = {troll};
+    f.nestUnitsRead = true;
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
+    CHECK(r.note.find("off the respawn nest") != std::string::npos);
+    // No nest read (the glue reads it only on the gather's own tick): today's gather on the lead bot.
+    Run plain = Start(&plan);
+    Facts g = f;
+    g.nestUnits.clear();
+    g.nestUnitsRead = false;
+    BeginRegroup(plain);
+    CHECK(Tick(plain, g) == "move 0.0 0.0 0.0");
+    // A fast respawning unit that walked out of its nest is a normal mob: the gather stays on the lead bot.
+    Run moved = Start(&plan);
+    Facts h = f;
+    h.nestUnits[0].homeYd = 40.0f;
+    BeginRegroup(moved);
+    CHECK(Tick(moved, h) == "move 0.0 0.0 0.0");
+    // A nest unit farther than kNestGatherYd from the spot does not move the gather either.
+    Run far = Start(&plan);
+    Facts k = f;
+    k.nestUnits[0].x = kNestGatherYd + 1.0f;
+    BeginRegroup(far);
+    CHECK(Tick(far, k) == "move 0.0 0.0 0.0");
+}
+
 // Review of #1055: a living rezzer gets kPartyRezWaitMs to raise the dead
 // before `revive party` releases them; without one the revive goes out at once.
 static void TestRegroupWaitsForPartyRez()
@@ -35236,6 +35332,8 @@ int main()
     TestFewDeadReviveBeforePull();
     TestFewDeadRuleSkipsEvents();
     TestRegroupFightsFirst();
+    TestRegroupIgnoresRespawnNestCombat();
+    TestRegroupAnchorAvoidsRespawnNest();
     TestRegroupWaitsForPartyRez();
     TestRegroupRevivePauses();
     TestMealWaitBeforePull();

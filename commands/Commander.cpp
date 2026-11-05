@@ -8473,6 +8473,36 @@ float RunHomeYd(Unit* unit)
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// The respawn nests near the lead bot (DungeonRun::Facts::nestUnits): a living hostile creature that comes back
+// within a minute and stands within kNestYd of its spawn point (InRespawnNest). Read on the tick a regroup would
+// gather, so the gather goes to the step point instead of standing the party on a nest (GatherAnchorInNest); no
+// other phase reads it, and it is one bounded grid search a regroup.
+void ReadNestUnits(Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    std::list<Unit*> around;
+    HostileCreaturesAround(lead, kNestGatherYd + kNestYd + 10.0f, around);
+    for (Unit* unit : around)
+    {
+        if (!unit->IsAlive())
+            continue;
+        UnitFact fact;
+        fact.guid = unit->GetObjectGuid().GetRawValue();
+        fact.entry = unit->GetEntry();
+        fact.x = unit->GetPositionX();
+        fact.y = unit->GetPositionY();
+        fact.z = unit->GetPositionZ();
+        fact.respawnSec = RunRespawnSec(unit);
+        if (!RespawnsQuickly(fact.respawnSec))
+            continue;
+        fact.homeYd = RunHomeYd(unit);
+        if (!InRespawnNest(fact))
+            continue;
+        f.nestUnits.push_back(fact);
+    }
+    f.nestUnitsRead = true;
+}
+
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
 // any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
@@ -11827,6 +11857,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f),
             TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f), raidWalk);
     }
+    // A regroup's gather spot against the respawn nests around it (DungeonRun::GatherAnchorInNest): read on the
+    // tick its gather would go out, so a party that wiped on a banished tank's body in a nest gathers at the step
+    // point instead of standing on the respawns. A bot still fighting the nest keeps the raw combat flag, so the
+    // read does not wait for it.
+    if (slot.run.regroup && !slot.run.regroupGatherSent && !TortoiseBots::DungeonRun::PartyGathered(f))
+        ReadNestUnits(lead, f);
 
     // A hold's done condition on every tick, its spot in sight or not
     // (DungeonRun::HoldDoneNote): the run's own step, also during a walk back.
