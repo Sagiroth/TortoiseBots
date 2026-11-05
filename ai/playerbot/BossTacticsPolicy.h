@@ -2041,13 +2041,21 @@ namespace ai
         return nowMs - advancedMs >= silentMs;
     }
 
+    // The one boundary of a taunt_after_cast window: `sinceMs` how long ago it opened and `deadlineMs` the row's
+    // param. The deadline instant itself is still the window's (it can taunt), so the window is handed over only
+    // from the next millisecond.
+    inline bool TauntDeadlinePassed(std::uint32_t sinceMs, std::uint32_t deadlineMs)
+    {
+        return sinceMs > deadlineMs;
+    }
+
     // The taunt_after_cast deadline: `triggered` is a window that is open, `sinceMs` how long ago it opened and
     // `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
     inline bool TauntAfterDue(bool triggered, std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         if (!triggered || victimIsAssigned)
             return false;
-        return sinceMs < deadlineMs;
+        return !TauntDeadlinePassed(sinceMs, deadlineMs);
     }
 
     // Whether a tank in the raid order can still take the taunt: a creature-charmed tank yields its AI completely

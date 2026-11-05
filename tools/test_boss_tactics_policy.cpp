@@ -2297,7 +2297,8 @@ int main()
         CHECK(TauntAfterDue(true, 0, 10000, false));      // the rising edge itself
         CHECK(TauntAfterDue(true, 1, 10000, false));
         CHECK(TauntAfterDue(true, 9999, 10000, false));
-        CHECK(!TauntAfterDue(true, 10000, 10000, false)); // the deadline passed
+        CHECK(TauntAfterDue(true, 10000, 10000, false));  // the deadline instant is the window's last one
+        CHECK(!TauntAfterDue(true, 10001, 10000, false)); // one ms later the window has run out
         CHECK(!TauntAfterDue(false, 1, 10000, false));    // no episode
         CHECK(!TauntAfterDue(true, 1, 10000, true));      // the assigned tank already has it
 
@@ -2316,13 +2317,52 @@ int main()
             // The assigned tank has it back: the episode ends, the next charm starts clean.
             TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, 5000, 10000, true);
             CHECK(!assigned.open && assigned.step == TauntEpisodeStep::Regained);
-            // The deadline: the old window is reported and the new one is already due.
-            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, 10000, 10000, false);
+            // The deadline instant is still the old window's taunt; only the next millisecond reports the run-out
+            // and opens the new window.
+            TauntEpisodeRead last = TauntEpisodeTick(true, false, true, 10000, 10000, false);
+            CHECK(!last.starts && last.open && !last.missed && last.step == TauntEpisodeStep::Due);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, 10001, 10000, false);
             CHECK(miss.starts && miss.open && miss.missed && miss.step == TauntEpisodeStep::Due);
             TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, 4000, 10000, false);
             CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open);
             TauntEpisodeRead between = TauntEpisodeTick(false, false, true, 4000, 10000, false);
             CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // The window's one boundary: at the deadline instant the holder is unchanged and its window still taunts; one
+        // millisecond later the next window opens on the next tank. The writer, the taunt and its run-out row all read
+        // this same instant.
+        {
+            std::vector<std::uint64_t> const guids = {11, 22, 33};
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const canTaunt = {true, true, true};
+            bool open = true;
+            bool taunted = true; // the holder cast its taunt and still lost the subject
+            std::uint32_t startMs = 0;
+            int holderSlot = 1;
+            auto const read = [&](std::uint32_t now) {
+                std::uint32_t const sinceMs = now - startMs;
+                bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
+                int const wanted = (opening && open && taunted) ? holderSlot + 1 : 0;
+                int const assigned = (opening || !usable[holderSlot])
+                    ? TauntAfterTankPick(usable, canTaunt, wanted)
+                    : holderSlot;
+                TauntEpisodeRead const out = TauntEpisodeTick(true, false, open, sinceMs, 10000, false);
+                if (out.starts)
+                {
+                    startMs = now;
+                    taunted = false;
+                }
+                open = out.open;
+                holderSlot = assigned;
+                return out;
+            };
+            TauntEpisodeRead const deadline = read(10000);
+            CHECK(holderSlot == 1); // still the old window's holder
+            CHECK(!deadline.missed && deadline.step == TauntEpisodeStep::Due);
+            TauntEpisodeRead const after = read(10001);
+            CHECK(holderSlot == 2); // the next window hands it to the next tank
+            CHECK(after.starts && after.missed);
         }
 
         // Jin'do: one window per tank-hold left the row dead after its first miss, and a wiped threat list never gave
@@ -2425,7 +2465,7 @@ int main()
                     {
                         advancedMs = now;
                         std::uint32_t const sinceMs = open ? now - startMs : 0;
-                        bool const opening = !open || sinceMs >= 10000;
+                        bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
                         int const wanted = (opening && open && holderSlot >= 0) ? holderSlot + 1 : 0;
                         int const assigned = (opening || !holderUsable)
                             ? TauntAfterTankPick(usable, canTaunt, wanted) : holderSlot;

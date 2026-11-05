@@ -4684,7 +4684,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
                     // One tank holds a window: the pick is read when the window opens (or when its tank can no longer
                     // take the taunt), never again mid-window, so a rival becoming eligible cannot restart the deadline.
-                    bool const opening = !state.open || sinceMs >= deadlineMs;
+                    // The deadline instant is still the old window's, as TauntAfterDue has it: the holder changes only
+                    // from the millisecond after it.
+                    bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);
                     // A window whose holder cast its taunt and still lost the subject (a resist, a taunt that missed)
                     // hands the next one to another tank; a holder that could not cast keeps it (it was walking in).
                     int const wanted = (opening && state.open && state.taunted && holderSlot >= 0)
