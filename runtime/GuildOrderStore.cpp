@@ -613,7 +613,10 @@ public:
             {
                 // The refund drain paid the last copper: the parked row goes, in
                 // memory and in the table. A still-owed row survives restarts.
-                if (it->second.record.cancelled && it->second.record.guildGoldHeld == 0)
+                // A cancelled enchant row still hands its reagents back; the
+                // deposit finish erases it.
+                if (it->second.record.cancelled && it->second.record.guildGoldHeld == 0 &&
+                    it->second.record.type != OrderType::Enchant)
                 {
                     deletes.push_back(it->first);
                     it = m_orders.erase(it);
