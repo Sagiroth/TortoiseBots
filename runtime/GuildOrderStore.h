@@ -166,6 +166,28 @@ uint32_t BranchGoldCapRemaining(uint32_t botGuidLow);
 void RefundGuildGold(uint32_t botGuidLow, uint32_t deposited);
 void NoteSupplyGain(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
 void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The giver handed base materials to the bot (trade or member mail taken in
+// by the order intake): the giver's share grows. Craft and enchant order
+// consumption spends the giver's share first, so the split at the end only
+// returns what the bot did not use. World thread only (the drains) or the
+// bot's map-thread action.
+void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The order consumed base materials: the giver's share shrinks first, then
+// the order-caused gain ledger. Same threads as NoteSupplySpent.
+void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count);
+// The stashed sender counts for one item take, oldest first, drained.
+struct TakenMailSender
+{
+    uint32_t senderLow = 0;
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+};
+// The take-mail action lifted order stock from a member's mail: stash the
+// per-mail counts on the map thread, then drain them with the row's giver
+// check after the take. Memory only (a restart drops the stash with the
+// mail still in the mailbox).
+void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count);
+std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId);
 // A bank, AH, mail or vendor pickup landed: the no-progress watchdog starts
 // over, like any farmed item. World thread only (the drains) or the bot's
 // map-thread action.

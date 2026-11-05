@@ -7,6 +7,9 @@
 #include "Guild/Guild.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
+
+#include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderStore.h"
 using namespace ai;
 
 bool CheckMailAction::Execute(Event& event)
@@ -142,6 +145,7 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
     MasterPlayer* master = bot->GetSession() ? bot->GetSession()->GetMasterPlayer() : nullptr;
     if (!master || !CanTakeGuildMail(mail, master))
         return;
+    uint32_t senderLow = mail ? mail->sender : 0;
     bool taken = false;
     if (mail->money)
     {
@@ -155,6 +159,8 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
         Item* item = master->GetMItem(itemGuid);
         if (!item)
             break;
+        uint32_t itemId = item->GetEntry();
+        uint32_t count = item->GetCount();
         ItemPosCountVec dest;
         if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
             break;
@@ -164,6 +170,17 @@ void CheckMailAction::TakeGuildMail(Mail* mail)
         item->SetState(ITEM_UNCHANGED);
         bot->MoveItemToInventory(dest, item, true);
         taken = true;
+        if (senderLow)
+        {
+            std::optional<TortoiseBots::GuildOrders::OrderRecord> order =
+                TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+            if (order && !order->cancelled &&
+                (order->type == TortoiseBots::GuildOrders::OrderType::Craft ||
+                    order->type == TortoiseBots::GuildOrders::OrderType::Enchant) &&
+                order->giverGuidLow && senderLow == order->giverGuidLow &&
+                order->itemId && itemId != order->itemId)
+                TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), itemId, count);
+        }
     }
     if (!taken)
         return;

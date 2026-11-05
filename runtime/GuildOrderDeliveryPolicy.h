@@ -109,5 +109,45 @@ inline bool DeliveryMailsAfterNoBanker(uint32_t noBankerSearches)
 // One stack per mail; the server takes a single item per mail.
 inline uint32_t DeliveryMailCount(size_t stacksLeft) { return uint32_t(stacksLeft); }
 
+// One material's share of the giver-surplus split: what still sits in the
+// bags up to the giver's unattributed remaining share goes back to the
+// giver by mail; everything past that keeps today's path (guild bank, then
+// mail to the guild master). The giver's share was spent first, so the row
+// only names what the bot did not already use.
+struct GiverSurplusSplit
+{
+    uint32_t itemId = 0;
+    uint32_t giverReturn = 0; // by mail to the giver
+    uint32_t bankRemainder = 0; // through the existing bank/mail path
+};
+
+inline GiverSurplusSplit SplitGiverSurplus(uint32_t itemId, uint32_t inBags, uint32_t giverRemaining)
+{
+    GiverSurplusSplit split;
+    split.itemId = itemId;
+    split.giverReturn = inBags < giverRemaining ? inBags : giverRemaining;
+    split.bankRemainder = inBags - split.giverReturn;
+    return split;
+}
+
+// One order's spent reagents, plain counts the callers already keep: the
+// giver's share goes first, then the order-caused gain ledger. The row only
+// names what the bot did not already use at the end, so consumption narrows
+// both legs the same way.
+struct GiverSpendShare
+{
+    uint32_t giverSpent = 0;
+    uint32_t gainSpent = 0;
+};
+
+inline GiverSpendShare SplitGiverSpend(uint32_t count, uint32_t giverRemaining, uint32_t gainRemaining)
+{
+    GiverSpendShare share;
+    share.giverSpent = count < giverRemaining ? count : giverRemaining;
+    uint32_t left = count - share.giverSpent;
+    share.gainSpent = left < gainRemaining ? left : gainRemaining;
+    return share;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

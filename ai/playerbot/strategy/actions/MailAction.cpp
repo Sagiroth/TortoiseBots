@@ -339,6 +339,7 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
         if (!mail->has_items)
             continue;
         uint32_t wantedGuid = 0;
+        uint32_t senderLow = mail->sender;
         for (MailItemInfoVec::const_iterator it = mail->items.begin(); it != mail->items.end(); ++it)
             if (it->item_template == itemId)
             {
@@ -359,6 +360,8 @@ uint32_t ai::TakeOrderMail(PlayerbotAI* ai, uint32_t itemId)
         packet << mail->messageID;
         bot->GetSession()->HandleMailTakeItem(packet);
         taken += count;
+        if (senderLow)
+            TortoiseBots::GuildOrders::NoteTakenMailSender(senderLow, itemId, count);
         Mail* current = owner->GetMail(mail->messageID);
         if (current && current->money == 0 && current->items.empty() && !ai->HasActivePlayerMaster())
         {

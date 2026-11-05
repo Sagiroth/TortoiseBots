@@ -93,6 +93,54 @@ inline std::string NeedItemsToken(std::vector<NeedItem> const& items)
     return out.empty() ? "-" : out;
 }
 
+// The giver's remaining share of the order's base materials ("id:count", `;`
+// between, `-` when empty). The row's live attribution: the giver's stock is
+// spent first, so what is still on the row at the end is what the bot's own
+// stock did not cover, capped by what the bags still hold.
+inline std::string GivenItemsToken(std::vector<NeedItem> const& given)
+{
+    std::string out;
+    for (NeedItem const& item : given)
+    {
+        if (!item.itemId || !item.count)
+            continue;
+        if (!out.empty())
+            out += ';';
+        out += std::to_string(item.itemId) + ':' + std::to_string(item.count);
+    }
+    return out.empty() ? "-" : out;
+}
+
+inline std::vector<NeedItem> ParseGivenItems(std::string const& token)
+{
+    std::vector<NeedItem> out;
+    size_t start = 0;
+    while (start < token.size())
+    {
+        size_t end = token.find(';', start);
+        std::string entry = token.substr(start,
+            end == std::string::npos ? std::string::npos : end - start);
+        size_t colon = entry.find(':');
+        if (colon != std::string::npos)
+        {
+            try
+            {
+                unsigned long itemId = std::stoul(entry.substr(0, colon));
+                unsigned long count = std::stoul(entry.substr(colon + 1));
+                if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
+                    out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
+            }
+            catch (...)
+            {
+            }
+        }
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return out;
+}
+
 inline char const* TypeToken(OrderType type)
 {
     switch (type)
@@ -279,6 +327,7 @@ struct OrderRecord
     uint32_t goldCap = 0;      // maximum guild copper this order may withdraw
     bool hasGoldCap = false;
     std::vector<uint32_t> bringItems; // base reagents the giver brings (bring=): never sourced, counted from bags+mail only
+    std::vector<NeedItem> given; // giver-supplied stock still attributed to the giver (itemId:count); giver share spent first
     uint32_t guildGoldWithdrawn = 0;
     uint32_t guildGoldHeld = 0;
     bool cancelled = false; // cancel kept the row: unspent guild gold is still owed to the bank

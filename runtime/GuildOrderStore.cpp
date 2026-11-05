@@ -5,6 +5,7 @@
 #include "GuildOrderBringPolicy.h"
 #include "GuildOrderCancelDepositPolicy.h"
 #include "GuildOrderDelivery.h"
+#include "GuildOrderDeliveryPolicy.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderNeedPolicy.h"
@@ -291,6 +292,7 @@ public:
                 record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
                 record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
                 record.bringItems = ParseBringItemsToken(fields[StoreColumns::ColBring].GetCppString());
+                record.given = ParseGivenItems(fields[StoreColumns::ColGiven].GetCppString());
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
@@ -547,10 +549,10 @@ public:
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`, `carried`, `bring`) "
+                "`created_at`, `updated_at`, `carried`, `bring`, `given`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u', '%s')",
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u', '%s', '%s')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
@@ -566,7 +568,7 @@ public:
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
-                record.reportedCarry, BringItemsToken(record.bringItems).c_str()))
+                record.reportedCarry, BringItemsToken(record.bringItems).c_str(), GivenItemsToken(record.given).c_str()))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -1204,6 +1206,89 @@ public:
                 MarkDirtyLocked(it->second);
                 return;
             }
+    }
+
+    void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId || !count)
+            return;
+        for (NeedItem& given : it->second.record.given)
+            if (given.itemId == itemId)
+            {
+                given.count = count > UINT32_MAX - given.count ? UINT32_MAX : given.count + count;
+                MarkDirtyLocked(it->second);
+                return;
+            }
+        it->second.record.given.push_back(NeedItem{ itemId, count });
+        MarkDirtyLocked(it->second);
+    }
+
+    void ConsumeBaseMaterial(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId || !count)
+            return;
+        uint32_t giverLeft = 0;
+        for (NeedItem const& given : it->second.record.given)
+            if (given.itemId == itemId)
+            {
+                giverLeft = given.count;
+                break;
+            }
+        uint32_t gainLeft = 0;
+        for (NeedItem const& gain : it->second.record.supplyGains)
+            if (gain.itemId == itemId)
+            {
+                gainLeft = gain.count;
+                break;
+            }
+        GiverSpendShare share = SplitGiverSpend(count, giverLeft, gainLeft);
+        if (share.giverSpent)
+            for (NeedItem& given : it->second.record.given)
+                if (given.itemId == itemId)
+                {
+                    given.count = share.giverSpent >= given.count ? 0 : given.count - share.giverSpent;
+                    break;
+                }
+        if (share.gainSpent)
+            for (NeedItem& gain : it->second.record.supplyGains)
+                if (gain.itemId == itemId)
+                {
+                    gain.count = share.gainSpent >= gain.count ? 0 : gain.count - share.gainSpent;
+                    break;
+                }
+        MarkDirtyLocked(it->second);
+    }
+
+    void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        ConsumeBaseMaterial(botGuidLow, itemId, count);
+    }
+
+    void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!senderLow || !itemId || !count)
+            return;
+        m_takenMail.push_back(TakenMailSender{ senderLow, itemId, count });
+    }
+
+    std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<TakenMailSender> out;
+        for (auto it = m_takenMail.begin(); it != m_takenMail.end();)
+            if (it->itemId == itemId)
+            {
+                out.push_back(*it);
+                it = m_takenMail.erase(it);
+            }
+            else
+                ++it;
+        return out;
     }
 
     void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
@@ -2900,7 +2985,7 @@ private:
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u' "
+                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u', `given` = '%s' "
                 "WHERE `bot_guid` = '%u'",
                 record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
@@ -2913,7 +2998,7 @@ private:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, record.botGuidLow))
+                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, GivenItemsToken(record.given).c_str(), record.botGuidLow))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -2947,6 +3032,10 @@ private:
     // after it, so one request cannot spend every tick's evaluation budget.
     uint32_t m_drainedParentBotGuidLow = 0;
     uint32_t m_drainedItemId = 0;
+    // Stashed per-mail sender counts from the take-mail action, drained by
+    // the next giver check. Memory only (a restart drops the stash with the
+    // mail still in the mailbox).
+    std::vector<TakenMailSender> m_takenMail;
     bool m_initialized = false;
 };
 
@@ -3725,6 +3814,26 @@ void NoteSupplyGain(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
 void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
 {
     OrderStore::Instance().NoteSupplySpent(botGuidLow, itemId, count);
+}
+
+void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteGiven(botGuidLow, itemId, count);
+}
+
+void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteGivenSpent(botGuidLow, itemId, count);
+}
+
+void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteTakenMailSender(senderLow, itemId, count);
+}
+
+std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId)
+{
+    return OrderStore::Instance().TakeTakenMailSenders(itemId);
 }
 
 void NoteSupplyProgress(uint32_t botGuidLow)

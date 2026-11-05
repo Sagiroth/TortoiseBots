@@ -150,6 +150,22 @@ bool TradeStatusAction::Execute(Event& event)
                     craftData.AddObtained(itemId, count);
                 }
             }
+            for (std::map<uint32, uint32>::iterator i = givenItemIds.begin(); i != givenItemIds.end(); ++i)
+            {
+                uint32 itemId = i->first;
+                uint32 count = i->second;
+                std::optional<TortoiseBots::GuildOrders::OrderRecord> giverOrder =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                // The giver's own trade counts even when the material is not
+                // on a need list: the split at the end only returns what the
+                // bot did not already use.
+                if (giverOrder && !giverOrder->cancelled &&
+                    (giverOrder->type == TortoiseBots::GuildOrders::OrderType::Craft ||
+                        giverOrder->type == TortoiseBots::GuildOrders::OrderType::Enchant) &&
+                    giverOrder->giverGuidLow && giverOrder->itemId && itemId != giverOrder->itemId &&
+                    trader->getObjectGuid() == ObjectGuid(HIGHGUID_PLAYER, giverOrder->giverGuidLow))
+                    TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), itemId, count);
+            }
 
             for (std::map<uint32, uint32>::iterator i = takenItemIds.begin(); i != takenItemIds.end(); ++i)
             {
@@ -689,6 +705,10 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             if (!bot->GetTrader())
             {
                 TortoiseBots::GuildOrders::NoteSupplyProgress(bot->GetGUIDLow());
+                if (order.itemId)
+                    for (ai::OfferedStack const& offered : materials.offered)
+                        if (offered.itemId && offered.itemId != order.itemId && offered.count)
+                            TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), offered.itemId, offered.count);
                 TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
                 // The refresh runs on the bot's map thread with the spell
                 // map readable: complete goes to the enchant trade at once,
