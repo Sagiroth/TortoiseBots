@@ -59,8 +59,12 @@ void ai::AdvanceGuildOrderAfterAuction(PlayerbotAI* ai, Player* bot, OrderRecord
     SupplyOptions options;
     options.bankAttempted = true;
     options.auctionHouseAttempted = true;
-    options.selfCanFarm = (order.type == OrderType::Craft && IsUnlimitedVendorItem(order.supplyItemId)) ||
-        (plan.verdict == OrderReason::None && !plan.zones.empty());
+    // Enchant reagents are never farmed or delegated: past the counter only
+    // the need list remains.
+    options.selfCanFarm = order.type != OrderType::Enchant &&
+        ((order.type == OrderType::Craft && IsUnlimitedVendorItem(order.supplyItemId)) ||
+        (plan.verdict == OrderReason::None && !plan.zones.empty()));
+    options.subAttempted = order.type == OrderType::Enchant;
     SupplyStep next = NextSupplyStep(options);
     if (next == SupplyStep::Sub)
     {

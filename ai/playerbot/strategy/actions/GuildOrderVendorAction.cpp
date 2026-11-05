@@ -21,8 +21,11 @@ bool GuildOrderVendorAction::isUseful()
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     // Craft reagents and farm-order items alike: anything a vendor sells
-    // without limit is bought, never farmed.
-    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
+    // without limit is bought, never farmed. Enchant reagents ride the same
+    // leg through the store record.
+    std::optional<OrderRecord> vendorRecord = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm &&
+        (!vendorRecord || vendorRecord->type != OrderType::Enchant))
         return false;
 
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");
@@ -56,7 +59,7 @@ bool GuildOrderVendorAction::Execute(Event& event)
         return false;
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
-    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm && record->type != OrderType::Enchant)
         return false;
 
     uint32 reagentId = AI_VALUE(uint32, "guild order vendor reagent");

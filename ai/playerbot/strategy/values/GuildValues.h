@@ -2,6 +2,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/Value.h"
+#include "runtime/GuildOrderContract.h"
 
 namespace ai
 {
@@ -54,6 +55,11 @@ namespace ai
     // True while the stored order still needs farm/craft work: not waiting,
     // not delivering, and delivered plus bags plus mailbox below the amount.
     bool OrderStillNeedsWork(Player* bot, GuildOrder const& order);
+
+    // True when every reagent for one cast of the working enchant order sits
+    // in the bot's bags. The lifecycle calls this after the capital
+    // teleport; the ladder's own ready edge counts the same way.
+    bool EnchantOrderMaterialsReady(Player* bot, TortoiseBots::GuildOrders::OrderRecord const& order);
 
     // First missing farmable reagent for a Working craft order: the same
     // pick the "guild order farm item" value makes, shared so order mode

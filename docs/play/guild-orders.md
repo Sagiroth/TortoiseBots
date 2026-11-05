@@ -147,12 +147,18 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 - The addon status shows the current step (`bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need` or `deliver`), the optional guild gold cap, and any missing item list.
 - Extra materials left after crafting go to the guild bank with the finished item, but only what the order itself gained; the bot's own materials stay in its bags.
 
+## Enchant orders
+
+An enchanter bot puts one enchant on your own item, from real materials, meeting you in its capital (Stormwind for the Alliance, Orgrimmar for the Horde).
+- **Gathering:** the bot teleports to its capital inn and starts at once, without waiting for Meet. For each missing reagent it works down a short list: its own bags and mailbox, then the guild bank (only the count still missing), then the auction house (own gold first, guild gold within your cap), then your need list. It never farms a reagent, never crafts one from something else, and never asks another bot. A material you tick "I bring it" is never bought or withdrawn: it waits for your trade. When every reagent is in the bags the order turns `ready` and the bot whispers "I have the materials for \<enchant\>. Come to \<Stormwind|Orgrimmar\> and press Meet." If a reagent goes missing again, it goes back to gathering.
+- **Reserved:** while the order runs, its reagents are protected: the bot never sells, auctions, disenchants, mails away or uses them.
+- **States:** `working` (gathering, step `bags`, `bank` or `ah`), `waiting` with reason `needitems`, `ready` (materials reserved, waiting for Meet). Cancelling returns leftover gathered materials to the guild bank with the finished delivery path.
+
 ## Guild bank access
 
 Every bot in a guild with at least one real player in it shares the guild's **bot rank** (by default the highest rank below the guild master).
 - A bot that joins gets the bot rank at once; bots already in the guild are moved there once when the server starts.
 - The founding guild-master rank is never rewritten. A guild of only a master with no other ranked members keeps its ranks.
-- Guilds made up of only bots keep their own ranks (including a bot guild master, which is never moved).
 - Your own characters are never touched: only bot characters get the bot rank. Bots in such guilds no longer promote, demote, kick or invite anyone.
 
 ```text

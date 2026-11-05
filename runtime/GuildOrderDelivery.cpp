@@ -295,6 +295,12 @@ void CollectCraftReagents(Player* bot, uint32_t itemId, uint32_t depth,
 {
     if (!bot || !itemId || depth >= 8 || !visited.insert(itemId).second)
         return;
+    // An enchant row holds the spell id: its reagents are the leftover set.
+    for (uint32_t reagentId : ai::EnchantReagentsFor(itemId))
+    {
+        reagents.insert(reagentId);
+        CollectCraftReagents(bot, reagentId, depth + 1, visited, reagents);
+    }
     uint32_t spellId = ai::FindCraftSpellFor(bot, itemId);
     SpellEntry const* spell = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
     if (!spell)
@@ -311,7 +317,7 @@ void CollectCraftReagents(Player* bot, uint32_t itemId, uint32_t depth,
 
 void DeliverCraftLeftovers(Player* bot, Guild* guild, Unit* banker, OrderRecord const& order)
 {
-    if (!bot || !guild || order.type != OrderType::Craft || !order.itemId)
+    if (!bot || !guild || (order.type != OrderType::Craft && order.type != OrderType::Enchant) || !order.itemId)
         return;
     // Only order-caused stock leaves the bags: what the ladder gained
     // (bank, AH, mail, vendor, farm) caps the deposit, so the bot's own

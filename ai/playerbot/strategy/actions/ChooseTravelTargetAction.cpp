@@ -2672,7 +2672,8 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             return false;
         bool ahSupply = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::AuctionHouse;
 
-        if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem) && !ahSupply)
+        if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem) && !ahSupply &&
+            (!mailRecord || mailRecord->type != TortoiseBots::GuildOrders::OrderType::Enchant))
         {
             ai->TellDebug(ai->GetMaster(), "No valid guild travel order found", "debug travel");
             return false;

@@ -338,11 +338,11 @@ public:
             }
             if (it->second.kept.valid && it->second.kept.orderItemId == record.itemId &&
                 it->second.kept.supplyItemId == record.supplyItemId &&
-                it->second.kept.orderIsCraft == (record.type == OrderType::Craft))
+                it->second.kept.orderIsCraft == (record.type == OrderType::Craft || record.type == OrderType::Enchant))
                 return;
             orderItemId = record.itemId;
             supplyItemId = record.supplyItemId;
-            orderIsCraft = record.type == OrderType::Craft;
+            orderIsCraft = record.type == OrderType::Craft || record.type == OrderType::Enchant;
         }
         if (!orderItemId)
             return;
@@ -362,7 +362,7 @@ public:
                 return;
             }
             if (record.itemId != orderItemId || record.supplyItemId != supplyItemId ||
-                (record.type == OrderType::Craft) != orderIsCraft)
+                (record.type == OrderType::Craft || record.type == OrderType::Enchant) != orderIsCraft)
                 return;
             it->second.kept.items = std::move(kept);
             it->second.kept.orderItemId = orderItemId;
@@ -3039,7 +3039,11 @@ void SendNeedWhisper(OrderRecord const& order)
         return;
 
     ItemPrototype const* output = sObjectMgr.GetItemPrototype(order.itemId);
-    std::string message = "To make " + (output ? output->Name1 : std::to_string(order.itemId)) + " I still need ";
+    std::string outputName = output ? output->Name1 : std::to_string(order.itemId);
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            outputName = enchant->SpellName[0].c_str();
+    std::string message = "To make " + outputName + " I still need ";
     for (NeedItem const& need : order.needItems)
     {
         if (message.back() != ' ')
@@ -3541,6 +3545,10 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
     std::string itemName = proto ? proto->Name1 : "?";
+    // An enchant row carries the spell id: the addon shows the enchant name.
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            itemName = enchant->SpellName[0].c_str();
     std::string zone = ZoneName(order.farmZoneId);
     if (order.type == OrderType::Buy && zone == "-")
         zone = "Auction House";
