@@ -982,44 +982,54 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
                     packet << i;
                     bot->GetSession()->HandleAutostoreLootItemOpcode(packet);
                 }
-                head.results.clear();
-                std::unordered_map<uint32_t, uint32_t> after;
-                for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
-                    if (Item* held = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-                        after[held->GetEntry()] += held->GetCount();
-                for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
-                {
-                    Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
-                    if (!pack)
-                        continue;
-                    for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
-                        if (Item* held = pack->GetItemByPos(uint8_t(slot)))
-                            after[held->GetEntry()] += held->GetCount();
-                }
-                for (auto const& counted : after)
-                {
-                    uint32_t had = 0;
-                    auto found = head.bagBefore.find(counted.first);
-                    if (found != head.bagBefore.end())
-                        had = found->second;
-                    if (counted.second > had)
-                        head.results.push_back({counted.first, counted.second - had});
-                }
-                head.bagBefore.clear();
                 WorldPacket release(CMSG_LOOT_RELEASE, 8);
                 release << lootGuid;
                 bot->GetSession()->HandleLootReleaseOpcode(release);
-                {
-                    TortoiseBots::GuildOrders::DisenchantQueueEntry row;
-                    row.botGuidLow = bot->GetGUIDLow();
-                    row.senderGuidLow = head.senderLow;
-                    row.itemGuidLow = head.itemGuidLow;
-                    row.itemId = head.itemId;
-                    row.itemName = head.itemName;
-                    row.pendingResults = true;
-                    row.results = TortoiseBots::GuildOrders::FormatDisenchantResults(head.results);
-                    TortoiseBots::GuildOrders::SaveDisenchantRow(row);
-                }
+            }
+            // The bot's own loot handling may have emptied the window first:
+            // the results are what the bags gained since the cast either way.
+            head.results.clear();
+            std::unordered_map<uint32_t, uint32_t> after;
+            for (uint8_t slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+                if (Item* held = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    after[held->GetEntry()] += held->GetCount();
+            for (uint8_t bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+            {
+                Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag);
+                if (!pack)
+                    continue;
+                for (uint32_t slot = 0; slot < pack->GetBagSize(); ++slot)
+                    if (Item* held = pack->GetItemByPos(uint8_t(slot)))
+                        after[held->GetEntry()] += held->GetCount();
+            }
+            // Items mailed in for a later cast are not this cast's results.
+            std::vector<TortoiseBots::GuildOrders::DisenchantQueueEntry> const queuedRows =
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow());
+            for (auto const& counted : after)
+            {
+                bool queuedItem = false;
+                for (auto const& row : queuedRows)
+                    queuedItem = queuedItem || row.itemId == counted.first;
+                if (queuedItem)
+                    continue;
+                uint32_t had = 0;
+                auto found = head.bagBefore.find(counted.first);
+                if (found != head.bagBefore.end())
+                    had = found->second;
+                if (counted.second > had)
+                    head.results.push_back({counted.first, counted.second - had});
+            }
+            head.bagBefore.clear();
+            {
+                TortoiseBots::GuildOrders::DisenchantQueueEntry row;
+                row.botGuidLow = bot->GetGUIDLow();
+                row.senderGuidLow = head.senderLow;
+                row.itemGuidLow = head.itemGuidLow;
+                row.itemId = head.itemId;
+                row.itemName = head.itemName;
+                row.pendingResults = true;
+                row.results = TortoiseBots::GuildOrders::FormatDisenchantResults(head.results);
+                TortoiseBots::GuildOrders::SaveDisenchantRow(row);
             }
             head.collectLootOpen = false;
         }
