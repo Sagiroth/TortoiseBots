@@ -219,6 +219,35 @@ bool GuildEnchantOrderAction::Execute(Event& event)
         }
     }
 
+    // An open window with the giver where nothing happens sends no trade
+    // packets, so the try budget is checked here every tick too.
+    if (order.state == OrderState::Enchanting && bot->GetTrader() && facts.tradeOpenWithGiver)
+    {
+        Player* trader = bot->GetTrader();
+        EnchantTradeSession session = GetEnchantTrade(bot->GetGUIDLow());
+        if (session.openedMs)
+        {
+            bool const active = trader->GetTradeData() && trader->GetTradeData()->IsAccepted();
+            TradeTryAction const next = CheckTradeTry(WorldTimer::getMSTime(), session.openedMs,
+                session.tries ? session.tries : 1, active);
+            if (next == TradeTryAction::KeepWaiting)
+                return false;
+            if (next == TradeTryAction::GiveUp)
+                ai->TellPlayerNoFacing(trader, kTradeGiveUpText,
+                    PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            WorldPacket cancel;
+            uint32 status = 0;
+            cancel << status;
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            if (next == TradeTryAction::GiveUp)
+            {
+                SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
+                ClearMeet(bot->GetGUIDLow());
+            }
+            return true;
+        }
+    }
+
     // Enchanting without a window: the trade closed (or never opened) without
     // completing. Back to Coming so the walk re-opens it; the try budget on
     // the trade-status path counts real windows only.

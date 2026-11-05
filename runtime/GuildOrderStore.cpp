@@ -144,6 +144,10 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_meet[botGuidLow] = MeetRequest{ giverGuidLow, WorldTimer::getMSTime() };
+        // A new Meet gets the full try budget again.
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.enchantTradeTries = 0;
     }
 
     EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)

@@ -619,8 +619,12 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
         return open || status != 0;
     }
 
-    bool needMaterials = order.state == TortoiseBots::GuildOrders::OrderState::Waiting ||
-        order.reason == TortoiseBots::GuildOrders::OrderReason::NeedItems;
+    // A materials trade while any reagent is still short in the bags: the
+    // order state no longer says so once Meet moved it to Coming.
+    bool needMaterials = false;
+    for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(order.itemId))
+        if (bot->GetItemCount(reagent.itemId) < reagent.count)
+            needMaterials = true;
     if (order.state == TortoiseBots::GuildOrders::OrderState::Coming)
     {
         TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
@@ -803,9 +807,17 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             // Cast once, then accept: the core remembers the spell
             // (SetSpell) and applies it when both sides accept, taking the
             // bot's reagents. A cancelled trade consumes nothing.
-            uint32_t duration = 0;
-            if (!bot->GetTradeData() || bot->GetTradeData()->GetSpell() == 0)
-                ai->CastSpell(order.itemId, static_cast<Unit*>(nullptr), nullptr, true, &duration);
+            if (bot->GetTradeData() && bot->GetTradeData()->GetSpell() == 0)
+            {
+                // The client's own path: a cast aimed at the trader's
+                // "Will not be traded" slot. The core only remembers it and
+                // casts it, taking the reagents, when both sides accept.
+                WorldPacket cast(CMSG_CAST_SPELL, 4 + 2 + 2);
+                cast << uint32(order.itemId);
+                cast << uint16(TARGET_FLAG_TRADE_ITEM);
+                cast << ObjectGuid(uint64(TRADE_SLOT_NONTRADED)).WriteAsPacked();
+                bot->GetSession()->HandleCastSpellOpcode(cast);
+            }
             if (trader->GetTradeData() && trader->GetTradeData()->IsAccepted())
             {
                 // The giver accepted last: snapshot the parked item's guid
