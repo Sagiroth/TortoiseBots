@@ -872,13 +872,13 @@ bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float&
 
     bool const fromTop = pick.dir == ai::MesaLiftDir::Down;
     uint32 const now = WorldTimer::getMSTime();
-    // Keep the shaft once picked: the car parking soonest flips every 15 s,
-    // and re-picking walked the bot back and forth between the two shafts.
+    // The shaft nearest the bot, kept once picked: re-picking walked the bot
+    // back and forth between the two shafts.
     if (waitLift != pick.lift || waitFromTop != fromTop)
     {
         waitLift = pick.lift;
         waitFromTop = fromTop;
-        waitCar = ai::NextLiftCar(*pick.lift, now, fromTop);
+        waitCar = ai::NearestLiftCar(*pick.lift, bot->GetPositionX(), bot->GetPositionY());
     }
     int const carIndex = waitCar;
     ai::LiftCar const& car = pick.lift->cars[carIndex];

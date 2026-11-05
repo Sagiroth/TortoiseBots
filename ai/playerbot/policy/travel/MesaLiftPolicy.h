@@ -183,9 +183,9 @@ namespace ai
         return pick;
     }
 
-    // The car to wait for at a level: the one that parks there soonest.
-    inline int NextLiftCar(MesaLift const& lift, uint32_t serverMs, bool top)
+    // The car to wait for: the one whose shaft is nearest the bot.
+    inline int NearestLiftCar(MesaLift const& lift, float x, float y)
     {
-        return LiftUntilParked(lift.cars[0], serverMs, top) <= LiftUntilParked(lift.cars[1], serverMs, top) ? 0 : 1;
+        return std::hypot(x - lift.cars[0].x, y - lift.cars[0].y) <= std::hypot(x - lift.cars[1].x, y - lift.cars[1].y) ? 0 : 1;
     }
 }

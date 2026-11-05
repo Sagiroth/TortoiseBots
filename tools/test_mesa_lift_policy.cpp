@@ -91,10 +91,9 @@ int main()
     float const mid = ai::LiftCarOffset(upCar, 10567 + (13100 - 10567) / 2);
     CHECK(mid > 32.55f && mid < 53.47f);
     CHECK(std::fabs(ai::LiftCarOffset(downCar, 17000) + 61.24f) < 0.01f);
-    // Waiting below at 2 s: the up car is parked there now.
-    CHECK(ai::NextLiftCar(ai::kThunderBluffLifts[0], 2000, false) == 1);
-    // Waiting below at 16 s: the down car arrived there.
-    CHECK(ai::NextLiftCar(ai::kThunderBluffLifts[0], 16000, false) == 0);
+    // The nearest shaft: next to the 4171 shaft, next to the 4170 shaft.
+    CHECK(ai::NearestLiftCar(ai::kThunderBluffLifts[0], -1310.0f, 183.0f) == 1);
+    CHECK(ai::NearestLiftCar(ai::kThunderBluffLifts[0], -1284.0f, 192.0f) == 0);
 
     // Other maps, cross-map trips: never.
     CHECK(MesaLiftFor(0, -5356.7f, -2487.1f, -45.9f, 0, -5441.9f, -2432.0f, 89.6f).dir == MesaLiftDir::None);
