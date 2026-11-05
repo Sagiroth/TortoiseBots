@@ -1997,7 +1997,7 @@ public:
         std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
         for (DisenchantQueueEntry& existing : rows)
         {
-            if (existing.itemGuidLow == row.itemGuidLow || existing.itemId == row.itemId)
+            if (existing.itemGuidLow == row.itemGuidLow)
             {
                 existing = row;
                 return;
@@ -2029,7 +2029,7 @@ public:
         std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
         for (DisenchantQueueEntry& existing : rows)
         {
-            if (existing.itemGuidLow == row.itemGuidLow || existing.itemId == row.itemId)
+            if (existing.itemGuidLow == row.itemGuidLow)
             {
                 existing = row;
                 return true;
