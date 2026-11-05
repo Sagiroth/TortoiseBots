@@ -260,9 +260,12 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("bool const holderAvailable = holderSlot >= 0 &&", scan)
         self.assertIn("holderSlot < static_cast<int>(available.size()) && available[holderSlot];", scan)
         self.assertIn("inline bool TauntAfterTankAvailable(bool inControl, bool silencedOrPacified, bool hasTaunt)", POLICY)
-        # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
-        self.assertIn("TauntAfterTankUsable(", scan)
-        self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
+        # The scan runs on aura tactics alone (Arlokk's threat wipe charms nothing): the gate never names the charm
+        # key, and a creature-charmed tank only leaves the order while the yield key is on (M5, L8).
+        self.assertIn("if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)", scan)
+        self.assertNotIn("||\n        !sPlayerbotAIConfig.dungeonRunCharmYield", scan)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield &&", scan)
+        self.assertIn("!charmer.IsEmpty() && !charmer.IsPlayer()", scan)
         self.assertIn("TauntAfterTankPick", POLICY)
         self.assertIn("TauntAfterTankIndex", POLICY)
         self.assertIn("TauntAfterDue", POLICY)

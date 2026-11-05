@@ -173,6 +173,52 @@ int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
 
+    // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
+    // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
+    {
+        std::vector<BossTacticRow> arlokk;
+        arlokk.push_back(Row(309, 14515, BossTacticKind::KillFirst, 14515, 0, 1));
+        arlokk.push_back(Row(309, 14515, BossTacticKind::KillFirst, 15101, 0, 2));
+        const std::uint64_t guid = 0xF130003893000001ULL;
+        BossPresenceMemory memory;
+        // Engaged and visible: the scan sees her, and remembers the unit and her health.
+        memory.Note(14515, guid, 80, 1000);
+        // Vanished at 36 s: only prowlers in the attackers list. Her entry is still in the fight.
+        const std::vector<BossPresenceMemory::Seen> gone = memory.Absent({15101}, 36000, true);
+        CHECK(gone.size() == 1);
+        CHECK(gone[0].entry == 14515 && gone[0].guid == guid && gone[0].hpPct == 80);
+        // With her rows active (the scan keeps them), the prowler is the pick: she is not a candidate.
+        std::vector<TacticCandidate> prowlerOnly(1);
+        prowlerOnly[0].entry = 15101;
+        prowlerOnly[0].distance = 12.0f;
+        prowlerOnly[0].pickable = true;
+        CHECK(PickKillFirst(Active(arlokk), prowlerOnly) == 0);
+        // Without them (the scan before the fix) the prowlers run free.
+        CHECK(PickKillFirst(Active({}), prowlerOnly) == -1);
+        // The remembered unit must still be alive, in combat, not evading, near the bot.
+        CHECK(VanishedBossStillInFight(true, true, false, true, 25.0f));
+        CHECK(!VanishedBossStillInFight(false, true, false, true, 25.0f));  // gone from the map
+        CHECK(!VanishedBossStillInFight(true, false, false, true, 25.0f)); // dead
+        CHECK(!VanishedBossStillInFight(true, true, true, true, 25.0f));   // running home
+        CHECK(!VanishedBossStillInFight(true, true, false, false, 25.0f)); // out of combat
+        CHECK(!VanishedBossStillInFight(true, true, false, true, 120.0f)); // far from this bot
+        // Back in view: not absent any more.
+        memory.Note(14515, guid, 70, 50000);
+        CHECK(memory.Absent({14515, 15101}, 50500, true).empty());
+        // Second vanish at 145 s: the scan noted her every tick until it, so the memory carries the newest sighting.
+        memory.Note(14515, guid, 70, 144500);
+        const std::vector<BossPresenceMemory::Seen> again = memory.Absent({15101}, 145000, true);
+        CHECK(again.size() == 1 && again[0].hpPct == 70);
+        // The fight ends (no attackers left): the memory is dropped, and stays dropped.
+        CHECK(memory.Absent({}, 146000, false).empty());
+        CHECK(memory.Absent({15101}, 146500, true).empty());
+        // Past the grace window the rows end even with adds still up.
+        memory.Note(14515, guid, 60, 200000);
+        CHECK(memory.Absent({15101}, 200000 + kBossVanishGraceMs, true).size() == 1);
+        CHECK(memory.Absent({15101}, 200000 + kBossVanishGraceMs + 1, true).empty());
+        CHECK(memory.Absent({15101}, 200000 + kBossVanishGraceMs + 2, true).empty());
+    }
+
     // The three Hakkar kinds. A seek_aura row carries the source, the aura, the cycle clock and the spot the source is
     // held at; the loader refuses a row that cannot answer the seek rules, and the cycle columns belong to that kind.
     {

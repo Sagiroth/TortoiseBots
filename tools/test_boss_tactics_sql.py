@@ -652,6 +652,45 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
 
+    def test_arlokk_rows(self):
+        # 20261105190000_world.sql: the boss-first grid entries (Arlokk herself, then the Zulian Prowler while she is
+        # vanished), the until_tank cover after an Ambush or a Gouge, and the 2 s hold on her panther transform. The
+        # core ids are pinned in BossTacticsCoreData below; here the live table shape is, so a wrong number or a
+        # delete that reaches too far fails.
+        name = "20261105190000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Arlokk rows migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        boss = live.get((309, 14515, "kill_first", 14515, 0))
+        self.assertIsNotNone(boss, "the Arlokk kill_first boss row is missing")
+        self.assertEqual((1, 0.0, ""), (boss["priority"], boss["param"], boss["tactic_mode"]),
+                         "the Arlokk kill_first boss row drifted")
+        prowler = live.get((309, 14515, "kill_first", 15101, 0))
+        self.assertIsNotNone(prowler, "the Arlokk kill_first prowler row is missing")
+        self.assertEqual((2, 0.0, ""), (prowler["priority"], prowler["param"], prowler["tactic_mode"]),
+                         "the Arlokk kill_first prowler row drifted")
+        taunt = live.get((309, 14515, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Arlokk taunt_after_cast row is missing")
+        self.assertEqual((1, 3.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
+                         "the Arlokk taunt_after_cast row drifted")
+        hold = live.get((309, 14515, "dps_hold_after", 0, 24190))
+        self.assertIsNotNone(hold, "the Arlokk dps_hold_after row is missing")
+        self.assertEqual((0, 2.0, "until_tank"), (hold["priority"], hold["param"], hold["tactic_mode"]),
+                         "the Arlokk dps_hold_after row drifted")
+        for row in (boss, prowler, taunt, hold):
+            self.assertIsNone(new_kind_problem(row))
+        for key in ((309, 14515, "behind", 0, 26350), (309, 14515, "flee_on_aura", 0, 24210),
+                    (309, 14515, "dispel_priority", 0, 24212)):
+            self.assertIn(key, live, "the Arlokk rows of 20261028110000 and 20261103020000 must stay: %s" % (key,))
+        if CORE and os.path.isfile(CORE_SPELLS):
+            templates = {row["entry"] for row in
+                         _core_rows("tw_world_creature_template.sql", "creature_template", ("entry",))}
+            spells = {row["entry"] for row in _core_rows("tw_world_spell_template.sql", "spell_template", ("entry",))}
+            for entry in (14515, 15101):
+                self.assertIn(entry, templates, "Arlokk row entry %s has no creature_template row" % entry)
+            for spell in (24190, 12540):
+                self.assertIn(spell, spells, "Arlokk row spell %s has no spell_template row" % spell)
+
     def test_seek_aura_row_without_cycle_spell_refused(self):
         seek = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="seek_aura", target_entry=11357,
                     spell_id=24321, priority=30, param=4.0, window_s=80.0, cycle_s=90.0,

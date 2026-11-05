@@ -727,6 +727,19 @@ struct FightScanCache
 };
 thread_local FightScanCache t_fightScan;
 
+// The boss entries a bot's scan saw that have rows, kept per bot so a boss that vanishes (leaves the attackers list while
+// alive and in combat) keeps its rows for the adds that go on fighting (BossPresenceMemory). Shared across the world
+// threads, so under a mutex; a bot's record is dropped when its memory empties, and a record nobody touched for the
+// idle window (a bot that left mid-fight) goes in a sweep.
+std::mutex g_presenceMutex;
+struct PresenceRecord
+{
+    BossPresenceMemory memory;
+    std::uint32_t touchedMs = 0;
+};
+std::unordered_map<std::uint64_t, PresenceRecord> g_presence;
+const std::uint32_t kPresenceIdleMs = 120000;
+
 // The seek_aura fight as one bot's read of it: the row and its boss, the cycle clock (due, dose window, the forced
 // burn), the gather (its source, the ready latch, the seekers still outside) and the number of seekers without the
 // poison (what the second off-tank's pull asks). Reading it updates the fight-wide record; every caller of the seek
@@ -831,6 +844,41 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         else
             entryUnits[known - seen.begin()].push_back(unit);
     }
+    // One boss entry's rows into the fight, gated by the entry's health (inclusive; a boss that vanished carries the health
+    // it was last seen at).
+    bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
+    bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
+    bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
+    bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
+    auto const addRows = [&](const std::vector<BossTacticRow>& rows, int bossHpPct)
+    {
+        for (const BossTacticRow& row : rows)
+        {
+            // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
+            // an older kind is closed by RowGateOpen instead, so key-off behaviour is exactly the pre-gate one.
+            if (!keyOn && IsAuraTacticKind(row.kind))
+                continue;
+            // The use_object kind is its own key's: with it off its rows are not read at all, so key-off is
+            // exactly today.
+            if (!useObjectOn && row.kind == BossTacticKind::UseObject)
+                continue;
+            // The two newer kinds keep their own keys too: key-off behaves exactly as before them.
+            if (!burnManaOn && row.kind == BossTacticKind::BurnMana)
+                continue;
+            if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
+                continue;
+            if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
+                continue;
+            fight.rows.push_back(&row);
+        }
+    };
+    struct SeenBoss
+    {
+        std::uint32_t entry;
+        std::uint64_t guid;
+        int hpPct;
+    };
+    std::vector<SeenBoss> seenBosses;
     for (std::size_t i = 0; i < seen.size(); ++i)
     {
         const std::vector<BossTacticRow>* rows = table.Rows(mapId, seen[i]);
@@ -850,29 +898,52 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             }
             const int gatePick = PickBossGateUnit(gateUnits);
             int const bossHpPct = gatePick < 0 ? 0 : gateUnits[gatePick].hpPct;
-            bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
-            bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
-            bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
-            bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
-            for (const BossTacticRow& row : *rows)
+            if (gatePick >= 0)
+                seenBosses.push_back({seen[i], gateUnits[gatePick].guid, bossHpPct});
+            addRows(*rows, bossHpPct);
+        }
+    }
+    // A boss that left the attackers list while still alive and in combat (Arlokk's Vanish: invisible, not selectable)
+    // keeps its rows as long as the bot has attackers left and the unit still belongs to the fight, so the rows that
+    // handle its adds stay active through the gap. They end with the fight (no attackers), the unit's death or evade, or
+    // the grace window.
+    {
+        std::vector<BossPresenceMemory::Seen> gone;
+        {
+            std::lock_guard<std::mutex> lock(g_presenceMutex);
+            std::uint32_t const nowMs = WorldTimer::getMSTime();
+            std::uint64_t const botKey = bot->GetObjectGuid().GetRawValue();
+            auto record = g_presence.find(botKey);
+            // A bot that never saw a boss with rows costs one lookup, no record.
+            if (record == g_presence.end() && !seenBosses.empty())
+                record = g_presence.emplace(botKey, PresenceRecord()).first;
+            if (record != g_presence.end())
             {
-                // The six aura kinds are the new key's own: with it off their rows are not read at all. A gated row of
-                // an older kind is closed by RowGateOpen instead, so key-off behaviour is exactly the pre-gate one.
-                if (!keyOn && IsAuraTacticKind(row.kind))
-                    continue;
-                // The use_object kind is its own key's: with it off its rows are not read at all, so key-off is
-                // exactly today.
-                if (!useObjectOn && row.kind == BossTacticKind::UseObject)
-                    continue;
-                // The two newer kinds keep their own keys too: key-off behaves exactly as before them.
-                if (!burnManaOn && row.kind == BossTacticKind::BurnMana)
-                    continue;
-                if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
-                    continue;
-                if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
-                    continue;
-                fight.rows.push_back(&row);
+                record->second.touchedMs = nowMs;
+                for (const SeenBoss& boss : seenBosses)
+                    record->second.memory.Note(boss.entry, boss.guid, boss.hpPct, nowMs);
+                gone = record->second.memory.Absent(seen, nowMs, !fight.units.empty());
+                if (record->second.memory.Empty())
+                    g_presence.erase(record);
             }
+            static std::uint32_t lastSweepMs = 0;
+            if (nowMs - lastSweepMs >= kPresenceIdleMs)
+            {
+                lastSweepMs = nowMs;
+                for (auto it = g_presence.begin(); it != g_presence.end();)
+                    it = nowMs - it->second.touchedMs > kPresenceIdleMs ? g_presence.erase(it) : std::next(it);
+            }
+        }
+        for (const BossPresenceMemory::Seen& absent : gone)
+        {
+            Unit* unit = ai->GetUnit(ObjectGuid(absent.guid));
+            Creature* creature = unit ? unit->ToCreature() : nullptr;
+            if (!VanishedBossStillInFight(creature && creature->IsInWorld(), creature && creature->IsAlive(),
+                    creature && creature->IsInEvadeMode(), creature && creature->IsInCombat(),
+                    creature ? bot->GetDistance(creature) : 0.0f))
+                continue;
+            if (const std::vector<BossTacticRow>* rows = table.Rows(mapId, absent.entry))
+                addRows(*rows, absent.hpPct);
         }
     }
     if (ai && t_fightScan.live)
@@ -5361,10 +5432,9 @@ void LogTauntAfter(PlayerbotAI* ai, Unit* subject, int tankIndex, const TauntAft
 BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     BossTauntAfter out;
-    // The row is only live with the charm yield on as well: the until_tank episode exists because a charmed victim
-    // cannot be its own tank, so applying the migration must not switch it on under AuraTactics alone (L8).
-    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics ||
-        !sPlayerbotAIConfig.dungeonRunCharmYield)
+    // The row is live on aura tactics alone: a charm-like threat wipe (Arlokk's Vanish) needs no charm to recover from,
+    // and the charmed-tank skip below only narrows the pick when the yield key is on.
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunAuraTactics)
         return out;
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
         return out;
@@ -5373,9 +5443,10 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
         return out;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
     PruneTauntAfter(ai, bot->GetInstanceId(), nowMs);
-    // The role order drops a dead or absent tank; a creature-charmed one yields its AI, so it is as gone for the order
-    // as a dead one and the pick wraps past it (M5). The pure pick's wrap also covers a row naming an index past the
-    // end (fewer tanks than the row expects).
+    // The role order drops a dead or absent tank; with the yield key on a creature-charmed one yields its AI, so it is
+    // as gone for the order as a dead one and the pick wraps past it (M5). With the key off the charm never yields, so
+    // every listed tank stays usable. The pure pick's wrap also covers a row naming an index past the end (fewer tanks
+    // than the row expects).
     std::vector<bool> usable;
     std::vector<std::uint64_t> guids; // the order's tanks by guid: a window's holder outlives a slot shift
     usable.reserve(roles.tanks.size());
@@ -5383,7 +5454,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     for (Player* const tank : roles.tanks)
     {
         const ObjectGuid charmer = tank ? tank->GetCharmerGuid() : ObjectGuid();
-        usable.push_back(TauntAfterTankUsable(!charmer.IsEmpty(), charmer.IsPlayer()));
+        bool const charmedOut = sPlayerbotAIConfig.dungeonRunCharmYield &&
+            !charmer.IsEmpty() && !charmer.IsPlayer();
+        usable.push_back(!charmedOut);
         guids.push_back(tank ? tank->GetObjectGuid().GetRawValue() : 0);
     }
     std::uint64_t const me = bot->GetObjectGuid().GetRawValue();
