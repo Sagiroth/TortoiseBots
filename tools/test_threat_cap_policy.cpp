@@ -26,6 +26,7 @@ int main()
     CHECK(ThreatCapReference({{1000.0f, false}}, false) == 1000.0f);
     CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}, {400.0f, true}}, false) == 1000.0f);
     CHECK(ThreatCapReference({}, false) == -1.0f);
+    CHECK(!ThreatCapPickReference({{1000.0f, false}, {600.0f, true}}, false).offTank);
 
     // ThreatCapsAtTheAssignedOffTank: on a target whose boss data asks for a successor (Hakkar) the damage dealers stay
     // below the assigned off-tank so a Cause Insanity threat reset hands the boss to it. Main 1000, off-tank 600: 600.
@@ -37,14 +38,27 @@ int main()
     // Two off-tanks, the higher of them stands.
     CHECK(ThreatCapReference({{1000.0f, false}, {400.0f, true}, {700.0f, true}}, true) == 700.0f);
 
-    // ThreatCapIgnoresATinyOffTankThreat: an off-tank below half the highest tank's threat on the target is not the
-    // successor — capping the damage dealers there would sit the cap at almost nothing and stop all damage, so the
-    // highest tank's threat stands instead. A main tank at 1000 with a 600 off-tank still caps at 600; a 50 one does
-    // not; a charmed main tank whose threat is gone leaves the off-tank's 600 as the reference.
-    CHECK(kThreatCapOffTankFloor == 0.5f);
+    // TauntImmuneSuccessorIgnoresHalfFloor: the floor is absolute (1 % of the highest tank, never below 100 threat),
+    // not half of the main tank's threat. Tanks at 1000 and 300 cap at the off-tank's 300 — the old 50 % floor sat the
+    // cap at 1000 and Cause Insanity then deleted the main tank's threat, moving the boss to the top damage dealer.
+    CHECK(kThreatCapOffTankMinShare == 0.01f);
+    CHECK(kThreatCapOffTankMinThreat == 100.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {300.0f, true}}, true) == 300.0f);
+    CHECK(ThreatCapPickReference({{1000.0f, false}, {300.0f, true}}, true).offTank);
+    // Well above the floor: unchanged by the new floor.
     CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}}, true) == 600.0f);
+
+    // ThreatCapIgnoresATinyOffTankThreat: an off-tank below the absolute floor is not the successor — capping the
+    // damage dealers there would sit the cap at almost nothing and stop all damage, so the highest tank's threat
+    // stands instead. A 50 off-tank on a 1000 main tank is below 100; 101 is above it.
     CHECK(ThreatCapReference({{1000.0f, false}, {50.0f, true}}, true) == 1000.0f);
+    CHECK(!ThreatCapPickReference({{1000.0f, false}, {50.0f, true}}, true).offTank);
+    CHECK(ThreatCapReference({{1000.0f, false}, {101.0f, true}}, true) == 101.0f);
+    // A charmed main tank whose threat is gone leaves the off-tank's 600 as the reference.
     CHECK(ThreatCapReference({{0.0f, false}, {600.0f, true}}, true) == 600.0f);
+    // The 1 % share wins over the fixed 100 on a huge main-tank lead: 2 000 000 * 1 % = 20 000.
+    CHECK(ThreatCapReference({{2000000.0f, false}, {15000.0f, true}}, true) == 2000000.0f);
+    CHECK(ThreatCapReference({{2000000.0f, false}, {25000.0f, true}}, true) == 25000.0f);
 
     // ThreatCapWithoutAZeroReference: an off-tank with no threat on the target (dead, not yet engaged, or its threat
     // deleted) never becomes the reference: a zero reads as "the tank has no threat" and vetoes every damage action

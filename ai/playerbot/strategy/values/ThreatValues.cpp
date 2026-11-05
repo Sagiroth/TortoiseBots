@@ -10,6 +10,12 @@
 #include "playerbot/ThreatCapPolicy.h"
 #include "Threat/ThreatManager.h"
 
+#include <cstdint>
+#include <cstdio>
+#include <iterator>
+#include <mutex>
+#include <unordered_map>
+
 using namespace ai;
 
 float MyThreatValue::Calculate()
@@ -58,6 +64,42 @@ uint8 ThreatValue::Calculate()
         target = target->GetVictim();
 
     return Calculate(target);
+}
+
+namespace
+{
+// One threat-cap row per damage dealer and 10 s: which tank the damage dealers of a `threat_successor` fight are
+// measured against and that tank's threat on the boss. Nothing else logged the reference, so a cap that sat on the
+// main tank instead of the off-tank was invisible until the boss turned to a damage dealer after a threat reset. The
+// throttle is checked before any string is built; one entry per bot guid, pruned with the bot count.
+constexpr std::uint32_t kThreatCapLogGapMs = 10000;
+
+std::mutex g_threatCapLogMutex;
+std::unordered_map<std::uint64_t, std::uint32_t> g_threatCapLog;
+
+void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit* offTankTarget)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_threatCapLogMutex);
+        std::uint32_t& last = g_threatCapLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kThreatCapLogGapMs)
+            return;
+        last = nowMs;
+        if (g_threatCapLog.size() > 4096)
+        {
+            for (auto it = g_threatCapLog.begin(); it != g_threatCapLog.end();)
+                it = nowMs - it->second > kThreatCapLogGapMs * 60 ? g_threatCapLog.erase(it) : std::next(it);
+        }
+    }
+    // The first off-tank's current target: the cap reference stalls when that tank is stuck on a Son instead of the boss.
+    char info1[128];
+    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s", pick.offTank ? "offtank" : "main",
+             pick.threat, offTankTarget ? offTankTarget->GetName() : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatCap", info1, "");
+}
 }
 
 float ThreatValue::GetThreat(Player* player, Unit* target)
@@ -130,7 +172,10 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1});
     }
 
-    return ThreatCapReference(tanks, true);
+    const ThreatCapPick pick = ThreatCapPickReference(tanks, true);
+    Unit* const offTankTarget = roles.tanks.size() >= 2 && roles.tanks[1] ? roles.tanks[1]->GetVictim() : nullptr;
+    LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);
+    return pick.threat;
 }
 
 bool ai::TargetTauntImmune(Unit* target)

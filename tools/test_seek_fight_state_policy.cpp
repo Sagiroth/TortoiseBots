@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -211,6 +212,46 @@ int main()
 
     // SeekSiphonAtLabel at the third read: the label carries the real elapsed time of the +9 s read.
     CHECK(SeekSiphonAtLabel(9007) == "at=+9007ms");
+
+    // SeekHealerClockTick: a read only sees the Sons inside its own reach, so a Son it did not list says nothing. The
+    // clock of a Son on a healer reaches 8 s through reads of bots that did not see it in between (the old code erased
+    // every guid the current read lacked, so the clock never filled with 20 bots reading); only a Son seen dead, out
+    // of combat or on a tank leaves, and an entry nobody has seen for kSeekHealerStaleMs is swept.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        const SeekSonSeen onHealer{7, true, true, false, true};
+        SeekHealerClockTick(held, {onHealer}, 1000);
+        CHECK(held.size() == 1 && held[7].sinceMs == 1000);
+        // Another bot's read, out of reach of Son 7 (it lists nothing of it, or only another Son): the entry stays.
+        SeekHealerClockTick(held, {}, 3000);
+        CHECK(held.count(7) == 1);
+        SeekHealerClockTick(held, {SeekSonSeen{9, true, true, false, false}}, 5000);
+        CHECK(held.count(7) == 1);
+        // A bot that sees it again refreshes seenMs and keeps sinceMs, so the 8 s clock runs from the first read.
+        SeekHealerClockTick(held, {onHealer}, 7000);
+        CHECK(held[7].sinceMs == 1000 && held[7].seenMs == 7000);
+        CHECK(SeekHealerTakeGuid(held, false, 8999) == 0);
+        CHECK(SeekHealerTakeGuid(held, false, 9000) == 7);
+        CHECK(SeekHealerTakeGuid(held, true, 9000) == 0);   // the third off-tank can still take it
+        // Seen on a tank, dead or out of combat: gone.
+        SeekHealerClockTick(held, {SeekSonSeen{7, true, true, true, false}}, 9500);
+        CHECK(held.empty());
+        SeekHealerClockTick(held, {onHealer}, 10000);
+        SeekHealerClockTick(held, {SeekSonSeen{7, false, true, false, true}}, 10500);
+        CHECK(held.empty());
+        SeekHealerClockTick(held, {onHealer}, 11000);
+        SeekHealerClockTick(held, {SeekSonSeen{7, true, false, false, true}}, 11500);
+        CHECK(held.empty());
+        // A Son whose victim is neither (no victim, a pet) keeps its entry; the sweep drops what nobody sees.
+        SeekHealerClockTick(held, {onHealer}, 20000);
+        SeekHealerClockTick(held, {SeekSonSeen{7, true, true, false, false}}, 30000);
+        CHECK(held.count(7) == 1);
+        SeekHealerClockTick(held, {}, 20000 + kSeekHealerStaleMs + 1);
+        CHECK(held.empty());
+        // The lowest guid among the due entries is the take.
+        SeekHealerClockTick(held, {SeekSonSeen{12, true, true, false, true}, SeekSonSeen{5, true, true, false, true}}, 40000);
+        CHECK(SeekHealerTakeGuid(held, false, 48000) == 5);
+    }
 
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;

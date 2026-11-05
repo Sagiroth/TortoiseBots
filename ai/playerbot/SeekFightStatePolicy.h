@@ -14,15 +14,82 @@
 // No core includes: tested in tools/test_seek_fight_state_policy.cpp.
 
 #include "BossTacticsPolicy.h"
+#include "SeekAuraPolicy.h"
 
 #include <cstdint>
 #include <cstdio>
+#include <iterator>
 #include <map>
 #include <string>
 #include <tuple>
+#include <vector>
 
 namespace ai
 {
+    // One Son's entry in the healer-held clock: `sinceMs` is the first read that saw it fighting a non-tank, `seenMs`
+    // the last one that did.
+    struct SeekHeldSon
+    {
+        std::uint32_t sinceMs = 0;
+        std::uint32_t seenMs = 0;
+    };
+
+    // What one bot's read saw of one Son it can reach: alive and fighting, and whether its victim is a player tank or a
+    // player non-tank (neither: no victim, or a pet or other non-player).
+    struct SeekSonSeen
+    {
+        std::uint64_t guid = 0;
+        bool alive = true;
+        bool inCombat = true;
+        bool victimTank = false;
+        bool victimNonTank = false;
+    };
+
+    // An entry nobody has seen on a non-tank for this long is dropped (a Son whose reads stopped: it left every bot's
+    // reach, or the raid left). Far above the 8 s take, far below a fight.
+    constexpr std::uint32_t kSeekHealerStaleMs = 20000;
+
+    // The Son-on-a-non-tank clock after one bot's read. Every bot of the fight feeds the one record, and a read only
+    // sees the Sons inside ITS reach (a range-limited grid search), so a Son the read did not see says nothing: only a
+    // Son this read saw dead, out of combat, or on a tank leaves the clock; one it saw on a non-tank enters it (or
+    // refreshes `seenMs`, never `sinceMs`); anything else stays untouched until the sweep drops what no read has seen on
+    // a non-tank for kSeekHealerStaleMs. Erasing every guid the read did not list kept the clock from ever reaching
+    // 8 s, since the bots that did not see the Son erased it between the ones that did.
+    inline void SeekHealerClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekSonSeen>& seen,
+                                    std::uint32_t nowMs)
+    {
+        for (const SeekSonSeen& son : seen)
+        {
+            if (!son.alive || !son.inCombat || son.victimTank)
+            {
+                held.erase(son.guid);
+                continue;
+            }
+            if (!son.victimNonTank)
+                continue;
+            auto it = held.find(son.guid);
+            if (it == held.end())
+                held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs}));
+            else
+                it->second.seenMs = nowMs;
+        }
+        for (auto it = held.begin(); it != held.end();)
+            it = nowMs - it->second.seenMs > kSeekHealerStaleMs ? held.erase(it) : std::next(it);
+    }
+
+    // The Son the first off-tank takes off a non-tank now: the first (lowest guid) of the clock's entries that has been
+    // held long enough, 0 when none. The third off-tank's availability is the caller's read of the whole fight.
+    inline std::uint64_t SeekHealerTakeGuid(const std::map<std::uint64_t, SeekHeldSon>& held, bool thirdTankTakes,
+                                            std::uint32_t nowMs)
+    {
+        for (const auto& entry : held)
+        {
+            if (SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - entry.second.sinceMs))
+                return entry.first;
+        }
+        return 0;
+    }
+
     struct SeekCycleRecord
     {
         std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
@@ -35,6 +102,14 @@ namespace ai
         std::uint32_t cycleSpell = 0;
         std::uint64_t gatherSourceGuid = 0;
         std::uint32_t gatherStartMs = 0;
+        // The pull's latch: the Son the running pull goes to and when it started. The pickup search reaches 60 yd of
+        // B, but the Son patrols from 32 to 112 yd out, so the tank kept dropping a Son it was already walking to.
+        std::uint64_t pullTargetGuid = 0;
+        std::uint32_t pullStartMs = 0;
+        // When each Son of the fight was first seen fighting a non-tank, and when a read last saw it so (guid -> clock).
+        // The first off-tank takes such a Son off a healer once the third off-tank cannot, and the healer has had it
+        // for a while. See SeekHealerClockTick for who may leave the map.
+        std::map<std::uint64_t, SeekHeldSon> healerHeldSince;
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
