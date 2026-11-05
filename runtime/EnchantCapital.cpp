@@ -187,7 +187,6 @@ bool TeleportToCapitalInn(Player* bot)
     bool const moved = bot->TeleportTo(inn.mapId, inn.x, inn.y, inn.z, inn.o);
     if (!moved)
         return false;
-    bot->SaveToDB();
     TB_LOG_BASIC("TortoiseBots: capital teleport bot %s to %s inn (map %u %.1f %.1f %.1f)",
         bot->GetName(), alliance ? "Stormwind" : "Orgrimmar",
         inn.mapId, inn.x, inn.y, inn.z);
