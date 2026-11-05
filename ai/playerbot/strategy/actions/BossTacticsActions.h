@@ -503,15 +503,26 @@ namespace ai
     // Whether this hunter's or warlock's pet has to be out of the siphon now: from 5 s before the due time until 2 s
     // after it, and while the siphon's dummy aura is on the bot. True only in a live seek_aura fight.
     bool BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot);
-    // The pet is dismissed at once; the class's own call or summon brings it back after the window.
+    // Whether this shaman's totems have to be out of the siphon now: the same window as the pets (from 5 s before the
+    // due time until 2 s after it, and while the siphon's dummy aura is on the bot). True only in a live seek_aura
+    // fight.
+    bool BossSeekTotemsMustLeave(PlayerbotAI* ai, Player* bot);
+    // The shaman's four totems are unsummoned at once (the core's Unit::UnsummonAllTotems).
+    class BossTacticsSeekTotemAction : public Action
+    {
+    public:
+        BossTacticsSeekTotemAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek totem") {}
+        bool Execute(Event& event) override;
+    };
+    // A pet is dismissed at once; the class's own call or summon brings it back after the window.
     class BossTacticsSeekPetAction : public Action
     {
     public:
         BossTacticsSeekPetAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek pet") {}
         bool Execute(Event& event) override;
     };
-    // A pet is called, revived or summoned back while the siphon is close or landing: the action is held (the pet
-    // would be one more heal). Only the seek_aura fight reads it.
+    // A pet is called, revived or summoned back, or a totem placed, while the siphon is close or landing: the action
+    // is held (each would be one more heal). Only the seek_aura fight reads it.
     class BossTacticsSeekPetHoldMultiplier : public Multiplier
     {
     public:

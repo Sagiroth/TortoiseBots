@@ -188,6 +188,27 @@ int main()
     CHECK(SeekPetMustLeave(90000, true));
     CHECK(SeekPetMustLeave(-30000, true));
 
+    // SeekTotemsAndGuardiansLeaveTheSiphon: a shaman's placements are named "<element> totem" (the damage ones
+    // too), and the rotations' pet calls and demon summons are their own names. Each leaves one more undosed unit to
+    // the siphon's hit, so the hold rule reads the spell/action name rather than the class alone.
+    CHECK(SeekTotemSpell("stoneskin totem"));
+    CHECK(SeekTotemSpell("fire nova totem"));
+    CHECK(SeekTotemSpell("disease cleansing totem"));
+    CHECK(!SeekTotemSpell("totemic recall"));
+    CHECK(!SeekTotemSpell("lightning bolt"));
+    CHECK(!SeekTotemSpell("totem"));
+    CHECK(SeekPetCallAction("call pet"));
+    CHECK(SeekPetCallAction("summon imp"));
+    CHECK(SeekPetCallAction("summon inferno"));
+    CHECK(SeekPetCallAction("inferno"));
+    CHECK(!SeekPetCallAction("lightning bolt"));
+    // The warlock's guardians are never summoned in the fight at all, not only around the window.
+    CHECK(SeekGuardianSummonAction("summon inferno"));
+    CHECK(SeekGuardianSummonAction("inferno"));
+    CHECK(SeekGuardianSummonAction("summon doomguard"));
+    CHECK(!SeekGuardianSummonAction("summon imp"));
+    CHECK(!SeekGuardianSummonAction("call pet"));
+
     // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
     CHECK(SeekClockStartOver(false, 0, 5000));
     CHECK(!SeekClockStartOver(true, 1000, 1500));

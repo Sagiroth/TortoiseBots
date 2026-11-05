@@ -1010,6 +1010,27 @@ void CountSiphonPets(Player* bot, int& heal, int& dmg)
         judge(bot);
 }
 
+// The group's living totems and guardian pets: each is one more unit for the core's siphon hit, like a pet. A totem
+// is counted off its slot (GetTotem returns only a live totem), a guardian off the unit's own guardian list.
+void CountSiphonSummons(Player* bot, int& totems, int& guardians)
+{
+    const auto judge = [&](Player* member)
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            return;
+        for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+            totems += member->GetTotem(TotemSlot(slot)) ? 1 : 0;
+        guardians += static_cast<int>(member->GetGuardiansCount());
+    };
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+            judge(member);
+    }
+    else
+        judge(bot);
+}
+
 // Hakkar's own side of the siphon: the shared heal holder's stack count (one stack per undosed unit, capped at 20)
 // and the number of damage holders (one per dosed caster). The group counts alone could not explain a siphon that
 // healed through them.
@@ -1029,25 +1050,26 @@ void CountHakkarSiphonAuras(Unit* boss, int& healStacks, int& dmgHolders)
 }
 
 // One siphon row per accepted cycle, read one and three seconds after the sighting: the group members dosed and not,
-// the pets on either side, and the boss's own heal stacks and damage holders. A no-op unless bot_events.csv is in
-// AiPlayerbot.AllowedLogFiles.
+// the pets and totems/guardians on either side, and the boss's own heal stacks and damage holders. A no-op unless
+// bot_events.csv is in AiPlayerbot.AllowedLogFiles.
 void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, int atSec, int dosed, int undosed, int petHeal,
-               int petDmg, int healStacks, int dmgHolders, Unit* boss)
+               int petDmg, int totems, int guardians, int healStacks, int dmgHolders, Unit* boss)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
-    char info1[192];
+    char info1[224];
     snprintf(info1, sizeof(info1),
-             "cycle=%u,at=+%ds,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,hakkar_stacks=%u,hakkar_dmg=%u,"
-             "hakkar_hp=%u",
+             "cycle=%u,at=+%ds,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,totems=%u,guardians=%u,hakkar_stacks=%u,"
+             "hakkar_dmg=%u,hakkar_hp=%u",
              cycle, atSec, static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
-             static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg),
-             static_cast<unsigned>(healStacks), static_cast<unsigned>(dmgHolders),
-             boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
-    char info2[192];
+             static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg), static_cast<unsigned>(totems),
+             static_cast<unsigned>(guardians), static_cast<unsigned>(healStacks),
+             static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
+    char info2[224];
     snprintf(info2, sizeof(info2),
-             "Hakkar siphon %u @+%ds: %d dosed, %d not, pets %d heal/%d dmg, hakkar heal stacks %d, dmg holders %d",
-             cycle, atSec, dosed, undosed, petHeal, petDmg, healStacks, dmgHolders);
+             "Hakkar siphon %u @+%ds: %d dosed, %d not, pets %d heal/%d dmg, totems %d, guardians %d, hakkar heal "
+             "stacks %d, dmg holders %d",
+             cycle, atSec, dosed, undosed, petHeal, petDmg, totems, guardians, healStacks, dmgHolders);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSiphon", info1, info2);
 }
 
@@ -1181,12 +1203,15 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         }
         int petHeal = 0;
         int petDmg = 0;
+        int totems = 0;
+        int guardians = 0;
         int healStacks = 0;
         int dmgHolders = 0;
         CountSiphonPets(bot, petHeal, petDmg);
+        CountSiphonSummons(bot, totems, guardians);
         CountHakkarSiphonAuras(boss, healStacks, dmgHolders);
-        LogSiphon(ai, bot, pendingCycle, pendingSiphonAtSec, dosed, undosed, petHeal, petDmg, healStacks, dmgHolders,
-                  boss);
+        LogSiphon(ai, bot, pendingCycle, pendingSiphonAtSec, dosed, undosed, petHeal, petDmg, totems, guardians,
+                  healStacks, dmgHolders, boss);
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
         if (it != g_seekRecords.end())
@@ -1313,6 +1338,14 @@ bool ReadSeekFightCached(PlayerbotAI* ai, Player* bot, SeekFight& out)
     return read;
 }
 
+// Whether this bot stands in a live seek_aura fight at all, window or not: a guardian summoned between two siphons
+// still lives through one.
+bool SeekFightLive(PlayerbotAI* ai, Player* bot)
+{
+    SeekFight state;
+    return ReadSeekFightCached(ai, bot, state);
+}
+
 bool IsSeekSource(const SeekFight& state, Unit* unit)
 {
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
@@ -1395,6 +1428,33 @@ bool ai::BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot)
     return SeekPetMustLeave(state.dueSignedMs, siphonActive);
 }
 
+// A shaman's totems stand inside the siphon too: each is one more undosed unit to the core's hit, and the pulse keeps
+// ticking after the cast, so they leave with the pets and are placed again only after the siphon has landed.
+bool ai::BossSeekTotemsMustLeave(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || bot->GetClass() != CLASS_SHAMAN)
+        return false;
+    SeekFight state;
+    if (!ReadSeekFightCached(ai, bot, state))
+        return false;
+    const bool siphonActive = state.row && bot->HasAura(state.row->cycleSpell);
+    return SeekPetMustLeave(state.dueSignedMs, siphonActive);
+}
+
+bool BossTacticsSeekTotemAction::Execute(Event& /*event*/)
+{
+    if (!BossSeekTotemsMustLeave(ai, bot))
+        return false;
+    bool any = false;
+    for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+        any = any || !bot->GetTotemGuid(TotemSlot(slot)).IsEmpty();
+    if (!any)
+        return false;
+    // The core's own sweep of all four slots (Unit::UnsummonAllTotems, Unit.cpp:5672).
+    bot->UnsummonAllTotems();
+    return true;
+}
+
 bool BossTacticsSeekPetAction::Execute(Event& /*event*/)
 {
     if (!BossSeekPetMustLeave(ai, bot))
@@ -1410,12 +1470,24 @@ bool BossTacticsSeekPetAction::Execute(Event& /*event*/)
 
 float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)
 {
-    if (!action || (bot->GetClass() != CLASS_HUNTER && bot->GetClass() != CLASS_WARLOCK))
+    if (!action)
+        return 1.0f;
+    if (bot->GetClass() == CLASS_SHAMAN)
+    {
+        if (!BossSeekTotemsMustLeave(ai, bot))
+            return 1.0f;
+        CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action);
+        return cast && SeekTotemSpell(cast->GetSpellName()) ? 0.0f : 1.0f;
+    }
+    if (bot->GetClass() != CLASS_HUNTER && bot->GetClass() != CLASS_WARLOCK)
         return 1.0f;
     const std::string& name = action->getName();
-    if (name != "call pet" && name != "revive pet" && name != "initialize pet" && name != "summon imp" &&
-        name != "summon voidwalker" && name != "summon succubus" && name != "summon felhunter")
+    if (!SeekPetCallAction(name))
         return 1.0f;
+    // An Infernal or a Doomguard is never summoned in the fight: it lives through the whole window and is one more
+    // undosed unit for the siphon. The pet call and the demon summons wait for the window instead.
+    if (bot->GetClass() == CLASS_WARLOCK && SeekGuardianSummonAction(name))
+        return SeekFightLive(ai, bot) ? 0.0f : 1.0f;
     return BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f;
 }
 

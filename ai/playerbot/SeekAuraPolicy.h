@@ -6,6 +6,7 @@
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace ai
@@ -68,6 +69,29 @@ namespace ai
     inline bool SeekPetMustLeave(int dueInMs, bool siphonActive)
     {
         return siphonActive || (dueInMs <= kSeekPetLeadMs && dueInMs >= -kSeekPetTailMs);
+    }
+
+    // A placement spell that leaves a totem behind: one more undosed unit to the siphon's hit, and its pulse outlives
+    // the cast. Every shaman totem spell is named "<element> totem" (the damage ones too), so the spell name decides.
+    inline bool SeekTotemSpell(const std::string& spell)
+    {
+        return spell.size() > 6 && spell.compare(spell.size() - 6, 6, " totem") == 0;
+    }
+
+    // A guardian a warlock's spell leaves behind (the Infernal of Inferno, a Doomguard): it fights for the whole
+    // window and is one more unit for the siphon's hit, so it is never summoned in the fight at all.
+    inline bool SeekGuardianSummonAction(const std::string& name)
+    {
+        return name == "summon inferno" || name == "inferno" || name == "summon doomguard";
+    }
+
+    // The class rotations' pet calls and demon summons: a pet is one more undosed unit to the same hit, and a
+    // warlock's new demon also costs a soul shard and a 10 s cast that would spend a whole siphon.
+    inline bool SeekPetCallAction(const std::string& name)
+    {
+        return name == "call pet" || name == "revive pet" || name == "initialize pet" || name == "summon imp" ||
+            name == "summon voidwalker" || name == "summon succubus" || name == "summon felhunter" ||
+            SeekGuardianSummonAction(name);
     }
 
     // A cloud is the row's when its spell is the aura itself or the trigger spell of its effect.

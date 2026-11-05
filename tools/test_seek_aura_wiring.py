@@ -193,7 +193,10 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("dosed=%u,undosed=%u", ACTIONS.replace("\\n", ""))
         # The pet side and the boss's own auras, read again two seconds later.
         self.assertIn("pets_heal=%u,pets_dmg=%u", ACTIONS)
-        self.assertIn("hakkar_stacks=%u,hakkar_dmg=%u", ACTIONS)
+        self.assertIn("totems=%u,guardians=%u", ACTIONS)
+        self.assertIn("CountSiphonSummons(bot, totems, guardians)", ACTIONS)
+        self.assertIn("hakkar_stacks=%u,", ACTIONS)
+        self.assertIn("hakkar_dmg=%u", ACTIONS)
         self.assertIn("kSeekSiphonSecondMs", ACTIONS)
 
 
@@ -248,6 +251,27 @@ class SeekRolesWiring(unittest.TestCase):
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
         self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
+
+    def test_the_totems_leave_the_siphon(self):
+        # Shaman totems are one more undosed unit each: unsummoned in the same window as the pets through the core's
+        # own sweep, and no placement is allowed until the siphon has landed.
+        node = '"boss tactics seek totem"'
+        combat = body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers(")
+        self.assertIn(node, combat)
+        self.assertIn('new NextAction("boss tactics seek totem", ACTION_EMERGENCY + 6)', combat)
+        self.assertIn('creators["boss tactics seek totem"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics seek totem"]', TRIGGER_CONTEXT)
+        act = body(ACTIONS, "bool BossTacticsSeekTotemAction::Execute(")
+        self.assertIn("BossSeekTotemsMustLeave(ai, bot)", act)
+        self.assertIn("bot->UnsummonAllTotems()", act)
+        hold = body(ACTIONS, "float BossTacticsSeekPetHoldMultiplier::GetValue(")
+        self.assertIn("SeekTotemSpell(cast->GetSpellName())", hold)
+        self.assertIn("SeekPetCallAction(name)", hold)
+        # A warlock's Infernal/Doomguard is held for the whole fight, not just the window.
+        self.assertIn("SeekGuardianSummonAction(name)", hold)
+        self.assertIn("SeekFightLive(ai, bot) ? 0.0f : 1.0f", hold)
+        self.assertIn("inline bool SeekTotemSpell(", POLICY)
+        self.assertIn("inline bool SeekGuardianSummonAction(", POLICY)
 
     def test_the_pet_dismissal_is_wired(self):
         # A pet is one more heal to the core's hit: the action dismisses it in the seek fight, the multiplier keeps the

@@ -355,6 +355,7 @@ namespace ai
             creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTrigger(ai); };
             creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankTrigger(ai); };
             creators["boss tactics seek pet"] = [](PlayerbotAI* ai) { return new BossTacticsSeekPetTrigger(ai); };
+            creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemTrigger(ai); };
             creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillTrigger(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterTrigger(ai); };
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };

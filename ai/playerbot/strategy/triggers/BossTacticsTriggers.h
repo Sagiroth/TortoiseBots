@@ -183,6 +183,14 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This shaman still has a totem down and the siphon is close or landing.
+    class BossTacticsSeekTotemTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekTotemTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek totem", 1) {}
+        bool IsActive() override;
+    };
+
     // A taunt_after_cast row (mode until_tank) names this tank and its subject's victim is no tank any more: the tank
     // takes the subject back inside the row's deadline.
     class BossTacticsTauntAfterTrigger : public Trigger

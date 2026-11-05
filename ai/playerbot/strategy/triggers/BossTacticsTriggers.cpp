@@ -237,6 +237,18 @@ bool BossTacticsSeekPetTrigger::IsActive()
     return pet && pet->IsAlive() && BossSeekPetMustLeave(ai, bot);
 }
 
+bool BossTacticsSeekTotemTrigger::IsActive()
+{
+    if (!Ready(ai, bot) || bot->GetClass() != CLASS_SHAMAN)
+        return false;
+    for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+    {
+        if (!bot->GetTotemGuid(TotemSlot(slot)).IsEmpty())
+            return BossSeekTotemsMustLeave(ai, bot);
+    }
+    return false;
+}
+
 bool BossTacticsSeekTankTrigger::IsActive()
 {
     if (!Ready(ai, bot))

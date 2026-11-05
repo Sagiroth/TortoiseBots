@@ -126,6 +126,11 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics seek pet",
         NextAction::array(0, new NextAction("boss tactics seek pet", ACTION_EMERGENCY + 6), NULL)));
 
+    // A shaman's totems are one more undosed unit each: cleared with the pets and not replaced before the siphon.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek totem",
+        NextAction::array(0, new NextAction("boss tactics seek totem", ACTION_EMERGENCY + 6), NULL)));
+
     // A stand set applies (ai_boss_stand): the walk to the seat comes before every cast and heal, the way the
     // reactive Deep Breath dodge does.
     triggers.push_back(new TriggerNode(
