@@ -2336,6 +2336,7 @@ int main()
             std::vector<std::uint64_t> const guids = {11, 22, 33};
             std::vector<bool> const usable = {true, true, true};
             std::vector<bool> const canTaunt = {true, true, true};
+            std::vector<bool> const canHold = {true, true, true};
             bool open = true;
             bool taunted = true; // the holder cast its taunt and still lost the subject
             std::uint32_t startMs = 0;
@@ -2344,9 +2345,9 @@ int main()
                 std::uint32_t const sinceMs = now - startMs;
                 bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
                 int const wanted = (opening && open && taunted) ? holderSlot + 1 : 0;
-                int const assigned = (opening || !usable[holderSlot])
-                    ? TauntAfterTankPick(usable, canTaunt, wanted)
-                    : holderSlot;
+                bool const holderHolds = holderSlot >= 0 && usable[holderSlot] && canHold[holderSlot];
+                int const assigned = TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt,
+                    canHold);
                 TauntEpisodeRead const out = TauntEpisodeTick(true, true, false, open, sinceMs, 10000, false);
                 if (out.starts)
                 {
@@ -2363,6 +2364,18 @@ int main()
             TauntEpisodeRead const after = read(10001);
             CHECK(holderSlot == 2); // the next window hands it to the next tank
             CHECK(after.starts && after.missed);
+        }
+
+        // A holder that loses control mid-window (a stun, a fear, a hex, a silence, its taunt on cooldown) hands the
+        // window over at once instead of keeping it and wasting its deadline.
+        {
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const canTaunt = {false, true, true};
+            std::vector<bool> const canHold = {false, true, true};
+            CHECK(TauntWindowAssign(false, false, 0, 1, usable, canTaunt, canHold) == 1); // the holder lost control
+            CHECK(TauntWindowAssign(false, true, 0, 1, usable, canTaunt, canHold) == 0);  // it can cast: it keeps it
+            CHECK(TauntWindowAssign(false, false, -1, 1, usable, canTaunt, canHold) == 1); // its slot is gone
+            CHECK(TauntWindowAssign(true, true, 0, 2, usable, canTaunt, canHold) == 2); // a new window picks afresh
         }
 
         // Jin'do: one window per tank-hold left the row dead after its first miss, and a wiped threat list never gave
@@ -2391,13 +2404,25 @@ int main()
         }
 
         // The window's tank: one in melee of the subject, with it as its target and not its victim counts before a
-        // tank that cannot taunt now; the row's own tank is still the pick when none can.
-        CHECK(TauntAfterTankPick({true, true}, {false, true}, 0) == 1);
-        CHECK(TauntAfterTankPick({true, true}, {true, false}, 1) == 0);   // wraps to the front
-        CHECK(TauntAfterTankPick({true, true}, {false, false}, 1) == 1);  // none can: the row's tank walks in
-        CHECK(TauntAfterTankPick({true, false}, {true, true}, 0) == 0);   // a dead or charmed tank is never picked
-        CHECK(TauntAfterTankPick({}, {}, 0) == -1);
-        CHECK(TauntAfterTankPick({true}, {true}, -1) == -1);
+        // tank that cannot taunt now; then one that can cast its taunt at all; the row's own tank is the pick only
+        // when none can.
+        CHECK(TauntAfterTankPick({true, true}, {false, true}, {false, true}, 0) == 1);
+        CHECK(TauntAfterTankPick({true, true}, {true, false}, {true, true}, 1) == 0);   // wraps to the front
+        CHECK(TauntAfterTankPick({true, true}, {false, false}, {false, false}, 1) == 1); // none can: the row's tank
+        CHECK(TauntAfterTankPick({true, false}, {true, true}, {true, true}, 0) == 0);   // a dead or charmed tank: never
+        CHECK(TauntAfterTankPick({}, {}, {}, 0) == -1);
+        CHECK(TauntAfterTankPick({true}, {true}, {true}, -1) == -1);
+        // The fallback is a tank that can cast its taunt now, not a hexed one: the main tank is hexed and the off-tank
+        // is healthy but on another target, so the off-tank takes the window and walks in.
+        {
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const canTaunt = {false, false, false}; // nobody taunts that subject this instant
+            std::vector<bool> const canHold = {false, true, false};   // the main tank is hexed, the off-tank is not
+            CHECK(TauntAfterTankPick(usable, canTaunt, canHold, 0) == 1);
+            CHECK(TauntAfterTankPick(usable, canTaunt, canHold, 1) == 1); // the row's own off-tank needs no walk
+            std::vector<bool> const noneCanHold = {false, false, false};
+            CHECK(TauntAfterTankPick(usable, canTaunt, noneCanHold, 2) == 2); // only then the row's tank as before
+        }
 
         // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
         // cooldown cannot take the subject back now: it is skipped for a tank that can.
@@ -2417,10 +2442,14 @@ int main()
                 TauntAfterTankCanTaunt(false, false, true, true, true, false, true),  // hexed
                 TauntAfterTankCanTaunt(true, true, true, true, true, false, true),    // silenced
                 TauntAfterTankCanTaunt(true, false, true, true, true, false, true)};  // ready
-            CHECK(TauntAfterTankPick(usable, canTaunt, 0) == 2);
-            CHECK(TauntAfterTankPick(usable, canTaunt, 3) == 2); // one past the last wraps to it again: the only one
+            std::vector<bool> const canHold = {
+                TauntAfterTankCanHold(false, false, true, true),  // hexed: cannot cast
+                TauntAfterTankCanHold(true, true, true, true),    // silenced: cannot cast
+                TauntAfterTankCanHold(true, false, true, true)};  // ready: can
+            CHECK(TauntAfterTankPick(usable, canTaunt, canHold, 0) == 2);
+            CHECK(TauntAfterTankPick(usable, canTaunt, canHold, 3) == 2); // wraps past the last to the only one
             std::vector<bool> const allCan = {true, true, true};
-            CHECK(TauntAfterTankPick(usable, allCan, 1) == 1); // a resisted window hands the next to the next tank
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 1) == 1); // a resisted window hands on to the next tank
         }
 
         // One tank advances a window's shared state: its holder while it can still take the taunt, else the order's
@@ -2430,6 +2459,7 @@ int main()
             std::vector<std::uint64_t> const guids = {11, 22, 33};
             std::vector<bool> const usable = {true, true, true};
             std::vector<bool> const canTaunt = {true, true, true};
+            std::vector<bool> const canHold = {true, true, true};
             CHECK(TankSlotOf(guids, 22) == 1);
             CHECK(TankSlotOf(guids, 44) == -1); // left the order: the slot no longer names it
             CHECK(TankSlotOf(guids, 0) == -1);
@@ -2467,8 +2497,8 @@ int main()
                         std::uint32_t const sinceMs = open ? now - startMs : 0;
                         bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
                         int const wanted = (opening && open && holderSlot >= 0) ? holderSlot + 1 : 0;
-                        int const assigned = (opening || !holderUsable)
-                            ? TauntAfterTankPick(usable, canTaunt, wanted) : holderSlot;
+                        int const assigned =
+                            TauntWindowAssign(opening, holderUsable, holderSlot, wanted, usable, canTaunt, canHold);
                         TauntEpisodeRead const read =
                             TauntEpisodeTick(true, !victimIsTank, victimIsTank, open, sinceMs, 10000, false);
                         if (read.missed)

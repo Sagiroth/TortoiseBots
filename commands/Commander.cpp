@@ -11477,6 +11477,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             probeZ = feet.getZ();
             probeFound = true;
         }
+        f.leadFloorZ = TortoiseBots::DungeonRun::LeadFloorZ(mapFloorZ, probeFound, probeZ);
         f.leadOffFloor = mmapLoaded && TortoiseBots::DungeonRun::LeadOffFloor(leadZ, mapFloorZ, probeFound, probeZ,
             lead->IsInWater() || lead->IsUnderwater());
     }

@@ -1552,7 +1552,9 @@ struct Facts
     float leadX = 0.0f, leadY = 0.0f, leadZ = 0.0f;
     // The lead bot stands off the floor (LeadOffFloor): the glue reads it with the teleport landing's feet probe. A
     // summon or a teleport return drops a member at the lead bot's own position, so none goes there while it is set.
+    // `leadFloorZ` is the floor that test compared against, for the note that names both heights.
     bool leadOffFloor = false;
+    float leadFloorZ = 0.0f;
     bool leadMoving = false;           // the lead bot is moving now (Unit::IsMoving): an exact point's proof waits
     // The walk after a rest (Run::restWalkDue): the lead bot is in a rest state (a meal or drink aura up, or not
     // standing), or casting a spell (a heal, a buff: never cut, the walk waits for the cast to end).
@@ -2070,6 +2072,9 @@ struct Run
     std::vector<LinkedEvent> linkedEvents;
 
     std::uint32_t phaseMs = 0;
+    // How long the lead bot has hung off the floor (the tick's own clock, cleared when it lands): past
+    // kLeadOffFloorPauseMs a gather that no summon can end pauses instead of starting its clock over.
+    std::uint32_t leadOffFloorMs = 0;
     std::uint32_t stepIdleMs = 0;
     std::uint32_t playerGatherMs = 0; // a regroup's wait for a living player (RegroupPlayerWait)
     std::uint32_t playerHoldMs = 0;   // a hold for a player (PlayerHoldNote) or a regroup's wait for a dead one, kPlayerHoldCapMs
@@ -4307,12 +4312,16 @@ inline void PauseOtherPart(Run& r, const Facts& f, OtherPartBlock why)
 // floor gap, and a summon into water is survivable (the run's water rules handle it). The caller leaves the flag clear
 // for a map whose mesh is not loaded: nothing there can judge.
 constexpr float kOffFloorYd = 3.0f;
+inline float LeadFloorZ(float mapFloorZ, bool probeFound, float probeZ)
+{
+    return probeFound ? std::max(mapFloorZ, probeZ) : mapFloorZ;
+}
+
 inline bool LeadOffFloor(float leadZ, float mapFloorZ, bool probeFound, float probeZ, bool inWater)
 {
     if (inWater)
         return false;
-    float const floorZ = probeFound ? std::max(mapFloorZ, probeZ) : mapFloorZ;
-    return leadZ - floorZ > kOffFloorYd;
+    return leadZ - LeadFloorZ(mapFloorZ, probeFound, probeZ) > kOffFloorYd;
 }
 
 // Whether a member may be brought to the lead bot now, with the note when not: a summon puts it at the lead bot's
@@ -4324,6 +4333,15 @@ inline bool SummonLeadFloorOk(Run& r, const Facts& f, const std::string& name)
         return true;
     r.note = "the lead bot has no floor under it: " + name + " is not summoned to it";
     return false;
+}
+
+// A lead bot hanging off the floor blocks every summon to it, and the gather's ceiling answers that by starting the
+// gather over, which resets its clock: the run would retry forever. 30 s of it pauses the run instead, naming both
+// heights; a lead bot that lands inside them continues as before.
+constexpr std::uint32_t kLeadOffFloorPauseMs = 30000;
+inline std::string LeadOffFloorPauseText(const Facts& f)
+{
+    return "the lead bot is off the floor (" + Num(f.leadZ) + " vs floor " + Num(f.leadFloorZ) + ")";
 }
 
 // A gather's ceiling: the farthest straggler, a bot more than kSummonYd from
@@ -4929,7 +4947,10 @@ inline void GatherCeiling(Run& r, const Facts& f, std::string& order, const std:
             {
                 if (!SummonLeadFloorOk(r, f, farthest->name))
                 {
-                    EnterPhase(r, Phase::Gather);
+                    if (r.leadOffFloorMs >= kLeadOffFloorPauseMs)
+                        Pause(r, LeadOffFloorPauseText(f));
+                    else
+                        EnterPhase(r, Phase::Gather);
                     return;
                 }
                 MarkSummoned(r, farthest->name);
@@ -4963,7 +4984,10 @@ inline void GatherCeiling(Run& r, const Facts& f, std::string& order, const std:
         {
             if (!SummonLeadFloorOk(r, f, farthest->name))
             {
-                EnterPhase(r, Phase::Gather);
+                if (r.leadOffFloorMs >= kLeadOffFloorPauseMs)
+                    Pause(r, LeadOffFloorPauseText(f));
+                else
+                    EnterPhase(r, Phase::Gather);
                 return;
             }
             MarkSummoned(r, farthest->name);
@@ -20585,6 +20609,9 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     // gather's ceiling waits for them meanwhile (HeldStragglerWait).
     std::string const dropNote = CombatDropTick(r, in, dt);
     const Facts& f = unattackable ? quiet : in;
+    // The gather's ceiling cannot end while no summon may go to a lead bot hanging off the floor: it starts the
+    // gather over and resets its clock. Count that time here, on the tick's own clock, for the pause at 30 s.
+    r.leadOffFloorMs = f.leadOffFloor ? r.leadOffFloorMs + dt : 0;
     if (!f.anyInCombat)
     {
         r.hpWatch.clear(); // HpHeldTick watches one fight

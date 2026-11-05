@@ -108,7 +108,8 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn('"boss tactics taunt after",\n        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));',
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
-        self.assertIn("TauntAfterTankPick(usable, canTaunt, wanted)", ACTIONS)
+        self.assertIn("TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt, canHold)", ACTIONS)
+        self.assertIn("TauntAfterTankPick", POLICY)
         self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", ACTIONS)
         self.assertIn("deadlineMs, victimIsAssigned);", ACTIONS)
         # A subject the game makes immune to taunts opens no episode: the tank keeps the attack and the taunt.
@@ -159,10 +160,14 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);", scan)
         self.assertIn("if (missed)\n                LogTauntAfter(ai, unit, windowSlot, closed, false);", scan)
         self.assertIn("if (regained)\n                LogTauntAfter(ai, unit, windowSlot, closed, true);", scan)
-        # A tank that cannot cast now (stunned, hexed, silenced, taunt on cooldown) never holds a window.
+        # A tank that cannot cast now (stunned, hexed, polymorphed, silenced, taunt on cooldown) never holds a window
+        # and never keeps one: the runner reads it for the pick's fallback and for the holder's fitness.
         self.assertIn("TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,", scan)
+        self.assertIn("canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);", scan)
         self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", scan)
+        self.assertIn("!tank->IsPolymorphed()", scan)
         self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", scan)
+        self.assertIn("holderSlot < static_cast<int>(canHold.size()) && canHold[holderSlot];", scan)
         # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
         self.assertIn("TauntAfterTankUsable(", scan)
         self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
@@ -171,7 +176,7 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("TauntAfterDue", POLICY)
         # The pure cases are pinned in the policy test file too.
         self.assertIn("CHECK(TauntAfterTankIndex(onlyFirst, 1) == 0);", POLICY_TEST)
-        self.assertIn("CHECK(TauntAfterTankPick({true, true}, {false, true}, 0) == 1);", POLICY_TEST)
+        self.assertIn("CHECK(TauntAfterTankPick({true, true}, {false, true}, {false, true}, 0) == 1);", POLICY_TEST)
         self.assertIn("CHECK(TauntAfterDue(true, 10000, 10000, false));", POLICY_TEST)
         self.assertIn("CHECK(!TauntAfterDue(true, 10001, 10000, false));", POLICY_TEST)
         self.assertIn("CHECK(!TauntAfterTankCanTaunt(false, false, true, true, true, false, true));", POLICY_TEST)

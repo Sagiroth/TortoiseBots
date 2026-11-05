@@ -21102,6 +21102,7 @@ static void TestNoSummonOntoALeadOffTheFloor()
         f.alive = 3;
         f.raid.on = true;
         f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
         f.leadOffFloor = offFloor;
         f.members = {Mem("Tanky", 0.0f), Mem("Healer", 8.0f), Mem("Rhan", 68.0f, -11.3f)};
         f.maxMemberYd = 68.0f;
@@ -21178,6 +21179,53 @@ static void TestNoSummonOntoALeadOffTheFloor()
     }
 }
 
+// Jin'do: the lead bot left hovering over the ZG pit never lands, and the gather's ceiling cannot end while no summon
+// may go to it: it started the gather over every 30 s, forever. The time off the floor is the tick's own clock, and
+// 30 s of it pauses the run with both heights.
+static void TestLeadOffFloorPausesTheGather()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {1})};
+    auto offFloor = [](bool offFloor)
+    {
+        Facts f = Party(0);
+        f.leadAlive = true;
+        f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
+        f.leadOffFloor = offFloor;
+        f.members = {Mem("Tanky", 0.0f), Mem("Rhan", 68.0f)};
+        f.maxMemberYd = 68.0f;
+        f.units = {Unit(7, 1, 20)};
+        return f;
+    };
+    {
+        Run r = Start(&plan);
+        Facts f = offFloor(true);
+        std::uint32_t ticks = 0;
+        while (r.state == State::Running && ticks < 4 * kGatherCapMs / kTickMs)
+        {
+            Tick(r, f, kTickMs);
+            ++ticks;
+        }
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        CHECK(ticks <= kGatherCapMs / kTickMs + 2); // the first ceiling, not one gather restart after another
+    }
+    {
+        // The same gather with a lead bot that lands at 20 s: at the 30 s ceiling the clock is clear, so it waits.
+        Run r = Start(&plan);
+        Facts off = offFloor(true);
+        Facts on = offFloor(false);
+        for (std::uint32_t i = 0; i < 20; ++i)
+            Tick(r, off, kTickMs);
+        for (std::uint32_t i = 0; i < 15; ++i)
+            Tick(r, on, kTickMs);
+        CHECK(r.state == State::Running);
+        CHECK(r.phase == Phase::Gather);
+        CHECK(r.leadOffFloorMs == 0);
+    }
+}
+
 // Every summon site that reads the lead bot's floor: with the lead bot off the floor no summon goes out and nothing is
 // spent, so the same summon goes out once it lands. The sites the Jin'do fix reached later: RunawaySummon, the gather
 // ceiling's own two summons, a revived bot's summon, the stranded lead bot's summons and the direct step's follower.
@@ -21210,6 +21258,8 @@ static void TestNoSummonOntoAnOffFloorLeadAtEverySite()
         r.phase = Phase::Gather;
         Facts f = Party(0);
         f.leadOffFloor = true;
+        f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
         f.members = {Mem("Tanky", 0), Mem("Rhan", 68)};
         f.maxMemberYd = 68;
         r.still["Rhan"].ms = kStillMs;
@@ -21217,6 +21267,23 @@ static void TestNoSummonOntoAnOffFloorLeadAtEverySite()
         GatherCeiling(r, f, order, "the party did not gather");
         CHECK(order.empty() && r.state == State::Running && r.phase == Phase::Gather);
         CHECK(r.note.find("no floor") != std::string::npos && r.summoned.empty());
+        // 30 s of it: every retry only starts the gather's clock over, so the run pauses instead and names the spot.
+        Run rLong = Start(&plan);
+        rLong.phase = Phase::Gather;
+        rLong.leadOffFloorMs = kLeadOffFloorPauseMs;
+        rLong.still["Rhan"].ms = kStillMs;
+        std::string orderLong;
+        GatherCeiling(rLong, f, orderLong, "the party did not gather");
+        CHECK(orderLong.empty() && rLong.state == State::Paused);
+        CHECK(rLong.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        // One tick short of it still waits: a lead bot that lands inside the 30 s continues as before.
+        Run rShort = Start(&plan);
+        rShort.phase = Phase::Gather;
+        rShort.leadOffFloorMs = kLeadOffFloorPauseMs - kTickMs;
+        rShort.still["Rhan"].ms = kStillMs;
+        std::string orderShort;
+        GatherCeiling(rShort, f, orderShort, "the party did not gather");
+        CHECK(orderShort.empty() && rShort.state == State::Running && rShort.phase == Phase::Gather);
         Facts on = f;
         on.leadOffFloor = false;
         Run r2 = Start(&plan);
@@ -35634,6 +35701,7 @@ int main()
     TestNoSummonTowardALeadInAnotherPart();
     TestNoSummonOntoALeadOffTheFloor();
     TestNoSummonOntoAnOffFloorLeadAtEverySite();
+    TestLeadOffFloorPausesTheGather();
     TestOffFloorLeadNeverStallsTheTick();
     TestWedgedMemberIsStillTeleportedBackOffTheFloor();
     TestNoIslandHopForALeadInAnotherPart();

@@ -180,7 +180,7 @@ The run protects itself with these rules:
 - It retries a refused gather once and then skips it.
 - It summons a straggler at the gather ceiling (30 s, 60 s on regroup), once per bot per step.
 - It first walks a straggler by path and summons it when it is still out.
-- It never summons a member onto a lead bot that stands off the floor: more than 3 yards of air under it, read the way the teleport landing reads the floor (the map's floor, and the feet probe under the feet, the higher one winning), so a lead bot left hovering in mid-air, as Jin'do's Banish does, is no summon point and its own landing or rescue comes first. A wedged member's teleport return is no summon and still runs: it lands beside another member, not at the lead bot's feet.
+- It never summons a member onto a lead bot that stands off the floor: more than 3 yards of air under it, read the way the teleport landing reads the floor (the map's floor, and the feet probe under the feet, the higher one winning), so a lead bot left hovering in mid-air, as Jin'do's Banish does, is no summon point and its own landing or rescue comes first. A wedged member's teleport return is no summon and still runs: it lands beside another member, not at the lead bot's feet. A lead bot left hanging that way for 30 seconds pauses the run with both heights (the lead bot's and the floor's) instead of the gather starting over every window, and a lead bot that lands inside those 30 seconds carries on as before.
 - It runs a member with attackers back to the party as a passive follower within 120 yd.
 - It pauses once on a missing item and then skips the dependent steps.
 - It still treats a boss that changed entry mid-fight as the boss.

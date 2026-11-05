@@ -2004,13 +2004,33 @@ namespace ai
         return -1;
     }
 
+    // Whether a tank can cast its taunt at all right now: in control (a stun, a fear, a confuse, a hex or a charm
+    // means no cast), not silenced or pacified, its taunt known and off cooldown. The target and range checks are
+    // separate: a window's first choice must also be on the subject and in melee (TauntAfterTankCanTaunt), while a
+    // window's holder and the pick's fallback only have to be able to cast it.
+    inline bool TauntAfterTankCanHold(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady)
+    {
+        return inControl && !silencedOrPacified && hasTaunt && tauntReady;
+    }
+
+    // Whether a tank can take a taunt back right now: it can cast it (TauntAfterTankCanHold), it is in melee of the
+    // subject, with it as its target, and not its victim.
+    inline bool TauntAfterTankCanTaunt(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
+        bool targetingSubject, bool isVictim, bool inMelee)
+    {
+        return TauntAfterTankCanHold(inControl, silencedOrPacified, hasTaunt, tauntReady) &&
+            targetingSubject && !isVictim && inMelee;
+    }
+
     // The tank of one until_tank window: the first usable tank at or after `priority` that can taunt the subject right
-    // now (TauntAfterTankCanTaunt) counts before one that cannot, wrapping to the front; else the first usable tank,
-    // which walks in and takes the next window. It is read once per window, when the window opens or its tank can no
-    // longer take the taunt, so one tank holds the window while its deadline runs; `priority` is one past the previous
-    // holder for a window whose taunt was cast and failed, so a resisted taunt hands the next one to another tank. -1
-    // when no tank is usable.
-    inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt, int wanted)
+    // now (TauntAfterTankCanTaunt) counts before one that cannot; then a tank that can cast its taunt at all
+    // (canHold), which is walking in or on another target; only then the first usable tank, whatever its state. A
+    // hexed or silenced tank is never chosen while a healthy one stands. It is read once per window, when the window
+    // opens or its tank can no longer take the taunt, so one tank holds the window while its deadline runs;
+    // `priority` is one past the previous holder for a window whose taunt was cast and failed, so a resisted taunt
+    // hands the next one to another tank. -1 when no tank is usable.
+    inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt,
+        const std::vector<bool>& canHold, int wanted)
     {
         int const count = static_cast<int>(usable.size());
         if (count == 0 || wanted < 0)
@@ -2021,16 +2041,24 @@ namespace ai
             if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
                 return index;
         }
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
+                return index;
+        }
         return TauntAfterTankIndex(usable, wanted);
     }
 
-    // Whether a tank can take a taunt back right now: in control (a stun, a fear, a confuse or a charm means no cast),
-    // not silenced or pacified, its taunt known and castable (off cooldown, in range, its stance), in melee of the
-    // subject, with it as its target, and not its victim.
-    inline bool TauntAfterTankCanTaunt(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
-        bool targetingSubject, bool isVictim, bool inMelee)
+    // The tank a window's read assigns: its holder while the window runs and that tank holds the window (alive and
+    // usable, can hold a taunt now), else the pick at `wanted`. The glue's advance and the policy tests read this one
+    // expression, so a holder that loses control hands the window over at once.
+    inline int TauntWindowAssign(bool opening, bool holderHolds, int holderSlot, int wanted,
+        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold)
     {
-        return inControl && !silencedOrPacified && hasTaunt && tauntReady && targetingSubject && !isVictim && inMelee;
+        if (!opening && holderHolds)
+            return holderSlot;
+        return TauntAfterTankPick(usable, canTaunt, canHold, wanted);
     }
 
     // The slot of `guid` in the raid order, -1 when it is no tank of it any more: a window's holder is kept by guid,

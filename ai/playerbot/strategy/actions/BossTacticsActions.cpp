@@ -5131,6 +5131,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     std::uint64_t const me = bot->GetObjectGuid().GetRawValue();
     int const mySlot = TankSlotOf(guids, me);
     std::vector<bool> canTaunt(roles.tanks.size(), false);
+    std::vector<bool> canHold(roles.tanks.size(), false);
     for (const BossTacticRow* row : fight.rows)
     {
         // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
@@ -5165,17 +5166,18 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             bool const onNonTank = victimIsPlayer && !victimIsTank;
             // A tank that can take the taunt back right now (in control, not silenced, its taunt off cooldown, in melee
             // of the subject with it as its target, and not its victim) is a window's first choice; a stunned, hexed or
-            // silenced tank never holds up a window that another one can take.
+            // silenced tank never holds up a window that another one can take, and never keeps one either.
             for (std::size_t i = 0; i < roles.tanks.size(); ++i)
             {
                 Player* const tank = roles.tanks[i];
                 PlayerbotAI* const tankAi = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
                 const char* const taunt = tankAi ? KnownTaunt(tankAi) : nullptr;
                 bool const inControl = tank && !tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
-                    !tank->IsCharmed();
+                    !tank->IsCharmed() && !tank->IsPolymorphed();
                 bool const silenced = tank &&
                     (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
                 bool const ready = taunt && tankAi->CanCastSpell(taunt, unit);
+                canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);
                 canTaunt[i] = TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,
                     tank && tank->GetSelectionGuid() == unit->GetObjectGuid(), victim == tank,
                     tank && tank->CanReachWithMeleeAutoAttack(unit));
@@ -5205,8 +5207,11 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                         reported->second = nowMs;
                 }
                 int const holderSlot = TankSlotOf(guids, state.holder);
-                bool const holderUsable = holderSlot >= 0 &&
-                    holderSlot < static_cast<int>(usable.size()) && usable[holderSlot];
+                // The holder keeps its window only while it can still cast the taunt: a dead, charmed, hexed, stunned,
+                // feared, polymorphed or silenced holder hands it over at once.
+                bool const holderHolds = holderSlot >= 0 &&
+                    holderSlot < static_cast<int>(usable.size()) && usable[holderSlot] &&
+                    holderSlot < static_cast<int>(canHold.size()) && canHold[holderSlot];
                 int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));
                 // One tank advances the window (its holder while it can still take the taunt, else the order's first
                 // usable tank), so a window's transitions and their outcome rows happen once each. A holder nobody
@@ -5225,9 +5230,8 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     int const wanted = (opening && state.open && state.taunted && holderSlot >= 0)
                         ? holderSlot + 1
                         : static_cast<int>(row->priority);
-                    int const assigned = (opening || !holderUsable)
-                        ? TauntAfterTankPick(usable, canTaunt, wanted)
-                        : holderSlot;
+                    int const assigned =
+                        TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt, canHold);
                     if (assigned >= 0 && assigned < static_cast<int>(roles.tanks.size()))
                     {
                         bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
