@@ -40,6 +40,7 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "Objects/Totem.h"
 #include "Objects/Creature.h"
+#include "Pet.h"
 #include "Spells/SpellMgr.h"
 #include "Database/DBCStores.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
@@ -697,7 +698,8 @@ struct SeekFight
     Unit* boss = nullptr;
     std::uint32_t nowMs = 0;
     std::uint32_t dueMs = 0;
-    std::uint32_t dueInMs = 0;
+    std::uint32_t dueInMs = 0;   // clamped at 0: only readers that need "due but not yet seen" take the signed one
+    int dueSignedMs = std::numeric_limits<int>::max(); // negative once the due time passed
     bool windowOpen = false;
     bool forceBurn = false;
     std::uint32_t cycleNo = 0;
@@ -1094,6 +1096,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.nowMs = nowMs;
     out.dueMs = dueMs;
     out.dueInMs = dueMs > nowMs ? dueMs - nowMs : 0;
+    out.dueSignedMs = dueMs
+        ? static_cast<int>(static_cast<std::int64_t>(dueMs) - static_cast<std::int64_t>(nowMs))
+        : std::numeric_limits<int>::max();
     out.windowOpen = dueMs != 0 && SeekWindowOpen(nowMs, dueMs, leadMs);
     out.forceBurn = dueMs != 0 && SeekForceBurn(nowMs, dueMs);
     out.cycleNo = cycleNo;
@@ -1305,6 +1310,41 @@ bool ai::IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn)
 bool ai::BossSeeking(PlayerbotAI* ai, Player* bot)
 {
     return FindBossSeek(ai, bot).valid;
+}
+
+bool ai::BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || (bot->GetClass() != CLASS_HUNTER && bot->GetClass() != CLASS_WARLOCK))
+        return false;
+    SeekFight state;
+    if (!ReadSeekFightCached(ai, bot, state))
+        return false;
+    const bool siphonActive = state.row && bot->HasAura(state.row->cycleSpell);
+    return SeekPetMustLeave(state.dueSignedMs, siphonActive);
+}
+
+bool BossTacticsSeekPetAction::Execute(Event& /*event*/)
+{
+    if (!BossSeekPetMustLeave(ai, bot))
+        return false;
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive())
+        return false;
+    // A hunter's pet is kept in the current slot so call pet brings it back unchanged; a warlock summons a new one,
+    // so the demon is abandoned rather than left as a stale row.
+    bot->RemovePet(bot->GetClass() == CLASS_HUNTER ? PET_SAVE_AS_CURRENT : PET_SAVE_AS_DELETED);
+    return true;
+}
+
+float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)
+{
+    if (!action || (bot->GetClass() != CLASS_HUNTER && bot->GetClass() != CLASS_WARLOCK))
+        return 1.0f;
+    const std::string& name = action->getName();
+    if (name != "call pet" && name != "revive pet" && name != "initialize pet" && name != "summon imp" &&
+        name != "summon voidwalker" && name != "summon succubus" && name != "summon felhunter")
+        return 1.0f;
+    return BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f;
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)

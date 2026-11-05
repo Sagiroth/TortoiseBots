@@ -58,6 +58,17 @@ namespace ai
         return keyOn && windowOpen && alive && !hasAura && !isBossVictim && !isExemptTank && !charmed;
     }
 
+    // A pet inside the siphon's radius is one full heal or damage tick of its own: the core reads the poison on every
+    // living unit, pets included. Hunters and warlocks dismiss theirs from this long before the due time until this
+    // long after it, and plainly while the siphon's dummy aura is on the bot. dueInMs is signed: negative once due.
+    constexpr int kSeekPetLeadMs = 5000;
+    constexpr int kSeekPetTailMs = 2000;
+
+    inline bool SeekPetMustLeave(int dueInMs, bool siphonActive)
+    {
+        return siphonActive || (dueInMs <= kSeekPetLeadMs && dueInMs >= -kSeekPetTailMs);
+    }
+
     // A cloud is the row's when its spell is the aura itself or the trigger spell of its effect.
     inline bool IsSoughtCloud(std::uint32_t dynSpellId, std::uint32_t effectTriggerSpell, std::uint32_t soughtAura)
     {

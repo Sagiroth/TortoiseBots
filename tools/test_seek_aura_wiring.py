@@ -234,6 +234,20 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
 
+    def test_the_pet_dismissal_is_wired(self):
+        # A pet is one more heal to the core's hit: the action dismisses it in the seek fight, the multiplier keeps the
+        # class from calling or summoning it back before the siphon has landed.
+        node = '"boss tactics seek pet"'
+        combat = body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers(")
+        self.assertIn(node, combat)
+        self.assertIn('new NextAction("boss tactics seek pet", ACTION_EMERGENCY + 6)', combat)
+        self.assertIn('creators["boss tactics seek pet"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics seek pet"]', TRIGGER_CONTEXT)
+        self.assertIn("new BossTacticsSeekPetHoldMultiplier(ai)",
+                      body(STRATEGY, "void BossTacticsStrategy::InitCombatMultipliers("))
+        self.assertIn("SeekPetMustLeave(", ACTIONS)
+        self.assertIn("PET_SAVE_AS_CURRENT", body(ACTIONS, "bool BossTacticsSeekPetAction::Execute("))
+
 
 class SpreadKindWiring(unittest.TestCase):
     """The spread row widens the ranged spacing and outranks a stay."""
@@ -310,6 +324,12 @@ class DeclarationsMatchDefinitions(unittest.TestCase):
              ACTIONS, "bool BossTacticsSeekKillAction::Execute(Event& event)"),
             (ACTIONS_H, "class BossTacticsSeekHoldMultiplier : public Multiplier",
              ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)"),
+            (ACTIONS_H, "bool BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot);",
+             ACTIONS, "bool ai::BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot)"),
+            (ACTIONS_H, "class BossTacticsSeekPetAction : public Action",
+             ACTIONS, "bool BossTacticsSeekPetAction::Execute(Event&"),
+            (ACTIONS_H, "class BossTacticsSeekPetHoldMultiplier : public Multiplier",
+             ACTIONS, "float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)"),
         )
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)

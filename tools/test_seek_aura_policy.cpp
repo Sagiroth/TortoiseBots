@@ -132,6 +132,18 @@ int main()
     CHECK(SeekSourceHeld(false, 40.0f, 30.0f, false, false));
     CHECK(SeekSourceHeld(true, 14.0f, 30.0f, false, false));
 
+    // Pets leave the siphon: one pet inside the 100 yd hit is a full 8 000 heal because the core reads the poison on
+    // every living unit. The window starts 5 s before the due time and lasts until 2 s after it; the dummy aura that
+    // marks a siphon in progress holds it too, and a pet may be called again once the window is over.
+    CHECK(!SeekPetMustLeave(6000, false));
+    CHECK(SeekPetMustLeave(5000, false));
+    CHECK(SeekPetMustLeave(1, false));
+    CHECK(SeekPetMustLeave(0, false));
+    CHECK(SeekPetMustLeave(-1000, false));
+    CHECK(SeekPetMustLeave(-2000, false));
+    CHECK(!SeekPetMustLeave(-2001, false));
+    CHECK(SeekPetMustLeave(90000, true));
+    CHECK(SeekPetMustLeave(-30000, true));
 
     // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
     CHECK(SeekClockStartOver(false, 0, 5000));
