@@ -20,7 +20,7 @@ namespace ai
     constexpr std::uint32_t kSeekGatherMaxMs = 8000; // a gather never waits longer than this
     constexpr float kSeekSpotYd = 8.0f;              // the source is "at B" within this
     constexpr float kSeekFallbackYd = 35.0f;         // the seek's outer reach: a source beyond it is out of the fight
-    constexpr float kSeekPickupYd = 60.0f;           // a source this near B may be pulled
+    constexpr float kSeekPickupYd = 60.0f;           // the tank's pull walks to a source this near B (the fallback: 35)
     constexpr int kSeekPullMinMissing = 3;           // pull a source only while this many seekers lack the aura
     constexpr float kSeekGatherStartPct = 5.0f;      // seekers start walking at hold % + this
     constexpr float kSeekTankSwingMarginPct = 10.0f; // the off-tank stops swinging this close above the hold
