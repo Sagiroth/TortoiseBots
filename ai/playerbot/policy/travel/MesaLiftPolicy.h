@@ -10,7 +10,7 @@
 // reports its own position. A bot has no client, so it walked to the foot of
 // a mesa and gave up (#1478), or stood in the Undercity throne room. The
 // module rides for it: the car's height follows the client animation
-// (TransportAnimation.dbc, below) at phase server-ms-time % period, the bot
+// (the client transport animation table, below) at phase server-ms-time % period, the bot
 // boards a car parked at its level and steps off when the car parks at the
 // other one. The world-facing part lives in MoveToTravelTargetAction.
 
@@ -22,7 +22,7 @@ namespace ai
         float dz;
     };
 
-    // TransportAnimation.dbc: height above the spawn over one cycle; equal
+    // Client transport animation table: height above the spawn over one cycle; equal
     // neighbouring keys are a stop at a level.
     inline constexpr LiftKey kTbWestDown[] = { {0, 0.0f}, {5000, 0.0f}, {6100, -1.75f}, {6933, -5.18f}, {12867, -56.81f},
         {13833, -59.85f}, {15000, -61.24f}, {20000, -61.24f}, {21333, -59.83f}, {22233, -56.74f}, {28133, -5.25f},
