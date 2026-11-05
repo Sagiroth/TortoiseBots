@@ -788,6 +788,30 @@ class BossTacticsSql(unittest.TestCase):
                     (309, 11380, "dispel_priority", 0, 17172), (309, 11380, "taunt_after_cast", 0, 0)):
             self.assertIn(key, live, "the Jin'do rows of 20261103020000 / 20261105100000 must stay: %s" % (key,))
 
+    def test_jindo_banish_taunt_row(self):
+        # 20261105233000_world.sql: the first off-tank takes Jin'do back from a tank Banish 24466 teleported onto the pit
+        # trolls. The row is keyed to the spell (the glue reads the tank's landing at the spell's destination and a
+        # jump of its position), sits beside the spell-less Hex/charm row of 20261105100000 and does not replace it.
+        name = "20261105233000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Jin'do Banish migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        banish = live.get((309, 11380, "taunt_after_cast", 0, 24466))
+        self.assertIsNotNone(banish, "the Jin'do Banish taunt_after_cast row is missing")
+        self.assertEqual((1, 10.0, "until_tank", 0, 100, 0),
+                         (banish["priority"], banish["param"], banish["tactic_mode"], banish["hp_min"],
+                          banish["hp_max"], banish["bot_aura"]),
+                         "the Jin'do Banish taunt_after_cast row drifted")
+        self.assertIsNone(new_kind_problem(banish))
+        spell_less = live.get((309, 11380, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(spell_less, "the spell-less Jin'do taunt row of 20261105100000 must stay")
+        self.assertEqual(1, spell_less["priority"])
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"), "one INSERT: the Banish row")
+        self.assertIn("`spell_id` = 24466", text, "the DELETE must name the spell key")
+        self.assertGreater(name, "20261105100000_world.sql")
+
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
         # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees

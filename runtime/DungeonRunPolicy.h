@@ -904,6 +904,12 @@ struct UnitFact
     // spawn of its own or a read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control
     // target and no body of the pull the order is for (RespawnsQuickly).
     std::uint32_t respawnSec = 0;
+    // How far it stands from its own spawn point (Creature::GetRespawnCoord): -1 not read, or a unit with no static
+    // spawn of its own. With respawnSec it makes a respawn nest (InRespawnNest).
+    float homeYd = -1.0f;
+    // It attacks a party bot or a party pet now (its victim is one): read for the engaged units. A nest unit that
+    // does is a real fight whatever its respawn (NestLeavable).
+    bool hitsParty = false;
     // Kill-first candidates (Facts::killFirst): in combat with a party member,
     // or summoned / owned (a healing ward) by a unit that is.
     bool engaged = false;
@@ -1272,6 +1278,20 @@ inline bool RespawnsQuickly(std::uint32_t respawnSec)
 {
     return respawnSec >= 1 && respawnSec <= kRunCcMinRespawnSec;
 }
+// A unit in its respawn nest: its spawn comes back within kRunCcMinRespawnSec and it stands within kNestYd of that
+// spawn point (UnitFact::homeYd, the core's Creature::GetRespawnCoord): the kill ends with the unit back in seconds
+// at the same spot, so a party that fights there fights forever (ZG Jin'do's pit: ten Sacrificed Trolls 14826, 10 s).
+// A fast-respawning unit that walked out of its nest (chasing a bot into the raid) is a normal unit. The guards and the
+// engage on arrival never use this: a unit that hits a party member is always their target. kNestYd is the trolls'
+// 18 yd aggro reach plus a 4 yd margin.
+constexpr float kNestYd = 22.0f;
+inline bool InRespawnNest(const UnitFact& u)
+{
+    return RespawnsQuickly(u.respawnSec) && u.homeYd >= 0.0f && u.homeYd <= kNestYd;
+}
+// A gather's own spot is never this close to a nest unit's home: a regroup that gathers on a banished lead bot's
+// corpse at the pit rim stands in the trolls' respawn nest (GatherAnchorInNest tells the gather to use the step point).
+constexpr float kNestGatherYd = 30.0f;
 // The respawn delay the run's facts carry: only a unit with a spawn of its own has one. A temporary summon's delay
 // is its lifetime (TemporarySummon), not a respawn, so read as one a 15 s scripted add (Gandling's Risen Guardians,
 // Arlokk's Prowlers, Mandokir's Ohgan) would look like a fast respawn and lose its crowd control and its place in
@@ -1553,6 +1573,13 @@ struct Facts
     // (engagedRead) by the glue on every tick in combat; a policy test that does not set it keeps the old rules.
     std::vector<UnitFact> engagedUnits;
     bool engagedRead = false;
+    // A regroup's gather spot against the respawn nests (GatherAnchorInNest): the living hostile units the glue read
+    // within kNestGatherYd + kNestYd of the lead bot that stand in their own nest (InRespawnNest), read on the tick a
+    // regroup would gather and no other. Empty: none read.
+    std::vector<UnitFact> nestUnits;
+    bool nestUnitsRead = false;
+    // AiPlayerbot.DungeonRunRespawnNest (default on): the nest rules (NestLeavable, GatherAnchorInNest) are live.
+    bool respawnNest = true;
     // ... the party's own bots under an enemy's charm (Dominate Mind, Mind Control) that fight the party: never
     // engaged units, but named in the note when nothing else is engaged (EngagedUnitsNote).
     std::vector<std::string> charmedFighting;
@@ -5154,14 +5181,61 @@ inline bool LeadOffAnchor(Run& r, const Facts& f)
     return CheckAnchor(r, f) == AnchorState::Off;
 }
 
+// An entry the plan's own steps are about: a boss step's entry and entries, a hold's event units, a pull's pack. Such a
+// unit is the run's objective, so it is never a respawn nest to leave (the plan fights it, however fast it comes back).
+inline bool PlanObjectiveEntry(const Run& r, std::uint32_t entry)
+{
+    if (!r.plan || !entry)
+        return false;
+    for (const PlanStep& s : r.plan->steps)
+    {
+        if (s.kind != PlanStepKind::Boss && s.kind != PlanStepKind::Hold && s.kind != PlanStepKind::Pull)
+            continue;
+        if (s.entry == entry || std::find(s.entries.begin(), s.entries.end(), entry) != s.entries.end())
+            return true;
+    }
+    return false;
+}
+
+// A respawn nest unit the run may leave alone (AiPlayerbot.DungeonRunRespawnNest): in its nest (InRespawnNest), not an
+// objective of the plan (PlanObjectiveEntry) and not attacking a party bot or pet now (UnitFact::hitsParty). A unit
+// that hits the party is a real fight and a real guard target, whatever it respawns as (review of t1105c).
+inline bool NestLeavable(const Run& r, const Facts& f, const UnitFact& u)
+{
+    return f.respawnNest && InRespawnNest(u) && !u.hitsParty && !PlanObjectiveEntry(r, u.entry);
+}
+
+// Whether a gather at (x, y, z) stands in a respawn nest: within kNestGatherYd of a nest unit the glue read
+// (Facts::nestUnits, read only on the tick a regroup gathers). A regroup that gathered on a dead tank's body at
+// the rim of a nest stood the party on it and the only fights left were respawns (ZG Jin'do's pit: the tank was
+// Banished onto the trolls, died at the rim, and the survivors gathered on the corpse).
+inline bool GatherAnchorInNest(const Run& r, const Facts& f, float x, float y, float z)
+{
+    if (!f.respawnNest)
+        return false;
+    for (const UnitFact& u : f.nestUnits)
+        if (InRespawnNest(u) && !PlanObjectiveEntry(r, u.entry) && ai::PlanDistance(x, y, z, u.x, u.y, u.z) <= kNestGatherYd)
+            return true;
+    return false;
+}
+
 // Sends a gather: the lead bot holds where it stands and the others form up on
 // it; a lead bot off the anchor walks back to the anchor first and the party
 // gathers there (19z5 step 83: a gather on the lead's own spot pinned the party
-// on a hilltop with no path down).
+// on a hilltop with no path down). A lead bot standing in a respawn nest walks
+// the party to the step point instead (GatherAnchorInNest).
 inline void SendGather(Run& r, const Facts& f, std::string& order)
 {
-    order = LeadOffAnchor(r, f) ? MoveOrder(r.anchorX, r.anchorY, r.anchorZ, false)
-                                : MoveOrder(f.leadX, f.leadY, f.leadZ, false);
+    const PlanStep* const step = Current(r);
+    if (LeadOffAnchor(r, f))
+        order = MoveOrder(r.anchorX, r.anchorY, r.anchorZ, false);
+    else if (step && GatherAnchorInNest(r, f, f.leadX, f.leadY, f.leadZ))
+    {
+        order = MoveOrder(step->x, step->y, step->z, false);
+        r.note += (r.note.empty() ? "" : "; ") + std::string("the gather stands at the step point, off the respawn nest");
+    }
+    else
+        order = MoveOrder(f.leadX, f.leadY, f.leadZ, false);
     r.gatherOrder = order;
     SampleMembers(r, f);
 }
@@ -19555,6 +19629,44 @@ inline bool UnattackableOnlyFight(const Facts& f)
     return true;
 }
 
+// The party's combat is held by respawn nests alone: in combat, and every unit any member (or its pet) is engaged
+// with is a nest unit the run may leave alone (NestLeavable: in its nest, no objective of the plan, not hitting a party
+// bot or pet). Such a fight is no fight either: each kill comes back in seconds at the same spot, so the party walks
+// out and the run goes on (Tick clears the combat flags on this view, and FightOn says no fight to the ceiling pause's
+// own resume). A nest unit that attacks the party keeps the fight real. A member whose engaged read is missing leaves
+// the fight as it is, and the run's own engaged read answers when the member lists carry none (a policy test's bare
+// Facts). ZG Jin'do's pit: a bot left standing in combat with the trolls that no longer hit it held the regroup
+// "fighting on" and then gathered the party on the rim for troll-only fights.
+inline bool NestOnlyCombat(const Run& r, const Facts& f)
+{
+    if (!f.anyInCombat)
+        return false;
+    // A real player in a fight is a fight of its own: the run never walks out on him.
+    for (const PlayerFact& p : f.players)
+        if (p.alive && p.inCombat)
+            return false;
+    bool saw = false;
+    for (const MemberFact& m : f.members)
+    {
+        if (!m.inCombat)
+            continue;
+        if (!m.engagedRead)
+            return false;
+        saw = saw || !m.engaged.empty();
+        for (const UnitFact& u : m.engaged)
+            if (!NestLeavable(r, f, u))
+                return false;
+    }
+    if (saw)
+        return true;
+    if (!f.engagedRead || f.engagedUnits.empty())
+        return false;
+    for (const UnitFact& u : f.engagedUnits)
+        if (!NestLeavable(r, f, u))
+            return false;
+    return true;
+}
+
 // An entry the plan fights as a boss (a boss step's own entry) or as an event's unit (a hold step's entries),
 // wherever in the plan that step stands.
 inline bool PlanBossOrHoldEntry(const Run& r, std::uint32_t entry)
@@ -20011,6 +20123,13 @@ inline bool InstanceRejoinTick(Run& r, const Facts& f, std::string& order)
 inline bool FightOn(Run& r, const Facts& f, std::uint32_t dt)
 {
     if (f.anyInCombat && OffMapUnitsOnly(f))
+    {
+        r.unattackableSet.clear();
+        r.unattackableMs = 0;
+        return false;
+    }
+    // A combat only a respawn nest holds is no fight (NestOnlyCombat): a ceiling pause's own resume goes on.
+    if (NestOnlyCombat(r, f))
     {
         r.unattackableSet.clear();
         r.unattackableMs = 0;
@@ -20614,7 +20733,10 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     // have stood so for the grace (UnattackableGraceTick): the step runs on a view with the combat flags cleared.
     bool const unattackable = UnattackableGraceTick(r, in, dt);
     Facts quiet;
-    if (unattackable)
+    // A combat only a respawn nest holds is no fight, at once: the step runs on the same quiet view (NestOnlyCombat),
+    // so a bot left fighting the pit's trolls does not hold the regroup ("13 dead: fighting on") or a walk.
+    bool const nestOnly = !unattackable && NestOnlyCombat(r, in);
+    if (unattackable || nestOnly)
     {
         quiet = in;
         quiet.anyInCombat = false;
@@ -20624,7 +20746,7 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     // The bots held by such units only: their combat is dropped after the same grace (CombatDropTick), and a
     // gather's ceiling waits for them meanwhile (HeldStragglerWait).
     std::string const dropNote = CombatDropTick(r, in, dt);
-    const Facts& f = unattackable ? quiet : in;
+    const Facts& f = (unattackable || nestOnly) ? quiet : in;
     if (!f.anyInCombat)
     {
         r.hpWatch.clear(); // HpHeldTick watches one fight

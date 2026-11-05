@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -5255,6 +5256,12 @@ struct TauntAfterEpisode
     // This charm's window is spent (regained or missed): no second attempt until the subject's victim is a tank again,
     // which is where the next charm starts afresh.
     bool spent = false;
+    // A spell-keyed row's teleport latch (TauntAfterVictim) and the last position read of the subject's victim: the
+    // teleport is seen as a jump between two reads.
+    TauntTeleportLatch tele;
+    std::uint64_t lastVictimGuid = 0;
+    float lastX = 0.0f, lastY = 0.0f, lastZ = 0.0f;
+    std::uint32_t lastPosMs = 0;
 };
 
 std::mutex g_tauntAfterMutex;
@@ -5266,6 +5273,8 @@ std::map<TauntAfterKey, std::uint32_t> g_tauntAfterImmune;
 std::atomic<std::uint32_t> g_tauntAfterPruneMs{0};
 // A subject nobody read for two minutes left the fight; the episode goes with it.
 constexpr std::uint32_t kTauntAfterStaleMs = 120000;
+// A jump of the victim's position counts as a teleport only between reads this close together.
+constexpr std::uint32_t kTauntJumpReadMaxMs = 3000;
 
 TauntAfterKey TauntAfterKeyOf(Player* bot, Unit* subject, const BossTacticRow& row)
 {
@@ -5372,8 +5381,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     }
     for (const BossTacticRow* row : fight.rows)
     {
-        // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
-        // the scan having no teleport edge or cast slot to offer them.
+        // Only `until_tank` is implemented: `blink` stays accepted by the loader and ignored here. A spell-keyed row
+        // (Jin'do's Banish 24466) triggers on the tank's teleport (TauntAfterVictim): the spell is an instant
+        // teleport, so there is no cast slot or aura to read.
         if (row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank)
             continue;
         int const assigned = TauntAfterTankIndex(alive, static_cast<int>(row->priority));
@@ -5390,7 +5400,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;
-            bool victimIsTank = false;
+            bool victimIsTankRole = false;
             if (victimIsPlayer)
             {
                 // A charmed player is hostile and its threat is gone (the charm handler deletes it), so it cannot be
@@ -5398,10 +5408,35 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 Player* const player = static_cast<Player*>(victim);
                 ObjectGuid const charmer = player->GetCharmerGuid();
                 bool const charmed = !charmer.IsEmpty() && !charmer.IsPlayer();
-                victimIsTank = !charmed &&
+                victimIsTankRole = !charmed &&
                     std::find(roles.tanks.begin(), roles.tanks.end(), player) != roles.tanks.end();
             }
-            bool const onNonTank = victimIsPlayer && !victimIsTank;
+            // A spell-keyed row (Jin'do's Banish 24466) reads the tank's teleport: its landing at the spell's destination
+            // or a jump of its own position between two reads (TauntAfterVictim, latched in the episode state).
+            TauntAfterVictimIn victimIn;
+            victimIn.victimIsPlayer = victimIsPlayer;
+            victimIn.victimIsTankRole = victimIsTankRole;
+            victimIn.spellKeyed = row->spellId != 0;
+            victimIn.nowMs = nowMs;
+            if (victimIsPlayer)
+            {
+                victimIn.victimGuid = victim->GetObjectGuid().GetRawValue();
+                victimIn.ydFromSubject = victim != unit ? unit->GetDistance(victim) : 0.0f;
+                if (victimIn.spellKeyed)
+                {
+                    SpellTargetPosition const* const landing = sSpellMgr.GetSpellTargetPosition(row->spellId);
+                    if (landing && victim->GetMapId() == landing->mapId)
+                    {
+                        float const dx = victim->GetPositionX() - landing->x;
+                        float const dy = victim->GetPositionY() - landing->y;
+                        float const dz = victim->GetPositionZ() - landing->z;
+                        victimIn.atSpellDestination =
+                            std::sqrt(dx * dx + dy * dy + dz * dz) <= kTauntDestinationYd;
+                    }
+                }
+            }
+            bool onNonTank = false;
+            bool victimIsTank = false;
             bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
             TauntAfterEpisode episode;
             bool close = false;
@@ -5412,6 +5447,27 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 TauntAfterKey const key = TauntAfterKeyOf(bot, unit, *row);
                 TauntAfterEpisode& state = g_tauntAfter[key];
                 state.lastReadMs = nowMs;
+                // The victim's displacement since the last read of the same victim, when that read is recent.
+                if (victimIsPlayer)
+                {
+                    if (state.lastVictimGuid == victimIn.victimGuid && nowMs - state.lastPosMs <= kTauntJumpReadMaxMs)
+                    {
+                        float const dx = victim->GetPositionX() - state.lastX;
+                        float const dy = victim->GetPositionY() - state.lastY;
+                        float const dz = victim->GetPositionZ() - state.lastZ;
+                        victimIn.jumpYd = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    }
+                    state.lastVictimGuid = victimIn.victimGuid;
+                    state.lastX = victim->GetPositionX();
+                    state.lastY = victim->GetPositionY();
+                    state.lastZ = victim->GetPositionZ();
+                    state.lastPosMs = nowMs;
+                }
+                else
+                    state.lastVictimGuid = 0;
+                TauntAfterVictimRead const victimRead = TauntAfterVictim(victimIn, state.tele);
+                onNonTank = victimRead.onNonTank;
+                victimIsTank = victimRead.victimIsTank;
                 // A taunt-immune subject opens no episode at all (TauntEpisodeTick), so the row is dead weight for this
                 // fight; one line per fight says so instead of the row silently doing nothing.
                 if (!tauntable)

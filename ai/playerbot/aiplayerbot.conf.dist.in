@@ -999,6 +999,11 @@ AiPlayerbot.DungeonRunAuraTactics = 0
 # A needs_aura row names an entry and the aura a bot must carry: a bot without it never targets, attacks or taunts that unit, and the run guard sends nobody at it.
 AiPlayerbot.DungeonRunAuraGatedTargets = 0
 
+# Respawn nests: a unit that comes back within a minute and stands at its spawn point (Jin'do's Sacrificed Trolls) and hits nobody in the party does not hold a fight open, and a regroup never gathers on one. A unit that attacks the party is always a real fight and a guard target; the plan's own boss, hold and pull units are never a nest.
+# 0 - off
+# 1 - on (Default)
+AiPlayerbot.DungeonRunRespawnNest = 1
+
 # The kill_first candidates come from a grid search of the row's entries within 40 yd too, not only from each bot's attackers list (which "focus rti targets" collapses to the raid mark).
 AiPlayerbot.DungeonRunKillFirstGrid = 0
 
