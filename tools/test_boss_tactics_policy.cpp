@@ -2347,38 +2347,88 @@ int main()
 
     // TestTauntAfterCastFiresOnTankBanish: Jin'do's Banish 24466 teleports a random player, the tank included, onto
     // the pit's trolls 47 yd west of his stand. The tank stays his victim, so the spell-less until_tank row never
-    // fires (a victim that is still a tank is "not lost"); a row keyed to 24466 reads the displacement instead. The
-    // spell is an instant teleport with no aura and no cast slot to read, so the victim's distance is the only
-    // signal TauntAfterVictim has.
+    // fires (a victim that is still a tank is "not lost"); a row keyed to 24466 reads the tank's teleport instead:
+    // its landing at the spell's destination, or a jump of its own position between two reads, latched until another
+    // tank has the subject, the tank is back within kTauntBackYd, or kTauntLatchMaxMs pass (review of t1105c: Jin'do
+    // follows the tank to the rim, about 21 yd from the landing, so a plain distance test closed the window in ~2 s).
     {
+        auto read = [](TauntTeleportLatch& latch, std::uint64_t guid, bool tankRole, bool keyed, float yd, float jump,
+                       bool atDestination, std::uint32_t nowMs)
+        {
+            TauntAfterVictimIn in;
+            in.victimIsPlayer = true;
+            in.victimIsTankRole = tankRole;
+            in.spellKeyed = keyed;
+            in.victimGuid = guid;
+            in.ydFromSubject = yd;
+            in.jumpYd = jump;
+            in.atSpellDestination = atDestination;
+            in.nowMs = nowMs;
+            return TauntAfterVictim(in, latch);
+        };
         // The spell-less row (spell 0) on a tank 47 yd away: the bug, no episode (today's rule).
-        TauntAfterVictimRead const stillTank = TauntAfterVictim(true, true, false, 47.0f);
+        TauntTeleportLatch lessLatch;
+        TauntAfterVictimRead const stillTank = read(lessLatch, 1, true, false, 47.0f, 47.0f, true, 1000);
         CHECK(!stillTank.onNonTank && stillTank.victimIsTank);
-        // The keyed row on the same banished tank: the episode opens and stays due until the deadline.
-        TauntAfterVictimRead const banished = TauntAfterVictim(true, true, true, 47.0f);
-        CHECK(banished.onNonTank && !banished.victimIsTank);
+        // The keyed row on a tank that merely stands far from the subject (kiting, a knockback, pathing: no jump, not
+        // at the destination) opens nothing: Codex MEDIUM, the configured spell must be what is seen.
+        TauntTeleportLatch far;
+        TauntAfterVictimRead const kiting = read(far, 1, true, true, 47.0f, 3.0f, false, 1000);
+        CHECK(!kiting.onNonTank && kiting.victimIsTank && !far.open);
+        // A tank landing at the destination: the episode opens, and the latch holds it while Jin'do follows the tank
+        // to the rim (21.5 yd from the landing), the Opus MEDIUM.
+        TauntTeleportLatch latch;
+        TauntAfterVictimRead const banished = read(latch, 1, true, true, 47.0f, 47.0f, true, 1000);
+        CHECK(banished.onNonTank && !banished.victimIsTank && latch.open);
         TauntEpisodeRead opened = TauntEpisodeTick(true, banished.onNonTank, banished.victimIsTank, false, false, 0,
             10000, false);
         CHECK(opened.starts && opened.open && opened.step == TauntEpisodeStep::Due);
-        // The boss follows it (still 30 yd away): the episode runs on, its deadline included.
-        TauntAfterVictimRead const chased = TauntAfterVictim(true, true, true, 30.0f);
-        TauntEpisodeRead continuing = TauntEpisodeTick(true, chased.onNonTank, chased.victimIsTank, true, false, 4000,
-            10000, false);
+        TauntAfterVictimRead const rim = read(latch, 1, true, true, 21.5f, 0.5f, true, 3000);
+        CHECK(rim.onNonTank && !rim.victimIsTank && latch.open);
+        TauntEpisodeRead continuing = TauntEpisodeTick(true, rim.onNonTank, rim.victimIsTank, true, false, 2000, 10000,
+            false);
         CHECK(!continuing.starts && continuing.open && continuing.step == TauntEpisodeStep::Due);
-        // The off-tank's taunt lands: a tank has Jin'do back and the episode closes as regained.
-        TauntAfterVictimRead const backOnTank = TauntAfterVictim(true, true, true, 3.0f);
-        CHECK(!backOnTank.onNonTank && backOnTank.victimIsTank);
+        // Standing still at the destination does not re-open anything once the latch let go (the edge is spent).
+        TauntAfterVictimRead const stays = read(latch, 1, true, true, 15.0f, 0.0f, true, 5000);
+        CHECK(stays.onNonTank && latch.open); // 15 yd is still outside kTauntBackYd
+        // The off-tank's taunt lands: another tank has Jin'do, the latch lets go and the episode closes as regained.
+        TauntAfterVictimRead const backOnTank = read(latch, 2, true, true, 3.0f, 0.0f, false, 6000);
+        CHECK(!backOnTank.onNonTank && backOnTank.victimIsTank && !latch.open);
         TauntEpisodeRead regained = TauntEpisodeTick(true, backOnTank.onNonTank, backOnTank.victimIsTank, true, false,
             5000, 10000, false);
         CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
-        // A tank standing close keeps the spell-less rule (a holding tank at 3 yd is not "on a non-tank").
-        TauntAfterVictimRead const close = TauntAfterVictim(true, true, false, 3.0f);
-        CHECK(!close.onNonTank && close.victimIsTank);
+        // The banished tank walks back within kTauntBackYd of the subject on its own: the window closes.
+        TauntTeleportLatch walkBack;
+        CHECK(read(walkBack, 1, true, true, 47.0f, 47.0f, true, 1000).onNonTank);
+        TauntAfterVictimRead const home = read(walkBack, 1, true, true, kTauntBackYd, 0.0f, true, 4000);
+        CHECK(!home.onNonTank && home.victimIsTank && !walkBack.open);
+        // The latch never holds longer than kTauntLatchMaxMs: a tank still 30 yd out after it is a plain tank again,
+        // and standing at the destination (no new edge) does not re-open it.
+        TauntTeleportLatch aged;
+        CHECK(read(aged, 1, true, true, 47.0f, 47.0f, true, 1000).onNonTank);
+        TauntAfterVictimRead const late = read(aged, 1, true, true, 30.0f, 0.0f, true, 1000 + kTauntLatchMaxMs + 1);
+        CHECK(!late.onNonTank && late.victimIsTank && !aged.open);
+        CHECK(!read(aged, 1, true, true, 30.0f, 0.0f, true, 1000 + kTauntLatchMaxMs + 2000).onNonTank);
+        // A jump of the tank's own position between two reads opens it as well (a teleport to a spot the table has no
+        // destination for), but a jump that leaves the tank next to the subject does not.
+        TauntTeleportLatch jumped;
+        CHECK(read(jumped, 1, true, true, 40.0f, 38.0f, false, 1000).onNonTank);
+        TauntTeleportLatch nearJump;
+        CHECK(!read(nearJump, 1, true, true, 4.0f, 38.0f, false, 1000).onNonTank);
+        // A walking tank (below the jump) at 25 yd opens nothing.
+        TauntTeleportLatch walking;
+        CHECK(!read(walking, 1, true, true, 25.0f, kTauntTeleportYd, false, 1000).onNonTank);
         // A non-tank player (a DPS banished, or Hex's threat wipe) opens every row, keyed or not; a pet victim is
         // neither (the episode keeps its clock, as the transition above).
-        CHECK(TauntAfterVictim(true, false, false, 47.0f).onNonTank);
-        CHECK(TauntAfterVictim(false, false, true, 47.0f).onNonTank == false);
-        CHECK(TauntAfterVictim(true, true, true, kTauntTeleportYd).victimIsTank); // on the edge it still holds
+        TauntTeleportLatch dps;
+        CHECK(read(dps, 5, false, false, 47.0f, 0.0f, false, 1000).onNonTank);
+        CHECK(read(dps, 5, false, true, 47.0f, 0.0f, false, 1000).onNonTank);
+        TauntAfterVictimIn pet;
+        pet.victimIsPlayer = false;
+        pet.spellKeyed = true;
+        TauntTeleportLatch petLatch;
+        TauntAfterVictimRead const petRead = TauntAfterVictim(pet, petLatch);
+        CHECK(!petRead.onNonTank && !petRead.victimIsTank);
     }
 
     // needs_aura (the Shade of Jin'do 14986, Delusions 24306): only a bot carrying the row's aura may target the entry,

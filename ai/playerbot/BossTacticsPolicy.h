@@ -2037,29 +2037,89 @@ namespace ai
     };
 
     // taunt_after_cast, a row with a spell id (Jin'do's Banish 24466): the spell is an instant teleport with no aura
-    // and no cast slot to read, so the row's trigger is the victim's displacement. A tank farther than this from its
-    // subject is not holding it: Banish drops a player in the ZG pit 47 yd west of Jin'do's stand, and he follows it
-    // to the rim. A bot walks about 2 yd/s in a fight, so a holding tank never drifts this far; one that walks back
-    // by itself comes inside it again and the episode closes as regained.
+    // and no cast slot to read, and it leaves the tank as the subject's victim. The row's trigger is the tank's own
+    // teleport, seen as an edge and latched (TauntTeleportLatch), never a steady-state distance: a tank that is merely
+    // far (kiting, a knockback, pathing) opens nothing. The edge is the tank appearing within kTauntDestinationYd of
+    // the spell's destination (Spell target position, atSpellDestination) or any jump of its own position of more than
+    // kTauntTeleportYd between two reads (jumpYd, -1 when the glue has no recent read of the same victim). Banish drops
+    // a player in the ZG pit 47 yd west of Jin'do's stand and he follows it to the rim, about 21 yd from the landing:
+    // the latch keeps the window open against that, until another tank has the subject, the banished tank is back
+    // within kTauntBackYd of it, or kTauntLatchMaxMs pass. A bot walks about 2 yd/s in a fight, so a holding tank
+    // never jumps.
     constexpr float kTauntTeleportYd = 20.0f;
+    constexpr float kTauntDestinationYd = 12.0f;
+    constexpr float kTauntBackYd = 10.0f;
+    constexpr std::uint32_t kTauntLatchMaxMs = 12000;
+
+    struct TauntTeleportLatch
+    {
+        bool open = false;
+        std::uint64_t tankGuid = 0;      // the tank the teleport moved
+        std::uint32_t startMs = 0;
+        bool wasAtDestination = false;   // the previous read had a tank at the spell's destination (the edge's memory)
+    };
 
     // One read of the taunt_after_cast victim, as the episode inputs want it: `onNonTank` opens (and holds) the
     // episode, `victimIsTank` closes it when a tank has the subject back. A player that is no tank (a charm, or Hex
-    // wiping the tank's threat and leaving him on a non-tank) is the spell-less rows' trigger; a spell-keyed row
-    // adds the tank its spell moved out of reach (victimIsTankRole is the raid order's answer for the player).
+    // wiping the tank's threat and leaving him on a non-tank) is the spell-less rows' trigger; a spell-keyed row adds
+    // the tank its spell teleported (the latch above). `victimIsTankRole` is the raid order's answer for the player.
     struct TauntAfterVictimRead
     {
         bool onNonTank = false;
         bool victimIsTank = false;
     };
 
-    inline TauntAfterVictimRead TauntAfterVictim(bool victimIsPlayer, bool victimIsTankRole, bool spellKeyed,
-        float ydFromSubject)
+    struct TauntAfterVictimIn
+    {
+        bool victimIsPlayer = false;
+        bool victimIsTankRole = false;
+        bool spellKeyed = false;
+        std::uint64_t victimGuid = 0;
+        float ydFromSubject = 0.0f;
+        float jumpYd = -1.0f;              // the victim's own displacement since the last read (-1: none)
+        bool atSpellDestination = false;   // the victim stands within kTauntDestinationYd of the spell's destination
+        std::uint32_t nowMs = 0;
+    };
+
+    inline TauntAfterVictimRead TauntAfterVictim(const TauntAfterVictimIn& in, TauntTeleportLatch& latch)
     {
         TauntAfterVictimRead out;
-        bool const movedAway = spellKeyed && victimIsPlayer && victimIsTankRole && ydFromSubject > kTauntTeleportYd;
-        out.victimIsTank = victimIsPlayer && victimIsTankRole && !movedAway;
-        out.onNonTank = (victimIsPlayer && !victimIsTankRole) || movedAway;
+        out.victimIsTank = in.victimIsPlayer && in.victimIsTankRole;
+        out.onNonTank = in.victimIsPlayer && !in.victimIsTankRole;
+        if (!in.spellKeyed)
+        {
+            latch = TauntTeleportLatch();
+            return out;
+        }
+        if (!out.victimIsTank)
+        {
+            // A non-tank player or a pet: the plain read, the latch has nothing to hold.
+            latch.open = false;
+            return out;
+        }
+        bool const destinationEdge = in.atSpellDestination && !latch.wasAtDestination;
+        latch.wasAtDestination = in.atSpellDestination;
+        if (latch.open)
+        {
+            bool const sameTank = in.victimGuid == latch.tankGuid;
+            bool const aged = in.nowMs - latch.startMs > kTauntLatchMaxMs;
+            if (sameTank && !aged && in.ydFromSubject > kTauntBackYd)
+            {
+                out.victimIsTank = false;
+                out.onNonTank = true;
+                return out;
+            }
+            latch.open = false; // another tank has the subject, or the tank is back, or the window ran out
+            return out;
+        }
+        if ((destinationEdge || in.jumpYd > kTauntTeleportYd) && in.ydFromSubject > kTauntBackYd)
+        {
+            latch.open = true;
+            latch.tankGuid = in.victimGuid;
+            latch.startMs = in.nowMs;
+            out.victimIsTank = false;
+            out.onNonTank = true;
+        }
         return out;
     }
 

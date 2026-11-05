@@ -618,7 +618,7 @@ namespace ai
     // order names (`priority`, the first alive at or after it): `valid` is true only while that bot is the one asking
     // and the deadline the rising edge opened has not run out. `sinceMs` is how long ago it opened, `deadlineMs` the
     // row's param. blink stays unimplemented: the loader accepts those rows, this scan ignores them. A spell-keyed
-    // row (Jin'do's Banish 24466) opens on the tank its spell moved out of reach (TauntAfterVictim).
+    // row (Jin'do's Banish 24466) opens on the tank's teleport (TauntAfterVictim).
     struct BossTauntAfter
     {
         bool valid = false;

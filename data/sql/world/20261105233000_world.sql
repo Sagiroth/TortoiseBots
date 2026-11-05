@@ -6,10 +6,12 @@
 --   spell-less taunt_after_cast until_tank row of 20261105100000_world.sql (spell 0) never opens: it opens on a
 --   victim that is no tank, and a Banished tank is still one. He follows it to the pit rim instead and the raid
 --   fights there (ZG walk 41, 2026-11-05).
---   This row keys the same tank cover to 24466: a tank the spell moved more than kTauntTeleportYd (20 yd) from him
---   is not holding him, so the first off-tank (priority 1) takes him back inside 10 s (param, mode until_tank). The
---   spell is an instant teleport with no aura and no cast slot, so the victim's distance is the row's trigger. Live
---   only with AiPlayerbot.DungeonRunAuraTactics and AiPlayerbot.DungeonRunCharmYield, as the other taunt rows.
+--   This row keys the same tank cover to 24466: the glue sees the tank land at the spell's destination (or jump more
+--   than 20 yd between two reads), latches the window and keeps it open while Jin'do follows it to the rim, until
+--   another tank has him, the banished tank is back within 10 yd of him or 12 s pass. The first off-tank (priority 1)
+--   takes him back inside 10 s (param, mode until_tank). The spell is an instant teleport with no aura and no cast
+--   slot, so the teleport itself is the row's trigger. Live only with AiPlayerbot.DungeonRunAuraTactics and
+--   AiPlayerbot.DungeonRunCharmYield, as the other taunt rows.
 --
 -- Idempotent: the DELETE names one exact (map, boss, kind, target, spell, health band) key, and this file's own key
 -- is the only one it writes. Never edit this file once applied; add a newer migration.
