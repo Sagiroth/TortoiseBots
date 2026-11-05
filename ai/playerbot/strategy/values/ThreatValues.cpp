@@ -94,6 +94,26 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (!group)
         return 0;
 
+    // The off-tank cap is the boss data's call (ai_boss_tactic kind `threat_successor`), never the creature's taunt
+    // immunity: only a target with that row reads the raid's tank order. Every other target keeps the plain IsTank
+    // max exactly as before, whatever its taunt immunity.
+    if (!ai::ThreatSuccessorTarget(target))
+    {
+        float maxThreat = -1.0f;
+        for (Player* player : LiveGroupMembers(group))
+        {
+            if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
+                continue;
+            if (ai->IsTank(player))
+            {
+                float threat = sServerFacade.GetThreatManager(target).getThreat(player);
+                if (maxThreat < threat)
+                    maxThreat = threat;
+            }
+        }
+        return maxThreat;
+    }
+
     // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
     // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
@@ -110,9 +130,7 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1});
     }
 
-    // The off-tank cap is the boss data's call (ai_boss_tactic kind `threat_successor`), never the creature's taunt
-    // immunity: a taunt-immune boss without that row keeps the highest tank.
-    return ThreatCapReference(tanks, ai::ThreatSuccessorTarget(target));
+    return ThreatCapReference(tanks, true);
 }
 
 bool ai::TargetTauntImmune(Unit* target)
