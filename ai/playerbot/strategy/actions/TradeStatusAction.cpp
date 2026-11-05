@@ -602,6 +602,31 @@ bool EnchantVerdictIsNew(uint32_t botGuidLow, uint32_t verdict, uint32_t itemGui
 }
 } // namespace
 
+namespace
+{
+// Materials the bot accepted in an open trade, booked as the giver's once the
+// trade completes, whichever side accepted last.
+std::mutex g_pendingGivenLock;
+std::unordered_map<uint32_t, std::vector<std::pair<uint32_t, uint32_t>>> g_pendingGiven;
+
+void SetPendingGiven(uint32_t botGuidLow, std::vector<std::pair<uint32_t, uint32_t>> offered)
+{
+    std::lock_guard<std::mutex> guard(g_pendingGivenLock);
+    g_pendingGiven[botGuidLow] = std::move(offered);
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> TakePendingGiven(uint32_t botGuidLow)
+{
+    std::lock_guard<std::mutex> guard(g_pendingGivenLock);
+    auto it = g_pendingGiven.find(botGuidLow);
+    if (it == g_pendingGiven.end())
+        return {};
+    std::vector<std::pair<uint32_t, uint32_t>> out = std::move(it->second);
+    g_pendingGiven.erase(it);
+    return out;
+}
+} // namespace
+
 bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
 {
     if (!bot || !trader)
@@ -644,10 +669,25 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
     // Cancelled/closed without completing: back to Coming so the walk
     // re-opens the trade. The session closes: the next window opens a new
     // try, and the replace answer resets with it.
+    // The materials trade completed on the giver's accept: book what the bot
+    // accepted, and move on like the bot-side completion below does.
+    if (status == TRADE_STATUS_TRADE_COMPLETE)
+    {
+        std::vector<std::pair<uint32_t, uint32_t>> booked = TakePendingGiven(bot->GetGUIDLow());
+        if (!booked.empty())
+        {
+            for (auto const& given : booked)
+                TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), given.first, given.second);
+            TortoiseBots::GuildOrders::NoteSupplyProgress(bot->GetGUIDLow());
+            TortoiseBots::GuildOrders::RequestMeet(bot->GetGUIDLow(), order.giverGuidLow);
+        }
+    }
     if (!open ||
         status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_CLOSE_WINDOW ||
         status == TRADE_STATUS_TRADE_REJECTED)
     {
+        if (status != TRADE_STATUS_TRADE_COMPLETE)
+            TakePendingGiven(bot->GetGUIDLow());
         if (order.state == TortoiseBots::GuildOrders::OrderState::Enchanting)
             TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
                 TortoiseBots::GuildOrders::OrderState::Coming, TortoiseBots::GuildOrders::OrderReason::None);
@@ -718,6 +758,13 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
         // after the accept, so the check below runs on the live bags.
         if (theirs->IsAccepted())
         {
+            {
+                std::vector<std::pair<uint32_t, uint32_t>> offeredList;
+                for (ai::OfferedStack const& offered : materials.offered)
+                    if (offered.itemId && offered.count)
+                        offeredList.push_back({ offered.itemId, offered.count });
+                SetPendingGiven(bot->GetGUIDLow(), offeredList);
+            }
             WorldPacket accept;
             uint32 acceptStatus = TRADE_STATUS_TRADE_ACCEPT;
             accept << acceptStatus;
@@ -725,10 +772,8 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             if (!bot->GetTrader())
             {
                 TortoiseBots::GuildOrders::NoteSupplyProgress(bot->GetGUIDLow());
-                if (order.itemId)
-                    for (ai::OfferedStack const& offered : materials.offered)
-                        if (offered.itemId && offered.itemId != order.itemId && offered.count)
-                            TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), offered.itemId, offered.count);
+                for (auto const& given : TakePendingGiven(bot->GetGUIDLow()))
+                    TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), given.first, given.second);
                 TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
                 // The enchant trade gets its own full set of tries.
                 TortoiseBots::GuildOrders::RequestMeet(bot->GetGUIDLow(), order.giverGuidLow);
