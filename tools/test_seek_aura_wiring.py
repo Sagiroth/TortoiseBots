@@ -10,7 +10,7 @@ the row's key reaches a consumer:
  - the seek trigger runs in the combat and the reaction engine (a run-held bot, a bot in a pull's join window) and
    the move hold keeps the walk from being undone;
  - the second off-tank drags a source to the spot, a free DPS bot pre-damages and burns it, and nobody burns it at
-   the wrong time (SeekSourceHeld);
+   the wrong time (SeekHoldDecision);
  - the spread row widens the ranged spacing and also applies to a bot the run holds on a stay.
 
 AiPlayerbot.DungeonRunBossSpread arms the spread row. AiPlayerbot.DungeonRunCharmYield is W3's and
@@ -36,6 +36,8 @@ NEAREST = (ROOT / "ai/playerbot/strategy/values/NearestGameObjects.cpp").read_te
 AOE = (ROOT / "ai/playerbot/strategy/values/AoeValues.cpp").read_text()
 DUNGEON_TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/DungeonTriggers.cpp").read_text()
 DUNGEON_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/DungeonActions.cpp").read_text()
+SPELL_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.cpp").read_text()
+SPELL_ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.h").read_text()
 CONFIG_USAGE = (ROOT / "tools/verify_config_usage.py").read_text()
 
 
@@ -125,10 +127,11 @@ class SeekWalkWiring(unittest.TestCase):
 
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
-        for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
-                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekSourceHeld(",
-                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekKeepOrPickGatherSource(",
-                     "SeekSourceSearchYd(", "SeekClockStartOver("):
+        for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
+                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
+                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
+                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullNeeded(", "SeekPullRoleOf(",
+                     "SeekPullHitExempt(", "SeekRolledDueMs("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -136,6 +139,16 @@ class SeekWalkWiring(unittest.TestCase):
 
 class FightStateWiring(unittest.TestCase):
     """One record per fight, exported to the run leader, swept and erased on an evade."""
+
+    def test_the_first_siphon_is_counted_from_the_combat_start(self):
+        # The core's 90 s siphon timer only runs in combat, so cycle 1 is due a cycle after the boss is first seen in
+        # combat with the group. The victim alone is not enough: a boss in combat with the group can be without one on
+        # that tick, and then no due time exists and cycle 1 gets no window.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim())", read)
+        self.assertIn("SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs)", read)
+        # The exported fight state times cycle 1 the same way for the run leader.
+        self.assertIn("SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs)", ACTIONS)
 
     def test_the_state_is_shared_keyed_and_swept(self):
         state = body(ACTIONS, "namespace\n{\n// The seek_aura fight state", "\n// A record nobody evaluated")
@@ -166,6 +179,14 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("record.cycleSpell == row.cycleSpell", STATE_POLICY)
         self.assertIn("beforeInstall(*nextTactics);", (ROOT / "ai/playerbot/DungeonPlanReloadPolicy.h").read_text())
 
+    def test_the_gather_latch_survives_a_forced_burn(self):
+        # Two Sons near the spot and damage spread between them: the record's pick holds while its Son lives inside
+        # the reach, whatever the search radius or the forced burn, so the gather does not flip every read.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("SeekLatchedGatherSource(latchInReach, gatherGuid, atSpot)", read)
+        self.assertNotIn("out.forceBurn || belowHold ? 0 : gatherGuid", read)
+        self.assertIn("kSeekFallbackYd", read)
+
     def test_the_evade_erases_the_record(self):
         read = body(ACTIONS, "bool ReadSeekFight(")
         self.assertIn("!boss->IsInCombat()", read)
@@ -183,6 +204,23 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("24323", ACTIONS)
         self.assertIn("24322", ACTIONS)
         self.assertIn("dosed=%u,undosed=%u", ACTIONS.replace("\\n", ""))
+        # The pet side and the boss's own auras, read again two seconds later.
+        self.assertIn("pets_heal=%u,pets_dmg=%u", ACTIONS)
+        self.assertIn("totems=%u,guardians=%u", ACTIONS)
+        self.assertIn("CountSiphonSummons(bot, totems, guardians)", ACTIONS)
+        self.assertIn("hakkar_stacks=%u,", ACTIONS)
+        self.assertIn("hakkar_dmg=%u", ACTIONS)
+        self.assertIn("kSeekSiphonSecondMs", ACTIONS)
+        # A third read nine seconds after the sighting sees the whole 8 s heal, which the +1/+3 reads under-count.
+        self.assertIn("kSeekSiphonThirdMs = 9000", ACTIONS)
+        self.assertIn("record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;", ACTIONS)
+        self.assertIn("pendingSiphonAtSec = 9;", ACTIONS)
+        # The note's clock is the real elapsed time since the cycle's first sighting, and the +3 s read is kept beside
+        # the +1 s one instead of overwriting the run line's counts.
+        self.assertIn("SeekSiphonAtLabel(elapsedMs)", ACTIONS)
+        self.assertIn("record.siphonSeenMs = nowMs;", ACTIONS)
+        self.assertIn("pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;", ACTIONS)
+        self.assertIn("SeekStoreSiphonRead(it->second", ACTIONS)
 
 
 class SeekRolesWiring(unittest.TestCase):
@@ -197,19 +235,31 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("FindBossSeekTank(ai, bot)", tank)
         self.assertIn("MoveTo(", tank)
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
-        # Only tanks[2] owns the job.
+        # The third off-tank owns the job, and with fewer than three tanks alive the off-tank takes the Son over while
+        # the raid's nearest hunter (else a ranged dealer) pulls it.
         self.assertIn("GetRaidTankRoles(ai)", find)
-        self.assertIn("tanks.size() < 3", find)
         self.assertIn("tanks[2]", find)
+        self.assertIn("tanks[1]", find)
+        self.assertIn("FindSeekFallbackPuller(", find)
+        self.assertIn("SeekPullRoleOf(", POLICY)
         # The pull rule and the gather radius are the policy's.
         self.assertIn("SeekTankPullDue(", find)
         # The pickup search and the drag's arrival are the policy's own distances.
         self.assertIn("kSeekPickupYd", find)
         self.assertIn("kSeekTankArriveYd", find)
+        # The pull branch walks the Son down with the attack's reach form; it used to set the target and give the
+        # tick back, so the tank never moved and the Son never aggroed.
+        self.assertIn("SeekTankPullNeeded(", tank)
+        self.assertIn("Attack(bot, task.source, kSeekPickupYd)", tank)
+        self.assertIn("DoSpecificAction(\"shoot\", event, true)", tank)
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the
         # fallback (M3).
         read = body(ACTIONS, "bool ReadSeekFight(")
-        self.assertIn("SeekSourceSearchYd(roles.tanks.size() >= 3)", read)
+        self.assertIn("SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold, engagedSon)", read)
+        # A Son already fighting inside the reach is the pick wherever it stands (11-25 yd from the spot on the
+        # healers was never selected at the spot's radius).
+        self.assertIn("engagedSon = true", read)
+        self.assertIn("unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd", read)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the
@@ -226,13 +276,98 @@ class SeekRolesWiring(unittest.TestCase):
                       body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers("))
         kill = body(ACTIONS, "Unit* ai::FindBossSeekKill(")
         self.assertIn("IsFreeDps(ai, bot)", kill)
-        # Every source but the one at the spot is held all window, and the one at the spot obeys SeekSourceHeld.
+        # Every source but the selected one is held all fight, and the selected one obeys SeekHoldDecision.
         self.assertIn("SeekHoldsUnit(state, state.source)", kill)
+        # The kill pick asks for the window before the pick: with it shut the Son is held at whatever health it has.
+        self.assertIn("!state.windowOpen", kill)
+        self.assertLess(kill.index("!state.windowOpen"), kill.index("SeekHoldsUnit(state, state.source)"))
 
     def test_the_sources_are_held_by_the_dps_hold_multiplier(self):
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
         self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
+
+    def test_only_the_pulled_son_is_exempt_from_the_hold(self):
+        # The puller's identity and its one Son are read once per tick with the rest of the seek fight (the tank roles
+        # are rebuilt there, not in every action's hold check), and the exemption names that Son: another Son, a Son
+        # already fighting and every non-puller keep the hold. A DoT is checked before the exemption, so its ticks
+        # never run through the hold on the pick.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("const RaidTankRoles roles = GetRaidTankRoles(ai);", read)
+        self.assertIn("out.puller = thirdTank || fallback;", read)
+        self.assertIn("out.pullTarget = pullDue ? nearest : nullptr;", read)
+        self.assertNotIn("IsSeekPuller(", ACTIONS)
+        hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat())", hold)
+        self.assertLess(hold.index("SeekDotOnSource(state, action)"), hold.index("SeekPullHitExempt("))
+        drop = body(ACTIONS, "Unit* ai::FindBossHoldKill(")
+        self.assertIn("SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat())", drop)
+        self.assertIn("inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)", POLICY)
+
+    def test_the_fallback_pull_is_the_auto_shot_and_casts_no_dot(self):
+        # The fallback puller's one hit must leave nothing ticking on the Son: a DoT's ticks run through the hold and
+        # the shut window and kill the source the next siphon needs. The opener is the shoot action's weapon hit (the
+        # classic auto shot for a bow, gun or crossbow, the wand's "shoot" otherwise) and the branch casts no spell at
+        # all, so no periodic aura can be applied; Serpent Sting, the hunter's own class pull, is never cast here.
+        tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        pull = tank[tank.index("if (task.rangedPull)"):tank.index("// The attack order carries the walk")]
+        self.assertNotIn("serpent sting", pull.lower())
+        self.assertNotIn("CastSpell(", pull)
+        self.assertNotIn("CanCastSpell(", pull)
+        self.assertIn('DoSpecificAction("shoot", event, true)', pull)
+        # The shoot action is the codebase's ranged auto attack: it resolves the equipped weapon's own shot.
+        self.assertIn('CastSpellAction(ai, "shoot")', SPELL_ACTIONS_H)
+        update = body(SPELL_ACTIONS, "void CastShootAction::UpdateWeaponInfo()")
+        for token in ('spellName += " gun"', 'spellName += " bow"', 'spellName += " crossbow"',
+                      'spellName = "throw"'):
+            self.assertIn(token, update)
+        self.assertIn("CURRENT_AUTOREPEAT_SPELL", body(SPELL_ACTIONS, "bool CastShootAction::Execute("))
+
+    def test_the_dot_and_off_tank_holds_answer_every_damage_cast(self):
+        # A melee debuff on the attacker ("rend on attacker") resolves to "attacker without aura", so it reaches the
+        # seek block through the every-damage-cast clause, and the classification is the policy's.
+        hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("(dpsAssist || aoe || attackerDebuff || area || seekSingle || seekDot)", hold)
+        self.assertIn("SeekDotVeto(", ACTIONS)
+        # The off-tank hold takes the tick only to stop a swing that is running on the Son; with none running the
+        # rotation (Shield Block, the shouts, the taunt) gets it.
+        tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        self.assertIn("SeekTankHoldConsumesTick(", tank)
+        self.assertIn("SeekTankHoldsSwing(", body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue("))
+
+    def test_the_totems_leave_the_siphon(self):
+        # Shaman totems are one more undosed unit each: unsummoned in the same window as the pets through the core's
+        # own sweep, and no placement is allowed until the siphon has landed.
+        node = '"boss tactics seek totem"'
+        combat = body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers(")
+        self.assertIn(node, combat)
+        self.assertIn('new NextAction("boss tactics seek totem", ACTION_EMERGENCY + 6)', combat)
+        self.assertIn('creators["boss tactics seek totem"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics seek totem"]', TRIGGER_CONTEXT)
+        act = body(ACTIONS, "bool BossTacticsSeekTotemAction::Execute(")
+        self.assertIn("BossSeekTotemsMustLeave(ai, bot)", act)
+        self.assertIn("bot->UnsummonAllTotems()", act)
+        hold = body(ACTIONS, "float BossTacticsSeekPetHoldMultiplier::GetValue(")
+        self.assertIn("SeekTotemSpell(cast->GetSpellName())", hold)
+        self.assertIn("SeekPetCallAction(action->getName())", hold)
+        # A warlock's demon summons and its Infernal/Doomguard are held for the whole fight, not just the window.
+        self.assertIn("BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f", hold)
+        self.assertIn("inline bool SeekTotemSpell(", POLICY)
+        self.assertIn("inline bool SeekGuardianSummonAction(", POLICY)
+
+    def test_the_pet_dismissal_is_wired(self):
+        # A pet is one more heal to the core's hit: the action dismisses it in the seek fight, the multiplier keeps the
+        # class from calling or summoning it back before the siphon has landed.
+        node = '"boss tactics seek pet"'
+        combat = body(STRATEGY, "void BossTacticsStrategy::InitCombatTriggers(")
+        self.assertIn(node, combat)
+        self.assertIn('new NextAction("boss tactics seek pet", ACTION_EMERGENCY + 6)', combat)
+        self.assertIn('creators["boss tactics seek pet"]', ACTION_CONTEXT)
+        self.assertIn('creators["boss tactics seek pet"]', TRIGGER_CONTEXT)
+        self.assertIn("new BossTacticsSeekPetHoldMultiplier(ai)",
+                      body(STRATEGY, "void BossTacticsStrategy::InitCombatMultipliers("))
+        self.assertIn("SeekPetMustLeave(", ACTIONS)
+        self.assertIn("PET_SAVE_AS_CURRENT", body(ACTIONS, "bool BossTacticsSeekPetAction::Execute("))
 
 
 class SpreadKindWiring(unittest.TestCase):
@@ -310,6 +445,12 @@ class DeclarationsMatchDefinitions(unittest.TestCase):
              ACTIONS, "bool BossTacticsSeekKillAction::Execute(Event& event)"),
             (ACTIONS_H, "class BossTacticsSeekHoldMultiplier : public Multiplier",
              ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)"),
+            (ACTIONS_H, "bool BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot);",
+             ACTIONS, "bool ai::BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot)"),
+            (ACTIONS_H, "class BossTacticsSeekPetAction : public Action",
+             ACTIONS, "bool BossTacticsSeekPetAction::Execute(Event&"),
+            (ACTIONS_H, "class BossTacticsSeekPetHoldMultiplier : public Multiplier",
+             ACTIONS, "float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)"),
         )
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)

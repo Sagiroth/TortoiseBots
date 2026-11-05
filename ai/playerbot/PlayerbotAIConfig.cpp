@@ -32,6 +32,7 @@
 #include "../../runtime/AltBotService.h"
 // logEvent forwards the activity whitelist to the telemetry daemon.
 #include "../../runtime/ObservabilityEmitter.h"
+#include "../../runtime/CombatMonitorService.h"
 // Faction-ratio / start-zone-weight parsing lives in the core-free
 // StartZoneBalance.h so the standalone unit test can exercise it.
 #include "../../runtime/StartZoneBalance.h"
@@ -921,6 +922,7 @@ bool PlayerbotAIConfig::Initialize()
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
     combatMonitor = config.GetBoolDefault("AiPlayerbot.CombatMonitor", false);
+    combatTimeline = config.GetBoolDefault("AiPlayerbot.CombatTimeline", false);
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));
@@ -1069,7 +1071,10 @@ bool PlayerbotAIConfig::Initialize()
     autoPickTalents = config.GetStringDefault("AiPlayerbot.AutoPickTalents", "full");
     autoLearnTrainerSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnTrainerSpells", true);
     autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", true);
+    autoLearnQuestSpellsAlts = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpellsAlts", false);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
+    petAutoTrain = config.GetBoolDefault("AiPlayerbot.PetAutoTrain", true);
+    petAutoTrainAlts = config.GetBoolDefault("AiPlayerbot.PetAutoTrainAlts", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
     autoShareConjuredOnTrade = config.GetBoolDefault("AiPlayerbot.AutoShareConjuredOnTrade", true);
     generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);
@@ -1167,6 +1172,8 @@ bool PlayerbotAIConfig::Initialize()
     sRandomBotFacade.LoadNamedLocationCache();
     sLog.outString("Loading boss tactics.");
     ai::LoadBossTactics();
+    sLog.outString("Loading combat timeline aura watch.");
+    TortoiseBots::CombatMonitorService::Instance().LoadTimelineWatch();
     sLog.outString("Loading boss stand sets.");
     ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");

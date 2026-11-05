@@ -1,4 +1,4 @@
 #pragma once
-// Stub: the one field the combat monitor service reads.
-struct PlayerbotAIConfig { bool combatMonitor = true; };
+// Stub: the fields the combat monitor service reads.
+struct PlayerbotAIConfig { bool combatMonitor = true; bool combatTimeline = false; };
 extern PlayerbotAIConfig sPlayerbotAIConfig;

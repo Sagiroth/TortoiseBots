@@ -8,6 +8,8 @@
 #include "Spell.h"
 #include "SpellEntry.h"
 #include "SpellAuraDefines.h"
+#include "Spells/SpellAuras.h"
+#include "Timer.h"
 #include "Maps/Map.h"
 #include "Unit.h"
 
@@ -15,7 +17,8 @@ namespace TortoiseBots {
 
 CombatMonitorUnitAdapter::CombatMonitorUnitAdapter()
     : UnitScript("tortoisebots_combat_monitor", { UNITHOOK_ON_DAMAGE, UNITHOOK_ON_HEAL,
-        UNITHOOK_MODIFY_HEAL_RECEIVED, UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_UNIT_DEATH })
+        UNITHOOK_MODIFY_HEAL_RECEIVED, UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_ON_UNIT_DEATH,
+        UNITHOOK_ON_AURA_APPLY, UNITHOOK_ON_AURA_REMOVE })
 {
 }
 
@@ -132,6 +135,22 @@ void CombatMonitorUnitAdapter::OnUnitDeath(Unit* unit, Unit* killer)
     if (creature)
         CombatMonitorService::Instance().OnDeath(0, OwnerLow(killer), "", 0.0f, 0.0f, 0.0f, unit->GetEntry(),
             DungeonRun::ScriptChangedFrom(creature));
+}
+
+void CombatMonitorUnitAdapter::OnAuraApply(Unit* unit, Aura* aura)
+{
+    if (!unit || !aura || !unit->IsPlayer())
+        return;
+    CombatMonitorService::Instance().OnTimelineAura(unit->GetGUIDLow(), aura->GetId(), true,
+        WorldTimer::getMSTime());
+}
+
+void CombatMonitorUnitAdapter::OnAuraRemove(Unit* unit, Aura* aura)
+{
+    if (!unit || !aura || !unit->IsPlayer())
+        return;
+    CombatMonitorService::Instance().OnTimelineAura(unit->GetGUIDLow(), aura->GetId(), false,
+        WorldTimer::getMSTime());
 }
 
 void CombatMonitorCastAdapter::OnSpellCast(Player* player, Spell* spell, bool /*skipCheck*/)

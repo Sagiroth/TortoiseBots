@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+
 ## v1.15.1 (2026-11-03)
 
 ### Bots & Setup
@@ -174,6 +176,7 @@
 - Fixed: restoration druids heal between 20 % and 70 % health with *Healing Touch* while *Regrowth* is still running on the target (its heal-over-time is not recast), instead of idling until someone drops to critical. Druids below level 12, who have no Regrowth yet, heal with it too.
 - Fixed: restoration druids hold Nature's Swiftness for critical health instead of popping it on the first quiet tick, so the instant Healing Touch lands when a life is on the line.
 - Fixed: resto shaman now hold Spirit Link until the tank drops to half health instead of linking on the pull.
+- Fixed: resto shaman no longer cast *Earth Shield* at the tank — on this server it is a self-only shield sharing the slot with *Water Shield*, so every cast just knocked *Water Shield* off and forced a recast. Healers now keep *Water Shield* up.
 - Fixed: arms and fury warriors no longer burn rage dancing in and out of Berserker Stance for a Whirlwind or Pummel they cannot fire yet — the swap now waits until the spell is off cooldown and the rage left after the swap (Tactical Mastery retention) still pays for it, and the interrupt still has a live cast.
 - Fixed: in a raid, warriors no longer spend the snare on mobs the tank already holds — Piercing Howl and Hamstring go only on mobs attacking someone who is not a tank (any tank the group identifies, or the raid's flagged Main Tank), including called adds running at the group. Dungeon behaviour is unchanged.
 - Fixed: in a raid, hunters no longer drop combat with Feign Death at medium threat on a mob the tank holds — the feign waits until a mob is on the hunter or threat is near-max. Dungeon behaviour is unchanged.
@@ -279,6 +282,21 @@
 - Fixed the test speed's party hold pausing a run when `cmd move` refused the hold on the lead bot's own spot (a swim under a ledge): the walk goes on.
 - New table `ai_boss_stand` (boss stand sets: where bots of a role stand while a boss is at a place, optionally only while it casts a spell), created empty by `20261101075500_world.sql`; Venoxis is its first user.
 - Zul'Gurub: the ranged and the healers spread out around High Priest Venoxis (22-23 yards from the spot he fights from, at least 11 yards apart, checked so he is always 15-30 yards away wherever he stands while they hold position) instead of stacking under him, so his chaining Holy Wrath no longer reaches the casters — the last walk lost nine bots in one second to it — and his Holy Fire joins the interrupt list in place of the useless Renew entry.
+- Fixed: in the Hakkar fight only the one Son of Hakkar the group has picked may be damaged, only once the raid has gathered around it or the siphon is about to land, and never while the window is shut — the pick is left at whatever health it has for the next siphon, and another Son standing elsewhere, even at low health, is left alone instead of being spent, a Son farther than 35 yards from the killing spot is never chased, and the group's chosen Son stays the one target while it lives within reach even when the damage spreads to another Son.
+- New: hunters' pets step out of the siphon for a few seconds before each Blood Siphon and come back after it, and warlocks dismiss their demon once at Hakkar and do not resummon it during the fight, so an undosed pet no longer gives Hakkar a full heal of its own.
+- New: in the Hakkar fight shaman bots take their totems down for a few seconds around each Blood Siphon and place none until it has landed, and warlocks never summon an Infernal or a Doomguard, because every totem and guardian inside the hit is one more full heal for Hakkar.
+- The Blood Siphon note now counts pets and totems/guardians on either side of the siphon and reports the healing Hakkar itself carries and the damage links the raid landed, read once and again three seconds later; each row is labelled with the real time since the siphon was first seen, and the second read is kept beside the first instead of replacing it.
+- Fixed: in the Hakkar fight no damage over time goes on a Son of Hakkar at any time — its ticks would run through the hold and the shut window and kill it — and the off-tank holding the Son stops auto-attacking it once it is near the hold percent with the window shut, keeping the threat.
+- Fixed: in the Hakkar fight an area cast no longer kills a second Son of Hakkar standing beside the picked one — if the cast reaches any Son that is held, it is stood down, so the group's spare source survives.
+- Fixed: with the whole raid already carrying Poisonous Blood, the Hakkar fight picks and kills no new Son of Hakkar until the next siphon strips the aura, and a Son that is not fighting is never picked, so no source is spent on a cloud nobody needs.
+- Fixed: the first Blood Siphon is countered too — the Hakkar fight now counts its 90 seconds from the moment the boss is first seen in combat, so the group gathers and doses itself before the first siphon just as it does before every later one, pets and totems included.
+- Fixed: tanks no longer spend an attack and a taunt trying to take a boss back that the game makes immune to taunts (Hakkar, and most raid bosses in this world data); the fight leaves such a target to the threat rules instead, and the server log says once per fight that the taunt was skipped for that reason.
+- The Blood Siphon log now also reads Hakkar's health nine seconds after the siphon, when the 8-second heal has finished, because the one- and three-second reads see only part of it.
+- Fixed: a missed Blood Siphon no longer shuts the Hakkar fight's dosing window for the rest of the fight, and no longer leaves it open for the rest of the fight either — the window stays open up to 8 seconds past the estimated siphon, then the estimate rolls one 90-second cycle forward and the window reopens with the next siphon's own lead-in, so the group doses itself before the next siphon instead of standing at the spot.
+- Fixed: in the Hakkar fight a Son of Hakkar that is already fighting the group outside the kill spot (on the healers, 11-25 yards from it) is now picked and dragged in, instead of being left alone until its cloud was burned too late.
+- Fixed: in the Hakkar fight the puller's own strike now goes through only on the one Son it is fetching and only until that Son joins the fight; any other Son stays held under the puller's hit, and a damage over time never lands on a Son at all.
+- Fixed: in the Hakkar fight damage dealers keep their threat below the off-tank, so a Cause Insanity reset hands the boss to the off-tank instead of a damage dealer, unless that off-tank has less than half the highest tank's threat (then the highest tank is the reference again, so an off-tank that has barely engaged cannot stop the damage); a boss that cannot be taunted but has no such fight rule keeps the highest tank exactly as it always has (most raid bosses), and a commanded group no longer lets the threat back-off slide while the boss hits one of them.
+- Fixed: in the Hakkar fight the off-tank that fetches a Son of Hakkar now walks to it and attacks until it joins the fight instead of picking it and standing still, so the Son reaches the group and most siphons are dosed; with two tanks alive the nearest hunter (else a ranged damage dealer) opens a Son within 35 yards of the spot with one shot from its ranged weapon (the auto shot or a wand, never a damage over time that would kill the Son under the hold) and the first off-tank takes it over, and a dead, charmed or boss-targeted member is never picked as that puller.
 
 ### Behind the scenes
 - Fixed: the Eluna test toolkit no longer reads the target of a spell still in flight, which crashed the server when that target (a dead hunter's pet) was deleted mid-flight.
@@ -291,6 +309,7 @@
 - Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
+- New: a fight record can now show the boss's health every two seconds, each change of who it was hitting and every time a key aura landed on or left a bot; it stays off until enabled.
 - The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.
 - The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
 - Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.

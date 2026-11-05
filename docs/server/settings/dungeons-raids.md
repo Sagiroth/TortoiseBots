@@ -21,6 +21,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | :--- | :---: | :--- |
 | [`AiPlayerbot.AvoidCreatureAuras`](#aiplayerbotavoidcreatureauras) | `1` | Steers bots away from permanent damaging creature auras and hazardous monsters. |
 | [`AiPlayerbot.CombatMonitor`](#aiplayerbotcombatmonitor) | `0` | Per-fight combat numbers of every bound group for the observability dashboard (needs `AiPlayerbot.Observability`). |
+| [`AiPlayerbot.CombatTimeline`](#aiplayerbotcombattimeline) | `0` | The boss timeline in each fight record: health every 2 s, victim changes, watched auras (needs `AiPlayerbot.CombatMonitor`). |
 | [`AiPlayerbot.BombRunoutDistance`](#aiplayerbotbombrunoutdistance) | `30.0` | Distance in yards bomb debuff carriers run clear of the living group. |
 | [`AiPlayerbot.BotAreaTriggers`](#aiplayerbotbotareatriggers) | *(empty)* | Audited allowlist of scripted area triggers a bot party may fire (off when empty; opt in with `962`). |
 | [`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat) | `1` | A waiting group posts in LookingForGroup and invites a player who whispers "inv". |
@@ -121,6 +122,23 @@ Collects per-fight combat numbers of every bound group for the observability das
 - a player outside every bound group costs one atomic bit test (no lock); a member event takes the lock
 - past 500 distinct engaged creatures, the rest counts in `fight.dropped` (distinct guids; stops at 4096)
 - needs `AiPlayerbot.Observability`
+
+</details>
+
+### `AiPlayerbot.CombatTimeline`
+Adds the boss timeline to each finished fight record, so a fight can be replayed against the boss's health and its targets.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Needs `AiPlayerbot.CombatMonitor = 1` and `AiPlayerbot.Observability`. The fight record (the JSON behind the dashboard's fight detail and the `combat-fight-*.json` files a walk saves) gains three arrays, all times in ms since the fight's start:
+
+- `boss_hp`: `[t_ms, hp_pct, phase_entry]`, the fought boss's health each 2 s (one decimal) with the entry it reads then; at most 600 samples.
+- `victims`: `[t_ms, guid, name, role]`, one row per change of the boss's current victim; `guid` is the unit's low guid (the same value as a bot row's `guid`), and `role` is `tank`, `healer`, `dps`, or `none` for a player, a pet or nobody. At most 400 rows.
+- `auras`: `[t_ms, bot guid, spell id, 1/-1]`, an apply (`1`) or remove (`-1`) of a watched aura on a bot of the group. The watched spells are the rows of the world table `ai_combat_aura_watch` (one pass at startup), never spell ids in code. At most 1000 rows.
+
+Each cap drops the oldest row. Existing fields keep their place; a reader that does not know the arrays ignores them. A fight whose payload has to shrink drops the timeline before it shrinks below its other detail. The shipped rows are Zul'Gurub's Mark of Arlokk, Delusions of Jin'do, Banish, Poisonous Blood, Cause Insanity and Corrupted Blood; more auras are added with a migration.
 
 </details>
 
@@ -839,7 +857,7 @@ Whether the boss tactics keep their `seek_aura` rows: the raid gathers in a dyin
 <details>
 <summary>How it works in detail</summary>
 
-**Seek aura:** a boss tactic row of the `seek_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the source creature whose death leaves the cloud (`target_entry`), the aura the raid must carry (`spell_id`), and the boss spell whose aura on a group member restarts the cycle clock (`cycle_spell`, every `cycle_s` seconds, the dose window opening `window_s` before it is due). The source is held and killed at the row's spot (`spot_x/y/z`): the DPS stop at its `priority` health % until the gather is ready (every seeker within `param` yd of it, 8 s at most, the burn forced near the end of the window), then burn it so the cloud lands on the gathered raid. A bot outside the fresh cloud walks in while it still lives; the cloud is exempt from every ground-hazard avoid while its row runs. Hakkar's row: one Son of Hakkar 11357 dies at B every 90 s before Blood Siphon 24324 so the raid carries Poisonous Blood 24321; the main tank and the first off-tank never seek, and the second off-tank pulls and holds the source.
+**Seek aura:** a boss tactic row of the `seek_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the source creature whose death leaves the cloud (`target_entry`), the aura the raid must carry (`spell_id`), and the boss spell whose aura on a group member restarts the cycle clock (`cycle_spell`, every `cycle_s` seconds, the dose window opening `window_s` before it is due and staying open for up to 8 s past the due time when a sighting is missed, after which the estimate rolls one `cycle_s` forward and the window waits for the rolled cycle's own opening; the first siphon is due one `cycle_s` after the boss is first seen in combat with the group, so cycle 1 gets the same window). The source is held and killed at the row's spot (`spot_x/y/z`): the DPS stop at its `priority` health % until the gather is ready (every seeker within `param` yd of it, 8 s at most, the burn forced near the end of the window), then burn it so the cloud lands on the gathered raid. Pets and guardians leave the siphon too: a hunter's pet for a few seconds around the cycle and a warlock's demon from the engage on (its summons are held all fight), because each is one more undosed unit. Only the one picked source is ever damaged: another source stays held, a source farther than 35 yd from the spot is never chased, and with the dose window shut the pick is left at whatever health it has for the next cycle. A bot outside the fresh cloud walks in while it still lives; the cloud is exempt from every ground-hazard avoid while its row runs. Hakkar's row: one Son of Hakkar 11357 dies at B every 90 s before Blood Siphon 24324 so the raid carries Poisonous Blood 24321; the main tank and the first off-tank never seek, and the second off-tank pulls and holds the source (a hunter pulls it when it is not there).
 
 </details>
 

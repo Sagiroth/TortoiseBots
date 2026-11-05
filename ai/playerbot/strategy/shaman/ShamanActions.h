@@ -79,12 +79,6 @@ namespace ai
         CastEarthShieldAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "earth shield") {}
     };
 
-    class CastEarthShieldOnPartyAction : public BuffOnPartyAction
-    {
-    public:
-        CastEarthShieldOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "earth shield") {}
-    };
-
     class CastWaterShieldAction : public CastBuffSpellAction
     {
     public:
@@ -682,11 +676,6 @@ namespace ai
         virtual std::string getName() override { return "cure disease on party"; }
     };
 
-    class CastEarthShieldOnPartyTankAction : public BuffOnTankAction
-    {
-    public:
-        CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
-    };
 
     class CastTotemicRecall : public CastBuffSpellAction
     {

@@ -1350,6 +1350,189 @@ static void TestTurtleHealSpell()
     CHECK(Contains(row, "\"heal_casts\":1"));
 }
 
+// ---- the boss timeline (AiPlayerbot.CombatTimeline) ----------------------
+
+static std::string Between(std::string const& hay, std::string const& from, std::string const& to)
+{
+    std::string::size_type a = hay.find(from);
+    if (a == std::string::npos)
+        return "";
+    a += from.size();
+    std::string::size_type b = hay.find(to, a);
+    return hay.substr(a, b == std::string::npos ? std::string::npos : b - a);
+}
+
+static void StartTimelineBook(Book& b, FightContext const& ctx)
+{
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.SetTimeline(true);
+}
+
+static std::string EndedPayload(Book& b, Seq& seq, uint32_t endMs)
+{
+    b.SetInCombat(false, false, endMs);
+    b.SetInCombat(false, false, endMs + 3000);
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700000000 + endMs / 1000, "Cmdr", 123, 55, 409);
+    return p.size() == 1 ? p[0] : std::string();
+}
+
+// The 2 s health cadence: one sample at the first tick, then one per 2 s, each with the boss's entry (phase) at the
+// sample. Victim calls at the same ticks record nothing new when the guid does not change.
+static void TestTimelineHpCadence()
+{
+    Book b;
+    StartTimelineBook(b, BossCtx());
+    b.SampleTimeline(0, 5000, 10000, 0, "");
+    b.SampleTimeline(1000, 4000, 10000, 0, "");
+    b.SampleTimeline(1999, 3000, 10000, 0, "");
+    b.SampleTimeline(2000, 2500, 10000, 0, "");
+    b.SampleTimeline(3999, 2000, 10000, 0, "");
+    b.SampleTimeline(4000, 1000, 10000, 0, "");
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"boss_hp\":[[0,50.0,11502],[2000,25.0,11502],[4000,10.0,11502]]"));
+    CHECK(Contains(p, "\"victims\":[[0,0,\"\",\"none\"]]"));
+    // The existing fields keep their place (the timeline rides after the deaths).
+    CHECK(p.find("\"boss\":11502") < p.find("\"boss_hp\":"));
+    CHECK(p.find("\"deaths\":[") < p.find("\"boss_hp\":"));
+}
+
+// Every cap keeps the newest rows: 600 samples, 400 victim changes, 1000 aura events.
+static void TestTimelineCaps()
+{
+    Book hp;
+    StartTimelineBook(hp, BossCtx());
+    for (uint32_t i = 0; i <= kMaxTimelineHp; ++i)
+        hp.SampleTimeline(i * kTimelineHpMs, 10000 - i, 10000, 0, "");
+    Seq seq;
+    std::string const p = EndedPayload(hp, seq, 1300000);
+    std::string const rows = Between(p, "\"boss_hp\":[", "],\"victims\"");
+    CHECK(!rows.empty());
+    CHECK(Count(rows, "[") == kMaxTimelineHp);
+    CHECK(Contains(rows, "[2000,"));                         // the t=0 sample went
+    CHECK(Contains(rows, "],[1200000,94.0,11502]"));         // the newest sample stays
+
+    Book victims;
+    StartTimelineBook(victims, BossCtx());
+    for (uint32_t i = 0; i <= kMaxTimelineVictims; ++i)
+        victims.SampleTimeline(i, 9000, 10000, 1000 + i, "");
+    std::string const vp = EndedPayload(victims, seq, 6000);
+    std::string const vrows = Between(vp, "\"victims\":[", "],\"auras\"");
+    CHECK(!vrows.empty());
+    CHECK(Count(vrows, "[") == kMaxTimelineVictims);
+    CHECK(Contains(vrows, "[1,1001,"));                       // the first change went
+    CHECK(Contains(vrows, "[400,1400,"));
+
+    Book auras;
+    StartTimelineBook(auras, BossCtx());
+    for (uint32_t i = 0; i <= kMaxTimelineAuras; ++i)
+        auras.OnTimelineAura(1, 2000 + i, true, i);
+    std::string const ap = EndedPayload(auras, seq, 6000);
+    std::string const arows = Between(ap, "\"auras\":[", "]}}");
+    CHECK(!arows.empty());
+    CHECK(Count(arows, "[") == kMaxTimelineAuras);
+    CHECK(Contains(arows, "[1,1,2001,1]"));
+}
+
+// One row per change of the boss's victim, with the member's role; a guid that is no member (a pet, a player, nobody)
+// is "none".
+static void TestTimelineVictimDedupe()
+{
+    Book b;
+    StartTimelineBook(b, BossCtx());
+    b.SampleTimeline(0, 9000, 10000, 1, "Tanky");
+    b.SampleTimeline(1000, 9000, 10000, 1, "Tanky");   // same victim: no row
+    b.SampleTimeline(2000, 9000, 10000, 2, "Healy");
+    b.SampleTimeline(3000, 9000, 10000, 0, "");
+    b.SampleTimeline(4000, 9000, 10000, 3, "Magey");
+    b.SampleTimeline(5000, 9000, 10000, 99, "Rag\"nar");
+    b.SampleTimeline(6000, 9000, 10000, 2, "Healy");   // back to an earlier victim: a new row
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 8000);
+    CHECK(Contains(p, "\"victims\":[[0,1,\"Tanky\",\"tank\"],[2000,2,\"Healy\",\"healer\"],"
+                        "[3000,0,\"\",\"none\"],[4000,3,\"Magey\",\"dps\"],"
+                        "[5000,99,\"Rag\\\"nar\",\"none\"],[6000,2,\"Healy\",\"healer\"]]"));
+}
+
+// A watched spell's apply and remove are one event each, even when the spell applies several aura effects; an aura
+// already on before the fight has no apply here, so its removal records nothing.
+static void TestTimelineAuras()
+{
+    Book b;
+    StartTimelineBook(b, BossCtx());
+    b.OnTimelineAura(1, 24321, true, 1000);
+    b.OnTimelineAura(1, 24321, true, 1000);    // the spell's second aura effect
+    b.OnTimelineAura(99, 24321, true, 1000);   // not a member
+    b.OnTimelineAura(1, 24306, false, 1500);   // removal with no apply (the aura came in before the fight)
+    b.OnTimelineAura(1, 24321, false, 61000);
+    b.OnTimelineAura(1, 24321, false, 61000);
+    b.OnTimelineAura(1, 24306, true, 62000);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 70000);
+    CHECK(Contains(p, "\"auras\":[[1000,1,24321,1],[61000,1,24321,-1],[62000,1,24306,1]]"));
+}
+
+// A fight too big only because of its timeline drops the timeline, not the numbers that were in the record before it:
+// the full spell list and the full recap stay, without the spells_cut marker.
+static void TestTimelineDropsBeforeNumbers()
+{
+    Book b;
+    std::vector<MemberInfo> m;
+    for (uint32_t i = 0; i < 40; ++i)
+        m.push_back({i + 1, "Bot" + std::to_string(i), "mage", Role::Damage, 0});
+    b.SetMembers(m);
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.SetTimeline(true);
+    for (uint32_t i = 0; i < 40; ++i)
+        for (size_t j = 0; j < kMaxSpellsPerBot; ++j)
+            b.OnCast(i + 1, "S" + std::to_string(i) + "_" + std::to_string(j), false, 1500);
+    for (uint32_t i = 0; i < kMaxTimelineHp; ++i)
+        b.SampleTimeline(i * kTimelineHpMs, 10000 - (i % 100), 10000, 1000 + i,
+                         "A Victim Name Of Some Length");
+    for (uint32_t i = 0; i < kMaxTimelineAuras; ++i)
+        b.OnTimelineAura(1, 3000 + i, true, 1000 + i);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 1300000);
+    CHECK(!p.empty());
+    CHECK(p.size() <= kPayloadByteBudget);
+    CHECK(!Contains(p, "\"truncated\":true"));
+    CHECK(!Contains(p, "\"spells_cut\""));
+    CHECK(!Contains(p, "\"boss_hp\""));
+    CHECK(Count(p, "\"n\":\"S") > 3 * 40);   // the full 12-spell list per bot is kept
+}
+
+// The key off: no timeline keys at all. A fight with no boss has no health or victim rows, but the auras (which need
+// no boss) are still listed.
+static void TestTimelineOffAndNoBoss()
+{
+    Book off;
+    off.SetMembers(Trio());
+    off.Start(0, 1700000000, BossCtx(), 1);
+    off.SampleTimeline(0, 5000, 10000, 1, "Tanky");
+    off.OnTimelineAura(1, 24321, true, 1000);
+    Seq seq;
+    std::string const op = EndedPayload(off, seq, 6000);
+    CHECK(!op.empty());
+    CHECK(!Contains(op, "boss_hp"));
+    CHECK(!Contains(op, "victims"));
+    CHECK(!Contains(op, "auras"));
+
+    Book noBoss;
+    noBoss.SetMembers(Trio());
+    noBoss.Start(0, 1700000000, FightContext{}, 1);
+    noBoss.SetTimeline(true);
+    noBoss.SampleTimeline(0, 5000, 10000, 1, "Tanky");
+    noBoss.OnTimelineAura(1, 24321, true, 1000);
+    std::string const np = EndedPayload(noBoss, seq, 6000);
+    CHECK(!np.empty());
+    CHECK(!Contains(np, "\"boss_hp\""));
+    CHECK(!Contains(np, "\"victims\""));
+    CHECK(Contains(np, "\"auras\":[[1000,1,24321,1]]"));
+}
+
+
 int main()
 {
     TestMealInTailNotInFight();
@@ -1390,6 +1573,12 @@ int main()
     TestEnemyCastCarriesSpellAndTarget();
     TestEventsRequeueKeepsOrder();
     TestSelfKillNamesLastAttacker();
+    TestTimelineHpCadence();
+    TestTimelineCaps();
+    TestTimelineVictimDedupe();
+    TestTimelineAuras();
+    TestTimelineDropsBeforeNumbers();
+    TestTimelineOffAndNoBoss();
     std::printf("combat monitor policy: %d checks passed\n", checks);
     return 0;
 }

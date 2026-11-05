@@ -83,7 +83,7 @@ Druid	all	-	-	Rejuvenation / Regrowth / Healing Touch / Innervate / Rebirth	trai
 Druid	all	-	-	Tranquility / Nature Swiftness / Mark / Thorns / Roots	trainer	active	base spells	none	utility kit	aoe/boost triggers	druid mixed	automatic	pre-existing	batch10	implemented-unverified
 Shaman	all	-	-	Lightning Bolt / Chain Lightning / Shocks	trainer	active	base spells	none	filler + shock	shock triggers	elemental combat	automatic	shock reserve follow-up	batch11	implemented-unverified
 Shaman	Enhancement	-	-	Stormstrike / Windfury / imbues	trainer	active	base spells	melee	enh kit	melee triggers	enhancement combat	automatic	imbue pairing follow-up	batch11	implemented-unverified
-Shaman	Restoration	-	-	Healing/Lesser Wave / Chain Heal / Earth Shield	trainer	active	base spells	healer role	heal kit	health triggers	resto combat	automatic	AS pairing batch11	batch11	implemented-unverified
+Shaman	Restoration	-	-	Healing/Lesser Wave / Chain Heal	trainer	active	base spells	healer role	heal kit	health triggers	resto combat	automatic	AS pairing batch11	batch11	implemented-unverified
 Hunter	all	45650	1	Aspect of the Wolf	trainer	active	template row, melee AP	none	aspect of the wolf	none	none	situational-manual	auto-maintain would oscillate vs Hawk upkeep; arbitration follow-up	batch17	implemented-unverified
 Hunter	all	45651	1	Aspect of the Viper	trainer	active	template row, mana regen	none	aspect of the viper	none	none	situational-manual	same oscillation constraint as Wolf	batch21	implemented-unverified
 Shaman	all	-	-	Totems 4 slots + Purge / Cures / Ghost Wolf / Reincarnation	trainer	active	base spells	none	totem kit	slot triggers	totems strategy	automatic	owner-aware; audit follow-ups	batch11	implemented-unverified

@@ -1776,9 +1776,25 @@ AiPlayerbot.AutoLearnTrainerSpells = 1
 # Default: 1 (enabled)
 AiPlayerbot.AutoLearnQuestSpells = 1
 
+# Your own alts (characters added with .bot add, and autonomous alt bots) also learn
+# classquest reward spells on login and levelup. Trainer spells stay paid for them.
+# Default: 0 (disabled)
+AiPlayerbot.AutoLearnQuestSpellsAlts = 0
+
 # Alt Bots automatically learn class spells from books dropped from dungeons and raids when leveled and they reached the required level of the book.
 # Default: 0 (disabled)
 AiPlayerbot.AutoLearnDroppedSpells = 0
+
+# Hunter and warlock pets of pool bots and hired companions train themselves on every
+# level-up: hunter pets get their family's best build within 4 active abilities and
+# their training points, warlock demons get every Grimoire rank of their level.
+# Default: 1 (enabled)
+AiPlayerbot.PetAutoTrain = 1
+
+# The same for your own alts' pets. A hunter alt's pet keeps the abilities you taught
+# it yourself and ranks them up too; nothing it knows is ever removed.
+# Default: 0 (disabled)
+AiPlayerbot.PetAutoTrainAlts = 0
 
 # Random Bots will pick quests on their own and try to complete
 # Default: 1 (enabled)
@@ -2836,6 +2852,14 @@ AiPlayerbot.RaidBossDiagnostics = 0
 # 0 - off (Default)
 # 1 - on
 AiPlayerbot.CombatMonitor = 0
+
+# The boss timeline in every fight record (owner tool): the fought boss's health every 2 s with his entry (phase), each
+# change of his current victim (guid, name, that bot's role) and every apply/remove of a watched aura on our bots (the
+# spell ids of the world table ai_combat_aura_watch). Each array is capped (600 samples, 400 victim changes, 1000 aura
+# events, oldest dropped) and the timeline is left out of a payload that has to shrink. Needs AiPlayerbot.CombatMonitor.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.CombatTimeline = 0
 
 # Days of bot logs to keep. The live file is plain text; every hour and at server start it is packed into
 # <name>_<date>_<time>.csv.gz next to it (named after the time it was closed), and packs older than this
