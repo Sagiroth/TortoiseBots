@@ -991,7 +991,6 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
 }
 bool TradeStatusAction::HandleDisenchantDropOffTrade(Event& event, Player* trader)
 {
-    (void)event;
     if (!bot || !trader)
         return false;
     // Same-guild members only; bots without Enchanting never open one (the
@@ -1009,6 +1008,20 @@ bool TradeStatusAction::HandleDisenchantDropOffTrade(Event& event, Player* trade
     bool open = bot->GetTradeData() != nullptr && trader->GetTradeData() != nullptr;
     if (!open)
         return false;
+    // The member's request: open the window, without the generic item list.
+    WorldPacket statusPacket(event.GetPacket());
+    uint32 status = 0;
+    if (statusPacket.size() >= sizeof(uint32))
+    {
+        statusPacket.rpos(0);
+        statusPacket >> status;
+    }
+    if (status == TRADE_STATUS_BEGIN_TRADE)
+    {
+        WorldPacket begin;
+        bot->GetSession()->HandleBeginTradeOpcode(begin);
+        return true;
+    }
     // The bot never puts anything of its own in: refuse outright when it did
     // (an action or a macro placed something), like the mail path takes no
     // gold and nothing of the bot's own. The window stays open either way:
