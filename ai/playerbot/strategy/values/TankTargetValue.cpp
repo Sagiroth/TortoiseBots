@@ -168,6 +168,9 @@ public:
 
         if (IsCcTarget(attacker)) return;
 
+        // The tank's pick skips a subject a ranged_only row holds above it (the adds are its fight until it lands).
+        if (IsRangedOnlyHeld(ai, ai->GetBot(), attacker)) return;
+
         if (!PossibleAttackTargetsValue::IsValid(attacker, bot))
         {
             std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
@@ -307,6 +310,10 @@ Unit* TankTargetValue::Calculate()
     // assist" does, and its set-aside mark falls through like a dps pick.)
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && AttackersValue::IsKeepoutSetAside(rti, bot))
+        rti = nullptr;
+    // A ranged_only subject is out of the melee tanks' reach: they take the adds and the boss's threat stays with the
+    // ranged until it lands.
+    if (rti && IsRangedOnlyHeld(ai, bot, rti))
         rti = nullptr;
     // Off-tanks take loose adds first: when another tank already holds the
     // mark, the mark drops out of this tank's pick and the tournament below

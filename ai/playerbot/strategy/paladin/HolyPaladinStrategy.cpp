@@ -418,7 +418,39 @@ void HolyPaladinCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 
 void HolyPaladinCureStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    PaladinCureStrategy::InitCombatTriggers(triggers);
+    CureStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "rooted",
+        NextAction::array(0, new NextAction("blessing of freedom", ACTION_DISPEL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "tank rooted",
+        NextAction::array(0, new NextAction("blessing of freedom on tank", ACTION_LIGHT_HEAL - 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse cure disease",
+        NextAction::array(0, new NextAction("cleanse disease", ACTION_DISPEL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse party member cure disease",
+        NextAction::array(0, new NextAction("cleanse disease on party", ACTION_DISPEL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse cure poison",
+        NextAction::array(0, new NextAction("cleanse poison", ACTION_DISPEL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse party member cure poison",
+        NextAction::array(0, new NextAction("cleanse poison on party", ACTION_DISPEL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse cure magic",
+        NextAction::array(0, new NextAction("cleanse magic", ACTION_DISPEL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "cleanse party member cure magic",
+        NextAction::array(0, new NextAction("cleanse magic on party", ACTION_DISPEL + 1), NULL)));
 }
 
 void HolyPaladinCureStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -525,7 +557,6 @@ void HolyPaladinBlessingStrategy::InitNonCombatTriggers(std::list<TriggerNode*>&
 void HolyPaladinBlessingPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     HolyPaladinBlessingStrategy::InitCombatTriggers(triggers);
-    PaladinBlessingPveStrategy::InitCombatTriggers(triggers);
 }
 
 void HolyPaladinBlessingPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -537,7 +568,6 @@ void HolyPaladinBlessingPveStrategy::InitNonCombatTriggers(std::list<TriggerNode
 void HolyPaladinBlessingPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     HolyPaladinBlessingStrategy::InitCombatTriggers(triggers);
-    PaladinBlessingPvpStrategy::InitCombatTriggers(triggers);
 }
 
 void HolyPaladinBlessingPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -549,7 +579,6 @@ void HolyPaladinBlessingPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode
 void HolyPaladinBlessingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     HolyPaladinBlessingStrategy::InitCombatTriggers(triggers);
-    PaladinBlessingRaidStrategy::InitCombatTriggers(triggers);
 }
 
 void HolyPaladinBlessingRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

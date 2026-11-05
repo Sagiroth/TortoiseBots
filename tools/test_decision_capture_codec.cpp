@@ -6,6 +6,10 @@
 // field. That is the check that no field is silently missing from the encoder
 // or the decoder, whatever the field's type. The tick-time check is built at
 // -O2 because the capture's budget (2 ms per tick) is a release-build number.
+// The tick-time bounds are enforced by default (CI relies on this). Set
+// TB_RELAX_TIMING=1 only on a shared box that is busy with other builds: then the
+// bounds are report-only, the measured times are printed as "not enforced", and
+// the rest of the test still runs.
 #include "../runtime/DecisionCaptureRecorder.h"
 
 #include <algorithm>
@@ -507,8 +511,21 @@ static void TestRecorderTickTime()
     std::cout << "400-step plan, 20 members, 30 units: recorder tick " << perTick << " us ("
               << sink.bytes / static_cast<std::uint64_t>(ticks) << " B/tick, cheapest encode " << minCapUs
               << " us, cheapest plan hash " << minHashUs << " us, " << hashBytes << " B)\n";
-    CHECK(perTick < 2000.0);
-    CHECK(minCapUs < minHashUs);
+    bool const relaxTiming = [] {
+        char const* const value = std::getenv("TB_RELAX_TIMING");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+    if (!relaxTiming)
+    {
+        CHECK(perTick < 2000.0);
+        CHECK(minCapUs < minHashUs);
+    }
+    else if (!(perTick < 2000.0) || !(minCapUs < minHashUs))
+    {
+        std::cout << "timing over budget (not enforced): tick " << perTick
+                  << " us (budget 2000), cheapest encode " << minCapUs
+                  << " us of a " << minHashUs << " us plan hash; TB_RELAX_TIMING=1 is set\n";
+    }
 }
 
 // -- 9. decode errors ----------------------------------------------------

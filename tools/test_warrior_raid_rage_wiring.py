@@ -34,6 +34,12 @@ def class_body(text, start):
     return text[i:end]
 
 
+def top_level_class_body(text, start):
+    i = text.index(start)
+    end = text.index("\n};", i)
+    return text[i:end]
+
+
 def function_body(text, signature):
     i = text.index(signature)
     end = text.index("\n}", i)
@@ -106,8 +112,13 @@ class WhirlwindRaidDanceWiringTest(unittest.TestCase):
         self.assertIn("isRaidGroup", body)
         self.assertIn("ShouldWhirlwindStanceDance(", body)
 
-    def test_sweeping_strikes_multipliers_name_the_new_prereq(self):
-        self.assertEqual(self.arms.count('actionName == "berserker stance for whirlwind"'), 3)
+    def test_sweeping_strikes_multipliers_match_the_action_gate(self):
+        for name in ("WarriorSweepingStrikesPveMultiplier",
+                     "WarriorSweepingStrikesRaidMultiplier",
+                     "WarriorSweepingStrikesPvpMultiplier"):
+            mult = top_level_class_body(self.arms, "class %s" % name)
+            self.assertIn('"melee medium aoe"', mult)
+            self.assertIn('HasAura("battle stance"', mult)
 
 
 class ArmsHowlFallbackWiringTest(unittest.TestCase):

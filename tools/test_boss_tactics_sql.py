@@ -20,10 +20,11 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
-         "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura"}
+         "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
+         "burn_mana", "ranged_only", "threat_successor"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
-TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death"}
+TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor"}
 # The mode word each kind takes (`tactic_mode`); an empty word is the kind's own behaviour.
 MODE_WORDS = {
     "dispel_priority": {"now", "clear", "never"},
@@ -247,8 +248,28 @@ def new_kind_problem(row):
     """BossTacticTable::Add's refusals of a seek_aura, pull_gate or spread row, or None for a usable one."""
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
-    if kind in ("seek_aura", "pull_gate", "spread") and (row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
+    if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor") and (
+            row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
+    if kind == "burn_mana":
+        # target_entry 0 (the boss), param the start % (exclusive), priority the most burners (0 = every eligible
+        # bot, so 0..10).
+        if row["target_entry"]:
+            return "burn_mana with a target"
+        if not 0.0 < row["param"] < 100.0:
+            return "burn_mana start percent outside (0, 100)"
+        if row["priority"] > 10:
+            return "burn_mana above ten burners"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
+        return None
+    if kind == "ranged_only":
+        # target_entry 0 (the boss) or an entry; param is the vertical gap the melee bot is held under.
+        if not 3.0 <= row["param"] <= 40.0:
+            return "ranged_only gap outside [3, 40]"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
+        return None
     if kind == "seek_aura":
         if not row["target_entry"] or not row["spell_id"] or not row["cycle_spell"] or not has_spot:
             return "seek_aura without its source, its aura, its cycle spell or its spot"
@@ -268,6 +289,13 @@ def new_kind_problem(row):
     if kind == "spread":
         if row["target_entry"] or not 5.0 <= row["param"] <= 30.0:
             return "spread with a target or a spacing outside [5, 30]"
+        return None
+    if kind == "threat_successor":
+        # The boss itself, and nothing else: the kind is read straight from the table by the threat reference.
+        if row["target_entry"]:
+            return "threat_successor with a target"
+        if row["tactic_mode"]:
+            return "a mode word on threat_successor"
         return None
     if kind == "needs_aura":
         # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
@@ -863,6 +891,67 @@ class BossTacticsSql(unittest.TestCase):
         glad = live[(509, 15324, "linked_death", 15324, 0)]
         self.assertEqual(7.0, glad["window_s"])
         self.assertNotIn((509, 15369, "interrupt", 0, 25748), live)
+
+    def test_aq20_burn_and_ranged_rows_are_live(self):
+        # T2 burn_mana and T3 ranged_only (20261104150200_world.sql), written with their C++ so the loader never
+        # skips them. Moam: up to four burners from 10 % mana. Ayamiss: melee held under an 8 yd gap while she is in
+        # the air (she climbs 20 yd at 5 s, boss_ayamiss.cpp:193-205).
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        burn = live.get((509, 15340, "burn_mana", 0, 0))
+        self.assertIsNotNone(burn, "the Moam burn_mana row is missing")
+        self.assertEqual("20261104150200_world.sql", burn["file"], "the T2 migration owns the burn_mana row")
+        self.assertEqual((4, 10.0, 0, 100), (burn["priority"], burn["param"], burn["hp_min"], burn["hp_max"]))
+        self.assertIsNone(new_kind_problem(burn))
+        hold = live.get((509, 15369, "ranged_only", 0, 0))
+        self.assertIsNotNone(hold, "the Ayamiss ranged_only row is missing")
+        self.assertEqual("20261104150200_world.sql", hold["file"], "the T3 migration owns the ranged_only row")
+        self.assertEqual((0, 8.0, "", 0, 100),
+                         (hold["priority"], hold["param"], hold["tactic_mode"], hold["hp_min"], hold["hp_max"]))
+        self.assertIsNone(new_kind_problem(hold))
+        # The earlier AQ20 rows stay untouched by the T2/T3 migration.
+        for key in ((509, 15340, "kill_first", 15527, 0), (509, 15369, "kill_first", 15934, 0),
+                    (509, 15369, "taunt_after_cast", 0, 0)):
+            self.assertIn(key, live, "the T2/T3 migration removed %s" % (key,))
+
+    def test_burn_mana_row_shape_refused(self):
+        burn = dict(INSERT_COLUMNS, map=509, boss_entry=15340, kind="burn_mana", priority=4, param=10.0)
+        self.assertIsNone(new_kind_problem(burn))
+        for broken in (dict(burn, target_entry=15527), dict(burn, param=0.0), dict(burn, param=100.0),
+                       dict(burn, priority=11), dict(burn, hp_max=50)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
+
+    def test_ranged_only_row_shape_refused(self):
+        hold = dict(INSERT_COLUMNS, map=509, boss_entry=15369, kind="ranged_only", param=8.0)
+        self.assertIsNone(new_kind_problem(hold))
+        for broken in (dict(hold, param=2.0), dict(hold, param=41.0), dict(hold, hp_min=20)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
+        self.assertIsNone(new_kind_problem(dict(hold, target_entry=15934)))
+
+    def test_hakkar_threat_successor_row_is_live(self):
+        # 20261105210000: Hakkar alone asks for a threat successor, so his damage dealers stay below the assigned
+        # off-tank and a Cause Insanity reset hands him to it. Every other taunt-immune boss keeps the highest tank.
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        cap = live.get((309, 14834, "threat_successor", 0, 0))
+        self.assertIsNotNone(cap, "the Hakkar threat_successor row is missing")
+        self.assertEqual("20261105210000_world.sql", cap["file"], "the threat_successor migration owns the row")
+        self.assertEqual((0, 0, 0.0, "", 0, 100, 0),
+                         (cap["priority"], cap["spell_id"], cap["param"], cap["tactic_mode"], cap["hp_min"],
+                          cap["hp_max"], cap["bot_aura"]))
+        self.assertIsNone(new_kind_problem(cap))
+        # One row only: a second taunt-immune boss naming itself here would change its cap too.
+        successors = [key for key in live if key[2] == "threat_successor"]
+        self.assertEqual([(309, 14834, "threat_successor", 0, 0)], successors)
+        # The four earlier Hakkar rows stay.
+        for key in ((309, 14834, "seek_aura", 11357, 24321), (309, 14834, "pull_gate", 0, 24692),
+                    (309, 14834, "spread", 0, 24328), (309, 14834, "taunt_after_cast", 0, 0)):
+            self.assertIn(key, live)
+
+    def test_threat_successor_row_shape_refused(self):
+        cap = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="threat_successor")
+        self.assertIsNone(new_kind_problem(cap))
+        for broken in (dict(cap, target_entry=11357), dict(cap, tactic_mode="until_tank"), dict(cap, hp_min=20),
+                       dict(cap, bot_aura=24321)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
 
     def test_aq20_step_one_keeps_the_ayamiss_larva_row(self):
         # 20261104150000 re-inserts Ayamiss's hornet row 15934 (kill_first). Its DELETE used to match every kill_first

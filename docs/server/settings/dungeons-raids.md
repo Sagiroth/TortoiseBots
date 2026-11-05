@@ -58,6 +58,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunRaidHealerGuard`](#aiplayerbotdungeonrunraidhealerguard) | `0` | `1`: in a raid boss fight with the main tank on the boss, and in a raid trash fight once the main tank held its current target (kept on for the fight), an add on a healer goes to the nearest ranged dps within 35 yd of it (up to two per add), and the off-tanks take only such an add when no ranged dps is free. |
 | [`AiPlayerbot.FankrissSwapStacks`](#aiplayerbotfankrissswapstacks) | `5` | Mortal Wound stacks at which an opt-in `fankriss tank` taunts Fankriss off the current tank (1-9). |
 | [`AiPlayerbot.PatchwerkOpeningDelay`](#aiplayerbotpatchwerkopeningdelay) | `4` | Seconds the DPS hold Patchwerk after an opt-in `patchwerk main` engages him (`0` = off, else 3-5). |
+| [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
+| [`AiPlayerbot.RaidTankHealerAssist`](#aiplayerbotraidtankhealerassist) | `0` | `1`: a layout tank healer's second seat on its tank heals a raid member in sight and in range below 70% while the tank is quiet (not on a boss, 90%+ after incoming damage). |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunPullGate`](#aiplayerbotdungeonrunpullgate) | `0` | `1`: the run leader never pulls a boss its `pull_gate` row gates while the boss wears the row's aura, and ends the run after the row's seconds (Hakkar needs all of this, seek, charm yield and boss spread, plus the aura tactics). |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
@@ -71,7 +73,10 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunTankSwap`](#aiplayerbotdungeonruntankswap) | `0` | `1`: the boss tactics keep their `swap_on_aura` rows — the tanks of the row's rotation trade the boss at a stack count, and the tank that was swapped off stops attacking it for a while (needs the aura tactics and the boss tactics). |
 | [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunSeekAura`](#aiplayerbotdungeonrunseekaura) | `0` | `1`: the boss tactics keep their `seek_aura` rows — the raid gathers in a dying source's cloud before the boss's cycle spell lands (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
+| [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
 | [`AiPlayerbot.RunTeleportReturnYd`](#aiplayerbotrunteleportreturnyd) | `0` (recommended `120`) | A party bot the run brings back from farther than this (yards) is teleported to the lead bot with its combat dropped, never summoned by portal or left to walk back; `0` off. |
 | [`AiPlayerbot.DungeonReviveHoldYd`](#aiplayerbotdungeonreviveholdyd) | `0` (recommended `100`) | A run's bot revived farther than this (yards) from the lead bot, and every bot the run is bringing back, stands still until it arrives (60 s at most); `0` off. |
 | [`AiPlayerbot.DungeonRunWalkBackAfterWonFight`](#aiplayerbotdungeonrunwalkbackafterwonfight) | `0` | `1` walks the tank and party back to the stand after every guarded fight (the old way); `0` goes on from where the tank stands once the pack is cleared. |
@@ -515,7 +520,7 @@ Focuses a totem the plan kills first on the damage dealers alone, and before the
 <details>
 <summary>How it works in detail</summary>
 
-**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it before the guard can spend the tick on somebody else, and sends only the damage dealers at it: no tank, no healer. The guard and the engage on arrival leave such a totem alone while the key is on, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. The DPS-only rule is the run leader's own order only: a player's explicit focus on a totem still arms every bot. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#totem-focus).
+**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick, and sends only the damage dealers at it: no tank, no healer. A totem a boss summons is read the moment it stands, even when no bot's attackers list carries it. On the focus the damage dealers cut their own current cast or channel — only an offensive one on an enemy, never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a run crowd-control spell, a resurrect or the hearthstone — open with an instant where the class has one, and take the attack by GUID: the skull stays on the boss, so tanks and healers never follow it. A retreat in progress keeps the tick: the totem waits until the living are back. The kill-first check runs every second while the key is on. The guard and the engage on arrival leave such a totem alone while the key is on, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. The DPS-only rule is the run leader's own order only: a player's explicit focus on a totem still arms every bot. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line (the run's lead bot and instance id name its run in a log shared by every run), so a walk measures a kill-first unit's lifetime. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#totem-focus).
 
 </details>
 
@@ -600,6 +605,40 @@ A raid's adds on healers (boss and trash fights): sent to the raid's ranged dps,
 - with `0`: off-tanks take the healers' adds as before
 
 </details>
+
+### `AiPlayerbot.RaidHealerSeatsByClass`
+A raid binding's healer seats go by class instead of member order.
+**Default:** `0` · **Values:** `0` off (member order), `1` on · **Restart:** not needed (`.reload config` applies it; a raid already bound keeps its seats until it is bound again)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Healer seats by class:** the seats are only read with `AiPlayerbot.DungeonRunRaid = 1`, when a raid binding applies its layout:
+- the raid seats take a group healer first: priest, then druid, then shaman, then any other healer; the raid keeps at least a third of its healers, rounded up, and the tanks take the rest up to two each
+- the main-tank seats take the next healers, any class; a healer the raid seats do not hold back (a paladin) comes before a remaining group healer, so the fixed priest, priest, paladin hire puts the paladin on a main tank and keeps a priest on the raid
+- the off-tank seats take whoever is left
+- a mid-raid hire joining a bound raid is seated by the joiner rule (the tank with the fewest healers), not this layout
+- with `0` the seats are handed out in member order, as before
+
+</details>
+
+### `AiPlayerbot.RaidTankHealerAssist`
+A tank healer seated by a raid binding's layout helps the raid while its tank has nothing to heal.
+**Default:** `0` · **Values:** `0` off (the seat keeps its focus targets), `1` on · **Restart:** not needed (`.reload config` applies it at once)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Quiet seat assist:** only read with `AiPlayerbot.DungeonRunRaid = 1`, and only for a tank healer the bind's layout seated (a player-set focus list outside the layout and a mid-raid joiner do not get it):
+- the healer's focus list is still exactly the layout's (the tank and the healer itself); a player who adds or drops a member keeps the tank healer but the seat no longer helps the raid
+- the healer's tank is found and alive, is not fighting a boss (an `ai_dungeon_boss` row or a plan boss step, or a world boss), and its health after the damage it is taking is at or above 90%
+- only the tank's second (or later) seat may leave; the first seat never does, so the tank keeps one healer
+- it then treats any group member below 70% that is in sight and inside heal range; it never walks into sight for one
+- the tank and the healer itself keep the ordinary focus treatment
+- with `0` the tank healers keep their focus targets only
+
+</details>
+
 ### `AiPlayerbot.DungeonRunBossSpread`
 Whether the boss tactics widen the ranged raid's spacing while a `spread` row's boss fights.
 **Default:** `0` · **Values:** `0` off (the ordinary 10 yd spacing, and a stay order keeps its bot in place), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -608,6 +647,26 @@ Whether the boss tactics widen the ranged raid's spacing while a `spread` row's 
 <summary>How it works in detail</summary>
 
 **Boss spread:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while a row's boss is in the fight the ranged bots and the healers keep the row's `param` yards apart instead of the ordinary spacing, and a stay order no longer exempts a bot from spreading. The row's spell only documents the splash the spacing answers (Hakkar's row: Corrupted Blood 24328 hits 10 yd around a random attacker, the row keeps 12). Melee and tanks never spread.
+
+</details>
+### `AiPlayerbot.DungeonRunBurnMana`
+Whether the boss tactics keep their `burn_mana` rows: a few eligible bots drain the boss's mana while it stands above the row's start percent.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Burn mana:** a boss tactic row of the `burn_mana` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the start percent of the boss's mana (`param`) and the most burners (`priority`, `0` = every eligible bot). Eligible means alive, in the group, in combat, not a tank, not a healer (a shadow priest counts as damage), knowing `mana burn`, `drain mana` or `viper sting`, and able to cast it right now: the bot must be in control (not stunned, feared, confused, charmed, silenced or pacified), its spell must be off cooldown, the boss must stand in that spell's own range (`mana burn` 30 yd, `drain mana` 20 yd, `viper sting` 8 to 35 yd) and the bot must have the cast's mana. Every bot ranks the members that run the boss tactics and can cast right now by guid and takes its own place, so an unavailable member never holds a slot and the same few bots burn without a vote. A global cooldown, an in-flight cast or movement is not a reason to move a slot: the burner keeps its place and casts when free. While the boss is in the fight, alive and at or above the start percent, a burner casts its first castable of the three on the boss, above its ordinary damage rotation and below every survival and avoid action; a hunter refreshes Viper Sting only when the boss lacks it, and a boss in the stone phase (Moam's aura 25685) is not burned at all: the burners go back to the `kill_first` Mana Fiends. The `BossTacticsBurnMana` row (`spell=<id>, boss_mana_pct=<n>`) goes to `bot_events.csv` when that log is on. Moam's Drain Mana 25676 fills him from the raid's own casts and Arcane Eruption 25672 fires at full mana (boss_moam.cpp:65,166-170,209-215), so the burners keep him from a full bar outside the stone phase.
+
+</details>
+### `AiPlayerbot.DungeonRunRangedOnly`
+Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subject that stands the row's gap above them and take the adds.
+**Default:** `0` · **Values:** `0` off (the rows and the held target are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Ranged only:** a boss tactic row of the `ranged_only` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the subject (`target_entry`, `0` = the row's boss) and the vertical gap in yards (`param`, 3 to 40). A melee bot (melee damage or a tank) standing `param` yd or more below the subject skips it in the free-damage and tank picks and drops it if it already holds it, then takes a `kill_first` pick or the nearest attacker that is not held; a ranged bot and a healer are never held. An explicit attack order beats the hold: an ordered bot keeps the subject until the order is cleared (as for `hold_kill`). The heights are the two units' own z, never the navmesh. When the subject lands the gap closes and the hold ends by itself. The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`) goes to `bot_events.csv` at most once per 5 s per bot. Ayamiss climbs 20 yd for her air phase (boss_ayamiss.cpp:193-205).
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`
@@ -743,7 +802,7 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 - before a pull over [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (or the row's smaller `max_bodies`), the run marks the row's own pack, one order a tick
 - order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
 - risky Fear and Scare Beast go last and only with this key's risky flag on
-- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit the plan does not list, and a `cc_never` entry of the plan
+- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit the plan does not list, a `cc_never` entry of the plan, and a DB-spawned unit that respawns within a minute (it would be marked again on every respawn; a temporary summon's lifetime is not a respawn) — and such a respawning unit is not counted as a body of the pull either
 - a non-elite unit neither counts toward the pre-pull body count nor the fight's engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do; a `cc_never` unit still counts as a body (it is dangerous even though it cannot be held)
 - the plan's `cc_never` list (`ai_dungeon_plan`) excludes those entries from the automatic pick entirely, before the pull, in the fight and on a re-send; the plan's own list with the key off is unchanged
 - in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
@@ -782,7 +841,7 @@ Whether the boss tactics keep their `seek_aura` rows: the raid gathers in a dyin
 <details>
 <summary>How it works in detail</summary>
 
-**Seek aura:** a boss tactic row of the `seek_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the source creature whose death leaves the cloud (`target_entry`), the aura the raid must carry (`spell_id`), and the boss spell whose aura on a group member restarts the cycle clock (`cycle_spell`, every `cycle_s` seconds, the dose window opening `window_s` before it is due). The source is held and killed at the row's spot (`spot_x/y/z`): the DPS stop at its `priority` health % until the gather is ready (every seeker within `param` yd of it, 8 s at most, the burn forced near the end of the window), then burn it so the cloud lands on the gathered raid. A bot outside the fresh cloud walks in while it still lives; the cloud is exempt from every ground-hazard avoid while its row runs. Hakkar's row: one Son of Hakkar 11357 dies at B every 90 s before Blood Siphon 24324 so the raid carries Poisonous Blood 24321; the main tank and the first off-tank never seek, and the second off-tank pulls and holds the source.
+**Seek aura:** a boss tactic row of the `seek_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the source creature whose death leaves the cloud (`target_entry`), the aura the raid must carry (`spell_id`), and the boss spell whose aura on a group member restarts the cycle clock (`cycle_spell`, every `cycle_s` seconds, the dose window opening `window_s` before it is due and staying open for up to 8 s past the due time when a sighting is missed, after which the estimate rolls one `cycle_s` forward and the window waits for the rolled cycle's own opening; the first siphon is due one `cycle_s` after the boss is first seen in combat with the group, so cycle 1 gets the same window). The source is held and killed at the row's spot (`spot_x/y/z`): the DPS stop at its `priority` health % until the gather is ready (every seeker within `param` yd of it, 8 s at most, the burn forced near the end of the window), then burn it so the cloud lands on the gathered raid. Pets and guardians leave the siphon too: a hunter's pet for a few seconds around the cycle and a warlock's demon from the engage on (its summons are held all fight), because each is one more undosed unit. Only the one picked source is ever damaged: another source stays held, a source farther than 35 yd from the spot is never chased, and with the dose window shut the pick is left at whatever health it has for the next cycle. A bot outside the fresh cloud walks in while it still lives; the cloud is exempt from every ground-hazard avoid while its row runs. Hakkar's row: one Son of Hakkar 11357 dies at B every 90 s before Blood Siphon 24324 so the raid carries Poisonous Blood 24321; the main tank and the first off-tank never seek, and the second off-tank pulls and holds the source (a hunter pulls it when it is not there).
 
 </details>
 
@@ -824,6 +883,25 @@ Whether the run leader teleports a stuck walk back's lead bot (and a placed run'
 - between the start step and the target point, earlier clear points are tried first; joining the party is the last option, and it never turns into a pause
 - a placed run's lead bot behind the start step is teleported to a safe point on the way it came
 - out of combat only, once a step; left-behind party is summoned only out of combat
+
+</details>
+
+### `AiPlayerbot.DungeonRunDryWalk`
+Whether the run leader keeps its own route picks off deep water instead of swimming through it.
+**Default:** `0` · **Values:** `0` the core's path, water included, `1` a ground-only way where one reaches the point · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Dry walk:** only read while `AiPlayerbot.DungeonSelfClear = 1`:
+- the core's own player path may cross deep water on its surface, so an approach hop or a firing stand picked on it can land in the water; the core's straight swim chord can then hold the lead bot against a bank
+- with `1`, the run leader asks the navmesh for a ground-only path (deep water, magma and slime left out; wading kept) and picks its approach hops and its firing stand there
+- the walk-back shortcut is not re-pathed: its straight swim chord is refused as no navmesh route, so the walk back replays the plan's points; the leg-on-path read and the too-far legs are unchanged
+- when the walk's own way would swim after the lead bot leaves its own water, it goes in dry legs first: 8-40 yd along the dry path, at most 24 a walk, each at a point with no deep water at it and with a dry core path of its own
+- the point itself must be dry and the dry way at most 3 times the way the run would walk; otherwise the old behaviour runs unchanged, so intended swims still work
+- a point in deep water keeps the core's swim chord, also for a walk-back point: a straggler standing in deep water is walked to as before, and a firing stand for a pack in the water may stand in it
+- a straggler whose own point is dry but whose way would swim has no path that ends at the point: its pull moves to the next tank and can pause the run
+- a lead bot more than 25 yd from any ground polygon gets no dry path; followers still use their own paths
 
 </details>
 

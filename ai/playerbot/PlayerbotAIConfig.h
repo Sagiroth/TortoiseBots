@@ -586,6 +586,9 @@ public:
     bool dungeonFollowHoldBeforePacks;
     // Warlock summons the demon that fits its spec in PvE instead of the Voidwalker (opt-in).
     bool warlockPetBySpec;
+    // Warlock raid rotation: DoT/curse life gate, raid spread cap, trash-only
+    // Drain Soul and a pay-as-needed combat Life Tap (opt-in).
+    bool warlockRaidRotation;
     // Rogue Feint (and Vanish as the last resort) on medium/high threat in 5-man dungeons (opt-in).
     bool rogueDungeonThreatDrops;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
@@ -602,6 +605,10 @@ public:
     // A raid binding's boss fight: a 1200 s ceiling, deaths that do not pause it while it loses hp, and the adds
     // sent to the off-tanks instead of the main tank (default off: the party rules).
     bool dungeonRunRaidBossRules = false;
+    // Healer seats of a raid binding go by class instead of member order (default off: member order).
+    bool raidHealerSeatsByClass = false;
+    // A layout tank healer's second seat on its tank helps the raid while the tank is quiet (default off).
+    bool raidTankHealerAssist = false;
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
@@ -645,6 +652,13 @@ public:
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // The burn_mana boss-tactic kind (a few eligible bots drain the boss's mana while it is above the row's start %,
+    // Moam's Drain Mana refills him so the burners keep him from a full-mana eruption): off, the rows are ignored
+    // (default off).
+    bool dungeonRunBurnMana = false;
+    // The ranged_only boss-tactic kind (melee bots leave a subject that stands the row's gap above them: Ayamiss in the
+    // air, so the melee take the adds): off, the rows and the held target are ignored (default off).
+    bool dungeonRunRangedOnly = false;
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;
@@ -701,6 +715,9 @@ public:
     bool dungeonRunWalkBackAfterWonFight;
     bool dungeonRunRetreatAt2Dead;
     bool dungeonRunWalkBackRescue;
+    // The run leader's route picks stay off deep water (DungeonRunPolicy.h DryWalkWanted, the glue's DryWayPath;
+    // default off).
+    bool dungeonRunDryWalk;
     // A member a run brings back from farther than this is teleported with its combat dropped (0: the old summon).
     float runTeleportReturnYd;
     // A run's bot revived farther than this from the lead bot, and any bot the run brings back, stands still
@@ -886,7 +903,10 @@ public:
     std::string autoPickTalents;
     bool autoLearnTrainerSpells;
     bool autoLearnQuestSpells;
+    bool autoLearnQuestSpellsAlts;
     bool autoLearnDroppedSpells;
+    bool petAutoTrain;
+    bool petAutoTrainAlts;
     bool autoDoQuests;
     bool autoShareConjuredOnTrade;
     // TravelNode cache generation can load every map and rewrite its database
@@ -930,6 +950,9 @@ public:
     float jumpInPlaceChance;
     float jumpBackwardChance;
     float jumpHeightLimit;
+    // A near teleport whose destination ends in mid-air (Jin'do's Banish 24466) lands the bot on the floor under
+    // it instead of leaving it hovering. Off by default: it changes every near teleport.
+    bool teleportLandingFall = false;
     float jumpVSpeed;
     float jumpHSpeed;
 

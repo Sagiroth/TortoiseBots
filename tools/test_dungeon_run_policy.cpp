@@ -26641,6 +26641,215 @@ static void TestTankHoldFocusUnchanged()
     CHECK(FocusSkipsBot(true, false, true, false, false));   // and so it stays with the keys off
 }
 
+// T1: a kill_first totem Jin'do summoned (spell 24262, SPELL_EFFECT_SUMMON_WILD) has no owner and no creator guid; only
+// its temporary summon's summoner names him. The grid read adds it, and the totem focus picks it the first tick it
+// stands, with no attackers list involved.
+static void TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick()
+{
+    std::uint64_t const jindo = 500;
+    CHECK(KillFirstOwner(0, 0, jindo) == jindo);      // a wild summon: the summoner alone
+    CHECK(KillFirstOwner(0, 555, jindo) == 555);      // a creator beats it
+    CHECK(KillFirstOwner(444, 555, jindo) == 444);    // an owner beats both
+    CHECK(KillFirstGridTotemOf(jindo, true, true, jindo));
+    CHECK(!KillFirstGridTotemOf(jindo, true, false, jindo)); // not a totem
+    CHECK(!KillFirstGridTotemOf(jindo, true, true, 0));      // no engaged boss
+    CHECK(!KillFirstGridTotemOf(0, true, true, jindo));      // an ownerless unit
+
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = jindo;         // the grid read's owner: the engaged boss
+    totem.ownerEngaged = true;
+    totem.engaged = false;       // in no attackers list
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    CHECK(r.focusGuid == 501);
+    CHECK(r.focusIconGuid == 0); // the skull stays where it is (T5)
+}
+
+// T2: the totem focus runs at the top of the fight branch, so the automatic crowd control (or the hp hold, the guard)
+// never spends the tick first. Key off: today's order, the auto-CC first.
+static void TestTotemFocusFiresBeforeTheAutoCcTick()
+{
+    for (bool key : {true, false})
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 0)};
+        plan.killFirst = {15112};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.members = {CcMem("Magey", CcFamily::Polymorph), Mem("Tanky", 0)};
+        f.autoCc = true;
+        f.autoCcAbove = 0;
+        f.anyInCombat = true;
+        f.totemFocus = key;
+        f.partyAttackers = {Typed(900, 100, 12, kCreatureHumanoid), Typed(901, 101, 14, kCreatureHumanoid),
+            Typed(902, 102, 16, kCreatureHumanoid)};
+        UnitFact totem = Unit(501, 15112, 5);
+        totem.creatureType = kCreatureTotem;
+        totem.engaged = true;
+        f.killFirst = {totem};
+        std::string const order = Tick(r, f);
+        if (key)
+            CHECK(order == "focus 501");
+        else
+            CHECK(order.compare(0, 3, "cc ") == 0); // the auto-CC spends the tick, as today
+    }
+}
+
+// T5: under the totem focus the run sends the DPS by guid and leaves the skull on the boss; the key off moves the mark
+// to the totem as before, and the focus' end clears only a mark the run placed.
+static void TestTotemFocusLeavesTheSkullOnTheBoss()
+{
+    CHECK(!FocusMovesSkull(true, true));
+    CHECK(FocusMovesSkull(true, false));
+    CHECK(FocusMovesSkull(false, true));
+    CHECK(FocusMovesSkull(false, false));
+
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    {
+        Run r;
+        r.focusIconGuid = 900; // the boss's skull, placed by an earlier focus
+        CHECK(IssueKillFirstFocus(r, totem, FocusMovesSkull(true, true)) == "focus 501");
+        CHECK(r.focusGuid == 501);
+        CHECK(r.focusIconGuid == 900); // untouched
+        CHECK(r.focusIconClear == 0);
+        DropFocus(r); // the totem died
+        CHECK(r.focusGuid == 0);
+        CHECK(r.focusIconClear == 0); // the boss keeps the skull
+    }
+    {
+        Run r;
+        r.focusIconGuid = 900;
+        CHECK(IssueKillFirstFocus(r, totem, FocusMovesSkull(false, true)) == "focus 501");
+        CHECK(r.focusIconGuid == 501); // today: the skull follows the focus
+        DropFocus(r);
+        CHECK(r.focusIconClear == 501);
+    }
+}
+
+// H1: the totem focus cuts only the damage dealer's own generic cast or channel, and only an offensive cast: a spell
+// that is not beneficial and a current target that is hostile. A hybrid's heal, a shield or a defensive cooldown is
+// never cut, whatever the role casting it. Nor a spell the fight needs: a run crowd-control spell, a resurrect
+// (Rebirth or any spell with a resurrect effect) or the hearthstone. An Auto Shot or a wand's shot is an autorepeat
+// spell and is never cut.
+static void TestTotemFocusMayInterrupt()
+{
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true));     // Fireball on an enemy
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false, false, true));   // a Drain Life channel
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, true));     // Shadow Bolt on an enemy
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2050, false, true, true));    // a hybrid's heal
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 17, false, true, true));      // a shield (Power Word)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 871, false, true, true));     // a defensive (Shield Wall)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, false));   // ... with no hostile target
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 118, false, false, true));    // Polymorph
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 12826, false, false, true));  // ... another rank
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 9484, false, false, true));   // Shackle Undead
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 710, false, false, true));    // Banish
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 6770, false, false, true));   // Sap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2637, false, false, true));   // Hibernate
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1499, false, false, true));   // Freezing Trap
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 6358, false, false, true)); // Seduction (a channel)
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20066, false, false, true));  // Repentance
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 5782, false, false, true));   // Fear
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 1513, false, false, true));   // Scare Beast
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 8690, false, false, true));   // Hearthstone
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 20484, false, false, true));  // Rebirth
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true, false, true));    // any resurrect effect
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false, false, true));       // Auto Shot
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false, false, true));     // Shoot (a wand's shot)
+}
+
+// M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back
+// first. Without the retreat the same tick focuses the totem.
+static void TestTotemFocusYieldsToTheRetreat()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {15112})};
+    plan.killFirst = {15112};
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.engaged = true;
+    Facts f = Party(20);
+    f.anyInCombat = true;
+    f.retreatAt2Dead = true;
+    f.dead = 2;
+    f.alive = 3;
+    f.killFirst = {totem};
+    Run r = Start(&plan, 1);
+    r.fighting = true;
+    r.anchorKnown = true;
+    r.retreatOn = true;
+    r.retreatOrders = 1;
+    r.retreatMs = 0;
+    CHECK(Tick(r, f).empty()); // the retreat waits for its resend
+    CHECK(r.focusGuid == 0);
+    CHECK(r.note.compare(0, 7, "retreat") == 0);
+    Run q = Start(&plan, 1);
+    q.fighting = true;
+    Facts g = f;
+    g.retreatAt2Dead = false;
+    CHECK(Tick(q, g) == "focus 501");
+}
+
+// L2: a totem focus leaves the skull on the boss, and the fight's end takes that skull off too: no run skull outlives
+// the fight it was placed in.
+static void TestStaleFocusSkullComesOffWhenTheFightEnds()
+{
+    DungeonPlan plan;
+    plan.steps = {ZfPack()};
+    plan.killFirst = {5650, 15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(1, 5648, 10)};
+    CHECK(Tick(r, f) == "pullback 1");
+    f.anyInCombat = true;
+    f.killFirst = {Engaged(Unit(30, 5650, 8))};
+    CHECK(Tick(r, f) == "focus 30");
+    CHECK(r.focusIconGuid == 30);
+    // The boss's totem is focused by guid: the recorded skull stays on the boss.
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.engaged = true;
+    f.totemFocus = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    CHECK(r.focusGuid == 501 && r.focusIconGuid == 30);
+    // The fight ends: the boss's skull comes off with it, though it was not the focus.
+    f.anyInCombat = false;
+    f.killFirst.clear();
+    Tick(r, f);
+    CHECK(r.focusGuid == 0 && r.focusIconGuid == 0 && r.focusIconClear == 30);
+}
+
+// L3: the grid read's own decision: only under the totem focus, only a creature, only a plan boss, and each owner once
+// per read.
+static void TestKillFirstGridReadsOwner()
+{
+    CHECK(KillFirstGridReadsOwner(true, true, true, false));
+    CHECK(!KillFirstGridReadsOwner(false, true, true, false));  // the key off
+    CHECK(!KillFirstGridReadsOwner(true, false, true, false));  // not a creature
+    CHECK(!KillFirstGridReadsOwner(true, true, false, false));  // not a plan boss
+    CHECK(!KillFirstGridReadsOwner(true, true, true, true));    // already read this tick
+}
+
+// T6: the server log's kill_first span lines, exact.
+static void TestKillFirstLogLine()
+{
+    CHECK(KillFirstLogLine("zul_gurub", "Tanky", 1234, "seen", 15112, 501, 0) ==
+        "TBM:KILLFIRST|zul_gurub|Tanky|1234|seen|15112|501");
+    CHECK(KillFirstLogLine("", "", 0, "dead", 14987, 502, 4200) == "TBM:KILLFIRST|-|-|0|dead|14987|502|4200");
+    CHECK(KillFirstLogLine("zul_gurub", "Healy", 7, "gone", 15112, 503, 900) ==
+        "TBM:KILLFIRST|zul_gurub|Healy|7|gone|15112|503|900");
+}
+
 // A raid boss fight's healer guard with a ranged dps in reach of the add and the main tank holding the boss.
 static Facts FocusGuardFacts()
 {
@@ -33525,6 +33734,131 @@ static void TestAutoCcCountsTheLeadBotsAttackers()
     }
 }
 
+// A unit that respawns within a minute is no crowd control target and no body of the pull the order is for: the
+// hold ends with the kill and the same guid is back seconds later (ZG's Sacrificed Trolls, 14826, 10 s), so the
+// same order would go out on it for the whole grind (walk 36: 170 Shackle Undead casts in troll-only fights, about
+// one every 20 s). The 10 s unit is the plan's first choice here: the pick must pass over it.
+static void TestAutoCcSkipsFastRespawnUnits()
+{
+    DungeonPlan plan = CcPlan({14826, 14882});
+    auto const fillers = [](Facts& f, std::uint64_t last)
+    {
+        for (std::uint64_t guid = 100; guid <= last; ++guid)
+        {
+            UnitFact filler = Typed(guid, 14880 + static_cast<std::uint32_t>(guid), 12.0f, kCreatureUndead);
+            filler.partyHits = true; // the party hits them: no candidate, a body of the fight
+            f.partyAttackers.push_back(filler);
+        }
+    };
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        fillers(f, 105);
+        UnitFact troll = Typed(200, 14826, 18.0f, kCreatureUndead);
+        troll.respawnSec = 10;
+        f.partyAttackers.push_back(troll);
+        UnitFact keeper = Typed(201, 14882, 20.0f, kCreatureUndead);
+        f.partyAttackers.push_back(keeper); // no spawn delay read: a keeper is a candidate
+        CHECK(Tick(r, f) == "cc moon 201 Priesty shackleundead");
+        // ... and it is no body of the pull either: eight attackers, one a 10 s respawn, read seven.
+        CHECK(r.note.find("engaged 7 over 6") != std::string::npos);
+    }
+    {
+        // The count alone: six bodies and the 10 s troll is a pull of six, not over the threshold, so no order at
+        // all. The same seven with the troll's spawn read (a real spawn) is over it, and the plan puts the troll
+        // first. The mutation that counts the respawning body sends the order in the first read.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        fillers(f, 105);
+        UnitFact troll = Typed(200, 14826, 18.0f, kCreatureUndead);
+        troll.respawnSec = 10;
+        f.partyAttackers.push_back(troll);
+        CHECK(Tick(r, f).empty());
+        f.partyAttackers.back().respawnSec = 0;
+        CHECK(Tick(r, f) == "cc moon 200 Priesty shackleundead");
+    }
+    {
+        // The lead bot's own attackers count with the party's: the 10 s troll on the tank is no body of the pull
+        // either. Five on the tank and the troll, plus a keeper in the party, read six, not over the threshold; with
+        // the troll's spawn read they read seven and the keeper is marked.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Priesty", CcFamily::Shackle, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 104; ++guid)
+            f.leadAttackers.push_back({guid, false});
+        f.leadAttackers.push_back({200, false, false, 10});
+        f.partyAttackers = {Typed(201, 14882, 20.0f, kCreatureUndead)};
+        CHECK(Tick(r, f).empty());
+        f.leadAttackers.back().respawnSec = 0;
+        CHECK(Tick(r, f) == "cc moon 201 Priesty shackleundead");
+    }
+}
+
+// The boundary of the fast-respawn window: a minute counts as quick, a second more does not (the unit is back after
+// the order's window), and no spawn read is no respawn.
+static void TestRespawnQuickBoundary()
+{
+    CHECK(RespawnsQuickly(60));
+    CHECK(!RespawnsQuickly(61));
+    CHECK(RespawnsQuickly(1));
+    CHECK(!RespawnsQuickly(0));
+}
+
+// Before the pull the same rule holds: the pack's first choice (the farthest unit) is a 10 s respawn, so the mark
+// goes to the next unit instead.
+static void TestAutoCcSkipsFastRespawnUnitsBeforeThePull()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph), AutoCcMem("Magetwo", CcFamily::Polymorph),
+        AutoCcMem("Magethree", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    UnitFact troll = AutoHumanoid(9, 20.0f);
+    troll.respawnSec = 10;
+    f.units.push_back(troll);
+    CHECK(Tick(r, f) == "cc moon 8 Magey polymorph");
+    CHECK(Tick(r, f) == "cc square 7 Magetwo polymorph");
+    CHECK(Tick(r, f) == "cc diamond 6 Magethree polymorph");
+    CHECK(Tick(r, f) == "pullback 1");
+    CHECK(r.ccSent.count(9) == 0);
+}
+
+// A temporary summon's respawn delay is its lifetime (TemporarySummon), not a respawn: Gandling's Risen Guardians
+// (15 s) must keep their crowd control and their place in the pull. Only a spawn of its own carries a respawn delay.
+static void TestAutoCcTemporarySummonWithALifetimeStillCounts()
+{
+    CHECK(SpawnRespawnSec(true, 15) == 15);
+    CHECK(RespawnsQuickly(SpawnRespawnSec(true, 15)));
+    CHECK(SpawnRespawnSec(false, 15) == 0);
+    CHECK(!RespawnsQuickly(SpawnRespawnSec(false, 15)));
+
+    // The 15 s summon as the facts read it (no respawn) is a candidate and a body: the pre-pull mark goes to it.
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+    UnitFact guardian = AutoHumanoid(9, 20.0f);
+    guardian.respawnSec = SpawnRespawnSec(false, 15);
+    f.units.push_back(guardian);
+    CHECK(Tick(r, f) == "cc moon 9 Magey polymorph");
+    CHECK(r.ccSent.count(9) == 1);
+}
+
 // The pull's opening: every unit a pre-pull order marked and whose aura is not
 // read gets its order again on the fight's first ticks, at once: no engaged
 // threshold, no 2 s gap. ZG walk 32: no pre-pull mark ever landed, every flow
@@ -33832,6 +34166,557 @@ static void TestCcOnlyFightIsBrokenOneAtATime()
     p.fighting = true;
     std::string none;
     CHECK(!RunCcBreakTick(p, off, kTickMs, none) && none.empty());
+}
+
+// ZG walk 36 d/e3, Jin'do step 552: a pull row cleared its pack beside the pit, and the pit's Sacrificed Trolls
+// 14826 (respawning every 10 s) kept the party in combat. Nothing of the row's own was engaged any more, yet the
+// run held the step to the 180 s ceiling and paused 14 min later with 20 dead. Once the row's own units are dead
+// and only unrelated units still fight, the step ends: those are the bots' own combat's, not the step's.
+static void TestClearedPullEndsWhileUnrelatedUnitsFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    // The row's own pack comes in: the fight is the step's, as before.
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 0 && r.state == State::Running);
+    // The pack dies; the pit's respawns take the party. The glue's lookup proves the row's own unit dead (its
+    // absence from the reads alone proves nothing), and the ceiling's timer is over the cap: the step is not held.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 1 && r.note == "pack cleared");
+    // The next row is a walk: it goes on while the respawns still fight (the fight's own units are remembered).
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
+}
+
+// The row's own unit still engaged: today's rules, the 180 s ceiling included, bound the fight.
+static void TestOwnPullAliveKeepsTheFightCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8), Unit(0x900, 14826, 10)};
+    r.fighting = true;
+    Tick(r, f);
+    CHECK(r.state == State::Running && r.step == 0);
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// Nothing of the row's own was ever engaged (a patrol met on the way holds the pull): today's ceiling.
+static void TestFightWithoutOwnUnitsKeepsTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x900, 11373, 10)}; // another pack's patrol, none of the row's units
+    r.fighting = true;
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A later pull row's unit engaged holds the step too: the fight is not only the trash's.
+static void TestLaterRowsUnitKeepsItsFight()
+{
+    DungeonPlan plan;
+    PlanStep own = PullStep(10, {14825});
+    own.radius = 8.0f;
+    PlanStep later = PullStep(50, {14826});
+    later.radius = 8.0f;
+    plan.steps = {own, later, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The row's own pack dies; a later row's unit takes the party: still the run's fight.
+    f.units.clear();
+    UnitFact ahead = Unit(0x900, 14826, 10);
+    ahead.x = 50.0f; // by the later row's own point: its unit
+    f.engagedUnits = {ahead};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 0);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A wipe keeps today's fight rules: the fight over unrelated units still runs its ceiling, and the regroup follows.
+static void TestWipeOverUnrelatedUnitsKeepsTheRegroup()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The row's pack dies, the pit's respawns fight on, and the party is at the wipe level: the regroup, not the step.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.dead = kWipeDead;
+    f.alive = 2;
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.regroup);
+    CHECK(r.note.find("dead and the fight went past 180 s") != std::string::npos);
+}
+
+// A later pull row met while the unrelated fight is still on keeps today's rules: the run never sends another pull
+// from inside a fight (the fight block holds it, its own ceiling included).
+static void TestNewPullIsNotBypassedByTheEarlierFight()
+{
+    DungeonPlan plan;
+    PlanStep first = PullStep(10, {14825});
+    first.radius = 6.0f;
+    PlanStep next = PullStep(50, {14826});
+    next.radius = 6.0f;
+    plan.steps = {first, Step(PlanStepKind::Move, 20), next, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    // The first row's own pack comes in and dies; the pit's respawns fight on and the row clears (past the ceiling:
+    // that is the only point the own-fight step end fires).
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    // The walk goes on (its fight's own units were the cleared row's) ...
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    f.leadX = 20.0f;
+    Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    // ... and the next pull row is no bypass: the fight block takes the step (no pull from inside the fight) and
+    // today's ceiling holds it.
+    f.units = {Unit(0x200, 14826, 20)};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.step == 2 && r.state == State::Running);
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.state == State::Paused && r.step == 2);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The own-fight step end's probes: each of these keeps the fight block's rules (the step ends only once the fight
+// is past the ceiling and the row is cleared).
+//
+// Probe A: a pull row with a second own unit not yet pulled; the first dies while unrelated units fight. The row is
+// not cleared (its other unit still stands), so the fight block keeps the step.
+static void TestNewOwnUnitNotYetPulledDoesNotEndTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    UnitFact b = Unit(0x102, 14825, 45);
+    b.x = 45.0f;
+    b.y = 30.0f;
+    f.units = {a, b};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // `a` dies; `b` still stands, not pulled yet, and unrelated units fight on.
+    f.units = {b};
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    for (int i = 0; i < 8; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+}
+
+// Probe B: the row's own unit is alive but absent from the engaged read and the row's lists (a pull mob dragged out
+// of the row's radius, one evading, a read gap) while unrelated units fight. Its absence is no death: past the
+// ceiling too, the step is not over (the glue's lookup says it is alive).
+static void TestOwnUnitAliveOffTheReadsDoesNotEndTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
+    for (int i = 0; i < 3; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+    // Past the ceiling it still does not go on: the fight ceiling's pause, not the step's end.
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// Probe C: the own pack dies and the combat flag lingers with nothing engaged (a stale flag), or unrelated units
+// fight, while the party is low: the step is not ended before the ceiling, and the rest after the fight is the same
+// as on the base (the walk does not start with the healer at 10 %).
+static void TestOwnFightHoldsAndTheRestRunsAfterIt(bool stale)
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    f.minHealerManaPct = 10;
+    f.minHealthPct = 30;
+    if (stale)
+    {
+        f.engagedUnits.clear();
+        f.staleCombat = true;
+    }
+    else
+        f.engagedUnits = {Unit(0x900, 14826, 10)};
+    for (int i = 0; i < 4; ++i)
+    {
+        CHECK(Tick(r, f).empty());
+        CHECK(r.step == 0 && r.state == State::Running && r.fighting);
+    }
+    // The combat drops: the fight ends as on the base and the party rests before the walk.
+    f.anyInCombat = false;
+    f.staleCombat = false;
+    f.engagedUnits.clear();
+    CHECK(Tick(r, f) == "rest");
+    CHECK(r.phase == Phase::Rest && r.step == 0);
+}
+
+// The cleared pull past the ceiling still rests before the next walk when the party needs it (the 14-minute stall
+// left the healer at 10 %): the step end does not skip the post-fight rest.
+static void TestClearedPullPastTheCeilingStillRests()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {Unit(0x101, 14825, 8)};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    f.minHealerManaPct = 10;
+    f.minHealthPct = 30;
+    r.fightMs = kFightCapMs + 5000;
+    CHECK(Tick(r, f) == "rest");
+    CHECK(r.phase == Phase::Rest && r.step == 0);
+}
+
+// Past the ceiling, the row's own end rule must still call it cleared: an own unit of the row still standing (not
+// pulled yet) is no cleared row, whatever the engaged read says.
+static void TestOwnUnitNotYetPulledKeepsTheStepPastTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    UnitFact b = Unit(0x102, 14825, 45);
+    b.x = 45.0f;
+    b.y = 30.0f;
+    f.units = {a, b};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units = {b};
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The same past the ceiling for a read gap: the own unit still stands (the row's lists hold it) though the engaged
+// read lost it for a tick.
+static void TestOwnUnitReadGapKeepsTheStepPastTheCeiling()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// A unit the run itself holds (a cc mark) stands in the fight though it drops out of the engaged read: the row is
+// no cleared one while the hold lasts.
+static void TestHeldOwnUnitKeepsTheFight()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    // The pack's last unit is held: the engaged read has only the pit's respawns, the run's own hold has it, and
+    // the glue's lookup finds it alive.
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ccHeldRead = true;
+    f.ccHeld = {a};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Alive}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// The fight's start (the opening's marks, the linked_death group, its clock) is the combat's, not the row's: the
+// own-fight step end leaves the combat on, and the next row's re-entry does not start the same fight over.
+static void TestMidFightReEntryKeepsTheFightStart()
+{
+    DungeonPlan plan;
+    PlanStep first = PullStep(10, {14825});
+    PlanStep later = PullStep(50, {14826});
+    later.radius = 8.0f;
+    plan.steps = {first, Step(PlanStepKind::Move, 20), later, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    CHECK(Tick(r, f).empty()); // the fight starts: its setup runs once
+    CHECK(r.fighting);
+    r.ccOpenSent.insert(0x777);
+    r.ccOpenPrepull.insert(0x777);
+    // The own pack dies and the step ends past the ceiling; the same combat goes on on the walk row.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    // A later row's unit takes the party on the walk: the fight block re-enters mid-fight.
+    r.fightMs = 5000;
+    UnitFact ahead = Unit(0x901, 14826, 10);
+    ahead.x = 50.0f; // by the later row's own point: its unit
+    f.engagedUnits = {ahead};
+    f.ownFightUnits = {{0x901, OwnUnitState::Alive}};
+    CHECK(Tick(r, f).empty());
+    CHECK(r.fighting);
+    CHECK(r.ccOpenSent.count(0x777) == 1);
+    CHECK(r.ccOpenPrepull.count(0x777) == 1);
+    CHECK(r.fightMs == 5000 + kTickMs);
+}
+
+// The same fight, no lookup: a guid the glue could not resolve is unknown, and unknown never counts as gone (an own
+// unit absent from every read alone proves nothing).
+static void TestUnreadOwnUnitNeverCountsAsGone()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(50, {14825}), Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 20);
+    a.x = 20.0f;
+    f.units = {a};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 0 && r.state == State::Paused);
+    CHECK(r.note.find("a fight lasted more than 180 s") != std::string::npos);
+}
+
+// ZG walk 36 d4: Jin'do 11380 died at his spot while the pit's Sacrificed Trolls 14826 (respawning every 10 s)
+// kept the party in the combat. The pull before his row had engaged him, so the boss row's own read never saw him
+// engaged and the own-fight end never named the row; the run sat in the fight for an hour. His corpse is positive
+// evidence: the row ends though the trolls fight on, and the next row goes on with them.
+static void TestBossDownEndsTheRowThoughTrollsKeepFighting()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss, 30);
+    boss.entry = 11380;
+    ai::NormalizePlanStep(boss);
+    plan.steps = {PullStep(10, {14825}), Step(PlanStepKind::Move, 20), boss, Step(PlanStepKind::Move, 60)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    UnitFact a = Unit(0x101, 14825, 8);
+    a.x = 8.0f;
+    f.units = {Unit(0x101, 14825, 20)};
+    std::string order;
+    for (int i = 0; i < 10 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "pullback 257");
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {a};
+    r.fighting = true;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.ownFightStep == 0);
+    // The pull row clears; the respawns take the party and the same combat goes on onto the boss row.
+    f.units.clear();
+    f.engagedUnits = {Unit(0x900, 14826, 10)};
+    f.ownFightRead = true;
+    f.ownFightUnits = {{0x101, OwnUnitState::Dead}};
+    r.fightMs = kFightCapMs + 5000;
+    Tick(r, f);
+    CHECK(r.step == 1 && r.state == State::Running);
+    CHECK(Tick(r, f) == "move 20.0 0.0 0.0");
+    f.leadX = 20.0f;
+    Tick(r, f);
+    CHECK(r.step == 2 && r.state == State::Running);
+    // Jin'do is dead (his corpse at his own spawn) and the trolls fight on: the row ends on his death alone.
+    f.bossOwnDead = true;
+    f.bossOwnDeadEntry = 11380;
+    Tick(r, f);
+    CHECK(r.step == 3 && r.state == State::Running);
+    CHECK(r.note.find("boss down") != std::string::npos);
+    // The combat goes on onto the walk row: the trolls no longer hold the run's next step.
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
 }
 
 static void TestHealerGuardSkipsCcHolders()
@@ -34162,8 +35047,212 @@ static void TestHakkarBerserkAndSiphonNotes()
     CHECK(r.note.find("Hakkar siphon 2: 19 dosed, 1 not") != std::string::npos);
 }
 
+// --- Dry walk (AiPlayerbot.DungeonRunDryWalk) ---
+
+// ZG run 35 f3 / run 36 c3-r2: the lead bot's core path to the firing-stand hop crossed the
+// pool (samples past x=-11775 are wet), so the hop landed in the water and the 0x81 swim
+// chord held the lead there. The path reads the swim after the dry start; a walk on it
+// takes a dry leg first.
+static void TestZgC3HopDipsIntoThePool()
+{
+    std::vector<PathPoint> path = {{-11810, -1250, 96}, {-11790, -1250, 100}, {-11770, -1250, 104},
+        {-11750.1f, -1249.6f, 107.6f}};
+    auto wet = [](float x, float, float) { return x >= -11775.0f && x <= -11745.0f; };
+    CHECK(PathSwimsAfterLeaving(path, wet) == 20); // the first 2 yd sample at or past x=-11775
+    CHECK(PathSwimsAfterLeaving(std::vector<PathPoint>{{0, 0, 0}}, wet) == -1);
+
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, -11750.1f, -1249.6f, 107.6f)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(-11810);
+    f.leadY = -1250;
+    f.leadZ = 96;
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move -11750.1 -1249.6 107.6");
+    CHECK(r.phase == Phase::Walk);
+    CHECK(DryWalkWanted(r, f, walk));
+    CHECK(!DryWalkWanted(r, f, MoveOrder(-11750.1f, -1249.6f, 107.6f, true)));
+    CHECK(DryLegTaken(r, f, -11780, -1250, 99));
+    CHECK(r.legOn && r.walkDryLegs == 1 && !r.walkLegs);
+    CHECK(r.note == "the way to -11750.1 -1249.6 107.6 swims through deep water: walking a dry leg first, "
+        "to -11780.0 -1250.0 99.0 (dry leg 1)");
+}
+
+// A lead bot in its own pool heading for the shore: the leading wet samples are exempt, so the path is
+// dry; the first wet sample after a dry one is still found.
+static void TestLeadInPoolHeadingAshoreIsNotWet()
+{
+    auto wet = [](float x, float, float) { return x < 6.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {20, 0, 0}}, wet) == -1);
+    auto wetAgain = [](float x, float, float) { return x < 6.0f || x > 14.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {20, 0, 0}}, wetAgain) == 8); // x=16, the first sample wet again
+}
+
+// Two dry corners 30 yd apart with a wet middle: the path swims, and the samples between the corners find it.
+static void TestWetBetweenTwoDryCorners()
+{
+    auto wet = [](float x, float, float) { return x > 12.0f && x < 18.0f; };
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {30, 0, 0}}, wet) == 7); // x=14
+}
+
+// Wading never counts: every sample dry is no swim, however deep the water polygon's neighbours are.
+static void TestWadingIsNotSwimming()
+{
+    CHECK(PathSwimsAfterLeaving({{0, 0, 0}, {30, 0, 0}}, [](float, float, float) { return false; }) == -1);
+}
+
+static void TestDryPathUsable()
+{
+    CHECK(DryPathUsable(true, 300, 100, 100)); // exactly 3x
+    CHECK(!DryPathUsable(true, 310, 100, 100)); // 3.1x
+    CHECK(!DryPathUsable(false, 100, 100, 100)); // does not reach
+    CHECK(DryPathUsable(true, 9, 0, 0)); // the kArriveYd floor when both ways are tiny
+    CHECK(!DryPathUsable(true, 9.1f, 0, 0));
+}
+
+static void TestDryWalkWanted()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 60), Step(PlanStepKind::Move, 80)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move 60.0 0.0 0.0" && r.phase == Phase::Walk);
+    CHECK(!DryWalkWanted(r, f, walk)); // the key off
+    f.dryWalk = true;
+    CHECK(DryWalkWanted(r, f, walk));
+    CHECK(!DryWalkWanted(r, f, MoveOrder(60, 0, 0, true))); // a direct move
+    CHECK(!DryWalkWanted(r, f, MoveOrder(f.leadX, f.leadY, f.leadZ, false))); // a gather to the lead's own spot
+    r.walkDryLegs = kMaxDryLegs;
+    CHECK(!DryWalkWanted(r, f, walk));
+    r.walkDryLegs = 0;
+    r.phase = Phase::Gather;
+    CHECK(!DryWalkWanted(r, f, walk));
+}
+
+// A long dry way: the 40 and 20 yd points are wet, the 10 yd point is dry, so the leg shrinks; a
+// 5 yd way keeps its first corner though it is under kDryLegMinYd.
+static void TestDryLegPickShrinks()
+{
+    std::vector<PathPoint> dry = {{0, 0, 0}, {100, 0, 0}};
+    PathPoint out;
+    int calls = 0;
+    CHECK(DryLegPick(dry, [&calls](const PathPoint& p) { ++calls; return p.x >= 11.0f; }, out));
+    CHECK(out.x == 10.0f && calls == 3);
+    CHECK(!DryLegPick(dry, [](const PathPoint&) { return true; }, out));
+    std::vector<PathPoint> shortDry = {{0, 0, 0}, {5, 0, 0}};
+    CHECK(DryLegPick(shortDry, [](const PathPoint&) { return false; }, out) && out.x == 5.0f);
+}
+
+// The intercept's whole rule: a dry way whose 20 yd candidate has a dry core way gives the leg, a candidate
+// whose own way swims is not taken, and a leg this walk already sent is not sent again.
+static void TestDryWalkOrderIssuesTheDryLeg()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 100)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    std::vector<PathPoint> dry = {{0, 0, 0}, {100, 0, 0}};
+    PathPoint leg;
+    CHECK(DryWalkOrder(r, f, walk, dry, [](const PathPoint& p) { return p.x >= 40.0f; }, leg) && leg.x == 20.0f);
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint&) { return true; }, leg));
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint& p) { return p.x >= 40.0f; }, leg));
+    f.dryWalk = false;
+    CHECK(!DryWalkOrder(r, f, walk, dry, [](const PathPoint&) { return false; }, leg));
+}
+
+// A target point in deep water is an intended swim: the core's straight swim chord (0x81) is not a fallback
+// there, so a straggler pull into a pool keeps today's way. Only a dry target's chord is refused.
+static void TestDryChordKeepsIntendedSwims()
+{
+    CHECK(!DryChordFallback(false, true, false)); // key off: the chord as before
+    CHECK(!DryChordFallback(true, true, false));  // a target in deep water: the swim keeps the chord
+    CHECK(DryChordFallback(true, true, true));    // a dry target: the chord is no way
+    CHECK(!DryChordFallback(true, false, true));  // no swim chord at all
+}
+
+// A wet firing-stand candidate is refused only while the pack it shoots at stands on dry ground: a pack in
+// deep water keeps a stand in that water.
+static void TestWetStandOnlyForADryPack()
+{
+    CHECK(!WetStandRefused(false, true, true));  // key off
+    CHECK(WetStandRefused(true, true, true));    // a pack on dry ground: its wet stand is refused
+    CHECK(!WetStandRefused(true, false, true));  // a pack in deep water: its wet stand stays allowed
+    CHECK(!WetStandRefused(true, true, false));  // a dry candidate
+}
+
+// At the dry leg's end the walk sends its own point again (the existing leg rule), and the walk on is
+// intercepted once more by the glue.
+static void TestDryLegWalkedResendsTheWalk()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    std::string const walk = Tick(r, f);
+    CHECK(walk == "move 50.0 0.0 0.0");
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    f.leadX = 20;
+    CHECK(Tick(r, f) == walk && !r.legOn);
+    CHECK(r.note.find("the leg 20.0 0.0 0.0 walked: on to 50.0 0.0 0.0") == 0);
+}
+
+static void TestFreshWalkResetsDryLegs()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 50), Step(PlanStepKind::Move, 70)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.dryWalk = true;
+    CHECK(Tick(r, f) == "move 50.0 0.0 0.0");
+    CHECK(DryLegTaken(r, f, 20, 0, 0));
+    f.leadX = 50;
+    Tick(r, f);
+    CHECK(r.step == 1);
+    CHECK(Tick(r, f) == "move 70.0 0.0 0.0" && r.walkDryLegs == 0 && !r.legOn);
+}
+
+// The StartLeg refactor leaves the too-far leg's count and note byte for byte the same.
+static void TestTooFarLegNoteIsUnchanged()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 200)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    std::string const move = Tick(r, f);
+    CHECK(move == "move 200.0 0.0 0.0");
+    CHECK(TooFarLegTaken(r, f, 120, 0, 0, true, ""));
+    CHECK(r.note == "the move to 200.0 0.0 0.0 is beyond the lead bot's reach: walking a leg of the way first, "
+        "to 120.0 0.0 0.0 (leg 1)");
+    CHECK(r.walkLegs == 1 && r.walkDryLegs == 0 && r.legOn);
+}
+
 int main()
 {
+    TestZgC3HopDipsIntoThePool();
+    TestLeadInPoolHeadingAshoreIsNotWet();
+    TestWetBetweenTwoDryCorners();
+    TestWadingIsNotSwimming();
+    TestDryPathUsable();
+    TestDryWalkWanted();
+    TestDryLegPickShrinks();
+    TestDryWalkOrderIssuesTheDryLeg();
+    TestDryChordKeepsIntendedSwims();
+    TestWetStandOnlyForADryPack();
+    TestDryLegWalkedResendsTheWalk();
+    TestFreshWalkResetsDryLegs();
+    TestTooFarLegNoteIsUnchanged();
     TestPullGateHoldsHakkarWithPriestAlive();
     TestPullGateIgnoresOtherUnits();
     TestPullGateHoldsOrdersOnTheGuardPath();
@@ -34198,10 +35287,31 @@ int main()
     TestPrePullMarksCastWhenThePackOpens();
     TestAWalkInFightSendsItsFirstOrdersAtOnce();
     TestAutoCcCountsTheLeadBotsAttackers();
+    TestAutoCcSkipsFastRespawnUnits();
+    TestRespawnQuickBoundary();
+    TestAutoCcSkipsFastRespawnUnitsBeforeThePull();
+    TestAutoCcTemporarySummonWithALifetimeStillCounts();
     TestAutoCcReappliesTwiceThenStops();
     TestTheCcReSendsSkipAHeldBot();
     TestAutoCcBudget();
     TestCcOnlyFightIsBrokenOneAtATime();
+    TestClearedPullEndsWhileUnrelatedUnitsFight();
+    TestOwnPullAliveKeepsTheFightCeiling();
+    TestFightWithoutOwnUnitsKeepsTheCeiling();
+    TestLaterRowsUnitKeepsItsFight();
+    TestWipeOverUnrelatedUnitsKeepsTheRegroup();
+    TestNewPullIsNotBypassedByTheEarlierFight();
+    TestNewOwnUnitNotYetPulledDoesNotEndTheFight();
+    TestOwnUnitAliveOffTheReadsDoesNotEndTheFight();
+    TestUnreadOwnUnitNeverCountsAsGone();
+    TestOwnFightHoldsAndTheRestRunsAfterIt(true);
+    TestOwnFightHoldsAndTheRestRunsAfterIt(false);
+    TestClearedPullPastTheCeilingStillRests();
+    TestOwnUnitNotYetPulledKeepsTheStepPastTheCeiling();
+    TestOwnUnitReadGapKeepsTheStepPastTheCeiling();
+    TestHeldOwnUnitKeepsTheFight();
+    TestMidFightReEntryKeepsTheFightStart();
+    TestBossDownEndsTheRowThoughTrollsKeepFighting();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
     TestRunCcFamilyTableKeyOffOrder();
@@ -34923,6 +36033,14 @@ int main()
     TestTotemFocusKeyOffJoinsAll();
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
+    TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
+    TestTotemFocusFiresBeforeTheAutoCcTick();
+    TestTotemFocusLeavesTheSkullOnTheBoss();
+    TestTotemFocusMayInterrupt();
+    TestTotemFocusYieldsToTheRetreat();
+    TestStaleFocusSkullComesOffWhenTheFightEnds();
+    TestKillFirstGridReadsOwner();
+    TestKillFirstLogLine();
     TestGuardSkipsTotemWithKey();
     TestGuardSkipsTotemInDungeon();
     TestGuardSkipsAuraGatedShade();

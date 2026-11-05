@@ -420,6 +420,7 @@ namespace ai
                 creators["divine favor"] = [](PlayerbotAI* ai) { return new CastDivineFavorAction(ai); };
                 creators["turn undead"] = [](PlayerbotAI* ai) { return new CastTurnUndeadAction(ai); };
                 creators["blessing of protection on party"] = [](PlayerbotAI* ai) { return new CastBlessingOfProtectionOnPartyAction(ai); };
+                creators["blessing of freedom on tank"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomOnTankAction(ai); };
                 creators["blessing of freedom on party"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomOnPartyAction(ai); };
                 creators["repentance"] = [](PlayerbotAI* ai) { return new CastRepentanceAction(ai); };
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new CastRepentanceSnareAction(ai); };

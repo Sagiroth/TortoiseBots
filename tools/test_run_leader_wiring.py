@@ -32,7 +32,7 @@ def body(text, start, end):
 class RunLeaderWiringTest(unittest.TestCase):
     def test_refusal_reports_the_order_as_sent(self):
         self.assertIn("order = TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);", COMMANDS)
-        self.assertIn("bool const accepted = IssueRunOrder(commander, order, answer,\n"
+        self.assertIn("bool accepted = IssueRunOrder(commander, order, answer,\n"
                       "            TortoiseBots::DungeonRun::IsGatherOrder(it->second.run, order), &captured);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer", COMMANDS)
 
@@ -283,12 +283,19 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;", guard)
         self.assertIn("fact.level = attacker->GetLevel();", guard)
 
-        # Kill-first units come from the bots' cached attackers lists: no grid or world scan (AGENTS.md).
+        # Kill-first units come from the bots' cached attackers lists. The only scan is the totem key's bounded grid
+        # read around an engaged boss (a wild-summoned Brain Wash Totem is in no attackers list): one visit per boss,
+        # filtered by a hash set of the plan's entries, never a visit per entry.
         self.assertIn("ReadKillFirst(*slot.run.plan, lead, bots, f);", facts)
         kill = body(COMMANDS, "void ReadKillFirst(", "\n}\n")
         self.assertIn('ReadCachedGuidList(PlayerbotAIStorage::Instance().GetAI(bot), "attackers", guids);', kill)
-        for scan in ("GetCreatureListWithEntryInGrid", "Cell::Visit", "VisitAllObjects", "HostileCreaturesAround"):
+        for scan in ("GetCreatureListWithEntryInGrid", "VisitAllObjects", "HostileCreaturesAround"):
             self.assertNotIn(scan, kill)
+        self.assertEqual(kill.count("Cell::VisitGridObjects("), 1)
+        self.assertIn("Cell::VisitGridObjects(boss, searcher, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false)",
+            kill)
+        self.assertIn("MaNGOS::CreatureListSearcher<KillFirstTotemCheck> searcher(found, check);", kill)
+        self.assertIn("TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),", kill)
         # The creatures channelling an aura at an engaged attacker (Hailar's Ritualists, r19-19z37) are
         # read off that attacker's own aura holders, inside the engaged block, and flagged for the policy.
         # Checked on the code with its // comments stripped, so a commented-out line does not pass.
@@ -934,7 +941,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("map->isInLineOfSight(point.x, point.y, point.z + leadHeight, goal.x, goal.y, goal.z + unitHeight, true)",
                       stand)
         self.assertIn("ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,", stand)
-        self.assertIn("blocked, clearance ? kStandClearCandidates : 1, clearance ? &best : nullptr);", stand)
+        self.assertIn("blocked, clearance || f.dryWalk ? kStandClearCandidates : 1, clearance ? &best : nullptr);", stand)
         self.assertIn("f.shotStandGuid = guid;", stand)
         # The policy: PullUnit's pullback passes through the gate first; HoldForShot is off without the key or a range.
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
@@ -1018,7 +1025,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers,", read)
         self.assertIn("[&seesOther, &candidate](StandOther const& other) { return seesOther(candidate, other); }) &&", read)
         self.assertIn("StandAbovePackReach(candidate.x, candidate.y, candidate.z, f.standPackReach));", read)
-        self.assertIn("blocked, clearance ? kStandClearCandidates : 1, clearance ? &best : nullptr);", read)
+        self.assertIn("blocked, clearance || f.dryWalk ? kStandClearCandidates : 1, clearance ? &best : nullptr);", read)
         self.assertIn("f.shotStandBlocked = clearance && blocked;", read)
         # The reach's own stand and the pack that refuses it: the hold names it.
         self.assertIn("float const packReach = StandPackReachYd(f.standPackReach);", read)
@@ -1538,8 +1545,8 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         # to OrderRefused (a stand asked by a refusal is answered on the next sync): pin that order.
         tick = body(strip_comments(COMMANDS), "void TickDungeonRun(uint64 commanderRaw, uint32 dt)", "\n}\n")
         self.assertLess(tick.index("TortoiseBots::DungeonRun::ApproachStandFound(slot.run, *told, found, sx, sy, sz);"),
-                        tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
-        self.assertLess(tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"),
+                        tick.index("bool accepted = IssueRunOrder(commander, order, answer,"))
+        self.assertLess(tick.index("bool accepted = IssueRunOrder(commander, order, answer,"),
                         tick.index("TortoiseBots::DungeonRun::OrderRefused(it->second.run, order, answer + legNote +"))
 
     def test_a_stand_search_that_finds_none_carries_the_lead_way(self):
@@ -1878,7 +1885,7 @@ class RunTestSpeedWiringTest(unittest.TestCase):
         self.assertLess(tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"),
                         tick.index("TortoiseBots::DungeonRun::SpeedRateNow(slot.run, facts, dt);"))
         self.assertLess(tick.index("ApplyRunSpeed(commanderRaw, lead, bots, speedRate);"),
-                        tick.index("bool const accepted = IssueRunOrder(commander, order, answer,"))
+                        tick.index("bool accepted = IssueRunOrder(commander, order, answer,"))
         # Round 1: the tick that advances onto a pull or boss step never starts fast (f.seen was read on the
         # step before). The cap sits between the rate read and the apply, before the order goes out.
         self.assertLess(tick.index("stepBeforeTick"), tick.index("TortoiseBots::DungeonRun::Tick(slot.run, facts, dt);"))
@@ -2105,11 +2112,11 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertIn("return CommanderFocus(handler, order, target, intent, s_runIssuing);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
                       "                totemTarget, totemFocus)", COMMANDS)
-        # The focus order hands the tick to the totem before the guard can spend it.
+        # The focus order hands the tick to the totem before the guard (and now before every other order) can spend it.
         policy = strip_comments(self.POLICY)
-        totem = policy.index("if (f.totemFocus)")
+        totem = policy.index("if (f.totemFocus && !r.retreatOn)")
         self.assertLess(totem, policy.index("if (CheckGuard(r, f, dt, order))", totem))
-        self.assertIn("return IssueKillFirstFocus(r, *totem);", policy)
+        self.assertIn("return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));", policy)
 
     def test_the_guard_leaves_only_plan_kill_first_totems_to_the_focus(self):
         skip = body(strip_comments(self.POLICY), "inline bool GuardSkipsUnit(", "\n}\n")
