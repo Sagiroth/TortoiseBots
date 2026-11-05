@@ -128,6 +128,15 @@ bool BotInCapital(Player* bot)
     return IsInCapital(bot->GetZoneId(), alliance);
 }
 
+bool BotBusyForMeet(Player* bot)
+{
+    if (!bot || !bot->IsInWorld())
+        return true;
+    if (InInstance(bot))
+        return true;
+    return InGroupWithRealPlayer(bot);
+}
+
 TeleportWait WaitReason(Player* bot)
 {
     if (!bot || !bot->GetSession() || !bot->GetSession()->IsHeadless() || !bot->IsInWorld())

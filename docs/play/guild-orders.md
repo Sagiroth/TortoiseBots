@@ -208,6 +208,10 @@ Press Meet (addon button or `.bot order <BotName> meet`) once your enchant order
 - An unfinished enchant order blocks other givers: a new order on that bot is refused `busy` ("<Bot> is busy with an enchant order for <Giver>."). The giver may always replace their own order, and the guild master (or a rank that may remove members) may replace anyone's. Other order types keep the old rule: a new order replaces the old one.
 - The request is not stored across a restart: press Meet again after the server restarts.
 
+## How an enchant order runs
+
+Once your enchant order is ready, the bot waits in the capital until you press Meet standing in Stormwind (Alliance) or Orgrimmar (Horde). It teleports back to the capital inn if it left, walks to you, and opens the trade itself; a trade you open first works the same. When materials are still missing it takes them first in a materials trade (anything else is refused), then opens the enchant trade: it casts the enchant on your item in the "Will not be traded" slot and you accept to finish. A trade left alone for about 2 minutes is retried, up to 3 tries, then the bot waits for Meet again. If the item already carries an enchant it asks whether to replace it: whisper "yes" to go on, anything else cancels and keeps the materials. Cancelling in any state closes the trade first and banks the gathered materials; a restart sends a bot caught mid-meeting back to ready. Waiting for you counts toward neither the order's hours nor its no-progress limit.
+
 ## Known limitations
 
 - A bot that cannot reach the guild banker shops or asks other bots for items that are already in the guild bank, instead of waiting or walking there.

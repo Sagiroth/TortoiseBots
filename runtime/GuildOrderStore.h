@@ -74,6 +74,22 @@ struct MeetRequest
 void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow);
 std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow);
 void ClearMeet(uint32_t botGuidLow);
+// Enchant-order trade window (memory only, a restart drops it): the lead
+// tracks the current window and the replace question through these. Counted
+// windows opened this Enchanting leg (1 for the first), or 0 when none was
+// tracked yet.
+struct EnchantTradeSession
+{
+    uint32_t openedMs = 0;
+    uint32_t tries = 0;
+    uint32_t replaceAskedMs = 0;
+    bool replaceConfirmed = false;
+};
+EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow);
+void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs);
+void NoteEnchantTradeClosed(uint32_t botGuidLow);
+void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs);
+void NoteEnchantReplaceConfirmed(uint32_t botGuidLow);
 
 // A sub-order was placed or is already running: the giver becomes the
 // parent bot, the row goes live to the root giver. Called from a bot's

@@ -38,6 +38,10 @@ CapitalInn FallbackInn(bool alliance);
 bool BotInCapital(Player* bot);
 TeleportWait WaitReason(Player* bot);
 bool TeleportToCapitalInn(Player* bot);
+// True while the bot is tied up for a Meet visit: in a dungeon, raid or
+// battleground, or grouped with a real player. The meet command and the
+// lifecycle action share it so the refusals cannot drift.
+bool BotBusyForMeet(Player* bot);
 
 } // namespace EnchantCapital
 } // namespace TortoiseBots
