@@ -910,6 +910,9 @@ struct UnitFact
     // is in no combat itself.
     bool auraOnEngaged = false;
     bool victimHealer = false; // its victim is a healer (Facts::partyAttackers, and a hold's units)
+    // Facts::killFirst only: a damage-dealing bot of the party attacks it now (not a tank, not a healer). The held totem
+    // focus is sent again only while nobody does (FocusResendDue).
+    bool dpsOnIt = false;
     // Its entry carries a needs_aura row (BossTacticsPolicy.h): only a carrier of the row's aura may touch it. The
     // guard leaves it alone while Facts::auraGatedTargets is on.
     bool auraGated = false;
@@ -10268,11 +10271,13 @@ inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkul
     return "focus " + std::to_string(k.guid);
 }
 
-// Whether the held kill_first focus is due to be sent again (kTotemRefocusMs): its unit lives (PickKillFirst picked
-// it, so it does) and its order is old enough.
-inline bool FocusResendDue(const Run& r)
+// Whether the held TOTEM focus is due to be sent again (kTotemRefocusMs): the focused unit `k` lives (PickKillFirst
+// picked it), its order is old enough, and no damage dealer attacks it now. Only the totem focus site asks: a focus
+// order cancels the commander's tasks and takes every bot off stay, so a general kill_first focus is never repeated.
+inline bool FocusResendDue(const Run& r, const UnitFact& k)
 {
-    return r.focusGuid != 0 && r.runMs >= r.focusSentMs && r.runMs - r.focusSentMs >= kTotemRefocusMs;
+    return r.focusGuid != 0 && k.guid == r.focusGuid && !k.dpsOnIt && r.runMs >= r.focusSentMs &&
+           r.runMs - r.focusSentMs >= kTotemRefocusMs;
 }
 
 // Whether a kill_first focus moves the skull. Under AiPlayerbot.DungeonRunTotemFocus a totem is the DPS' alone and the
@@ -21561,13 +21566,18 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard its focus waits a whole second more. A totem focus sends the DPS by guid and leaves the skull on the
         // boss (IssueKillFirstFocus, FocusMovesSkull). A retreat in progress keeps the tick: the living walk back first,
         // not one more totem kill.
+        std::uint64_t resendTotem = 0;
         if (f.totemFocus && !r.retreatOn)
         {
             const UnitFact* totem = PickKillFirst(r, f);
             if (totem && totem->creatureType == kCreatureTotem)
             {
-                if (totem->guid != r.focusGuid || FocusResendDue(r))
+                if (totem->guid != r.focusGuid)
                     return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));
+                // The held totem with no damage dealer on it: the order goes out again, but at the end of this branch
+                // (resendTotem), so the tick's other work (the ceilings, the guard) still runs.
+                if (FocusResendDue(r, *totem))
+                    resendTotem = totem->guid;
             }
         }
         // A hold's fights are the event (one wave after the other, no pause
@@ -21769,15 +21779,15 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
         // is focused: skull on it, every bot attacks it. Only when the best one
-        // changes (it died, or a ward came up), and every kTotemRefocusMs while
-        // it lives (FocusResendDue), so a bot that left it after one volley
-        // comes back.
+        // changes (it died, or a ward came up); the one exception is the held
+        // totem with no damage dealer on it, sent again every kTotemRefocusMs
+        // (resendTotem), when the tick has no other order.
         // None left and the focused unit is gone (FocusGone: dead or
         // crowd-controlled): the focus is over, and with it the guard's reason
         // to keep watching (GuardTarget). One still alive (evading, say) keeps it.
         if (const UnitFact* k = PickKillFirst(r, f))
         {
-            if (k->guid != r.focusGuid || FocusResendDue(r))
+            if (k->guid != r.focusGuid || (resendTotem == k->guid && order.empty()))
                 order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))

@@ -9108,6 +9108,17 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
+        // A damage dealer (not a tank, not a healer) of the party attacking it now: the held totem focus is not sent
+        // again while one does (DungeonRun::FocusResendDue).
+        for (Player* bot : bots)
+        {
+            if (bot && bot->IsAlive() && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot) &&
+                bot->GetVictim() == unit)
+            {
+                fact.dpsOnIt = true;
+                break;
+            }
+        }
         f.killFirst.push_back(fact);
     };
     std::list<ObjectGuid> guids;
