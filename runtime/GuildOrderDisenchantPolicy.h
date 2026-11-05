@@ -11,7 +11,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace TortoiseBots
@@ -99,13 +101,64 @@ inline DisenchantVerdict ClassifyDisenchantItem(bool hasEnchanting, bool disench
     return DisenchantVerdict::Ok;
 }
 
-// Result mails: one mail per returned item (the core's one-item cap),
-// bodies name the reason for refused items. `batches` counts the mails.
+// Result mails: every item travels in its own mail (the core's one-item
+// cap), so `batches` counts the mails for a result set.
 inline uint32_t DisenchantResultBatches(uint32_t returnedItems)
 {
     if (returnedItems == 0)
         return 0;
     return (returnedItems + kDisenchantMailMaxItems - 1) / kDisenchantMailMaxItems;
+}
+
+// One disenchant result: the loot that landed per cast, kept with the names
+// for the subject line. Counts are stack counts, not item counts: a cast
+// yields a few dusts plus an essence shard, and one dust stack holds them.
+struct DisenchantServiceResult
+{
+    uint32_t itemId = 0;
+    uint32_t count = 0;
+};
+
+// Landed results and their persisted form (itemId:count pairs, `;` between):
+// malformed pairs are skipped, so a bad row mails nothing instead of
+// mis-mailing the bot's own stock.
+inline std::vector<DisenchantServiceResult> ParseDisenchantResults(std::string const& text)
+{
+    std::vector<DisenchantServiceResult> out;
+    size_t start = 0;
+    while (start < text.size())
+    {
+        size_t end = text.find(';', start);
+        if (end == std::string::npos)
+            end = text.size();
+        std::string pair = text.substr(start, end - start);
+        size_t colon = pair.find(':');
+        if (colon != std::string::npos)
+        {
+            char* e1 = nullptr;
+            char* e2 = nullptr;
+            unsigned long itemId = std::strtoul(pair.substr(0, colon).c_str(), &e1, 10);
+            unsigned long count = std::strtoul(pair.substr(colon + 1).c_str(), &e2, 10);
+            if (e1 && !*e1 && e2 && !*e2 && itemId && count)
+                out.push_back({static_cast<uint32_t>(itemId), static_cast<uint32_t>(count)});
+        }
+        start = end + 1;
+    }
+    return out;
+}
+
+inline std::string FormatDisenchantResults(std::vector<DisenchantServiceResult> const& results)
+{
+    std::string out;
+    for (DisenchantServiceResult const& result : results)
+    {
+        if (!result.itemId || !result.count)
+            continue;
+        if (!out.empty())
+            out += ';';
+        out += std::to_string(result.itemId) + ':' + std::to_string(result.count);
+    }
+    return out;
 }
 
 // The bot only casts when it can finish one: idle, not mounted, not already
@@ -118,16 +171,23 @@ inline bool DisenchantCastReady(bool inCombat, bool moving, bool mounted,
     return hasWork && !inCombat && !moving && !mounted && !casting && !trading;
 }
 
-// Queued service items, keyed by the sender's low guid: the intake appends,
-// the service action drains from the front. A restart empties it; the
-// attachments stay in the bags and the member's mail is gone, so the
-// service action hands them to the maintenance disenchant instead of
-// stranding them.
+// Queued service items for one bot, oldest first: the intake appends, the
+// service action drains from the front and mails the refused item back at
+// once. Successful casts stay queued as pending, with the landed results
+// the loot window gave, until one mailbox visit mails them back. The queue
+// lives in the store (persisted per row), so a restart re-queues instead of
+// stranding the item; the process list only mirrors what the service action
+// works on this session.
 struct DisenchantServiceItem
 {
     uint32_t senderLow = 0; // member the item and its reasons go back to
     uint32_t itemGuidLow = 0;
     uint32_t itemId = 0;
+    std::string itemName;
+    bool pendingResults = false; // cast landed, results wait for the mailbox
+    bool collectLootOpen = false; // cast done, loot window still to collect
+    std::unordered_map<uint32_t, uint32_t> bagBefore; // bag counts before the cast
+    std::vector<DisenchantServiceResult> results;
 };
 
 inline std::vector<DisenchantServiceItem>& DisenchantServiceQueue()
@@ -146,9 +206,9 @@ inline void QueueDisenchantServiceItem(uint32_t senderLow, uint32_t itemGuidLow,
     queued.itemId = itemId;
     DisenchantServiceQueue().push_back(queued);
 }
-
-// True while the item waits for its own service cast: the maintenance
-// disenchant skips it next to the order-stock guard (matches the item id:
+// True while the item waits for its own service cast, or its results wait
+// for the mailbox: the maintenance disenchant skips it, and the usage gate
+// shields the results, next to the order-stock guard (matches the item id:
 // the queued guid is the mail attachment, the live guid the bag stack after
 // the intake move).
 inline bool DisenchantServiceHasItem(uint32_t itemId)
@@ -156,9 +216,23 @@ inline bool DisenchantServiceHasItem(uint32_t itemId)
     if (!itemId)
         return false;
     for (DisenchantServiceItem const& queued : DisenchantServiceQueue())
+    {
         if (queued.itemId == itemId)
             return true;
+        for (DisenchantServiceResult const& result : queued.results)
+            if (result.itemId == itemId)
+                return true;
+    }
     return false;
+}
+
+// Subject for one result mail: names what was disenchanted so the member
+// can match the mail to the item they sent.
+inline std::string DisenchantServiceMailSubject(std::string const& itemName)
+{
+    if (itemName.empty())
+        return "Disenchanted";
+    return "Disenchanted: " + itemName;
 }
 } // namespace GuildOrders
 } // namespace TortoiseBots

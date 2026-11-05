@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Action.h"
 #include "QuestAction.h"
 #include "../../../../runtime/GuildOrderDisenchantPolicy.h"
+#include "../../../../runtime/GuildOrderStore.h"
 
 class MasterPlayer;
 

@@ -202,6 +202,12 @@ void CheckMailAction::QueueDisenchantMail(Mail* mail)
         master->RemoveMItem(infoGuid);
         item->SetState(ITEM_UNCHANGED);
         bot->MoveItemToInventory(dest, item, true);
+        TortoiseBots::GuildOrders::DisenchantQueueEntry entry;
+        entry.botGuidLow = bot->GetGUIDLow();
+        entry.senderGuidLow = senderLow;
+        entry.itemGuidLow = itemGuidLow;
+        entry.itemId = itemId;
+        TortoiseBots::GuildOrders::NoteDisenchantQueued(entry);
         TortoiseBots::GuildOrders::QueueDisenchantServiceItem(senderLow, itemGuidLow, itemId);
         moved = true;
     }

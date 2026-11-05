@@ -312,6 +312,20 @@ struct OrderRecord
     uint64_t updatedAt = 0;
 };
 
+// One queued disenchant service item: which member it goes back to, which
+// disenchanted item it came from, and (once the cast's loot lands) the
+// results the next mailbox visit mails back, one item per mail.
+struct DisenchantQueueEntry
+{
+    uint32_t botGuidLow = 0;
+    uint32_t senderGuidLow = 0;
+    uint32_t itemGuidLow = 0; // live bag guid the intake moved; 0 once the cast consumed it
+    uint32_t itemId = 0;
+    std::string itemName;
+    bool pendingResults = false;
+    std::string results; // itemId:count pairs, `;` between
+};
+
 // Protected item ids for the running order: the order item, the current
 // supply-leg item, and (craft orders) the whole reagent tree through recipes
 // the bot knows. Memory only (never persisted: recomputed from the bot's

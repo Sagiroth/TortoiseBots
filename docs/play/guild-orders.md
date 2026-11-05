@@ -140,9 +140,9 @@ If the bot and other guild bots cannot get one of the materials, that item goes 
 ## Disenchant by mail
 
 Mail items to a guild bot that has Enchanting with the subject `disenchant` and it breaks them down for you, no meeting needed.
-- The bot disenchants what its skill allows and mails the materials back; the rest comes back with a reason (`lowskill` when the item needs more skill, `cannot disenchant` for anything with no disenchant loot, `noskill` from a bot without Enchanting).
+- The bot disenchants what its skill allows, loots the results itself, and mails exactly what that cast made back (`Disenchanted: <item>`); the rest comes back with a reason (`lowskill` when the item needs more skill, `cannot disenchant` for anything with no disenchant loot, `noskill` from a bot without Enchanting).
 - Mail from a guild member without that subject is taken into the bags as usual, never disenchanted.
-- Queued items are never sold, auctioned, equipped or used for anything else while they wait; the bot casts when it can (not in combat, moving or mounted) and mails every item back with no gold taken and nothing of its own added.
+- Queued items and landed results are never sold, auctioned, equipped or used for anything else while they wait; the bot casts when it can (not in combat, moving or mounted), collects at a mailbox, and mails every item back with no gold taken and nothing of its own added. A restart re-queues instead of losing the item.
 
 ## Delivery
 

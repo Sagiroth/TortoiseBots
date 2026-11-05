@@ -69,6 +69,16 @@ int main()
     CHECK(DisenchantServiceHasItem(9));
     CHECK(!DisenchantServiceHasItem(10));
     CHECK(!DisenchantServiceHasItem(0));
+    CHECK(DisenchantServiceMailSubject("Copper Axe") == "Disenchanted: Copper Axe");
+    CHECK(DisenchantServiceMailSubject("") == "Disenchanted");
+    // Results of a landed cast shield from disposal the same way.
+    DisenchantServiceQueue().front().results.push_back({1234, 2});
+    CHECK(DisenchantServiceHasItem(1234));
+    CHECK(DisenchantResultBatches(2) == 2);
+    CHECK(FormatDisenchantResults(DisenchantServiceQueue().front().results) == "1234:2");
+    CHECK(ParseDisenchantResults("1234:2;12:3").size() == 2);
+    CHECK(ParseDisenchantResults("bogus;1234:2").size() == 1);
+    CHECK(ParseDisenchantResults("").empty());
     DisenchantServiceQueue().clear();
 
     if (failures == 0)
