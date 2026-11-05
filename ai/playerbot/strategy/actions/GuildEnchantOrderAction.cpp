@@ -89,15 +89,12 @@ bool GuildEnchantOrderAction::isUseful()
         return false;
     // Working/Waiting rows gather on the ladder; the action only owns the
     // capital teleport while gathering and the Meet walk/trades after Ready.
-    if (order->state == OrderState::Working || order->state == OrderState::Waiting)
-    {
-        if (!EnchantRowNeedsMeetStates(*order))
-            return false;
-        if (TortoiseBots::EnchantCapital::BotBusyForMeet(bot))
-            return false;
-        if (order->state == OrderState::Waiting && order->reason != OrderReason::NeedItems)
-            return false;
-    }
+    if (TortoiseBots::EnchantCapital::BotBusyForMeet(bot))
+        return false;
+    // Gathering only needs the action for the capital teleport.
+    if (order->state == OrderState::Working ||
+        (order->state == OrderState::Waiting && order->reason != OrderReason::NeedItems))
+        return !TortoiseBots::EnchantCapital::BotInCapital(bot);
     return EnchantRowNeedsMeetStates(*order);
 }
 
