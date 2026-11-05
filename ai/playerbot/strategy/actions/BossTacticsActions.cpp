@@ -5124,8 +5124,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     }
     for (const BossTacticRow* row : fight.rows)
     {
-        // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
-        // the scan having no teleport edge or cast slot to offer them.
+        // Only `until_tank` is implemented: `blink` stays accepted by the loader and ignored here. A spell-keyed row
+        // (Jin'do's Banish 24466) triggers on the tank the spell moved out of reach (TauntAfterVictim): the spell is
+        // an instant teleport, so there is no cast slot or aura to read.
         if (row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank)
             continue;
         int const assigned = TauntAfterTankIndex(alive, static_cast<int>(row->priority));
@@ -5142,7 +5143,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;
-            bool victimIsTank = false;
+            bool victimIsTankRole = false;
             if (victimIsPlayer)
             {
                 // A charmed player is hostile and its threat is gone (the charm handler deletes it), so it cannot be
@@ -5150,10 +5151,16 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 Player* const player = static_cast<Player*>(victim);
                 ObjectGuid const charmer = player->GetCharmerGuid();
                 bool const charmed = !charmer.IsEmpty() && !charmer.IsPlayer();
-                victimIsTank = !charmed &&
+                victimIsTankRole = !charmed &&
                     std::find(roles.tanks.begin(), roles.tanks.end(), player) != roles.tanks.end();
             }
-            bool const onNonTank = victimIsPlayer && !victimIsTank;
+            // A spell-keyed row (Jin'do's Banish 24466) reads the victim's distance too: the spell is an instant
+            // teleport, so a tank it moved out of reach no longer holds the subject (TauntAfterVictim).
+            float const victimYd = victim && victim != unit ? unit->GetDistance(victim) : 0.0f;
+            TauntAfterVictimRead const victimRead =
+                TauntAfterVictim(victimIsPlayer, victimIsTankRole, row->spellId != 0, victimYd);
+            bool const onNonTank = victimRead.onNonTank;
+            bool const victimIsTank = victimRead.victimIsTank;
             bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];
             TauntAfterEpisode episode;
             bool close = false;

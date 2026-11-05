@@ -617,8 +617,8 @@ namespace ai
     // A taunt_after_cast row (mode until_tank) whose subject stopped being on a tank, for the one bot the row's raid
     // order names (`priority`, the first alive at or after it): `valid` is true only while that bot is the one asking
     // and the deadline the rising edge opened has not run out. `sinceMs` is how long ago it opened, `deadlineMs` the
-    // row's param. blink and the spell triggers stay unimplemented: the loader accepts those rows, this scan ignores
-    // them.
+    // row's param. blink stays unimplemented: the loader accepts those rows, this scan ignores them. A spell-keyed
+    // row (Jin'do's Banish 24466) opens on the tank its spell moved out of reach (TauntAfterVictim).
     struct BossTauntAfter
     {
         bool valid = false;

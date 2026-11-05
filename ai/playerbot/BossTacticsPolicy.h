@@ -2036,6 +2036,33 @@ namespace ai
         TauntEpisodeStep step = TauntEpisodeStep::None;
     };
 
+    // taunt_after_cast, a row with a spell id (Jin'do's Banish 24466): the spell is an instant teleport with no aura
+    // and no cast slot to read, so the row's trigger is the victim's displacement. A tank farther than this from its
+    // subject is not holding it: Banish drops a player in the ZG pit 47 yd west of Jin'do's stand, and he follows it
+    // to the rim. A bot walks about 2 yd/s in a fight, so a holding tank never drifts this far; one that walks back
+    // by itself comes inside it again and the episode closes as regained.
+    constexpr float kTauntTeleportYd = 20.0f;
+
+    // One read of the taunt_after_cast victim, as the episode inputs want it: `onNonTank` opens (and holds) the
+    // episode, `victimIsTank` closes it when a tank has the subject back. A player that is no tank (a charm, or Hex
+    // wiping the tank's threat and leaving him on a non-tank) is the spell-less rows' trigger; a spell-keyed row
+    // adds the tank its spell moved out of reach (victimIsTankRole is the raid order's answer for the player).
+    struct TauntAfterVictimRead
+    {
+        bool onNonTank = false;
+        bool victimIsTank = false;
+    };
+
+    inline TauntAfterVictimRead TauntAfterVictim(bool victimIsPlayer, bool victimIsTankRole, bool spellKeyed,
+        float ydFromSubject)
+    {
+        TauntAfterVictimRead out;
+        bool const movedAway = spellKeyed && victimIsPlayer && victimIsTankRole && ydFromSubject > kTauntTeleportYd;
+        out.victimIsTank = victimIsPlayer && victimIsTankRole && !movedAway;
+        out.onNonTank = (victimIsPlayer && !victimIsTankRole) || movedAway;
+        return out;
+    }
+
     // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
     // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
     // and one between victims (a pet, a transition) keeps its deadline. `tauntable` is false for a subject the core

@@ -2345,6 +2345,42 @@ int main()
         CHECK(WidestSpreadYd({}, 10.0f) == 10.0f);
     }
 
+    // TestTauntAfterCastFiresOnTankBanish: Jin'do's Banish 24466 teleports a random player, the tank included, onto
+    // the pit's trolls 47 yd west of his stand. The tank stays his victim, so the spell-less until_tank row never
+    // fires (a victim that is still a tank is "not lost"); a row keyed to 24466 reads the displacement instead. The
+    // spell is an instant teleport with no aura and no cast slot to read, so the victim's distance is the only
+    // signal TauntAfterVictim has.
+    {
+        // The spell-less row (spell 0) on a tank 47 yd away: the bug, no episode (today's rule).
+        TauntAfterVictimRead const stillTank = TauntAfterVictim(true, true, false, 47.0f);
+        CHECK(!stillTank.onNonTank && stillTank.victimIsTank);
+        // The keyed row on the same banished tank: the episode opens and stays due until the deadline.
+        TauntAfterVictimRead const banished = TauntAfterVictim(true, true, true, 47.0f);
+        CHECK(banished.onNonTank && !banished.victimIsTank);
+        TauntEpisodeRead opened = TauntEpisodeTick(true, banished.onNonTank, banished.victimIsTank, false, false, 0,
+            10000, false);
+        CHECK(opened.starts && opened.open && opened.step == TauntEpisodeStep::Due);
+        // The boss follows it (still 30 yd away): the episode runs on, its deadline included.
+        TauntAfterVictimRead const chased = TauntAfterVictim(true, true, true, 30.0f);
+        TauntEpisodeRead continuing = TauntEpisodeTick(true, chased.onNonTank, chased.victimIsTank, true, false, 4000,
+            10000, false);
+        CHECK(!continuing.starts && continuing.open && continuing.step == TauntEpisodeStep::Due);
+        // The off-tank's taunt lands: a tank has Jin'do back and the episode closes as regained.
+        TauntAfterVictimRead const backOnTank = TauntAfterVictim(true, true, true, 3.0f);
+        CHECK(!backOnTank.onNonTank && backOnTank.victimIsTank);
+        TauntEpisodeRead regained = TauntEpisodeTick(true, backOnTank.onNonTank, backOnTank.victimIsTank, true, false,
+            5000, 10000, false);
+        CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
+        // A tank standing close keeps the spell-less rule (a holding tank at 3 yd is not "on a non-tank").
+        TauntAfterVictimRead const close = TauntAfterVictim(true, true, false, 3.0f);
+        CHECK(!close.onNonTank && close.victimIsTank);
+        // A non-tank player (a DPS banished, or Hex's threat wipe) opens every row, keyed or not; a pet victim is
+        // neither (the episode keeps its clock, as the transition above).
+        CHECK(TauntAfterVictim(true, false, false, 47.0f).onNonTank);
+        CHECK(TauntAfterVictim(false, false, true, 47.0f).onNonTank == false);
+        CHECK(TauntAfterVictim(true, true, true, kTauntTeleportYd).victimIsTank); // on the edge it still holds
+    }
+
     // needs_aura (the Shade of Jin'do 14986, Delusions 24306): only a bot carrying the row's aura may target the entry,
     // wherever it stands. AuraGateRefuses is the one rule the attack pickers, the taunt picks and the run guard read.
     CHECK(ParseBossTacticKind("needs_aura") == BossTacticKind::NeedsAura); // ParseNeedsAuraKind
