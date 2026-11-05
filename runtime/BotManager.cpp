@@ -1267,6 +1267,14 @@ void BotManager::OnPlayerLogin(::Player* player)
             tools.EnsureStarterKit();
     }
 
+    // An alt that was already past its class quests when the setting was turned
+    // on would otherwise wait for its next level-up to get their spells.
+    if (!record.random && sPlayerbotAIConfig.autoLearnQuestSpellsAlts)
+    {
+        if (PlayerbotAI* ai = entry.aiAdapter->GetAI())
+            ai->DoSpecificAction("auto learn spell");
+    }
+
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.
     // Must run AFTER gear seeding and skills so the bot is fully initialized before any map transfer.
     TryRandomTeleport(player, record);

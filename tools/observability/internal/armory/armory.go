@@ -516,7 +516,62 @@ func (s *Service) GetBotProfile(guid uint32) (*BotProfile, error) {
 	}
 	profile.Talents = talents
 
+	// 9. Pet: one character's current pet, keyed by owner (small reads). A
+	// dead or dismissed pet is saved outside slot 0 (not stabled, slots 1-4).
+	pet, err := s.loadPet(guid)
+	if err != nil {
+		return nil, err
+	}
+	profile.Pet = pet
+
 	return &profile, nil
+}
+
+// petAutocastOn is ACT_ENABLED in pet_spell.active (autocast on).
+const petAutocastOn = 0xC1
+
+func (s *Service) loadPet(guid uint32) (*PetInfo, error) {
+	var pet PetInfo
+	var id uint32
+	var petType uint32
+	err := s.db.QueryRow(fmt.Sprintf(`
+		SELECT p.id, p.entry, p.name, p.PetType, p.level, p.loyalty, p.trainpoint, p.curhealth, p.curhappiness,
+		       COALESCE(ct.beast_family, 0)
+		FROM character_pet p
+		LEFT JOIN %s.creature_template ct ON ct.entry = p.entry
+		WHERE p.owner = ? AND (p.slot = 0 OR p.slot > 4)
+		ORDER BY p.slot
+		LIMIT 1`, s.cfg.WorldDB), guid).Scan(&id, &pet.Entry, &pet.Name, &petType, &pet.Level, &pet.Loyalty,
+		&pet.TrainPoints, &pet.Health, &pet.Happiness, &pet.Family)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	pet.Hunter = petType == 1
+	rows, err := s.db.Query(fmt.Sprintf(`
+		SELECT ps.spell, COALESCE(st.name, ''), COALESCE(st.nameSubtext, ''),
+		       (COALESCE(st.attributes, 0) & %d) <> 0, ps.active
+		FROM pet_spell ps
+		LEFT JOIN %s.spell_template st ON st.entry = ps.spell
+		WHERE ps.guid = ?
+		ORDER BY st.name`, spellAttrPassive, s.cfg.WorldDB), id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	pet.Spells = []PetSpell{}
+	for rows.Next() {
+		var ps PetSpell
+		var active uint32
+		if err := rows.Scan(&ps.Spell, &ps.Name, &ps.Subtext, &ps.Passive, &active); err != nil {
+			return nil, err
+		}
+		ps.Autocast = !ps.Passive && active == petAutocastOn
+		pet.Spells = append(pet.Spells, ps)
+	}
+	return &pet, rows.Err()
 }
 
 func (s *Service) scanEquipped(query string, guid uint32, profile *BotProfile) error {

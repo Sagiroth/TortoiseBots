@@ -7,23 +7,25 @@
 // so nothing in it may dereference the row it came from.
 //
 // A reload replaces the tactic table with a freshly loaded one. The records survive it only while their row is still
-// there with the same cycle columns (`cycle_spell`, `cycle_s`, `window_s`): then the engage (t0), the last accepted
-// siphon (t1) and the dose window stay untouched, so a reload between two siphons does not restart the poison cycle.
-// A record whose row was removed or retimed is dropped (the new row's clock is a new fight).
+// there with the same cycle columns (`cycle_spell`, `cycle_s`, `window_s`): then the combat start (t0), the last
+// accepted siphon (t1) and the dose window stay untouched, so a reload between two siphons does not restart the
+// poison cycle. A record whose row was removed or retimed is dropped (the new row's clock is a new fight).
 //
 // No core includes: tested in tools/test_seek_fight_state_policy.cpp.
 
 #include "BossTacticsPolicy.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <map>
+#include <string>
 #include <tuple>
 
 namespace ai
 {
     struct SeekCycleRecord
     {
-        std::uint32_t engageMs = 0;     // the first sighting of the boss in combat with a victim
+        std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
         std::uint32_t lastCycleMs = 0;  // the last accepted cycle spell sighting (0: none)
         std::uint32_t lastSeenMs = 0;
         // The row's own clock, copied at every read: the record outlives the row pointer, and SeekCycleSnapshot reads
@@ -36,11 +38,42 @@ namespace ai
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
-        std::uint32_t siphonAtMs = 0;   // the dosed/undosed count is due then (0: none pending)
+        std::uint32_t siphonAtMs = 0;   // the +1 s dose count is due then (0: none pending)
+        std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
+        std::uint32_t siphonThirdAtMs = 0;  // the +9 s read, after the 8 s heal has run its course
+        std::uint32_t siphonSeenMs = 0;     // the cycle's first 24324 sighting: the note's clock starts here
         std::uint32_t siphonCycle = 0;
-        int siphonDosed = 0;
+        int siphonDosed = 0;            // the +1 s read, which the run line reports
         int siphonUndosed = 0;
+        int siphonLateDosed = 0;        // the +3 s read, kept beside it
+        int siphonLateUndosed = 0;
     };
+
+    // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside
+    // it. The second read settles a heal the first cannot explain and must never erase the first; the +9 s read (the
+    // end of the 8 s heal) is the log's own and replaces neither.
+    inline void SeekStoreSiphonRead(SeekCycleRecord& record, std::uint32_t atSec, int dosed, int undosed)
+    {
+        if (atSec <= 1)
+        {
+            record.siphonDosed = dosed;
+            record.siphonUndosed = undosed;
+        }
+        else if (atSec <= 3)
+        {
+            record.siphonLateDosed = dosed;
+            record.siphonLateUndosed = undosed;
+        }
+    }
+
+    // The siphon note's clock label: the real milliseconds between the cycle's first sighting and the read, not the
+    // read's nominal delay. A read lands a few ticks late, and the note is read against the siphon it explains.
+    inline std::string SeekSiphonAtLabel(std::uint32_t elapsedMs)
+    {
+        char label[32];
+        snprintf(label, sizeof(label), "at=+%ums", static_cast<unsigned>(elapsedMs));
+        return label;
+    }
 
     // The stable identity of a row: the table's primary key (map, boss entry, kind, target, spell, band) plus the fight it
     // belongs to (instance, boss guid), never the row's address. The key does not carry the cycle columns: a retimed
@@ -79,8 +112,8 @@ namespace ai
         return nullptr;
     }
 
-    // A record outlives a reload only when its row still exists and its clock columns did not change. The engage and
-    // the last siphon are the record's own: the caller keeps them as they are.
+    // A record outlives a reload only when its row still exists and its clock columns did not change. The combat start
+    // and the last siphon are the record's own: the caller keeps them as they are.
     inline bool SeekRecordSurvivesReload(const SeekCycleRecord& record, const BossTacticRow& row)
     {
         return record.cycleSpell == row.cycleSpell && record.cycleMs == SeekSecondsToMs(row.cycleSec) &&
