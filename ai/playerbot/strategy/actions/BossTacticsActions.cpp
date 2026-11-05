@@ -1981,8 +1981,15 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     if (sPlayerbotAIConfig.dungeonRunSeekAura)
     {
         SeekFight state;
-        if (ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, current))
-            return current;
+        if (ReadSeekFightCached(ai, bot, state))
+        {
+            // The fallback puller's target is the Son it is about to shoot: dropping it would re-pick the boss every
+            // tick and the shot would never go out (the hold answers true for a Son that is not the pick).
+            const bool pullHit = IsSeekSource(state, current) &&
+                SeekPullHitExempt(IsSeekPuller(ai, bot, state), current->IsInCombat());
+            if (!pullHit && SeekHoldsUnit(state, current))
+                return current;
+        }
     }
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
