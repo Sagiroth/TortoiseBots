@@ -316,14 +316,94 @@ void CollectCraftReagents(Player* bot, uint32_t itemId, uint32_t depth,
     }
 }
 
+uint32_t GiverRemaining(OrderRecord const& order, uint32_t itemId)
+{
+    for (NeedItem const& given : order.given)
+        if (given.itemId == itemId)
+            return given.count;
+    return 0;
+}
+
+// Mails whole stacks of one material back to the giver ("Your leftover
+// materials"), one stack per mail as the core allows. The order's item
+// record carries the enchant name for enchant rows, so the body names it.
+// Returns what left the bags for the giver.
+uint32_t MailGiverSurplus(Player* bot, uint32_t itemId, uint32_t quota, ObjectGuid giverGuid,
+    std::string const& orderName)
+{
+    if (!bot || !itemId || !quota || !giverGuid || giverGuid == bot->getObjectGuid())
+        return 0;
+    Player* giver = sObjectMgr.GetPlayer(giverGuid);
+    uint32_t mailed = 0;
+    while (mailed < quota)
+    {
+        Item* stack = SmallestStack(bot, itemId);
+        if (!stack)
+            break;
+        std::ostringstream body;
+        body << "Hello,\n\nHere are your leftover materials"
+             << (orderName.empty() ? "" : " from " + orderName) << ".\n\n" << bot->GetName() << '\n';
+        MailDraft draft("Your leftover materials", body.str());
+        uint32_t count = stack->GetCount();
+        bot->MoveItemFromInventory(stack->GetBagSlot(), stack->GetSlot(), true);
+        stack->DeleteFromInventoryDB();
+        stack->SetOwnerGuid(giverGuid);
+        if (stack->GetState() != ITEM_NEW)
+            stack->FSetState(ITEM_CHANGED);
+        stack->SaveToDB();
+        draft.AddItem(stack);
+        draft.SendMailTo(MailReceiver(giver, giverGuid), MailSender(bot));
+        mailed += count;
+    }
+    return mailed;
+}
+
+// The giver's return for one leftover material: up to the giver's remaining
+// share still in the bags. Moves whole stacks like the bank path does, so a
+// partial stack overshoots the giver instead of leaving a sliver for the
+// bank. Spends the giver's share (and, for craft, the gain cap) for what
+// went back.
+uint32_t DeliverGiverSurplus(Player* bot, uint32_t itemId, OrderRecord const& order,
+    std::string const& orderName)
+{
+    uint32_t giverShare = GiverRemaining(order, itemId);
+    if (!giverShare)
+        return 0;
+    uint32_t held = bot->GetItemCount(itemId);
+    if (!held)
+        return 0;
+    GiverSurplusSplit split = SplitGiverSurplus(itemId, held, giverShare);
+    if (!split.giverReturn)
+        return 0;
+    ObjectGuid giverGuid(HIGHGUID_PLAYER, order.giverGuidLow);
+    uint32_t mailed = MailGiverSurplus(bot, itemId, split.giverReturn, giverGuid, orderName);
+    if (!mailed)
+        return 0;
+    NoteGivenSpent(order.botGuidLow, itemId, mailed);
+    return mailed;
+}
+
+std::string OrderDisplayName(OrderRecord const& order)
+{
+    if (order.type != OrderType::Enchant)
+    {
+        if (ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId))
+            return proto->Name1;
+        return "?";
+    }
+    if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+        return enchant->SpellName[0].c_str();
+    return "?";
+}
+
 void DeliverCraftLeftovers(Player* bot, Guild* guild, Unit* banker, OrderRecord const& order)
 {
     if (!bot || !guild || (order.type != OrderType::Craft && order.type != OrderType::Enchant) || !order.itemId)
         return;
-    // Only order-caused stock leaves the bags: what the ladder gained
-    // (bank, AH, mail, vendor, farm) caps the deposit, so the bot's own
-    // pre-existing materials stay put. Spent reagents already shrank their
-    // gain ledger when the bot crafted.
+    // Surplus from the giver goes back to the giver by mail; whatever is
+    // left beyond that keeps today's path (guild bank, then mail to the
+    // guild master). The giver's share was spent first, so the row only
+    // names what the bot did not already use.
     std::unordered_map<uint32_t, uint32_t> allowed;
     for (NeedItem const& gain : order.supplyGains)
         if (gain.count)
@@ -331,10 +411,22 @@ void DeliverCraftLeftovers(Player* bot, Guild* guild, Unit* banker, OrderRecord 
     std::unordered_set<uint32_t> visited;
     std::unordered_set<uint32_t> reagents;
     CollectCraftReagents(bot, order.itemId, 0, visited, reagents);
+    std::string orderName = OrderDisplayName(order);
     for (uint32_t itemId : reagents)
     {
         if (itemId == order.itemId)
             continue;
+        uint32_t giverMailed = DeliverGiverSurplus(bot, itemId, order, orderName);
+        if (giverMailed)
+        {
+            auto spent = allowed.find(itemId);
+            if (spent != allowed.end() && spent->second)
+            {
+                uint32_t use = giverMailed > spent->second ? spent->second : giverMailed;
+                NoteSupplySpent(order.botGuidLow, itemId, use);
+                spent->second -= use;
+            }
+        }
         auto cap = allowed.find(itemId);
         if (cap == allowed.end() || !cap->second)
             continue;
@@ -409,11 +501,12 @@ private:
     // kDeliveryBankRetries empty passes in a row.
     std::unordered_map<uint32_t, uint32_t> m_emptyPasses;
 
-    // One deposit pass for a cancelled or timed-out enchant row: every due
-    // reagent walks to the banker up to its quota, and what the bank cannot
-    // take goes by mail like craft leftovers do. Runs dry, the row ends
-    // through FinishEnchantDeposit; otherwise it stays queued and the map
-    // action re-queues at the next banker visit.
+    // One deposit pass for a cancelled or timed-out enchant row: the giver's
+    // share of every due reagent mails home first, then the rest walks to
+    // the banker up to its quota, and what the bank cannot take goes by mail
+    // like craft leftovers do. Runs dry, the row ends through
+    // FinishEnchantDeposit; otherwise it stays queued and the map action
+    // re-queues at the next banker visit.
     void RunEnchantDeposit(PendingDelivery const& request, OrderRecord const& stored, Player* bot,
         ::PlayerbotAI* ai, Guild* guild, Unit* banker)
     {
@@ -425,10 +518,26 @@ private:
             ExpireTargetFor(ai);
             return;
         }
+        std::string orderName = OrderDisplayName(stored);
         ObjectGuid receiver = MailReceiverGuid(stored, bot->getObjectGuid());
         for (EnchantDepositRow const& row : due)
         {
-            uint32_t quota = row.quota;
+            uint32_t giverShare = GiverRemaining(stored, row.itemId);
+            if (giverShare)
+            {
+                GiverSurplusSplit split = SplitGiverSurplus(row.itemId, bot->GetItemCount(row.itemId), giverShare);
+                ObjectGuid giverGuid(HIGHGUID_PLAYER, stored.giverGuidLow);
+                uint32_t mailed = MailGiverSurplus(bot, row.itemId, split.giverReturn, giverGuid, orderName);
+                if (mailed)
+                    NoteGivenSpent(stored.botGuidLow, row.itemId, mailed);
+            }
+            std::vector<EnchantDepositRow> rest = EnchantDepositQuotas(bot, stored.itemId);
+            uint32_t quota = 0;
+            for (EnchantDepositRow const& left : rest)
+                if (left.itemId == row.itemId)
+                    quota = left.quota;
+            if (!quota)
+                continue;
             for (uint32_t pass = 0; pass < 200 && quota; ++pass)
             {
                 uint32_t moved = banker ? DepositPass(bot, guild, banker, row.itemId, 0, quota) : 0;

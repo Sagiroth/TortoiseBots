@@ -153,13 +153,13 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 - Unspent guild gold comes back to the guild bank: when the order ends (or is cancelled), the bot deposits what it still holds at its next guild banker visit.
 - A cancelled order disappears from the list at once; the repayment still happens behind the scenes.
 - The addon status shows the current step (`bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need` or `deliver`), the optional guild gold cap, and any missing item list.
-- Extra materials left after crafting go to the guild bank with the finished item, but only what the order itself gained; the bot's own materials stay in its bags.
+- Extra materials left after crafting go to the guild bank with the finished item, but only what the order itself gained; the bot's own materials stay in its bags. Materials you handed over yourself come back to you by mail instead (`Your leftover materials`).
 
 ## Enchant orders
 
 An enchanter bot puts one enchant on your own item, from real materials, meeting you in its capital (Stormwind for the Alliance, Orgrimmar for the Horde).
 - **Reserved:** while the order runs, its reagents are protected: the bot never sells, auctions, disenchants, mails away or uses them.
-- **States:** `working` (gathering, step `bags`, `bank` or `ah`), `waiting` with reason `needitems`, `ready` (materials reserved, waiting for Meet). Cancelling, or running out of time, walks every reagent the bot still holds (up to one cast's worth) to the guild bank through a delivery trip, mailing what the bank cannot take; the row ends once nothing is due.
+- **States:** `working` (gathering, step `bags`, `bank` or `ah`), `waiting` with reason `needitems`, `ready` (materials reserved, waiting for Meet). Cancelling, or running out of time, mails your leftover materials back to you (`Your leftover materials`) and walks the rest to the guild bank through a delivery trip, mailing what the bank cannot take; the row ends once nothing is due.
 
 ## Guild bank access
 

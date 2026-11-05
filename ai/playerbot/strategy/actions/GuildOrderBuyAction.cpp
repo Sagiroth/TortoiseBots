@@ -527,6 +527,13 @@ bool GuildOrderTakeMailAction::Execute(Event& event)
     bool result = taken > 0;
     if (taken)
     {
+        std::optional<OrderRecord> live = Find(bot->GetGUIDLow());
+        if (live && !live->cancelled &&
+            (live->type == OrderType::Craft || live->type == OrderType::Enchant) &&
+            live->giverGuidLow && live->itemId && itemId != live->itemId)
+            for (TakenMailSender const& sender : TakeTakenMailSenders(itemId))
+                if (sender.senderLow == live->giverGuidLow && sender.count)
+                    TortoiseBots::GuildOrders::NoteGiven(bot->GetGUIDLow(), itemId, sender.count);
         NoteSupplyGain(bot->GetGUIDLow(), itemId, taken);
         NoteSupplyProgress(bot->GetGUIDLow());
     }
