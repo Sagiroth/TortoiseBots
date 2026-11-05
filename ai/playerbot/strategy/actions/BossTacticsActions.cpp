@@ -260,6 +260,24 @@ bool IsCleaveToggleAction(Action* action)
     return name == "sweeping strikes" || name == "blade flurry";
 }
 
+// Whether a single-target action hurts the unit it names: an attack (a swing, an assist, a taunt, a wand shot) or a
+// cast at a hostile pick (damage, interrupt, stun, silence, CC). Heals, buffs, cures and protection cast on a party
+// member are not harm: their target names are "party member ..." or "self target", and healing the charmed member
+// stays allowed.
+bool IsHarmfulTargetedAction(Action* action)
+{
+    if (!action)
+        return false;
+    if (dynamic_cast<CastHealingSpellAction*>(action) != nullptr ||
+        dynamic_cast<CastBuffSpellAction*>(action) != nullptr)
+        return false;
+    std::string const& targetName = action->GetTargetName();
+    if (targetName == "self target" || targetName.compare(0, 12, "party member") == 0)
+        return false;
+    return dynamic_cast<AttackAction*>(action) != nullptr ||
+           dynamic_cast<CastSpellAction*>(action) != nullptr;
+}
+
 // The creature-charmed members of the bot's group, read once per AI update: the hold multiplier asks for every action
 // the engine weighs, and the roster cannot change inside one update. Aura-free by design (GetCharmerGuid only): an
 // aura walk here would run for every action of every bot.
@@ -304,12 +322,13 @@ const CharmedAllyCache& CharmedAllies(PlayerbotAI* ai, Player* bot)
     return t_charmedAllies;
 }
 
-// Whether this area action stands down because a creature-charmed group member would take it (DungeonRunCharmYield):
-// a hostile ally is healable damage for ten seconds, while an ally's blast on him is not. Any map: the key is the
-// encounter's, no row is needed. A self-centred blast (Thunder Clap, Consecration, Swipe, the cleave toggles) has no
-// point but the bot; anything else is judged at its target, and an action with nothing picked yet from the bot, the
-// conservative side.
-bool CharmedAllyAreaVeto(PlayerbotAI* ai, Player* bot, Action* action)
+// Whether this action stands down because a creature-charmed group member would take it (DungeonRunCharmYield):
+// a hostile ally is healable damage for ten seconds, while an ally's blast or bolt on him is not. Any map: the key is
+// the encounter's, no row is needed. A single-target attack, damage, interrupt or CC cast aimed at the member is
+// refused by identity. An area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the
+// Sweeping Strikes and Blade Flurry toggles) is judged by reach: a self-centred blast has no point but the bot;
+// anything else is judged at its target, and an action with nothing picked yet from the bot, the conservative side.
+bool CharmedAllyVeto(PlayerbotAI* ai, Player* bot, Action* action)
 {
     if (!sPlayerbotAIConfig.dungeonRunCharmYield || !action)
         return false;
@@ -317,8 +336,23 @@ bool CharmedAllyAreaVeto(PlayerbotAI* ai, Player* bot, Action* action)
     if (charmed.count == 0)
         return false;
     bool const cleave = IsCleaveToggleAction(action);
-    if (!cleave && !IsAreaDamageAction(ai, action))
+    bool const area = !cleave && IsAreaDamageAction(ai, action);
+    if (!cleave && !area)
+    {
+        // Only a harmful single-target action is refused by identity: healing, buffing, curing or protecting the
+        // charmed member is not harm and stays allowed.
+        if (!IsHarmfulTargetedAction(action))
+            return false;
+        Unit* const aimed = action->GetTarget();
+        if (!aimed)
+            return false;
+        for (std::size_t i = 0; i < charmed.count; ++i)
+        {
+            if (charmed.members[i] == aimed)
+                return true;
+        }
         return false;
+    }
     Unit* const point = cleave ? nullptr : action->GetTarget();
     bool const selfCentred = !point || point == bot || action->GetTargetName() == "self target";
     for (std::size_t i = 0; i < charmed.count; ++i)
@@ -2979,8 +3013,9 @@ bool BossTacticsTankSwapHoldAction::Execute(Event& event)
 float CharmedAllyHoldMultiplier::GetValue(Action* action)
 {
     // The charmed ally's veto is not boss tactics': every bot carries this multiplier (avoid aoe and the dungeon
-    // strategy), so AiPlayerbot.DungeonRunCharmYield alone stands an area action down, on any map, with no row.
-    return CharmedAllyAreaVeto(ai, bot, action) ? 0.0f : 1.0f;
+    // strategy), so AiPlayerbot.DungeonRunCharmYield alone stands an area or a targeted harmful action down, on any
+    // map, with no row.
+    return CharmedAllyVeto(ai, bot, action) ? 0.0f : 1.0f;
 }
 
 float BossTacticsHoldMultiplier::GetValue(Action* action)

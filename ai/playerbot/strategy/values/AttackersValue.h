@@ -26,6 +26,11 @@ namespace ai
 
         static bool IsValid(Unit* target, Player* player, Player* owner = nullptr, bool checkInCombat = true, bool validatePossibleTarget = true);
         static bool IgnoreTarget(Unit* target, Player* playerToCheckAgainst);
+        // AiPlayerbot.DungeonRunCharmYield: true while `target` is a member of `player`'s group/raid that a creature
+        // currently charms (Hakkar's Cause Insanity 24327). Every pick and attack path asks this before it takes the
+        // member: the charm makes it hostile, and the raid killed its own charmed damage dealers in 3-7 s without it.
+        // A player charmer and a member of another group are ordinary enemies; healing the member stays allowed.
+        static bool CharmedAllyOffLimits(Unit* target, Player* player);
         // True while `bot`'s own "keepout set aside" book refuses `target`
         // (a melee chase held outside a creature aura keep-out set it aside,
         // MovementAction::HoldChaseOutsideKeepout; CreatureAuraSetAsideHolds
