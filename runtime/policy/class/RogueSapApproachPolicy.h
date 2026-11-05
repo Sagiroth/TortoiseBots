@@ -355,14 +355,14 @@ inline bool SapPlanStale(SapPlanCache const& cache, unsigned targetId, SapPoint 
     // stand within kSapReplanMoveYd of a cached position.
     for (SapPackMate const& m : mates)
     {
-        bool near = false;
+        bool hasNearbyCachedMate = false;
         for (SapPoint const& c : cache.matesAt)
             if (SapDist(c, SapPoint{m.x, m.y}) <= kSapReplanMoveYd)
             {
-                near = true;
+                hasNearbyCachedMate = true;
                 break;
             }
-        if (!near)
+        if (!hasNearbyCachedMate)
             return true;
     }
     return false;
