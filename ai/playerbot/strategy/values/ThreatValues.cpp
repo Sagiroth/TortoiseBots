@@ -77,7 +77,7 @@ constexpr std::uint32_t kThreatCapLogGapMs = 10000;
 std::mutex g_threatCapLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_threatCapLog;
 
-void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick)
+void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit* offTankTarget)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
         return;
@@ -94,8 +94,10 @@ void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick)
                 it = nowMs - it->second > kThreatCapLogGapMs * 60 ? g_threatCapLog.erase(it) : std::next(it);
         }
     }
-    char info1[96];
-    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f", pick.offTank ? "offtank" : "main", pick.threat);
+    // The first off-tank's current target: the cap reference stalls when that tank is stuck on a Son instead of the boss.
+    char info1[128];
+    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s", pick.offTank ? "offtank" : "main",
+             pick.threat, offTankTarget ? offTankTarget->GetName() : "none");
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatCap", info1, "");
 }
 }
@@ -171,7 +173,8 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     }
 
     const ThreatCapPick pick = ThreatCapPickReference(tanks, true);
-    LogThreatCap(ai, ai->GetBot(), pick);
+    Unit* const offTankTarget = roles.tanks.size() >= 2 && roles.tanks[1] ? roles.tanks[1]->GetVictim() : nullptr;
+    LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);
     return pick.threat;
 }
 

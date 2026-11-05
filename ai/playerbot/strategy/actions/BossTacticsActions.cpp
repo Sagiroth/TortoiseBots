@@ -1474,18 +1474,36 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     }
     // A Son camped on a non-tank: the first off-tank's own take once the third off-tank cannot take it (dead, or
     // holding a Son of its own) and the non-tank has had it for a while. The fight record times it (the take must not
-    // flip with every read, and the healer gets its 8 s first).
-    std::vector<std::uint64_t> onNonTank;
-    bool thirdTankTakes = roles.tanks.size() >= 3;
-    for (Unit* unit : fight.units)
+    // flip with every read, and the healer gets its 8 s first). The Sons it judges are the fight-wide set, never
+    // fight.units alone: under "focus rti targets" that list collapses to the raid mark, so a Son on a healer would
+    // never be seen. They are the group's attackers and the source walk's Sons (out.sons) plus the "sole kill
+    // candidates" grid search of the entry (the living Sons that fight within kHoldKillRangeYd of the bot).
+    std::vector<Unit*> fightSons = out.sons;
+    for (const SoleCandidate& candidate : SoleKillCandidates(ai, row->targetEntry))
     {
-        if (unit->GetEntry() != row->targetEntry || !unit->IsInCombat())
-            continue;
-        if (thirdTankTakes && unit->GetVictim() == roles.tanks[2])
-            thirdTankTakes = false;
-        Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
-        if (victim && !PlayerbotAI::IsTank(victim))
-            onNonTank.push_back(unit->GetObjectGuid().GetRawValue());
+        Creature* const creature = bot->GetMap()->GetCreature(ObjectGuid(candidate.guid));
+        if (creature && creature->GetEntry() == row->targetEntry &&
+            std::find(fightSons.begin(), fightSons.end(), static_cast<Unit*>(creature)) == fightSons.end())
+            fightSons.push_back(creature);
+    }
+    std::vector<SeekSonSeen> seenSons;
+    seenSons.reserve(fightSons.size());
+    bool thirdTankTakes = roles.tanks.size() >= 3;
+    for (Unit* unit : fightSons)
+    {
+        SeekSonSeen seen;
+        seen.guid = unit->GetObjectGuid().GetRawValue();
+        seen.alive = sServerFacade.IsAlive(unit);
+        seen.inCombat = unit->IsInCombat();
+        if (seen.alive && seen.inCombat)
+        {
+            if (thirdTankTakes && unit->GetVictim() == roles.tanks[2])
+                thirdTankTakes = false;
+            Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
+            seen.victimTank = victim && PlayerbotAI::IsTank(victim);
+            seen.victimNonTank = victim && !seen.victimTank;
+        }
+        seenSons.push_back(seen);
     }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
@@ -1544,32 +1562,18 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.gathering = record.gatherSourceGuid != 0;
         out.ready = record.ready;
         out.missing = record.missing;
-        // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once it stops fighting a
-        // non-tank (it died, moved to a tank, or left the fight).
-        for (auto held = record.healerHeldSince.begin(); held != record.healerHeldSince.end();)
-            held = std::find(onNonTank.begin(), onNonTank.end(), held->first) == onNonTank.end()
-                ? record.healerHeldSince.erase(held) : std::next(held);
-        for (std::uint64_t guid : onNonTank)
-            record.healerHeldSince.insert(std::make_pair(guid, nowMs));
-        for (const auto& held : record.healerHeldSince)
-        {
-            if (SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - held.second))
-            {
-                healerTakeGuid = held.first;
-                break;
-            }
-        }
+        // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once a read sees it dead, out
+        // of combat or on a tank; a Son this read did not see stays (SeekHealerClockTick).
+        SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
+        healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, thirdTankTakes, nowMs);
     }
     if (healerTakeGuid)
     {
-        for (Unit* unit : fight.units)
-        {
-            if (unit->GetObjectGuid().GetRawValue() == healerTakeGuid)
-            {
-                out.healerSon = unit;
-                break;
-            }
-        }
+        // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
+        // whose attackers list holds only the raid mark.
+        Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(healerTakeGuid));
+        if (son && son->GetEntry() == row->targetEntry && sServerFacade.IsAlive(son))
+            out.healerSon = son;
     }
     return true;
 }

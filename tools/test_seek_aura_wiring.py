@@ -132,8 +132,10 @@ class SeekWalkWiring(unittest.TestCase):
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
                      "SeekPullRoleOf(", "SeekPullHitExemptOnLatch(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
-                     "SeekTakeFightingSonOnHealer("):
+                     "SeekHealerClockTick(", "SeekHealerTakeGuid("):
             self.assertIn(rule, ACTIONS, rule)
+        # SeekTakeFightingSonOnHealer is called by SeekHealerTakeGuid, the state policy's own rule.
+        self.assertIn("SeekTakeFightingSonOnHealer(", STATE_POLICY)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
 
@@ -292,14 +294,29 @@ class SeekRolesWiring(unittest.TestCase):
     def test_the_healer_take_is_wired(self):
         # A Son camped on a non-tank is tanks[1]'s once the third off-tank cannot take it, timed in the fight record.
         read = body(ACTIONS, "bool ReadSeekFight(")
-        self.assertIn("record.healerHeldSince.insert(std::make_pair(guid, nowMs));", read)
-        self.assertIn("SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - held.second)", read)
-        self.assertIn("out.healerSon = unit;", read)
+        # The Sons it judges are the fight-wide set (the "sole kill candidates" grid search plus the source walk), never
+        # fight.units alone, which "focus rti targets" collapses to the raid mark.
+        self.assertIn("SoleKillCandidates(ai, row->targetEntry)", read)
+        self.assertNotIn("for (Unit* unit : fight.units)\n    {\n        if (unit->GetEntry() != row->targetEntry || !unit->IsInCombat())", read)
+        # One read never erases a Son it did not see: the clock is the pure SeekHealerClockTick.
+        self.assertIn("SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);", read)
+        self.assertNotIn("record.healerHeldSince.erase(", read)
+        self.assertIn("SeekHealerTakeGuid(record.healerHeldSince, thirdTankTakes, nowMs)", read)
+        # The Son is resolved from the map, not from this bot's attackers list.
+        self.assertIn("GetCreature(ObjectGuid(healerTakeGuid))", read)
+        self.assertIn("out.healerSon = son;", read)
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
         self.assertIn("roles.tanks.size() >= 3 && roles.tanks[1] == bot", find)
         self.assertIn("if (state.healerSon)", find)
         self.assertIn("SeekTakeFightingSonOnHealer(", POLICY)
         self.assertIn("healerHeldSince", STATE_POLICY)
+
+    def test_the_threat_cap_row_logs_the_off_tanks_target(self):
+        # tanks[1] stalling on a Son stalls the cap reference: the row names what the first off-tank is fighting.
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        self.assertIn("offtank_target=%s", values)
+        self.assertIn("roles.tanks[1]->GetVictim()", values)
+        self.assertIn("LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);", values)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the
