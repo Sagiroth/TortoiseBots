@@ -173,6 +173,70 @@ void TestSapSkipWindow()
     CHECK(SapSkipActive(7, 7, 20000u, 0xFFFFF000u));
 }
 
+// One plan per Sap order: a second call within the window asks the navmesh
+// nothing; the window ends after kSapReplanMs, or once the target or a
+// pack-mate moves more than kSapReplanMoveYd, or on another target.
+void TestPlanCachedWithinWindow()
+{
+    int queries = 0;
+    auto counting = [&queries](SapPoint from, SapPoint to, SapPath& out)
+    {
+        ++queries;
+        return StraightPath(from, to, out);
+    };
+
+    SapPoint const target{0.0f, 0.0f};
+    SapPoint const rogue{0.0f, 30.0f};
+    std::vector<SapPackMate> mates{{-5.0f, 0.0f, 7.0f}};
+    SapPlanCache cache;
+    bool replanned = false;
+
+    SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, mates, 1000, counting, &replanned);
+    CHECK(replanned);
+    int const first = queries;
+    CHECK(first >= 1);
+
+    // The rogue walked 10 yd, the pack mates shuffled under 3 yd, 4 s later: cached.
+    std::vector<SapPackMate> shuffled{{-4.0f, 1.5f, 7.0f}};
+    SapApproachPlan const& again = SapPlanFor(cache, 7, SapPoint{1.0f, 20.0f}, SapPoint{0.5f, 0.5f},
+        3.0f, 15.0f, shuffled, 1000 + kSapReplanMs - 1, counting, &replanned);
+    CHECK(!replanned);
+    CHECK(queries == first);
+    CHECK(again.found);
+
+    // Window over.
+    SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, mates, 1000 + kSapReplanMs, counting, &replanned);
+    CHECK(replanned);
+    // A mate moved 4 yd.
+    int const before = queries;
+    std::vector<SapPackMate> moved{{-5.0f, 4.0f, 7.0f}};
+    SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 10, counting, &replanned);
+    CHECK(replanned);
+    CHECK(queries > before);
+    // The target moved 4 yd.
+    SapPlanFor(cache, 7, rogue, SapPoint{4.0f, 0.0f}, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 20, counting, &replanned);
+    CHECK(replanned);
+    // Another target.
+    SapPlanFor(cache, 8, rogue, SapPoint{4.0f, 0.0f}, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 30, counting, &replanned);
+    CHECK(replanned);
+}
+
+// A plan never asks more than kSapMaxPathQueries, even with nothing reachable.
+void TestQueryBudget()
+{
+    int queries = 0;
+    auto none = [&queries](SapPoint, SapPoint, SapPath&)
+    {
+        ++queries;
+        return false;
+    };
+    std::vector<SapPackMate> const mates{{-6.0f, 2.0f, 7.0f}, {-6.0f, -2.0f, 7.0f}};
+    SapApproachPlan const plan = PlanSapApproach(SapPoint{-30.0f, 0.0f}, SapPoint{0.0f, 0.0f}, 3.0f, 15.0f, mates, none);
+    CHECK(!plan.found);
+    CHECK(queries <= kSapMaxPathQueries);
+    CHECK(plan.pathQueries == queries);
+}
+
 } // namespace
 
 int main()
@@ -186,6 +250,8 @@ int main()
     TestStartInsideClearanceMayOnlyLeave();
     TestStealthDetectRange();
     TestSapSkipWindow();
+    TestPlanCachedWithinWindow();
+    TestQueryBudget();
     std::cout << "rogue sap approach policy tests passed\n";
     return 0;
 }

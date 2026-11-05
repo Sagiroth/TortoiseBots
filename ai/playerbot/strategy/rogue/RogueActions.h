@@ -311,9 +311,7 @@ namespace ai
         // such route the Sap is skipped for a while and the tank pulls.
         bool ApproachAroundPack(Unit* target, float standDist);
 
-        ObjectGuid planTarget;
-        uint32 planMs = 0;
-        TortoiseBots::SapApproachPlan plan;
+        TortoiseBots::SapPlanCache planCache;
     };
 
     class CastSapAction : public CastMeleeSpellAction

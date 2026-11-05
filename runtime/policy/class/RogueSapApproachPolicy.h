@@ -42,11 +42,13 @@ using SapPath = std::vector<SapPoint>;
 
 constexpr int kSapStandAngles = 16;     // stand points tried around the target
 constexpr int kSapWaypointAngles = 16;  // detour points tried on the outer ring
-constexpr int kSapMaxPathQueries = 48;  // navmesh queries per plan
+constexpr int kSapMaxCandidates = 8;    // stand points, and detour routes, tried per plan
+constexpr int kSapMaxPathQueries = 16;  // navmesh queries per plan
 constexpr float kSapPackRadius = 30.0f; // hostiles this close to the target are its pack
 constexpr float kSapStealthAlertYd = 5.0f;
 constexpr float kSapClearanceMargin = 2.0f;
-constexpr unsigned kSapReplanMs = 2000;  // the plan is rebuilt from where the rogue stands
+constexpr unsigned kSapReplanMs = 5000;  // a plan is kept at most this long
+constexpr float kSapReplanMoveYd = 3.0f; // or until the target or a pack-mate moves this far
 constexpr unsigned kSapSkipMs = 30000;   // a skipped Sap is not tried again on that mob for this long
 // "manual int" keys that carry a skip from ReachSapAction to the "sap cc mark" trigger.
 constexpr char const* kSapSkipTargetKey = "sap skip target";
@@ -150,11 +152,14 @@ inline std::vector<SapPoint> SapRing(SapPoint centre, float radius, float baseAn
 //
 // Stand points sit standDist from the target, ordered by their distance from the
 // pack (the far side first; ties, as with no pack at all, go to the one nearest
-// the rogue), and only those outside every clearance count. The first one whose
-// navmesh path from the rogue stays clear wins. Failing that, the rogue may walk
-// round the pack: a detour point on a ring of waypointRadius around the target,
-// clear itself, with a clear path from the rogue to it and from it to a stand
-// point. No such route: found stays false and the Sap is skipped.
+// the rogue); only those outside every clearance count, at most kSapMaxCandidates.
+// The first one whose navmesh path from the rogue stays clear wins. Failing that,
+// the rogue may walk round the pack: a detour point on a ring of waypointRadius
+// around the target, clear itself, with a clear path from the rogue to it and from
+// it to a stand point. Detour routes whose straight legs are already clear are
+// tried first (on open floor the navmesh path is the straight line), at most
+// kSapMaxCandidates of them. No route, or the kSapMaxPathQueries budget spent:
+// found stays false and the Sap is skipped.
 //
 // pathFn(from, to, out) fills `out` with the navmesh path (any points after
 // `from`) and returns false when `to` cannot be reached.
@@ -179,6 +184,8 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
     });
     if (stands.empty())
         return plan;
+    if (stands.size() > static_cast<std::size_t>(kSapMaxCandidates))
+        stands.resize(static_cast<std::size_t>(kSapMaxCandidates));
 
     // No pack: the plain walk to the rogue's side of the mob, no queries.
     if (mates.empty())
@@ -190,8 +197,6 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
 
     auto clearPath = [&](SapPoint from, SapPoint to) -> bool
     {
-        if (plan.pathQueries >= kSapMaxPathQueries)
-            return false;
         ++plan.pathQueries;
         SapPath path;
         if (!pathFn(from, to, path))
@@ -203,6 +208,8 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
 
     for (SapPoint const& s : stands)
     {
+        if (plan.pathQueries >= kSapMaxPathQueries)
+            return plan;
         if (clearPath(start, s))
         {
             plan.found = true;
@@ -216,36 +223,124 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
         if (SapPointMargin(w, mates) >= 0.0f)
             waypoints.push_back(w);
 
-    // A detour point the rogue cannot reach cleanly is not asked again for the next stand point.
-    std::vector<int> reach(waypoints.size(), -1);
-    for (SapPoint const& s : stands)
+    struct Detour
     {
-        std::vector<std::size_t> order(waypoints.size());
-        for (std::size_t i = 0; i < order.size(); ++i)
-            order[i] = i;
-        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b)
+        std::size_t w;
+        std::size_t s;
+        bool straightClear;
+        float length;
+    };
+    std::vector<Detour> detours;
+    for (std::size_t wi = 0; wi < waypoints.size(); ++wi)
+    {
+        bool const firstLegStraight = SapPathClear(start, SapPath{waypoints[wi]}, mates);
+        for (std::size_t si = 0; si < stands.size(); ++si)
         {
-            return SapDist(waypoints[a], s) < SapDist(waypoints[b], s);
-        });
-        for (std::size_t i : order)
+            bool const straight = firstLegStraight && SapPathClear(waypoints[wi], SapPath{stands[si]}, mates);
+            detours.push_back(Detour{wi, si, straight,
+                SapDist(start, waypoints[wi]) + SapDist(waypoints[wi], stands[si])});
+        }
+    }
+    std::stable_sort(detours.begin(), detours.end(), [](Detour const& a, Detour const& b)
+    {
+        if (a.straightClear != b.straightClear)
+            return a.straightClear;
+        return a.length < b.length;
+    });
+    if (detours.size() > static_cast<std::size_t>(kSapMaxCandidates))
+        detours.resize(static_cast<std::size_t>(kSapMaxCandidates));
+
+    // A detour point the rogue cannot reach cleanly is not asked again.
+    std::vector<int> reach(waypoints.size(), -1);
+    for (Detour const& d : detours)
+    {
+        if (reach[d.w] < 0)
         {
             if (plan.pathQueries >= kSapMaxPathQueries)
                 return plan;
-            if (reach[i] < 0)
-                reach[i] = clearPath(start, waypoints[i]) ? 1 : 0;
-            if (reach[i] == 0)
-                continue;
-            if (clearPath(waypoints[i], s))
-            {
-                plan.found = true;
-                plan.viaWaypoint = true;
-                plan.waypoint = waypoints[i];
-                plan.stand = s;
-                return plan;
-            }
+            reach[d.w] = clearPath(start, waypoints[d.w]) ? 1 : 0;
+        }
+        if (reach[d.w] == 0)
+            continue;
+        if (plan.pathQueries >= kSapMaxPathQueries)
+            return plan;
+        if (clearPath(waypoints[d.w], stands[d.s]))
+        {
+            plan.found = true;
+            plan.viaWaypoint = true;
+            plan.waypoint = waypoints[d.w];
+            plan.stand = stands[d.s];
+            return plan;
         }
     }
     return plan;
+}
+
+// One plan per Sap order: kept while the target and its pack stand still (none
+// moved kSapReplanMoveYd), for at most kSapReplanMs, and rebuilt once the rogue
+// reaches its detour point (the next leg starts there).
+struct SapPlanCache
+{
+    bool valid = false;
+    unsigned targetId = 0;
+    SapPoint targetAt;
+    std::vector<SapPoint> matesAt;
+    unsigned planMs = 0;
+    SapApproachPlan plan;
+};
+
+inline bool SapPlanStale(SapPlanCache const& cache, unsigned targetId, SapPoint targetAt,
+    std::vector<SapPackMate> const& mates, SapPoint here, unsigned nowMs)
+{
+    if (!cache.valid || cache.targetId != targetId)
+        return true;
+    if (nowMs - cache.planMs >= kSapReplanMs)
+        return true;
+    if (SapDist(cache.targetAt, targetAt) > kSapReplanMoveYd)
+        return true;
+    if (cache.plan.found && cache.plan.viaWaypoint && SapDist(here, cache.plan.waypoint) < 2.0f)
+        return true;
+    if (cache.matesAt.size() != mates.size())
+        return true;
+    // The grid search returns the pack in no fixed order: every mate must still
+    // stand within kSapReplanMoveYd of a cached position.
+    for (SapPackMate const& m : mates)
+    {
+        bool near = false;
+        for (SapPoint const& c : cache.matesAt)
+            if (SapDist(c, SapPoint{m.x, m.y}) <= kSapReplanMoveYd)
+            {
+                near = true;
+                break;
+            }
+        if (!near)
+            return true;
+    }
+    return false;
+}
+
+// The cached plan, or a new one when SapPlanStale says so. `replanned` tells the
+// caller whether pathFn ran this call.
+template <class PathFn>
+SapApproachPlan const& SapPlanFor(SapPlanCache& cache, unsigned targetId, SapPoint here, SapPoint targetAt,
+    float standDist, float waypointRadius, std::vector<SapPackMate> const& mates, unsigned nowMs,
+    PathFn&& pathFn, bool* replanned = nullptr)
+{
+    bool const stale = SapPlanStale(cache, targetId, targetAt, mates, here, nowMs);
+    if (replanned)
+        *replanned = stale;
+    if (stale)
+    {
+        cache.plan = PlanSapApproach(here, targetAt, standDist, waypointRadius, mates, pathFn);
+        cache.valid = true;
+        cache.targetId = targetId;
+        cache.targetAt = targetAt;
+        cache.matesAt.clear();
+        for (SapPackMate const& m : mates)
+            cache.matesAt.push_back(SapPoint{m.x, m.y});
+        cache.planMs = nowMs;
+    }
+    return cache.plan;
 }
 
 } // namespace TortoiseBots
