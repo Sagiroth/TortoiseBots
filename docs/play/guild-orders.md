@@ -176,6 +176,7 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> cancel
+.bot order <BotName> meet
 .bot order <BotName> preview <farm|craft> <item link or id> <amount>
 .bot order <BotName> steps
 .bot order list
@@ -184,6 +185,16 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 ```
 
 `.bot order <BotName> steps` lists the order's last 16 steps with their age (the same steps the status shows), read-only and memory only, so it starts empty after a restart, a new order or a reassign.
+
+## Meet (enchant orders)
+
+Press Meet (addon button or `.bot order <BotName> meet`) once your enchant order is ready and you stand in the bot's main capital (Stormwind for the Alliance, Orgrimmar for the Horde). Only the giver who placed the order may press it.
+- Outside the capital the bot answers "Meet me in Stormwind." (or Orgrimmar) and stays where it is.
+- While the bot is in a dungeon, raid or battleground, or grouped with a real player, it answers "I'll come when I'm out." The request is kept: it comes once it is free.
+- While the bot is still gathering (or offline), it answers "Still gathering, I'll tell you." The request is kept: it comes once the materials are together.
+- Otherwise it answers "On my way." and walks to you from the capital inn.
+- An unfinished enchant order blocks other givers: a new order on that bot is refused `busy` ("<Bot> is busy with an enchant order for <Giver>."). The giver may always replace their own order, and the guild master (or a rank that may remove members) may replace anyone's. Other order types keep the old rule: a new order replaces the old one.
+- The request is not stored across a restart: press Meet again after the server restarts.
 
 ## Known limitations
 

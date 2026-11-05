@@ -139,6 +139,27 @@ public:
     }
 
 
+    void SetMeet(uint32_t botGuidLow, uint32_t giverGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meet[botGuidLow] = MeetRequest{ giverGuidLow, WorldTimer::getMSTime() };
+    }
+
+    std::optional<MeetRequest> GetMeet(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_meet.find(botGuidLow);
+        if (it == m_meet.end())
+            return std::nullopt;
+        return it->second;
+    }
+
+    void DropMeet(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meet.erase(botGuidLow);
+    }
+
     // Row write outside the store mutex (the caller snapshotted it out of
     // Tick): a failed write re-marks the row dirty for the next pass.
     void WriteAndRescue(OrderRecord const& record)
@@ -2620,6 +2641,10 @@ private:
     // that is still on the auction house, in the mail or in the bot's hands.
     std::unordered_map<uint32_t, std::vector<RelistLedgerEntry>> m_relist;
     uint64_t m_lastRelistExpireSec = 0;
+    // A pending Meet press per bot (giver guid, request time in server
+    // uptime ms), memory only: the lead consumes it, and a restart drops
+    // it so the giver presses Meet again.
+    std::unordered_map<uint32_t, MeetRequest> m_meet;
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     // Last request the drain gave planner time to: the next drain starts
     // after it, so one request cannot spend every tick's evaluation budget.
@@ -3136,6 +3161,27 @@ std::vector<OrderRecord> All()
 bool IsOrderProtectedItem(Player* bot, uint32_t itemId)
 {
     return OrderStore::Instance().IsProtectedItem(bot, itemId);
+}
+
+void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow)
+{
+    if (!botGuidLow || !giverGuidLow)
+        return;
+    OrderStore::Instance().SetMeet(botGuidLow, giverGuidLow);
+}
+
+std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return std::nullopt;
+    return OrderStore::Instance().GetMeet(botGuidLow);
+}
+
+void ClearMeet(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropMeet(botGuidLow);
 }
 
 void RefreshOrderProtectedSet(Player* bot)

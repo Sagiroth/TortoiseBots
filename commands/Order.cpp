@@ -9,11 +9,18 @@
 #include "../runtime/GuildOrderCraftPolicy.h"
 #include "../runtime/GuildOrderPlayerBuyPolicy.h"
 #include "../runtime/GuildOrderStore.h"
+#include "../runtime/GuildOrderEnchantPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Maps/Map.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -158,6 +165,123 @@ bool ParseHours(std::string const& token, uint32_t& hours)
     if (!ParseUintToken(token, hours))
         return false;
     return hours >= GuildOrders::kMinOrderHours && hours <= GuildOrders::kMaxOrderHours;
+}
+
+// The zone check behind Meet lives in GiverInBotCapital in
+// GuildOrderEnchantPolicy.h: giver zone against the bot's main capital
+// (Stormwind for the Alliance, Orgrimmar for the Horde).
+
+// True while the bot is tied up for a Meet visit: in a dungeon, raid or
+// battleground, or grouped with a real player.
+bool BotBusyForMeet(Player* bot)
+{
+    if (!bot || !bot->IsInWorld())
+        return false;
+    if (bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid() ||
+        bot->GetMap()->IsBattleGround()))
+        return true;
+    if (bot->InBattleGround())
+        return true;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    for (Group::MemberSlot const& slot : group->GetMemberSlots())
+    {
+        if (slot.guid == bot->getObjectGuid())
+            continue;
+        Player* member = sObjectAccessor.FindPlayer(slot.guid);
+        if (member && member->IsInWorld() && member->GetSession() &&
+            member->GetSession()->HasNetworkTransport())
+            return true;
+    }
+    return false;
+}
+
+// True when the giver ranks as guild master or may remove guild members
+// (an officer): replacing another giver's running enchant order.
+bool GiverMayOverrideEnchant(Guild* guild, Player* requester)
+{
+    if (!guild || !requester)
+        return false;
+    if (guild->GetLeaderGuid() == requester->getObjectGuid())
+        return true;
+    return guild->HasRankRight(requester->GetRank(), GR_RIGHT_REMOVE);
+}
+
+bool HandleOrderMeet(ChatHandler* handler, Player* requester, std::string const& botName)
+{
+    // order <bot> meet: the giver records a Meet press; the lead comes once
+    // ready. Every refusal names its code: noorder, notcapital, later (kept)
+    // or gathering (kept).
+    Player* bot = nullptr;
+    ObjectGuid guid;
+    if (!ResolveOrderBot(botName, bot, guid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!IsOrderBot(bot, guid))
+    {
+        OrderError(handler, "no-bot", "That character is not a bot.");
+        return true;
+    }
+    if (!CheckGiver(handler, requester, GuildOf(bot, guid)))
+        return true;
+    std::optional<OrderRecord> row = GuildOrders::Find(guid.GetCounter());
+    bool liveEnchant = row && !row->cancelled && row->type == OrderType::Enchant &&
+        !GuildOrders::IsFinished(row->state) &&
+        row->giverGuidLow == requester->GetGUIDLow();
+    if (!liveEnchant)
+    {
+        OrderError(handler, "noorder", "That bot has no enchant order from you.");
+        return true;
+    }
+    bool giverInCapital = GuildOrders::GiverInBotCapital(requester->GetZoneId(), !bot || bot->GetTeam() == ALLIANCE);
+    bool botTiedUp = BotBusyForMeet(bot);
+    bool online = bot && bot->IsInWorld();
+    bool gathering;
+    if (!online)
+        gathering = true;
+    else if (row->state == OrderState::Working)
+        gathering = true;
+    else if (row->state == OrderState::Waiting)
+        gathering = row->reason != OrderReason::NeedItems;
+    else
+        gathering = false;
+    GuildOrders::MeetFacts facts;
+    facts.liveEnchantOrder = liveEnchant;
+    facts.giverInCapital = giverInCapital;
+    facts.botTiedUp = botTiedUp;
+    facts.gathering = gathering;
+    switch (GuildOrders::DecideMeet(facts))
+    {
+        case GuildOrders::MeetVerdict::NoOrder:
+            OrderError(handler, "noorder", "That bot has no enchant order from you.");
+            return true;
+        case GuildOrders::MeetVerdict::NotCapital:
+        {
+            std::string text = (bot && bot->GetTeam() != ALLIANCE) ?
+                "Meet me in Orgrimmar." : "Meet me in Stormwind.";
+            OrderError(handler, "notcapital", text.c_str());
+            return true;
+        }
+        case GuildOrders::MeetVerdict::Later:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("I'll come when I'm out.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet later");
+            return true;
+        case GuildOrders::MeetVerdict::Gathering:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("Still gathering, I'll tell you.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet gathering");
+            return true;
+        case GuildOrders::MeetVerdict::Coming:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("On my way.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet coming");
+            return true;
+    }
+    return true;
 }
 
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
@@ -321,6 +445,29 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     }
     if (!CheckGiver(handler, requester, guildId))
         return true;
+    // An unfinished enchant order of another giver blocks every new order:
+    // only the giver or the guild master (or a rank that may remove
+    // members) replaces it. Other order types keep today's rule.
+    if (std::optional<OrderRecord> existing = GuildOrders::Find(guid.GetCounter()))
+    {
+        if (!existing->cancelled && existing->type == OrderType::Enchant &&
+            !GuildOrders::IsFinished(existing->state))
+        {
+            Guild* guild = sGuildMgr.GetGuildById(guildId);
+            bool sameGiver = existing->giverGuidLow == requester->GetGUIDLow();
+            bool mayOverride = GiverMayOverrideEnchant(guild, requester);
+            if (GuildOrders::DecideEnchantReplace(true, sameGiver, mayOverride) ==
+                GuildOrders::EnchantReplaceVerdict::Busy)
+            {
+                std::string giverName = "?";
+                sObjectMgr.GetPlayerNameByGUID(
+                    ObjectGuid(HIGHGUID_PLAYER, existing->giverGuidLow), giverName);
+                OrderError(handler, "busy", ((bot ? bot->GetName() : botName) +
+                    std::string(" is busy with an enchant order for ") + giverName + ".").c_str());
+                return true;
+            }
+        }
+    }
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)
@@ -628,7 +775,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::string rest = Trim(args ? args : "");
     if (rest.empty())
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ... | order list | order search ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|meet|steps|preview> ... | order list | order search ....");
         return true;
     }
 
@@ -704,8 +851,8 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
-    if (lower == "reassign")
+    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> meet |
+    // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     {
         std::string subBotName, newBotName;
         if (!(in >> subBotName >> newBotName))
@@ -715,16 +862,18 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         }
         return HandleOrderReassign(handler, requester, subBotName, newBotName);
     }
-    // order <bot> cancel | order <bot> steps | order <bot> preview <farm|craft> <item> <amount> |
+    // order <bot> cancel | order <bot> meet | order <bot> steps | order <bot> preview <farm|craft> <item> <amount> |
     // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     std::string second;
     if (!(in >> second))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|meet|steps|preview> ....");
         return true;
     }
     std::string lowerSecond = second;
     std::transform(lowerSecond.begin(), lowerSecond.end(), lowerSecond.begin(), ::tolower);
+    if (lowerSecond == "meet")
+        return HandleOrderMeet(handler, requester, first);
     if (lowerSecond == "cancel")
         return HandleOrderCancel(handler, requester, first);
     if (lowerSecond == "steps")
