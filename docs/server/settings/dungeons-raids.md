@@ -34,6 +34,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
+| [`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `1` | `1`: a fight held only by fast-respawning units at their spawn, none hitting the party, is no fight; a regroup never gathers on one. |
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no area action lands on a charmed group member (needs no rows or tactics). |
@@ -335,6 +336,17 @@ Leaves a unit a `needs_aura` boss-tactic row gates to the bots that carry the ro
 <summary>How it works in detail</summary>
 
 **Aura-gated targets:** the `needs_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): `boss_entry` is the unit and `spell` the aura it takes damage from. A bot without the aura does no damage to it, so with this key on the target picks, boss-tactic taunts and the run's guard leave it out, and an explicit attack order on it is refused.
+
+</details>
+
+### `AiPlayerbot.DungeonRunRespawnNest`
+Keeps the run leader out of fights that only a fast-respawning spawn holds open.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Respawn nest:** a unit that respawns within 60 s and stands within 22 yd of its own spawn point (ZG Jin'do's pit: ten Sacrificed Trolls, 10 s). A combat that only such units hold, none of them hitting a party bot or pet, is no fight: the run orders the bots back to the step. A regroup also gathers at the step point instead of within 30 yd of one. A nest unit that attacks the party is always a real fight and a guard target, and a unit the plan's own boss, hold or pull step names is never a nest.
 
 </details>
 

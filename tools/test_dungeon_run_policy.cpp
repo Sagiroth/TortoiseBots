@@ -3492,14 +3492,14 @@ static void TestRegroupFightsFirst()
     CHECK(w.regroup && w.autoRegroups == 1);
 }
 
-// A bot left in combat with a respawn nest (its kills come back in seconds at the same spot) does not hold the
-// run: the wipe's regroup starts at once instead of "13 dead: fighting on, a regroup follows", and after the revive
-// the gather's move goes out while the bot still swings at the nest. ZG Jin'do's pit: a Banish dropped a bot on the
-// trolls and its troll-only fight held the regroup.
+// A bot left in combat with a respawn nest that hits nobody in the party (its kills come back in seconds at the same
+// spot) does not hold the run: the wipe's regroup starts at once instead of "13 dead: fighting on, a regroup follows",
+// and after the revive the gather's move goes out while the bot still swings at the nest. ZG Jin'do's pit: a bot left
+// on the trolls after a Banish held the regroup. The plan names other units than the trolls.
 static void TestRegroupIgnoresRespawnNestCombat()
 {
     DungeonPlan plan;
-    plan.steps = {PullStep(60, {14826})};
+    plan.steps = {PullStep(60, {7011})};
     Run r = Start(&plan);
     Facts f = Party(0);
     f.total = 20;
@@ -3548,13 +3548,118 @@ static void TestRegroupIgnoresRespawnNestCombat()
     CHECK(!q.regroup && q.note.find("fighting on") != std::string::npos);
 }
 
+// Review of t1105c (Codex HIGH + Opus): a nest unit that attacks a party member is a real fight. The trolls hitting the
+// banished bot keep the run in combat ("fighting on"): only an idle nest is no fight.
+static void TestRegroupKeepsFightWithNestUnitHittingParty()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Facts f = Party(0);
+    f.total = 20;
+    f.alive = 7;
+    f.dead = 13;
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    nest.hitsParty = true; // it hits the banished bot
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    Run r = Start(&plan);
+    CHECK(NestOnlyCombat(r, f) == false);
+    CHECK(Tick(r, f).empty());
+    CHECK(!r.regroup && r.note.find("fighting on") != std::string::npos);
+    // The same unit idle (hits nobody) is no fight.
+    Facts idle = f;
+    idle.engagedUnits[0].hitsParty = false;
+    idle.members[0].engaged = idle.engagedUnits;
+    CHECK(NestOnlyCombat(r, idle) == true);
+    // One hitting nest unit among idle ones keeps the whole combat real.
+    UnitFact other = idle.engagedUnits[0];
+    other.guid = 0x302;
+    other.hitsParty = true;
+    idle.members[0].engaged.push_back(other);
+    CHECK(NestOnlyCombat(r, idle) == false);
+}
+
+// A short-respawn unit the plan itself fights (a boss step's entry, a hold's event unit, a pull's pack) is never a
+// nest: Codex HIGH, the rule must not abandon a legitimate short-respawn encounter.
+static void TestNestRuleSparesPlanObjectives()
+{
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    DungeonPlan none;
+    none.steps = {PullStep(60, {7011})};
+    Run plain = Start(&none);
+    CHECK(NestOnlyCombat(plain, f));
+    DungeonPlan pull;
+    pull.steps = {PullStep(60, {14826})};
+    Run viaPull = Start(&pull);
+    CHECK(!NestOnlyCombat(viaPull, f));
+    DungeonPlan boss;
+    boss.steps = {Step(PlanStepKind::Boss, 60)};
+    boss.steps[0].entry = 14826;
+    Run viaBoss = Start(&boss);
+    CHECK(!NestOnlyCombat(viaBoss, f));
+    DungeonPlan hold;
+    hold.steps = {Step(PlanStepKind::Hold, 60)};
+    hold.steps[0].entries = {14826};
+    Run viaHold = Start(&hold);
+    CHECK(!NestOnlyCombat(viaHold, f));
+    // A bare Run with no plan (a policy test's Start(nullptr)) has no objective.
+    Run noPlan = Start(nullptr);
+    CHECK(NestOnlyCombat(noPlan, f));
+}
+
+// AiPlayerbot.DungeonRunRespawnNest = 0: the rules are off, the nest holds the fight as before the rule existed.
+static void TestNestRuleOffKeepsFight()
+{
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Run r = Start(&plan);
+    CHECK(NestOnlyCombat(r, f));
+    f.respawnNest = false;
+    CHECK(!NestOnlyCombat(r, f));
+    // ... and the gather stays on the lead bot.
+    f.nestUnits = {nest};
+    f.nestUnitsRead = true;
+    CHECK(!GatherAnchorInNest(r, f, 0.0f, 0.0f, 0.0f));
+}
+
 // A regroup never gathers inside a respawn nest (kNestGatherYd): the dead tank's body at the rim of the pit was the
 // gather spot, and the party stood on the trolls' spawns. With a nest unit within 30 yd of the lead bot the gather
 // goes to the step point; a unit that left its nest is no reason to leave the spot.
 static void TestRegroupAnchorAvoidsRespawnNest()
 {
     DungeonPlan plan;
-    plan.steps = {PullStep(60, {14826})};
+    plan.steps = {PullStep(60, {7011})};
     Facts f = Party(0);
     f.members = {Mem("Tanky", 0), Mem("Magey", 25)};
     f.maxMemberYd = 25.0f;
@@ -3586,6 +3691,12 @@ static void TestRegroupAnchorAvoidsRespawnNest()
     k.nestUnits[0].x = kNestGatherYd + 1.0f;
     BeginRegroup(far);
     CHECK(Tick(far, k) == "move 0.0 0.0 0.0");
+    // A unit the plan's own pull step names is the run's objective, no nest to keep away from.
+    DungeonPlan objective;
+    objective.steps = {PullStep(60, {14826})};
+    Run own = Start(&objective);
+    BeginRegroup(own);
+    CHECK(Tick(own, f) == "move 0.0 0.0 0.0");
 }
 
 // Review of #1055: a living rezzer gets kPartyRezWaitMs to raise the dead
@@ -34480,11 +34591,10 @@ static void TestHealerGuardSkipsCcHolders()
 }
 
 
-// A unit that comes back within a minute and stands within kNestYd of its own spawn point is in its respawn nest
-// (InRespawnNest): the kill ends with it back in seconds at the same spot, so the guards never send anyone at it. ZG
-// Jin'do's pit: ten Sacrificed Trolls 14826 (respawnSec 10) around their spawns, one Banish drops a bot on them and
-// the whole raid's guard and off-tanks used to be spent there pull after pull.
-static void TestHealerGuardSkipsUnitInRespawnNest()
+// Review of t1105c (Codex HIGH + Opus): the guards never leave a nest unit that attacks a party member. Ten Sacrificed
+// Trolls 14826 (respawnSec 10) around their spawns hit the Banished healer, and the guard still sends a ranged dps at
+// the one on a healer, wherever the troll stands in relation to its spawn.
+static void TestHealerGuardTakesNestUnitHittingHealer()
 {
     DungeonPlan plan;
     Run r = RaidBossRun(plan);
@@ -34496,41 +34606,18 @@ static void TestHealerGuardSkipsUnitInRespawnNest()
     f.members = {tank, dps};
     UnitFact troll = Hitter(49078, 14826, 47, true); // on a healer, 47 yd from the lead bot (the pit)
     troll.respawnSec = 10;
-    troll.homeYd = 3.0f;
+    troll.homeYd = 3.0f; // in its nest
+    troll.hitsParty = true;
     f.partyAttackers = {troll};
-    for (int i = 0; i < 5; ++i)
-        CHECK(GuardTick(r, f).empty());
-    CHECK(r.healerGuardAssigned.count(49078) == 0);
-    // The same unit out of its nest is a normal add.
-    f.partyAttackers[0].homeYd = 40.0f;
-    CHECK(GuardTick(r, f) == "attack 49078 NearDps");
+    std::string order;
+    for (int i = 0; i < 5 && order.empty(); ++i)
+        order = GuardTick(r, f);
+    CHECK(order == "attack 49078 NearDps");
+    CHECK(r.healerGuardAssigned.count(49078) == 1);
 }
 
-// A fast respawning unit that left its nest (chasing a bot into the raid, > kNestYd from home) is still a target: the
-// rule is about the nest, not the respawn. A unit that does not respawn quickly is unchanged wherever it stands.
-static void TestHealerGuardTakesFastRespawnUnitThatLeftHome()
-{
-    DungeonPlan plan;
-    Run r = RaidBossRun(plan);
-    Facts f = RaidHealerGuardFacts();
-    MemberFact tank = Mem("Tanky", 0);
-    MemberFact dps = Mem("NearDps", 20);
-    dps.ranged = true;
-    dps.rangedDps = true;
-    f.members = {tank, dps};
-    UnitFact troll = Hitter(49081, 14826, 18, true);
-    troll.respawnSec = 10;
-    troll.homeYd = kNestYd; // at the edge it still counts as in its nest
-    f.partyAttackers = {troll};
-    for (int i = 0; i < 5; ++i)
-        CHECK(GuardTick(r, f).empty());
-    f.partyAttackers[0].homeYd = kNestYd + 1.0f;
-    CHECK(GuardTick(r, f) == "attack 49081 NearDps");
-}
-
-// The raid boss fight's off-tank guard (RaidGuardTick) skips a nest unit too: with the main tank on the boss the
-// off-tank used to be spent on the pit's trolls and was not free to take Jin'do back when the tank was Banished.
-static void TestOffTankGuardSkipsUnitInRespawnNest()
+// The raid boss fight's off-tank guard (RaidGuardTick) takes a nest unit that hits the party as well.
+static void TestOffTankGuardTakesNestUnitHittingParty()
 {
     DungeonPlan plan;
     Run r = RaidBossRun(plan);
@@ -34538,20 +34625,17 @@ static void TestOffTankGuardSkipsUnitInRespawnNest()
     UnitFact troll = Hitter(45001, 14826, 20, true);
     troll.respawnSec = 10;
     troll.homeYd = 2.0f;
+    troll.hitsParty = true;
     f.partyAttackers = {troll};
-    for (int i = 0; i < 20; ++i)
-        CHECK(Tick(r, f).empty());
-    CHECK(r.note.find("the off-tank") == std::string::npos);
-    f.partyAttackers[0].homeYd = 40.0f; // out of its nest: a normal add
     std::string order;
     for (int i = 0; i < 20 && order.empty(); ++i)
         order = Tick(r, f);
     CHECK(order == "attack 45001 Offy");
 }
 
-// The engage on arrival (EngageTarget) skips a nest unit as well, the tank's own mob and a healer's attacker alike:
-// the tank would walk into the nest and the fight would never end.
-static void TestEngageOnArrivalSkipsUnitInRespawnNest()
+// The engage on arrival (EngageTarget) takes a nest unit that hits the party too, the tank's own mob and a healer's
+// attacker alike.
+static void TestEngageOnArrivalTakesNestUnitHittingParty()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Move, 0)};
@@ -34563,23 +34647,16 @@ static void TestEngageOnArrivalSkipsUnitInRespawnNest()
     UnitFact troll = Hitter(49078, 14826, 6, true);
     troll.respawnSec = 10;
     troll.homeYd = 3.0f;
+    troll.hitsParty = true;
     f.partyAttackers = {troll};
-    CHECK(EngageTarget(r, f) == nullptr);
-    f.partyAttackers[0].homeYd = 40.0f;
     CHECK(EngageTarget(r, f) == &f.partyAttackers[0]);
-    // The tank's own mob in melee reach: the same rule.
     Facts t = f;
     t.partyAttackers.clear();
     t.leadHasAttacker = true;
     t.leadAttacker = Hitter(49079, 14826, 2);
     t.leadAttacker.respawnSec = 10;
     t.leadAttacker.homeYd = 4.0f;
-    CHECK(EngageTarget(r, t) == nullptr);
-    t.leadAttacker.homeYd = 40.0f;
-    CHECK(EngageTarget(r, t) == &t.leadAttacker);
-    // No fast respawn: today's rule, wherever it stands.
-    t.leadAttacker.respawnSec = 0;
-    t.leadAttacker.homeYd = 0.0f;
+    t.leadAttacker.hitsParty = true;
     CHECK(EngageTarget(r, t) == &t.leadAttacker);
 }
 
@@ -35141,10 +35218,9 @@ int main()
     TestBossDownEndsTheRowThoughTrollsKeepFighting();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
-    TestHealerGuardSkipsUnitInRespawnNest();
-    TestHealerGuardTakesFastRespawnUnitThatLeftHome();
-    TestOffTankGuardSkipsUnitInRespawnNest();
-    TestEngageOnArrivalSkipsUnitInRespawnNest();
+    TestHealerGuardTakesNestUnitHittingHealer();
+    TestOffTankGuardTakesNestUnitHittingParty();
+    TestEngageOnArrivalTakesNestUnitHittingParty();
     TestRunCcFamilyTableKeyOffOrder();
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();
@@ -35333,6 +35409,9 @@ int main()
     TestFewDeadRuleSkipsEvents();
     TestRegroupFightsFirst();
     TestRegroupIgnoresRespawnNestCombat();
+    TestRegroupKeepsFightWithNestUnitHittingParty();
+    TestNestRuleSparesPlanObjectives();
+    TestNestRuleOffKeepsFight();
     TestRegroupAnchorAvoidsRespawnNest();
     TestRegroupWaitsForPartyRez();
     TestRegroupRevivePauses();

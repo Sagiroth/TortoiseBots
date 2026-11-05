@@ -1,8 +1,7 @@
 # Changelog
 
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
-- Run leaders no longer send the guard, the off-tanks or the tank's arrival order at a unit standing in its own respawn nest: it comes back within a minute at the same spot, so the party fought it forever.
-- A bot left fighting such a fast-respawning nest no longer holds the run, and the party gathers at the step's own point instead of on the nest.
+- A fast-respawning unit at its own spawn that hits nobody in the party (Jin'do's pit trolls) no longer holds a fight open or a regroup's gather spot; a unit that attacks the party is always fought (AiPlayerbot.DungeonRunRespawnNest, default on).
 - Jin'do in Zul'Gurub: when Banish throws the tank onto the pit's trolls, the off-tank takes the boss back instead of letting him chase the tank to the pit rim.
 
 ## v1.15.1 (2026-11-03)
