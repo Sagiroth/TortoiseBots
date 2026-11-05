@@ -82,6 +82,8 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.AutoLearnQuestSpellsAlts`](#aiplayerbotautolearnquestspellsalts) | `0` | Lets your own alts learn class-quest spells on level-up too. |
 | [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `1` | Grants free trainer spell sweeps on level-up for random pool bots. |
 | [`AiPlayerbot.AutoLearnDroppedSpells`](#aiplayerbotautolearndroppedspells) | `0` | Grants free dungeon and raid book spells to random pool bots at level 60. |
+| [`AiPlayerbot.PetAutoTrain`](#aiplayerbotpetautotrain) | `1` | Hunter and warlock pets of pool bots and hires train themselves on every level-up. |
+| [`AiPlayerbot.PetAutoTrainAlts`](#aiplayerbotpetautotrainalts) | `0` | The same for your own alts' pets. |
 | [`AiPlayerbot.RandomGearUpgradeEnabled`](#aiplayerbotrandomgearupgradeenabled) | `1` (commented out in the template; uncomment to change it) | Seeds newly created pool bots with level-appropriate starter equipment. |
 | [`AiPlayerbot.RandomGearWhitelist`](#aiplayerbotrandomgearwhitelist) | `(empty)` (commented out in the template; uncomment to change it) | Item IDs that skip stat-weight scoring; other equip rules still apply. |
 | [`AiPlayerbot.RandomGearProgression`](#aiplayerbotrandomgearprogression) | `1` (commented out in the template; uncomment to change it) | Controls quality-band variety when pool bots generate gear. |
@@ -935,6 +937,39 @@ Teaches dungeon and raid dropped ability books to high-level random pool bots fo
 <summary>How it works in detail</summary>
 
 When set to `1`, random pool bots automatically learn dungeon and raid spell book ranks for free once they reach the required level (entries at levels 48, 50, 56, and 60 depending on class). When `0`, these spells must be acquired through normal item drops.
+
+</details>
+
+### `AiPlayerbot.PetAutoTrain`
+Hunter and warlock pets of pool bots and hired companions train themselves on every level-up.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- **Hunter pets** get their family's best build, re-planned on every level-up:
+    - Growl plus up to three abilities, because a pet holds at most four active abilities. For example, a wolf gets Bite, Furious Howl and Dash, a raptor gets Bite and Savage Rend, and a spider gets Bite and Web.
+    - Then Great Stamina, Natural Armor and the resistances with the training points left.
+    - The budget is the game's own, (loyalty level − 1) × pet level: 300 points at level 60.
+    - Bite and Claw never share a build, because a pet with both on autocast only uses Claw. Cower is left out.
+- **Pets that know more** (for example, from older versions) are rebuilt to the plan.
+- **Warlock demons** learn every Grimoire rank of their level.
+
+With `0`, pets keep what they have and new ranks stop coming.
+
+</details>
+
+### `AiPlayerbot.PetAutoTrainAlts`
+Lets your own alts' hunter and warlock pets train themselves on every level-up, the same way pool pets do.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Covers characters you add with `.bot add` and autonomous alt bots. It differs from pool pets in two ways:
+
+- A hunter alt's pet keeps every ability you taught it yourself, and those abilities rank up too. The family build only fills the free slots, and nothing the pet knows is ever removed.
+- It spends the pet's real training points, so a pet with low loyalty gets less until its loyalty grows.
 
 </details>
 

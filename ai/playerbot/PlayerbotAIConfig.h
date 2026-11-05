@@ -905,6 +905,8 @@ public:
     bool autoLearnQuestSpells;
     bool autoLearnQuestSpellsAlts;
     bool autoLearnDroppedSpells;
+    bool petAutoTrain;
+    bool petAutoTrainAlts;
     bool autoDoQuests;
     bool autoShareConjuredOnTrade;
     // TravelNode cache generation can load every map and rewrite its database
