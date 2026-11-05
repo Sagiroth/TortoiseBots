@@ -167,6 +167,17 @@ namespace ai
         return best;
     }
 
+    // The gather's latched source: the record's current one wins while its Son is alive inside the seek's reach (the
+    // caller checks that), whatever the current search radius or the damage between the two Sons; only a dead or
+    // out-of-reach Son repicks, and then the lowest health % (then lowest guid) of the search's sources.
+    inline std::uint64_t SeekLatchedGatherSource(bool latchInReach, std::uint64_t currentGuid,
+        const std::vector<SeekSourceChoice>& atSpot)
+    {
+        if (latchInReach && currentGuid != 0)
+            return currentGuid;
+        return SeekKeepOrPickGatherSource(0, atSpot);
+    }
+
     // The source search's reach around the spot: the spot's own radius while the third tank is there to drag a source
     // in, else the fallback's 35 yd (the gather then goes to the source wherever it stands). A forced burn or a source
     // already at the hold percent reaches the fallback too, whatever the tank count: the off-spot Son has to die for

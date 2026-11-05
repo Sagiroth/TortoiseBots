@@ -1213,29 +1213,25 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             break;
         }
     }
-    // The source the gather stands around: one pick for the whole raid. The record's current source wins while it still
-    // stands at the spot; with two Sons there every bot else would pick its own and flip the shared latch. Without the
+    // The source the gather stands around: one pick for the whole raid. The latch holds across the reads: the
+    // record's current source wins while its Son is alive and inside the seek's reach, even when the search shrinks
+    // back to the spot's radius or the burn is forced — two Sons near the spot with damage spread between them would
+    // otherwise flip the pick and restart the gather's readiness every read. Only a dead or out-of-reach source
+    // repicks, and then the lowest health % (then lowest guid) of the search's sources is the new one. Without the
     // third tank, or with the burn forced or a source already at the hold percent, the search reaches 35 yd, so the
-    // gather goes to the source wherever it stands and the below-hold or lowest one is the pick.
+    // gather goes to the source wherever it stands.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold);
     const std::vector<Creature*> sources =
         SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
     std::vector<SeekSourceChoice> atSpot;
-    std::vector<SeekSourceChoice> finishable;
     atSpot.reserve(sources.size());
     for (Creature* candidate : sources)
-    {
-        const SeekSourceChoice choice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()};
-        atSpot.push_back(choice);
-        if (SeekSourceFinishable(candidate->IsInCombat(), choice.hpPct, holdPct))
-            finishable.push_back(choice);
-    }
-    // A source already at the hold percent and fighting is the kill pick before any other: the lowest of them wins,
-    // and the record's current source may not hold it back.
-    const std::uint64_t chosenGuid = !finishable.empty()
-        ? SeekKeepOrPickGatherSource(0, finishable)
-        : SeekKeepOrPickGatherSource(out.forceBurn || belowHold ? 0 : gatherGuid, atSpot);
+        atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
+    Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
+    const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
+        latched->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) <= kSeekFallbackYd;
+    const std::uint64_t chosenGuid = SeekLatchedGatherSource(latchInReach, gatherGuid, atSpot);
     Unit* source = nullptr;
     for (Creature* candidate : sources)
     {
@@ -1245,6 +1241,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             break;
         }
     }
+    // The latch's Son may stand outside the current search radius (the search shrank back): the map lookup above
+    // still finds it, and the gather (and the kill pick) stays on it.
+    if (!source && latched && latchInReach && latched->GetObjectGuid().GetRawValue() == chosenGuid)
+        source = latched;
     out.source = source;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
@@ -1267,9 +1267,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             record.missing = CountSeekWanted(ai, bot, boss, *row, out.windowOpen, source, row->param + 1.0f);
             record.ready = record.ready || SeekGatherReady(record.missing, record.gatherStartMs, nowMs, forceBurn);
         }
-        else if (record.gatherSourceGuid != 0 && (!source || !out.windowOpen))
+        else if (record.gatherSourceGuid != 0 &&
+                 (!out.windowOpen || chosenGuid != record.gatherSourceGuid))
         {
-            // The gather is over (the source died or left the spot, or the window closed): the next one starts afresh.
+            // The gather is over (the pick died or left the reach, or the window closed): the next one starts afresh.
             record.gatherSourceGuid = 0;
             record.gatherStartMs = 0;
             record.ready = false;

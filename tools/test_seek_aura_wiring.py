@@ -126,8 +126,8 @@ class SeekWalkWiring(unittest.TestCase):
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
         for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
-                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(",
-                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekKeepOrPickGatherSource(",
+                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(",
+                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(",
                      "SeekSourceSearchYd(", "SeekClockStartOver("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
@@ -165,6 +165,14 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("SeekRecordSurvivesReload(it->second, *row)", STATE_POLICY)
         self.assertIn("record.cycleSpell == row.cycleSpell", STATE_POLICY)
         self.assertIn("beforeInstall(*nextTactics);", (ROOT / "ai/playerbot/DungeonPlanReloadPolicy.h").read_text())
+
+    def test_the_gather_latch_survives_a_forced_burn(self):
+        # Two Sons near the spot and damage spread between them: the record's pick holds while its Son lives inside
+        # the reach, whatever the search radius or the forced burn, so the gather does not flip every read.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("SeekLatchedGatherSource(latchInReach, gatherGuid, atSpot)", read)
+        self.assertNotIn("out.forceBurn || belowHold ? 0 : gatherGuid", read)
+        self.assertIn("kSeekFallbackYd", read)
 
     def test_the_evade_erases_the_record(self):
         read = body(ACTIONS, "bool ReadSeekFight(")

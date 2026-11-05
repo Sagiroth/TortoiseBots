@@ -124,6 +124,23 @@ int main()
         CHECK(SeekKeepOrPickGatherSource(0, {}) == 0);
     }
 
+    // SeekLatchSurvivesDamageSpread: two Sons near the spot, the raid's damage spreads between them, and the pick is
+    // the latched one for the whole window — also through a forced burn or once the search shrinks back (the caller
+    // checks the latch against the 35 yd reach, not the current radius). It repicks only when the Son is gone or out
+    // of reach, and then the lowest health % (then lowest guid) wins.
+    {
+        const std::vector<SeekSourceChoice> spread = {{0x2000, 22.0f}, {0x1000, 18.0f}};
+        CHECK(SeekLatchedGatherSource(true, 0x2000, spread) == 0x2000);
+        const std::vector<SeekSourceChoice> flipped = {{0x2000, 12.0f}, {0x1000, 25.0f}};
+        CHECK(SeekLatchedGatherSource(true, 0x2000, flipped) == 0x2000);
+        const std::vector<SeekSourceChoice> dragged = {{0x2000, 40.0f}, {0x1000, 25.0f}};
+        CHECK(SeekLatchedGatherSource(false, 0x2000, dragged) == 0x1000);
+        CHECK(SeekLatchedGatherSource(true, 0x2000, dragged) == 0x2000);
+        CHECK(SeekLatchedGatherSource(true, 0x2000, {}) == 0x2000); // alive in reach, outside the search radius
+        CHECK(SeekLatchedGatherSource(false, 0x2000, {}) == 0);     // gone with nothing to repick
+        CHECK(SeekLatchedGatherSource(false, 0, spread) == 0x1000); // no latch yet: the lowest health %
+    }
+
     // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
     CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
     CHECK(SeekSourceSearchYd(false, false, false) == kSeekFallbackYd);
