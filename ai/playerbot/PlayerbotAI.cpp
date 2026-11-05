@@ -28,6 +28,7 @@
 #include "../../runtime/AltBotPolicy.h"
 #include "../../runtime/AltBotService.h"
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/WhyTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/GuildOrderStore.h"
@@ -2830,6 +2831,10 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     if (type == CHAT_MSG_SYSTEM)
         return;
 
+    // `.bot why`: an order this bot received (whisper/party/raid chat,
+    // run-leader or commander included), recorded for the trace.
+    TortoiseBots::WhyTraceService::Instance().NoteOrder(this, &fromPlayer, filtered);
+
     if (filtered.find(sPlayerbotAIConfig.commandSeparator) != std::string::npos)
     {
         std::vector<std::string> commands;
@@ -3133,6 +3138,9 @@ void PlayerbotAI::ChangeEngine(BotState type)
 void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 {
     SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
+    // `.bot why`: closes the tick line on every return path, and does nothing
+    // unless this bot is the one being traced.
+    TortoiseBots::WhyTraceService::TickScope whyScope(this);
     const bool previousActivityOverride = explicitActivityOverride;
     explicitActivityOverride = previousActivityOverride || forceActivity;
 
@@ -3558,6 +3566,10 @@ bool PlayerbotAI::CanDoSpecificAction(const std::string& name, bool isUseful, bo
 bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool silent)
 {
     Player* requester = event.getOwner();
+    // `.bot why`: an action somebody ordered (chat, commander or run leader)
+    // is an order the trace shows. Internal callers pass the bot as owner.
+    if (requester && bot && requester->GetObjectGuid() != bot->GetObjectGuid())
+        TortoiseBots::WhyTraceService::Instance().NoteOrderAction(this, requester, name, event.getSource());
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         Engine* engine = engines[i];
