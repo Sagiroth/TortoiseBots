@@ -10,6 +10,7 @@
 #include "GuildOrderSupplyQueue.h"
 #include "GuildOrderStore.h"
 #include "../ai/playerbot/GuildOrderCraft.h"
+#include "../ai/playerbot/policy/guild/EnchantGatherPolicy.h"
 #include "../ai/playerbot/TravelMgr.h"
 #include "../host/ModuleLog.h"
 #include "PlayerbotAIStorage.h"
@@ -359,6 +360,29 @@ void DeliverCraftLeftovers(Player* bot, Guild* guild, Unit* banker, OrderRecord 
     }
 }
 
+// What a cancelled or timed-out enchant order still owes the guild bank, per
+// reagent: what the bags hold, capped at one cast's need. The spell read is
+// static data, so the world-thread drain may do it; bag counts are live.
+std::vector<EnchantDepositRow> EnchantDepositQuotas(Player* bot, uint32_t spellId)
+{
+    std::vector<EnchantDepositRow> out;
+    if (!bot || !spellId)
+        return out;
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell || spell->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+        return out;
+    std::vector<EnchantMaterialState> materials;
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        materials.push_back(EnchantMaterialState{ reagentId,
+            uint32_t(spell->ReagentCount[i]), bot->GetItemCount(reagentId), false });
+    }
+    return EnchantDepositDue(materials.data(), materials.size());
+}
+
 class DeliveryDrain
 {
 public:
@@ -384,6 +408,49 @@ private:
     // anything resets the count; the bank counts as refused after
     // kDeliveryBankRetries empty passes in a row.
     std::unordered_map<uint32_t, uint32_t> m_emptyPasses;
+
+    // One deposit pass for a cancelled or timed-out enchant row: every due
+    // reagent walks to the banker up to its quota, and what the bank cannot
+    // take goes by mail like craft leftovers do. Runs dry, the row ends
+    // through FinishEnchantDeposit; otherwise it stays queued and the map
+    // action re-queues at the next banker visit.
+    void RunEnchantDeposit(PendingDelivery const& request, OrderRecord const& stored, Player* bot,
+        ::PlayerbotAI* ai, Guild* guild, Unit* banker)
+    {
+        std::vector<EnchantDepositRow> due = EnchantDepositQuotas(bot, stored.itemId);
+        if (due.empty())
+        {
+            FinishEnchantDeposit(request.botGuidLow);
+            m_emptyPasses.erase(request.botGuidLow);
+            ExpireTargetFor(ai);
+            return;
+        }
+        ObjectGuid receiver = MailReceiverGuid(stored, bot->getObjectGuid());
+        for (EnchantDepositRow const& row : due)
+        {
+            uint32_t quota = row.quota;
+            for (uint32_t pass = 0; pass < 200 && quota; ++pass)
+            {
+                uint32_t moved = banker ? DepositPass(bot, guild, banker, row.itemId, 0, quota) : 0;
+                if (!moved)
+                    break;
+                quota -= moved > quota ? quota : moved;
+            }
+            if (!quota)
+                continue;
+            if (receiver)
+            {
+                bool mailed = false;
+                MailStacks(bot, row.itemId, receiver, 0, quota, mailed);
+            }
+        }
+        if (EnchantDepositQuotas(bot, stored.itemId).empty())
+        {
+            FinishEnchantDeposit(request.botGuidLow);
+            m_emptyPasses.erase(request.botGuidLow);
+        }
+        ExpireTargetFor(ai);
+    }
 
     void RunOne(PendingDelivery const& request)
     {
@@ -415,7 +482,14 @@ private:
         if (!guild)
             return;
 
-        uint32_t& emptyPasses = m_emptyPasses[request.botGuidLow];
+        // A cancelled or timed-out enchant row banks its reagents instead of
+        // an output item: per-reagent quotas through the same banker, with
+        // the same mail fallback.
+        if (stored->type == OrderType::Enchant)
+        {
+            RunEnchantDeposit(request, *stored, bot, ai, guild, banker);
+            return;
+        }
         bool mailedAny = stored->reason == OrderReason::NoBank;
         uint32_t delivered = stored->delivered;
         // Anything already banked or mailed reached the guild during this

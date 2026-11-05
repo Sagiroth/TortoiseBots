@@ -748,13 +748,18 @@ bool RefreshEnchantOrderGathering(PlayerbotAI* ai, Player* bot, OrderRecord cons
     {
         TortoiseBots::GuildOrders::SetState(order.botGuidLow, OrderState::Ready, OrderReason::None);
         TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
-        Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
-        if (giver && giver->IsInWorld())
+        // Once per order: a relapse to working and back never repeats it.
+        if (!order.readyWhispered)
         {
-            std::string capital = bot->GetTeam() == ALLIANCE ? "Stormwind" : "Orgrimmar";
-            std::string enchant = spell->SpellName[0].c_str();
-            ai->TellPlayerNoFacing(giver, "I have the materials for " + enchant + ". Come to " + capital +
-                " and press Meet.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+            Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
+            if (giver && giver->IsInWorld())
+            {
+                std::string capital = bot->GetTeam() == ALLIANCE ? "Stormwind" : "Orgrimmar";
+                std::string enchant = spell->SpellName[0].c_str();
+                ai->TellPlayerNoFacing(giver, "I have the materials for " + enchant + ". Come to " + capital +
+                    " and press Meet.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+                TortoiseBots::GuildOrders::NoteEnchantReadyWhispered(order.botGuidLow);
+            }
         }
         return true;
     }
@@ -1440,9 +1445,17 @@ bool ai::OrderNeedsDelivery(Player* bot)
         return false;
     if (stored->state != TortoiseBots::GuildOrders::OrderState::Delivering || !stored->itemId)
         return false;
+    // A cancelled or timed-out enchant row walks its reagents to the banker
+    // while any of the spell's reagents sits in the bags.
+    if (stored->type == TortoiseBots::GuildOrders::OrderType::Enchant)
+    {
+        for (uint32_t reagentId : ai::EnchantReagentsFor(stored->itemId))
+            if (reagentId && bot->GetItemCount(reagentId))
+                return true;
+        return false;
+    }
     return bot->GetItemCount(stored->itemId) > 0;
 }
-
 bool HasGuildOrderDeliveryValue::Calculate()
 {
     if (!OrderBotMayTravel(ai, bot))

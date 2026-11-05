@@ -47,6 +47,22 @@ int main()
     CHECK(EnchantMaterialsComplete(tickedHeld, 1));
     CHECK(EnchantMissingMaterials(tickedHeld, 1).empty());
 
+    // Deposit quota on cancel/timeout: what the bags hold, capped at one
+    // cast's need. Empty-handed reagents drop out.
+    EnchantMaterialState deposit[] = { { 12811, 1, 0, false }, { 11137, 2, 1, false }, { 11129, 3, 7, false } };
+    std::vector<EnchantDepositRow> due = EnchantDepositDue(deposit, 3);
+    CHECK(due.size() == 2);
+    CHECK(due[0].itemId == 11137 && due[0].quota == 1);
+    CHECK(due[1].itemId == 11129 && due[1].quota == 3);
+
+    // Exact stock deposits in full; a ticked reagent the giver left behind
+    // banks like any other.
+    EnchantMaterialState exact[] = { { 12811, 1, 1, false }, { 11137, 2, 2, true } };
+    std::vector<EnchantDepositRow> exactDue = EnchantDepositDue(exact, 2);
+    CHECK(exactDue.size() == 2);
+    CHECK(exactDue[0].quota == 1 && exactDue[1].quota == 2);
+    CHECK(EnchantDepositDue(nullptr, 0).empty());
+
     if (failures)
     {
         std::printf("enchant-gather policy: %d FAILURES\n", failures);

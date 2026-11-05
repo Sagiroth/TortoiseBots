@@ -83,5 +83,31 @@ inline bool EnchantReagentSourcable(EnchantMaterialState const& material)
     return !material.bringTicked;
 }
 
+// One reagent's share of a cancelled or timed-out enchant order: what the
+// bot hands to the guild bank through the delivery leg. No per-source
+// tracking: the quota is what the bags hold, capped at one cast's need, so
+// the bot's own stock within that cast goes too. Zero rows never appear.
+struct EnchantDepositRow
+{
+    uint32_t itemId = 0;
+    uint32_t quota = 0;
+};
+
+inline std::vector<EnchantDepositRow> EnchantDepositDue(EnchantMaterialState const* materials,
+    size_t count)
+{
+    std::vector<EnchantDepositRow> out;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (!materials[i].itemId || !materials[i].need || !materials[i].inBags)
+            continue;
+        uint32_t quota = materials[i].inBags < materials[i].need ?
+            materials[i].inBags : materials[i].need;
+        if (quota)
+            out.push_back(EnchantDepositRow{ materials[i].itemId, quota });
+    }
+    return out;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots
