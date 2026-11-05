@@ -231,7 +231,7 @@ Only kinds the module already runs. Needs `DungeonRunCharmYield = 1` on the two 
 
 Needs `DungeonRunPullGate`, `DungeonRunSeekAura`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. The five High Priests must be dead first, one stack of Hakkar Power per living priest; the run leader never pulls while he wears it and ends the run after 30 s.
 Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart. Cause Insanity cannot be taunted off, so the `threat_successor` row makes the damage dealers keep below the off-tank: on the reset the off-tank takes the boss instead of a damage dealer. An off-tank carrying only a tiny amount of threat (under 100, and under 1 % of the highest tank's) is not used, so the fight still deals damage while a charmed or just-reset off-tank is picked up.
-The pull holds all damage for 5 s (`dps_hold_after`, no spell, mode `engage`) so the main tank takes Hakkar first, before Cause Insanity (every 20-25 s on his current victim) can charm a damage dealer.
+The pull holds all damage for 5 s (`dps_hold_after`, no spell, mode `engage`) so the main tank takes Hakkar first, before Cause Insanity (every 20-25 s on his current victim) can charm a damage dealer. A re-pull re-arms it: the hold state resets when the boss is read out of combat or when nobody read it for more than 10 s (a wipe leaves the live attacker scan, so a quick re-pull is seen only as that silence).
 
 ## Known limits
 

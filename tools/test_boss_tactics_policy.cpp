@@ -1787,15 +1787,40 @@ int main()
         CHECK(DpsHoldTick(repull, in, 1000, nullptr));
         CHECK(repull.engageSeen);
         CHECK(!DpsHoldTick(repull, in, 1000 + 6000, nullptr));
-        DpsHoldResetOnBossReset(repull, true);
+        DpsHoldResetOnBossReset(repull, true, 1000 + 6500);
         CHECK(repull.engageSeen);                               // the fight is on: still spent
         CHECK(!DpsHoldTick(repull, in, 1000 + 7000, nullptr));
-        DpsHoldResetOnBossReset(repull, false);                 // evade or wipe: the boss left combat
+        DpsHoldResetOnBossReset(repull, false, 1000 + 7500);    // evade or wipe: the boss left combat
         CHECK(!repull.engageSeen);
         CHECK(DpsHoldTick(repull, in, 20000, nullptr));         // the re-pull holds again
-        DpsHoldResetOnBossReset(repull, false);
+        DpsHoldResetOnBossReset(repull, false, 25000);
         CHECK(!repull.engageSeen);
         CHECK(DpsHoldTick(repull, in, 30000, nullptr));
+    }
+    // A quick wipe and repull: nobody reads the state while the boss is out of combat (the scan walks only live
+    // attackers), so the next read already sees him in combat. The read gap is the repull signal: the pull that follows a
+    // silence longer than kDpsHoldRepullGapMs re-arms the opening hold; a gap inside a fight does not.
+    {
+        DpsHoldState wipe;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 5.0f;
+        CHECK(DpsHoldTick(wipe, in, 1000, nullptr));            // pull 1
+        CHECK(!DpsHoldTick(wipe, in, 8000, nullptr));           // spent, hold over
+        // wipe + evade: no read between 8000 and 30000, then the repull reads the boss already in combat
+        DpsHoldResetOnBossReset(wipe, true, 30000);
+        CHECK(!wipe.engageSeen);
+        DpsHoldTrigger fired = DpsHoldTrigger::None;
+        CHECK(DpsHoldTick(wipe, in, 30000, &fired));            // the repull holds again
+        CHECK(fired == DpsHoldTrigger::Engage);
+        // reads inside the fight a few seconds apart do not reset
+        DpsHoldResetOnBossReset(wipe, true, 30000 + kDpsHoldRepullGapMs);
+        CHECK(wipe.engageSeen);
+        CHECK(!DpsHoldTick(wipe, in, 30000 + kDpsHoldRepullGapMs, nullptr));
+        // one ms past the gap is a repull
+        DpsHoldResetOnBossReset(wipe, true, 30000 + kDpsHoldRepullGapMs + kDpsHoldRepullGapMs + 1);
+        CHECK(!wipe.engageSeen);
     }
     // An in-combat boss back at full health (Blood Siphon) is not a reset: a running hold stays running and the spent
     // engage edge does not fire again (the old '|| hp >= 100' reset restarted the 5 s deadline on every read).
@@ -1807,12 +1832,12 @@ int main()
         in.holdSec = 5.0f;
         CHECK(DpsHoldTick(mid, in, 1000, nullptr));             // deadline 6000
         for (std::uint32_t t = 2000; t <= 5000; t += 1000)
-            DpsHoldResetOnBossReset(mid, true);                 // the boss reads 100 % in combat: nothing resets
+            DpsHoldResetOnBossReset(mid, true, t);                 // the boss reads 100 % in combat: nothing resets
         CHECK(mid.engageSeen);
         CHECK(mid.untilMs == 6000);
         CHECK(DpsHoldTick(mid, in, 5999, nullptr));             // still the original hold
         CHECK(!DpsHoldTick(mid, in, 6000, nullptr));            // released on time, not restarted
-        DpsHoldResetOnBossReset(mid, true);
+        DpsHoldResetOnBossReset(mid, true, 6500);
         CHECK(!DpsHoldTick(mid, in, 7000, nullptr));            // the spent edge does not re-arm
     }
     // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
