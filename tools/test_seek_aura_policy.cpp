@@ -160,6 +160,14 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
+    // SeekTakeFightingSonOnHealer: a Son that sits on a healer (or any other non-tank) is the first off-tank's own
+    // take once the third off-tank cannot take it — dead, or holding a Son of its own — and the non-tank has had it
+    // for 8 s. While the third off-tank can take it, the first off-tank leaves the Son alone.
+    CHECK(kSeekHealerTakeMs == 8000);
+    CHECK(SeekTakeFightingSonOnHealer(false, 8000));
+    CHECK(!SeekTakeFightingSonOnHealer(false, 7999));
+    CHECK(!SeekTakeFightingSonOnHealer(true, 8000));
+
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
     CHECK(!SeekWanted(true, true, false, false, true, false, true));

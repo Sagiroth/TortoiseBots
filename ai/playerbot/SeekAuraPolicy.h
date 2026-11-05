@@ -294,6 +294,16 @@ namespace ai
         return SeekPullStep::Walk;
     }
 
+    // A Son that has been fighting a non-tank (a healer, a damage dealer) is the first off-tank's own take once the
+    // third off-tank cannot take it — dead, or busy holding a Son of its own — and the non-tank has had it for a while.
+    // Walk 41: a Son sat on a healer at 100 % for 13 s and the siphon went undosed behind it.
+    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
+
+    inline bool SeekTakeFightingSonOnHealer(bool thirdTankTakes, std::uint32_t heldMs)
+    {
+        return !thirdTankTakes && heldMs >= kSeekHealerTakeMs;
+    }
+
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive
     // the off-tank (tanks[1]) takes the Son over instead, and the raid's nearest hunter pulls it with one ranged shot;
     // without a hunter the nearest ranged damage dealer does. Nobody pulls when there is no off-tank to take it over.

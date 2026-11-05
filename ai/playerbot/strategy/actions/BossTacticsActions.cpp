@@ -715,6 +715,9 @@ struct SeekFight
     // The hold exemption compares against this pick, so another Son stays held even under the puller's own hit.
     bool puller = false;
     Unit* pullTarget = nullptr;
+    // A Son that fights a non-tank while the third off-tank cannot take it: the first off-tank's own take, once the
+    // fight record says the non-tank has had it for a while (SeekTakeFightingSonOnHealer).
+    Unit* healerSon = nullptr;
 };
 
 struct SeekTickCache
@@ -1469,6 +1472,21 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             }
         }
     }
+    // A Son camped on a non-tank: the first off-tank's own take once the third off-tank cannot take it (dead, or
+    // holding a Son of its own) and the non-tank has had it for a while. The fight record times it (the take must not
+    // flip with every read, and the healer gets its 8 s first).
+    std::vector<std::uint64_t> onNonTank;
+    bool thirdTankTakes = roles.tanks.size() >= 3;
+    for (Unit* unit : fight.units)
+    {
+        if (unit->GetEntry() != row->targetEntry || !unit->IsInCombat())
+            continue;
+        if (thirdTankTakes && unit->GetVictim() == roles.tanks[2])
+            thirdTankTakes = false;
+        Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
+        if (victim && !PlayerbotAI::IsTank(victim))
+            onNonTank.push_back(unit->GetObjectGuid().GetRawValue());
+    }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
         latched->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) <= kSeekFallbackYd;
@@ -1492,6 +1510,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     Unit* const pickedSon = latched && latchInReach ? static_cast<Unit*>(latched) : source;
     if (SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs))
         out.forceBurn = true;
+    std::uint64_t healerTakeGuid = 0;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
@@ -1525,6 +1544,32 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.gathering = record.gatherSourceGuid != 0;
         out.ready = record.ready;
         out.missing = record.missing;
+        // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once it stops fighting a
+        // non-tank (it died, moved to a tank, or left the fight).
+        for (auto held = record.healerHeldSince.begin(); held != record.healerHeldSince.end();)
+            held = std::find(onNonTank.begin(), onNonTank.end(), held->first) == onNonTank.end()
+                ? record.healerHeldSince.erase(held) : std::next(held);
+        for (std::uint64_t guid : onNonTank)
+            record.healerHeldSince.insert(std::make_pair(guid, nowMs));
+        for (const auto& held : record.healerHeldSince)
+        {
+            if (SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - held.second))
+            {
+                healerTakeGuid = held.first;
+                break;
+            }
+        }
+    }
+    if (healerTakeGuid)
+    {
+        for (Unit* unit : fight.units)
+        {
+            if (unit->GetObjectGuid().GetRawValue() == healerTakeGuid)
+            {
+                out.healerSon = unit;
+                break;
+            }
+        }
     }
     return true;
 }
@@ -4797,7 +4842,10 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     // false before the fight read.
     const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
     const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
-    if (!thirdTank && !pickupTank)
+    // The first off-tank also takes a Son off a healer while the third off-tank cannot (dead, or holding one of its
+    // own); the state's healer pick says whether one has been waiting long enough.
+    const bool healerTaker = roles.tanks.size() >= 3 && roles.tanks[1] == bot;
+    if (!thirdTank && !pickupTank && !healerTaker)
     {
         if (roles.tanks.size() < 2 || roles.tanks.size() >= 3)
             return task;
@@ -4807,7 +4855,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
-    if (!thirdTank && !pickupTank && FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot)
+    if (!thirdTank && !pickupTank && !healerTaker && FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot)
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -4839,7 +4887,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         else if (candidate->IsInCombat() && !fighting)
             fighting = candidate;
     }
-    if (thirdTank || pickupTank)
+    if (thirdTank || pickupTank || healerTaker)
     {
         if (onTank)
         {
@@ -4852,6 +4900,18 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                                                static_cast<float>(state.row->priority));
             if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
                 task.walkToSpot = true;
+            return task;
+        }
+    }
+    if (thirdTank || pickupTank)
+    {
+        // A Son camped on a healer is tanks[1]'s take here too when the third off-tank is dead (two tanks left) and
+        // the Son stands beyond the pickup search.
+        if (pickupTank && state.healerSon)
+        {
+            task.valid = true;
+            task.source = state.healerSon;
+            task.take = true;
             return task;
         }
         if (fighting)
@@ -4871,6 +4931,18 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                 task.take = true;
             else
                 task.pull = true;
+        }
+        return task;
+    }
+    if (healerTaker)
+    {
+        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot. Nothing
+        // here when the third off-tank can still take it.
+        if (state.healerSon)
+        {
+            task.valid = true;
+            task.source = state.healerSon;
+            task.take = true;
         }
         return task;
     }

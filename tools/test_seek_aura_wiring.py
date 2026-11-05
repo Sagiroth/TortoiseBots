@@ -131,7 +131,8 @@ class SeekWalkWiring(unittest.TestCase):
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
-                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs(", "SeekLateEngagedBurn("):
+                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
+                     "SeekTakeFightingSonOnHealer("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -287,6 +288,18 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs)", read)
         self.assertIn("out.forceBurn = true;", read)
         self.assertIn("inline bool SeekLateEngagedBurn(", POLICY)
+
+    def test_the_healer_take_is_wired(self):
+        # A Son camped on a non-tank is tanks[1]'s once the third off-tank cannot take it, timed in the fight record.
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("record.healerHeldSince.insert(std::make_pair(guid, nowMs));", read)
+        self.assertIn("SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - held.second)", read)
+        self.assertIn("out.healerSon = unit;", read)
+        find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
+        self.assertIn("roles.tanks.size() >= 3 && roles.tanks[1] == bot", find)
+        self.assertIn("if (state.healerSon)", find)
+        self.assertIn("SeekTakeFightingSonOnHealer(", POLICY)
+        self.assertIn("healerHeldSince", STATE_POLICY)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the

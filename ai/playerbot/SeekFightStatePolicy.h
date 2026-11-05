@@ -39,6 +39,9 @@ namespace ai
         // B, but the Son patrols from 32 to 112 yd out, so the tank kept dropping a Son it was already walking to.
         std::uint64_t pullTargetGuid = 0;
         std::uint32_t pullStartMs = 0;
+        // When each Son of the fight was first seen fighting a non-tank (guid -> ms). The first off-tank takes such a
+        // Son off a healer once the third off-tank cannot, and the healer has had it for a while.
+        std::map<std::uint64_t, std::uint32_t> healerHeldSince;
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
