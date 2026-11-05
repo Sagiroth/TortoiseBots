@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+
 ## v1.15.1 (2026-11-03)
 
 ### Bots & Setup

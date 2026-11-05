@@ -633,6 +633,40 @@ static void TestNormalHireHeldByBinding()
     CHECK(plan.cancel.size() == 1 && plan.cancel[0] == 39 && plan.dismiss.empty());
 }
 
+// The pool-account race: the previous hire's character row is saved async, so a SQL COUNT right after
+// a create misses it while the core's cache (updated synchronously by CreateCharacter) already holds
+// it. Room is judged on the larger of the two counts; a dismissed hire's row still counts (the core
+// refuses at CHAR_CREATE_SERVER_LIMIT until the row is deleted), so no departing credit.
+static void HireAccountHasRoom_cacheAheadOfSql()
+{
+    CHECK(kHireCreateServerLimit == 52);
+    // The failing case: cache ahead of SQL (9 rows visible, 10 created) at limit 10 -> no room.
+    CHECK(!HireAccountHasRoom(9, 10, 10));
+}
+
+static void HireAccountHasRoom_bothBelow()
+{
+    CHECK(HireAccountHasRoom(9, 9, 10));
+    CHECK(HireAccountHasRoom(0, 0, 10));
+    CHECK(!HireAccountHasRoom(10, 10, 10));
+    CHECK(!HireAccountHasRoom(10, 9, 10));
+}
+
+// Retry on a limit refusal only: the core's own COUNT saw a full account the module's earlier COUNT
+// missed. Any other non-name error stays terminal; at most 3 account retries (attempts 0..2).
+static void HireCreateRetryable_limitCodes()
+{
+    CHECK(kHireCreateAccountLimit == 53);
+    CHECK(HireCreateRetryable(52, 0));
+    CHECK(HireCreateRetryable(52, 2));
+    CHECK(!HireCreateRetryable(52, 3));
+    CHECK(HireCreateRetryable(53, 0));
+    CHECK(HireCreateRetryable(53, 2));
+    CHECK(!HireCreateRetryable(53, 3));
+    CHECK(!HireCreateRetryable(49, 0));
+}
+
+
 int main()
 {
     TestRoleCounts();
@@ -649,6 +683,9 @@ int main()
     TestSeatCancelOutcome();
     TestSeatHireFollowUps();
     TestNormalHireHeldByBinding();
+    HireAccountHasRoom_cacheAheadOfSql();
+    HireAccountHasRoom_bothBelow();
+    HireCreateRetryable_limitCodes();
     std::printf("hire raid policy: %d checks passed\n", checks);
     return 0;
 }

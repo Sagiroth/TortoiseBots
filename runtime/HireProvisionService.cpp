@@ -65,6 +65,7 @@
 #include <chrono>
 #include <ctime>
 #include <random>
+#include <set>
 #include <thread>
 
 namespace TortoiseBots
@@ -872,6 +873,10 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
     // registered before their first character is created.
     std::vector<uint32_t> accountIds = RandomBotAccountRegistry::Instance().AccountIds();
 
+    // The pool-account race: a hire's character row is saved async, so this COUNT can miss a row the
+    // core's own COUNT sees a moment later (refusal 52/53). The core's per-account cache is updated
+    // synchronously by CreateCharacter, so room is judged on the larger of the two counts. A
+    // dismissed hire's row still counts (the core refuses until the row is deleted): no credit.
     auto accountEligible = [&](uint32_t id) -> bool
     {
         std::unique_ptr<QueryResult> rows(CharacterDatabase.PQuery(
@@ -892,21 +897,10 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
                     hasHorde = true;
             } while (rows->NextRow());
         }
-        if (count >= perAccountLimit)
-        {
-            // A dismissed hire is on its way out of the database (the hire
-            // deletion queue is pumped every world tick). Its row must not make
-            // the account look full, or an immediate re-hire after a release
-            // would be pushed onto a brand-new pool account.
-            uint32_t departing = 0;
-            std::unique_ptr<QueryResult> queued(CharacterDatabase.PQuery(
-                "SELECT COUNT(*) FROM `tortoise_bots_hire` "
-                "WHERE `state` = 'dismissed' AND `character_account_id` = '%u'", id));
-            if (queued)
-                departing = queued->Fetch()[0].GetUInt32();
-            if (count <= departing || count - departing >= perAccountLimit)
-                return false;
-        }
+        std::vector<PlayerCacheData*> cached;
+        sObjectMgr.GetPlayerDataForAccount(id, cached);
+        if (!HireAccountHasRoom(count, static_cast<uint32_t>(cached.size()), perAccountLimit))
+            return false;
         if (!allowTwoSide)
         {
             if (hasAlliance && hasHorde)
@@ -923,10 +917,17 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
         return true;
     };
 
+    // A limit refusal (52/53) means the core's COUNT saw a full account this COUNT missed: mark it
+    // full, drop the raid hint if it points at it, and try another account (minting a fresh one when
+    // none has room), at most kHireCreateAccountRetries account retries. Name errors retry the name
+    // on the same account; every other error stays terminal.
+    std::set<uint32_t> fullAccounts;
+    for (uint32_t limitAttempt = 0; ; ++limitAttempt)
+    {
     uint32_t chosenAccount = 0;
     // Issue #900: a raid job reuses the account its previous slot landed on
     // while it still has room, instead of rescanning every full pool account.
-    if (m_raidHireActive && m_raidAccountHint &&
+    if (m_raidHireActive && m_raidAccountHint && fullAccounts.count(m_raidAccountHint) == 0 &&
         std::find(accountIds.begin(), accountIds.end(), m_raidAccountHint) != accountIds.end() &&
         accountEligible(m_raidAccountHint))
         chosenAccount = m_raidAccountHint;
@@ -934,6 +935,8 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
     {
         if (chosenAccount)
             break;
+        if (fullAccounts.count(id))
+            continue;
         if (accountEligible(id))
         {
             chosenAccount = id;
@@ -1006,7 +1009,10 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
             chosenAccount = freshId;
         }
     }
+    if (!chosenAccount)
+        return false;
 
+    bool limitRefused = false;
     for (int attempt = 0; attempt < 8; ++attempt)
     {
         BotAppearanceCounts look{};
@@ -1042,11 +1048,32 @@ bool HireProvisionService::CreateCandidate(HireSelection const& sel, uint32_t re
         if (outcome.result == CHAR_CREATE_NAME_IN_USE || outcome.result == CHAR_NAME_RESERVED ||
             outcome.result == CHAR_NAME_PROFANE || outcome.result == CHAR_CREATE_FAILED)
             continue;
+        if (HireCreateRetryable(outcome.result, limitAttempt))
+        {
+            limitRefused = true;
+            TB_LOG_DETAIL("TortoiseBots: hire account %u full at create (core result %u), trying another account",
+                chosenAccount, uint32(outcome.result));
+            fullAccounts.insert(chosenAccount);
+            if (m_raidAccountHint == chosenAccount)
+                m_raidAccountHint = 0;
+            // A fresh account minted above has no characters yet, but its row may still be
+            // draining through the async account INSERT; re-list so the retry can see it.
+            accountIds = RandomBotAccountRegistry::Instance().AccountIds();
+            break;
+        }
         sLog.outError("TortoiseBots: hire CreateCharacter %s on account %u failed result %u",
             norm.c_str(), chosenAccount, uint32(outcome.result));
         return false;
     }
+    if (limitAttempt >= kHireCreateAccountRetries)
+        return false;
+    // The name loop ended without success and without a limit refusal (no usable names): retrying
+    // another account cannot help.
+    if (!limitRefused)
+        return false;
+    } // for (limitAttempt)
     return false;
+
 }
 
 bool HireProvisionService::EnsureGrouped(Player* master, Player* bot)
