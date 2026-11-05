@@ -209,7 +209,7 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Mad Servant | `interrupt` Flamestrike; `hold_kill` budget 0; `one_at_a_time` |
 | Venoxis | `interrupt` Holy Fire; ranged and healer stand set |
 | Thekal, Lor'Khan, Zath | `linked_death` group, hold 2 %, burn order Zealots then Thekal; Lor'Khan `interrupt` Greater Heal |
-| Hakkar the Soulflayer | `dps_hold_after` 5 s from the pull (no spell, mode `engage`); `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 20 s. Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the opening hold and the taunt row. |
+| Hakkar the Soulflayer | `dps_hold_after` 5 s from the pull (no spell, mode `engage`); `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 10 s (inert: Hakkar is taunt-immune, the row opens no episode); `threat_successor` (the damage dealers' threat cap is the assigned off-tanks' highest). Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. |
 
 ## AQ20 rows (map 509)
 
@@ -225,13 +225,14 @@ Only kinds the module already runs. Needs `DungeonRunCharmYield = 1` on the two 
 
 ## Hakkar the Soulflayer (map 309, entry 14834)
 
-Needs `DungeonRunPullGate`, `DungeonRunSeekAura`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the opening hold and the taunt row. The five High Priests must be dead first, one stack of Hakkar Power per living priest; the run leader never pulls while he wears it and ends the run after 30 s.
-Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart.
-Cause Insanity hits Hakkar's current victim every 20-25 s, so the pull holds all damage for 5 s (`dps_hold_after`, no spell, mode `engage`) to let the main tank take him first, and the first off-tank taunts him back within 20 s of a charm while he stands on a non-tank (the charm lasts 10 s and the core restores the victim's threat 4 s after it ends).
+Needs `DungeonRunPullGate`, `DungeonRunSeekAura`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. The five High Priests must be dead first, one stack of Hakkar Power per living priest; the run leader never pulls while he wears it and ends the run after 30 s.
+Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart. Cause Insanity cannot be taunted off, so the `threat_successor` row makes the damage dealers keep below the off-tank: on the reset the off-tank takes the boss instead of a damage dealer. Once the off-tank has fallen well behind the highest tank's threat (under half), the reference is the highest tank again.
+The pull holds all damage for 5 s (`dps_hold_after`, no spell, mode `engage`) so the main tank takes Hakkar first, before Cause Insanity (every 20-25 s on his current victim) can charm a damage dealer.
+
 
 ## Known limits
 
-Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so it can serve an opening hold but never a trigger that comes back mid-fight. Mandokir keys an `until_tank` row on Threatening Gaze; Hakkar's spell-less row is only the 5 s opening hold at the pull, and Cause Insanity is answered by the `taunt_after_cast` row in mode `until_tank` (see the Hakkar section above).
+Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so it serves the opening 5 s Hakkar pull hold only and never comes back mid-fight (the spell-less Mandokir row was removed). Hakkar's Cause Insanity is answered by the `threat_successor` row's cap at the assigned off-tanks, which is what keeps the boss off the damage dealers; his `taunt_after_cast` row in mode `until_tank` stays inert because the game makes him immune to taunts (see the Hakkar section above).
 
 ## Stand sets
 

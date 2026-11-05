@@ -1849,7 +1849,9 @@ namespace ai
 
     // Applies one read to the hold and answers whether it is on. A trigger restarts it; a hold lasts `param` seconds
     // from the latest trigger. With `untilTank`, a subject whose victim is not a tank keeps it on past that, up to
-    // 3 * param. `fired` (optional) names the trigger this read started.
+    // 3 * param. The caller resets the state when the boss leaves combat (evade or wipe, the fight it held is over),
+    // so the engage edge fires again on the re-pull; see DpsHoldResetOnBossReset. `fired` (optional) names the
+    // trigger this read started.
     inline bool DpsHoldTick(DpsHoldState& state, const DpsHoldInputs& in, std::uint32_t nowMs,
                             DpsHoldTrigger* fired = nullptr)
     {
@@ -1946,6 +1948,14 @@ namespace ai
         if (nowMs < state.untilMs)
             return true;
         return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
+    }
+
+    // The boss left combat, evaded or was wiped back to full health (the same signal ReadSeekFight uses to start the
+    // cycle over): the fight the state held is over, so the engage edge must fire again on the re-pull.
+    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat, float bossHpPct)
+    {
+        if (!bossInCombat || bossHpPct >= 100.0f)
+            state = DpsHoldState();
     }
 
     // The held-subject veto over every live unit of one subject entry: `held[i]` is whether unit i is held after its

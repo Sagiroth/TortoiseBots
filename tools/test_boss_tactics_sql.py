@@ -525,10 +525,10 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn((309, 14510, "interrupt", 0, 24300), live)
         self.assertIn((309, 14515, "behind", 0, 26350), live)
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
-        # The spell-less until_tank holds of Hakkar 14834 and Mandokir 11382 are gone: a spell-less hold fires only its
-        # engage edge, once per fight, so "until_tank" never recurred. Hakkar's is back in mode `engage`, where that
-        # single edge is the whole rule (the 5 s opening threat hold of 20261107120000); Mandokir's would still need a
-        # trigger that recurs. Their triggers are auras on players (or an instant cast, Cause Insanity 24327,
+        # The spell-less until_tank hold of Mandokir 11382 is gone: a spell-less hold fires only its engage edge, once
+        # per fight, so "until_tank" never recurred. Hakkar's opening hold is back in mode `engage`, where that single
+        # edge is the whole rule (the 5 s opening threat hold of 20261107120000); Mandokir's would still need a trigger
+        # that recurs. Their triggers are auras on players (or an instant cast, Cause Insanity 24327,
         # castingTimeIndex 1), which the hold's cast/aura edge cannot see on the boss.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
         self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
@@ -585,9 +585,9 @@ class BossTacticsSql(unittest.TestCase):
                                  "%s carries a cycle or spot unexpectedly" % (row[0],))
 
     def test_hakkar_rows(self):
-        # The four rows of 20261104020000_world.sql plus the opening hold and the longer taunt window of
-        # 20261107120000_world.sql. The core ids are pinned in BossTacticsCoreData below; here the live table shape is,
-        # so a wrong number or a delete that reaches too far fails.
+        # The four rows of 20261104020000_world.sql plus the opening hold of 20261107120000_world.sql. The core ids
+        # are pinned in BossTacticsCoreData below; here the live table shape is, so a wrong number or a delete that
+        # reaches too far fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         seek = live.get((309, 14834, "seek_aura", 11357, 24321))
         self.assertIsNotNone(seek, "the Hakkar seek_aura row is missing")
@@ -604,30 +604,27 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(12.0, spread["param"], "the Hakkar spread row drifted")
         taunt = live.get((309, 14834, "taunt_after_cast", 0, 0))
         self.assertIsNotNone(taunt, "the Hakkar taunt_after_cast row is missing")
-        # 20 s: Cause Insanity charms for 10 s and the core restores the victim's threat 4 s after the aura ends, so a
-        # 10 s deadline had already expired when the boss could be taken back (walk 38 hm2/hm3-r2).
-        self.assertEqual((1, 20.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
+        self.assertEqual((1, 10.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
                          "the Hakkar taunt_after_cast row drifted")
         # The opening hold: 5 s from the first engagement, no spell, mode engage. A spell-less row fires only that
-        # edge, which is exactly a pull hold (it never recurs).
+        # edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
+        # threat_successor cap keeps damage dealers under the off-tank, so this hold answers the pull only.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
         self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
         self.assertEqual((0, 5.0, 0, "engage"),
                          (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
                          "the Hakkar opening dps_hold_after row drifted")
-        for key in ((309, 14834, "dps_hold_after", 0, 0), (309, 14834, "taunt_after_cast", 0, 0)):
-            self.assertEqual("20261107120000_world.sql", live[key]["file"],
-                             "the Hakkar D1/D2 migration owns %s" % (key,))
+        self.assertEqual("20261107120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
+                         "the Hakkar D1 migration owns the opening hold")
         for row in (seek, gate, spread, taunt, hold):
             self.assertIsNone(new_kind_problem(row))
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
 
-    def test_hakkar_opening_hold_and_taunt_window_migration(self):
-        # 20261107120000_world.sql: D1 the 5 s opening threat hold and D2 the taunt window 10 -> 20 s. Both keys are
-        # DELETEd by their full key before the re-insert, because a boot that already ran 20261104020000 holds the
-        # taunt row; the other Hakkar rows stay untouched.
+    def test_hakkar_opening_hold_migration(self):
+        # 20261107120000_world.sql: D1 the 5 s opening threat hold. Its DELETE names that one key's full key, because
+        # the row is new: no earlier migration owns it and the other Hakkar rows stay untouched.
         name = "20261107120000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Hakkar opening hold migration is missing")
@@ -637,13 +634,10 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
                       "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
-        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
-                      "AND `kind` = 'taunt_after_cast' AND `target_entry` = 0 AND `spell_id` = 0 "
-                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertNotIn("taunt_after_cast", text)
         self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
-        self.assertEqual(2, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
-        self.assertIn("(309, 14834, 'taunt_after_cast', 0, 0, 1, 20, 'until_tank', 0, 0, 0, 0, 0, 0, ", text)
 
     def test_seek_aura_row_without_cycle_spell_refused(self):
         seek = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="seek_aura", target_entry=11357,

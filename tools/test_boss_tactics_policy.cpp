@@ -1682,6 +1682,27 @@ int main()
         CHECK(fired == DpsHoldTrigger::Engage);
     }
 
+    // A re-pull re-arms the opening hold: the evade or wipe (boss out of combat, or back at full health) resets the
+    // edge, so the next engage holds again. No new edge without a reset.
+    {
+        DpsHoldState repull;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 5.0f;
+        CHECK(DpsHoldTick(repull, in, 1000, nullptr));
+        CHECK(repull.engageSeen);
+        CHECK(!DpsHoldTick(repull, in, 1000 + 6000, nullptr));
+        DpsHoldResetOnBossReset(repull, true, 80.0f);
+        CHECK(repull.engageSeen);                               // the fight is on: still spent
+        CHECK(!DpsHoldTick(repull, in, 1000 + 7000, nullptr));
+        DpsHoldResetOnBossReset(repull, false, 80.0f);          // evade: the boss left combat
+        CHECK(!repull.engageSeen);
+        CHECK(DpsHoldTick(repull, in, 20000, nullptr));         // the re-pull holds again
+        DpsHoldResetOnBossReset(repull, true, 100.0f);          // wipe: back at full health
+        CHECK(!repull.engageSeen);
+        CHECK(DpsHoldTick(repull, in, 30000, nullptr));
+    }
     // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
     {
         DpsHoldState band;
