@@ -494,8 +494,9 @@ class BossTacticsSql(unittest.TestCase):
                                  "%s carries a gate, mode or window unexpectedly" % (key,))
 
     def test_zg_aura_rows(self):
-        # Zul'Gurub's aura rows (20261103020000_world.sql). The core ids are pinned in BossTacticsCoreData below; here
-        # the live table shape is, so a delete that is too wide or a priority that drifted fails.
+        # Zul'Gurub's aura rows (20261103020000_world.sql; Jin'do's kill_first priorities are the ones
+        # 20261105234000_world.sql leaves: the ward before the totem). The core ids are pinned in BossTacticsCoreData
+        # below; here the live table shape is, so a delete that is too wide or a priority that drifted fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         expected = {
             (309, 14834, "dispel_priority", 0, 24321): (0, 0.0, 0, "never"),
@@ -507,8 +508,8 @@ class BossTacticsSql(unittest.TestCase):
             (309, 11380, "dispel_priority", 0, 17172): (0, 0.0, 0, "now"),
             (309, 11380, "dispel_priority", 0, 24306): (0, 0.0, 0, "never"),
             (309, 11380, "kill_first", 14986, 0): (0, 0.0, 24306, ""),
-            (309, 11380, "kill_first", 15112, 0): (1, 0.0, 0, ""),
-            (309, 11380, "kill_first", 14987, 0): (2, 0.0, 0, ""),
+            (309, 11380, "kill_first", 15112, 0): (2, 0.0, 0, ""),
+            (309, 11380, "kill_first", 14987, 0): (1, 0.0, 0, ""),
             (309, 14510, "kill_first", 15041, 0): (1, 0.0, 0, ""),
             (309, 14510, "dispel_priority", 0, 24111): (1, 0.0, 0, "now"),
             (309, 14510, "dispel_priority", 0, 24099): (2, 0.0, 0, "now"),
@@ -691,6 +692,35 @@ class BossTacticsSql(unittest.TestCase):
                 self.assertIn(entry, templates, "Jin'do row entry %s has no creature_template row" % entry)
             for spell in (24306, 17172):
                 self.assertIn(spell, spells, "Jin'do row spell %s has no spell_template row" % spell)
+
+    def test_jindo_ward_before_totem_migration(self):
+        # 20261105234000_world.sql: the Powerful Healing Ward 14987 heals Jin'do about as much as the raid deals, so it
+        # outranks the Brain Wash Totem 15112. The migration deletes exactly those two rows by their key and inserts
+        # them swapped; a delete that is too wide or a priority that drifted fails here.
+        name = "20261105234000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Jin'do ward-first migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for entry in (15112, 14987):
+            self.assertIn(
+                "DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 11380 AND `kind` = 'kill_first' "
+                "AND `target_entry` = %d AND `spell_id` = 0;" % entry, text)
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        ward = live.get((309, 11380, "kill_first", 14987, 0))
+        totem = live.get((309, 11380, "kill_first", 15112, 0))
+        self.assertIsNotNone(ward, "the Jin'do ward kill_first row is missing")
+        self.assertIsNotNone(totem, "the Jin'do totem kill_first row is missing")
+        self.assertEqual(1, ward["priority"], "the Powerful Healing Ward is not the first kill_first row")
+        self.assertEqual(2, totem["priority"], "the Brain Wash Totem is not the second kill_first row")
+        for row in (ward, totem):
+            self.assertEqual(name, row["file"], "the ward-first migration no longer owns its row")
+            self.assertIsNone(new_kind_problem(row))
+        # The Shade's gated row (rank 0) still stands, and no other Jin'do row was touched.
+        self.assertEqual(0, live[(309, 11380, "kill_first", 14986, 0)]["priority"])
+        for key in ((309, 11380, "needs_aura", 14986, 24306), (309, 11380, "dispel_priority", 0, 24306),
+                    (309, 11380, "dispel_priority", 0, 17172), (309, 11380, "taunt_after_cast", 0, 0)):
+            self.assertIn(key, live, "the Jin'do rows of 20261103020000 / 20261105100000 must stay: %s" % (key,))
 
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
