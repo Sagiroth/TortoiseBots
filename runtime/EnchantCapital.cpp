@@ -2,7 +2,7 @@
 
 #include "../ai/playerbot/GroupMembers.h"
 #include "../ai/playerbot/PlayerbotAI.h"
-#include "../ai/playerbot/PlayerbotAIStorage.h"
+#include "PlayerbotAIStorage.h"
 #include "../ai/playerbot/GuidPosition.h"
 #include "../ai/playerbot/TravelMgr.h"
 #include "../ai/playerbot/WorldPosition.h"
