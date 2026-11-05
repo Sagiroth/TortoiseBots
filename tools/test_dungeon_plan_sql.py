@@ -5325,9 +5325,16 @@ class DungeonPlanSql(unittest.TestCase):
         # carries the walk-29 unit lists: the mages Polymorph the Venombroods (14532, beasts and not immune) and the
         # kill_first order names the Thekal zealots and the four Razzashi Cobras. 9 legs, 754 steps, 149 pulls, the
         # eight bosses in the guide's order; leg 2 is the r2 Mar'li route (below).
+        # 20261106010000 (turtle-agent d0562bdc, plan/zg-t1105c, 2026-11-06): the newest zul_gurub migration, build t1105c. The
+        # combined plan of 20261105230000 plus (a) the walk-41 Jeklik fix: leg 0's last boss approach moves from
+        # -12241.56 -1399.14 to the walked floor point -12269.3 -1389.4 131.5 (step 47, 51 yd from the hover point before);
+        # (b) turtle-agent #416's trash lists: cc_priority is the 19-entry list (Blood Drinker 11353 in, out of kill_first)
+        # and cc_always stays empty; (c) Jin'do: kill_first puts the Powerful Healing Ward 14987 BEFORE the Brain Wash Totem
+        # 15112 (research zg-bosses/JINDO-WIPES.md), so a new ward preempts a held totem. 9 legs, 695 steps, 148 pulls:
+        # every leg keeps its step and pull count.
         # 20261105230000 (turtle-agent df591a73, the combined plan: walk 38's Jin'do hall (its review round 2), Hakkar outer
         # rows on the mesh floor and Jeklik's patrol checks, plus the Arlokk temple route and the arena descent in the
-        # gong's rows, 2026-11-05): the newest zul_gurub migration. 9 legs, 695 steps, 148 pulls. Against 20261105170000:
+        # gong's rows, 2026-11-05): the previous zul_gurub migration. 9 legs, 695 steps, 148 pulls. Against 20261105170000:
         # legs 0, 4, 6 and 7 re-cut (50 -> 49, 134 -> 95, 86 -> 89, 97 -> 96 steps; leg 4 pulls 25 -> 26); legs 1, 2, 3, 5
         # and 8 unchanged.
         # 20261105170000 (turtle-agent 2b977b8, the walk-37 fixes: Jin'do guard, Jeklik camp, patroller stand pulls, Mandokir,
@@ -5346,8 +5353,8 @@ class DungeonPlanSql(unittest.TestCase):
         # carries kill_first 15112,14987 (Brain Wash Totem, Powerful Healing Ward) ahead of the old order; 9 legs, 750 steps,
         # 148 pulls. Only leg 6 (jindo_the_hexxer) differs from 20261104160000: 90 -> 87 steps, 19 -> 18 pulls.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261105230000_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532,11356,11339,14882,11361,11365,11350,14825', '', '15112,14987,14750,15146,11830,14883,11353', 'turtle-agent df591a730bcba6451752b1b9deac4a643e8f854f dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        self.assertEqual(name, "20261106010000_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043,11370,11365,11361', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent d0562bdc42a797d1c6cace7f7f4741f5ec9a71b1 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
         self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
                          ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
@@ -5358,6 +5365,9 @@ class DungeonPlanSql(unittest.TestCase):
                          [49, 124, 28, 54, 95, 79, 89, 96, 81])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [16, 23, 6, 8, 26, 20, 18, 23, 8])
+        # t1105c: the Jin'do ward leads kill_first (14987 before 15112) and Jeklik's boss approach is the walked floor point.
+        self.assertIn("'14987,15112,14750,15146,11830,14883'", text)
+        self.assertIn("('zul_gurub', 0, 47, 'move', 0, -12269.3, -1389.4, 131.5, 0, 0, 0, 0, 0, '', 'boss approach')", text)
         # Leg 1 (high_priest_venoxis), walk 20: the Mad Servant packs (15111) are pulled from stands out of the
         # others' aggro, in the order E, C, then D+A as one row (walk 18 moved D in from leg 7 group 37; walk 20
         # merged it with A). Each is a stand pull (flag 8192) run from the move row right before it (its stand):
@@ -5528,15 +5538,18 @@ class DungeonPlanSql(unittest.TestCase):
         # The bat pack (group 7) is the leg's one plain pull: it runs from the plateau point -12057 -1448.
         self.assertEqual((pulls0[7]["x"], pulls0[7]["y"], pulls0[7]["entries"]),
                          ("-12054.76", "-1438.19", "11368,14750"))
-        # Jeklik's keep-out: every leg-0 row before her own is 49.85 yd or more from her row (2D); the last approach row
-        # stays within 50 yd (3D), or the exporter would cut approach rows between it and her.
+        # Jeklik's keep-out: every leg-0 row before her own and before her last approach is 49.85 yd or more from her
+        # row (2D). t1105c (walk-41 fix 1, turtle-agent zg_w41_test.go): the last approach row is the walked floor point
+        # -12269.3 -1389.4 131.5, 20.5 yd (2D) from her row and within 28 yd (3D) of her hover point's reach, so the
+        # reach pull has a firing position; it is the one row inside the old keep-out.
         jek = leg0[-1]
         self.assertEqual((jek["kind"], jek["entry"]), ("boss", "14517"))
         def jek_yd(r, flat=True):
             d = [float(r[k]) - float(jek[k]) for k in ("x", "y", "z")]
             return math.hypot(d[0], d[1]) if flat else math.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
-        self.assertGreaterEqual(min(jek_yd(r) for r in leg0[:-1]), 49.85)
-        self.assertLessEqual(jek_yd(leg0[-2], flat=False), 50.0)
+        self.assertGreaterEqual(min(jek_yd(r) for r in leg0[:-2]), 49.85)
+        self.assertEqual((leg0[-2]["x"], leg0[-2]["y"], leg0[-2]["z"]), ("-12269.3", "-1389.4", "131.5"))
+        self.assertLessEqual(jek_yd(leg0[-2], flat=False), 28.0)
         xyz = lambda r: [float(r[k]) for k in ("x", "y", "z")]
         stand = lambda p: leg0[leg0.index(p) - 1]
         # Item 7: the Jeklik stair approach is the walkable ramp the navmesh takes, all four points ground.
