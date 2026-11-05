@@ -14,6 +14,8 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "SetCraftAction.h"
 #include "playerbot/policy/guild/EnchantTradePolicy.h"
+#include <mutex>
+#include <unordered_map>
 #include "playerbot/GuildOrderEnchants.h"
 #include "playerbot/GuildOrderCraft.h"
 #include "runtime/EnchantCapital.h"
@@ -567,6 +569,22 @@ bool EnchantHookWindowFacts(Player* bot, Player* trader, uint32_t spellId,
 }
 } // namespace
 
+namespace
+{
+// One whisper per verdict and item: the trade step runs every tick.
+bool EnchantVerdictIsNew(uint32_t botGuidLow, uint32_t verdict, uint32_t itemGuidLow)
+{
+    static std::mutex lock;
+    static std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> last;
+    std::lock_guard<std::mutex> guard(lock);
+    auto& seen = last[botGuidLow];
+    if (seen.first == verdict && seen.second == itemGuidLow)
+        return false;
+    seen = { verdict, itemGuidLow };
+    return true;
+}
+} // namespace
+
 bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
 {
     if (!bot || !trader)
@@ -781,19 +799,31 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
     switch (ai::CheckEnchantTrade(tradeState))
     {
         case ai::EnchantTradeVerdict::WrongPlayer:
-            ai->TellPlayerNoFacing(trader, ai::kEnchantWrongPlayerText,
+            if (EnchantVerdictIsNew(bot->GetGUIDLow(), uint32_t(ai::EnchantTradeVerdict::WrongPlayer),
+                    trader->GetTradeData() && trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) ?
+                        trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED)->GetGUIDLow() : 0))
+                ai->TellPlayerNoFacing(trader, ai::kEnchantWrongPlayerText,
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             break;
         case ai::EnchantTradeVerdict::Extras:
-            ai->TellPlayerNoFacing(trader, ai::kEnchantExtrasText,
+            if (EnchantVerdictIsNew(bot->GetGUIDLow(), uint32_t(ai::EnchantTradeVerdict::Extras),
+                    trader->GetTradeData() && trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) ?
+                        trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED)->GetGUIDLow() : 0))
+                ai->TellPlayerNoFacing(trader, ai::kEnchantExtrasText,
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             break;
         case ai::EnchantTradeVerdict::NoItem:
-            ai->TellPlayerNoFacing(trader, ai::kEnchantNoItemText,
+            if (EnchantVerdictIsNew(bot->GetGUIDLow(), uint32_t(ai::EnchantTradeVerdict::NoItem),
+                    trader->GetTradeData() && trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) ?
+                        trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED)->GetGUIDLow() : 0))
+                ai->TellPlayerNoFacing(trader, ai::kEnchantNoItemText,
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             break;
         case ai::EnchantTradeVerdict::WrongItem:
-            ai->TellPlayerNoFacing(trader, ai::kEnchantWrongItemText,
+            if (EnchantVerdictIsNew(bot->GetGUIDLow(), uint32_t(ai::EnchantTradeVerdict::WrongItem),
+                    trader->GetTradeData() && trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED) ?
+                        trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED)->GetGUIDLow() : 0))
+                ai->TellPlayerNoFacing(trader, ai::kEnchantWrongItemText,
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             break;
         case ai::EnchantTradeVerdict::AskReplace:
