@@ -4,9 +4,9 @@
 
 #include "../ai/playerbot/BotState.h"
 #include "../runtime/RemoteCommanderPolicy.h"
+#include "../runtime/GuildOrderEnchantPolicy.h"
 #include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
-
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -31,7 +31,9 @@ bool ResolveOwnedBot(ChatHandler* handler, char const* args, Player*& bot, BotRe
 // answers (the commander's order log notes every reply).
 // Professions.cpp: one bot's orderable craft recipes matching the search
 // words (spell, made item, skill, reagents), read live for the guild-wide
-// who-search. The snapshot runs on the world thread; the caller only maps it onto names.
+// who-search; and one bot's catalogue enchants it knows that match the
+// search words (spell, slot, skill, reagents), for both enchant searches.
+// The snapshots run on the world thread; the caller only maps them onto names.
 struct CraftRecipeReagent
 {
     uint32_t itemId = 0;
@@ -48,6 +50,20 @@ struct CraftRecipeSnapshot
     std::vector<CraftRecipeReagent> reagents;
 };
 std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot, std::vector<std::string> const& words);
+// Enchant the bot knows from the permanent-item catalogue: the spell, where
+// it lands, the bot's Enchanting value, the required skill, and the
+// reagents with what the bot holds (bags plus mailbox). Snapshotted live
+// (spell map, catalogue, bags, mail) for the per-bot and guild-wide enchant
+// search; the caller only maps it onto names.
+struct EnchantSnapshot
+{
+    uint32_t spellId = 0;
+    GuildOrders::EnchantSlot slot = GuildOrders::EnchantSlot::Unknown;
+    uint32_t skillValue = 0;
+    uint32_t reqSkillValue = 0;
+    std::vector<CraftRecipeReagent> reagents;
+};
+std::vector<EnchantSnapshot> OrderableEnchantSpells(Player* bot, std::vector<std::string> const& words);
 std::string ProtocolSafe(std::string value);
 void NoteCommanderOrderResult(ChatHandler* handler, std::string const& intent, bool ok, std::string const& result);
 void SendActionError(ChatHandler* handler, std::string const& intent, char const* code, char const* message);

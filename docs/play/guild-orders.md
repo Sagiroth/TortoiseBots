@@ -101,12 +101,13 @@ For the auction house step the bot picks one auction house and walks there.
 - **Guild gold cap:** add `gold=<copper>` after the other options. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
 - **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
-  - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables.
+  - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables. Enchant: permanent enchants the bot knows.
   - Never shown: recipes, conjured items, random-drop gear. At most 30 matches.
-  - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that).
-  - Every query word must match somewhere in the name, in any order.
-  - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text.
+  - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that). Enchant matches show the slot, the required Enchanting skill and the reagents instead.
+  - Every query word must match somewhere in the name, in any order. Enchant search also matches the slot word (`bracer`, `chest`, `boots`, `cloak`, `gloves`, `shield`, `weapon`, `2hweapon`) and its aliases (`wrist`, `feet`, `back`, `hands`, `2h`).
+  - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text. `.bot order search <BotName> enchant <text>` lists only enchants this bot knows, one row each with verdict `ok` or `noskill` and the reagents it holds (bags plus mail).
   - `.bot order search craft <text>` asks the whole guild instead of one bot: each match lists every online guild bot that knows an orderable recipe for it, with its profession skill, how many distinct reagents it already holds in full, and whether it already runs an order. At most 30 matches, same order as the per-bot craft search.
+  - `.bot order search enchant <text>` asks the whole guild instead of one bot: each match lists every online guild bot that knows the enchant, with its Enchanting skill, how many distinct reagents it already holds in full, and whether it already runs an order. At most 30 matches, sorted by required skill, then name.
 - **One order per bot.** A new order replaces the old one. `cancel` removes it (and its whole sub-order branch) and the bot goes back to normal life.
 
 <details>
@@ -187,13 +188,15 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 .bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>] [bring=<item>,<item>]
+.bot order <BotName> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>]
 .bot order <BotName> cancel
 .bot order <BotName> meet
 .bot order <BotName> preview <farm|craft> <item link or id> <amount> [bring=<item>,<item>]
 .bot order <BotName> steps
 .bot order list
-.bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order search <BotName> <farm|buy|craft|enchant> [cat=<kind>] <text>
 .bot order search craft <text>
+.bot order search enchant <text>
 .bot order reassign <SubOrderBot> <NewBot>
 ```
 `.bot order <BotName> steps` lists the order's last 16 steps with their age (the same steps the status shows), read-only and memory only, so it starts empty after a restart, a new order or a reassign.
