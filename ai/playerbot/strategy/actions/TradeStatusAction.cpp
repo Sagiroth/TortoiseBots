@@ -691,6 +691,8 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             {
                 TortoiseBots::GuildOrders::NoteSupplyProgress(bot->GetGUIDLow());
                 TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
+                // The enchant trade gets its own full set of tries.
+                TortoiseBots::GuildOrders::RequestMeet(bot->GetGUIDLow(), order.giverGuidLow);
                 // The refresh runs on the bot's map thread with the spell
                 // map readable: complete goes to the enchant trade at once,
                 // still short stays Waiting needitems.
