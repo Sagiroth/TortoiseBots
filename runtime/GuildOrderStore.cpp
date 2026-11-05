@@ -1643,6 +1643,21 @@ public:
         return true;
     }
 
+    // The received rows the bank trip has to pay out, oldest first. Any
+    // thread: the bank action checks what it can pay now, the drain pays it.
+    std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<RelistLedgerEntry> out;
+        auto it = m_relist.find(botGuidLow);
+        if (it == m_relist.end())
+            return out;
+        for (RelistLedgerEntry const& entry : it->second)
+            if (RelistNeedsDeposit(entry))
+                out.push_back(entry);
+        return out;
+    }
+
     // One queued disenchant row: the table write lands before memory
     // changes, so a restart never loses an item the table holds. Map thread
     // only (the intake and the service action).

@@ -810,6 +810,8 @@ bool GuildDisenchantServiceAction::isUseful()
 // it there). No gold taken, nothing of the bot's own added; one item per
 // mail on the core side. False when the stack is gone, so the stranded row
 // drops instead of looping.
+namespace ai
+{
 namespace
 {
 bool MailServiceStackBack(Player* bot, uint32_t senderLow, Item* item, std::string const& subject,
@@ -904,6 +906,7 @@ void MailServiceResultsBack(Player* bot, TortoiseBots::GuildOrders::DisenchantSe
         }
     }
 } // namespace
+} // namespace ai
 
 bool GuildDisenchantServiceAction::Execute(Event& event)
 {
@@ -1108,3 +1111,4 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
         PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
     return true;
 }
+} // namespace ai
