@@ -1397,31 +1397,30 @@ Unit* SeekSourceInAction(const SeekFight& state, Unit* target)
 }
 
 // Whether the action would leave a damage-over-time on one of the fight's Sons: the spell applies a periodic damage
-// aura (the damage tick, the leech, the percent-of-max tick). A DoT cannot be stood down once it lands, so its ticks
-// would run through the hold percent and the shut window and kill the Son for the next cycle. Any Son counts, the
-// picked one included: the burn has to be a steady damage the action can stop.
+// aura (the damage tick, the leech, the percent-of-max tick), and either it has no direct damage the rotation could
+// stop or that Son is held (SeekDotVeto). Any Son counts, the picked one included: the burn has to be a steady damage
+// the action can stop.
 bool SeekDotOnSource(const SeekFight& state, Action* action)
 {
     CastSpellAction* const cast = dynamic_cast<CastSpellAction*>(action);
     if (!cast)
         return false;
-    const bool son = IsSeekSource(state, action->GetTarget());
-    if (!son)
+    Unit* const target = action->GetTarget();
+    if (!IsSeekSource(state, target))
         return false;
     SpellEntry const* const info = sServerFacade.LookupSpellInfo(cast->GetSpellID());
+    if (!info)
+        return false;
+    bool direct = false;
     bool periodic = false;
-    if (info)
+    for (std::uint32_t i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
-        for (std::uint32_t i = 0; i < MAX_EFFECT_INDEX; ++i)
-        {
-            if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
-            {
-                periodic = true;
-                break;
-            }
-        }
+        if (info->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE)
+            direct = true;
+        if (info->Effect[i] == SPELL_EFFECT_APPLY_AURA && IsPeriodicDamageAura(info->EffectApplyAuraName[i]))
+            periodic = true;
     }
-    return SeekDotHeld(son, periodic);
+    return SeekDotVeto(direct, periodic, info->IsChanneledSpell(), SeekHoldsUnit(state, target));
 }
 
 // The held source inside an area action's area: every living Son of the read is judged by the same hold rule at its
@@ -2928,7 +2927,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     // readiness (SeekHoldsUnit), and every source but the one at the spot is held all window, so a DPS assist, an AoE,
     // a DoT or a single-target swing on it re-picks the boss; the hold_kill clause above is the other half of the rule
     // (the current target is dropped).
-    if (seeksRow && (dpsAssist || aoe || attackerDebuff || area || seekSingle))
+    if (seeksRow && (dpsAssist || aoe || attackerDebuff || area || seekSingle || seekDot))
     {
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
@@ -2940,8 +2939,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
             }
             Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
                 : aoe ? AI_VALUE(Unit*, "dps aoe target")
-                : attackerDebuff ? action->GetTarget()
-                : AI_VALUE(Unit*, "current target");
+                : action->GetTarget();
             Unit* source = SeekSourceInAction(state, picked);
             Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
             // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it down.
@@ -4768,9 +4766,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     }
     if (task.holdSwing)
     {
-        // AttackStop leaves the threat list alone, so the Son stays on the tank and the tank stays at the spot; true
-        // keeps the rotation from re-arming the swing for this tick, and the next tick asks the same question.
+        // The swing is the only thing this hold stops: AttackStop leaves the threat list alone, so the Son stays on the
+        // tank and the tank stays at the spot. With no swing running on the Son there is nothing to stop, and taking
+        // the tick anyway left the tank's Shield Block, its shouts and its taunt no turn. The AttackAction veto keeps
+        // the "tank target" pick from re-arming the swing.
         hasLast = false;
+        const bool swinging = bot->GetVictim() == task.source && bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING);
+        if (!SeekTankHoldConsumesTick(swinging))
+            return false;
         bot->AttackStop();
         return true;
     }

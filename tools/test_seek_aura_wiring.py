@@ -258,6 +258,18 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("SeekHoldsUnit(state, source)", hold)
         self.assertIn("seeksRow", hold)
 
+    def test_the_dot_and_off_tank_holds_answer_every_damage_cast(self):
+        # A melee debuff on the attacker ("rend on attacker") resolves to "attacker without aura", so it reaches the
+        # seek block through the every-damage-cast clause, and the classification is the policy's.
+        hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
+        self.assertIn("(dpsAssist || aoe || attackerDebuff || area || seekSingle || seekDot)", hold)
+        self.assertIn("SeekDotVeto(", ACTIONS)
+        # The off-tank hold takes the tick only to stop a swing that is running on the Son; with none running the
+        # rotation (Shield Block, the shouts, the taunt) gets it.
+        tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        self.assertIn("SeekTankHoldConsumesTick(", tank)
+        self.assertIn("SeekTankHoldsSwing(", body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue("))
+
     def test_the_totems_leave_the_siphon(self):
         # Shaman totems are one more undosed unit each: unsummoned in the same window as the pets through the core's
         # own sweep, and no placement is allowed until the siphon has landed.

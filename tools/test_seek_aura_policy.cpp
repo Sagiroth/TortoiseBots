@@ -118,11 +118,18 @@ int main()
     }
 
     // SeekDoTsAreNeverCastOnASon: a plain DoT on the boss is fine, but one that would land on any Son of the seek fight
-    // is held at any time, the picked Son included: its ticks would run through the hold percent and the shut window.
-    CHECK(SeekDotHeld(true, true));
-    CHECK(!SeekDotHeld(false, true));
-    CHECK(!SeekDotHeld(true, false));
-    CHECK(!SeekDotHeld(false, false));
+    // is held: its ticks would run through the hold percent and the shut window. A spell that also lands direct damage
+    // is a burst the rotation can stop, so its periodic tail is held only while that Son is held; a channelled
+    // periodic cast (Mind Flay, Drain Life) cannot be stopped once it runs and stays held always.
+    CHECK(SeekDotVeto(false, true, false, false));  // Corruption, Serpent Sting: no direct part to stop
+    CHECK(SeekDotVeto(false, true, false, true));
+    CHECK(SeekDotVeto(true, true, false, true));    // Fireball, Immolate on a held Son
+    CHECK(!SeekDotVeto(true, true, false, false));  // ... and on the Son the hold lets burn
+    CHECK(SeekDotVeto(true, true, true, false));    // Mind Flay, Drain Life: channelled ticks
+    CHECK(SeekDotVeto(false, true, true, true));
+    CHECK(!SeekDotVeto(true, false, false, false)); // a plain nuke
+    CHECK(!SeekDotVeto(false, false, false, true));
+    CHECK(!SeekDotVeto(true, false, true, false));  // a channel with no damage tick (Arcane Missiles)
 
     // SeekOffTankStopsSwingingATiredSon: with the window shut the holding off-tank stops auto-attacking a Son already
     // at or below the hold percent plus 10 (a 30 % hold: 40 % and below); inside the open window it swings as usual,
@@ -131,6 +138,12 @@ int main()
     CHECK(SeekTankSwingHeld(false, 12.0f, 30.0f));
     CHECK(!SeekTankSwingHeld(false, 41.0f, 30.0f));
     CHECK(!SeekTankSwingHeld(true, 12.0f, 30.0f));
+
+    // SeekOffTankHoldLeavesTheTickToTheRotation: with no swing on the held Son there is nothing to stop, and the tank
+    // action must not take the tick: Shield Block, the shouts and the taunt only ran on the ticks it left (one
+    // successful action a tick). It takes the tick only to stop the swing that is running on the Son.
+    CHECK(SeekTankHoldConsumesTick(true));
+    CHECK(!SeekTankHoldConsumesTick(false));
 
     // At the gather the seek action stops a walk once, then leaves the tick to the rotation, the heals and the burn:
     // a seek that kept consuming every tick at the spot froze the seekers (H1).

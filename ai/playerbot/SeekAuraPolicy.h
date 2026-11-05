@@ -195,12 +195,16 @@ namespace ai
             nearestSourceToSpotYd <= kSeekPickupYd;
     }
 
-    // A damage-over-time on a Son of the seek fight is always held: once the aura is on, its ticks cannot be called
-    // back, so they would run through the hold percent and the shut window and kill the Son for the next cycle. The
-    // caller supplies the two reads.
-    inline bool SeekDotHeld(bool isSeekSource, bool spellAppliesPeriodicDamage)
+    // A damage-over-time on a Son of the seek fight: a pure DoT (Corruption, Serpent Sting) and a channelled periodic
+    // cast (Mind Flay, Drain Life) tick through the hold percent and the shut window with no direct damage the
+    // rotation could stop, so they are held at any time; a spell that also lands direct damage (Fireball, Immolate,
+    // Moonfire) is a burst whose tail is acceptable on the Son the hold lets burn, and is held only while that Son is
+    // held (SeekHoldDecision). The caller supplies the spell's shape and the hold read.
+    inline bool SeekDotVeto(bool hasDirect, bool hasPeriodic, bool channelled, bool held)
     {
-        return isSeekSource && spellAppliesPeriodicDamage;
+        if (!hasPeriodic)
+            return false;
+        return !hasDirect || channelled || held;
     }
 
     // The off-tank holding a source stops auto-attacking it once the window is shut and the Son stands at or below the
@@ -209,6 +213,14 @@ namespace ai
     inline bool SeekTankSwingHeld(bool windowOpen, float hpPct, float holdPct)
     {
         return !windowOpen && hpPct <= holdPct + kSeekTankSwingMarginPct;
+    }
+
+    // The hold takes the tick only to stop a swing that is running on the held Son (bot->GetVictim() == son with
+    // UNIT_STAT_MELEE_ATTACKING, as the other melee holds read it): the engine runs one successful action a tick, so a
+    // hold that answered true on every tick left the tank's Shield Block, its shouts and its taunt no turn.
+    inline bool SeekTankHoldConsumesTick(bool swingingAtSon)
+    {
+        return swingingAtSon;
     }
 
     // The seek action takes this tick while it walks, and once more to stop a walk already under way. Standing at the
