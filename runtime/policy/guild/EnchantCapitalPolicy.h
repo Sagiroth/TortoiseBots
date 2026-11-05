@@ -25,9 +25,6 @@ inline constexpr uint32_t kOrgrimmarZoneId = 1637;
 inline constexpr uint32_t kEasternKingdomsMap = 0;
 inline constexpr uint32_t kKalimdorMap = 1;
 
-// Hearthstone visuals, without ever using the item: the spell alone
-// (8690) is the 10 s cast. Kept in one place so callers agree on it.
-
 // The bot's main capital by faction. True = Alliance (Stormwind).
 inline uint32_t CapitalZoneId(bool alliance) { return alliance ? kStormwindZoneId : kOrgrimmarZoneId; }
 inline uint32_t CapitalMapId(bool alliance) { return alliance ? kEasternKingdomsMap : kKalimdorMap; }
