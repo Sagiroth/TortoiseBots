@@ -128,6 +128,7 @@
 #include "Database/DatabaseEnv.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Maps/PathFinder.h"
+#include "Maps/MoveMap.h" // the dry walk's Detour query
 #include "Movement/spline/MoveSplineInit.h"
 #include "Movement/WaypointManager.h"
 #include "Maps/Cell.h"
@@ -271,6 +272,13 @@ struct DungeonRunSlot
     // The pull row's ring estimate per unit (DungeonRun::PullEstimateCache, ReadPullJoiners): one read a row,
     // refilled into the unit facts on later ticks.
     mutable TortoiseBots::DungeonRun::PullEstimateCache pullEstCache;
+    // A kill_first unit's fight-log span (TBM:KILLFIRST, LogKillFirstSpans): its entry and the ms it was first seen at.
+    struct KillFirstSpan
+    {
+        uint32 entry = 0;
+        uint32 seenMs = 0;
+    };
+    mutable std::unordered_map<uint64, KillFirstSpan> killFirstSeen;
     // A player-led run (`.bot run start ... player`, PlayerLedPolicy.h): its own state beside the run.
     TortoiseBots::PlayerLed::State playerLed;
     // A system run paused by L6 (SystemRun::DecideJoinStep).
@@ -1768,6 +1776,12 @@ void UpdateCommanderViews(uint32 diff)
 struct RaidFocusHealer
 {
     ObjectGuid guid;
+    // The tank the layout seated this healer to heal and the seat on it; a
+    // mid-raid joiner's focus target is not the layout's plan.
+    ObjectGuid tank;
+    uint8_t seat = 0;
+    bool layoutSeat = false;
+    std::list<ObjectGuid> assignedTargets;
     bool hadStrategy = false;
     std::list<ObjectGuid> previousTargets;
 };
@@ -2096,9 +2110,11 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             : PlayerbotAI::IsHeal(bot) ? TortoiseBots::RaidLayout::Role::Healer
             : TortoiseBots::RaidLayout::Role::Damage;
         member.lead = bot == lead;
+        member.cls = bot->GetClass();
         members.push_back(member);
     }
-    TortoiseBots::RaidLayout::Layout layout = TortoiseBots::RaidLayout::Plan(members);
+    TortoiseBots::RaidLayout::Layout layout =
+        TortoiseBots::RaidLayout::Plan(members, sPlayerbotAIConfig.raidHealerSeatsByClass);
     if (!layout.ok)
     {
         handler->PSendSysMessage("TBM:RAID_LAYOUT|warning|raid layout not applied: %s", ProtocolSafe(layout.error).c_str());
@@ -2201,12 +2217,16 @@ static void ApplyRaidLayout(Group* group, Player* lead, std::vector<Player*> con
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
             RaidFocusHealer record;
             record.guid = bot->GetObjectGuid();
+            record.tank = tankGuid;
+            record.seat = placement.healsSeat;
+            record.layoutSeat = true;
+            record.assignedTargets = {tankGuid, bot->GetObjectGuid()};
             if (ai && ai->GetAiObjectContext())
             {
                 record.hadStrategy = ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT);
                 record.previousTargets =
                     ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Get();
-                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set({tankGuid, bot->GetObjectGuid()});
+                ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("focus heal targets")->Set(record.assignedTargets);
                 ai->ChangeStrategy("+focus heal targets", BotState::BOT_STATE_COMBAT);
             }
             applied.focusHealers.push_back(record);
@@ -2395,6 +2415,25 @@ bool IsRaidFocusHealer(Player* bot)
             return true;
     }
     return false;
+}
+
+RaidTankSeat RaidTankHealerSeat(Player* bot)
+{
+    RaidTankSeat seat;
+    if (!bot)
+        return seat;
+    ObjectGuid const guid = bot->GetObjectGuid();
+    for (auto const& entry : RaidLayouts())
+        for (RaidFocusHealer const& record : entry.second.focusHealers)
+            if (record.layoutSeat && record.guid == guid)
+            {
+                seat.seated = true;
+                seat.tank = record.tank;
+                seat.seat = record.seat;
+                seat.assigned = record.assignedTargets;
+                return seat;
+            }
+    return seat;
 }
 
 static void ClearRaidLayout(uint32 groupId)
@@ -2987,6 +3026,68 @@ bool RunBotAttackOrder(PlayerbotAI* ai, Player* bot, Player* selectionOwner, Obj
     return accepted;
 }
 
+// AiPlayerbot.DungeonRunTotemFocus: one DPS bot on the run's totem focus. It cuts its own current cast or channel first
+// (a Rain of Fire or a Drain Soul channel otherwise finishes before the switch), then takes the attack by guid (the
+// run's skull stays on the boss), then opens with an instant the class has, so the first damage does not wait out a
+// 2.5-3 s nuke's cast. A class without an instant action falls through to its ordinary attack.
+static char const* const kTotemFocusOpeners[] = {"fire blast", "shadowburn", "death coil", "arcane shot"};
+
+// Whether the spell resurrects, the caster itself included: one of its effects is EFFECT_RESURRECT,
+// EFFECT_SELF_RESURRECT or EFFECT_RESURRECT_NEW. The totem focus never cuts one (TotemFocusMayInterrupt): a cut
+// Rebirth is a member lost.
+static bool TotemFocusResurrects(SpellEntry const* info)
+{
+    if (!info)
+        return false;
+    for (int i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; ++i)
+        if (info->Effect[i] == SPELL_EFFECT_RESURRECT || info->Effect[i] == SPELL_EFFECT_SELF_RESURRECT ||
+            info->Effect[i] == SPELL_EFFECT_RESURRECT_NEW)
+            return true;
+    return false;
+}
+
+// Cuts one current spell slot by the totem focus' rule (TotemFocusMayInterrupt): only a generic cast or a channel, only
+// an offensive cast on a hostile target, and only a spell the fight does not need. A delayed generic spell is left
+// alone, as InterruptNonMeleeSpells left it.
+static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
+{
+    TortoiseBots::DungeonRun::TotemFocusSpell kind;
+    if (slot == CURRENT_GENERIC_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Generic;
+    else if (slot == CURRENT_CHANNELED_SPELL)
+        kind = TortoiseBots::DungeonRun::TotemFocusSpell::Channeled;
+    else
+        return; // a melee or autorepeat slot (an Auto Shot, a wand's shot) is never cut
+    Spell* const spell = bot->GetCurrentSpell(slot);
+    if (!spell || !spell->m_spellInfo)
+        return;
+    // The cast's own target; a destination-targeted spell (Rain of Fire) carries no unit target, so the bot's
+    // selection stands in for it.
+    Unit* const target = spell->m_targets.getUnitTarget() ? spell->m_targets.getUnitTarget() : bot->GetSelectedUnit();
+    if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
+            TotemFocusResurrects(spell->m_spellInfo), spell->m_spellInfo->IsPositiveSpell(),
+            target && bot->IsHostileTo(target)))
+        return;
+    bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
+}
+
+static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
+{
+    ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
+    // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
+    // and the hearthstone are never cut (TotemFocusMayInterrupt).
+    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL);
+    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL);
+    selectionOwner->SetSelectionGuid(targetGuid);
+    bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
+    if (attacked)
+        for (char const* const opener : kTotemFocusOpeners)
+            if (ExecuteQuietAction(ai, opener, ai::Event("focus totem", "", selectionOwner)))
+                break;
+    ExecuteQuietNextAction(ai, false);
+    return attacked;
+}
+
 } // namespace
 
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
@@ -3154,14 +3255,16 @@ static bool FocusIsTankHoldTarget(Unit* target)
 static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,
     std::string const& intent, bool automatedKillFirst)
 {
-    order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     SupersedeCommanderTasks(order.commander->GetObjectGuid().GetRawValue(), 0, RemoteCommander::LaterOrder::Focus);
     bool const dpsOnly = FocusIsTankHoldTarget(target);
     // AiPlayerbot.DungeonRunTotemFocus: a totem (the Brain Wash Totem, a healing ward) dies in 1-2 s and holds no
-    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot).
+    // healer, so the run's focus leaves the tanks and the healers on their own jobs (FocusSkipsBot), and it sends the
+    // damage dealers by guid with the skull left where it is: the run's mark draws in every bot that follows it.
     bool const totemTarget = target->GetCreatureType() == CREATURE_TYPE_TOTEM;
     bool const totemFocus = TortoiseBots::DungeonRun::AutomatedTotemFocus(automatedKillFirst, totemTarget,
         sPlayerbotAIConfig.dungeonRunTotemFocus);
+    if (!totemFocus)
+        order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3177,9 +3280,15 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
                 totemTarget, totemFocus))
             continue;
-        bool set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
-        bool accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
-        ExecuteQuietNextAction(ai, true);
+        bool accepted;
+        if (totemFocus)
+            accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());
+        else
+        {
+            bool const set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
+            accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
+            ExecuteQuietNextAction(ai, true);
+        }
         if (accepted)
             ++succeeded;
     }
@@ -6885,14 +6994,165 @@ bool GoodSpotCutOff(Player* lead, TortoiseBots::DungeonRun::Run const& run)
     return (static_cast<uint32>(path.getPathType()) & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH)) != 0;
 }
 
+// The dry walk (AiPlayerbot.DungeonRunDryWalk): the lead bot's way to (x,y,z) over NAV_GROUND polys only,
+// deep water left out. The core's own player filter includes NAV_WATER, so where a pool is the shorter way
+// its path crosses it on the surface; `out` is the lead bot's spot then the way's corners, `lengthYd` its
+// length. False: no query or attached navmesh, no poly near either end, or a way that does not reach the
+// point. NAV_GROUND alone also leaves out magma and slime (the shim's NAV_MAGMA_SLIME and NAV_GROUND_STEEP
+// do not name this core's bits).
+static bool DryWayPath(Player* lead, float x, float y, float z,
+    std::vector<TortoiseBots::DungeonRun::PathPoint>& out, float& lengthYd)
+{
+    using namespace TortoiseBots::DungeonRun;
+    out.clear();
+    lengthYd = 0.0f;
+    if (!lead || !lead->IsInWorld() || lead->GetTransport())
+        return false;
+    if (!MaNGOS::IsValidMapCoord(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()) ||
+        !MaNGOS::IsValidMapCoord(x, y, z))
+        return false;
+    MMAP::MMapManager* const mmap = MMAP::MMapFactory::createOrGetMMapManager();
+    if (!mmap)
+        return false;
+    dtNavMeshQuery const* const query = mmap->GetNavMeshQuery(lead->GetMapId());
+    if (!query || !query->getAttachedNavMesh())
+        return false;
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND);
+    filter.setExcludeFlags(0);
+    // Detour's coordinates and extents are Y, Z, X (the core's FindWalkPoly reads them the same way).
+    float start[VERTEX_SIZE] = {lead->GetPositionY(), lead->GetPositionZ(), lead->GetPositionX()};
+    float end[VERTEX_SIZE] = {y, z, x};
+    float startExtents[3] = {kDryStartSearchYd, 15.0f, kDryStartSearchYd};
+    float endExtents[3] = {5.0f, 10.0f, 5.0f};
+    float startNearest[VERTEX_SIZE], endNearest[VERTEX_SIZE];
+    dtPolyRef startRef = INVALID_POLYREF, endRef = INVALID_POLYREF;
+    if (dtStatusFailed(query->findNearestPoly(start, startExtents, &filter, &startRef, startNearest)) ||
+        startRef == INVALID_POLYREF)
+        return false;
+    if (dtStatusFailed(query->findNearestPoly(end, endExtents, &filter, &endRef, endNearest)) ||
+        endRef == INVALID_POLYREF)
+        return false;
+    dtPolyRef polys[256];
+    int polyCount = 0;
+    dtStatus const status = query->findPath(startRef, endRef, startNearest, endNearest, &filter, polys, &polyCount, 256);
+    if (dtStatusFailed(status) || polyCount < 1)
+        return false;
+    float straight[64 * VERTEX_SIZE];
+    int straightCount = 0;
+    if (dtStatusFailed(query->findStraightPath(startNearest, endNearest, polys, polyCount, straight, nullptr, nullptr,
+            &straightCount, 64)) ||
+        straightCount < 1)
+        return false;
+    float const endX = straight[(straightCount - 1) * VERTEX_SIZE + 2];
+    float const endY = straight[(straightCount - 1) * VERTEX_SIZE];
+    float const endZ = straight[(straightCount - 1) * VERTEX_SIZE + 1];
+    // The end poly may lie up to the search extents from the point (5 yd to its side, 10 above or below, another
+    // floor included), and a complete route to that poly is not a way to the point: the same bound the run's own
+    // paths are held to.
+    if (PathEndsShort(false, true, endX, endY, endZ, x, y, z))
+        return false;
+    out.push_back(PathPoint{lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()});
+    for (int i = 0; i < straightCount; ++i)
+        out.push_back(PathPoint{straight[i * VERTEX_SIZE + 2], straight[i * VERTEX_SIZE],
+            straight[i * VERTEX_SIZE + 1]});
+    for (std::size_t i = 1; i < out.size(); ++i)
+        lengthYd += ai::PlanDistance(out[i - 1].x, out[i - 1].y, out[i - 1].z, out[i].x, out[i].y, out[i].z);
+    return true;
+}
+
+// Whether the lead bot's core path to (x,y,z) swims after leaving its own water (the samples at most 2 yd
+// apart, the leading ones at the lead bot's spot exempt): the path the run walks today. `coreYd` is its length.
+static bool CorePathSwims(Player* lead, float x, float y, float z, float* coreYd = nullptr)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (coreYd)
+        *coreYd = 0.0f;
+    if (!lead || !lead->IsInWorld())
+        return false;
+    PathFinder path(lead);
+    path.calculate(x, y, z, false);
+    std::vector<PathPoint> points;
+    points.push_back(PathPoint{lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()});
+    for (Vector3 const& p : path.getPath())
+        points.push_back(PathPoint{p.x, p.y, p.z});
+    if (coreYd)
+        for (std::size_t i = 1; i < points.size(); ++i)
+            *coreYd += ai::PlanDistance(points[i - 1].x, points[i - 1].y, points[i - 1].z, points[i].x, points[i].y,
+                points[i].z);
+    TerrainInfo const* const terrain = lead->GetMap() ? lead->GetMap()->GetTerrain() : nullptr;
+    if (!terrain)
+        return false;
+    return PathSwimsAfterLeaving(points, [terrain](float sx, float sy, float sz)
+    {
+        return terrain->IsSwimmable(sx, sy, sz);
+    }) >= 0;
+}
+
+// Whether (x,y,z) is dry ground for the dry walk: deep water only, wading is fine (the dry target gate).
+static bool DryAt(Player* lead, float x, float y, float z)
+{
+    Map* const map = lead ? lead->GetMap() : nullptr;
+    TerrainInfo const* const terrain = map ? map->GetTerrain() : nullptr;
+    return terrain && !terrain->IsSwimmable(x, y, z);
+}
+
+// The gate every dry pick shares: the core path swims after leaving the lead bot's water, the point itself is
+// dry (deep water only; wading is fine), and a ground-only way reaches it within kDryDetourFactor times the
+// way the run would walk. `dry` gets that way. Any failure keeps the old behaviour byte for byte.
+static bool DryWayFor(Player* lead, float x, float y, float z, std::vector<TortoiseBots::DungeonRun::PathPoint>& dry)
+{
+    using namespace TortoiseBots::DungeonRun;
+    dry.clear();
+    if (!lead || !lead->IsInWorld() || !lead->GetMap())
+        return false;
+    float coreYd = 0.0f;
+    if (!CorePathSwims(lead, x, y, z, &coreYd))
+        return false;
+    if (!DryAt(lead, x, y, z))
+        return false;
+    float dryYd = 0.0f;
+    if (!DryWayPath(lead, x, y, z, dry, dryYd))
+        return false;
+    return DryPathUsable(true, dryYd, coreYd, DistanceTo(lead, x, y, z));
+}
+
+// The next hop for a walk: the first point of `path` that is kApproachYd from the target or the one
+// kApproachHopYd along it (its end at most).
+template <class Points>
+static bool ApproachHopOn(Points const& points, float x, float y, float z, float& ox, float& oy, float& oz)
+{
+    if (points.size() < 2)
+        return false;
+    float walked = 0.0f;
+    for (size_t i = 1; i < points.size(); ++i)
+    {
+        auto const& from = points[i - 1];
+        auto const& to = points[i];
+        walked += ai::PlanDistance(from.x, from.y, from.z, to.x, to.y, to.z);
+        if (ai::PlanDistance(to.x, to.y, to.z, x, y, z) <= TortoiseBots::DungeonRun::kApproachYd ||
+            walked >= TortoiseBots::DungeonRun::kApproachHopYd || i + 1 == points.size())
+        {
+            ox = to.x;
+            oy = to.y;
+            oz = to.z;
+            return true;
+        }
+    }
+    return false;
+}
+
 // The next approach hop toward (x,y,z): a point of the lead bot's own navmesh
 // path, the first one kApproachYd from the target or kApproachHopYd along the
 // path (or its end). False when the navmesh has no path at all. A point on the
 // path is what `cmd move` accepts; a straight-line guess can sit off the mesh.
 // With `way`, the same path gives the island escape's facts (NoteLeadWay).
+// With the dry walk on and a ground-only way that reaches the point, the hop (and `whole`) comes from that
+// way, so the hop never stands in the pool the core path crosses; a core type with PATHFIND_UNDERWATER (the
+// straight swim chord) and no dry way keeps the old answer, and the walk to that hop is intercepted then.
 bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& oy, float& oz,
     std::vector<TortoiseBots::DungeonRun::PathPoint>* whole = nullptr, TortoiseBots::DungeonRun::Facts* way = nullptr,
-    bool* incomplete = nullptr)
+    bool* incomplete = nullptr, bool dryWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     PathFinder path(lead);
@@ -6908,35 +7168,32 @@ bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& o
         *incomplete = !PathWalkable((type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0,
             lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), end.x, end.y, end.z, x, y, z);
     }
+    if (dryWalk)
+    {
+        std::vector<PathPoint> dry;
+        if (DryWayFor(lead, x, y, z, dry))
+        {
+            if (whole)
+                whole->insert(whole->end(), dry.begin(), dry.end());
+            return ApproachHopOn(dry, x, y, z, ox, oy, oz);
+        }
+    }
     if (path.getPathType() & PATHFIND_NOPATH)
         return false;
     Movement::PointsArray const& points = path.getPath();
-    if (points.size() < 2)
-        return false;
     if (whole)
         for (Vector3 const& p : points)
             whole->push_back(PathPoint{p.x, p.y, p.z});
-    float walked = 0.0f;
-    for (size_t i = 1; i < points.size(); ++i)
-    {
-        Vector3 const& from = points[i - 1];
-        Vector3 const& to = points[i];
-        walked += ai::PlanDistance(from.x, from.y, from.z, to.x, to.y, to.z);
-        if (ai::PlanDistance(to.x, to.y, to.z, x, y, z) <= kApproachYd || walked >= kApproachHopYd ||
-            i + 1 == points.size())
-        {
-            ox = to.x;
-            oy = to.y;
-            oz = to.z;
-            return true;
-        }
-    }
-    return false;
+    return ApproachHopOn(points, x, y, z, ox, oy, oz);
 }
 
 // The lead bot's navmesh path to (x,y,z) reaches it (DungeonRun::PathEndsShort false) and is no detour
 // (DungeonRun::PathFitsStraight); `path` gets its points. The fight forward's and the replay shortcut's read.
-bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<TortoiseBots::DungeonRun::PathPoint>& points)
+// With the dry walk on, the straight swim chord (PATHFIND_UNDERWATER) is a fallback too when the point is dry:
+// it is no navmesh route (vmap models alone are checked), so the walk back replays the plan's points instead of
+// the chord. A point in deep water is an intended swim and keeps the chord.
+bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<TortoiseBots::DungeonRun::PathPoint>& points,
+    bool dryWalk = false)
 {
     using namespace TortoiseBots::DungeonRun;
     points.clear();
@@ -6944,8 +7201,10 @@ bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<Tortoise
     path.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(path.getPathType());
     Vector3 const end = path.getActualEndPosition();
+    bool const fallback = (type & PATHFIND_NOT_USING_PATH) != 0 ||
+        DryChordFallback(dryWalk, (type & PATHFIND_UNDERWATER) != 0, DryAt(lead, x, y, z));
     if (!NavPathReaches((type & PATHFIND_NOPATH) != 0, (type & PATHFIND_INCOMPLETE) != 0, (type & PATHFIND_SHORTCUT) != 0,
-            (type & PATHFIND_NOT_USING_PATH) != 0, end.x, end.y, end.z, x, y, z))
+            fallback, end.x, end.y, end.z, x, y, z))
         return false;
     float length = 0.0f;
     Movement::PointsArray const& way = path.getPath();
@@ -6973,7 +7232,7 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
         std::vector<PathPoint> way;
         f.forwardRead = true;
         f.forwardFor = run.fightForwardWanted;
-        f.forwardPathOk = DirectNavPath(lead, pull.x, pull.y, pull.z, way);
+        f.forwardPathOk = DirectNavPath(lead, pull.x, pull.y, pull.z, way, f.dryWalk);
         f.forwardLos = lead->IsWithinLOS(pull.x, pull.y, pull.z + 1.0f, true, 0.0f);
         // Live hostiles by the way (not the pack's own: its entries within its radius of its point) and at the move
         // points left out.
@@ -7007,7 +7266,7 @@ void ReadTimeSinkWays(DungeonRunSlot const& slot, Player* lead, TortoiseBots::Du
         std::vector<PathPoint> way;
         f.shortcutRead = true;
         f.shortcutFor = run.shortcutWanted;
-        f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way);
+        f.shortcutOk = DirectNavPath(lead, p.x, p.y, p.z, way, f.dryWalk);
     }
 
 }
@@ -7042,7 +7301,7 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
         targetZ = unit->GetPositionZ();
     }
     std::vector<PathPoint> way;
-    if (!DirectNavPath(tank, targetX, targetY, targetZ, way))
+    if (!DirectNavPath(tank, targetX, targetY, targetZ, way, f.dryWalk && DryAt(tank, targetX, targetY, targetZ)))
         return; // no way that ends at the point: f.stragglerPathOk stays false and the pause says so
     float length = 0.0f;
     for (std::size_t i = 1; i < way.size(); ++i)
@@ -8183,6 +8442,19 @@ uint32 RunCcImmune(Creature* creature)
     return immune;
 }
 
+// The spawn's respawn delay in seconds (DungeonRun::UnitFact::respawnSec): the run never crowd-controls a unit that
+// comes back within its window (ZG's Sacrificed Trolls, 10 s) and never counts it as a body of the pull. 0 for a
+// unit with no spawn of its own (a player, a pet's fact, a temporary summon whose delay is its lifetime) or one
+// whose read did not fill it.
+uint32 RunRespawnSec(Unit* unit)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!unit || !unit->IsCreature())
+        return 0;
+    Creature* const creature = static_cast<Creature*>(unit);
+    return SpawnRespawnSec(creature->HasStaticDBSpawnData(), creature->GetRespawnDelay());
+}
+
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
 // any family: the Freezing Trap's effect auras, not the trap spell itself.
 bool RunCcHeld(Unit const* unit)
@@ -8377,6 +8649,9 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         if (Creature* asCreature = other->ToCreature())
             fact.formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(asCreature);
         fact.distLead = other->GetMap() == lead->GetMap() ? lead->GetDistance(other) : 1000.0f;
+        fact.x = other->GetPositionX();
+        fact.y = other->GetPositionY();
+        fact.z = other->GetPositionZ();
         fact.engaged = true;
         fact.attackable = GroupCanAttack(judge, other);
         fact.evading = other->IsCreature() && static_cast<Creature*>(other)->IsInEvadeMode();
@@ -8414,8 +8689,8 @@ void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBo
     f.engagedRead = true;
 }
 
-// The automatic crowd control's break read (DungeonRun::RunCcBreakTick): the run's own held units that are still in
-// combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
+// The run's own holds read (DungeonRun::RunCcBreakTick, and the own-fight step end): its held units that are still
+// in combat, one object lookup a hold and no grid scan, with the time left on each hold. A held unit out of combat
 // keeps no fight open and is none. The party's own read (partyHits) is the unit's attacker set only, no scan.
 void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*> const& bots,
     TortoiseBots::DungeonRun::Facts& f)
@@ -8460,6 +8735,31 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
         f.ccHeld.push_back(fact);
     }
     f.ccHeldRead = true;
+}
+
+// The fight's own units (DungeonRun::Run::ownFightGuids), each resolved with one object lookup on the run's map, so
+// the own-fight step end has positive evidence of death or despawn instead of a unit's absence from this tick's
+// reads: a pull mob dragged out of the row's radius, one evading out of the engaged read, or a read gap leaves no
+// proof of anything. Not on the map any more: gone; on it and not alive: dead; alive: not gone, wherever it stands.
+// The lead bot off the run's map (a ghost in a regroup) leaves the read unset, and an unread guid never counts as
+// gone. No grid or world scan.
+void ReadOwnFightFacts(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    if (!f.anyInCombat)
+        return;
+    Map* const map = lead->FindMap();
+    if (!map || (slot.run.plan && map->GetId() != slot.run.plan->map))
+        return;
+    for (std::uint64_t const guid : slot.run.ownFightGuids)
+    {
+        OwnUnitFact fact;
+        fact.guid = guid;
+        Unit* const unit = map->GetUnit(::ObjectGuid(guid));
+        fact.state = !unit ? OwnUnitState::Gone : !unit->IsAlive() ? OwnUnitState::Dead : OwnUnitState::Alive;
+        f.ownFightUnits.push_back(fact);
+    }
+    f.ownFightRead = true;
 }
 
 // A party bot is in combat when it or its living pet is (DungeonRun::MemberFact::inCombat, Facts::anyInCombat, and
@@ -8713,6 +9013,35 @@ static bool InLeadGroup(Player* lead, Unit* unit)
     return group && static_cast<Player*>(unit)->GetGroup() == group;
 }
 
+// The visitor of an engaged boss's one bounded grid read (ReadKillFirst): a creature of the plan's kill_first entries
+// within kKillFirstTotemGridYd of that boss (the grid visit reaches whole cells, so the exact bound is checked here
+// too), whose owner (KillFirstOwner) is the boss, alive, in the world and a totem. The entries are a hash set, so one
+// visit reads them all.
+struct KillFirstTotemCheck
+{
+    KillFirstTotemCheck(std::unordered_set<std::uint32_t> const& entries, Creature* boss)
+        : entries(entries), boss(boss), bossRaw(boss->GetObjectGuid().GetRawValue()) {}
+
+    bool operator()(Creature* c)
+    {
+        if (!c || c == boss || !c->IsInWorld() || !entries.count(c->GetEntry()) ||
+            !boss->IsWithinDist(c, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false))
+            return false;
+        std::uint64_t summonerRaw = 0;
+        if (c->IsTemporarySummon())
+            summonerRaw = static_cast<TemporarySummon*>(c)->GetSummonerGuid().GetRawValue();
+        std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(
+            c->GetOwnerGuid().GetRawValue(), c->GetCreatorGuid().GetRawValue(), summonerRaw);
+        return TortoiseBots::DungeonRun::KillFirstGridTotemOf(ownerRaw, c->IsAlive(),
+            c->GetCreatureType() == TortoiseBots::DungeonRun::kCreatureTotem, bossRaw);
+    }
+
+private:
+    std::unordered_set<std::uint32_t> const& entries;
+    Creature* const boss;
+    std::uint64_t const bossRaw;
+};
+
 // The plan's kill_first units of this fight, from the bots' cached
 // "attackers" lists (no scan): each with whether it is engaged with the party
 // and, for a summoned one (a healing ward), whether its owner is. The creatures
@@ -8727,7 +9056,22 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         party.insert(bot->GetObjectGuid().GetRawValue());
     std::unordered_set<uint64> seen;
     std::unordered_set<uint64> auraWalked; // attackers whose aura holders this read walked
+    std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
+    std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // A plan boss (a boss step's entry, or the entry the spawn row first had when a script changed it).
+    auto const planBoss = [&plan](Creature* c)
+    {
+        if (!c)
+            return false;
+        std::uint32_t const entry = c->GetEntry();
+        std::uint32_t const formOf = TortoiseBots::DungeonRun::ScriptChangedFrom(c);
+        for (ai::PlanStep const& step : plan.steps)
+            if (step.kind == ai::PlanStepKind::Boss && step.entry &&
+                (step.entry == entry || step.entry == formOf))
+                return true;
+        return false;
+    };
     auto add = [&](Unit* unit, bool auraOnEngaged)
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
@@ -8751,10 +9095,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         ObjectGuid owner = unit->GetOwnerGuid();
         if (owner.IsEmpty())
             owner = unit->GetCreatorGuid();
-        if (!owner.IsEmpty())
+        std::uint64_t summonerRaw = 0;
+        // A wild summon has no owner and no creator (Jin'do's Brain Wash Totem, spell 24262): its temporary summon's
+        // summoner is the only owner it has, and only the totem focus reads it.
+        if (f.totemFocus && unit->IsCreature() && static_cast<Creature*>(unit)->IsTemporarySummon())
+            summonerRaw = static_cast<TemporarySummon*>(unit)->GetSummonerGuid().GetRawValue();
+        std::uint64_t const ownerRaw = TortoiseBots::DungeonRun::KillFirstOwner(owner.GetRawValue(), 0, summonerRaw);
+        if (ownerRaw)
         {
-            fact.owner = owner.GetRawValue();
-            Unit* summoner = lead->GetMap()->GetUnit(owner);
+            fact.owner = ownerRaw;
+            Unit* summoner = lead->GetMap()->GetUnit(ObjectGuid(ownerRaw));
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
@@ -8774,6 +9124,16 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             add(unit, false);
             if (EngagedWithParty(unit, party))
             {
+                // AiPlayerbot.DungeonRunTotemFocus: an engaged boss's kill_first totems are read by a grid pass after
+                // this loop (a Brain Wash Totem is a wild summon and in no CONTROLLED_TOTEMS list). The decision is the
+                // policy's (KillFirstGridReadsOwner); the seen set keeps it to one pass per owner per read.
+                if (TortoiseBots::DungeonRun::KillFirstGridReadsOwner(f.totemFocus, unit->IsCreature(),
+                        unit->IsCreature() && planBoss(static_cast<Creature*>(unit)),
+                        engagedOwnerSeen.count(unit->GetObjectGuid().GetRawValue()) != 0))
+                {
+                    engagedOwnerSeen.insert(unit->GetObjectGuid().GetRawValue());
+                    engagedOwners.push_back(static_cast<Creature*>(unit));
+                }
                 // The totems and guardians of an attacker in this fight, read off
                 // the attacker itself: a Greater Healing Ward the moment it is up,
                 // not when a bot's cached list next takes it in (19z5: one ward was
@@ -8814,6 +9174,66 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
                     }
             }
         }
+    }
+    // AiPlayerbot.DungeonRunTotemFocus: the kill_first totems of an engaged boss in no attackers list (Jin'do's Brain
+    // Wash Totem, spell 24262) are read around the boss, bounded to the plan's entries and kKillFirstTotemGridYd. One
+    // grid visit per engaged boss reads every plan entry at once (KillFirstTotemCheck filters them through a hash
+    // set), so the read costs one bounded visit per boss, not one per boss and plan entry. The totem is a wild summon,
+    // so only its temporary summon's summoner names the boss.
+    if (!engagedOwners.empty())
+    {
+        std::unordered_set<std::uint32_t> const entries(plan.killFirst.begin(), plan.killFirst.end());
+        for (Creature* boss : engagedOwners)
+        {
+            std::list<Creature*> found;
+            KillFirstTotemCheck check(entries, boss);
+            MaNGOS::CreatureListSearcher<KillFirstTotemCheck> searcher(found, check);
+            Cell::VisitGridObjects(boss, searcher, TortoiseBots::DungeonRun::kKillFirstTotemGridYd, false);
+            for (Creature* c : found)
+                add(c, false);
+        }
+    }
+}
+
+// A kill_first unit's sighting and death in the server log (TBM:KILLFIRST, DungeonRun::KillFirstLogLine): the line
+// carries the run's lead bot and instance id, so it names its run in a log shared by every run of the server. The
+// frames sample a fight every few seconds, so a totem's lifetime is only measurable from these lines. One line per
+// unit: seen when the read first lists it, dead or gone when it leaves the list dead. A unit still alive but out of
+// the list for a tick (not engaged, out of the boss's grid) keeps its span and is not seen again. World thread, once a
+// second.
+void LogKillFirstSpans(DungeonRunSlot const& slot, Player* lead, TortoiseBots::DungeonRun::Facts const& f)
+{
+    if (!lead || !lead->IsInWorld() || !slot.run.plan)
+        return;
+    std::uint32_t const now = WorldTimer::getMSTime();
+    std::unordered_set<uint64> live;
+    for (TortoiseBots::DungeonRun::UnitFact const& u : f.killFirst)
+    {
+        live.insert(u.guid);
+        if (slot.killFirstSeen.count(u.guid))
+            continue;
+        slot.killFirstSeen[u.guid] = {u.entry, now};
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), "seen", u.entry, u.guid, 0).c_str());
+    }
+    for (auto it = slot.killFirstSeen.begin(); it != slot.killFirstSeen.end();)
+    {
+        if (live.count(it->first))
+        {
+            ++it;
+            continue;
+        }
+        Unit* unit = lead->GetMap() ? lead->GetMap()->GetUnit(ObjectGuid(it->first)) : nullptr;
+        if (unit && unit->IsAlive())
+        {
+            ++it;
+            continue;
+        }
+        char const* const event = unit ? "dead" : "gone";
+        std::uint32_t const ms = WorldTimer::getMSTimeDiff(it->second.seenMs, now);
+        TB_LOG_BASIC("%s", TortoiseBots::DungeonRun::KillFirstLogLine(slot.run.plan->name, lead->GetName(),
+            lead->GetInstanceId(), event, it->second.entry, it->first, ms).c_str());
+        it = slot.killFirstSeen.erase(it);
     }
 }
 
@@ -9024,7 +9444,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
                 f.leadAttackers.push_back(
-                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker)});
+                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker), RunRespawnSec(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -9085,6 +9505,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;
@@ -9912,14 +10333,21 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
     front.y = lead->GetPositionY();
     front.z = lead->GetPositionZ();
     points.push_back(front);
-    for (Vector3 const& p : path.getPath())
-    {
-        ai::ApproachPoint point;
-        point.x = p.x;
-        point.y = p.y;
-        point.z = p.z;
-        points.push_back(point);
-    }
+    // The dry walk: the stand's path is the lead bot's ground-only way when it reaches the unit, so a stand
+    // picked on it never stands in the pool the core path crosses.
+    std::vector<PathPoint> dry;
+    if (f.dryWalk && DryWayFor(lead, unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), dry))
+        for (PathPoint const& p : dry)
+            points.push_back(ai::ApproachPoint{p.x, p.y, p.z});
+    else
+        for (Vector3 const& p : path.getPath())
+        {
+            ai::ApproachPoint point;
+            point.x = p.x;
+            point.y = p.y;
+            point.z = p.z;
+            points.push_back(point);
+        }
     ai::ApproachPoint goal;
     goal.x = unit->GetPositionX();
     goal.y = unit->GetPositionY();
@@ -9988,17 +10416,22 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
         return map->isInLineOfSight(s.x, s.y, s.z + leadHeight, c->GetPositionX(), c->GetPositionY(),
             c->GetPositionZ() + c->GetCollisionHeight(), true);
     };
-    // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule).
+    // The clearance key off: one stand, today's pick, and nothing else read (byte for byte the old rule). The dry
+    // walk refuses a wet stand and falls to the next candidate even with the clearance off, unless the pack it
+    // shoots at stands in water: a stand meant to be in that water stays allowed.
     bool blocked = false;
     ShotStand best;
+    bool const dryPack = !map->GetTerrain()->IsSwimmable(goal.x, goal.y, goal.z);
     ShotStand const stand = ShotStandOnPathCleared(points, goal, f.leadShotYd - kShotMarginYd, sees,
-        [&f, clearance, &seesOther](ShotStand const& candidate)
+        [&f, clearance, dryPack, map, &seesOther](ShotStand const& candidate)
         {
+            if (WetStandRefused(f.dryWalk, dryPack, map->GetTerrain()->IsSwimmable(candidate.x, candidate.y, candidate.z)))
+                return false;
             return !clearance || (StandClearAt(candidate.x, candidate.y, candidate.z, f.standOthers,
                 [&seesOther, &candidate](StandOther const& other) { return seesOther(candidate, other); }) &&
                 StandAbovePackReach(candidate.x, candidate.y, candidate.z, f.standPackReach));
         },
-        blocked, clearance ? kStandClearCandidates : 1, clearance ? &best : nullptr);
+        blocked, clearance || f.dryWalk ? kStandClearCandidates : 1, clearance ? &best : nullptr);
     if (!stand.known)
     {
         f.shotStandBlocked = clearance && blocked;
@@ -10988,6 +11421,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
     f.retreatAt2Dead = sPlayerbotAIConfig.dungeonRunRetreatAt2Dead;
     f.walkBackRescue = sPlayerbotAIConfig.dungeonRunWalkBackRescue;
+    // The dry walk (AiPlayerbot.DungeonRunDryWalk): the run leader's route picks stay off deep water. Read every
+    // tick, so a reload switches it mid-run.
+    f.dryWalk = sPlayerbotAIConfig.dungeonRunDryWalk;
     // The teleport return and the stand-still hold (DungeonRun::FarReturnTick, ai::ReturnHoldPolicy).
     f.teleportReturnYd = sPlayerbotAIConfig.runTeleportReturnYd;
     f.reviveHoldYd = sPlayerbotAIConfig.dungeonReviveHoldYd;
@@ -11321,7 +11757,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // In a fight of a plan with kill_first: those units among what the bots
     // already hold, their own cached "attackers" lists (which carry the
     // attackers' totems and guardians, a healing ward too; read only when
-    // already calculated), resolved by guid. No grid or world scan.
+    // already calculated), resolved by guid. The only scan is the totem key's
+    // bounded grid read of an engaged boss's kill-first units (ReadKillFirst).
     // In combat by the flag, yet nothing hostile is engaged with any bot or its
     // pet: stale (DungeonRun::Facts::staleCombat).
     // The same read lists those units with whether the group can attack each (DungeonRun::Facts::engagedUnits):
@@ -11331,11 +11768,21 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     {
         ReadEngagedUnits(lead, bots, f);
         f.staleCombat = f.engagedUnits.empty();
-        if (f.autoCc)
+        // The run's own holds, automatic or the plan's: a held unit neither attacks nor is attacked, so the
+        // engaged read loses it while the hold lasts (DungeonRun::Facts::ccHeld).
+        if (!slot.run.ccHolds.empty())
             ReadCcBreakFacts(slot, lead, bots, f);
+        // The fight's own units, one object lookup each (DungeonRun::Facts::ownFightUnits).
+        ReadOwnFightFacts(slot, lead, f);
     }
-    if (f.anyInCombat && slot.run.plan && !slot.run.plan->killFirst.empty())
-        ReadKillFirst(*slot.run.plan, lead, bots, f);
+    if (slot.run.plan && !slot.run.plan->killFirst.empty())
+    {
+        if (f.anyInCombat)
+            ReadKillFirst(*slot.run.plan, lead, bots, f);
+        // Also out of combat: a kill-first unit that dies or despawns as the fight ends still gets its closing line,
+        // and a span is never left open into the next fight.
+        LogKillFirstSpans(slot, lead, f);
+    }
     if (f.anyInCombat)
     {
         // In a hold: the attackers' distance from its spot (DungeonRun::HoldGuardTarget).
@@ -11389,7 +11836,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             std::vector<uint32> entries = step->entries;
@@ -11624,6 +12071,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -11704,7 +12152,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     bool const direct = slot.run.walkBack && slot.run.walkBackDirect;
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY,
                         f.approachZ, direct ? &whole : nullptr, step->kind == ai::PlanStepKind::Move ? &f : nullptr,
-                        direct ? &f.approachIncomplete : nullptr);
+                        direct ? &f.approachIncomplete : nullptr, f.dryWalk);
                     if (direct && f.approachKnown)
                         f.directPathCrossesPack = PathCrossesUnclearedPack(*slot.run.plan,
                             TortoiseBots::DungeonRun::LiveFrom(slot.run, true), whole, f.team,
@@ -11790,7 +12238,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             std::list<Unit*> hostiles;
@@ -11856,7 +12304,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             {
                 if (wantsApproach)
                     f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                        nullptr, &f);
+                        nullptr, &f, nullptr, f.dryWalk);
                 break;
             }
             float const range = std::min(toPoint + step->radius, 2.0f * kSeeYd);
@@ -11886,6 +12334,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
                     unit.fleeRoomYd = FearRoomFor(creature, unit.creatureType, unit.ccImmune, f);
@@ -11925,7 +12374,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             // run walks to it in navmesh hops first (DungeonRun::GossipStep).
             if (!f.seen && wantsApproach)
                 f.approachKnown = ApproachOnPath(lead, step->x, step->y, step->z, f.approachX, f.approachY, f.approachZ,
-                    nullptr, &f);
+                    nullptr, &f, nullptr, f.dryWalk);
             f.carrierBusy = CommanderTasks().count(lead->GetObjectGuid().GetRawValue()) != 0;
             if (slot.carrierRaw == lead->GetObjectGuid().GetRawValue())
             {
@@ -12459,6 +12908,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
@@ -13148,13 +13598,56 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         }
         std::string answer;
         RunOrderCapture captured;
-        bool const accepted = IssueRunOrder(commander, order, answer,
+        // The walk's way swims after the lead bot left its own water (AiPlayerbot.DungeonRunDryWalk): the
+        // first dry leg of a ground-only way goes out instead of the walk's own order, and the walk sends its
+        // own point again from the leg (WalkTo), intercepted again until the rest of the way is dry.
+        bool dryLeg = false;
+        float dryLegX = 0.0f, dryLegY = 0.0f, dryLegZ = 0.0f;
+        std::string const walkOrder = order;
+        if (TortoiseBots::DungeonRun::DryWalkWanted(it->second.run, facts, order) && lead->IsAlive() && lead->IsInWorld())
+        {
+            TortoiseBots::DungeonRun::Run const& run = it->second.run;
+            std::vector<TortoiseBots::DungeonRun::PathPoint> dry;
+            if (DryWayFor(lead, run.walkX, run.walkY, run.walkZ, dry))
+            {
+                TortoiseBots::DungeonRun::PathPoint leg;
+                if (TortoiseBots::DungeonRun::DryWalkOrder(run, facts, order, dry,
+                        [lead](TortoiseBots::DungeonRun::PathPoint const& p)
+                        { return !DryAt(lead, p.x, p.y, p.z) || CorePathSwims(lead, p.x, p.y, p.z); }, leg))
+                {
+                    dryLeg = true;
+                    dryLegX = leg.x;
+                    dryLegY = leg.y;
+                    dryLegZ = leg.z;
+                    order = TortoiseBots::DungeonRun::MoveOrder(leg.x, leg.y, leg.z, false);
+                }
+            }
+        }
+        bool accepted = IssueRunOrder(commander, order, answer,
             TortoiseBots::DungeonRun::IsGatherOrder(it->second.run, order), &captured);
         // The order may have released the binding (and the run with it): `slot`
         // is not to be touched before the run is looked up again.
         it = DungeonRuns().find(commanderRaw);
         if (it == DungeonRuns().end())
             return;
+        if (dryLeg)
+        {
+            if (accepted)
+                TortoiseBots::DungeonRun::DryLegTaken(it->second.run, facts, dryLegX, dryLegY, dryLegZ);
+            else
+            {
+                // A refused dry leg: the walk's own order goes out once in this tick, as it would have, and a
+                // refusal of that too says the leg was tried.
+                std::string const legAnswer = answer;
+                order = walkOrder;
+                accepted = IssueRunOrder(commander, order, answer,
+                    TortoiseBots::DungeonRun::IsGatherOrder(it->second.run, order), &captured);
+                it = DungeonRuns().find(commanderRaw);
+                if (it == DungeonRuns().end())
+                    return;
+                answer += " (the dry leg was refused: " + legAnswer + ")";
+            }
+        }
         // A raid boss fight's healer guard (RaidHealerGuard): its assignment stands only once this order was taken.
         TortoiseBots::DungeonRun::HealerGuardOrderTaken(it->second.run, order, accepted);
         // An automatic cc order that was refused assigned nothing: its unit,

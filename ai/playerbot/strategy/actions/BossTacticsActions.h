@@ -500,6 +500,38 @@ namespace ai
     // Whether the bot is in a seek phase right now: the move hold and the raid spread stand-down read it.
     bool BossSeeking(PlayerbotAI* ai, Player* bot);
 
+    // Whether this hunter's or warlock's pet has to be out of the siphon now: a hunter's from 5 s before the due time
+    // until 2 s after it (and while the siphon's dummy aura is on the bot), a warlock's for the whole fight (one
+    // dismiss at the engage, no resummon). True only in a live seek_aura fight.
+    bool BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot);
+    // Whether this shaman's totems have to be out of the siphon now: the same window as the pets (from 5 s before the
+    // due time until 2 s after it, and while the siphon's dummy aura is on the bot). True only in a live seek_aura
+    // fight.
+    bool BossSeekTotemsMustLeave(PlayerbotAI* ai, Player* bot);
+    // The shaman's four totems are unsummoned at once (the core's Unit::UnsummonAllTotems).
+    class BossTacticsSeekTotemAction : public Action
+    {
+    public:
+        BossTacticsSeekTotemAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek totem") {}
+        bool Execute(Event& event) override;
+    };
+    // A pet is dismissed at once; a hunter's pet waits in its current slot for the call back after the window, a
+    // warlock's demon is not kept.
+    class BossTacticsSeekPetAction : public Action
+    {
+    public:
+        BossTacticsSeekPetAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek pet") {}
+        bool Execute(Event& event) override;
+    };
+    // A pet is called, revived or summoned back, or a totem placed, while it would stand in the siphon: the action is
+    // held (each would be one more heal). Only the seek_aura fight reads it.
+    class BossTacticsSeekPetHoldMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsSeekPetHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek pet hold") {}
+        float GetValue(Action* action) override;
+    };
+
     // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
     // off. False on every other bot, row or target.
     bool IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit);
@@ -518,7 +550,10 @@ namespace ai
     Unit* FindBossSeekKill(PlayerbotAI* ai, Player* bot);
 
     // The second off-tank's job: take a source that fights, pull one while the gather still needs it, and hold it at
-    // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B.
+    // the row's spot. `take` is the Attack-and-taunt, `pull` the walk-out-and-grab, `walkToSpot` the drag back to B,
+    // and `holdSwing` the window-shut stop of the tank's own auto-attack on a Son already close to the hold percent.
+    // With fewer than three tanks alive the off-tank (tanks[1]) takes the Son over and the raid's nearest hunter (else
+    // a ranged damage dealer) pulls it with one ranged shot (`rangedPull`).
     struct SeekTankTask
     {
         bool valid = false;
@@ -526,7 +561,9 @@ namespace ai
         Unit* source = nullptr;
         bool take = false;
         bool pull = false;
+        bool rangedPull = false; // the fallback's one shot, instead of the tank's walk-in and swing
         bool walkToSpot = false;
+        bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;
     };
     SeekTankTask FindBossSeekTank(PlayerbotAI* ai, Player* bot);
@@ -604,6 +641,49 @@ namespace ai
     {
     public:
         BossTacticsTauntAfterAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics taunt after") {}
+        bool Execute(Event& event) override;
+    };
+
+    // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap
+    // (param, yards) or more above it (RangedOnlyPolicy.h). Gated by AiPlayerbot.DungeonRunRangedOnly, the map's rows
+    // and the "boss tactics" strategy; ranged bots and healers are never held, and an explicit attack order wins.
+    // `gapYdOut` (optional) the measured gap.
+    bool IsRangedOnlyHeld(PlayerbotAI* ai, Player* bot, Unit* unit, float* gapYdOut = nullptr);
+    // The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`), at most once per bot per five seconds.
+    void LogBossRangedOnly(PlayerbotAI* ai, Player* bot, Unit* subject, float gapYd);
+
+    // The burn_mana row this bot burns for now, or null: the row's boss stands in the fight, alive, in combat and at
+    // or above the row's start % of mana, the boss is not in the stone phase (aura 25685), and this bot is one of the
+    // row's first `priority` burners that can cast now (ordered by guid; 0 = every eligible bot). `manaPctOut`
+    // (optional) the boss's mana percent.
+    Unit* FindBossBurnMana(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, int* manaPctOut = nullptr);
+    // Whether the bot may burn at all: alive, not a tank, not a healer (a shadow priest counts as damage), and it
+    // knows mana burn, drain mana or viper sting.
+    bool BossCanBurnMana(PlayerbotAI* ai, Player* bot);
+    // The bot's 0-based place among the group's burners ordered by guid, or -1 when it cannot burn `boss` now. Only
+    // members that run the boss tactics and can cast their own drain spell right now take a slot: alive, in combat,
+    // in control (not stunned, feared, confused, charmed, silenced or pacified), the spell off cooldown, in its range
+    // and with enough mana. The global cooldown and an in-flight cast do not count, so a busy burner keeps its slot.
+    int BossBurnManaRank(PlayerbotAI* ai, Player* bot, Unit* boss);
+
+    // The first castable drain spell the bot knows on the boss, or null (a hunter refreshes Viper Sting only when the
+    // boss lacks it).
+    const char* BossBurnManaSpell(PlayerbotAI* ai, Unit* boss);
+
+    // Casts BossBurnManaSpell on the row's boss and writes the `BossTacticsBurnMana` row.
+    class BossTacticsBurnManaAction : public AttackAction
+    {
+    public:
+        BossTacticsBurnManaAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics burn mana") {}
+        bool Execute(Event& event) override;
+    };
+
+    // Drops a subject this melee bot is held off (IsRangedOnlyHeld): the kill_first pick if there is one, else the
+    // nearest attacker that is not held, else nothing (attack stopped so the assist rows re-pick once it lands).
+    class BossTacticsRangedOnlyAction : public AttackAction
+    {
+    public:
+        BossTacticsRangedOnlyAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics ranged only") {}
         bool Execute(Event& event) override;
     };
 }

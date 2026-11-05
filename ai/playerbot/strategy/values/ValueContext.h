@@ -159,6 +159,12 @@ namespace ai
             creators["party member without my aura"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutMyAuraValue(ai); };
             creators["attacker without aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutAuraTargetValue(ai); };
             creators["attacker without my aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutMyAuraTargetValue(ai); };
+            creators["warlock spread attacker my aura"] = [](PlayerbotAI* ai) {
+                return new WarlockSpreadAttackerTargetValue(ai, "warlock spread attacker my aura", true, true, false, false); };
+            creators["warlock spread attacker"] = [](PlayerbotAI* ai) {
+                return new WarlockSpreadAttackerTargetValue(ai, "warlock spread attacker", false, false, true, false); };
+            creators["warlock spread attacker manual"] = [](PlayerbotAI* ai) {
+                return new WarlockSpreadAttackerTargetValue(ai, "warlock spread attacker manual", false, false, true, true); };
             creators["party member to heal"] = [](PlayerbotAI* ai) { return new PartyMemberToHeal(ai); };
             creators["incoming heals"] = [](PlayerbotAI* ai) { return new IncomingHealsValue(ai); };
             creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowMana(ai); };
@@ -187,6 +193,7 @@ namespace ai
             creators["duel target"] = [](PlayerbotAI* ai) { return new DuelTargetValue(ai); };
             creators["party member to dispel"] = [](PlayerbotAI* ai) { return new PartyMemberToDispel(ai); };
             creators["party member to protect"] = [](PlayerbotAI* ai) { return new PartyMemberToProtect(ai); };
+            creators["tank to remove roots"] = [](PlayerbotAI* ai) { return new TankToRemoveRoots(ai); };
             creators["party member to remove roots"] = [](PlayerbotAI* ai) { return new PartyMemberToRemoveRoots(ai); };
             creators["health"] = [](PlayerbotAI* ai) { return new HealthValue(ai); };
             creators["rage"] = [](PlayerbotAI* ai) { return new RageValue(ai); };

@@ -112,6 +112,10 @@ namespace
     {
         if (!unit || !ai || !bot)
             return false;
+        // A ranged_only row's subject stands out of this melee bot's reach: it is left for the adds, exactly like a
+        // held boss entry (the helper carries the kind's own key and the melee role gate).
+        if (IsRangedOnlyHeld(ai, bot, unit))
+            return true;
         // A dps_hold_after hold is the aura-tactics key's own rule and lives beside this one (IsDpsHeld): the subject
         // of an active hold is skipped exactly like a held boss entry, so no free DPS bot starts on it.
         if (IsDpsHeld(ai, bot, unit))

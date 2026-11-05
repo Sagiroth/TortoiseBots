@@ -162,6 +162,7 @@ The run protects itself with these rules:
 - It gathers the party before a pull and pulls only what is near.
 - It guards from the stand, attacking mobs that hit the party.
 - It never pulls what a later step owns.
+- It ends a pull or boss step past the 180 s fight ceiling once the game confirms that step's own units are dead or gone from the map (a unit that merely dropped out of the run's reads is not dead) and lets the walk go on, even while unrelated mobs (respawning trash, a patrol that walked in) still fight: those are fought by the bots' ordinary combat and do not hold the step. A boss step ends as soon as the boss's corpse is confirmed, whatever keeps the party in the combat afterwards. Younger fights, a combat flag with nothing engaged, and a row with its own units left keep the rules as before.
 - It judges no unseen pack or boss, only what the lead bot sees within 60 yd.
 - A healer on stay is held 9 yd behind the tank and heals only.
 - A reaching pull ends once any creature has a party victim.
@@ -200,6 +201,7 @@ The run protects itself with these rules:
 
 Retreat at 2 dead is opt-in with `AiPlayerbot.DungeonRunRetreatAt2Dead = 1` (default `0`), see the [dungeon and raid settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonrunretreatat2dead).
 Walk back to the stand after every guarded fight is opt-in with `AiPlayerbot.DungeonRunWalkBackAfterWonFight = 1` (default `0`). A stuck walk back is rescued by default with `AiPlayerbot.DungeonRunWalkBackRescue = 1` (default `1`).
+The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), see the [dungeon and raid settings](../server/settings/dungeons-raids.md#aiplayerbotdungeonrundrywalk): the lead bot's approach hops and firing stands come from a ground-only navmesh path, a walk-back shortcut's swim chord is refused so the walk back replays the plan's points, and a walk whose own way would swim after leaving its pool goes in dry legs first, so the party no longer swims into a pool it cannot leave. A point in deep water keeps the old way: an intended swim, a wet firing stand for a pack in the water, and a straggler standing in water are unchanged; a dry straggler whose way would swim is not pulled and its pull can pause the run.
 
 ### Combat reads
 
@@ -238,7 +240,7 @@ Related opt-ins, one line each:
 
 ### Totem focus
 
-Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it with the damage dealers alone, before the guard, and the guard leaves it alone.
+Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick. Only the damage dealers go: no tank, no healer. A totem a boss summons is read as soon as it stands, even when no bot has it on its attackers list. The damage dealers cut their own cast or channel first, but only an offensive one on an enemy — never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a crowd-control spell of the run, a resurrect or a hearthstone; they open with an instant where their class has one, and take the attack by GUID, so the skull stays on the boss and nobody follows it to the totem. While the party is pulling back from a lost fight, the totem waits. The kill-first check runs every second while the key is on. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line when a kill-first unit is first seen and when it dies.
 
 ### Events
 
@@ -279,7 +281,7 @@ Staying away from the dungeon or raid instance for over `AiPlayerbot.DungeonRunP
 ### Raids
 
 A raid bind takes 6-40 bots from your own raid, with you taken out and the lead-bot tank as main tank.
-It applies the raid layout at the start and restores it at the end.
+It applies the raid layout at the start and restores it at the end: with `AiPlayerbot.RaidHealerSeatsByClass = 1` the healer seats go by class instead of member order, so the raid seats take a group healer first (priest, druid, shaman) and the paladin is not always the lone off-tank healer; with `AiPlayerbot.RaidTankHealerAssist = 1` the second healer on a tank helps the raid while the tank is quiet (not on a boss, 90%+ after incoming damage) and only with a raid member in sight and in heal range below 70%.
 Gather and wipe rules scale to raid size.
 A near-wipe stops the run with `AiPlayerbot.DungeonRunNearWipeStop = 2` and `AiPlayerbot.DungeonRunNearWipeStopMinutes = 10`, pausing after the fight.
 - It runs `AiPlayerbot.DungeonRunRaid = 1` for the raid bind.

@@ -276,4 +276,28 @@ type BotProfile struct {
 	// (core loads Talent/TalentTab from the operator's own DBC files at
 	// server startup, not from SQL).
 	Talents []TalentTree `json:"talents"`
+	// Pet is the current hunter pet or warlock demon (character_pet, not stabled);
+	// nil when the character has none. Values are as last saved.
+	Pet *PetInfo `json:"pet,omitempty"`
+}
+
+type PetInfo struct {
+	Name        string     `json:"name"`
+	Entry       uint32     `json:"entry"`
+	Family      uint32     `json:"family"`
+	Hunter      bool       `json:"hunter"`
+	Level       uint32     `json:"level"`
+	Loyalty     uint32     `json:"loyalty"`
+	TrainPoints int32      `json:"train_points"`
+	Health      uint32     `json:"health"`
+	Happiness   uint32     `json:"happiness"`
+	Spells      []PetSpell `json:"spells"`
+}
+
+type PetSpell struct {
+	Spell    uint32 `json:"spell"`
+	Name     string `json:"name"`
+	Subtext  string `json:"subtext"`
+	Passive  bool   `json:"passive,omitempty"`
+	Autocast bool   `json:"autocast,omitempty"`
 }

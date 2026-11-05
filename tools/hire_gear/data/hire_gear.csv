@@ -2653,7 +2653,7 @@ class,spec,race,tier,slot,item_id,item_name,enchant,source,flags
 9,affliction,0,2,10,19893,Zanzil's Seal,51043,bisclassic,0
 9,affliction,0,2,11,20682,Elemental Focus Band,51043,bisclassic,0
 9,affliction,0,2,12,19957,Hazza'rah's Charm of Destruction,0,bisclassic,0
-9,affliction,0,2,13,19812,Rune of the Dawn,0,bisclassic,0
+9,affliction,0,2,13,13968,Eye of the Beast,0,bisclassic,1
 9,affliction,0,2,14,19857,Cloak of Consumption,20014,bisclassic,0
 9,affliction,0,2,15,18372,Blade of the New Moon,23804,prev-tier,0
 9,affliction,0,2,16,19891,Jin'do's Bag of Whammies,0,bisclassic,0
@@ -2772,7 +2772,7 @@ class,spec,race,tier,slot,item_id,item_name,enchant,source,flags
 9,demonology,0,2,10,19893,Zanzil's Seal,51043,bisclassic,0
 9,demonology,0,2,11,20682,Elemental Focus Band,51043,bisclassic,0
 9,demonology,0,2,12,19957,Hazza'rah's Charm of Destruction,0,bisclassic,0
-9,demonology,0,2,13,19812,Rune of the Dawn,0,bisclassic,0
+9,demonology,0,2,13,13968,Eye of the Beast,0,bisclassic,1
 9,demonology,0,2,14,19857,Cloak of Consumption,20014,bisclassic,0
 9,demonology,0,2,15,18372,Blade of the New Moon,23804,prev-tier,0
 9,demonology,0,2,16,19891,Jin'do's Bag of Whammies,0,bisclassic,0
@@ -2891,7 +2891,7 @@ class,spec,race,tier,slot,item_id,item_name,enchant,source,flags
 9,destruction,0,2,10,19893,Zanzil's Seal,51043,bisclassic,0
 9,destruction,0,2,11,20682,Elemental Focus Band,51043,bisclassic,0
 9,destruction,0,2,12,19957,Hazza'rah's Charm of Destruction,0,bisclassic,0
-9,destruction,0,2,13,19812,Rune of the Dawn,0,bisclassic,0
+9,destruction,0,2,13,13968,Eye of the Beast,0,bisclassic,1
 9,destruction,0,2,14,19857,Cloak of Consumption,20014,bisclassic,0
 9,destruction,0,2,15,18372,Blade of the New Moon,23804,prev-tier,0
 9,destruction,0,2,16,19891,Jin'do's Bag of Whammies,0,bisclassic,0

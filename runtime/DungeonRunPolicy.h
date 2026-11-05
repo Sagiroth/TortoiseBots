@@ -65,6 +65,7 @@
 #include "RemoteCommanderTasks.h"
 #include "RaidLayoutPolicy.h"
 #include "RezHoldPolicy.h"
+#include "../ai/playerbot/SwimPathPolicy.h" // kSwimSampleYd: the dry walk's water samples
 
 #include <algorithm>
 #include <cctype>
@@ -865,7 +866,8 @@ struct UnitFact
     std::uint32_t formOf = 0;
     float distLead = 0.0f;
     float x = 0.0f, y = 0.0f; // hold units and patrollers: where it stands (HoldStands: the side the event comes from);
-                              // a raid boss fight's attackers: where the add stands (RaidHealerGuard's nearest dps)
+                              // a raid boss fight's attackers: where the add stands (RaidHealerGuard's nearest dps);
+                              // engaged units: where it stands (LaterStepOwnsEngagedUnit's claim)
     float z = 0.0f;           // ... patrollers (OwnedByLaterStep); step units: the unit's real height (the passed-boss pause)
     bool hostile = true;     // not friendly to the party (hostile or neutral): it may be pulled
     bool stealthed = false;
@@ -890,6 +892,10 @@ struct UnitFact
     // mechanic_immune_mask or a live mechanic immunity against that spell's
     // mechanic): never picked for that spell.
     std::uint32_t ccImmune = 0;
+    // The spawn's respawn delay in seconds (SpawnRespawnSec, from Creature::GetRespawnDelay): 0 for a unit with no
+    // spawn of its own or a read that did not fill it. A unit back within kRunCcMinRespawnSec is no crowd control
+    // target and no body of the pull the order is for (RespawnsQuickly).
+    std::uint32_t respawnSec = 0;
     // Kill-first candidates (Facts::killFirst): in combat with a party member,
     // or summoned / owned (a healing ward) by a unit that is.
     bool engaged = false;
@@ -1094,6 +1100,9 @@ constexpr std::uint32_t kCreatureCritter = 8;
 constexpr std::uint32_t kCreatureMechanical = 9;
 // A totem (the Brain Wash Totem 15112, the Powerful Healing Ward 14987): a 1-2 s kill, never a guard's target.
 constexpr std::uint32_t kCreatureTotem = 11;
+// The read around an engaged boss for its kill_first totems: a Brain Wash Totem lands about 5 yd from Jin'do, and a boss
+// never summons one across the room. Bounded, because the read runs once a second.
+constexpr float kKillFirstTotemGridYd = 25.0f;
 constexpr std::uint32_t CreatureBit(std::uint32_t type) { return type ? 1u << type : 0u; }
 
 // The run's crowd-control spells, in the order of their reliability: the bot
@@ -1240,6 +1249,23 @@ constexpr std::uint32_t kRunCcOpenOrders = 3;
 constexpr std::uint32_t kRunCcReapplyGapMs = 3000;
 constexpr std::uint32_t kRunCcReapplies = 2;
 constexpr std::uint32_t kRunCcAutoOrdersPerStep = 24;
+// A unit whose spawn respawns within this long is no crowd control target and no body of the pull the order is for:
+// the hold ends with the kill and the same guid is back seconds later, so the same order would go out on it again
+// and again (ZG walk 36: the pit's Sacrificed Trolls, 14826, come back 10 s after they die; one priest made 170
+// Shackle Undead casts in troll-only fights).
+constexpr std::uint32_t kRunCcMinRespawnSec = 60;
+inline bool RespawnsQuickly(std::uint32_t respawnSec)
+{
+    return respawnSec >= 1 && respawnSec <= kRunCcMinRespawnSec;
+}
+// The respawn delay the run's facts carry: only a unit with a spawn of its own has one. A temporary summon's delay
+// is its lifetime (TemporarySummon), not a respawn, so read as one a 15 s scripted add (Gandling's Risen Guardians,
+// Arlokk's Prowlers, Mandokir's Ohgan) would look like a fast respawn and lose its crowd control and its place in
+// the pull's body count.
+inline std::uint32_t SpawnRespawnSec(bool hasStaticSpawn, std::uint32_t respawnDelay)
+{
+    return hasStaticSpawn ? respawnDelay : 0;
+}
 // A fight kept open only by the run's own holds (RunCcBreakTick) breaks them one at a time: a break order that has
 // not ended its unit's hold in this long no longer holds the fight ceiling off, so a hold the party cannot reach
 // still ends in the usual pause instead of a stall.
@@ -1427,11 +1453,30 @@ struct PullReadIn
 };
 
 // One of the lead bot's attackers, as the automatic cc's fight threshold counts it: by guid (the union with the
-// party's and the walk's attackers counts a mob once) and held now (a run cc's aura on it).
+// party's and the walk's attackers counts a mob once), held now (a run cc's aura on it), and its spawn's respawn
+// delay (0: not read or no spawn of its own; a unit back within kRunCcMinRespawnSec is no body of the pull).
 struct LeadAttackerFact
 {
     std::uint64_t guid = 0;
     bool held = false;
+    std::uint32_t respawnSec = 0;
+};
+
+// How the glue resolved one of the fight's remembered own guids (Run::ownFightGuids): one object lookup on the
+// run's map. Unknown: not read (the lead bot off the run's map). Only Dead and Gone are positive evidence; Alive
+// and Unknown never end a step.
+enum class OwnUnitState : std::uint8_t
+{
+    Unknown = 0,
+    Alive = 1,
+    Dead = 2, // on the map, not alive
+    Gone = 3, // not on the map any more: despawned
+};
+
+struct OwnUnitFact
+{
+    std::uint64_t guid = 0;
+    OwnUnitState state = OwnUnitState::Unknown;
 };
 
 // What the glue reads once a tick for the run's current step.
@@ -1496,6 +1541,14 @@ struct Facts
     // ... the party's own bots under an enemy's charm (Dominate Mind, Mind Control) that fight the party: never
     // engaged units, but named in the note when nothing else is engaged (EngagedUnitsNote).
     std::vector<std::string> charmedFighting;
+    // The fight's remembered own guids (Run::ownFightGuids), each resolved by the glue with one object lookup on
+    // the run's map: Alive (still there, whatever this tick's other reads say), Dead, or Gone. The own-fight step
+    // end takes a step's end only on positive evidence: an own unit missing from the engaged read and the row's
+    // lists proves nothing (it may be dragged out of the row's radius or evading), and a guid the glue did not
+    // read is Unknown, which never counts as gone. ownFightRead false: not read (out of combat, or the lead bot
+    // off the run's map).
+    std::vector<OwnUnitFact> ownFightUnits;
+    bool ownFightRead = false;
     float leadX = 0.0f, leadY = 0.0f, leadZ = 0.0f;
     bool leadMoving = false;           // the lead bot is moving now (Unit::IsMoving): an exact point's proof waits
     // The walk after a rest (Run::restWalkDue): the lead bot is in a rest state (a meal or drink aura up, or not
@@ -1550,6 +1603,9 @@ struct Facts
     // AiPlayerbot.DungeonRunWalkBackRescue (default 1): a stuck walk back, and a placed run's lead bot revived behind
     // its start step, are teleported to a safe point (WalkBackStuckRescue, PlacedRunRescue). Off: the old pause.
     bool walkBackRescue = true;
+    // AiPlayerbot.DungeonRunDryWalk (default 0): the run leader's route picks stay off deep water (the glue's
+    // DryWayPath and DryWayFor; the policy's DryWalkWanted and DryLegPick).
+    bool dryWalk = false;
     // AiPlayerbot.RunTeleportReturnYd (default 0: off; recommended 120): a member the run brings back from farther than this is
     // teleported to the lead bot with its combat dropped (FarReturnTick, the glue's RunFetchReturn), never summoned
     // with the portal and never left to walk. Bot-only parties only.
@@ -1905,9 +1961,9 @@ struct Facts
     // (UnitFact::auraGated).
     bool totemFocus = false;
     bool auraGatedTargets = false;
-    // Automatic crowd control, a fight kept open only by the run's holds (RunCcBreakTick): the run's own held units
-    // that are still in combat, read from its holds (one object lookup each, no scan). ccHeldRead false: not read
-    // (the key is off, or the party is out of combat).
+    // The run's own held units that are still in combat, read from its holds, automatic or the plan's (one object
+    // lookup each, no scan): a fight kept open only by them (RunCcBreakTick), and a row no cleared one while a hold
+    // lasts (the own-fight step end). ccHeldRead false: not read (no hold, or the party is out of combat).
     std::vector<UnitFact> ccHeld;
     bool ccHeldRead = false;
     // The glue's terrain read at a point: true when the point is in or under liquid at its own z (the core's
@@ -2080,6 +2136,20 @@ struct Run
     std::uint32_t fightMs = 0;
     std::uint32_t staleMs = 0;          // all the time in this fight the combat flag stood with nothing hostile engaged (Facts::staleCombat)
     std::uint32_t staleRunMs = 0;       // ... and the time it has stood so without a break
+    // The guids of the run's own units seen in this fight (StepOwnEngagedUnit, LaterStepOwnsEngagedUnit, and the
+    // units the run holds: Facts::ccHeld) and the step whose own units were among them. The set keeps only the units
+    // no read has yet proven gone (Facts::ownFightUnits: dead or despawned, one object lookup each); a unit that
+    // merely left the engaged read and the row's lists stays. Past the fight ceiling, with every one of them proven
+    // gone, a pull or boss step that its own end rule clears, and a walk, go on though unrelated units (respawning
+    // trash, a patrol) still fight: those are the bots' own combat's, not the step's (ZG walk 36 d/e3: the pit's
+    // Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run paused 14 min later at the
+    // 180 s ceiling with 20 dead). Younger than the ceiling, on a stale flag or an empty engaged read, and with no own
+    // unit seen, the fight block keeps today's rules, a wipe's included. Cleared with the combat.
+    std::unordered_set<std::uint64_t> ownFightGuids;
+    bool ownFightSeen = false; // an own unit of this fight was seen (the set empties as units are proven gone)
+    std::size_t ownFightStep = static_cast<std::size_t>(-1);
+    bool ownFightCleared = false; // the own fight ended over the ceiling and the combat went on: the rows after it do too
+    bool fightReentry = false;    // that end left the combat running: the next fight-block entry keeps the fight's start
     std::uint32_t restRepeatMs = 0;
     // The last point the run itself walked the party to (a move, an approach
     // hop, a stand point): a gather goes back there when a fight left the lead
@@ -2150,6 +2220,9 @@ struct Run
     float legBestYd = 0.0f;
     float legStartYd = 0.0f; // the lead bot's distance to the leg when it went out
     std::uint32_t walkLegs = 0;
+    // A walk whose core path swims after leaving the lead bot's own water goes in dry legs first
+    // (DryWalkWanted, DryLegTaken): how many this walk sent. A fresh walk clears it.
+    std::uint32_t walkDryLegs = 0;
     // An exact waypoint's tighten (ExactWalkTo): on once the walk to the point
     // ended (3 yd, or a stall within 6 yd); it brings the lead bot onto the
     // point and wants the stand-still proof before the step is done.
@@ -3504,9 +3577,27 @@ inline void ClearFightProgress(Run& r)
 // reports success or drop for each.
 inline void DropFocus(Run& r)
 {
+    // Only the focused unit's own skull comes off. A totem focus sends the DPS by guid and moves no mark
+    // (IssueKillFirstFocus, FocusMovesSkull): its skull is another unit's (the boss), which stays while the fight goes
+    // on; its record does too.
+    if (r.focusGuid != 0 && r.focusIconGuid == r.focusGuid)
+    {
+        r.focusIconClear = r.focusIconGuid;
+        r.focusIconGuid = 0;
+    }
+    r.focusGuid = 0;
+}
+
+// The fight is over: the run takes off any skull it still records, even one that was no longer the focus (a totem focus
+// moves no mark, so its record can be the boss's). Left alone it stayed on the unit until the run's own end, across
+// every fight after. Called after DropFocus, so the focus' own skull is already off; the clear goes the same way
+// (Run::focusIconClear, EndRunIcon).
+inline void DropStaleFocusIcon(Run& r)
+{
+    if (r.focusIconGuid == 0)
+        return;
     r.focusIconClear = r.focusIconGuid;
     r.focusIconGuid = 0;
-    r.focusGuid = 0;
 }
 
 // Clears what belongs to one step (also on resume, so a resumed step gets
@@ -8434,6 +8525,7 @@ inline bool WalkTo(Run& r, const Facts& f, float x, float y, float z, bool direc
         r.stallStandInWanted = false;
         r.legOn = false;
         r.walkLegs = 0;
+        r.walkDryLegs = 0;
         r.legEnds.clear();
         r.walkMoveX = f.leadX;
         r.walkMoveY = f.leadY;
@@ -9520,7 +9612,7 @@ inline CcPick RunAutoCcPickOrder(const Run& r, const Facts& f, std::uint64_t pul
             PlanBossEntry(r, u.entry) || r.plan->KillFirstRank(u.entry) >= 0 || FightKillFirst(f, u.guid) ||
             f.bossTacticNoCc.count(u.entry) || u.polymorphed || u.partyHits ||
             u.victimTank || u.guid == f.leadTargetGuid || (r.focusGuid && u.guid == r.focusGuid) ||
-            r.healerGuardAssigned.count(u.guid) ||
+            r.healerGuardAssigned.count(u.guid) || RespawnsQuickly(u.respawnSec) ||
             (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
             continue;
         std::size_t spellIdx = 0;
@@ -9664,9 +9756,21 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
     if (r.ccAutoOrders > 0 && r.ccAutoGapMs < kRunCcFightGapMs && !opening)
         return false;
     // The pull's size: every living hostile engaged with the party, each mob once (a mob has one victim, but the
-    // union is by guid so a guid reaching the count from two lists still counts once).
+    // union is by guid so a guid reaching the count from two lists still counts once). A unit that respawns within
+    // kRunCcMinRespawnSec is no body of the fight the order is for: respawning trolls alone would hold the
+    // threshold open for the whole grind.
     std::uint32_t engaged = 0, held = 0;
     std::unordered_set<std::uint64_t> engagedGuids;
+    std::unordered_set<std::uint64_t> shortLived;
+    auto const countsAsEngaged = [&](std::uint64_t guid, std::uint32_t respawnSec)
+    {
+        if (RespawnsQuickly(respawnSec))
+        {
+            shortLived.insert(guid);
+            return false;
+        }
+        return shortLived.count(guid) == 0;
+    };
     auto const countEngaged = [&](std::uint64_t guid, bool polymorphed)
     {
         if (!engagedGuids.insert(guid).second)
@@ -9680,10 +9784,12 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
         {
             if (!u.guid || !u.hostile || !u.attackable || u.evading)
                 continue;
+            if (!countsAsEngaged(u.guid, u.respawnSec))
+                continue;
             countEngaged(u.guid, u.polymorphed);
         }
     for (const LeadAttackerFact& u : f.leadAttackers)
-        if (u.guid)
+        if (u.guid && countsAsEngaged(u.guid, u.respawnSec))
             countEngaged(u.guid, u.held);
     std::uint32_t const threshold = RunAutoCcThreshold(s, f);
     if (engaged <= held || engaged - held <= threshold)
@@ -9707,6 +9813,7 @@ inline bool RunAutoCcFightTick(Run& r, const Facts& f, const PlanStep& s, std::u
                 BossStepUnit(&s, u.entry, u.formOf) || PlanBossEntry(r, u.entry) ||
                 (r.plan && r.plan->KillFirstRank(u.entry) >= 0) || FightKillFirst(f, u.guid) ||
                 f.bossTacticNoCc.count(u.entry) || r.healerGuardAssigned.count(u.guid) ||
+                RespawnsQuickly(u.respawnSec) ||
                 (reapplied != r.ccReapplied.end() && reapplied->second >= kRunCcReapplies))
                 continue;
             std::size_t spellIdx = 0;
@@ -10082,6 +10189,54 @@ inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool 
     return automatedKillFirst && totemKeyOn && totemTarget;
 }
 
+// The current-spell slot a bot's cast was read from, as the glue maps CurrentSpellTypes onto it. Under the totem focus
+// only a generic cast and a channel are ever cut; an Auto Shot or a wand's shot is an autorepeat spell and keeps
+// firing.
+enum class TotemFocusSpell : std::uint8_t { Generic, Channeled, Other };
+
+// The hearthstone (an item's cast) and Rebirth, never cut by the totem focus: the first is the bot leaving, the second
+// a member coming back.
+constexpr std::uint32_t kHearthstoneSpell = 8690;
+constexpr std::uint32_t kRebirthSpell = 20484;
+
+template <std::size_t N>
+inline bool SpellIdIn(std::uint32_t spellId, const std::uint32_t (&spells)[N])
+{
+    for (std::uint32_t const id : spells)
+        if (id == spellId)
+            return true;
+    return false;
+}
+
+// Whether the spell is one of the run's crowd-control spells, every rank (kRunCc's families): a cut Polymorph, Shackle,
+// Banish, Sap, Hibernate, freezing trap, Seduction, Repentance, Fear or Scare Beast is a hold the party loses.
+inline bool RunCcSpellId(std::uint32_t spellId)
+{
+    return SpellIdIn(spellId, kPolymorphSpells) || SpellIdIn(spellId, kShackleUndeadSpells) ||
+        SpellIdIn(spellId, kBanishSpells) || SpellIdIn(spellId, kSapSpells) ||
+        SpellIdIn(spellId, kHibernateSpells) || SpellIdIn(spellId, kFreezingTrapSpells) ||
+        SpellIdIn(spellId, kSeductionSpells) || SpellIdIn(spellId, kRepentanceSpells) ||
+        SpellIdIn(spellId, kFearSpells) || SpellIdIn(spellId, kScareBeastSpells);
+}
+
+// The totem focus cuts a damage dealer's own cast or channel before it switches (a Rain of Fire or a Drain Soul
+// channel otherwise finishes before the attack lands). Only a generic cast and a channel are cut (an Auto Shot or a
+// wand's shot keeps firing), and only a cast that is positively offense: a spell that is not beneficial and a current
+// target that is hostile. A heal, shield, buff or defensive cast is never cut, whatever the role casting it (a hybrid
+// healing the tank keeps the heal). Nor a spell the fight depends on: the run's crowd control, a resurrect (Rebirth,
+// or any spell with a resurrect effect) and the hearthstone.
+inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect,
+    bool positiveSpell, bool hostileTarget)
+{
+    if (slot != TotemFocusSpell::Generic && slot != TotemFocusSpell::Channeled)
+        return false;
+    if (positiveSpell || !hostileTarget)
+        return false;
+    if (spellId == kHearthstoneSpell || spellId == kRebirthSpell || resurrectEffect)
+        return false;
+    return !RunCcSpellId(spellId);
+}
+
 // Whether a run fact skips an attacker: a player of the lead bot's group is a charmed member (Brain Wash 24261 and the
 // like), and every order at it is refused, so it is never a fight's unit: no guard, focus or crowd-control order, and
 // no order budget spent on it.
@@ -10092,14 +10247,50 @@ inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
 
 // The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
 // skull stays until the new order lands, so it is remembered (FocusOrderRefused).
-inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k)
+// movesSkull false: the order leaves every raid mark where it is (the skull on the boss) and only sends the bots by
+// guid. The totem focus does (FocusMovesSkull): the run's skull draws healers and tanks that never take an order.
+inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkull = true)
 {
-    r.prevFocusIconGuid = r.focusIconGuid;
+    if (movesSkull)
+    {
+        r.prevFocusIconGuid = r.focusIconGuid;
+        r.focusIconGuid = k.guid;
+        r.focusIconClear = 0;
+    }
     r.focusGuid = k.guid;
-    r.focusIconGuid = k.guid;
-    r.focusIconClear = 0;
     r.note = "fighting: kill " + std::to_string(k.entry) + " first";
     return "focus " + std::to_string(k.guid);
+}
+
+// Whether a kill_first focus moves the skull. Under AiPlayerbot.DungeonRunTotemFocus a totem is the DPS' alone and the
+// focus is sent by guid: moving the skull to it pulls in every healer and tank that follows the mark.
+inline bool FocusMovesSkull(bool totemKeyOn, bool totemTarget)
+{
+    return !(totemKeyOn && totemTarget);
+}
+
+// The owner a kill_first unit is read through: its owner, else its creator, else its temporary summon's summoner. The
+// core sets no creator on a SPELL_EFFECT_SUMMON_WILD creature (Jin'do's Brain Wash Totem is effect 41), and only the
+// summoner names the boss that cast it.
+inline std::uint64_t KillFirstOwner(std::uint64_t owner, std::uint64_t creator, std::uint64_t summoner)
+{
+    if (owner)
+        return owner;
+    return creator ? creator : summoner;
+}
+
+// Whether a grid hit is a kill_first totem of the engaged unit: alive, a totem, and its owner (KillFirstOwner) is that
+// engaged unit. The read adds only these, so a totem in no attackers list still joins the fight the tick it stands.
+inline bool KillFirstGridTotemOf(std::uint64_t hitOwner, bool alive, bool totem, std::uint64_t engagedOwner)
+{
+    return alive && totem && engagedOwner != 0 && hitOwner == engagedOwner;
+}
+
+// Whether an engaged unit's grid is read for its kill_first totems (ReadKillFirst's glue): only under the totem focus,
+// only a creature, only a plan boss, and each owner once per read.
+inline bool KillFirstGridReadsOwner(bool totemFocus, bool creature, bool planBoss, bool alreadyRead)
+{
+    return totemFocus && creature && planBoss && !alreadyRead;
 }
 
 // In a fight: the kill_first unit to focus (best rank, then nearest; not a
@@ -11398,6 +11589,142 @@ inline bool PointAlongPath(const std::vector<PathPoint>& path, float maxYd, floa
     return ai::PlanDistance(path[0].x, path[0].y, path[0].z, x, y, z) > kArriveYd;
 }
 
+// The dry walk (AiPlayerbot.DungeonRunDryWalk): the run leader's route picks stay off deep water. The core's
+// own player filter includes NAV_WATER, so where a pool is the shorter way its path crosses it on the water
+// surface; a hop or a leg picked there lands in the water, and the core's straight swim chord (0x81, checked
+// on vmap models only) can then hold the lead bot against a bank or a sandbar (ZG run 36 c3-r2 step 535, b2
+// step 439). The glue asks Detour for a NAV_GROUND-only path instead and takes its picks from that one.
+constexpr float kDryLegYd = 40.0f;          // a dry leg's length along the dry path at most
+constexpr float kDryLegMinYd = 8.0f;        // ... and at least (the first corner when nearer)
+constexpr float kDryDetourFactor = 3.0f;    // a dry path longer than this times max(core path, straight) is not taken
+constexpr std::uint32_t kMaxDryLegs = 24;   // dry legs per walk
+constexpr float kDryStartSearchYd = 25.0f;  // the glue's start-poly search, horizontal (vertical 15)
+
+// The first sample, at most kSwimSampleYd apart and both ends included, where the path is wet after at least
+// one dry sample: `at(x, y, z)` is the core's deep-water test. The leading wet samples are the lead bot's own
+// pool and are exempt (a lead in water heading for the shore is not "wet"), so a dry path, or one wet only at
+// its start, gives -1. Fewer than two points: -1.
+template <class SwimmableAt>
+inline int PathSwimsAfterLeaving(const std::vector<PathPoint>& path, SwimmableAt&& at)
+{
+    if (path.size() < 2)
+        return -1;
+    bool left = false;
+    int index = 0;
+    for (std::size_t i = 1; i < path.size(); ++i)
+    {
+        const PathPoint& a = path[i - 1];
+        const PathPoint& b = path[i];
+        float const length = ai::PlanDistance(a.x, a.y, a.z, b.x, b.y, b.z);
+        std::uint32_t const samples = ai::SwimSampleCount(length);
+        for (std::uint32_t k = i == 1 ? 0 : 1; k < samples; ++k)
+        {
+            float const t = samples == 1 ? 0.0f : static_cast<float>(k) / static_cast<float>(samples - 1);
+            if (at(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z)))
+            {
+                if (left)
+                    return index;
+            }
+            else
+                left = true;
+            ++index;
+        }
+    }
+    return -1;
+}
+
+// A dry path reaches the point and is no detour: at most kDryDetourFactor times the way the run would walk
+// (the core path, the straight line, or the arrival distance when both are tiny).
+inline bool DryPathUsable(bool reaches, float dryYd, float coreYd, float straightYd)
+{
+    return reaches && dryYd <= kDryDetourFactor * std::max({coreYd, straightYd, kArriveYd});
+}
+
+// The core's straight swim chord (PATHFIND_UNDERWATER, 0x81 with PATHFIND_NORMAL) is no navmesh route: the glue's
+// DirectNavPath treats it as a fallback, which refuses it. Only for a dry target: a target in deep water is an
+// intended swim, and the chord is then its whole way (a straggler pull in a pool, a plan point in water).
+inline bool DryChordFallback(bool dryWalk, bool underwater, bool dryTarget)
+{
+    return dryWalk && underwater && dryTarget;
+}
+
+// A firing-stand candidate in deep water is refused only while the pack it shoots at stands on dry ground: a pack
+// in deep water keeps a stand in that water, as before.
+inline bool WetStandRefused(bool dryWalk, bool dryPack, bool wetCandidate)
+{
+    return dryWalk && dryPack && wetCandidate;
+}
+
+// The walk's own order, in Phase::Walk, is the one a dry leg may replace. Not a `direct` move, not a gather,
+// regroup or hold-in-place order (those never equal the walk's own point), and at most kMaxDryLegs a walk.
+inline bool DryWalkWanted(const Run& r, const Facts& f, const std::string& order)
+{
+    return f.dryWalk && r.state == State::Running && r.phase == Phase::Walk &&
+        order == MoveOrder(r.walkX, r.walkY, r.walkZ, false) && r.walkDryLegs < kMaxDryLegs;
+}
+
+// The first dry leg toward the walk's point: the 40, 20 and 10 yd points along `dry` (its end when it is
+// shorter), then its first corner when that is at least kArriveYd away; a candidate nearer than kDryLegMinYd
+// is dropped (the corner excepted), as is a duplicate. `wetTo(point)` says whether the core path from the
+// lead bot to it swims after leaving its own water: the first candidate whose own way is dry is taken.
+template <class CoreWetTo>
+inline bool DryLegPick(const std::vector<PathPoint>& dry, CoreWetTo&& wetTo, PathPoint& out)
+{
+    std::vector<PathPoint> candidates;
+    auto add = [&candidates](float x, float y, float z)
+    {
+        for (const PathPoint& c : candidates)
+            if (ai::PlanDistance(c.x, c.y, c.z, x, y, z) <= 1.0f)
+                return;
+        candidates.push_back(PathPoint{x, y, z});
+    };
+    for (float const maxYd : {kDryLegYd, kDryLegYd / 2.0f, kDryLegYd / 4.0f})
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if (!PointAlongPath(dry, maxYd, x, y, z))
+            continue;
+        if (ai::PlanDistance(dry[0].x, dry[0].y, dry[0].z, x, y, z) < kDryLegMinYd)
+            continue;
+        add(x, y, z);
+    }
+    if (dry.size() >= 2 && ai::PlanDistance(dry[0].x, dry[0].y, dry[0].z, dry[1].x, dry[1].y, dry[1].z) >= kArriveYd)
+        add(dry[1].x, dry[1].y, dry[1].z);
+    for (const PathPoint& c : candidates)
+        if (!wetTo(c))
+        {
+            out = c;
+            return true;
+        }
+    return false;
+}
+
+// The leg start a walk's leg shares (TooFarLegTaken, DryLegTaken): the leg is under way from the lead bot's
+// spot, its distance is the leg's best, and the walk's stillness clock starts over.
+inline void StartLeg(Run& r, const Facts& f, float lx, float ly, float lz)
+{
+    r.legOn = true;
+    r.legX = lx;
+    r.legY = ly;
+    r.legZ = lz;
+    r.legBestYd = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, lx, ly, lz);
+    r.legStartYd = r.legBestYd;
+    r.legEnds.insert(r.legEnds.end(), {lx, ly, lz});
+    r.walkStillMs = 0;
+}
+
+// The glue's dry leg went out (`DryWalkWanted` and its `DryLegPick`): the walk goes on toward its own point,
+// and once the lead bot stands at the leg WalkTo sends that point again, to be intercepted again until the
+// rest of the way is dry.
+inline bool DryLegTaken(Run& r, const Facts& f, float lx, float ly, float lz)
+{
+    StartLeg(r, f, lx, ly, lz);
+    ++r.walkDryLegs;
+    r.note = "the way to " + Num(r.walkX) + " " + Num(r.walkY) + " " + Num(r.walkZ) +
+        " swims through deep water: walking a dry leg first, to " + Num(lx) + " " + Num(ly) + " " + Num(lz) +
+        " (dry leg " + std::to_string(r.walkDryLegs) + ")";
+    return true;
+}
+
 // The answer of a `cmd move` refused for its distance alone: the point is farther than
 // AiPlayerbot.ReactDistance from the lead bot (CommanderMove's TooFar verdict). Not a
 // direct step's too-far, which names a bot that is not with the lead bot.
@@ -11450,6 +11777,16 @@ inline std::string TooFarLegRepeatNote(const Run& r, float lx, float ly, float l
         Num(r.legX) + " " + Num(r.legY) + " " + Num(r.legZ) + ": the lead bot made no way toward it)";
 }
 
+// The dry walk's intercept as a whole: the walk's own order (`DryWalkWanted`, which the glue asks first so the
+// path query runs only then), a dry way with a candidate whose own core way is dry, and a leg this walk has not
+// sent yet. True: the glue issues `move` to `out` instead of the walk's order.
+template <class CoreWetTo>
+inline bool DryWalkOrder(const Run& r, const Facts& f, const std::string& order,
+    const std::vector<PathPoint>& dry, CoreWetTo&& wetTo, PathPoint& out)
+{
+    return DryWalkWanted(r, f, order) && DryLegPick(dry, wetTo, out) && !TooFarLegRepeats(r, out.x, out.y, out.z);
+}
+
 // The glue's leg for a move refused too-far (TooFarLegWanted) went out (`accepted`) as
 // `cmd move lx ly lz`: the walk goes on toward its own point, and once the lead bot
 // stands at the leg (or stalls on its way) WalkTo sends that point again. True: taken
@@ -11463,15 +11800,8 @@ inline bool TooFarLegTaken(Run& r, const Facts& f, float lx, float ly, float lz,
             legAnswer + ")";
         return false;
     }
-    r.legOn = true;
-    r.legX = lx;
-    r.legY = ly;
-    r.legZ = lz;
-    r.legBestYd = ai::PlanDistance(f.leadX, f.leadY, f.leadZ, lx, ly, lz);
-    r.legStartYd = r.legBestYd;
-    r.legEnds.insert(r.legEnds.end(), {lx, ly, lz});
+    StartLeg(r, f, lx, ly, lz);
     ++r.walkLegs;
-    r.walkStillMs = 0;
     r.note = "the move to " + Num(r.walkX) + " " + Num(r.walkY) + " " + Num(r.walkZ) +
         " is beyond the lead bot's reach: walking a leg of the way first, to " + Num(lx) + " " + Num(ly) + " " + Num(lz) +
         " (leg " + std::to_string(r.walkLegs) + ")";
@@ -14381,6 +14711,15 @@ inline const UnitFact* PatrolStandPullGate(Run& r, const Facts& f, const PlanSte
     return nullptr;
 }
 
+// The positive evidence a boss row is done: his corpse near the step's spot, the step's own spawn (the spawn row
+// nearest to the step's point) lying dead whatever entry it reads now, or, once he was seen alive, his corpse near
+// the lead bot. Absence proves nothing: a boss merely missing from the row's read (dragged after the party, a read
+// gap) is no dead boss.
+inline bool BossDownEvidence(const Run& r, const Facts& f)
+{
+    return f.bossDeadNearSpot || f.bossOwnDead || (r.bossSeenAlive && f.bossDeadNearLead);
+}
+
 inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
 {
     if (!f.seen || OpenUnits(r, f.units) > 0)
@@ -14401,10 +14740,8 @@ inline FightEnd FightStepEnd(const Run& r, const Facts& f, const PlanStep& s)
                 return FightEnd::NotYet;
         return FightEnd::Cleared;
     }
-    // f.bossOwnDead: the step's own spawn (the spawn row nearest to the step's point) lies dead, whatever entry it
-    // reads now: checked before the away-wait, so a boss whose script changed his entry never starts it.
-    return f.bossDeadNearSpot || f.bossOwnDead || (r.bossSeenAlive && f.bossDeadNearLead) ? FightEnd::BossDown
-                                                                                           : FightEnd::NotYet;
+    // Checked before the away-wait, so a boss whose script changed his entry never starts it.
+    return BossDownEvidence(r, f) ? FightEnd::BossDown : FightEnd::NotYet;
 }
 
 // Where a place lies from the lead bot, for a boss step's pause: "N yd from the lead bot (M yd above it)" (or below),
@@ -19798,6 +20135,39 @@ inline std::string EngagedUnitsNote(const Facts& f, bool withHp = false)
     return note;
 }
 
+// Whether an engaged unit (Facts::engagedUnits) is one the current pull or boss row reads as its own: a unit of one
+// of its lists (by guid, the lists the glue filled for this step's point: its entries within its radius, a residue
+// unit, a patroller it waits for), or a guid of the pack the step's own pull took (Run::joinerPack, so a pack member
+// dragged out of the radius is still its own).
+inline bool StepOwnEngagedUnit(const Run& r, const Facts& f, const UnitFact& u)
+{
+    if (!u.guid)
+        return false;
+    if (r.joinerPack.count(u.guid))
+        return true;
+    const PlanStep* const s = Current(r);
+    if (!s || (s->kind != PlanStepKind::Pull && s->kind != PlanStepKind::Boss))
+        return false;
+    for (const std::vector<UnitFact>* own : {&f.units, &f.packResidue, &f.patrollers})
+        for (const UnitFact& stepUnit : *own)
+            if (stepUnit.guid == u.guid)
+                return true;
+    return false;
+}
+
+// Whether an engaged unit belongs to a later pull, boss or hold row (OwnedByLaterStep). ZG walk 36 d/e3: the pit's
+// Sacrificed Trolls 14826, respawning every 10 s beside a cleared pull row, are no row's. An engaged fact carries
+// the unit's position (the glue reads it); one at exactly the origin was not read (a policy test's default) and is
+// no later row's.
+inline bool LaterStepOwnsEngagedUnit(const Run& r, const Facts& f, const UnitFact& u)
+{
+    if (!u.guid || !r.plan)
+        return false;
+    if (u.x == 0.0f && u.y == 0.0f && u.z == 0.0f)
+        return false;
+    return ai::OwnedByLaterStep(*r.plan, r.step, u.entry, u.x, u.y, u.z, f.team);
+}
+
 // What the fight ceiling's hp watch (FightProgressTick) saw over its last kFightProgressWindowMs.
 enum class FightProgress
 {
@@ -20666,6 +21036,11 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     {
         r.staleMs = 0;
         r.staleRunMs = 0;
+        r.ownFightGuids.clear(); // the fight is over: the next one reads its own units afresh
+        r.ownFightSeen = false;
+        r.ownFightStep = static_cast<std::size_t>(-1);
+        r.ownFightCleared = false;
+        r.fightReentry = false;
     }
     else if (f.staleCombat)
     {
@@ -21040,8 +21415,71 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
     // Fight on: the straggler pull's tries are over (its attack drew the pack, or another fight came in).
     if (f.anyInCombat)
         ResetStragglerPull(r);
+    // The fight's own units: the current pull or boss row's (its read lists, the pack its pull took), a later row's,
+    // and the units the run holds (Facts::ccHeld), remembered for the fight. Only past the 180 s ceiling, with one
+    // of them seen and every one of them proven gone, the step is over for the run: unrelated units that still fight
+    // (respawning trash, a patrol) are the bots' own combat's and neither hold the step nor run its ceiling (ZG walk
+    // 36 d/e3: the pit's Sacrificed Trolls 14826 respawned every 10 s beside a cleared pull row, and the run paused
+    // 14 min later at the 180 s ceiling with 20 dead). Proven gone is positive evidence only: the glue's lookup on
+    // the run's map found the unit dead or despawned (Facts::ownFightUnits). A unit merely missing from this tick's
+    // engaged read and the row's lists (dragged out of the row's radius, evading) is alive until that lookup says
+    // otherwise, and a guid the glue could not read is unknown and never gone. Younger than the ceiling, on a stale
+    // flag or an empty engaged read, the fight block keeps today's rules: a fresh pull, a read gap and the flag wait
+    // it out.
+    // A pull or boss step goes on so only for its own step and only once its own end rule clears it (a later pull
+    // never goes out from inside another fight); a walk goes on for the fight's own units. A fight that never
+    // engaged one of them keeps the rules, a patrol met on the way included, and so does a wipe: its regroup and
+    // stop caps stay the fight block's. The combat that is once read so goes on for the rows after it too
+    // (ownFightCleared), until the combat drops.
+    if (f.ownFightRead)
+        for (const OwnUnitFact& u : f.ownFightUnits)
+            if (u.state == OwnUnitState::Dead || u.state == OwnUnitState::Gone)
+                r.ownFightGuids.erase(u.guid);
+    if (f.anyInCombat && f.engagedRead)
+    {
+        for (const UnitFact& u : f.engagedUnits)
+        {
+            if (StepOwnEngagedUnit(r, f, u))
+            {
+                r.ownFightGuids.insert(u.guid);
+                r.ownFightStep = r.step;
+            }
+            else if (LaterStepOwnsEngagedUnit(r, f, u))
+                r.ownFightGuids.insert(u.guid);
+        }
+        // A unit of the run's own crowd control stands in the fight (one object lookup a hold) but neither attacks
+        // nor is attacked: it drops out of the engaged read, and the row is no cleared one while the hold lasts.
+        if (f.ccHeldRead)
+            for (const UnitFact& u : f.ccHeld)
+            {
+                if (!u.guid)
+                    continue;
+                if (StepOwnEngagedUnit(r, f, u))
+                    r.ownFightStep = r.step;
+                r.ownFightGuids.insert(u.guid);
+            }
+        r.ownFightSeen = r.ownFightSeen || !r.ownFightGuids.empty();
+    }
+    bool const ownFightRow = s->kind == PlanStepKind::Pull || s->kind == PlanStepKind::Boss;
+    bool const overForStep = ownFightRow ? r.ownFightStep == r.step
+                                         : (s->kind == PlanStepKind::Move || s->kind == PlanStepKind::MoveDirect);
+    // A boss row is the exception: his death is the row's end whatever keeps the party in combat afterwards (ZG walk
+    // 36 d4: Jin'do died at his spot while the 14826 Sacrificed Trolls respawned beside him, and the run sat in the
+    // fight for an hour; the pull before his row had engaged him, so no own unit of the row's ever read as engaged).
+    // The boss's own death is proof enough on a stale flag too, and no engagement read is needed for it.
+    bool const bossRowDown = s->kind == PlanStepKind::Boss && BossDownEvidence(r, f) && OpenUnits(r, f.units) == 0;
+    bool const ownFightOver = f.anyInCombat && !wipe &&
+        (bossRowDown ||
+            (f.engagedRead && !f.staleCombat && !f.engagedUnits.empty() && f.ownFightRead && r.ownFightSeen &&
+                r.ownFightGuids.empty() && overForStep && (r.ownFightCleared || r.fightMs > kFightCapMs) &&
+                (!ownFightRow || FightStepEnd(r, f, *s) != FightEnd::NotYet)));
+    if (ownFightOver)
+    {
+        r.ownFightCleared = true;
+        r.fightReentry = true;
+    }
     // Fights are the bots' own; the run only bounds them.
-    if (f.anyInCombat && !objectDone)
+    if (f.anyInCombat && !objectDone && !ownFightOver)
     {
         // The ritual answered and its event is fighting already (the first
         // Stone Keeper wakes with the cast): the fight is the hold's.
@@ -21069,27 +21507,35 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (!r.fighting)
         {
             r.fighting = true;
-            r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
-            r.ccOpenOrders = 0;
-            r.ccOpenSent.clear();
-            r.ccOpenPrepull.clear();
-            for (auto const& hold : r.ccHolds)
-                r.ccOpenPrepull.insert(hold.first);
-            r.restWalkDue = false; // a fight is on: the walk after the rest is over
-            r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
-            EndBigWalk(r);        // ... and so is the big pack's stand walk gate
-            r.fightMs = 0;
-            r.raidBossFight = false;
-            r.ccBreakGuid = 0;
-            r.ccBreakMs = 0;
-            r.ccBreakSeen.clear();
-            r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
-            r.linkedDeaths.clear();
-            r.linkedNotePct = -1;
-            r.linkedState = Run::LinkedState::None;
-            r.linkedStateNote.clear();
-            r.linkedEvents.clear();
-            DropHopWaiver(r);
+            // The start belongs to the combat, not to each row it runs on: the own-fight step end above leaves the
+            // combat running onto the next row, and re-entering the block there must not open the same fight again
+            // (the opening's marks, the linked_death group, the clock).
+            if (r.fightReentry)
+                r.fightReentry = false;
+            else
+            {
+                r.ccOpenDue = true; // the pull's opening: the marks are cast at once (RunAutoCcPrePullOpenTick)
+                r.ccOpenOrders = 0;
+                r.ccOpenSent.clear();
+                r.ccOpenPrepull.clear();
+                for (auto const& hold : r.ccHolds)
+                    r.ccOpenPrepull.insert(hold.first);
+                r.restWalkDue = false; // a fight is on: the walk after the rest is over
+                r.joinerRest = false; // a fight is on: the aggro estimate's rest wait is moot
+                EndBigWalk(r);        // ... and so is the big pack's stand walk gate
+                r.fightMs = 0;
+                r.raidBossFight = false;
+                r.ccBreakGuid = 0;
+                r.ccBreakMs = 0;
+                r.ccBreakSeen.clear();
+                r.linkedAlive.clear(); // a new fight's linked_death deaths start from zero
+                r.linkedDeaths.clear();
+                r.linkedNotePct = -1;
+                r.linkedState = Run::LinkedState::None;
+                r.linkedStateNote.clear();
+                r.linkedEvents.clear();
+                DropHopWaiver(r);
+            }
         }
         // A stale flag (nothing hostile engaged) is waited out for a grace
         // period; past it the fight ceiling runs again, so a flag that never
@@ -21097,6 +21543,17 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         bool const staleGrace = f.staleCombat && r.staleMs <= kStaleCombatGraceMs;
         if (!staleGrace)
             r.fightMs += dt;
+        // AiPlayerbot.DungeonRunTotemFocus first, before any other tick can spend it: a kill_first totem (the Brain Wash
+        // Totem, a healing ward) dies in 1-2 s, and behind the hp hold, a CC break, the retreat, the auto-CC or the
+        // guard its focus waits a whole second more. A totem focus sends the DPS by guid and leaves the skull on the
+        // boss (IssueKillFirstFocus, FocusMovesSkull). A retreat in progress keeps the tick: the living walk back first,
+        // not one more totem kill.
+        if (f.totemFocus && !r.retreatOn)
+        {
+            const UnitFact* totem = PickKillFirst(r, f);
+            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
+                return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));
+        }
         // A hold's fights are the event (one wave after the other, no pause
         // between): its own timeout bounds them when that is longer.
         // A start step's fight (or a move's) before its hold is the event's too.
@@ -21292,14 +21749,6 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // guard would never send it anywhere while it stands there.
         if (order.empty() && WedgedSummon(r, f, dt, order))
             return order;
-        // The totem focus goes before the guard (AiPlayerbot.DungeonRunTotemFocus): a kill_first totem dies in 1-2 s,
-        // and a guard order spends the tick. Any other focus waits for the ordinary one below.
-        if (f.totemFocus)
-        {
-            const UnitFact* totem = PickKillFirst(r, f);
-            if (totem && totem->creatureType == kCreatureTotem && totem->guid != r.focusGuid)
-                return IssueKillFirstFocus(r, *totem);
-        }
         if (CheckGuard(r, f, dt, order))
             return order;
         // The plan's kill_first unit of the fight (a healer, its healing ward)
@@ -21311,7 +21760,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         if (const UnitFact* k = PickKillFirst(r, f))
         {
             if (k->guid != r.focusGuid)
-                order = IssueKillFirstFocus(r, *k);
+                order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
             DropFocus(r);
@@ -21327,6 +21776,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.eatWaitMs = 0;
         r.pullGuid = 0;
         DropFocus(r);
+        DropStaleFocusIcon(r);
         r.focusRefused.clear();
         r.focusUnstayed = false;
         r.guardMs = 0;
@@ -21752,6 +22202,22 @@ inline std::string PhaseText(const Run& r)
         return std::string(r.fighting ? "fight " : "hold ") + std::to_string(r.eventDown) + "/" +
             std::to_string(r.eventTotal) + " down";
     return PhaseName(r.phase);
+}
+
+// A kill_first unit's sighting or death in the server log:
+//   TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]
+// <lead> is the run's lead bot and <instance> its instance id, so the line names its run in a log shared by every run
+// of the server. <ms> is the time since it was first seen (0: none, a sighting). The frames sample a fight every few
+// seconds, so a totem's lifetime is only measurable from the log.
+inline std::string KillFirstLogLine(const std::string& plan, const std::string& lead, std::uint32_t instance,
+    const char* event, std::uint32_t entry, std::uint64_t guid, std::uint32_t ms)
+{
+    std::string line = std::string("TBM:KILLFIRST|") + (plan.empty() ? "-" : plan) + "|" +
+        (lead.empty() ? "-" : lead) + "|" + std::to_string(instance) + "|" + event + "|" + std::to_string(entry) +
+        "|" + std::to_string(guid);
+    if (ms)
+        line += "|" + std::to_string(ms);
+    return line;
 }
 
 // The status line for the commander:

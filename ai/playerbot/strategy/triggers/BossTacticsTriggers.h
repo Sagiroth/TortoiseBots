@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/Trigger.h"
 
 namespace ai
@@ -38,11 +39,13 @@ namespace ai
         bool IsActive() override;
     };
 
-    // A kill_first creature is alive and this DPS bot is not on it.
+    // A kill_first creature is alive and this DPS bot is not on it. Checked every second under
+    // AiPlayerbot.DungeonRunTotemFocus (a totem's whole life is 1-2 s), every two seconds otherwise.
     class BossTacticsKillFirstTrigger : public Trigger
     {
     public:
-        BossTacticsKillFirstTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics kill first", 2) {}
+        BossTacticsKillFirstTrigger(PlayerbotAI* ai)
+            : Trigger(ai, "boss tactics kill first", sPlayerbotAIConfig.dungeonRunTotemFocus ? 1 : 2) {}
         bool IsActive() override;
     };
 
@@ -172,12 +175,46 @@ namespace ai
         bool IsActive() override;
     };
 
+    // This hunter or warlock still has a pet out and the siphon is close or landing.
+    class BossTacticsSeekPetTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekPetTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek pet", 1) {}
+        bool IsActive() override;
+    };
+
+    // This shaman still has a totem down and the siphon is close or landing.
+    class BossTacticsSeekTotemTrigger : public Trigger
+    {
+    public:
+        BossTacticsSeekTotemTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics seek totem", 1) {}
+        bool IsActive() override;
+    };
+
     // A taunt_after_cast row (mode until_tank) names this tank and its subject's victim is no tank any more: the tank
     // takes the subject back inside the row's deadline.
     class BossTacticsTauntAfterTrigger : public Trigger
     {
     public:
         BossTacticsTauntAfterTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics taunt after", 1) {}
+        bool IsActive() override;
+    };
+
+    // A burn_mana row's boss is in the fight at or above the row's start % of mana and this bot is one of the row's
+    // burners (FindBossBurnMana): it casts its longest drain spell on the boss.
+    class BossTacticsBurnManaTrigger : public Trigger
+    {
+    public:
+        BossTacticsBurnManaTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics burn mana", 1) {}
+        bool IsActive() override;
+    };
+
+    // This melee bot's current target is held by a ranged_only row (the subject stands the row's gap above it): it
+    // drops the target for the adds.
+    class BossTacticsRangedOnlyTrigger : public Trigger
+    {
+    public:
+        BossTacticsRangedOnlyTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics ranged only", 1) {}
         bool IsActive() override;
     };
 }

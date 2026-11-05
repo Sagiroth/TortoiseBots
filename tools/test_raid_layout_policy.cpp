@@ -224,6 +224,69 @@ static void TestPlanForty()
     CHECK(raidHealers == 4);
 }
 
+// Healer seats by class (AiPlayerbot.RaidHealerSeatsByClass): the raid seat
+// takes a group healer first (priest, then druid, then shaman), then a tank
+// seat takes the next healer (any class) and the off-tank seat whoever is left,
+// instead of one member-order pass. The default stays the member-order pass.
+static void TestSeatsByClass()
+{
+    std::vector<Member> m = Raid(2, 0, 0);
+    m.push_back({"P0", Role::Healer, false, kClassPriest});
+    m.push_back({"P1", Role::Healer, false, kClassPriest});
+    m.push_back({"Pal", Role::Healer, false, kClassPaladin});
+    Layout l = Plan(m, true);
+    CHECK(l.ok);
+    CHECK(P(l, "P0").healsTank == -1);  // the raid seat, not a tank seat
+    CHECK(P(l, "Pal").healsTank == 0);  // the main tank, not always the off-tank
+    CHECK(P(l, "P1").healsTank == 1);
+    // The default (key off) keeps today's member order.
+    Layout before = Plan(m);
+    CHECK(P(before, "P0").healsTank == 0);
+    CHECK(P(before, "P1").healsTank == 1);
+    CHECK(P(before, "Pal").healsTank == -1);
+
+    // Group healers rank priest before druid before shaman, whatever the order.
+    std::vector<Member> g = Raid(2, 0, 0);
+    g.push_back({"Sh", Role::Healer, false, kClassShaman});
+    g.push_back({"Dr", Role::Healer, false, kClassDruid});
+    g.push_back({"Pr", Role::Healer, false, kClassPriest});
+    Layout byClass = Plan(g, true);
+    CHECK(P(byClass, "Pr").healsTank == -1);
+    CHECK(P(byClass, "Dr").healsTank == 0);
+    CHECK(P(byClass, "Sh").healsTank == 1);
+
+    // A druid holds the raid seat ahead of a shaman.
+    std::vector<Member> ds = Raid(2, 0, 0);
+    ds.push_back({"Sh", Role::Healer, false, kClassShaman});
+    ds.push_back({"Dr", Role::Healer, false, kClassDruid});
+    ds.push_back({"Pal", Role::Healer, false, kClassPaladin});
+    Layout druidFirst = Plan(ds, true);
+    CHECK(P(druidFirst, "Dr").healsTank == -1);
+    CHECK(P(druidFirst, "Pal").healsTank == 0);
+    CHECK(P(druidFirst, "Sh").healsTank == 1);
+
+    // The fixed 5h hire (priest, priest, paladin, druid, priest): the paladin
+    // takes a main-tank seat and a priest keeps the raid seat.
+    std::vector<Member> five = Raid(2, 0, 0);
+    five.push_back({"P0", Role::Healer, false, kClassPriest});
+    five.push_back({"P1", Role::Healer, false, kClassPriest});
+    five.push_back({"Pal", Role::Healer, false, kClassPaladin});
+    five.push_back({"Dr", Role::Healer, false, kClassDruid});
+    five.push_back({"P2", Role::Healer, false, kClassPriest});
+    Layout hire = Plan(five, true);
+    CHECK(P(hire, "P0").healsTank == -1);
+    CHECK(P(hire, "P1").healsTank == -1);
+    CHECK(P(hire, "Pal").healsTank == 0);
+    // Seat ordinals on the tank: its first seat never helps the raid, its second may.
+    CHECK(P(hire, "Pal").healsSeat == 0);
+    CHECK(P(hire, "P2").healsSeat == 1);
+    int raidSeats = 0;
+    for (auto const& p : hire.placements)
+        if (p.role == Role::Healer && p.healsTank < 0)
+            ++raidSeats;
+    CHECK(raidSeats == 2);
+}
+
 static void TestPlanErrors()
 {
     std::vector<Member> noTank = Raid(2, 3, 5); noTank[0].role = Role::Damage;
@@ -348,6 +411,7 @@ int main()
     TestPlanTen();
     TestPlanTwenty();
     TestPlanForty();
+    TestSeatsByClass();
     TestPlanSubgroupMoves();
     TestRestoreNewcomerInTarget();
     TestFullRaidKeepsOfflineSlots();
