@@ -1114,6 +1114,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
 
     // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> meet |
     // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    if (lower == "reassign")
     {
         std::string subBotName, newBotName;
         if (!(in >> subBotName >> newBotName))
