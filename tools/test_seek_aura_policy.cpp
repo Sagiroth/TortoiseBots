@@ -194,6 +194,38 @@ int main()
     CHECK(SeekPullRoleOf(false, true, false, false) == SeekPullRole::None);
     CHECK(SeekPullRoleOf(false, false, true, true) == SeekPullRole::None);
 
+    // SeekFallbackPullerIsTwoTankOnly: the fallback shot belongs to exactly two living tanks — with three the third
+    // off-tank walks the Son down itself, and with fewer than two nobody is left at the spot to take the Son over.
+    CHECK(SeekFallbackPullBranch(2));
+    CHECK(!SeekFallbackPullBranch(0));
+    CHECK(!SeekFallbackPullBranch(1));
+    CHECK(!SeekFallbackPullBranch(3));
+    CHECK(!SeekFallbackPullBranch(4));
+
+    // SeekFallbackPullerSkips: a charmed member is hostile and its AI is gone, the boss's current victim cannot turn
+    // and shoot (and the pull would take the boss's target out of the tank's face), a dead one is gone, and the three
+    // tanks the seek leaves out are never the fallback. Only the clean ranged member pulls.
+    CHECK(SeekFallbackCandidate(true, false, false, false));   // a clean candidate
+    CHECK(!SeekFallbackCandidate(false, false, false, false));  // dead
+    CHECK(!SeekFallbackCandidate(true, true, false, false));    // charmed
+    CHECK(!SeekFallbackCandidate(true, false, true, false));    // the boss's victim
+    CHECK(!SeekFallbackCandidate(true, false, false, true));    // an exempt tank
+    CHECK(!SeekFallbackCandidate(true, true, true, true));      // every skip at once
+
+    // SeekFallbackPullsOnlyNearTheSpot: the fallback's shot reaches a Son within 35 yd of the spot (the third
+    // off-tank's own pull still walks to one within 60), so a Son just inside the old 60 yd reach is not pulled; the
+    // rule also needs the open window, no Son in the fight yet, and enough seekers still without the poison.
+    CHECK(SeekFallbackPullDue(true, false, 3, 34.9f));
+    CHECK(SeekFallbackPullDue(true, false, 3, kSeekFallbackYd));
+    CHECK(!SeekFallbackPullDue(true, false, 3, kSeekFallbackYd + 0.1f));
+    CHECK(!SeekFallbackPullDue(true, false, 3, 59.0f));
+    CHECK(!SeekFallbackPullDue(true, false, 2, 30.0f));
+    CHECK(!SeekFallbackPullDue(true, true, 3, 30.0f));
+    CHECK(!SeekFallbackPullDue(false, false, 3, 30.0f));
+    // The third off-tank's own pull keeps its 60 yd walk-in.
+    CHECK(SeekTankPullDue(true, false, 3, 59.0f));
+    CHECK(!SeekTankPullDue(true, false, 3, 61.0f));
+
     // SeekAreaHoldsASonBesideThePick: an area action's area is judged Son by Son, so the selected Son may be burnable
     // while a second, held Son standing beside it is not: the cast reaches both, so it is vetoed. When the area reaches
     // only the non-selected (held) Son the cast is vetoed too, and it stands when nothing inside it is held.

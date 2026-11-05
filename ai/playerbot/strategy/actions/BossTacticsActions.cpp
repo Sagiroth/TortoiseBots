@@ -960,9 +960,11 @@ bool IsSeekExemptTank(const RaidTankRoles& roles, Player* member)
 }
 
 // The fallback puller when the third off-tank is not there: the living hunter nearest the row's spot, else the nearest
-// living ranged damage dealer that is not a tank or a healer. Null when no off-tank is alive to take the Son over or
-// nobody in the raid can shoot it.
-Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const BossTacticRow& row)
+// living ranged damage dealer that is not a tank or a healer. A charmed member, the boss's own victim and a dead one
+// are no puller: the victim cannot shoot and a charmed bot is hostile. Null when no off-tank is alive to take the Son
+// over or nobody in the raid can shoot it.
+Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss,
+                               const BossTacticRow& row)
 {
     Player* hunter = nullptr;
     float hunterYd = 0.0f;
@@ -970,8 +972,11 @@ Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles
     float rangedYd = 0.0f;
     const auto judge = [&](Player* member)
     {
-        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
-            !sServerFacade.IsAlive(member) || IsSeekExemptTank(roles, member))
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            return;
+        const bool bossVictim = boss && boss->GetVictim() == member;
+        if (!SeekFallbackCandidate(sServerFacade.IsAlive(member), !member->GetCharmerGuid().IsEmpty(), bossVictim,
+                IsSeekExemptTank(roles, member)))
             return;
         const float yd = member->GetDistance2dToCenter(row.spotX, row.spotY);
         if (member->GetClass() == CLASS_HUNTER)
@@ -999,8 +1004,7 @@ Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles
     }
     else
         judge(bot);
-    const bool offTankAlive = roles.tanks.size() >= 2 && roles.tanks.size() < 3;
-    switch (SeekPullRoleOf(false, offTankAlive, hunter != nullptr, ranged != nullptr))
+    switch (SeekPullRoleOf(false, SeekFallbackPullBranch(roles.tanks.size()), hunter != nullptr, ranged != nullptr))
     {
         case SeekPullRole::Hunter: return hunter;
         case SeekPullRole::Ranged: return ranged;
@@ -1017,9 +1021,9 @@ bool IsSeekPuller(PlayerbotAI* ai, Player* bot, const SeekFight& state)
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     if (roles.tanks.size() >= 3)
         return roles.tanks[2] == bot;
-    if (roles.tanks.size() < 2)
+    if (!SeekFallbackPullBranch(roles.tanks.size()))
         return false;
-    return FindSeekFallbackPuller(ai, bot, roles, *state.row) == bot;
+    return FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) == bot;
 }
 
 // The seekers of this fight: every living group member that SeekWanted would send (no poison, not the boss's victim,
@@ -4700,7 +4704,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
-    if (!thirdTank && !pickupTank && FindSeekFallbackPuller(ai, bot, roles, *state.row) != bot)
+    if (!thirdTank && !pickupTank && FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot)
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -4766,9 +4770,10 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         }
         return task;
     }
-    // The fallback lifts a Son that stands out of the fight with one shot; once it fights, the off-tank takes it.
-    if (SeekTankPullDue(state.windowOpen, anyInCombat, state.seekers,
-                        nearest ? nearestToSpot : std::numeric_limits<float>::max()))
+    // The fallback lifts a Son that stands out of the fight with one shot; once it fights, the off-tank takes it. Only
+    // a Son near the spot: its shot has to reach one the off-tank can then take over, not a patrol 60 yd out.
+    if (SeekFallbackPullDue(state.windowOpen, anyInCombat, state.seekers,
+                            nearest ? nearestToSpot : std::numeric_limits<float>::max()))
     {
         task.valid = true;
         task.source = nearest;

@@ -5,6 +5,7 @@
 // another Son of Hakkar 11357. Tested in tools/test_seek_aura_policy.cpp; callers pass plain numbers so this header
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -221,6 +222,29 @@ namespace ai
     {
         return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
             nearestSourceToSpotYd <= kSeekPickupYd;
+    }
+
+    // The fallback pull branch: exactly two tanks alive. The third off-tank pulls by itself with three, and with fewer
+    // than two nobody is left at the spot to take a pulled Son over.
+    inline bool SeekFallbackPullBranch(std::size_t tankCount)
+    {
+        return tankCount == 2;
+    }
+
+    // The fallback puller's candidate: alive, not charmed (a creature-charmed player is hostile and its AI is gone),
+    // not the boss's current victim (the pull would take the boss's target out of the tank's face, and the victim
+    // cannot turn and shoot), and not one of the three tanks the seek leaves out.
+    inline bool SeekFallbackCandidate(bool alive, bool charmed, bool bossVictim, bool exemptTank)
+    {
+        return alive && !charmed && !bossVictim && !exemptTank;
+    }
+
+    // The fallback pulls only a Son near the spot: its shot has to reach a Son the off-tank can then take over, and a
+    // Son farther out costs the window while the raid walks to it (the third off-tank's own pull walks its 60 yd).
+    inline bool SeekFallbackPullDue(bool windowOpen, bool sourceInFight, int missing, float nearestSourceToSpotYd)
+    {
+        return windowOpen && !sourceInFight && missing >= kSeekPullMinMissing &&
+            nearestSourceToSpotYd <= kSeekFallbackYd;
     }
 
     // The pull branch's step: a Son that stands out of the fight stays its target until the pulling tank's own swing
