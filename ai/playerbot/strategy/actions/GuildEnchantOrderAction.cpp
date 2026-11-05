@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "GuildEnchantOrderAction.h"
+#include "TradeStatusAction.h"
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -220,6 +221,15 @@ bool GuildEnchantOrderAction::Execute(Event& event)
     // packets, so the try budget is checked here every tick too.
     if (order.state == OrderState::Enchanting && bot->GetTrader() && facts.tradeOpenWithGiver)
     {
+        // An item put in the window sends no trade status either: run the
+        // trade step (checks, cast, accept) from here as well.
+        {
+            TradeStatusAction step(ai);
+            Event tick;
+            step.HandleEnchantOrderTrade(tick, bot->GetTrader());
+        }
+        if (!bot->GetTrader())
+            return true;
         Player* trader = bot->GetTrader();
         EnchantTradeSession session = GetEnchantTrade(bot->GetGUIDLow());
         if (session.openedMs)
