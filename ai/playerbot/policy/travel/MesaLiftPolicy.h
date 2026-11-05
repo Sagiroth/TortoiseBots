@@ -4,7 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
-// Pure policy for the city lifts (Undercity, Thunder Bluff, Freewind Post).
+// Pure policy for the lifts (Undercity, Thunder Bluff, Freewind Post, the
+// Great Lift).
 // The core keeps lifts as static objects and never carries a passenger: a
 // player rides because the client animates the car from the server clock and
 // reports its own position. A bot has no client, so it walked to the foot of
@@ -212,21 +213,60 @@ namespace ai
         MesaLift const* lift = nullptr;
     };
 
-    // A bot further out than this past the place's edge walks its normal
-    // route first.
-    inline constexpr float kLiftApproachYd = 250.0f;
+    // A lift between two zones: the Great Lift joins the Barrens plateau to
+    // the Thousand Needles floor; the other ways down run through Feralas or
+    // Tanaris.
+    struct ZoneLift
+    {
+        MesaLift const* lift;
+        uint32_t mapId, topZone, bottomZone;
+        float bottomMaxZ;   // the bottom zone's floor; its mesas stand higher
+    };
 
-    // The lift a trip needs to get into or out of a place: the one with the
-    // shortest straight line bot -> lift -> destination. A destination on
-    // another map counts as outside.
-    inline MesaLiftPick MesaLiftFor(uint32_t botMap, float bx, float by, float bz,
-        uint32_t goalMap, float gx, float gy, float gz)
+    inline constexpr uint32_t kBarrensZone = 17;
+    inline constexpr float kZoneLiftTopYd = 300.0f;
+    inline constexpr uint32_t kThousandNeedlesZone = 400;
+
+    inline constexpr LiftCar kGreatLiftCars[] = {
+        { 11898, -4665.43f, -1827.67f, 85.41f, kFreewindDown, 14 },
+        { 11899, -4670.77f, -1849.61f, -44.14f, kFreewindUp, 13 },
+    };
+    inline constexpr MesaLift kGreatLift[] = { { "Great Lift", kGreatLiftCars, 2 } };
+    inline constexpr ZoneLift kZoneLifts[] = {
+        { kGreatLift, 1, kBarrensZone, kThousandNeedlesZone, 40.0f },
+    };
+
+    // The lift a trip needs between two zones, or to get into or out of a
+    // place (for a place with several lifts the one with the shortest
+    // straight line bot -> lift -> destination). A destination on another map counts
+    // as outside the place. Zone ids are zones, not subzones.
+    inline MesaLiftPick MesaLiftFor(uint32_t botMap, float bx, float by, float bz, uint32_t botZone,
+        uint32_t goalMap, float gx, float gy, float gz, uint32_t goalZone)
     {
         MesaLiftPick pick;
+        // Zone links first: a Barrens bot heading for Freewind goes down the
+        // Great Lift, then up the Freewind lift.
+        for (ZoneLift const& link : kZoneLifts)
+        {
+            if (botMap != link.mapId || goalMap != botMap)
+                continue;
+            // The top station may lie in the bottom zone: high ground next
+            // to the lift counts as the top.
+            LiftCar const& car = link.lift->cars[0];
+            bool const botOnTop = botZone == link.topZone || (botZone == link.bottomZone && bz >= link.bottomMaxZ &&
+                std::hypot(bx - car.x, by - car.y) < kZoneLiftTopYd);
+            if (botOnTop && goalZone == link.bottomZone)
+                pick.dir = MesaLiftDir::Down;
+            else if (botZone == link.bottomZone && bz < link.bottomMaxZ && goalZone == link.topZone)
+                pick.dir = MesaLiftDir::Up;
+            else
+                continue;
+            pick.lift = link.lift;
+            return pick;
+        }
         for (Mesa const& mesa : kMesas)
         {
-            if (botMap != mesa.mapId ||
-                std::hypot(bx - mesa.centreX, by - mesa.centreY) > mesa.radius + kLiftApproachYd)
+            if (botMap != mesa.mapId)
                 continue;
             bool const botIn = InMesa(mesa, botMap, bx, by, bz);
             bool const goalIn = InMesa(mesa, goalMap, gx, gy, gz);

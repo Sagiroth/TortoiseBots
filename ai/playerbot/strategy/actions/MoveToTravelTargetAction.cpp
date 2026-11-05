@@ -818,8 +818,14 @@ static std::string LiftLogPos(WorldPosition const& pos)
 // `staged` puts the walk on the shaft.
 bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float& x, float& y, float& z, bool& staged)
 {
-    ai::MesaLiftPick const pick = ai::MesaLiftFor(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
-        location.GetMapId(), location.getX(), location.getY(), location.getZ());
+    // Zones only matter for the zone lifts; look the goal's up only then.
+    uint32 const botZone = bot->GetZoneId();
+    uint32 goalZone = 0;
+    if (botZone == ai::kBarrensZone || botZone == ai::kThousandNeedlesZone)
+        if (AreaTableEntry const* area = location.GetArea())
+            goalZone = area->ZoneId ? area->ZoneId : area->Id;
+    ai::MesaLiftPick const pick = ai::MesaLiftFor(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), botZone,
+        location.GetMapId(), location.getX(), location.getY(), location.getZ(), goalZone);
     if (pick.dir == ai::MesaLiftDir::None || !MayRideLift(ai, bot))
         return false;
 
