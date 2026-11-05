@@ -1965,6 +1965,7 @@
     'AiPlayerbot.AhMarketBuyer': 'Bots buy fairly priced auctions (also yours), so items listed on the AH actually sell.',
     'AiPlayerbot.AutoLearnTrainerSpells': 'Bots learn all trainer spells for free on level-up. Off = they must visit a trainer and pay, like players.',
     'AiPlayerbot.AutoLearnQuestSpells': 'Bots learn class-quest spells (stances, forms, totems, pet skills) on level-up without doing the quest.',
+    'AiPlayerbot.AutoLearnQuestSpellsAlts': 'Your own alts also learn class-quest spells on level-up without doing the quest. Trainer spells stay paid.',
     'AiPlayerbot.LevelUpMounts': 'Bots get their mount when they reach level 40, and the epic mount at 60.',
     'AiPlayerbot.TurtleMountAtLevel': 'Level at which bots get the Swift Riding Turtle, as if they did the quest. 0 = never.',
     'AiPlayerbot.RandomBotGroupNearby': 'Pool bots invite nearby bots into groups. Off by default: bot-only groups slow the pool down.',
@@ -2040,6 +2041,7 @@
           ['AH market enabled', flagBadge(bots.ah_market), cfg('AhMarketEnabled')],
           ['Auto-learn trainer spells', flagBadge(bots.auto_learn_trainer_spells), cfg('AutoLearnTrainerSpells')],
           ['Auto-learn quest spells', flagBadge(bots.auto_learn_quest_spells), cfg('AutoLearnQuestSpells')],
+          ['Auto-learn quest spells (alts)', flagBadge(bots.auto_learn_quest_spells_alts), cfg('AutoLearnQuestSpellsAlts')],
           ['Level-up mounts', flagBadge(bots.level_up_mounts), cfg('LevelUpMounts')],
           ['Turtle mount at level', num(bots.turtle_mount_at_level), cfg('TurtleMountAtLevel')]
         ])}
@@ -2102,7 +2104,7 @@
       `- module: ${info.module_version || '?'} / core: ${info.core_revision || '?'} (${info.core_date || '?'}) / max level: ${info.max_level || '?'}`,
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
-      `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
+      `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} autolearn_quest_alts=${on(bots.auto_learn_quest_spells_alts)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}${b.gear_bots ? `/ilvl${b.avg_item_level.toFixed(1)}` : ''}`).join(' ')}`,

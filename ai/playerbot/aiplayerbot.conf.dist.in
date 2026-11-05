@@ -1776,6 +1776,11 @@ AiPlayerbot.AutoLearnTrainerSpells = 1
 # Default: 1 (enabled)
 AiPlayerbot.AutoLearnQuestSpells = 1
 
+# Your own alts (characters added with .bot add, and autonomous alt bots) also learn
+# classquest reward spells on login and levelup. Trainer spells stay paid for them.
+# Default: 0 (disabled)
+AiPlayerbot.AutoLearnQuestSpellsAlts = 0
+
 # Alt Bots automatically learn class spells from books dropped from dungeons and raids when leveled and they reached the required level of the book.
 # Default: 0 (disabled)
 AiPlayerbot.AutoLearnDroppedSpells = 0

@@ -79,6 +79,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.WanderMinDistance`](#aiplayerbotwandermindistance) | `5.0` (commented out in the template; uncomment to change it) | Inner wander trigger band. |
 | [`AiPlayerbot.WanderMaxDistance`](#aiplayerbotwandermaxdistance) | `50.0` (commented out in the template; uncomment to change it) | Maximum yard radius bots roam from anchor while running wander strategy. |
 | [`AiPlayerbot.AutoLearnQuestSpells`](#aiplayerbotautolearnquestspells) | `1` | Automatically teaches spells rewarded by completed class quests. |
+| [`AiPlayerbot.AutoLearnQuestSpellsAlts`](#aiplayerbotautolearnquestspellsalts) | `0` | Lets your own alts learn class-quest spells on level-up too. |
 | [`AiPlayerbot.AutoLearnTrainerSpells`](#aiplayerbotautolearntrainerspells) | `1` | Grants free trainer spell sweeps on level-up for random pool bots. |
 | [`AiPlayerbot.AutoLearnDroppedSpells`](#aiplayerbotautolearndroppedspells) | `0` | Grants free dungeon and raid book spells to random pool bots at level 60. |
 | [`AiPlayerbot.RandomGearUpgradeEnabled`](#aiplayerbotrandomgearupgradeenabled) | `1` (commented out in the template; uncomment to change it) | Seeds newly created pool bots with level-appropriate starter equipment. |
@@ -897,7 +898,18 @@ Automatically teaches class spells awarded upon completing specific class quests
 <details>
 <summary>How it works in detail</summary>
 
-Teaches abilities rewarded by completed class quests (for example paladin resurrection, warlock pet summons, or shaman totems). This is free for random pool bots, including hired companions; owned bots never get it free.
+Teaches abilities rewarded by completed class quests (for example paladin resurrection, warlock pet summons, or shaman totems). This is free for random pool bots, including hired companions. Your own alts get it only with [`AiPlayerbot.AutoLearnQuestSpellsAlts`](#aiplayerbotautolearnquestspellsalts).
+
+</details>
+
+### `AiPlayerbot.AutoLearnQuestSpellsAlts`
+Lets your own alts learn class-quest spells on level-up, the same way pool bots do.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Covers characters you add with `.bot add` and autonomous alt bots. When the alt logs in, and on each level-up or talent change, it learns every class-quest spell it is old enough for, plus the quest's reward item (for example shaman totems). It does not depend on `AiPlayerbot.AutoLearnQuestSpells`. Trainer spells stay paid: take the alt to a trainer as usual. The spells stay on the character when you log in to it yourself.
 
 </details>
 
