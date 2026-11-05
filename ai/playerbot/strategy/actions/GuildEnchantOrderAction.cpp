@@ -193,6 +193,8 @@ bool GuildEnchantOrderAction::Execute(Event& event)
     // the item the enchant was cast on tells whether it landed.
     if ((order.state == OrderState::Coming || order.state == OrderState::Enchanting) && !bot->GetTrader())
     {
+        if (SettlePendingEnchantMaterials(bot))
+            RequestMeet(bot->GetGUIDLow(), order.giverGuidLow);
         EnchantTradeSession session = GetEnchantTrade(bot->GetGUIDLow());
         Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
         Item* done = (giver && session.parkedItemGuidLow) ?

@@ -4,6 +4,9 @@
 
 namespace ai
 {
+    // Books an enchant materials trade that completed after the bot's accept.
+    bool SettlePendingEnchantMaterials(Player* bot);
+
     class TradeStatusAction : public QueryItemUsageAction
     {
     public:
