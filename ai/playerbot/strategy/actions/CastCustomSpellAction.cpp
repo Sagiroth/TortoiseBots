@@ -6,6 +6,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "CheckMountStateAction.h"
+#include "Mail/Mail.h"
 #include "../../../../runtime/GuildOrderDisenchantPolicy.h"
 
 using namespace ai;
