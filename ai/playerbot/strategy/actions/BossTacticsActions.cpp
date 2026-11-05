@@ -35,6 +35,7 @@
 #include "FollowActions.h"
 #include "ReachTargetActions.h"
 #include "playerbot/strategy/values/NearestGameObjects.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "EnemyAreaSpell.h"
 #include "GenericSpellActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -710,6 +711,10 @@ struct SeekFight
     int seekers = 0;   // living seekers that lack the poison (the pull rule's count)
     Unit* source = nullptr; // the living source at the row's spot
     std::vector<Unit*> sons; // every living source of the fight the area veto judges (one bounded walk per read)
+    // The pull, read once for the tick: whether this bot is the one opening a Son, and the one Son its shot goes to.
+    // The hold exemption compares against this pick, so another Son stays held even under the puller's own hit.
+    bool puller = false;
+    Unit* pullTarget = nullptr;
 };
 
 struct SeekTickCache
@@ -849,10 +854,12 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting and again two seconds later, both far inside the 8 s the dummy
-// aura lasts: the second read settles a heal the first one cannot explain (a pet, the boss's own stack count).
+// The siphon count runs one second after the sighting and again two seconds later, and the boss's health is read once
+// more nine seconds after it: the 8 s heal has run its course by then, so that read sees the heal the +1 s and +3 s
+// reads under-count. The first two settle a heal the counts alone cannot explain (a pet, the boss's own stack count).
 const std::uint32_t kSeekSiphonReadMs = 1000;
 const std::uint32_t kSeekSiphonSecondMs = 3000;
+const std::uint32_t kSeekSiphonThirdMs = 9000;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -954,6 +961,59 @@ bool IsSeekExemptTank(const RaidTankRoles& roles, Player* member)
             return true;
     }
     return false;
+}
+
+// The fallback puller when the third off-tank is not there: the living hunter nearest the row's spot, else the nearest
+// living ranged damage dealer that is not a tank or a healer. A charmed member, the boss's own victim and a dead one
+// are no puller: the victim cannot shoot and a charmed bot is hostile. Null when no off-tank is alive to take the Son
+// over or nobody in the raid can shoot it.
+Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss,
+                               const BossTacticRow& row)
+{
+    Player* hunter = nullptr;
+    float hunterYd = 0.0f;
+    Player* ranged = nullptr;
+    float rangedYd = 0.0f;
+    const auto judge = [&](Player* member)
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            return;
+        const bool bossVictim = boss && boss->GetVictim() == member;
+        if (!SeekFallbackCandidate(sServerFacade.IsAlive(member), !member->GetCharmerGuid().IsEmpty(), bossVictim,
+                IsSeekExemptTank(roles, member)))
+            return;
+        const float yd = member->GetDistance2dToCenter(row.spotX, row.spotY);
+        if (member->GetClass() == CLASS_HUNTER)
+        {
+            if (!hunter || yd < hunterYd)
+            {
+                hunter = member;
+                hunterYd = yd;
+            }
+            return;
+        }
+        if (ai->IsRanged(member) && !PlayerbotAI::IsHeal(member))
+        {
+            if (!ranged || yd < rangedYd)
+            {
+                ranged = member;
+                rangedYd = yd;
+            }
+        }
+    };
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+            judge(member);
+    }
+    else
+        judge(bot);
+    switch (SeekPullRoleOf(false, SeekFallbackPullBranch(roles.tanks.size()), hunter != nullptr, ranged != nullptr))
+    {
+        case SeekPullRole::Hunter: return hunter;
+        case SeekPullRole::Ranged: return ranged;
+        default: return nullptr;
+    }
 }
 
 // The seekers of this fight: every living group member that SeekWanted would send (no poison, not the boss's victim,
@@ -1152,7 +1212,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             g_seekRecords.erase(it);
             return false;
         }
-        if (record.engageMs == 0 && boss->GetVictim())
+        // The fight's combat start: the first read that sees the boss in combat with the group. The core arms
+        // BloodSiphon_Timer at the cycle length and only counts it down in combat, so cycle 1 is due a cycle after
+        // this. The victim is read too: a boss in combat with the group can be without one for a tick.
+        if (record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim()))
             record.engageMs = nowMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
         // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
@@ -1162,6 +1225,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             ++record.cycleNo;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
+            record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
             record.siphonCycle = record.cycleNo;
         }
@@ -1181,7 +1245,17 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
         }
-        dueMs = record.engageMs == 0 ? 0 : SeekDueMs(record.engageMs, record.lastCycleMs, cycleMs);
+        else if (record.siphonThirdAtMs != 0 && nowMs >= record.siphonThirdAtMs)
+        {
+            pendingSiphon = true;
+            pendingSiphonAtSec = 9;
+            pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingCycle = record.siphonCycle;
+            record.siphonThirdAtMs = 0;
+        }
+        // A due time nobody saw the siphon for is stale: past the overdue grace it rolls a cycle at a time, so the
+        // window and the forced burn follow the estimate instead of the missed siphon's past due.
+        dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs), cycleMs);
         cycleNo = record.cycleNo;
     }
     out.live = true;
@@ -1235,26 +1309,31 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     // the grid walk below). A Son farther than the reach is not counted: it can neither widen the search nor drop the
     // gather latch, since the gather cannot stand around it without leaving B.
     bool belowHold = false;
+    bool engagedSon = false;
     for (Unit* unit : fight.units)
     {
         if (unit->GetEntry() != row->targetEntry)
             continue;
         const float distFromSpotYd = unit->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
-        if (SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
-        {
+        // A Son already fighting inside the seek's reach is the pick wherever it stands (the one left on the healers
+        // at 11-25 yd from the spot was never selected at the spot's radius).
+        if (unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd)
+            engagedSon = true;
+        if (!belowHold &&
+            SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
             belowHold = true;
+        if (belowHold && engagedSon)
             break;
-        }
     }
     // The source the gather stands around: one pick for the whole raid. The latch holds across the reads: the
     // record's current source wins while its Son is alive and inside the seek's reach, even when the search shrinks
     // back to the spot's radius or the burn is forced — two Sons near the spot with damage spread between them would
     // otherwise flip the pick and restart the gather's readiness every read. Only a dead or out-of-reach source
     // repicks, and then the lowest health % (then lowest guid) of the search's sources is the new one. Without the
-    // third tank, or with the burn forced or a source already at the hold percent, the search reaches 35 yd, so the
-    // gather goes to the source wherever it stands.
+    // third tank, or with the burn forced, a source already at the hold percent or one already fighting inside the
+    // reach, the search reaches 35 yd, so the gather goes to the source wherever it stands.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold);
+    const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold, engagedSon);
     const std::vector<Creature*> sources =
         SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
     std::vector<SeekSourceChoice> atSpot;
@@ -1283,6 +1362,38 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     {
         if (std::find(out.sons.begin(), out.sons.end(), static_cast<Unit*>(candidate)) == out.sons.end())
             out.sons.push_back(candidate);
+    }
+    // The pull's own pick, read once for the tick: the tank roles are rebuilt here (not in every action's hold check,
+    // which asks this state), and only the one Son a pull may go to is exempt from the hold under the puller's hit. The
+    // pull rule decides whether a pull runs at all, so nothing is exempt while a Son already fights.
+    if (out.windowOpen && out.seekers >= kSeekPullMinMissing)
+    {
+        const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
+        const bool fallback = !thirdTank && SeekFallbackPullBranch(roles.tanks.size()) &&
+            FindSeekFallbackPuller(ai, bot, roles, boss, *row) == bot;
+        out.puller = thirdTank || fallback;
+        if (out.puller)
+        {
+            Unit* nearest = nullptr;
+            float nearestYd = std::numeric_limits<float>::max();
+            bool anyInCombat = false;
+            for (Creature* candidate : SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ,
+                    kSeekPickupYd))
+            {
+                const float toSpot = candidate->GetDistance2dToCenter(row->spotX, row->spotY);
+                if (candidate->IsInCombat())
+                    anyInCombat = true;
+                if (toSpot < nearestYd)
+                {
+                    nearest = candidate;
+                    nearestYd = toSpot;
+                }
+            }
+            const bool pullDue = thirdTank
+                ? SeekTankPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd)
+                : SeekFallbackPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd);
+            out.pullTarget = pullDue ? nearest : nullptr;
+        }
     }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
@@ -1898,8 +2009,16 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     if (sPlayerbotAIConfig.dungeonRunSeekAura)
     {
         SeekFight state;
-        if (ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, current))
-            return current;
+        if (ReadSeekFightCached(ai, bot, state))
+        {
+            // The puller's target is the one Son it is about to shoot: dropping it would re-pick the boss every tick
+            // and the shot would never go out (the hold answers true for a Son that is not the pick). Any other Son,
+            // and the pick once it fights, is dropped like before.
+            const bool pullHit = IsSeekSource(state, current) &&
+                SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat());
+            if (!pullHit && SeekHoldsUnit(state, current))
+                return current;
+        }
     }
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
@@ -2932,23 +3051,34 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         SeekFight state;
         if (ReadSeekFightCached(ai, bot, state))
         {
+            // The puller's own strike on the one Son it is fetching, before that Son fights, is the pull itself: the
+            // hold answers true for every Son that is not the picked source, so it would stand the tank's swing (or
+            // the fallback's shot) down and the Son would never aggro. A DoT is exempt from none of this: its ticks
+            // run through the hold, so it is vetoed even on the pull target (SeekDotVeto).
+            Unit* const struck = action->GetTarget();
             if (SeekDotOnSource(state, action))
             {
                 LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
                 return 0.0f;
             }
-            Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
-                : aoe ? AI_VALUE(Unit*, "dps aoe target")
-                : action->GetTarget();
-            Unit* source = SeekSourceInAction(state, picked);
-            Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
-            // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it down.
-            if (!heldSource && area)
-                heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
-            if (heldSource)
+            const bool pullHit = IsSeekSource(state, struck) &&
+                SeekPullHitExempt(state.puller, struck == state.pullTarget, struck->IsInCombat());
+            if (!pullHit)
             {
-                LogHoldKillVeto(ai, bot, "seek", heldSource);
-                return 0.0f;
+                Unit* picked = dpsAssist ? AI_VALUE(Unit*, "dps target")
+                    : aoe ? AI_VALUE(Unit*, "dps aoe target")
+                    : action->GetTarget();
+                Unit* source = SeekSourceInAction(state, picked);
+                Unit* heldSource = source && SeekHoldsUnit(state, source) ? source : nullptr;
+                // An area cast lands on every Son inside its reach, not only the picked one: any held Son stands it
+                // down.
+                if (!heldSource && area)
+                    heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
+                if (heldSource)
+                {
+                    LogHoldKillVeto(ai, bot, "seek", heldSource);
+                    return 0.0f;
+                }
             }
         }
     }
@@ -4538,7 +4668,8 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         if (record.engageMs == 0 || record.cycleMs == 0)
             continue;
         out.valid = true;
-        out.dueMs = SeekDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
+        out.dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs),
+                                    record.cycleMs);
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;
@@ -4579,15 +4710,25 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekTankTask task;
     if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunSeekAura)
         return task;
-    if (!PlayerbotAI::IsTank(bot))
-        return task;
-    const RaidTankRoles roles = GetRaidTankRoles(ai);
-    if (roles.tanks.size() < 3 || roles.tanks[2] != bot)
-        return task;
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return task;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    // The third off-tank pulls a Son that is not fighting; with fewer than three tanks alive its fallback does (the
+    // raid's nearest hunter, else a ranged damage dealer) and tanks[1] takes the Son over. Every other bot answers
+    // false before the fight read.
+    const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
+    const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
+    if (!thirdTank && !pickupTank)
+    {
+        if (roles.tanks.size() < 2 || roles.tanks.size() >= 3)
+            return task;
+        if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
+            return task;
+    }
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
+        return task;
+    if (!thirdTank && !pickupTank && FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot)
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -4599,6 +4740,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     Unit* fighting = nullptr;
     Unit* nearest = nullptr;
     float nearestToSpot = 0.0f;
+    bool anyInCombat = false;
     for (Creature* candidate : SeekSourcesNear(bot, state.row->targetEntry, state.row->spotX, state.row->spotY,
             state.row->spotZ, kSeekPickupYd))
     {
@@ -4608,6 +4750,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             nearest = candidate;
             nearestToSpot = toSpot;
         }
+        if (candidate->IsInCombat())
+            anyInCombat = true;
         if (candidate->GetVictim() == bot)
         {
             if (!onTank)
@@ -4616,31 +4760,49 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         else if (candidate->IsInCombat() && !fighting)
             fighting = candidate;
     }
-    if (onTank)
+    if (thirdTank || pickupTank)
     {
-        // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then). With the
-        // window shut and the Son already close to the hold percent the tank's swings would spend it before the next
-        // window: the tank stops auto-attacking it, and keeps only the threat.
-        task.valid = true;
-        task.source = onTank;
-        task.holdSwing = SeekTankSwingHeld(state.windowOpen, onTank->GetHealthPercent(),
-                                           static_cast<float>(state.row->priority));
-        if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
-            task.walkToSpot = true;
+        if (onTank)
+        {
+            // The tank's own source: drag it back to the spot, and hold it there (the normal tank rotation then). With
+            // the window shut and the Son already close to the hold percent the tank's swings would spend it before
+            // the next window: the tank stops auto-attacking it, and keeps only the threat.
+            task.valid = true;
+            task.source = onTank;
+            task.holdSwing = SeekTankSwingHeld(state.windowOpen, onTank->GetHealthPercent(),
+                                               static_cast<float>(state.row->priority));
+            if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
+                task.walkToSpot = true;
+            return task;
+        }
+        if (fighting)
+        {
+            task.valid = true;
+            task.source = fighting;
+            task.take = true;
+            return task;
+        }
+        // Only the third off-tank's own pull walks the Son down; the off-tank of a two-tank raid stands at the spot
+        // for the fallback's shot to arrive.
+        if (thirdTank &&
+            SeekTankPullDue(state.windowOpen, anyInCombat, state.seekers,
+                            nearest ? nearestToSpot : std::numeric_limits<float>::max()))
+        {
+            task.valid = true;
+            task.source = nearest;
+            task.pull = true;
+        }
         return task;
     }
-    if (fighting)
-    {
-        task.valid = true;
-        task.source = fighting;
-        task.take = true;
-        return task;
-    }
-    if (SeekTankPullDue(state.windowOpen, false, state.seekers, nearest ? nearestToSpot : std::numeric_limits<float>::max()))
+    // The fallback lifts a Son that stands out of the fight with one shot; once it fights, the off-tank takes it. Only
+    // a Son near the spot: its shot has to reach one the off-tank can then take over, not a patrol 60 yd out.
+    if (SeekFallbackPullDue(state.windowOpen, anyInCombat, state.seekers,
+                            nearest ? nearestToSpot : std::numeric_limits<float>::max()))
     {
         task.valid = true;
         task.source = nearest;
         task.pull = true;
+        task.rangedPull = true;
     }
     return task;
 }
@@ -4709,7 +4871,6 @@ bool TauntAuraGated(Player* bot, Unit* subject)
 
 bool BossTacticsSeekTankAction::Execute(Event& event)
 {
-    (void)event;
     AiObjectContext* context = ai->GetAiObjectContext();
     const SeekTankTask task = FindBossSeekTank(ai, bot);
     if (!task.valid)
@@ -4745,9 +4906,23 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     if (task.pull)
     {
         hasLast = false;
-        if (AI_VALUE(Unit*, "current target") != task.source)
-            return Attack(bot, task.source);
-        return false;
+        if (!SeekTankPullNeeded(task.source->IsInCombat(), task.source->GetVictim() == bot))
+            return false;
+        if (task.rangedPull)
+        {
+            // The shot opens the Son for the off-tank's pickup: the shoot action resolves the equipped ranged weapon
+            // itself (CastShootAction: a bow, gun or crossbow fires the classic auto-repeat shot, a wand its "shoot",
+            // thrown a "throw"), and a weapon hit applies no spell aura at all. The hunter's class pull, Serpent
+            // Sting, is never cast here: its periodic damage aura's ticks would run through the seek hold and the shut
+            // window and kill the Son before the next siphon needs it. Out of range the tick is left to the walk and
+            // the next read tries again.
+            if (AI_VALUE(Unit*, "current target") != task.source)
+                return Attack(bot, task.source, kSeekPickupYd);
+            return ai->DoSpecificAction("shoot", event, true);
+        }
+        // The attack order carries the walk to the Son with it (the reach action) and the swing at contact arms the
+        // fight. The branch used to return false once the target was set, so the tank never moved.
+        return Attack(bot, task.source, kSeekPickupYd);
     }
     if (task.walkToSpot)
     {
@@ -4836,6 +5011,10 @@ struct TauntAfterEpisode
 
 std::mutex g_tauntAfterMutex;
 std::map<TauntAfterKey, TauntAfterEpisode> g_tauntAfter;
+// The taunt-immune subjects this fight already reported, keyed like the episode (map, instance, subject and row) with
+// the last read: the row can never move such a subject, so one line per fight says why, and the tanks that read the
+// same subject afterwards stay quiet.
+std::map<TauntAfterKey, std::uint32_t> g_tauntAfterImmune;
 std::atomic<std::uint32_t> g_tauntAfterPruneMs{0};
 // A subject nobody read for two minutes left the fight; the episode goes with it.
 constexpr std::uint32_t kTauntAfterStaleMs = 120000;
@@ -4876,6 +5055,11 @@ void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t instanceId, std::uint32_t no
             drop = subject && !subject->IsAlive();
         }
         it = drop ? g_tauntAfter.erase(it) : std::next(it);
+    }
+    for (auto it = g_tauntAfterImmune.begin(); it != g_tauntAfterImmune.end();)
+    {
+        bool const drop = std::get<1>(it->first) == instanceId && nowMs - it->second > kTauntAfterStaleMs;
+        it = drop ? g_tauntAfterImmune.erase(it) : std::next(it);
     }
 }
 
@@ -4974,12 +5158,29 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             TauntAfterEpisode episode;
             bool close = false;
             bool regained = false;
+            const bool tauntable = !TargetTauntImmune(unit);
             {
                 std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
-                TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
+                TauntAfterKey const key = TauntAfterKeyOf(bot, unit, *row);
+                TauntAfterEpisode& state = g_tauntAfter[key];
                 state.lastReadMs = nowMs;
+                // A taunt-immune subject opens no episode at all (TauntEpisodeTick), so the row is dead weight for this
+                // fight; one line per fight says so instead of the row silently doing nothing.
+                if (!tauntable)
+                {
+                    auto const reported = g_tauntAfterImmune.find(key);
+                    if (reported == g_tauntAfterImmune.end())
+                    {
+                        g_tauntAfterImmune[key] = nowMs;
+                        sLog.outString("taunt_after skipped: target taunt-immune (map %u, entry %u)",
+                                       unit->GetMapId(), unit->GetEntry());
+                    }
+                    else
+                        reported->second = nowMs;
+                }
                 std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                const TauntEpisodeRead read = TauntEpisodeTick(onNonTank, victimIsTank, state.open, state.spent,
+                const TauntEpisodeRead read = TauntEpisodeTick(tauntable, onNonTank, victimIsTank,
+                    state.open, state.spent,
                     sinceMs, deadlineMs, victimIsAssigned);
                 if (read.starts)
                 {

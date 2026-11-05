@@ -111,7 +111,7 @@ int main()
         CHECK(kept.ready);
         CHECK(kept.siphonCycle == 1 && kept.siphonDosed == 12 && kept.siphonUndosed == 3);
 
-        std::uint32_t const due = SeekDueMs(kept.engageMs, kept.lastCycleMs, kept.cycleMs);
+        std::uint32_t const due = SeekCycleDueMs(kept.engageMs, kept.lastCycleMs, kept.cycleMs);
         CHECK(due == 131000);
         CHECK(SeekWindowOpen(52000, due, kept.leadMs));
         CHECK(!SeekWindowOpen(30000, due, kept.leadMs)); // before the window: not a reload's effect, the fight's
@@ -197,14 +197,20 @@ int main()
     CHECK(SeekSiphonAtLabel(3004) == "at=+3004ms");
 
     // SeekSiphonSecondReadKept: the +3 s read lands beside the +1 s one; the record's siphonDosed/siphonUndosed (the
-    // run line's) are never overwritten by it.
+    // run line's) are never overwritten by it. The +9 s read (the end of the 8 s heal) only logs: it replaces neither.
     {
         SeekCycleRecord record;
         SeekStoreSiphonRead(record, 1, 12, 3);
         SeekStoreSiphonRead(record, 3, 14, 1);
         CHECK(record.siphonDosed == 12 && record.siphonUndosed == 3);
         CHECK(record.siphonLateDosed == 14 && record.siphonLateUndosed == 1);
+        SeekStoreSiphonRead(record, 9, 0, 0);
+        CHECK(record.siphonDosed == 12 && record.siphonUndosed == 3);
+        CHECK(record.siphonLateDosed == 14 && record.siphonLateUndosed == 1);
     }
+
+    // SeekSiphonAtLabel at the third read: the label carries the real elapsed time of the +9 s read.
+    CHECK(SeekSiphonAtLabel(9007) == "at=+9007ms");
 
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;

@@ -31,23 +31,84 @@ int main()
     // The dose window is [due - lead, due - 3 s]: the first 10 s of the cycle are the previous siphon's tail and the
     // last 3 s are too late for the dose to be on at the siphon.
     {
-        const std::uint32_t due = SeekDueMs(0, 0, 90000);
-        CHECK(due == 90000);
+        const std::uint32_t due = 90000;
         CHECK(!SeekWindowOpen(9999, due, 80000));
         CHECK(SeekWindowOpen(10000, due, 80000));
         CHECK(SeekWindowOpen(87000, due, 80000));
         CHECK(!SeekWindowOpen(87001, due, 80000));
     }
 
+    // SeekWindowStaysOpenWhenOverdue: the raw window does not shut at due - 3 s when the 24324 is not seen (walk 40
+    // missed two, leaving 184-185 s gaps); it is open past the due time, and the caller's overdue read
+    // (SeekRolledDueMs) decides how long. The last three seconds before due stay shut.
+    {
+        const std::uint32_t due = 90000;
+        CHECK(!SeekWindowOpen(87001, due, 80000));
+        CHECK(SeekWindowOpen(90000, due, 80000));   // due with no sighting: open
+        CHECK(SeekWindowOpen(184000, due, 80000));  // still open on the raw due: the caller rolls it
+        CHECK(SeekForceBurn(184000, due));
+        // The sighting moves the due time a cycle ahead: the window shuts and waits for the next one.
+        CHECK(!SeekWindowOpen(184000, 274000, 80000));
+        CHECK(SeekWindowOpen(194000, 274000, 80000));
+        CHECK(!SeekWindowOpen(1000, 0, 80000));     // no due time yet
+    }
+
+    // SeekWindowShutsAfterTheOverdueGrace: a due time nobody saw the siphon for is stale, and the window must not stay
+    // open for the rest of the fight (the quiet group stood at the spot and the Son was held there). Hakkar's row is a
+    // 90 s cycle with an 80 s window, so the grace has to stay under the 10 s between the roll and the rolled window:
+    // the window stays open up to due + 8 s, the estimate then rolls one cycle (due += 90 s) and the window is shut
+    // from due + 8 s until due_new - 80 s = due + 10 s, where the rolled cycle's own window opens.
+    {
+        const std::uint32_t due = 90000;
+        const std::uint32_t cycle = 90000;
+        const std::uint32_t lead = 80000;
+        CHECK(kSeekOverdueGraceMs == 8000);
+        CHECK(SeekRolledDueMs(due + 7999, due, cycle) == due);   // still the overdue grace
+        CHECK(SeekRolledDueMs(due + 8000, due, cycle) == due);   // due + 8 s, inclusive
+        CHECK(SeekRolledDueMs(due + 8001, due, cycle) == due + cycle); // rolled one cycle (due += 90 s)
+        const std::uint32_t rolled = SeekRolledDueMs(due + 8001, due, cycle);
+        CHECK(rolled != due);                                   // not the stale due
+        CHECK(!SeekWindowOpen(due + 8001, rolled, lead));       // shut right after the roll
+        CHECK(!SeekWindowOpen(rolled - lead - 1, rolled, lead)); // due + 9.999 s: still shut
+        CHECK(SeekWindowOpen(rolled - lead, rolled, lead));     // due + 10 s: the rolled window opens
+        CHECK(!SeekForceBurn(due + 8001, rolled));              // and the burn waits for it
+        CHECK(SeekForceBurn(rolled - 15000, rolled));
+        // A clock that is never sighted keeps rolling: a 94 s overdue gap is due + one cycle, a 184 s one two cycles.
+        CHECK(SeekRolledDueMs(184000, due, 90000) == 180000);
+        CHECK(SeekRolledDueMs(184000, due, 90000) == due + 90000);
+        CHECK(SeekRolledDueMs(274000, due, 90000) == 270000);
+        // No due time (no combat start yet) stays 0; a zero cycle cannot roll.
+        CHECK(SeekRolledDueMs(184000, 0, 90000) == 0);
+        CHECK(SeekRolledDueMs(184000, due, 0) == due);
+    }
+
+    // SeekFirstSiphonIsCountedFromThePull: before any siphon is seen the due time is the fight's combat start plus one
+    // cycle, since the core's 90 s timer only runs in combat, so cycle 1 gets the same 80 s window and 15 s forced
+    // burn as every later cycle. An observed siphon resyncs the cadence to itself, and a fight with no combat start
+    // yet has no due time.
+    {
+        const std::uint32_t start = 1000;
+        const std::uint32_t first = SeekCycleDueMs(start, 0, 90000);
+        CHECK(first == 91000);
+        CHECK(!SeekWindowOpen(10999, first, 80000)); // opens at start + 10 s
+        CHECK(SeekWindowOpen(11000, first, 80000));
+        CHECK(SeekWindowOpen(88000, first, 80000));
+        CHECK(!SeekWindowOpen(88001, first, 80000));
+        CHECK(!SeekForceBurn(75999, first)); // forced 15 s before due
+        CHECK(SeekForceBurn(76000, first));
+        CHECK(SeekCycleDueMs(start, 92000, 90000) == 182000);
+        CHECK(SeekCycleDueMs(0, 0, 90000) == 0);
+    }
+
     // A sighting starts a new cycle only half a cycle after the last accepted one: every bot sees the same siphon
     // within a few hundred ms, so the second sighting must not push the due time again.
     {
         CHECK(SeekCycleAccepts(0, 91000, 90000));
-        CHECK(SeekDueMs(0, 91000, 90000) == 181000);
+        CHECK(SeekCycleDueMs(1000, 91000, 90000) == 181000);
         CHECK(!SeekCycleAccepts(91000, 95000, 90000));
-        CHECK(SeekDueMs(0, 91000, 90000) == 181000);
+        CHECK(SeekCycleDueMs(1000, 91000, 90000) == 181000);
         CHECK(SeekCycleAccepts(91000, 136000, 90000));
-        CHECK(SeekDueMs(0, 136000, 90000) == 226000);
+        CHECK(SeekCycleDueMs(1000, 136000, 90000) == 226000);
     }
 
     // The walk aims kSeekCloudInsetYd inside the cloud's edge and pays the decision latency first: at 14 yd from an
@@ -104,6 +165,68 @@ int main()
     CHECK(!SeekTankPullDue(true, false, 3, 61.0f));
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
+
+    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to and hit, not dropped after one
+    // target set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son
+    // in combat). The attack order carries the walk and the swing itself; once the Son fights, or follows the tank,
+    // the take/drag branch owns it.
+    CHECK(SeekTankPullNeeded(false, false));
+    CHECK(!SeekTankPullNeeded(true, false));
+    CHECK(!SeekTankPullNeeded(false, true));
+    CHECK(!SeekTankPullNeeded(true, true));
+
+    // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
+    // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.
+    CHECK(SeekPullHitExempt(true, true, false));
+    // Only the picked Son: a puller's hit on another Son stays held, so the spare source is not damaged.
+    CHECK(!SeekPullHitExempt(true, false, false));
+    // Once the Son fights the hold applies to it like to any other Son; a bot that is not the puller never exempts.
+    CHECK(!SeekPullHitExempt(true, true, true));
+    CHECK(!SeekPullHitExempt(false, true, false));
+    CHECK(!SeekPullHitExempt(false, false, true));
+    // The hold itself still answers true for a Son that is not the pick: the exemption is the caller's, on the puller's
+    // own strike against the Son it has not engaged yet.
+    CHECK(SeekHoldDecision(false, true, false, false, 100.0f, 30.0f, 30.0f, 5));
+
+    // SeekPullFallsBackToHunter: with fewer than three tanks alive the third off-tank's pull is a hunter's shot, then
+    // a ranged damage dealer's; nobody pulls without an off-tank (tanks[1]) to take the Son over.
+    CHECK(SeekPullRoleOf(true, true, true, true) == SeekPullRole::ThirdTank);
+    CHECK(SeekPullRoleOf(false, true, true, true) == SeekPullRole::Hunter);
+    CHECK(SeekPullRoleOf(false, true, false, true) == SeekPullRole::Ranged);
+    CHECK(SeekPullRoleOf(false, true, false, false) == SeekPullRole::None);
+    CHECK(SeekPullRoleOf(false, false, true, true) == SeekPullRole::None);
+
+    // SeekFallbackPullerIsTwoTankOnly: the fallback shot belongs to exactly two living tanks — with three the third
+    // off-tank walks the Son down itself, and with fewer than two nobody is left at the spot to take the Son over.
+    CHECK(SeekFallbackPullBranch(2));
+    CHECK(!SeekFallbackPullBranch(0));
+    CHECK(!SeekFallbackPullBranch(1));
+    CHECK(!SeekFallbackPullBranch(3));
+    CHECK(!SeekFallbackPullBranch(4));
+
+    // SeekFallbackPullerSkips: a charmed member is hostile and its AI is gone, the boss's current victim cannot turn
+    // and shoot (and the pull would take the boss's target out of the tank's face), a dead one is gone, and the three
+    // tanks the seek leaves out are never the fallback. Only the clean ranged member pulls.
+    CHECK(SeekFallbackCandidate(true, false, false, false));   // a clean candidate
+    CHECK(!SeekFallbackCandidate(false, false, false, false));  // dead
+    CHECK(!SeekFallbackCandidate(true, true, false, false));    // charmed
+    CHECK(!SeekFallbackCandidate(true, false, true, false));    // the boss's victim
+    CHECK(!SeekFallbackCandidate(true, false, false, true));    // an exempt tank
+    CHECK(!SeekFallbackCandidate(true, true, true, true));      // every skip at once
+
+    // SeekFallbackPullsOnlyNearTheSpot: the fallback's shot reaches a Son within 35 yd of the spot (the third
+    // off-tank's own pull still walks to one within 60), so a Son just inside the old 60 yd reach is not pulled; the
+    // rule also needs the open window, no Son in the fight yet, and enough seekers still without the poison.
+    CHECK(SeekFallbackPullDue(true, false, 3, 34.9f));
+    CHECK(SeekFallbackPullDue(true, false, 3, kSeekFallbackYd));
+    CHECK(!SeekFallbackPullDue(true, false, 3, kSeekFallbackYd + 0.1f));
+    CHECK(!SeekFallbackPullDue(true, false, 3, 59.0f));
+    CHECK(!SeekFallbackPullDue(true, false, 2, 30.0f));
+    CHECK(!SeekFallbackPullDue(true, true, 3, 30.0f));
+    CHECK(!SeekFallbackPullDue(false, false, 3, 30.0f));
+    // The third off-tank's own pull keeps its 60 yd walk-in.
+    CHECK(SeekTankPullDue(true, false, 3, 59.0f));
+    CHECK(!SeekTankPullDue(true, false, 3, 61.0f));
 
     // SeekAreaHoldsASonBesideThePick: an area action's area is judged Son by Son, so the selected Son may be burnable
     // while a second, held Son standing beside it is not: the cast reaches both, so it is vetoed. When the area reaches
@@ -182,15 +305,23 @@ int main()
     }
 
     // Without the third tank the gather goes to the source wherever it stands within 35 yd of the spot (M3).
-    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
-    CHECK(SeekSourceSearchYd(false, false, false) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(false, false, false, false) == kSeekFallbackYd);
     CHECK(kSeekFallbackYd == 35.0f);
+
+    // SeekInCombatOffSpotSonIsPicked: with three tanks a Son already fighting 11-25 yd from the spot (on the healers)
+    // used to stay outside the spot's 8 yd search and was never picked; an engaged Son inside the 35 yd reach now
+    // widens the search, so the gather and the tank's drag take it.
+    CHECK(SeekSourceSearchYd(true, false, false, true) == kSeekFallbackYd);
+    CHECK(18.0f <= SeekSourceSearchYd(true, false, false, true));
+    CHECK(SeekSourceSelectable(true, 5));
+    CHECK(!SeekSourceSelectable(false, 5)); // an idle Son is still not a pick
 
     // SeekForcedBurnReachesOffSpotSource: with three tanks the search used to stay at the spot's 8 yd, so a Son 11 yd
     // out could never become the gather source and was held for the whole fight. A forced burn widens the reach to
     // 35 yd, and the source the gather then stands around is not held once the gather is ready.
-    CHECK(SeekSourceSearchYd(true, true, false) == kSeekFallbackYd);
-    CHECK(11.0f <= SeekSourceSearchYd(true, true, false));
+    CHECK(SeekSourceSearchYd(true, true, false, false) == kSeekFallbackYd);
+    CHECK(11.0f <= SeekSourceSearchYd(true, true, false, false));
     CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 11.0f, 5));
 
     // SeekBelowHoldSourceStillWaits: a low Son only widens the search while it stands inside the seek's reach and
@@ -198,7 +329,7 @@ int main()
     CHECK(SeekSourceFinishable(true, 14.0f, 30.0f, 5));
     CHECK(!SeekSourceFinishable(false, 14.0f, 30.0f, 5));
     CHECK(!SeekSourceFinishable(true, 31.0f, 30.0f, 5));
-    CHECK(SeekSourceSearchYd(true, false, true) == kSeekFallbackYd);
+    CHECK(SeekSourceSearchYd(true, false, true, false) == kSeekFallbackYd);
     CHECK(SeekHoldDecision(true, false, false, false, 14.0f, 30.0f, 5.0f, 5));
     CHECK(SeekHoldDecision(true, false, false, false, 40.0f, 30.0f, 5.0f, 5));
     CHECK(SeekHoldDecision(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));
@@ -210,7 +341,7 @@ int main()
     CHECK(!SeekFinishableInReach(true, 14.0f, 30.0f, 36.0f, 5));
     CHECK(!SeekFinishableInReach(true, 31.0f, 30.0f, 10.0f, 5));
     CHECK(!SeekFinishableInReach(false, 14.0f, 30.0f, 10.0f, 5));
-    CHECK(SeekSourceSearchYd(true, false, false) == kSeekSpotYd);
+    CHECK(SeekSourceSearchYd(true, false, false, false) == kSeekSpotYd);
     // A picked Son beyond the reach is held even inside the window with the gather ready: the gather cannot stand
     // around it inside the row's radius.
     CHECK(SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 36.0f, 5));
