@@ -24,6 +24,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
+| [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `1` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
 | [`AiPlayerbot.WarlockRaidRotation`](#aiplayerbotwarlockraidrotation) | `0` | Stops warlock DoTs, curses and Drain Soul from wasting casts on targets that are about to die. |
 
@@ -89,6 +90,22 @@ In 5-player dungeons with a living main tank holding the mob, rogues monitor the
 This behavior applies only while a living main tank other than the rogue is in the fight and holds the mob (it is the target's victim or has threat on it), so rogues do not blow cooldowns on unengaged loose adds or while solo, without an active tank, or in the open world. Raid rogues keep their own Feint/Vanish rows regardless of this toggle. Vanish fires only while the mob is held by the tank or the rogue.
 
 Vanish is prioritized below Feint so a ready Feint is always attempted first. When set to `0`, the dungeon rows are gone and only the base low-health chain (Evasion, then Vanish, then Feint) remains.
+
+</details>
+
+### `AiPlayerbot.SapApproachAvoidPack`
+Makes a rogue that Saps its crowd control mark before the pull approach from the side away from the mob's pack-mates instead of walking straight through them.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- The rogue only walks in while Stealth is up; with Stealth on cooldown it waits.
+- It picks a spot in Sap reach of the marked mob, as far as possible from the other hostile mobs within 30 yards of it.
+- The walk there must stay clear of each pack-mate by its stealth detection range (the core's own formula, which grows when the mob is several levels above the rogue), plus the 5 yards in which a mob turns to look, plus a 2-yard margin. If the direct path does not, the rogue tries other spots around the mob, then a detour round the outside of the pack.
+- When no spot and path are clear, the rogue skips that Sap for 30 seconds, writes one line to the server log, and the tank pulls as usual.
+
+When set to `0`, the rogue walks straight to its own side of the mob, as before.
 
 </details>
 

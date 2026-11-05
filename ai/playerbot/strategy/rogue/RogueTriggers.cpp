@@ -149,6 +149,14 @@ bool SapCcMarkTrigger::IsActive()
         ai->HasAura("sap", target))
         return false;
 
+    // The approach found no route clear of the pack (ReachSapAction): the tank pulls instead.
+    if (TortoiseBots::SapSkipActive(
+            static_cast<uint32>(AI_VALUE2(int32, "manual int", TortoiseBots::kSapSkipTargetKey)),
+            target->GetObjectGuid().GetCounter(),
+            static_cast<uint32>(AI_VALUE2(int32, "manual int", TortoiseBots::kSapSkipUntilKey)),
+            WorldTimer::getMSTime()))
+        return false;
+
     return true;
 }
 

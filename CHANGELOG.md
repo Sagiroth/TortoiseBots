@@ -1,6 +1,7 @@
 # Changelog
 
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+- Fixed: rogue bots no longer walk through the pack to Sap a marked target, #1527.
 
 ## v1.15.1 (2026-11-03)
 

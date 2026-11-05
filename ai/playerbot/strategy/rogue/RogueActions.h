@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/GroupMembers.h"
+#include "../../../runtime/policy/class/RogueSapApproachPolicy.h"
 #include "../../../runtime/policy/class/RogueThreatPolicy.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/UseItemAction.h"
@@ -292,6 +293,9 @@ namespace ai
             float standDist = bot->GetObjectBoundingRadius() + target->GetObjectBoundingRadius() + edgeGap;
             standDist = std::min(standDist, bot->GetCombatReach(target, false, 0.0f) - 1.0f);
 
+            if (sPlayerbotAIConfig.sapApproachAvoidPack)
+                return ApproachAroundPack(target, standDist);
+
             const float angle = target->GetAngle(bot);
             WorldPosition stand(target->GetMapId(),
                 target->GetPositionX() + standDist * std::cos(angle),
@@ -300,6 +304,16 @@ namespace ai
             stand.setZ(stand.GetHeight());
             return MoveTo(stand.GetMapId(), stand.getX(), stand.getY(), stand.getZ());
         }
+
+    private:
+        // Walks to a stand point away from the target's pack-mates by a path that
+        // keeps out of their stealth detection (RogueSapApproachPolicy.h); with no
+        // such route the Sap is skipped for a while and the tank pulls.
+        bool ApproachAroundPack(Unit* target, float standDist);
+
+        ObjectGuid planTarget;
+        uint32 planMs = 0;
+        TortoiseBots::SapApproachPlan plan;
     };
 
     class CastSapAction : public CastMeleeSpellAction

@@ -900,6 +900,17 @@ AiPlayerbot.WarlockRaidRotation = 0
 # 1 - Feint on medium threat, Vanish on critical threat in 5-man dungeons (Default)
 AiPlayerbot.RogueDungeonThreatDrops = 1
 
+# Rogue pre-pull Sap approach around the pack.
+# A rogue sent to Sap its CC mark before the pull walks, stealthed, to a spot
+# on the side of the mob away from its pack-mates, by a path that stays out of
+# each pack-mate's stealth detection range (plus the range in which it turns
+# to look, plus a margin), going round the pack if it must. Without Stealth up
+# it waits. If no such spot and path exist the rogue skips that Sap for 30
+# seconds and the tank pulls. On by default.
+# 0 - walk straight to the rogue's side of the mob (old behaviour)
+# 1 - approach around the pack, skip the Sap when no safe route exists (Default)
+AiPlayerbot.SapApproachAvoidPack = 1
+
 # Hunter Aspect of the Viper on low mana.
 # A hunter that has learned Aspect of the Viper (Turtle 1.18.1 spell 45651,
 # trainer level 56) switches to it in combat when its mana drops below 20
