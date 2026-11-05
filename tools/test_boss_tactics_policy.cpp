@@ -658,6 +658,26 @@ int main()
         CHECK(PickKillFirst(active, mixed) == 0);
     }
 
+    // TestKillFirstGridMergeKeepsTheHealerVictim: a Shade the attackers path found (victimHealer read from its victim)
+    // and the grid read finds again is one candidate, not two: the grid's victim role merges into the existing one,
+    // and either read saying "a healer" keeps the flag. Failing case before the merge: the far Shade on a healer lost
+    // to the near one on a damage dealer, because the attackers path never set the flag and the grid hit was dropped.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 1),
+        };
+        const ActiveBossRows active = Active(rows);
+        std::vector<TacticCandidate> shades = { Cand(14986, 4), Cand(14986, 14) };
+        CHECK(PickKillFirst(active, shades) == 0);    // no read says healer yet: the nearer
+        MergeVictimHealer(shades[1], true);           // the grid read of the same far Shade: its victim is a healer
+        CHECK(shades[1].victimHealer);
+        CHECK(PickKillFirst(active, shades) == 1);
+        MergeVictimHealer(shades[1], false);          // a grid read that missed the victim never clears the flag
+        CHECK(shades[1].victimHealer);
+        MergeVictimHealer(shades[0], false);
+        CHECK(!shades[0].victimHealer);
+    }
+
     // hold_kill: DPS leave a boss entry alone while more than `priority` living blockers of it are near. The modal
     // case, "a Mad Servant is held while one Mad Voidwalker lives": the two Zul'Gurub Servant rows, budget 0, blockers
     // the Mad Voidwalker 15146 and the unselectable Portal of Madness 15141.

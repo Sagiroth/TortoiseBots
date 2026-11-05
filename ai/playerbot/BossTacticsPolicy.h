@@ -2127,6 +2127,14 @@ namespace ai
         bool victimHealer = false; // its victim is a healer of the bot's group (a Shade of Jin'do on a healer)
     };
 
+    // A candidate the attackers path and the grid read both found keeps one entry; a victim that is a healer on either
+    // read counts (the grid read sees the victim from the unit, the attackers path from the same unit: they agree
+    // unless one read missed it).
+    inline void MergeVictimHealer(TacticCandidate& existing, bool gridVictimHealer)
+    {
+        existing.victimHealer = existing.victimHealer || gridVictimHealer;
+    }
+
     // Nobody is sent after a creature further away than this.
     constexpr float kBossTacticsEngageRange = 40.0f;
 
