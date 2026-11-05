@@ -60,6 +60,7 @@ namespace ai
         NeedsAura = 19,       // only a bot carrying `spell_id` may target `target_entry`
         BurnMana = 20,        // up to `priority` eligible bots drain the boss's mana while it is at or above `param` %
         RangedOnly = 21,      // melee bots leave the boss alone while it stands `param` yd or more above them
+        ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -169,6 +170,8 @@ namespace ai
             return BossTacticKind::BurnMana;
         if (text == "ranged_only")
             return BossTacticKind::RangedOnly;
+        if (text == "threat_successor")
+            return BossTacticKind::ThreatSuccessor;
         return BossTacticKind::None;
     }
 
@@ -308,10 +311,12 @@ namespace ai
             // The health band is a percentage range, low to high.
             if (row.hpMin > row.hpMax || row.hpMax > 100)
                 return false;
-            // Only a row a fight scan answers can carry a gate. These four are read straight from the table (the dps
-            // and tank pickers, the linked_death scan), so a gate on one of them would never be consulted.
+            // Only a row a fight scan answers can carry a gate. These five are read straight from the table (the dps
+            // and tank pickers, the linked_death scan, the threat reference), so a gate on one of them would never be
+            // consulted.
             if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
-                    row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath))
+                    row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath ||
+                    row.kind == BossTacticKind::ThreatSuccessor))
                 return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
@@ -396,6 +401,11 @@ namespace ai
             if (row.kind == BossTacticKind::RangedOnly &&
                 (row.param < 3.0f || row.param > 40.0f || row.mode != TacticMode::Default))
                 return false;
+            // threat_successor: the boss itself and nothing else — the row marks the creature whose damage dealers are
+            // capped at the off-tank. Like ranged_only it takes no mode word, and it carries no gate (see above).
+            if (row.kind == BossTacticKind::ThreatSuccessor &&
+                (row.targetEntry != 0 || row.mode != TacticMode::Default))
+                return false;
             // The cycle and spot columns are the seek_aura kind's.
             if (row.kind != BossTacticKind::SeekAura &&
                 (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
@@ -447,6 +457,8 @@ namespace ai
             // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
             if (row.kind == BossTacticKind::RangedOnly)
                 rangedOnlyGaps_[row.map].emplace(row.targetEntry != 0 ? row.targetEntry : row.bossEntry, row.param);
+            if (row.kind == BossTacticKind::ThreatSuccessor)
+                threatSuccessors_[row.map].insert(TacticSubjectEntry(row));
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -576,6 +588,18 @@ namespace ai
             return it == byMap->second.end() ? 0.0f : it->second;
         }
 
+        // Whether the creature entry carries a `threat_successor` row on this map: the damage dealers' threat is then
+        // capped at the assigned off-tanks' highest (ThreatCapPolicy.h), so the second tank stays second for a threat
+        // reset. Read from the table by ThreatValue::GetTankThreat, so no gate or mode can qualify it. False before the
+        // seal.
+        bool HasThreatSuccessor(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || threatSuccessors_.empty())
+                return false;
+            auto const byMap = threatSuccessors_.find(map);
+            return byMap != threatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
+        }
+
         // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
         // before the seal.
         bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
@@ -677,6 +701,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;

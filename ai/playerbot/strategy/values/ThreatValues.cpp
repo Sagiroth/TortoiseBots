@@ -1,6 +1,8 @@
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "ThreatValues.h"
 
 #include "Objects/Creature.h"
@@ -92,26 +94,38 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (!group)
         return 0;
 
-    std::vector<float> tankThreats;
-
-    for (Player* player : LiveGroupMembers(group))
+    // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
+    // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    std::vector<ThreatCapTank> tanks;
+    tanks.reserve(roles.tanks.size());
+    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
     {
+        Player* player = roles.tanks[index];
         if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
             continue;
-
-        if (ai->IsTank(player))
-            tankThreats.push_back(sServerFacade.GetThreatManager(target).getThreat(player));
+        ObjectGuid const charmer = player->GetCharmerGuid();
+        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+            continue;
+        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1});
     }
 
-    // A taunt-immune target cannot be pulled back, so the damage dealers are measured against the second-highest tank
-    // and that tank stays second (the off-tank takes the boss on the next threat reset).
-    return ThreatCapReference(tankThreats, TargetTauntImmune(target));
+    // The off-tank cap is the boss data's call (ai_boss_tactic kind `threat_successor`), never the creature's taunt
+    // immunity: a taunt-immune boss without that row keeps the highest tank.
+    return ThreatCapReference(tanks, ai::ThreatSuccessorTarget(target));
 }
 
 bool ai::TargetTauntImmune(Unit* target)
 {
     Creature* const creature = target ? dynamic_cast<Creature*>(target) : nullptr;
     return creature && creature->HasImmunityFlag(CREATURE_IMMUNITY_TAUNT);
+}
+
+bool ai::ThreatSuccessorTarget(Unit* target)
+{
+    if (!target || target->getObjectGuid().IsPlayer())
+        return false;
+    return GetBossTactics().HasThreatSuccessor(target->GetMapId(), target->GetEntry());
 }
 
 uint8 ThreatValue::Calculate(Unit* target)

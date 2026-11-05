@@ -2481,6 +2481,47 @@ int main()
         }
     }
 
+    // T4 threat_successor: the boss itself (target_entry 0), no mode word and no gate. The row turns the damage
+    // dealers' threat cap into the assigned off-tanks' highest (ThreatCapPolicy.h) and is read straight from the table
+    // by ThreatValue::GetTankThreat, so a gate could never be answered.
+    CHECK(ParseBossTacticKind("threat_successor") == BossTacticKind::ThreatSuccessor); // ParseThreatSuccessorKind
+    CHECK(static_cast<int>(BossTacticKind::ThreatSuccessor) == 22);
+    {
+        BossTacticRow cap = Row(309, 14834, BossTacticKind::ThreatSuccessor);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(cap));                        // ThreatSuccessorRowAccepted
+        }
+        {
+            BossTacticRow entryTarget = cap;
+            entryTarget.targetEntry = 11357;
+            BossTacticTable table;
+            CHECK(!table.Add(entryTarget));               // ThreatSuccessorRowRefusedWithTarget
+        }
+        {
+            BossTacticRow withMode = cap;
+            withMode.mode = TacticMode::UntilTank;
+            BossTacticTable table;
+            CHECK(!table.Add(withMode));                  // ThreatSuccessorRowRefusedWithMode
+        }
+        {
+            BossTacticRow withBand = cap;
+            withBand.hpMin = 50;
+            BossTacticTable table;
+            CHECK(!table.Add(withBand));                  // ThreatSuccessorRowRefusedWithGate
+        }
+        // The reference reads the row by the target's own map and entry, never by the row's boss.
+        {
+            BossTacticTable table;
+            CHECK(!table.HasThreatSuccessor(309, 14834)); // not sealed yet
+            CHECK(table.Add(cap));
+            table.Seal();
+            CHECK(table.HasThreatSuccessor(309, 14834));  // ThreatSuccessorByEntry
+            CHECK(!table.HasThreatSuccessor(309, 11357));
+            CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
+        }
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

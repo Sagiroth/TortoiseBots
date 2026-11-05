@@ -49,7 +49,7 @@ Two extra opt-ins:
 | :--- | :--- |
 | `map` | Map id. |
 | `boss_entry` | Creature entry whose presence among the bots' attackers activates the row. |
-| `kind` | See Kinds below: `interrupt`, `kill_first`, `behind`, `avoid_cast`, `tank_hold`, `hold_kill`, `one_at_a_time`, `linked_death`, `seek_aura`, `pull_gate`, `spread`, `use_object`, plus the aura kinds behind their own key (`dps_hold_after`, `dispel_priority`, `flee_on_aura`, `freeze_on_aura`, `taunt_after_cast`, `swap_on_aura`). |
+| `kind` | See Kinds below: `interrupt`, `kill_first`, `behind`, `avoid_cast`, `tank_hold`, `hold_kill`, `one_at_a_time`, `linked_death`, `seek_aura`, `pull_gate`, `spread`, `use_object`, `threat_successor`, plus the aura kinds behind their own key (`dps_hold_after`, `dispel_priority`, `flee_on_aura`, `freeze_on_aura`, `taunt_after_cast`, `swap_on_aura`). |
 | `target_entry` | The creature the row is about; `0` means the boss itself. `hold_kill` is inverted: `boss_entry` is the spared entry and `target_entry` is the blocker. `one_at_a_time` uses target `0` and `boss_entry` is the paced entry. `linked_death` lists one partner per row and `boss_entry` is the anchor. A `seek_aura` row names the source creature whose death leaves the cloud; a `pull_gate` row has `target_entry` 0 and names the boss itself, as does a `spread` row. |
 | `spell_id` | `interrupt` / `avoid_cast` spell. `seek_aura`: the aura a bot must carry; `pull_gate`: the aura the boss must not wear; `spread`: the splash the spacing answers (documents the row only). |
 | `priority` | `kill_first`: lower dies first. `hold_kill`: budget, how many blockers may live before DPS stop (`0` = not one more). `linked_death`: group id. `seek_aura`: the health % at which DPS stop on the source while the gather is not ready; `pull_gate`: most stacks allowed (`0` = none); `taunt_after_cast` with mode `until_tank`: which raid tank takes the subject. |
@@ -64,7 +64,7 @@ Two extra opt-ins:
 
 The true primary key is `(map, boss_entry, kind, target_entry, spell_id, hp_min, hp_max)`.
 
-The loader skips unusable rows and logs the count: unknown kind, interrupt without spell, behind without radius, avoid without spell or radius, tank_hold with target_entry, hold_kill without target_entry, one_at_a_time with target_entry, linked_death without target_entry or param outside (0,100], `seek_aura` without target_entry, spell_id, cycle_spell or spot, param outside (0,10], priority above 99, cycle_s outside (0,600] or window_s outside (0,cycle_s), `pull_gate` with target_entry, without spell_id or param outside (0,300], `spread` with target_entry or param outside 5-30, a cycle/spot/mode column the kind does not read, duplicate key.
+The loader skips unusable rows and logs the count: unknown kind, interrupt without spell, behind without radius, avoid without spell or radius, tank_hold with target_entry, hold_kill without target_entry, one_at_a_time with target_entry, linked_death without target_entry or param outside (0,100], `seek_aura` without target_entry, spell_id, cycle_spell or spot, param outside (0,10], priority above 99, cycle_s outside (0,600] or window_s outside (0,cycle_s), `pull_gate` with target_entry, without spell_id or param outside (0,300], `spread` with target_entry or param outside 5-30, `threat_successor` with target_entry or a gate, a cycle/spot/mode column the kind does not read, duplicate key.
 
 ### Kinds
 
@@ -90,6 +90,7 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 | `needs_aura` | Only a bot carrying `spell_id` may target the unit; with `AiPlayerbot.DungeonRunAuraGatedTargets = 1` other bots leave it alone. | Any bot with the aura |
 | `use_object` | One claimed bot clicks the boss's game object at the right moment; mode `tank_anchor` also walks the boss over to it. Needs `AiPlayerbot.DungeonRunUseObject = 1` (default `0`). | Claimed clicker (free damage, healer or non-tank) |
 | `burn_mana` | A few eligible bots (no tank, no healer, a Mana Burn priest, a Drain Mana warlock or a Viper Sting hunter; `priority` of them, `0` = all, ordered by guid) drain the boss's mana while it stands at or above the row's start % (`param`); only members that run the boss tactics and can cast right now (in combat, in control, their spell off cooldown, the boss in their spell's own range, enough mana) take a slot, a global cooldown does not cost one, and the burn pauses while the boss wears the stone-phase aura 25685. `target_entry` is 0, `spell_id` is unused. Needs `AiPlayerbot.DungeonRunBurnMana = 1` (default `0`). | Eligible drainers; the rest of the raid keeps its rotation |
+| `threat_successor` | The boss itself (`target_entry` 0): its damage dealers are measured against the highest threat among the assigned off-tanks instead of the main tank, so the off-tank stays second and a threat reset (Hakkar's Cause Insanity) hands the boss to it instead of to a damage dealer. Only the boss's own data turns this on; most raid bosses are taunt-immune but keep the highest tank as the reference. Read straight from the table, so the kind takes no gate and no mode word. | Damage dealers of the group |
 | `ranged_only` | Melee bots (melee damage and tanks) leave the subject alone while it stands `param` yd (3 to 40) or more above them, and take the adds; a ranged bot is never held, an explicit attack order beats the hold, and the hold ends by itself when the subject lands. `target_entry` 0 is the row's boss. Needs `AiPlayerbot.DungeonRunRangedOnly = 1` (default `0`). | melee damage and tanks; ranged bots, healers and an ordered bot keep the subject |
 
 \* Needs `AiPlayerbot.DungeonRunAuraTactics = 1`.
@@ -209,7 +210,7 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Mad Servant | `interrupt` Flamestrike; `hold_kill` budget 0; `one_at_a_time` |
 | Venoxis | `interrupt` Holy Fire; ranged and healer stand set |
 | Thekal, Lor'Khan, Zath | `linked_death` group, hold 2 %, burn order Zealots then Thekal; Lor'Khan `interrupt` Greater Heal |
-| Hakkar the Soulflayer | `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 10 s (inert: Hakkar is taunt-immune, the row opens no episode). Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. |
+| Hakkar the Soulflayer | `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 10 s (inert: Hakkar is taunt-immune, the row opens no episode); `threat_successor` (the damage dealers' threat cap is the assigned off-tanks' highest). Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. |
 
 ## AQ20 rows (map 509)
 
@@ -226,11 +227,11 @@ Only kinds the module already runs. Needs `DungeonRunCharmYield = 1` on the two 
 ## Hakkar the Soulflayer (map 309, entry 14834)
 
 Needs `DungeonRunPullGate`, `DungeonRunSeekAura`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. The five High Priests must be dead first, one stack of Hakkar Power per living priest; the run leader never pulls while he wears it and ends the run after 30 s.
-Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart; Cause Insanity is ignored and the first off-tank taunts him back while he stands on a non-tank.
+Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from a Son held and killed at the fixed spot: DPS hold it at 30 % until the raid gathers within 4 yd, then burn it so the cloud lands on them. Dispel never touches the poison; Corrupted Blood keeps the ranged raid 12 yd apart. Cause Insanity cannot be taunted off, so the `threat_successor` row makes the damage dealers keep below the off-tank: on the reset the off-tank takes the boss instead of a damage dealer.
 
 ## Known limits
 
-Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so the spell-less Mandokir and Hakkar rows were removed. Mandokir is covered: it keys an `until_tank` row on Threatening Gaze. Hakkar's `until_tank` row on Cause Insanity stays inert because the game makes him immune to taunts (see the Hakkar section above): there the threat cap at the off-tank is what keeps the boss off the damage dealers.
+Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so the spell-less Mandokir and Hakkar rows were removed. Mandokir is covered: it keys an `until_tank` row on Threatening Gaze. Hakkar's `until_tank` row on Cause Insanity stays inert because the game makes him immune to taunts (see the Hakkar section above): there the `threat_successor` row's cap at the assigned off-tanks is what keeps the boss off the damage dealers.
 
 ## Stand sets
 

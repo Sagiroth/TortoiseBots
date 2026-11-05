@@ -19,19 +19,37 @@ int main()
 {
     std::cout << "Starting TortoiseBots threat cap policy tests...\n";
 
-    // TauntImmuneBossCapsAtOffTank: a normal target caps damage at the highest tank's threat. On a taunt-immune
-    // target (Hakkar: creature_template 14834 immunity_flags 6 keeps CREATURE_IMMUNITY_TAUNT) no tank can take the
-    // boss back, so the reference is the second-highest tank's threat and that tank stays second: a Cause Insanity
-    // then hands the boss to the off-tank instead of a damage dealer. Tanks {1000, 600}: 600, not 1000.
-    CHECK(ThreatCapReference({1000.0f, 600.0f}, false) == 1000.0f);
-    CHECK(ThreatCapReference({1000.0f, 600.0f}, true) == 600.0f);
-    CHECK(ThreatCapReference({600.0f, 1000.0f}, true) == 600.0f);
-    CHECK(ThreatCapReference({1000.0f, 600.0f, 400.0f}, true) == 600.0f);
-    CHECK(ThreatCapReference({1000.0f, 1000.0f}, true) == 1000.0f);
-    // With fewer than two tanks there is no off-tank to cap at: the highest stands.
-    CHECK(ThreatCapReference({1000.0f}, true) == 1000.0f);
-    CHECK(ThreatCapReference({}, true) == -1.0f);
+    // ThreatCapIsTheHighestTankByDefault: without a `threat_successor` row the reference is the highest tank, whatever
+    // the target's taunt immunity. Tanks {1000, 600}: 1000, not 600.
+    CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}}, false) == 1000.0f);
+    CHECK(ThreatCapReference({{600.0f, false}, {1000.0f, true}}, false) == 1000.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}}, false) == 1000.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}, {400.0f, true}}, false) == 1000.0f);
     CHECK(ThreatCapReference({}, false) == -1.0f);
+
+    // ThreatCapsAtTheAssignedOffTank: on a target whose boss data asks for a successor (Hakkar) the damage dealers stay
+    // below the assigned off-tank so a Cause Insanity threat reset hands the boss to it. Main 1000, off-tank 600: 600.
+    CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}}, true) == 600.0f);
+    // An off-tank already above the main tank stands at its own threat: the cap is the highest off-tank, not always
+    // the second number.
+    CHECK(ThreatCapReference({{600.0f, false}, {1000.0f, true}}, true) == 1000.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {600.0f, true}, {400.0f, true}}, true) == 600.0f);
+    // Two off-tanks, the higher of them stands.
+    CHECK(ThreatCapReference({{1000.0f, false}, {400.0f, true}, {700.0f, true}}, true) == 700.0f);
+
+    // ThreatCapWithoutAZeroReference: an off-tank with no threat on the target (dead, not yet engaged, or its threat
+    // deleted) never becomes the reference: a zero reads as "the tank has no threat" and vetoes every damage action
+    // (Hakkar's Cause Insanity zeroing the main tank was the bug). The highest tank stands instead.
+    CHECK(ThreatCapReference({{1000.0f, false}, {0.0f, true}}, true) == 1000.0f);
+    CHECK(ThreatCapReference({{1000.0f, false}, {0.0f, true}, {0.0f, true}}, true) == 1000.0f);
+    // The main tank is charmed and its threat gone; the off-tank still stands as the successor.
+    CHECK(ThreatCapReference({{0.0f, false}, {600.0f, true}}, true) == 600.0f);
+
+    // ThreatCapWithoutAnAssignedOffTank: a lone tank (or none of the assigned off-tanks on the target) leaves the
+    // highest tank as the reference, never a zero.
+    CHECK(ThreatCapReference({{1000.0f, false}}, true) == 1000.0f);
+    CHECK(ThreatCapReference({{900.0f, false}, {1000.0f, false}}, true) == 1000.0f);
+    CHECK(ThreatCapReference({}, true) == -1.0f);
 
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
