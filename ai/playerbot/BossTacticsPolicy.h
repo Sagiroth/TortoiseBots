@@ -266,6 +266,84 @@ namespace ai
         return pick;
     }
 
+    // A boss that vanishes mid-fight (ScriptedAI::EnterVanish: invisible, not selectable, attack stopped; High Priestess
+    // Arlokk) drops out of the bot's attackers list while it stays alive and in combat. The fight scan loads a boss
+    // entry's rows only from the attackers, so the rows that handle its adds (Arlokk's prowler kill_first) would end
+    // with the boss's visibility. This memory carries the entry across the gap: it is noted whenever the scan sees a boss
+    // entry that has rows, and handed back as "absent" while the bot still has attackers and the sighting is young.
+    constexpr std::uint32_t kBossVanishGraceMs = 90000;   // Arlokk's Vanish lasts 35-50 s; two vanishes are ~145 s apart
+    constexpr float kBossVanishRangeYd = 60.0f;           // the remembered unit must still be this near the bot
+
+    class BossPresenceMemory
+    {
+    public:
+        struct Seen
+        {
+            std::uint32_t entry = 0;
+            std::uint64_t guid = 0;
+            int hpPct = 0;
+            std::uint32_t seenMs = 0;
+        };
+
+        // The scan saw this boss entry's unit (the PickBossGateUnit pick) at nowMs.
+        void Note(std::uint32_t entry, std::uint64_t guid, int hpPct, std::uint32_t nowMs)
+        {
+            for (Seen& seen : seen_)
+            {
+                if (seen.entry == entry)
+                {
+                    seen.guid = guid;
+                    seen.hpPct = hpPct;
+                    seen.seenMs = nowMs;
+                    return;
+                }
+            }
+            Seen seen;
+            seen.entry = entry;
+            seen.guid = guid;
+            seen.hpPct = hpPct;
+            seen.seenMs = nowMs;
+            seen_.push_back(seen);
+        }
+
+        // The remembered entries not among `presentEntries` (this tick's attackers) whose sighting is within the grace
+        // window. A bot with no attackers is out of the fight, so everything is forgotten; an expired sighting is
+        // forgotten too.
+        std::vector<Seen> Absent(const std::vector<std::uint32_t>& presentEntries, std::uint32_t nowMs, bool hasAttackers)
+        {
+            std::vector<Seen> out;
+            if (!hasAttackers)
+            {
+                seen_.clear();
+                return out;
+            }
+            for (std::size_t i = 0; i < seen_.size();)
+            {
+                if (nowMs - seen_[i].seenMs > kBossVanishGraceMs)
+                {
+                    seen_.erase(seen_.begin() + static_cast<std::ptrdiff_t>(i));
+                    continue;
+                }
+                if (std::find(presentEntries.begin(), presentEntries.end(), seen_[i].entry) == presentEntries.end())
+                    out.push_back(seen_[i]);
+                ++i;
+            }
+            return out;
+        }
+
+        bool Empty() const { return seen_.empty(); }
+
+    private:
+        std::vector<Seen> seen_;
+    };
+
+    // Whether the remembered unit of a vanished boss still belongs to this bot's fight: it is still in the map, alive,
+    // not running home, in combat, and near the bot.
+    inline bool VanishedBossStillInFight(bool found, bool alive, bool evading, bool inCombat, float distanceYd)
+    {
+        return found && alive && !evading && inCombat && distanceYd <= kBossVanishRangeYd;
+    }
+
     // The creature a row is about. A use_object row is about its boss: the target is a game object, not a creature.
     inline std::uint32_t TacticSubjectEntry(const BossTacticRow& row)
     {

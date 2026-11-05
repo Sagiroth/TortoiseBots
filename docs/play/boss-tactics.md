@@ -30,6 +30,8 @@ The `boss tactics` strategy is added to a bot by the `enter boss tactics` trigge
 
 `leave boss tactics` removes it when the bot is on a map without rows (not while teleporting or loading), or when the key is off and the bot is no longer in a bound group. The gate is `BossTacticsWanted`.
 
+A boss that vanishes mid-fight (invisible and off the bot's attackers list while alive and in combat, like Arlokk) keeps its rows for up to 90 s as long as the bot still has attackers and the boss stays within 60 yd and out of evade mode (`BossPresenceMemory`), so rows for its adds, such as the Zulian Prowler `kill_first`, stay active during the vanish. The rows end with the fight, the boss's death or evade, or the grace window.
+
 Commander-bound groups use it because commanders cannot give interrupt and kill orders fast enough. The key stays `0` because it changes how bots play.
 
 Two extra opt-ins:

@@ -76,7 +76,7 @@ class RowGateWiring(unittest.TestCase):
         self.assertIn("fight.rows.push_back(&row);", scan)
         self.assertNotIn("GetHealthPercent()) && !RowGateOpen", scan)
         # The six aura kinds are the key's own: with it off their rows never reach a consumer.
-        gated = scan[scan.index("for (const BossTacticRow& row : *rows)"):]
+        gated = scan[scan.index("for (const BossTacticRow& row : rows)"):]
         self.assertIn("if (!keyOn && IsAuraTacticKind(row.kind))", gated)
         self.assertLess(gated.index("IsAuraTacticKind(row.kind)"), gated.index("RowGateOpen("))
 
@@ -227,7 +227,7 @@ class UseObjectWiring(unittest.TestCase):
         scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
         self.assertIn("bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;", scan)
         self.assertIn("if (!useObjectOn && row.kind == BossTacticKind::UseObject)", scan)
-        gated = scan[scan.index("for (const BossTacticRow& row : *rows)"):]
+        gated = scan[scan.index("for (const BossTacticRow& row : rows)"):]
         self.assertIn("continue;", gated[gated.index("row.kind == BossTacticKind::UseObject"):])
 
     def test_the_clicker_is_claimed_from_the_policy(self):
