@@ -195,6 +195,7 @@ void BuildGuildOrderEnchantIndex()
         if (!spell)
             continue;
         bool hasEnchant = false;
+        bool createsItem = false;
         for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
         {
             if (spell->Effect[e] == SPELL_EFFECT_ENCHANT_ITEM)
@@ -204,7 +205,6 @@ void BuildGuildOrderEnchantIndex()
         }
         uint32_t effect0 = spell->Effect[EFFECT_INDEX_0];
         bool isSkillStep = spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP;
-        bool rowOk = false;
         for (SkillLineAbilityEntry const* ability : rows)
         {
             if (IsCatalogueEnchantRow(ability->skillId, hasEnchant, createsItem, isSkillStep, effect0))
