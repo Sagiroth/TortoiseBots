@@ -196,6 +196,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderStore.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderAccess.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/GuildOrderDelivery.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/EnchantCapital.cpp"
     "${TORTOISEBOTS_ROOT}/behavior/Movement.cpp"
     "${TORTOISEBOTS_ROOT}/behavior/PlayerConvenience.cpp"
     "${TORTOISEBOTS_ROOT}/commands/BotCommands.cpp"
