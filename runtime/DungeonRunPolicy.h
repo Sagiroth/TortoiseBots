@@ -2075,6 +2075,9 @@ struct Run
     // How long the lead bot has hung off the floor (the tick's own clock, cleared when it lands): past
     // kLeadOffFloorPauseMs a gather that no summon can end pauses instead of starting its clock over.
     std::uint32_t leadOffFloorMs = 0;
+    // A summon was refused this tick because the lead bot is off the floor (SummonLeadFloorOk): the tick's end pauses
+    // the run once leadOffFloorMs reaches kLeadOffFloorPauseMs, whichever summon site was refused (LeadOffFloorPauseTick).
+    bool summonRefusedOffFloor = false;
     std::uint32_t stepIdleMs = 0;
     std::uint32_t playerGatherMs = 0; // a regroup's wait for a living player (RegroupPlayerWait)
     std::uint32_t playerHoldMs = 0;   // a hold for a player (PlayerHoldNote) or a regroup's wait for a dead one, kPlayerHoldCapMs
@@ -4317,9 +4320,22 @@ inline float LeadFloorZ(float mapFloorZ, bool probeFound, float probeZ)
     return probeFound ? std::max(mapFloorZ, probeZ) : mapFloorZ;
 }
 
-inline bool LeadOffFloor(float leadZ, float mapFloorZ, bool probeFound, float probeZ, bool inWater)
+// A lead bot on a surface the map's floor does not know is on the floor all the same: a game-object platform or
+// elevator (a transport the bot rides, or a walkable surface the core's height read finds within kSurfaceYd under the
+// feet: game-object collision, a model's deck), which neither the terrain floor nor the mesh probe sees. A surface
+// further down is no ground under a hovering bot, and one above the feet is no floor it stands on.
+constexpr float kSurfaceYd = 2.0f;
+inline bool LeadOnSurface(float leadZ, bool onTransport, bool surfaceFound, float surfaceZ)
 {
-    if (inWater)
+    if (onTransport)
+        return true;
+    return surfaceFound && leadZ - surfaceZ <= kSurfaceYd && surfaceZ - leadZ <= kSurfaceYd;
+}
+
+inline bool LeadOffFloor(float leadZ, float mapFloorZ, bool probeFound, float probeZ, bool inWater,
+    bool onSurface = false)
+{
+    if (inWater || onSurface)
         return false;
     return leadZ - LeadFloorZ(mapFloorZ, probeFound, probeZ) > kOffFloorYd;
 }
@@ -4331,6 +4347,7 @@ inline bool SummonLeadFloorOk(Run& r, const Facts& f, const std::string& name)
 {
     if (!f.leadOffFloor)
         return true;
+    r.summonRefusedOffFloor = true;
     r.note = "the lead bot has no floor under it: " + name + " is not summoned to it";
     return false;
 }
@@ -4342,6 +4359,19 @@ constexpr std::uint32_t kLeadOffFloorPauseMs = 30000;
 inline std::string LeadOffFloorPauseText(const Facts& f)
 {
     return "the lead bot is off the floor (" + Num(f.leadZ) + " vs floor " + Num(f.leadFloorZ) + ")";
+}
+
+// The same cap for every summon site, not only the gather's two: a summon refused this tick (SummonLeadFloorOk set
+// Run::summonRefusedOffFloor) with the lead bot off the floor for kLeadOffFloorPauseMs pauses the run, naming both
+// heights. The flag is the tick's own: Tick clears it before the step runs and calls this after.
+inline bool LeadOffFloorPauseTick(Run& r, const Facts& f)
+{
+    bool const refused = r.summonRefusedOffFloor;
+    r.summonRefusedOffFloor = false;
+    if (!refused || !f.leadOffFloor || r.state != State::Running || r.leadOffFloorMs < kLeadOffFloorPauseMs)
+        return false;
+    Pause(r, LeadOffFloorPauseText(f));
+    return true;
 }
 
 // A gather's ceiling: the farthest straggler, a bot more than kSummonYd from
@@ -20621,6 +20651,7 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
     bool const firstUnattackable = unattackable && !r.unattackableFight;
     r.unattackableFight = unattackable;
     r.shotGateRan = false;
+    r.summonRefusedOffFloor = false;
     SyncCcIcons(r, f);
     ArmReachedTriggers(r); // a step reached by a skip, a resume or a jump since the last tick
     if (StopAtUntil(r))
@@ -20664,6 +20695,7 @@ inline std::string Tick(Run& r, const Facts& raw, std::uint32_t dt = kTickMs, co
             EndShotHold(r);
         return std::string(); // the step the tick reached was the stop
     }
+    LeadOffFloorPauseTick(r, f); // any summon site refused for 30 s of a lead bot off the floor
     OffMapReturnTick(r, f, order); // a bot outside the instance in a bot-only run (lead decision 2026-10-24)
     InstanceRejoinTick(r, f, order); // ta252: a bot in another copy of the instance
     if (!r.shotGateRan)

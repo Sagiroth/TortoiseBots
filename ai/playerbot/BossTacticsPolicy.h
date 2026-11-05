@@ -2085,12 +2085,30 @@ namespace ai
         return -1;
     }
 
-    // The one tank that advances a window's shared state: its holder while that tank is still a usable tank of the
-    // order, else the first usable tank at or after `wanted` (TauntAfterTankIndex). -1 when no tank is usable.
-    inline int TauntWindowOwner(const std::vector<bool>& usable, int holder, int wanted)
+    // The one tank that advances a window's shared state: its holder while that tank is a usable tank of the order
+    // AND available (TauntAfterTankAvailable: in control, not silenced), else the first tank at or after `wanted` that
+    // is usable and available, else the first usable one (TauntAfterTankIndex). A stunned, hexed or silenced holder is
+    // therefore not the writer any more, so another tank hands the window over in the same tick instead of waiting for
+    // the silent-writer timeout. -1 when no tank is usable.
+    inline int TauntWindowOwner(const std::vector<bool>& usable, const std::vector<bool>& available, int holder,
+        int wanted)
     {
-        if (holder >= 0 && holder < static_cast<int>(usable.size()) && usable[holder])
+        auto const ready = [&](int index) {
+            return index >= 0 && index < static_cast<int>(usable.size()) && usable[index] &&
+                index < static_cast<int>(available.size()) && available[index];
+        };
+        if (ready(holder))
             return holder;
+        int const count = static_cast<int>(usable.size());
+        if (count > 0 && wanted >= 0)
+        {
+            for (int step = 0; step < count; ++step)
+            {
+                int const index = (wanted + step) % count;
+                if (ready(index))
+                    return index;
+            }
+        }
         return TauntAfterTankIndex(usable, wanted);
     }
 
@@ -2167,9 +2185,17 @@ namespace ai
                 out.step = TauntEpisodeStep::Due;
                 return out;
             }
-            // The window ran out, or its own assigned tank is the victim: log the run-out once and open the next
-            // window at once.
-            out.missed = open && !victimIsAssigned;
+            // The window ran out, or its own assigned tank is the victim (it cannot taunt itself, yet counts as a
+            // non-tank: banished, teleported or charmed out of the role, the pick falling back to it as the only tank
+            // left). The run-out is logged once and the next window opens at once; a window whose assigned tank is
+            // the victim opens once and then runs its deadline like any other, never restarting on every read.
+            bool const runOut = open && TauntDeadlinePassed(sinceMs, deadlineMs);
+            if (victimIsAssigned && open && !runOut)
+            {
+                out.step = TauntEpisodeStep::None;
+                return out;
+            }
+            out.missed = runOut;
             out.starts = true;
             out.open = true;
             out.step = victimIsAssigned ? TauntEpisodeStep::None : TauntEpisodeStep::Due;

@@ -302,7 +302,7 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 - `dps_hold_after`: holds free DPS off a subject for a row's seconds after a pull, health-band opening, cast, aura, or blink
 - `flee_on_aura`: moves a carrier out of the group (or to the main tank)
 - `freeze_on_aura`: stands a carrier still and vetoes every action while the aura lasts
-- `taunt_after_cast`: sends a rotation tank to taunt a subject back, and retries every window while the subject stays off a tank; one tank holds a window even while its taunt cools down after the cast, and only a tank that lost control or is silenced hands it over, while the pick of a new window skips a tank whose taunt is on cooldown; a failed taunt hands the next window to another tank
+- `taunt_after_cast`: sends a rotation tank to taunt a subject back, and retries every window while the subject stays off a tank; one tank holds a window even while its taunt cools down after the cast, and only a tank that lost control or is silenced hands it over, while the pick of a new window skips a tank whose taunt is on cooldown; a failed taunt hands the next window to another tank; only mode `until_tank` acts, `blink` and spell-keyed rows in other modes are loaded and ignored
 - `swap_on_aura`: rotates two tanks at a stack count
 - the same key opens the row gates: a row whose `hp_min`/`hp_max` or `bot_aura` does not match is ignored while off
 - the `until_tank` mode also needs `AiPlayerbot.DungeonRunCharmYield`: a creature-charmed tank yields its AI and cannot take the taunt back
@@ -916,7 +916,7 @@ How far (yards) a party bot may be from the lead bot before the run leader bring
 - when the lead bot stands in an unpulled pack's reach, the bot lands at the nearest clear point beside it (same floor, in sight, outside every pack's reach)
 - not within 10 yd after 5 s: sent again; after three tries the run names it and never tells it to walk back
 - not toward a dead or separated lead bot, not while the lead bot's own rescue is due, not with a plan boss engaged
-- never onto a lead bot that stands off the floor (more than 3 yards of air under it, read with the teleport landing's own floor: the map's floor and the feet probe, the higher one winning): the bot is brought to the nearest member out of combat instead, or holds; a lead bot off the floor for 30 seconds pauses the run and names both heights
+- never onto a lead bot that stands off the floor (more than 3 yards of air under it, read with the teleport landing's own floor: the map's floor and the feet probe, the higher one winning): the bot is brought to the nearest member out of combat instead, or holds; a lead bot on a game-object platform or elevator (a transport under it, or a surface within 2 yards under its feet that the core's height read finds) counts as on the floor; a lead bot off the floor for 30 seconds pauses the run at whichever summon was refused, and names both heights
 
 </details>
 

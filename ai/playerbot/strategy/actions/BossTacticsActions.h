@@ -618,8 +618,8 @@ namespace ai
     // order names for the current window (`priority` and the roll of tanks that can taunt now): `valid` is true only
     // while that bot is the one asking and its window has not run out. `sinceMs` is how long ago the window opened,
     // `deadlineMs` its length (the row's param, 10 s when the row leaves it 0). A new window opens every deadline
-    // while the subject stays off a tank. blink and the spell triggers stay unimplemented: the loader accepts those
-    // rows, this scan ignores them.
+    // while the subject stays off a tank. Only mode until_tank is read, and its `spell_id` not at all (0 is legal): a
+    // blink row, or a spell-keyed row in any other mode, is accepted by the loader and does nothing here.
     struct BossTauntAfter
     {
         bool valid = false;

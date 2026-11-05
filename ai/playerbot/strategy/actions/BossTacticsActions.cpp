@@ -5135,8 +5135,8 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     std::vector<bool> available(roles.tanks.size(), false);
     for (const BossTacticRow* row : fight.rows)
     {
-        // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
-        // the scan having no teleport edge or cast slot to offer them.
+        // Only mode `until_tank` is acted on, and the row's spell_id is not read: a `blink` row, or a spell-keyed row in
+        // any other mode, stays accepted by the loader and does nothing here (no teleport edge or cast slot to offer).
         if (row->kind != BossTacticKind::TauntAfterCast || row->mode != TacticMode::UntilTank)
             continue;
         // The row's param is the window length (and its retry cadence); a row that leaves it 0 keeps the 10 s the
@@ -5217,9 +5217,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 bool const holderAvailable = holderSlot >= 0 &&
                     holderSlot < static_cast<int>(usable.size()) && usable[holderSlot] &&
                     holderSlot < static_cast<int>(available.size()) && available[holderSlot];
-                int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));
+                int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority));
                 // One tank advances the window (its holder while it is still an available tank, else the order's first
-                // usable tank), so a window's transitions and their outcome rows happen once each. A holder nobody
+                // usable AND available tank, so an incapacitated holder is replaced as writer in the same tick), so a window's transitions and their outcome rows happen once each. A holder nobody
                 // has read for kTauntAfterOwnerSilentMs stands out of the scan and hands the advance over.
                 if (TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs))
                 {
@@ -5271,8 +5271,10 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     }
                 }
                 // This bot's own window: it acts while the window is due and the subject stands on a non-tank. Every
-                // tank reads this from the shared state, so the holder is the only one that acts.
-                if (state.open && state.holder == me && onNonTank)
+                // tank reads this from the shared state, so the holder is the only one that acts, and only while it is available:
+                // an incapacitated holder is replaced as the window's writer by another tank's read and never acts itself.
+                bool const meAvailable = mySlot >= 0 && mySlot < static_cast<int>(available.size()) && available[mySlot];
+                if (state.open && state.holder == me && onNonTank && meAvailable)
                 {
                     std::uint32_t const since = nowMs - state.startMs;
                     if (TauntAfterDue(true, since, deadlineMs, false))

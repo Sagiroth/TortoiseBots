@@ -11477,9 +11477,23 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             probeZ = feet.getZ();
             probeFound = true;
         }
+        // A game-object floor (an elevator, a platform) is in neither the map's floor nor the mesh: a transport under
+        // the lead bot, or the core's own height read (terrain, models and game-object collision, cast down from just
+        // above the feet) finding a surface within kSurfaceYd of them, is a floor (DungeonRun::LeadOnSurface).
+        float surfaceZ = leadZ;
+        bool surfaceFound = false;
+        if (Map* const surfaceMap = lead->GetMap())
+        {
+            float const height = surfaceMap->GetHeight(lead->GetPositionX(), lead->GetPositionY(), leadZ + 0.5f);
+            surfaceFound = height > INVALID_HEIGHT + 1.0f;
+            if (surfaceFound)
+                surfaceZ = height;
+        }
+        bool const onSurface = TortoiseBots::DungeonRun::LeadOnSurface(leadZ, lead->GetTransport() != nullptr,
+            surfaceFound, surfaceZ);
         f.leadFloorZ = TortoiseBots::DungeonRun::LeadFloorZ(mapFloorZ, probeFound, probeZ);
         f.leadOffFloor = mmapLoaded && TortoiseBots::DungeonRun::LeadOffFloor(leadZ, mapFloorZ, probeFound, probeZ,
-            lead->IsInWater() || lead->IsUnderwater());
+            lead->IsInWater() || lead->IsUnderwater(), onSurface);
     }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
     // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in

@@ -154,7 +154,7 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("int const holderSlot = TankSlotOf(guids, state.holder);", scan)
         self.assertIn("state.holder = guids[assigned];", scan)
         self.assertIn("TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs)", scan)
-        self.assertIn("int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));", scan)
+        self.assertIn("int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority));", scan)
         # The window's holder is handed over on the one deadline boundary the taunt itself reads, never at the
         # deadline instant.
         self.assertIn("bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);", scan)

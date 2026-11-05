@@ -21226,6 +21226,68 @@ static void TestLeadOffFloorPausesTheGather()
     }
 }
 
+// A lead bot on a game-object platform or elevator reads as off the floor (the terrain floor and the mesh probe do not
+// know the deck), and every summon is refused. A transport under it, or a walkable surface the core's height read finds
+// within kSurfaceYd of the feet, is a floor; a surface further down is not (the Banish hover stays off the floor).
+static void TestLeadOnAGameObjectFloor()
+{
+    CHECK(LeadOnSurface(90.0f, true, false, 0.0f));          // riding a transport (an elevator)
+    CHECK(LeadOnSurface(90.0f, false, true, 89.2f));         // a deck 0.8 yd under the feet
+    CHECK(LeadOnSurface(90.0f, false, true, 88.0f));         // exactly kSurfaceYd down
+    CHECK(!LeadOnSurface(90.0f, false, true, 87.9f));        // 2.1 yd: a hover over something below
+    CHECK(!LeadOnSurface(90.0f, false, true, 77.68f));       // the Banish hover over the pit floor
+    CHECK(!LeadOnSurface(90.0f, false, false, 0.0f));        // nothing found
+    CHECK(!LeadOnSurface(90.0f, false, true, 93.0f));        // a ceiling over the feet is no floor
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false));                // the terrain alone: off the floor
+    CHECK(!LeadOffFloor(90.0f, 77.68f, false, 90.0f, false, true));         // ... on a platform: on it
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false, false));
+}
+
+// Every summon site pauses at the same 30 s: SummonLeadFloorOk marks the refusal and the tick's end pauses the run
+// once the lead bot has hung off the floor for kLeadOffFloorPauseMs, not only the gather ceiling's two summons.
+static void TestLeadOffFloorPausesAtEverySummonSite()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Facts f = Party(0);
+    f.raid.on = true;
+    f.total = 5;
+    f.alive = 5;
+    f.leadAlive = true;
+    f.leadOffFloor = true;
+    f.leadZ = 90.0f;
+    f.leadFloorZ = 77.68f;
+    f.members = {Mem("Tanky", 0), Mem("Rhan", 150)};
+    {
+        // A site that is not the gather (RunawaySummon): refused, marked, and the cap pauses the run.
+        Run r = Start(&plan);
+        std::string order;
+        r.leadOffFloorMs = kLeadOffFloorPauseMs;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order) && order.empty());
+        CHECK(r.summonRefusedOffFloor);
+        CHECK(LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        CHECK(!r.summonRefusedOffFloor);
+    }
+    {
+        // One tick short of the cap: refused, but the run keeps waiting.
+        Run r = Start(&plan);
+        std::string order;
+        r.leadOffFloorMs = kLeadOffFloorPauseMs - kTickMs;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order));
+        CHECK(!LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Running);
+    }
+    {
+        // Long off the floor but no summon asked this tick: nothing pauses it.
+        Run r = Start(&plan);
+        r.leadOffFloorMs = kLeadOffFloorPauseMs;
+        CHECK(!LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Running);
+    }
+}
+
 // Every summon site that reads the lead bot's floor: with the lead bot off the floor no summon goes out and nothing is
 // spent, so the same summon goes out once it lands. The sites the Jin'do fix reached later: RunawaySummon, the gather
 // ceiling's own two summons, a revived bot's summon, the stranded lead bot's summons and the direct step's follower.
@@ -35702,6 +35764,8 @@ int main()
     TestNoSummonOntoALeadOffTheFloor();
     TestNoSummonOntoAnOffFloorLeadAtEverySite();
     TestLeadOffFloorPausesTheGather();
+    TestLeadOnAGameObjectFloor();
+    TestLeadOffFloorPausesAtEverySummonSite();
     TestOffFloorLeadNeverStallsTheTick();
     TestWedgedMemberIsStillTeleportedBackOffTheFloor();
     TestNoIslandHopForALeadInAnotherPart();

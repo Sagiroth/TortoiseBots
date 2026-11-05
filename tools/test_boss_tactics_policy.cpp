@@ -2415,7 +2415,7 @@ int main()
                 for (int reader = 0; reader < static_cast<int>(guids.size()); ++reader)
                 {
                     int const holderSlot = TankSlotOf(guids, holder);
-                    int const owner = TauntWindowOwner(usable, holderSlot, 0);
+                    int const owner = TauntWindowOwner(usable, available, holderSlot, 0);
                     if (TauntWindowAdvance(owner, reader, now, advancedMs, 1000))
                     {
                         advancedMs = now;
@@ -2434,7 +2434,7 @@ int main()
                         open = read.open;
                         holder = guids[assigned];
                     }
-                    if (open && holder == guids[reader] && TauntAfterDue(true, now - startMs, 10000, false))
+                    if (open && holder == guids[reader] && available[reader] && TauntAfterDue(true, now - startMs, 10000, false))
                         acts |= 1u << reader;
                 }
                 return acts;
@@ -2455,6 +2455,8 @@ int main()
                     inControl[0] = true;
                 unsigned const acts = scan(now);
                 CHECK(__builtin_popcount(acts) <= 1); // never two tanks due at once
+                if (now == 5000)
+                    CHECK(holder == guids[1] && acts == (1u << 1)); // the hex hands it over in the SAME scan
                 if (now >= 2100 && now < 5000)
                 {
                     CHECK(holder == guids[0]); // the cooling holder keeps the window
@@ -2564,10 +2566,17 @@ int main()
             CHECK(TankSlotOf(guids, 22) == 1);
             CHECK(TankSlotOf(guids, 44) == -1); // left the order: the slot no longer names it
             CHECK(TankSlotOf(guids, 0) == -1);
-            CHECK(TauntWindowOwner(usable, 1, 0) == 1);                 // the holder keeps the advance
-            CHECK(TauntWindowOwner(usable, -1, 2) == 2);                // none yet: the order's first usable tank
-            CHECK(TauntWindowOwner({false, true, false}, 0, 1) == 1);   // its holder died: the next usable one
-            CHECK(TauntWindowOwner({false, false, false}, 0, 0) == -1);
+            CHECK(TauntWindowOwner(usable, available, 1, 0) == 1);      // the holder keeps the advance
+            CHECK(TauntWindowOwner(usable, available, -1, 2) == 2);     // none yet: the order's first usable tank
+            CHECK(TauntWindowOwner({false, true, false}, {true, true, true}, 0, 1) == 1); // its holder died: the next
+            CHECK(TauntWindowOwner({false, false, false}, {true, true, true}, 0, 0) == -1);
+            // An incapacitated holder (stunned, hexed, silenced: not available) is no longer the writer: the next
+            // usable AND available tank is, at once. With nobody available the first usable tank still is.
+            CHECK(TauntWindowOwner(usable, {false, true, true}, 0, 0) == 1);
+            CHECK(TauntWindowOwner(usable, {true, false, true}, 1, 0) == 0);
+            CHECK(TauntWindowOwner(usable, {true, false, false}, 1, 1) == 0);  // wraps past the unavailable ones
+            CHECK(TauntWindowOwner(usable, {false, false, false}, 1, 0) == 0);
+            CHECK(TauntWindowOwner({true, true, false}, {false, false, true}, 0, 0) == 0); // available but unusable: no
             CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));          // the owner's own read
             CHECK(!TauntWindowAdvance(1, 2, 5000, 4500, 1000));         // a rival, the owner just read
             CHECK(TauntWindowAdvance(1, 2, 5000, 4000, 1000));          // the owner went quiet: anyone advances
@@ -2591,7 +2600,7 @@ int main()
                     int const readerSlot = TankSlotOf(guids, reader);
                     int const holderSlot = TankSlotOf(guids, holder);
                     bool const holderAvailable = holderSlot >= 0 && usable[holderSlot] && available[holderSlot];
-                    int const owner = TauntWindowOwner(usable, holderSlot, 0);
+                    int const owner = TauntWindowOwner(usable, available, holderSlot, 0);
                     if (TauntWindowAdvance(owner, readerSlot, now, advancedMs, 1000))
                     {
                         advancedMs = now;
@@ -2635,6 +2644,22 @@ int main()
             CHECK(!immuneOpen.starts && !immuneOpen.open && immuneOpen.step == TauntEpisodeStep::None);
             CHECK(TauntEpisodeTick(false, false, true, true, 1000, 10000, true).step ==
                   TauntEpisodeStep::None);
+        }
+
+        // The assigned tank is itself the subject's victim yet counts as a non-tank (banished, teleported or charmed
+        // out of the tank role, and the pick fell back to it as the only tank left): it cannot taunt itself, but its
+        // window must not restart on every read. It opens once, stays open while its deadline runs, and the run-out
+        // is logged once as a miss when the deadline passes, as for any other window.
+        {
+            TauntEpisodeRead first = TauntEpisodeTick(true, true, false, false, 0, 10000, true);
+            CHECK(first.starts && first.open && !first.missed);            // opens once
+            for (std::uint32_t since = 0; since <= 10000; since += 1000)  // then every read keeps it
+            {
+                TauntEpisodeRead keep = TauntEpisodeTick(true, true, false, true, since, 10000, true);
+                CHECK(!keep.starts && keep.open && !keep.missed && keep.step == TauntEpisodeStep::None);
+            }
+            TauntEpisodeRead ran = TauntEpisodeTick(true, true, false, true, 10001, 10000, true);
+            CHECK(ran.starts && ran.open && ran.missed);                   // the run-out is a miss row, once
         }
         }
 
