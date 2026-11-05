@@ -129,7 +129,9 @@ bool CheckMailAction::IsGuildMail(Mail* mail, Player* bot)
 // alone instead of retrying it every tick.
 bool CheckMailAction::CanTakeGuildMail(Mail* mail, MasterPlayer* master)
 {
-    if (mail->COD || mail->deliver_time > time(nullptr))
+    // A guild member's mail is taken at once, without the core's one-hour
+    // item delivery delay: guild orders and the disenchant service run on it.
+    if (mail->COD)
         return false;
     if (mail->money)
         return true;
