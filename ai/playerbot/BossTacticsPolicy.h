@@ -2103,6 +2103,7 @@ namespace ai
         bool alive = true;
         bool evading = false;
         bool victimOurs = false; // its victim is a member of the bot's group (or one of their pets)
+        bool victimHealer = false; // ... and that member is a healer (the Shades of Jin'do eat the healers first)
         bool weHoldIt = false;   // a member or their pet is on its threat list, or attacks it
         std::uint64_t owner = 0; // owner, else creator, else the temporary summon's summoner (0: none)
     };
@@ -2123,18 +2124,23 @@ namespace ai
         std::uint32_t entry = 0;
         float distance = 0.0f;
         bool pickable = false;  // alive, attackable, reachable by the caller's rules
+        bool victimHealer = false; // its victim is a healer of the bot's group (a Shade of Jin'do on a healer)
     };
 
     // Nobody is sent after a creature further away than this.
     constexpr float kBossTacticsEngageRange = 40.0f;
 
     // Index of the candidate to kill first, or -1 when no kill_first row names
-    // a pickable candidate: lowest priority wins, the nearer one breaks a tie.
+    // a pickable candidate: lowest priority wins, then one whose victim is a
+    // healer of ours (the Shades of Jin'do copy the boss's threat list, on which
+    // the healers' heal threat is top, and eat them), the nearer one breaks the
+    // rest of the tie.
     inline int PickKillFirst(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates)
     {
         int best = -1;
         int bestPriority = 256;
         float bestDistance = 0.0f;
+        bool bestVictimHealer = false;
         for (std::size_t i = 0; i < candidates.size(); ++i)
         {
             const TacticCandidate& c = candidates[i];
@@ -2149,11 +2155,15 @@ namespace ai
             }
             if (priority == 256)
                 continue;
-            if (best < 0 || priority < bestPriority || (priority == bestPriority && c.distance < bestDistance))
+            if (best < 0 || priority < bestPriority ||
+                (priority == bestPriority &&
+                 (c.victimHealer > bestVictimHealer ||
+                  (c.victimHealer == bestVictimHealer && c.distance < bestDistance))))
             {
                 best = static_cast<int>(i);
                 bestPriority = priority;
                 bestDistance = c.distance;
+                bestVictimHealer = c.victimHealer;
             }
         }
         return best;

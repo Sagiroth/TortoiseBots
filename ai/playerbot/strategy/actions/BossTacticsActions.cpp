@@ -1987,6 +1987,7 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 c.entry = hit.entry;
                 c.distance = bot->GetDistance(unit);
                 c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+                c.victimHealer = hit.victimHealer;
                 candidates.push_back(c);
                 units.push_back(unit);
             }

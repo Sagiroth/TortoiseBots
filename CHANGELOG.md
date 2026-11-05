@@ -3,6 +3,7 @@
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
 - Fixed: a dungeon party told to kill a totem keeps hitting it until it dies, instead of drifting off after one burst and leaving it almost dead.
 - Fixed: Jin'do's healing ward is now killed before his Brain Wash Totem, and a new higher-priority target in the plan's kill order takes over from a half-finished one.
+- Fixed: damage dealers cursed by Jin'do now go for the Shade that is attacking a healer before one on another damage dealer.
 
 ## v1.15.1 (2026-11-03)
 

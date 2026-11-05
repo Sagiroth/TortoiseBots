@@ -629,6 +629,35 @@ int main()
         CHECK(PickKillFirst(Active(other), { Cand(6910, 3) }) == -1);
     }
 
+    // TestDelusionsCarrierPicksShadeOnHealer: a Delusions carrier's Shades of Jin'do 14986 are kill_first rank 1 and
+    // gated by needs_aura (the caller marks a Shade it may not attack unpickable). Among the ones it may attack, the one
+    // eating a healer comes first -- the Shades copy the boss's threat list, on which the healers' heal threat is top,
+    // so a healer left with one dies -- and distance only breaks a tie between two Shades on healers, or two on others.
+    {
+        const std::vector<BossTacticRow> rows = {
+            Row(309, 11380, BossTacticKind::NeedsAura, 14986, 24306),
+            Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 1),
+            Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 2),
+        };
+        const ActiveBossRows active = Active(rows);
+        std::vector<TacticCandidate> shades = { Cand(14986, 4), Cand(14986, 14) };
+        shades[1].victimHealer = true;
+        CHECK(PickKillFirst(active, shades) == 1);    // the farther Shade on a healer over the near one on a dps
+        shades[0].victimHealer = true;
+        CHECK(PickKillFirst(active, shades) == 0);    // both on healers: the nearer
+        shades[0].victimHealer = false;
+        shades[1].victimHealer = false;
+        CHECK(PickKillFirst(active, shades) == 0);    // neither: the nearer, as before
+        // A Shade the aura gate refuses is not a candidate at all (IsValid makes it unpickable), healer victim or not.
+        std::vector<TacticCandidate> gated = { Cand(14986, 30, false), Cand(14986, 38) };
+        gated[0].victimHealer = true;
+        CHECK(PickKillFirst(active, gated) == 1);
+        // Priority still comes first: the lower-priority totem's healer victim does not outrank a Shade.
+        std::vector<TacticCandidate> mixed = { Cand(14986, 20), Cand(15112, 3) };
+        mixed[1].victimHealer = true;
+        CHECK(PickKillFirst(active, mixed) == 0);
+    }
+
     // hold_kill: DPS leave a boss entry alone while more than `priority` living blockers of it are near. The modal
     // case, "a Mad Servant is held while one Mad Voidwalker lives": the two Zul'Gurub Servant rows, budget 0, blockers
     // the Mad Voidwalker 15146 and the unselectable Portal of Madness 15141.
