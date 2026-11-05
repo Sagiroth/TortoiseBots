@@ -824,7 +824,7 @@
     server: { hash: 'server', title: 'Server' }
   };
   const HASH_TO_TAB = Object.fromEntries(Object.entries(TABS).map(([k, v]) => [v.hash, k]));
-  const PROFILE_TABS = ['overview', 'gear', 'talents', 'spells', 'professions', 'skills', 'bags', 'progress'];
+  const PROFILE_TABS = ['overview', 'gear', 'talents', 'spells', 'professions', 'skills', 'pet', 'bags', 'progress'];
 
   function openNavDrawer() {
     if (!el.sidebar) return;
@@ -4215,6 +4215,7 @@
     else if (tab === 'spells') renderArmorySpells(p);
     else if (tab === 'professions') renderArmoryProfessions(p);
     else if (tab === 'skills') renderArmorySkills(p);
+    else if (tab === 'pet') renderArmoryPet(p);
     else if (tab === 'progress') renderArmoryProgress(p);
   }
 
@@ -4944,6 +4945,50 @@
     }
     host.innerHTML = html;
     bindSpellTooltips(host);
+  }
+
+  // Hunter pet families (CreatureFamily DBC) and warlock demons by entry.
+  const PET_FAMILY_NAMES = {
+    1: 'Wolf', 2: 'Cat', 3: 'Spider', 4: 'Bear', 5: 'Boar', 6: 'Crocolisk', 7: 'Carrion Bird', 8: 'Crab',
+    9: 'Gorilla', 11: 'Raptor', 12: 'Tallstrider', 20: 'Scorpid', 21: 'Turtle', 24: 'Bat', 25: 'Hyena',
+    26: 'Owl', 27: 'Wind Serpent', 35: 'Serpent', 36: 'Fox', 37: 'Plagued', 38: 'Horse', 39: 'Moth'
+  };
+  const DEMON_NAMES = { 416: 'Imp', 417: 'Felhunter', 1860: 'Voidwalker', 1863: 'Succubus' };
+  const PET_LOYALTY_NAMES = ['', 'Rebellious', 'Unruly', 'Submissive', 'Dependable', 'Faithful', 'Best Friend'];
+
+  // Current pet as last saved: hunters see family, loyalty and training
+  // points; demons only their abilities.
+  function renderArmoryPet(p) {
+    const host = document.getElementById('armory-content-pet');
+    if (!host) return;
+    const pet = p.pet;
+    if (!pet) {
+      host.innerHTML = '<div class="empty-hint">No pet.</div>';
+      return;
+    }
+    const kind = pet.hunter ? (PET_FAMILY_NAMES[pet.family] || `Family ${pet.family}`) : (DEMON_NAMES[pet.entry] || 'Demon');
+    const facts = [
+      ['Name', esc(pet.name || '—')],
+      ['Type', esc(kind)],
+      ['Level', pet.level],
+      ['Health', pet.health],
+    ];
+    if (pet.hunter) {
+      facts.push(['Loyalty', esc(PET_LOYALTY_NAMES[pet.loyalty] || String(pet.loyalty))]);
+      facts.push(['Training points left', pet.train_points]);
+      facts.push(['Happiness', pet.happiness]);
+    }
+    const spells = pet.spells || [];
+    const actives = spells.filter(s => !s.passive && s.name !== 'Avoidance');
+    const passives = spells.filter(s => s.passive || s.name === 'Avoidance');
+    const row = s => `<tr><td>${esc(s.name || ('Spell ' + s.spell))}</td><td>${esc(s.subtext || '')}</td><td>${s.passive ? '' : (s.autocast ? 'on' : 'off')}</td></tr>`;
+    const table = (title, list) => list.length
+      ? `<div class="section-label" style="margin: 14px 0 8px;">${title}</div><div style="overflow-x: auto;"><table class="data-table"><thead><tr><th>Ability</th><th>Rank</th><th>Autocast</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`
+      : '';
+    host.innerHTML = `<div style="overflow-x: auto;"><table class="data-table"><tbody>${facts.map(f => `<tr><td>${f[0]}</td><td>${f[1]}</td></tr>`).join('')}</tbody></table></div>`
+      + table(`Abilities (${actives.length})`, actives)
+      + table('Passives', passives)
+      + '<div class="empty-hint" style="margin-top: 10px;">Values as last saved by the server.</div>';
   }
 
   function renderArmorySkills(p) {
