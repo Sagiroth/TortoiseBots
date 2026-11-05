@@ -1774,6 +1774,10 @@ namespace ai
     constexpr std::uint32_t kDpsHoldBlinkMs = 1500;
     // A hold state nobody read for 10 minutes is stale (the subject left the fight); the caller drops it.
     constexpr std::uint32_t kDpsHoldStaleMs = 600000;
+    // A read gap longer than this ends the fight the state held. The reads come from the bots' live attacker scan, so
+    // nothing reads the state while the boss is out of combat after an evade or wipe; a quick repull is therefore only
+    // seen as the first in-combat read after a silence (the seek clock's kSeekRepullGapMs uses the same 10 s).
+    constexpr std::uint32_t kDpsHoldRepullGapMs = 10000;
     // The cast/aura edge is kept per observing bot. An observer nobody heard from for 10 s is gone (it no longer
     // vouches that a signal was already seen), and one record holds at most 64 observers.
     constexpr std::uint32_t kDpsHoldObserverStaleMs = 10000;
@@ -1975,12 +1979,15 @@ namespace ai
         return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
     }
 
-    // The boss left combat (an evade or a wipe both end with it out of combat): the fight the state held is over, so
-    // the engage edge must fire again on the re-pull. Health plays no part: an in-combat boss that is back at 100 %
-    // (Blood Siphon heals him) is still the same fight and keeps its spent edge and running hold.
-    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat)
+    // The fight the state held is over: the boss is out of combat (an evade or a wipe), or nobody read the state for
+    // longer than kDpsHoldRepullGapMs (the boss left the live attacker scan, so no read saw him out of combat and the
+    // next one finds the re-pull already running). The engage edge then fires again on the re-pull. Health plays no part:
+    // an in-combat boss that is back at 100 % (Blood Siphon heals him) is still the same fight and keeps its spent edge
+    // and running hold. Call before DpsHoldTick, which stamps the read time.
+    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat, std::uint32_t nowMs)
     {
-        if (!bossInCombat)
+        const bool silent = state.hasPos && nowMs - state.lastReadMs > kDpsHoldRepullGapMs;
+        if (!bossInCombat || silent)
             state = DpsHoldState();
     }
 
