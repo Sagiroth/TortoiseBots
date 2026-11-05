@@ -16,7 +16,9 @@
 #include "BossTacticsPolicy.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <map>
+#include <string>
 #include <tuple>
 
 namespace ai
@@ -38,10 +40,38 @@ namespace ai
         int missing = 0;
         std::uint32_t siphonAtMs = 0;   // the +1 s dose count is due then (0: none pending)
         std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
+        std::uint32_t siphonSeenMs = 0;     // the cycle's first 24324 sighting: the note's clock starts here
         std::uint32_t siphonCycle = 0;
-        int siphonDosed = 0;
+        int siphonDosed = 0;            // the +1 s read, which the run line reports
         int siphonUndosed = 0;
+        int siphonLateDosed = 0;        // the +3 s read, kept beside it
+        int siphonLateUndosed = 0;
     };
+
+    // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside
+    // it. The second read settles a heal the first cannot explain and must never erase the first.
+    inline void SeekStoreSiphonRead(SeekCycleRecord& record, std::uint32_t atSec, int dosed, int undosed)
+    {
+        if (atSec <= 1)
+        {
+            record.siphonDosed = dosed;
+            record.siphonUndosed = undosed;
+        }
+        else
+        {
+            record.siphonLateDosed = dosed;
+            record.siphonLateUndosed = undosed;
+        }
+    }
+
+    // The siphon note's clock label: the real milliseconds between the cycle's first sighting and the read, not the
+    // read's nominal delay. A read lands a few ticks late, and the note is read against the siphon it explains.
+    inline std::string SeekSiphonAtLabel(std::uint32_t elapsedMs)
+    {
+        char label[32];
+        snprintf(label, sizeof(label), "at=+%ums", static_cast<unsigned>(elapsedMs));
+        return label;
+    }
 
     // The stable identity of a row: the table's primary key (map, boss entry, kind, target, spell, band) plus the fight it
     // belongs to (instance, boss guid), never the row's address. The key does not carry the cycle columns: a retimed

@@ -1052,24 +1052,27 @@ void CountHakkarSiphonAuras(Unit* boss, int& healStacks, int& dmgHolders)
 // One siphon row per accepted cycle, read one and three seconds after the sighting: the group members dosed and not,
 // the pets and totems/guardians on either side, and the boss's own heal stacks and damage holders. A no-op unless
 // bot_events.csv is in AiPlayerbot.AllowedLogFiles.
-void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, int atSec, int dosed, int undosed, int petHeal,
-               int petDmg, int totems, int guardians, int healStacks, int dmgHolders, Unit* boss)
+void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, std::uint32_t elapsedMs, int dosed, int undosed,
+               int petHeal, int petDmg, int totems, int guardians, int healStacks, int dmgHolders, Unit* boss)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
+    // The row's clock is the real time since the cycle's first 24324 sighting, not the read's nominal delay.
+    const std::string at = SeekSiphonAtLabel(elapsedMs);
     char info1[224];
     snprintf(info1, sizeof(info1),
-             "cycle=%u,at=+%ds,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,totems=%u,guardians=%u,hakkar_stacks=%u,"
+             "cycle=%u,%s,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,totems=%u,guardians=%u,hakkar_stacks=%u,"
              "hakkar_dmg=%u,hakkar_hp=%u",
-             cycle, atSec, static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
+             cycle, at.c_str(), static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
              static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg), static_cast<unsigned>(totems),
              static_cast<unsigned>(guardians), static_cast<unsigned>(healStacks),
              static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
     char info2[224];
     snprintf(info2, sizeof(info2),
-             "Hakkar siphon %u @+%ds: %d dosed, %d not, pets %d heal/%d dmg, totems %d, guardians %d, hakkar heal "
+             "Hakkar siphon %u @+%ums: %d dosed, %d not, pets %d heal/%d dmg, totems %d, guardians %d, hakkar heal "
              "stacks %d, dmg holders %d",
-             cycle, atSec, dosed, undosed, petHeal, petDmg, totems, guardians, healStacks, dmgHolders);
+             cycle, static_cast<unsigned>(elapsedMs), dosed, undosed, petHeal, petDmg, totems, guardians, healStacks,
+             dmgHolders);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSiphon", info1, info2);
 }
 
@@ -1120,6 +1123,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint32_t cycleNo = 0;
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
+    std::uint32_t pendingSiphonElapsedMs = 0;
     std::uint32_t pendingCycle = 0;
     std::uint64_t gatherGuid = 0;
     {
@@ -1156,12 +1160,14 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             ++record.cycleNo;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
+            record.siphonSeenMs = nowMs;
             record.siphonCycle = record.cycleNo;
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
         {
             pendingSiphon = true;
             pendingSiphonAtSec = 1;
+            pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
             pendingCycle = record.siphonCycle;
             record.siphonAtMs = 0;
         }
@@ -1169,6 +1175,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         {
             pendingSiphon = true;
             pendingSiphonAtSec = 3;
+            pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
         }
@@ -1210,15 +1217,14 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         CountSiphonPets(bot, petHeal, petDmg);
         CountSiphonSummons(bot, totems, guardians);
         CountHakkarSiphonAuras(boss, healStacks, dmgHolders);
-        LogSiphon(ai, bot, pendingCycle, pendingSiphonAtSec, dosed, undosed, petHeal, petDmg, totems, guardians,
+        LogSiphon(ai, bot, pendingCycle, pendingSiphonElapsedMs, dosed, undosed, petHeal, petDmg, totems, guardians,
                   healStacks, dmgHolders, boss);
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
         if (it != g_seekRecords.end())
         {
             it->second.siphonCycle = pendingCycle;
-            it->second.siphonDosed = dosed;
-            it->second.siphonUndosed = undosed;
+            SeekStoreSiphonRead(it->second, static_cast<std::uint32_t>(pendingSiphonAtSec), dosed, undosed);
         }
     }
     out.seekers = out.windowOpen ? CountSeekWanted(ai, bot, boss, *row, out.windowOpen, nullptr, 0.0f) : 0;

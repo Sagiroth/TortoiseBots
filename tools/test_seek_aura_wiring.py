@@ -198,6 +198,12 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("hakkar_stacks=%u,", ACTIONS)
         self.assertIn("hakkar_dmg=%u", ACTIONS)
         self.assertIn("kSeekSiphonSecondMs", ACTIONS)
+        # The note's clock is the real elapsed time since the cycle's first sighting, and the +3 s read is kept beside
+        # the +1 s one instead of overwriting the run line's counts.
+        self.assertIn("SeekSiphonAtLabel(elapsedMs)", ACTIONS)
+        self.assertIn("record.siphonSeenMs = nowMs;", ACTIONS)
+        self.assertIn("pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;", ACTIONS)
+        self.assertIn("SeekStoreSiphonRead(it->second", ACTIONS)
 
 
 class SeekRolesWiring(unittest.TestCase):
