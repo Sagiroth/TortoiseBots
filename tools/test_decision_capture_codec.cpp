@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <limits>
 #include <new>
@@ -427,6 +428,15 @@ struct CountingSink : Sink
     }
 };
 
+// The test thread's own CPU time: the tick budget is a CPU budget, and a wall clock would also count the build
+// machine's other load.
+static std::uint64_t ThreadCpuUs()
+{
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return static_cast<std::uint64_t>(ts.tv_sec) * 1000000u + static_cast<std::uint64_t>(ts.tv_nsec) / 1000u;
+}
+
 static void TestRecorderTickTime()
 {
     DungeonPlan plan;
@@ -466,30 +476,39 @@ static void TestRecorderTickTime()
     Recorder recorder(header, limits, sink);
 
     int const ticks = 1000;
-    auto const start = std::chrono::steady_clock::now();
-    std::uint32_t minCapUs = std::numeric_limits<std::uint32_t>::max();
+    auto const start = ThreadCpuUs();
+    std::uint64_t minCapUs = std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t minHashUs = std::numeric_limits<std::uint64_t>::max();
+    std::size_t hashBytes = 0;
     for (int i = 0; i < ticks; ++i)
     {
         // A live run's facts churn every tick: members and units move.
         facts.members[i % 20].yd = 4.0f + static_cast<float>(i % 7);
         facts.units[i % 30].distLead = 30.0f + static_cast<float>(i % 11);
+        // Hashing the 400-step plan costs about as much as a tick's encodes, and the hash is cached per
+        // plan: the cheapest tick does no hashing. The hash is sampled among the ticks (a counter's minimum
+        // on both, so the same machine speed and load apply to each) and the cheapest tick must undercut it.
+        // A missing per-segment cache makes every tick at least a hash long.
+        if (i % 50 == 0)
+        {
+            auto const hashStart = std::chrono::steady_clock::now();
+            hashBytes += PlanHash(plan).size();
+            minHashUs = std::min(minHashUs, static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - hashStart)
+                    .count()));
+        }
         recorder.BeforeTick(run, facts, 1000, 2000 + static_cast<std::uint64_t>(i));
         recorder.AfterTick(run, "move 40,0 0,0");
-        minCapUs = std::min(minCapUs, recorder.stats().lastCapUs);
+        minCapUs = std::min(minCapUs, static_cast<std::uint64_t>(recorder.stats().lastCapUs));
     }
-    auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now() - start)
-                        .count();
-    double const perTick = static_cast<double>(us) / ticks;
+    // The budget is a CPU budget: a wall clock here would also count the build machine's other load
+    // (and a VM's steal time).
+    double const perTick = static_cast<double>(ThreadCpuUs() - start) / ticks;
     std::cout << "400-step plan, 20 members, 30 units: recorder tick " << perTick << " us ("
-              << sink.bytes / static_cast<std::uint64_t>(ticks) << " B/tick, min capUs "
-              << minCapUs << ")\n";
-    // The budget is 2 ms per tick. The encode alone must sit well under it:
-    // hashing the 400-step plan on every tick costs about 1.1 ms, so the
-    // cheapest tick is the one that catches a missing per-segment cache (a
-    // busy machine inflates single ticks, so the fastest is the fair sample).
+              << sink.bytes / static_cast<std::uint64_t>(ticks) << " B/tick, cheapest encode " << minCapUs
+              << " us, cheapest plan hash " << minHashUs << " us, " << hashBytes << " B)\n";
     CHECK(perTick < 2000.0);
-    CHECK(minCapUs < 1000);
+    CHECK(minCapUs < minHashUs);
 }
 
 // -- 9. decode errors ----------------------------------------------------
