@@ -11,6 +11,7 @@
 - Fixed: damage dealers cursed by Jin'do now go for the Shade that is attacking a healer before one on another damage dealer.
 - A fast-respawning unit at its own spawn that hits nobody in the party (Jin'do's pit trolls) no longer holds a fight open or a regroup's gather spot; a unit that attacks the party is always fought (AiPlayerbot.DungeonRunRespawnNest, default on).
 - Jin'do in Zul'Gurub: when Banish throws the tank onto the pit's trolls, the off-tank takes the boss back instead of letting him chase the tank to the pit rim.
+- Fixed: warrior tanks use Charge/Intercept to start a pull and to rescue a healer, #1529.
 
 ## v1.15.1 (2026-11-03)
 

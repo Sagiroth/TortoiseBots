@@ -2,7 +2,7 @@
 id: server-settings-class-behaviour
 title: Class Behaviour Settings
 category: server
-summary: Configuration flags controlling class-specific AI decisions for hunters, paladins, rogues, and warlocks.
+summary: Configuration flags controlling class-specific AI decisions for hunters, paladins, rogues, warlocks, and warriors.
 tags: [config, classes, ai, spells]
 relates_to:
   - classes-overview
@@ -10,6 +10,7 @@ relates_to:
   - classes-paladin
   - classes-rogue
   - classes-warlock
+  - classes-warrior
 ---
 
 # Class Behaviour Settings
@@ -27,6 +28,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | [`AiPlayerbot.SapApproachAvoidPack`](#aiplayerbotsapapproachavoidpack) | `1` | Makes rogues sneak round a pack to Sap the marked mob, or skip the Sap when there is no safe way in. |
 | [`AiPlayerbot.WarlockPetBySpec`](#aiplayerbotwarlockpetbyspec) | `1` | Selects warlock demon summons based on active talent specialization. |
 | [`AiPlayerbot.WarlockRaidRotation`](#aiplayerbotwarlockraidrotation) | `0` | Stops warlock DoTs, curses and Drain Soul from wasting casts on targets that are about to die. |
+| [`AiPlayerbot.WarriorGapCloser`](#aiplayerbotwarriorgapcloser) | `1` | Warriors Charge to open a fight and tanks Intercept to rescue a party member, swapping stance for it. |
 
 ## Settings
 
@@ -139,5 +141,22 @@ Stops the warlock rotation from spending casts on a target that is about to die,
 - In combat *Life Tap* only fires when two *Shadow Bolts* cannot be paid for, instead of at the 40% medium-mana line. The health floor and the out-of-combat top-up band are unchanged.
 
 Manual curse strategies a player turns on (`.bot strategy +curse …`) are player orders and are never gated. When set to `0`, every row behaves as before.
+
+</details>
+
+### `AiPlayerbot.WarriorGapCloser`
+Lets warriors close distance with *Charge* and *Intercept*, swapping stance for it, instead of walking in.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+- Out of combat, with its target 8-25 yards away (the spell's own range, measured edge to edge like the server does) and in line of sight, a warrior of any spec swaps to Battle Stance if needed and casts *Charge*. A tank swaps back to Defensive Stance as soon as the fight starts; Fury goes back to Berserker Stance.
+- A tank picks a mob that is already hitting a party member first (a pack a rogue or a healer pulled), then its own target. A crowd-controlled mob (a Sap, a Polymorph) or a held crowd-control mark is never charged.
+- In combat a tank uses *Intercept* (Berserker Stance, 10 rage) on a mob hitting the healer or another non-tank member 8-25 yards away, but only when the rage left after the stance swap pays for it (Tactical Mastery keeps 5 rage per rank across a swap). It then swaps back to Defensive Stance and taunts. With too little rage it runs in.
+- Inside a dungeon or raid an unengaged mob is charged only when it is the target of a melee pull order or an attack order; the run's own pulls open from range and stay that way.
+- A bot told to stay, or held by a pull's wait, does not charge.
+
+When set to `0`, warriors only Charge from the stance they are already in as the walk in closes (Arms), and tanks never leave Defensive Stance to close a gap.
 
 </details>

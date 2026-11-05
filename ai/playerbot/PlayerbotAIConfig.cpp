@@ -1051,6 +1051,7 @@ bool PlayerbotAIConfig::Initialize()
     warlockRaidRotation = config.GetBoolDefault("AiPlayerbot.WarlockRaidRotation", false);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
     sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", true);
+    warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", true);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
