@@ -88,6 +88,7 @@
 #include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
+#include "../runtime/policy/movement/TeleportLandingPolicy.h" // the feet probe an off-floor lead bot is read with
 #include "CreatureGroups.h"
 #include "Group/CreatureLinkingMgr.h"
 #include "Maps/InstanceData.h"
@@ -11540,6 +11541,45 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // A lead bot off the floor is no summon point: Banish 24466 leaves a bot 12.3 yd over the ZG pit floor and, with no
+    // client, nothing makes it fall; the summon then parked the party beside it. The floor is read the way the teleport
+    // landing reads it (PlayerbotAI::HandleTeleportAck): the map's floor, and the feet probe only when that floor is
+    // more than kLandingYd under the feet, the higher of the two winning. A map without the mesh cannot judge, so the
+    // flag stays clear.
+    {
+        float const leadZ = lead->GetPositionZ();
+        float mapFloorZ = leadZ;
+        lead->UpdateAllowedPositionZ(lead->GetPositionX(), lead->GetPositionY(), mapFloorZ);
+        ai::WorldPosition feet(lead->GetMapId(), lead->GetPositionX(), lead->GetPositionY(),
+            leadZ - ai::TeleportLandingPolicy::kFeetProbeDepth);
+        bool const mmapLoaded = feet.isMmapLoaded(lead->GetInstanceId());
+        bool probeFound = false;
+        float probeZ = leadZ;
+        if (mmapLoaded && leadZ - mapFloorZ > ai::TeleportLandingPolicy::kLandingYd &&
+            feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
+                ai::TeleportLandingPolicy::kFeetProbeDepth, lead->GetInstanceId()))
+        {
+            probeZ = feet.getZ();
+            probeFound = true;
+        }
+        // A game-object floor (an elevator, a platform) is in neither the map's floor nor the mesh: a transport under
+        // the lead bot, or the core's own height read (terrain, models and game-object collision, cast down from just
+        // above the feet) finding a surface within kSurfaceYd of them, is a floor (DungeonRun::LeadOnSurface).
+        float surfaceZ = leadZ;
+        bool surfaceFound = false;
+        if (Map* const surfaceMap = lead->GetMap())
+        {
+            float const height = surfaceMap->GetHeight(lead->GetPositionX(), lead->GetPositionY(), leadZ + 0.5f);
+            surfaceFound = height > INVALID_HEIGHT + 1.0f;
+            if (surfaceFound)
+                surfaceZ = height;
+        }
+        bool const onSurface = TortoiseBots::DungeonRun::LeadOnSurface(leadZ, lead->GetTransport() != nullptr,
+            surfaceFound, surfaceZ);
+        f.leadFloorZ = TortoiseBots::DungeonRun::LeadFloorZ(mapFloorZ, probeFound, probeZ);
+        f.leadOffFloor = mmapLoaded && TortoiseBots::DungeonRun::LeadOffFloor(leadZ, mapFloorZ, probeFound, probeZ,
+            lead->IsInWater() || lead->IsUnderwater(), onSurface);
+    }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
     // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
     // the canal at -11944.3 -1353.9 62.3 and the run stranded there).
