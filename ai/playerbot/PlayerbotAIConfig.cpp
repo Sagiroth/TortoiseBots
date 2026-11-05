@@ -1071,6 +1071,8 @@ bool PlayerbotAIConfig::Initialize()
     autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", true);
     autoLearnQuestSpellsAlts = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpellsAlts", false);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
+    petAutoTrain = config.GetBoolDefault("AiPlayerbot.PetAutoTrain", true);
+    petAutoTrainAlts = config.GetBoolDefault("AiPlayerbot.PetAutoTrainAlts", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
     autoShareConjuredOnTrade = config.GetBoolDefault("AiPlayerbot.AutoShareConjuredOnTrade", true);
     generateTravelNodes = config.GetBoolDefault("AiPlayerbot.GenerateTravelNodes", false);

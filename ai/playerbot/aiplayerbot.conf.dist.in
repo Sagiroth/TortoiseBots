@@ -1785,6 +1785,17 @@ AiPlayerbot.AutoLearnQuestSpellsAlts = 0
 # Default: 0 (disabled)
 AiPlayerbot.AutoLearnDroppedSpells = 0
 
+# Hunter and warlock pets of pool bots and hired companions train themselves on every
+# level-up: hunter pets get their family's best build within 4 active abilities and
+# their training points, warlock demons get every Grimoire rank of their level.
+# Default: 1 (enabled)
+AiPlayerbot.PetAutoTrain = 1
+
+# The same for your own alts' pets. A hunter alt's pet keeps the abilities you taught
+# it yourself and ranks them up too; nothing it knows is ever removed.
+# Default: 0 (disabled)
+AiPlayerbot.PetAutoTrainAlts = 0
+
 # Random Bots will pick quests on their own and try to complete
 # Default: 1 (enabled)
 # AiPlayerbot.AutoDoQuests = 1
