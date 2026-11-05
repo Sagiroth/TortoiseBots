@@ -686,7 +686,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
         WorldPacket cancel;
         uint32 cancelStatus = 0;
         cancel << cancelStatus;
-        sLog.outBasic("TBDEBUG enchant trade cancel site 1 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
         return true;
     }
 
@@ -751,7 +751,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             WorldPacket cancel;
             uint32 cancelStatus = 0;
             cancel << cancelStatus;
-            sLog.outBasic("TBDEBUG enchant trade cancel site 2 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
             return true;
         }
         if (checked.verdict == ai::MaterialsTradeVerdict::NoGold)
@@ -761,7 +761,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             WorldPacket cancel;
             uint32 cancelStatus = 0;
             cancel << cancelStatus;
-            sLog.outBasic("TBDEBUG enchant trade cancel site 3 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
             return true;
         }
         // All materials offered and the giver accepted: accept, then count
@@ -830,7 +830,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             WorldPacket cancel;
             uint32 cancelStatus = 0;
             cancel << cancelStatus;
-            sLog.outBasic("TBDEBUG enchant trade cancel site 4 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
             return true;
         }
         case ai::TradeTryAction::GiveUp:
@@ -840,7 +840,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
             WorldPacket cancel;
             uint32 cancelStatus = 0;
             cancel << cancelStatus;
-            sLog.outBasic("TBDEBUG enchant trade cancel site 5 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
             bool need = order.reason == TortoiseBots::GuildOrders::OrderReason::NeedItems;
             TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
                 need ? TortoiseBots::GuildOrders::OrderState::Waiting :
@@ -862,7 +862,7 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
         WorldPacket cancel;
         uint32 cancelStatus = 0;
         cancel << cancelStatus;
-        sLog.outBasic("TBDEBUG enchant trade cancel site 6 bot %s", bot->GetName()); bot->GetSession()->HandleCancelTradeOpcode(cancel);
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
         return true;
     }
 
@@ -871,7 +871,6 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
     if (!EnchantHookWindowFacts(bot, trader, order.itemId, tradeState, currentEnchant))
         return true;
     tradeState.replaceConfirmed = session.replaceConfirmed;
-    sLog.outBasic("TBDEBUG enchant verdict %s item %u fits %u ench %u extras %u", ai::EnchantTradeToken(ai::CheckEnchantTrade(tradeState)), tradeState.hasItem ? 1u : 0u, tradeState.fitsEnchant ? 1u : 0u, tradeState.hasPermanentEnchant ? 1u : 0u, tradeState.traderExtras ? 1u : 0u);
     switch (ai::CheckEnchantTrade(tradeState))
     {
         case ai::EnchantTradeVerdict::WrongPlayer:

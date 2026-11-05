@@ -832,9 +832,6 @@ bool GuildDisenchantServiceAction::isUseful()
         return false;
     bool hasWork = !SyncedServiceQueue(bot).empty();
     // Moving or mounted does not block: the cast stops and dismounts the bot.
-    if (hasWork && (bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false) || bot->GetTrader()))
-        sLog.outBasic("TBDEBUG disenchant blocked %s combat %u cast %u trader %u", bot->GetName(),
-            bot->IsInCombat() ? 1u : 0u, bot->IsNonMeleeSpellCasted(false) ? 1u : 0u, bot->GetTrader() ? 1u : 0u);
     return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), false,
         false, bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
 }
@@ -947,8 +944,6 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
     auto& queue = SyncedServiceQueue(bot);
     if (queue.empty())
         return false;
-    sLog.outBasic("TBDEBUG disenchant service %s head item %u pending %u loot %u", bot->GetName(),
-        queue.front().itemId, queue.front().pendingResults ? 1u : 0u, queue.front().collectLootOpen ? 1u : 0u);
     // The cast leaves its results in a loot window on the item for the bot
     // itself: the collect tick below takes it there, so a cast never
     // reports success before its loot exists. Pending results ride the
@@ -1136,7 +1131,6 @@ bool GuildDisenchantServiceAction::Execute(Event& event)
     if (didCast)
         if (SpellEntry const* disenchant = sServerFacade.LookupSpellInfo(13262))
             SetDuration(GetSpellCastTime(disenchant) + 500);
-    sLog.outBasic("TBDEBUG disenchant service %s cast %u -> %u", bot->GetName(), queued.itemId, didCast ? 1u : 0u);
     if (!didCast)
     {
         head.bagBefore.clear();
