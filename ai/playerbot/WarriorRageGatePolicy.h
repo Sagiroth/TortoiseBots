@@ -90,4 +90,14 @@ namespace ai
         return known && lostAggro && !tauntReady && mockingReady && inMelee &&
             rage >= WARRIOR_MOCKING_BLOW_RAGE_COST;
     }
+    // Thunder Clap is a rage trap in the Arms swing cycle (Mortal
+    // Strike/Overpower/Sweeping Strikes out-damage it), so grouped PvE Arms
+    // DPS leaves it to the tank. Solo Arms has no tank covering it, PvP/BG
+    // Arms wants the snare, and tanks and non-Arms keep the row. Grouped is
+    // the bot's real group, not an online master: an ungrouped bot with a
+    // master online still has no tank beside it.
+    inline bool ShouldSkipThunderClapForArms(bool isTank, bool isArms, bool grouped, bool pvpOrBg)
+    {
+        return !isTank && isArms && grouped && !pvpOrBg;
+    }
 } // namespace ai

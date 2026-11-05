@@ -37,7 +37,7 @@ public:
         // the tank-correctness set (defensive: taunt/revenge/shield block/
         // shield wall) and the interrupt/mobility set (berserker: pummel/
         // intercept). Charge/mock/overpower/retaliation/mortal stay unforced
-        // to avoid rage-dance churn; whirlwind keeps its Arms-scoped node.
+        // to avoid rage-dance churn.
         creators["pummel"] = &pummel;
         creators["intercept"] = &intercept;
         creators["taunt"] = &taunt;

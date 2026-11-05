@@ -1117,10 +1117,20 @@ static void TestHeldAttack()
 // commanded party, never on a mob hitting the tank, and never outside one.
 static void TestCommandedBackoffYields()
 {
-    CHECK(CommandedBackoffYields(true, true, false));
-    CHECK(!CommandedBackoffYields(true, true, true));
-    CHECK(!CommandedBackoffYields(true, false, false));
-    CHECK(!CommandedBackoffYields(false, true, false));
+    CHECK(CommandedBackoffYields(true, true, false, false));
+    CHECK(!CommandedBackoffYields(true, true, true, false));
+    CHECK(!CommandedBackoffYields(true, false, false, false));
+    CHECK(!CommandedBackoffYields(false, true, false, false));
+}
+
+// CommandedBackoffNoYieldOnTauntImmune: a taunt-immune subject (Hakkar,
+// creature_template 14834 immunity_flags 6) can never be taken back by a
+// tank, so the back-off holds the damage dealer off it even in a commanded
+// party; nothing else changes.
+static void TestCommandedBackoffNoYieldOnTauntImmune()
+{
+    CHECK(!CommandedBackoffYields(true, true, false, true));
+    CHECK(!CommandedBackoffYields(false, true, false, true));
 }
 
 // Lifecycle of a binding's "threat": given only to an eligible bot that
@@ -1489,6 +1499,7 @@ int main()
     TestPartyAttackAckDetail();
     TestHeldAttack();
     TestCommandedBackoffYields();
+    TestCommandedBackoffNoYieldOnTauntImmune();
     TestCommanderThreatLedger();
     TestCommanderAutonomyLedger();
     TestCommanderAutonomyRestoreInsideInstance();

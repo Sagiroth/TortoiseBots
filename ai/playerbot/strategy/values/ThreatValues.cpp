@@ -1,9 +1,13 @@
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "ThreatValues.h"
 
+#include "Objects/Creature.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "Threat/ThreatManager.h"
 
 using namespace ai;
@@ -90,22 +94,56 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     if (!group)
         return 0;
 
-    float maxThreat = -1.0f;
-
-    for (Player* player : LiveGroupMembers(group))
+    // The off-tank cap is the boss data's call (ai_boss_tactic kind `threat_successor`), never the creature's taunt
+    // immunity: only a target with that row reads the raid's tank order. Every other target keeps the plain IsTank
+    // max exactly as before, whatever its taunt immunity.
+    if (!ai::ThreatSuccessorTarget(target))
     {
-        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
-            continue;
-
-        if (ai->IsTank(player))
+        float maxThreat = -1.0f;
+        for (Player* player : LiveGroupMembers(group))
         {
-            float threat = sServerFacade.GetThreatManager(target).getThreat(player);
-            if (maxThreat < threat)
-                maxThreat = threat;
+            if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
+                continue;
+            if (ai->IsTank(player))
+            {
+                float threat = sServerFacade.GetThreatManager(target).getThreat(player);
+                if (maxThreat < threat)
+                    maxThreat = threat;
+            }
         }
+        return maxThreat;
     }
 
-    return maxThreat;
+    // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
+    // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    std::vector<ThreatCapTank> tanks;
+    tanks.reserve(roles.tanks.size());
+    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+    {
+        Player* player = roles.tanks[index];
+        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
+            continue;
+        ObjectGuid const charmer = player->GetCharmerGuid();
+        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+            continue;
+        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1});
+    }
+
+    return ThreatCapReference(tanks, true);
+}
+
+bool ai::TargetTauntImmune(Unit* target)
+{
+    Creature* const creature = target ? dynamic_cast<Creature*>(target) : nullptr;
+    return creature && creature->HasImmunityFlag(CREATURE_IMMUNITY_TAUNT);
+}
+
+bool ai::ThreatSuccessorTarget(Unit* target)
+{
+    if (!target || target->getObjectGuid().IsPlayer())
+        return false;
+    return GetBossTactics().HasThreatSuccessor(target->GetMapId(), target->GetEntry());
 }
 
 uint8 ThreatValue::Calculate(Unit* target)

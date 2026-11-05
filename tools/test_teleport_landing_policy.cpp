@@ -1,0 +1,95 @@
+// Standalone check for runtime/policy/movement/TeleportLandingPolicy.h (the ground a bot lands on after a near
+// teleport):
+//   g++ -std=c++17 -Wall -Wextra tools/test_teleport_landing_policy.cpp -o /tmp/test_teleport_landing_policy && /tmp/test_teleport_landing_policy
+#include "../runtime/policy/movement/TeleportLandingPolicy.h"
+
+#include <cstdlib>
+#include <iostream>
+
+#define CHECK(x) do { \
+    if (!(x)) { \
+        std::cerr << "Assertion failed at line " << __LINE__ << ": " #x "\n"; \
+        std::exit(1); \
+    } \
+} while (0)
+
+using ai::TeleportLandingPolicy::JumpState;
+using ai::TeleportLandingPolicy::NearTeleportJumpState;
+using ai::TeleportLandingPolicy::SimulatedFallMs;
+using ai::TeleportLandingPolicy::TeleportLandingZ;
+
+// Jin'do's Banish 24466 lands a player at (-11582.9, -1251.15, 90.0), 12 yd over the ZG pit floor at 77.63. With
+// no client nothing makes a bot fall, so it hovers there and never paths back. The feet probe misses a floor that
+// deep: the caller's UpdateAllowedPositionZ reading is the fallback (floorFound false), and within the jump limit
+// it is the landing.
+static void TestBanishLandsOnThePitFloor()
+{
+    CHECK(TeleportLandingZ(90.0f, true, 77.63f, 77.63f, 20.0f) == 77.63f);
+    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 77.63f, 20.0f) == 77.63f);
+    CHECK(TeleportLandingZ(90.0f, false, 77.63f, 77.63f, 60.0f) == 77.63f);
+}
+
+// Nothing to fall to: the terrain under a WMO deck reads far deeper than the jump limit, and a bot is never pulled
+// down through a floor (the jump landing's own deck guard).
+static void TestNoFloorStays()
+{
+    CHECK(TeleportLandingZ(90.0f, false, 90.0f, 90.0f, 20.0f) == 90.0f);   // the map answers with the feet
+    CHECK(TeleportLandingZ(90.0f, false, 60.0f, 60.0f, 20.0f) == 90.0f);   // 30 yd: terrain only, over the limit
+    // A navmesh floor is authoritative however deep it is: it is the surface the bot stands on (the map read
+    // agrees here).
+    CHECK(TeleportLandingZ(180.0f, true, 0.0f, 0.0f, 60.0f) == 0.0f);
+}
+
+// Both floors are below the destination: the higher walkable floor is the landing. The feet probe can answer with a
+// lower storey under the real floor, and the bot must not drop through it onto ground with no way back.
+static void TestTheHigherFloorWins()
+{
+    CHECK(TeleportLandingZ(10.0f, true, -6.0f, -1.5f, 20.0f) == -1.5f);   // probe 4.5 yd under the map's floor
+    CHECK(TeleportLandingZ(10.0f, true, 6.0f, 2.0f, 20.0f) == 6.0f);       // the probe's deck over the terrain
+}
+
+// A destination at or above the floor it would land on does not fall: same height, a step, or a deck overhead.
+static void TestNoFallWithinAStep()
+{
+    CHECK(TeleportLandingZ(90.0f, true, 90.0f, 90.0f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, true, 89.7f, 89.7f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, false, 89.7f, 89.7f, 20.0f) == 90.0f);
+    CHECK(TeleportLandingZ(90.0f, true, 92.0f, 92.0f, 20.0f) == 90.0f);   // a bridge over the head is no landing ground
+}
+
+// The fall time is the jump landing's formula: the same fall lasts as long whichever caller starts it.
+static void TestFallTimeMatchesTheJumpFormula()
+{
+    // 12.37 yd from rest: sqrt(2 * 12.37 / 19.2911) = 1.132 s.
+    CHECK(SimulatedFallMs(12.37f) == 1132);
+    CHECK(SimulatedFallMs(-12.37f) == 1132);
+    CHECK(SimulatedFallMs(0.0f) == 0);
+    // Past the terminal length the last stretch runs at terminal velocity.
+    CHECK(SimulatedFallMs(1000.0f) > SimulatedFallMs(500.0f));
+}
+
+// With the key on every near teleport replaces the jump state before the landing is decided: a fall or knockback
+// still in flight (its own jump time and destination) must not Relocate the bot back after the teleport. On the
+// ground nothing is scheduled; in the air the new landing is the only jump.
+static void TestNearTeleportClearsTheJumpInFlight()
+{
+    JumpState const onTheGround = NearTeleportJumpState(10.0f, false, 10.0f, 10.0f, 20.0f, 5000);
+    CHECK(onTheGround.jumpTimeMs == 0);
+    CHECK(!onTheGround.hasDestination);
+    JumpState const inTheAir = NearTeleportJumpState(10.0f, true, -1.5f, -1.5f, 20.0f, 5000);
+    CHECK(inTheAir.hasDestination);
+    CHECK(inTheAir.destinationZ == -1.5f);
+    CHECK(inTheAir.jumpTimeMs == 5000 + SimulatedFallMs(11.5f) + 1000);
+}
+
+int main()
+{
+    TestBanishLandsOnThePitFloor();
+    TestNoFloorStays();
+    TestTheHigherFloorWins();
+    TestNoFallWithinAStep();
+    TestNearTeleportClearsTheJumpInFlight();
+    TestFallTimeMatchesTheJumpFormula();
+    std::cout << "test_teleport_landing_policy: all checks passed\n";
+    return 0;
+}

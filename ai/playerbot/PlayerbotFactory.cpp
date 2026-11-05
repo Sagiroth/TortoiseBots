@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotFactory.h"
+#include <map>
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/policy/gear/SpellRankPolicy.h"
@@ -715,6 +716,131 @@ void PlayerbotFactory::InitPet(bool saveToDb)
     }
 }
 
+bool PlayerbotFactory::PetAutoTrainAllowed(Player* bot)
+{
+    if (!bot)
+        return false;
+    return sRandomBotFacade.IsRandomBot(bot) ? sPlayerbotAIConfig.petAutoTrain : sPlayerbotAIConfig.petAutoTrainAlts;
+}
+
+// Training-point cost of one pet spell rank (SkillLineAbility); an id this
+// core cannot teach costs more than any budget, so the planner never picks it.
+static int32 HunterPetSpellCost(uint32 spellId)
+{
+    if (!sSpellMgr.GetSpellEntry(spellId))
+        return 1 << 20;
+    SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spellId);
+    for (SkillLineAbilityMap::const_iterator itr = bounds.first; itr != bounds.second; ++itr)
+        return int32(itr->second->reqtrainpoints);
+    return 0;
+}
+
+bool PlayerbotFactory::TrainHunterPet(Player* bot, Pet* pet, bool apply, std::function<bool(uint32)> const& autocastDefault)
+{
+    if (!bot || !pet || pet->getPetType() != HUNTER_PET)
+        return false;
+
+    // Pool pets (hires included) are Best Friends and follow the plan exactly;
+    // an alt's pet spends its real loyalty's points and keeps its player's picks.
+    bool const rebuild = sRandomBotFacade.IsRandomBot(bot);
+    uint32 const level = pet->GetLevel();
+    int32 const budget = TortoiseBots::HunterPetTrainingBudget(level,
+        rebuild ? uint32(BEST_FRIEND) : uint32(pet->GetLoyaltyLevel()));
+    CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
+    uint32 const family = info ? info->beast_family : 0;
+
+    std::map<TortoiseBots::PetRankLadder const*, int> knownRank;
+    std::vector<uint32> knownManaged;
+    for (auto const& itr : pet->m_petSpells)
+    {
+        if (itr.second.state == PETSPELL_REMOVED)
+            continue;
+        int rank = -1;
+        TortoiseBots::HunterPetBuildEntry const* entry = TortoiseBots::FindHunterPetLadder(itr.first, rank);
+        if (!entry)
+            continue;
+        knownManaged.push_back(itr.first);
+        auto known = knownRank.find(entry->ladder);
+        if (known == knownRank.end() || known->second < rank)
+            knownRank[entry->ladder] = rank;
+    }
+
+    // An alt keeps the actives its player taught outside the family build.
+    std::vector<TortoiseBots::PetRankLadder const*> kept;
+    if (!rebuild)
+    {
+        std::vector<TortoiseBots::HunterPetBuildEntry> const build = TortoiseBots::HunterPetBuild(family);
+        for (TortoiseBots::HunterPetBuildEntry const& entry : TortoiseBots::HunterPetManagedLadders())
+        {
+            if (entry.passive || entry.ladder == &TortoiseBots::GrowlLadder() || !knownRank.count(entry.ladder))
+                continue;
+            bool inBuild = false;
+            for (TortoiseBots::HunterPetBuildEntry const& b : build)
+                inBuild = inBuild || b.ladder == entry.ladder;
+            if (!inBuild)
+                kept.push_back(entry.ladder);
+        }
+    }
+
+    std::vector<TortoiseBots::PetWantedSpell> plan;
+    TortoiseBots::PlanHunterPetSpells(family, level, budget, kept,
+        [](uint32_t spellId) { return HunterPetSpellCost(spellId); },
+        [&](TortoiseBots::PetRankLadder const& ladder)
+        {
+            if (rebuild)
+                return -1;
+            auto known = knownRank.find(&ladder);
+            return known == knownRank.end() ? -1 : known->second;
+        },
+        [&plan](TortoiseBots::PetWantedSpell wanted) { plan.push_back(wanted); });
+
+    auto planned = [&plan](uint32 spellId)
+    {
+        for (TortoiseBots::PetWantedSpell const& wanted : plan)
+            if (wanted.spellId == spellId)
+                return true;
+        return false;
+    };
+    std::vector<uint32> toUnlearn;
+    if (rebuild)
+        for (uint32 spellId : knownManaged)
+            if (!planned(spellId))
+                toUnlearn.push_back(spellId);
+    std::vector<TortoiseBots::PetWantedSpell> toLearn;
+    for (TortoiseBots::PetWantedSpell const& wanted : plan)
+        if (!pet->HasSpell(wanted.spellId))
+            toLearn.push_back(wanted);
+
+    if (!apply || (toUnlearn.empty() && toLearn.empty()))
+        return !toUnlearn.empty() || !toLearn.empty();
+
+    for (uint32 spellId : toUnlearn)
+        pet->unlearnSpell(spellId, false);
+    for (TortoiseBots::PetWantedSpell const& wanted : toLearn)
+    {
+        int rank = -1;
+        TortoiseBots::HunterPetBuildEntry const* entry = TortoiseBots::FindHunterPetLadder(wanted.spellId, rank);
+        bool const newAbility = !entry || !knownRank.count(entry->ladder) || rebuild;
+        pet->LearnSpell(wanted.spellId);
+        // A new rank keeps the autocast state of the one it replaces (an
+        // alt's player may have set it); only a new ability gets the default.
+        if (newAbility && !wanted.passive && pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
+            pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
+    }
+
+    // Keep the training-point counter in step with what the pet now knows,
+    // like Beast Training does, so the player sees the points left.
+    int32 used = 0;
+    for (auto const& itr : pet->m_petSpells)
+    {
+        int rank = -1;
+        if (itr.second.state != PETSPELL_REMOVED && TortoiseBots::FindHunterPetLadder(itr.first, rank))
+            used += HunterPetSpellCost(itr.first);
+    }
+    pet->SetTP(TortoiseBots::HunterPetTrainingBudget(level, pet->GetLoyaltyLevel()) - used);
+    return true;
+}
+
 void PlayerbotFactory::InitPetSpells()
 {
     Map* map = bot->GetMap();
@@ -725,30 +851,11 @@ void PlayerbotFactory::InitPetSpells()
     if (!pet)
         return;
 
-     // TODO: Proper Training Point calculation for build variety
-    if (bot->GetClass() == CLASS_HUNTER)
-    {
-        CreatureInfo const* ci = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
-        uint32 beastFamily = ci ? ci->beast_family : 0;
-        // Single shared table (runtime/PetSpellRankPolicy.h): the same
-        // ForEachHunterWantedSpell walk drives the missing-rank check, so a
-        // rank the check names is always one this loop can teach. Top rank
-        // per ladder only - the core's Pet::AddSpell swaps the lower rank out
-        // and keeps its autocast state - then pin the survivor to the
-        // teach-time default. Ids with no SpellEntry are skipped, never
-        // counted, so an unteachable row cannot pin isUseful true.
-        TortoiseBots::ForEachHunterWantedSpell(beastFamily, pet->GetLevel(),
-            [pet](TortoiseBots::PetWantedSpell wanted)
-        {
-            if (!sSpellMgr.GetSpellEntry(wanted.spellId))
-                return;
-            if (!pet->HasSpell(wanted.spellId))
-                pet->LearnSpell(wanted.spellId);
-            if (!wanted.passive && pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                pet->ToggleAutocast(wanted.spellId, TortoiseBots::ShouldPetSpellAutocastDefault(wanted.spellId));
-        });
-    }
+    if (!PetAutoTrainAllowed(bot))
+        return;
 
+    if (bot->GetClass() == CLASS_HUNTER)
+        TrainHunterPet(bot, pet, true, [](uint32 spellId) { return TortoiseBots::ShouldPetSpellAutocastDefault(spellId); });
 
     if (bot->GetClass() == CLASS_WARLOCK)
     {

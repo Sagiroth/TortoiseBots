@@ -107,7 +107,11 @@ class RowGateWiring(unittest.TestCase):
         add = body(POLICY, "bool Add(const BossTacticRow& row)", "\n        }\n")
         self.assertIn("if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || "
                       "row.kind == BossTacticKind::TankHold ||", add)
-        self.assertIn("row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath))", add)
+        # Every kind read straight from the table is refused a gate: the fight scan never answers it for one of them.
+        gated = add[add.index("if (RowGateSet(row) && ("):add.index("if (row.kind == BossTacticKind::Interrupt")]
+        for kind in ("HoldKill", "TankHold", "OneAtATime", "LinkedDeath", "ThreatSuccessor"):
+            self.assertIn("BossTacticKind::%s" % kind, gated)
+        self.assertIn("ThreatSuccessor))", gated)
         self.assertIn("if (row.hpMin > row.hpMax || row.hpMax > 100)", add)
         # The duplicate key includes the band, so one boss can carry the same kind once per band.
         self.assertIn("have.hpMin == row.hpMin && have.hpMax == row.hpMax", add)

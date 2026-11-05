@@ -71,8 +71,8 @@ When enabled, paladin bots coordinate to maintain *Judgement of Wisdom* and *Jud
 
 ## Utility & interrupts
 
-- **Blessings Coordination:** Coordinates blessings across party classes (*Kings*, *Might*, *Wisdom*, *Salvation*, *Sanctuary*, *Light*). Each paladin assigns one blessing per member, and multiple paladins stack distinct blessing families. Buff claims prevent duplicate casts.
-- **Hands:** Casts *Hand of Protection* on non-tank allies facing physical danger (checking *Forbearance* to prevent wasted casts) and *Hand of Freedom* on rooted allies.
+- **Blessings Coordination:** Coordinates blessings across party classes (*Kings*, *Might*, *Wisdom*, *Salvation*, *Sanctuary*, *Light*). Each paladin assigns one blessing per member, and multiple paladins stack distinct blessing families. Buff claims prevent duplicate casts. Holy healers never re-buff mid-fight; blessings are an out-of-combat job.
+- **Hands:** Casts *Hand of Protection* on non-tank allies facing physical danger (checking *Forbearance* to prevent wasted casts) and *Hand of Freedom* on rooted tanks (Holy) or rooted allies (other specs).
 - **Auras:** Holy runs *Concentration Aura*, Protection runs *Retribution Aura*, and Retribution runs *Sanctity Aura*. In raids, the first paladin bot in the fight auto-swaps to *Fire* or *Shadow Resistance Aura* on applicable bosses, then drops it out of combat.
 - **Cleansing:** Uses *Cleanse* and *Purify* to remove poisons, diseases, and magic debuffs from self and allies.
 - **Crowd Control & Stuns:** Casts *Hammer of Justice* to stun dangerous casters or runners. *Repentance* interrupts with no humanoid restriction and *Turn Undead* covers assigned-CC undead.

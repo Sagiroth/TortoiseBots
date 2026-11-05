@@ -107,6 +107,30 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("ReadGuardFacts(lead, bots, f, hold, raidBoss, raidTrashOffTanks);", code)
         self.assertIn("Player* const anchor = RaidGuardAnchor(lead, bots, f);", read)
 
+    def test_healer_seat_keys_are_wired(self):
+        # AiPlayerbot.RaidHealerSeatsByClass places the seats; AiPlayerbot.RaidTankHealerAssist lets a layout tank
+        # healer's second seat help the raid. Both default off: deleting either gate must fail here.
+        keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
+        self.assertIn(
+            'raidHealerSeatsByClass = config.GetBoolDefault("AiPlayerbot.RaidHealerSeatsByClass", false);', keys)
+        self.assertIn(
+            'raidTankHealerAssist = config.GetBoolDefault("AiPlayerbot.RaidTankHealerAssist", false);', keys)
+        self.assertIn("bool raidHealerSeatsByClass = false;", HEADER)
+        self.assertIn("bool raidTankHealerAssist = false;", HEADER)
+        self.assertIn("AiPlayerbot.RaidHealerSeatsByClass = 0", TEMPLATE)
+        self.assertIn("AiPlayerbot.RaidTankHealerAssist = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.RaidHealerSeatsByClass`", SETTINGS)
+        self.assertIn("### `AiPlayerbot.RaidTankHealerAssist`", SETTINGS)
+        self.assertIn("[`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0`", SETTINGS)
+        self.assertIn("[`AiPlayerbot.RaidTankHealerAssist`](#aiplayerbotraidtankhealerassist) | `0`", SETTINGS)
+        code = strip_comments(COMMANDER)
+        self.assertIn("TortoiseBots::RaidLayout::Plan(members, sPlayerbotAIConfig.raidHealerSeatsByClass);", code)
+        healer = strip_comments((ROOT / "ai/playerbot/strategy/values/PartyMemberToHeal.cpp").read_text())
+        self.assertIn("sPlayerbotAIConfig.raidTankHealerAssist", healer)
+        self.assertIn("TortoiseBots::BotCommands::RaidTankHealerSeat(bot)", healer)
+        self.assertIn("TankSeatQuiet(seat.seated, seat.seat, true, tank->IsAlive(),", healer)
+        self.assertIn("RaidAssistCandidate(true, sServerFacade.IsWithinLOSInMap(bot, player),", healer)
+
     def test_boss_off_tanks_are_raid_wide(self):
         code = strip_comments(COMMANDER)
         self.assertIn("(yd <= TortoiseBots::DungeonRun::kRaidBossGuardYd || !lead->IsAlive()) &&", code)

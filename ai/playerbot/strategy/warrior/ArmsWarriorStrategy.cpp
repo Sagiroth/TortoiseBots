@@ -15,8 +15,6 @@ public:
         creators["piercing howl"] = &piercing_howl;
         creators["mocking blow"] = &mocking_blow;
         creators["heroic strike"] = &heroic_strike;
-        creators["whirlwind"] = &whirlwind;
-        creators["sweeping strikes"] = &sweeping_strikes;
         creators["sunder armor"] = &sunder_armor;
     }
 
@@ -34,9 +32,6 @@ private:
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 
-    ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance for whirlwind");
-
-    ACTION_NODE_P(sweeping_strikes, "sweeping strikes", "battle stance");
 };
 
 ArmsWarriorStrategy::ArmsWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
@@ -202,7 +197,7 @@ void ArmsWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "melee light aoe",
+        "melee medium aoe",
         NextAction::array(0, new NextAction("sweeping strikes", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -261,10 +256,9 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 
     // Battle-stance pin (donor ArmsWarriorStrategy pins battle at HIGH+10):
     // charge/overpower/mocking blow/sweeping strikes/retaliation are all
-    // Battle-locked, and pinning berserker broke every one of them. Whirlwind
-    // keeps its arms-scoped berserker prerequisite node, so it still dances
-    // out and back (donor accepts the same dance); the AoE multipliers keep
-    // managing the sweeping-strikes stance choice on packs.
+    // Battle-locked. Pummel and Intercept dance out through their gated
+    // berserker nodes and this row swaps back after; the AoE multipliers
+    // keep holding spenders while Sweeping Strikes is ready on a pack.
     triggers.push_back(new TriggerNode(
         "battle stance",
         NextAction::array(0, new NextAction("battle stance", ACTION_NORMAL), NULL)));
@@ -326,9 +320,8 @@ void ArmsWarriorBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
     // Retaliation while winning (donor arms fires at almost-full-health):
     // 70-90% hp with melee attackers is when the counterattack shield earns
-    // its 30-min cooldown. Battle-locked: fires from battle stance (the
-    // WAR-5 pin holds it there; without that PR this row simply waits for
-    // battle rather than dancing).
+    // its 30-min cooldown. Battle-locked: fires from battle stance rather
+    // than dancing stances.
     triggers.push_back(new TriggerNode(
         "almost full health",
         NextAction::array(0, new NextAction("retaliation", ACTION_HIGH), NULL)));
@@ -437,15 +430,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -453,9 +448,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
@@ -473,15 +469,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -489,9 +487,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
@@ -509,15 +508,17 @@ public:
 
     float GetValue(Action* action) override
     {
-        // Disable Berserker Stance
+        // Sweeping Strikes copies swings onto a second mob: while it is ready
+        // (medium aoe in Battle Stance, same gate as the action) hold the
+        // spenders that would eat its rage.
         const std::string& actionName = action->getName();
         if ((actionName == "berserker stance" ||
-            actionName == "berserker stance for whirlwind" ||
             actionName == "whirlwind" ||
             actionName == "mortal strike" ||
             actionName == "heroic strike" ||
             actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
+            ai->HasAura("battle stance", bot) &&
             bot->HasSpell(12292) &&
             !bot->HasSpellCooldown(12292) &&
             !bot->HasAura(12292))
@@ -525,9 +526,10 @@ public:
             return 0.0f;
         }
 
-        // Disable Battle Stance spam if SS is on CD
+        // Sweeping Strikes on cooldown on a pack: hold the Battle Stance row
+        // instead of dancing stances for nothing.
         if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
+            AI_VALUE2(bool, "trigger active", "melee medium aoe") &&
             bot->HasSpell(12292) &&
             bot->HasSpellCooldown(12292))
         {
