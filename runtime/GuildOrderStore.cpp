@@ -616,7 +616,8 @@ public:
                 // A cancelled enchant row still hands its reagents back; the
                 // deposit finish erases it.
                 if (it->second.record.cancelled && it->second.record.guildGoldHeld == 0 &&
-                    it->second.record.type != OrderType::Enchant)
+                    !(it->second.record.type == OrderType::Enchant &&
+                        it->second.record.state == OrderState::Delivering))
                 {
                     deletes.push_back(it->first);
                     it = m_orders.erase(it);
