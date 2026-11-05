@@ -903,7 +903,10 @@ public:
     std::string autoPickTalents;
     bool autoLearnTrainerSpells;
     bool autoLearnQuestSpells;
+    bool autoLearnQuestSpellsAlts;
     bool autoLearnDroppedSpells;
+    bool petAutoTrain;
+    bool petAutoTrainAlts;
     bool autoDoQuests;
     bool autoShareConjuredOnTrade;
     // TravelNode cache generation can load every map and rewrite its database
@@ -962,6 +965,8 @@ public:
 
     // Per-fight combat numbers of every bound group for the observability dashboard.
     bool combatMonitor = false;
+    // The boss timeline in each fight record (health, victims, watched auras); needs combatMonitor and Observability.
+    bool combatTimeline = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;

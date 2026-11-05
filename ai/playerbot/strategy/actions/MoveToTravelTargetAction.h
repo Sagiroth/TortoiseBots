@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/policy/travel/MesaLiftPolicy.h"
 #include "playerbot/policy/travel/ServiceTripPolicy.h"
 #include "playerbot/PlayerbotAI.h"
 
@@ -16,7 +17,7 @@ namespace ai
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-        bool TryUndercityLift(WorldPosition const& location);
+        bool TryMesaLift(WorldPosition const& location, float& x, float& y, float& z, bool& staged);
 
         // Stuck-hand-in fallback, shared with the re-pick observation in
         // ChooseTravelTargetAction::setNewTarget: records one no-progress
@@ -76,11 +77,24 @@ namespace ai
         // a transport leg stand still by design and are skipped.
         bool TravelMoveMadeNoProgress();
         bool TryStepTowardTarget(WorldPosition const& location);
+        bool ContinueMesaLiftRide();
 
         float noProgressX = 0.0f;
         float noProgressY = 0.0f;
         time_t noProgressSince = 0;
         bool noProgressArmed = false;
+
+        // The lift car this bot stands on (MesaLiftPolicy.h), null when not riding.
+        ai::MesaLift const* rideLift = nullptr;
+        uint32 rideMapId = 0;
+        int rideCar = 0;
+        bool rideToTop = false;
+        ObjectGuid rideCarGuid;
+        WorldPosition rideGoal;
+        // The lift and car this bot waits for at its level.
+        ai::MesaLift const* waitLift = nullptr;
+        bool waitFromTop = false;
+        int waitCar = 0;
     };
 
 }

@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
+
 ## v1.15.1 (2026-11-03)
 
 ### Bots & Setup
@@ -306,6 +308,7 @@
 - Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
+- New: a fight record can now show the boss's health every two seconds, each change of who it was hitting and every time a key aura landed on or left a bot; it stays off until enabled.
 - The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.
 - The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
 - Fixed: a spell two bosses share (Four Horsemen marks, Twin Emperors berserk, Call of Nightmare) no longer shows as just cast on both bosses' panels; it counts for the boss that cast it.

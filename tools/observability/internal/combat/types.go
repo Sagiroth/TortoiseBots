@@ -103,6 +103,14 @@ type Fight struct {
 	Log        []json.RawMessage `json:"log,omitempty"`
 	LogDropped int               `json:"log_dropped,omitempty"`
 
+	// The boss timeline (runtime/CombatMonitorPolicy.h, AiPlayerbot.CombatTimeline), kept as the module sent it: the
+	// daemon does not judge it, it passes it on to GET /api/v1/combat/fight/<key> and into the history file. Rows are
+	// arrays: boss_hp [t_ms, hp_pct, phase entry], victims [t_ms, low guid, name, role], auras
+	// [t_ms, bot guid, spell id, 1 apply / -1 remove]. An older module omits them and an older daemon drops them.
+	BossHP  []json.RawMessage `json:"boss_hp,omitempty"`
+	Victims []json.RawMessage `json:"victims,omitempty"`
+	Auras   []json.RawMessage `json:"auras,omitempty"`
+
 	// SpellsCut is the emitter's degraded-build marker (runtime/
 	// CombatMonitorPolicy.h TakeFightPayloads): 0 = full build, otherwise the
 	// per-bot spell cap of the build that was sent. Absent on old payloads.

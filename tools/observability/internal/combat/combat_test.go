@@ -274,6 +274,48 @@ func TestStoreReadsModuleBytes(t *testing.T) {
 		t.Fatalf("tail spells: %+v", f.Bots[0].TailSpells)
 	}
 }
+
+// The boss timeline (runtime/CombatMonitorPolicy.h, AiPlayerbot.CombatTimeline) is rows the daemon does not judge: a
+// COMBAT_FIGHT that carries them must keep them through the store, so GET /api/v1/combat/fight/<key> and the history
+// file hand the walk the bytes the module sent.
+func TestStoreKeepsTimeline(t *testing.T) {
+	raw := `{"fight":{"id":"7-9","commander":"Cmdr","commander_guid":3,"group":7,"map":309,"plan":"zul_gurub","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"kill","boss":14599,"boss_name":"High Priest Thekal","planned":[14599],"engaged":[],"bots":[],"debuffs":{"sampled_s":0,"up_s":{}},"deaths":[],` +
+		`"boss_hp":[[0,99.4,14509],[2000,88.1,14509]],` +
+		`"victims":[[0,42,"Tanky","tank"],[3000,43,"Healy","healer"]],` +
+		`"auras":[[1000,1,24321,1],[61000,1,24321,-1]]}}`
+	var dg struct {
+		Fight Fight `json:"fight"`
+	}
+	if err := json.Unmarshal([]byte(raw), &dg); err != nil {
+		t.Fatal(err)
+	}
+	if len(dg.Fight.BossHP) != 2 || len(dg.Fight.Victims) != 2 || len(dg.Fight.Auras) != 2 {
+		t.Fatalf("timeline rows: boss_hp %d victims %d auras %d", len(dg.Fight.BossHP),
+			len(dg.Fight.Victims), len(dg.Fight.Auras))
+	}
+	s := NewStore(nil)
+	if !s.Add(9, dg.Fight) {
+		t.Fatal("fight refused")
+	}
+	f, _, ok := s.Get("Cmdr", 9, "7-9")
+	if !ok {
+		t.Fatal("fight not found")
+	}
+	out, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"boss_hp":[[0,99.4,14509],[2000,88.1,14509]]`,
+		`"victims":[[0,42,"Tanky","tank"],[3000,43,"Healy","healer"]]`,
+		`"auras":[[1000,1,24321,1],[61000,1,24321,-1]]`,
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("stored fight lost %s: %s", want, out)
+		}
+	}
+}
+
 func TestStoreReadsDegradedMarkers(t *testing.T) {
 	newPayload := `{"fight":{"id":"7-3","commander":"Cmdr","commander_guid":3,"group":7,"map":409,"plan":"mc","leg":"l1","step":1,"kind":"boss","start":9,"dur_ms":25000,"outcome":"end","boss":1,"boss_name":"B","spells_cut":3,"planned":[1],"engaged":[],"dropped":0,"bots":[{"name":"T","guid":1,"class":"warrior","role":"tank","sub":-1,"dmg":5,"heal":0,"over":0,"taken":1,"casts":2,"heal_casts":0,"deaths":0,"spells":[{"n":"Sunder Armor","c":2}],"tail_spells":[]}],"debuffs":{"sampled_s":3,"up_s":{}},"deaths":[],"truncated":true}}`
 	var dg struct {
