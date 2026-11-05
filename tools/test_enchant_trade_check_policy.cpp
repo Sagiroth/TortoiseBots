@@ -150,7 +150,7 @@ int main()
     std::cout << "  [PASS] trade wait excluded from order limits\n";
 
     // 11. Replace answer: "yes" (any case, padded) confirms, the rest refuses.
-    CHECK(ReplaceAnswerIsYes("yes"));
+    CHECK(ReplaceAnswerIsYes("yes") && ReplaceAnswerIsYes("|c1049e6ffyes|r") && !ReplaceAnswerIsYes("|c1049e6ffno|r"));
     CHECK(ReplaceAnswerIsYes("YES"));
     CHECK(ReplaceAnswerIsYes("  Yes  "));
     CHECK(ReplaceAnswerIsYes("\tyes\n"));

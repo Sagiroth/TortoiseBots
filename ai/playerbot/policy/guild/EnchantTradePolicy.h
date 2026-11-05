@@ -206,8 +206,26 @@ namespace ai
 
     // Replace confirmation: "yes", case-insensitive and trimmed; anything else
     // (including silence) is no.
-    inline bool ReplaceAnswerIsYes(std::string const& text)
+    // Chat colour codes (|cAARRGGBB ... |r) wrap some whispers, e.g. a GM's.
+    inline std::string StripChatColours(std::string const& text)
     {
+        std::string out;
+        for (std::string::size_type i = 0; i < text.size(); ++i)
+        {
+            if (text[i] == '|' && i + 1 < text.size())
+            {
+                char const code = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i + 1])));
+                if (code == 'c' && i + 9 < text.size()) { i += 9; continue; }
+                if (code == 'r') { ++i; continue; }
+            }
+            out += text[i];
+        }
+        return out;
+    }
+
+    inline bool ReplaceAnswerIsYes(std::string const& raw)
+    {
+        std::string const text = StripChatColours(raw);
         std::string::size_type first = text.find_first_not_of(" \t\r\n");
         if (first == std::string::npos)
             return false;
