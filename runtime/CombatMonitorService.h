@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "CombatMonitorPolicy.h"
@@ -32,7 +33,20 @@ public:
     void Refresh(uint32_t groupId, std::vector<CombatMonitor::MemberInfo> members, bool anyInCombat, bool allDead,
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
     // world thread: the fight's boss as the sampler picked it from the engaged creatures (once per fight)
-    void NoteBoss(uint32_t groupId, uint32_t entry, char const* name);
+    void NoteBoss(uint32_t groupId, uint32_t entry, char const* name, uint64_t guid = 0);
+    // world thread: the boss unit's raw guid (a run's plan boss), once per fight
+    void NoteBossGuid(uint32_t groupId, uint64_t guid);
+    // world thread: the fight's boss unit guid (0: none picked yet)
+    uint64_t BossGuid(uint32_t groupId) const;
+    // AiPlayerbot.CombatTimeline: the aura watch rows (world table ai_combat_aura_watch) and the timeline gate
+    void SetTimelineWatch(std::vector<uint32_t> spellIds);
+    void LoadTimelineWatch();                               // startup: one pass over the watch table
+    bool TimelineEnabled() const;
+    // world thread, 1 Hz after NoteBoss/NoteBossGuid: the boss's health and his current victim
+    void SampleTimeline(uint32_t groupId, uint32_t hp, uint32_t maxHp, uint32_t victimGuid, char const* victimName,
+                        uint32_t nowMs);
+    // hook side (map threads): a watched aura's apply/remove on a member
+    void OnTimelineAura(uint32_t botGuidLow, uint32_t spellId, bool applied, uint32_t nowMs);
     // world thread: the entry the fight's boss unit reads now (the sampler, every tick; a script changed it)
     void NoteBossForm(uint32_t groupId, uint32_t entry);
     // world thread: the open fight's boss entry (0: none, or no fight): the sampler follows the boss unit by it
@@ -117,6 +131,9 @@ private:
     int64_t m_lastUnixNow = 0;
     std::atomic<uint32_t> m_inFightCount{0};   // books in a fight, maintained under m_mutex
     std::atomic<bool> m_enabled{false};
+    // The watched aura spell ids, loaded once at startup; hooks read the snapshot with atomic_load.
+    std::shared_ptr<std::unordered_set<uint32_t> const> m_watchedAuras =
+        std::make_shared<std::unordered_set<uint32_t> const>();
 };
 
 } // namespace TortoiseBots

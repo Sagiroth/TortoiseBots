@@ -21,6 +21,12 @@ namespace CombatMonitor {
 constexpr uint32_t kMinFightMs = 5000;        // shorter fights are dropped
 constexpr uint32_t kOutOfCombatEndMs = 3000;  // a fight ends this long after the last member left combat
 constexpr uint32_t kWindowMs = 10000;         // the rolling window
+// The boss timeline (AiPlayerbot.CombatTimeline): the boss's health every 2 s, its victim changes and the watched
+// auras our bots gain or lose. The caps bound the record; past one, the oldest row goes.
+constexpr uint32_t kTimelineHpMs = 2000;
+constexpr size_t kMaxTimelineHp = 600;
+constexpr size_t kMaxTimelineVictims = 400;
+constexpr size_t kMaxTimelineAuras = 1000;
 constexpr uint32_t kMaxDeathsPerFight = 200;  // death recaps kept per fight, oldest dropped past it
 constexpr uint32_t kMaxEngagedPerFight = 500; // distinct engaged creature guids tracked per fight (all entries together)
 constexpr size_t kMaxEnemyDeathsPerFight = kMaxEngagedPerFight; // enemy entries remembered for the sampler's later boss pick
@@ -190,6 +196,63 @@ struct FightContext
     uint32_t bossPhase = 0;
     uint32_t bossPhaseEntry = 0;
     std::vector<uint32_t> planned;   // the run's step at fight start (empty plan: no run)
+};
+
+// The boss timeline rows (AiPlayerbot.CombatTimeline). Times are ms since the fight start; the victim and aura rows use
+// a unit's low guid, like the fight's bot rows, so a consumer joins them without knowing the guid's raw layout.
+struct TimelineHp
+{
+    uint32_t atMs = 0;
+    uint32_t hpPct10 = 0;      // the boss's health %, in tenths (994 = 99.4)
+    uint32_t phaseEntry = 0;   // his entry at the sample
+};
+
+enum class TimelineRole : uint8_t { None, Tank, Healer, Damage };
+
+inline char const* TimelineRoleName(TimelineRole role)
+{
+    switch (role)
+    {
+    case TimelineRole::Tank:
+        return "tank";
+    case TimelineRole::Healer:
+        return "healer";
+    case TimelineRole::Damage:
+        return "dps";
+    case TimelineRole::None:
+    default:
+        return "none";
+    }
+}
+
+inline TimelineRole TimelineRoleOf(Role role)
+{
+    switch (role)
+    {
+    case Role::Tank:
+        return TimelineRole::Tank;
+    case Role::Healer:
+        return TimelineRole::Healer;
+    case Role::Damage:
+    default:
+        return TimelineRole::Damage;
+    }
+}
+
+struct TimelineVictim
+{
+    uint32_t atMs = 0;
+    uint32_t guid = 0;   // the victim's low guid (a bot's guid in the fight record; a pet's or a player's low guid)
+    std::string name;
+    TimelineRole role = TimelineRole::None;   // none: not a member of the book (a player, a pet, nobody)
+};
+
+struct TimelineAura
+{
+    uint32_t atMs = 0;
+    uint32_t botGuid = 0;   // low guid
+    uint32_t spellId = 0;
+    bool applied = false;
 };
 
 inline std::string JsonEscape(std::string const& s)
@@ -497,6 +560,13 @@ public:
         debuffSampled_ = 0;
         deaths_.clear();
         dead_.clear();
+        bossGuid_ = 0;
+        bossHp_.clear();
+        victims_.clear();
+        auras_.clear();
+        auraHolders_.clear();
+        hpSeen_ = false;
+        victimSeen_ = false;
         for (auto& m : order_)
         {
             m.totals = BotTotals{};
@@ -722,6 +792,112 @@ public:
             bossDied_ = true;
     }
 
+    // The boss unit's raw guid, so the timeline sampler finds him after a script changes his entry: the first pick of
+    // the fight wins, like NoteBoss. A run's plan boss sets it too.
+    void NoteBossGuid(uint64_t guid)
+    {
+        if (!inFight_ || ctx_.bossEntry == 0 || guid == 0 || bossGuid_ != 0)
+            return;
+        bossGuid_ = guid;
+    }
+
+    uint64_t BossGuid() const { return bossGuid_; }
+
+    // AiPlayerbot.CombatTimeline: while off nothing is recorded and the fight carries no timeline keys. Turning it off
+    // drops what the open fight holds.
+    void SetTimeline(bool on)
+    {
+        if (timeline_ == on)
+            return;
+        timeline_ = on;
+        if (!on)
+        {
+            bossHp_.clear();
+            victims_.clear();
+            auras_.clear();
+            auraHolders_.clear();
+            hpSeen_ = false;
+            victimSeen_ = false;
+        }
+    }
+
+    // One sampler tick (1 Hz) of the fight's boss: his health now and his current victim. hp/maxHp are the unit's hit
+    // points; victimGuid is the victim's low guid (0: nobody), whose member row gives the role.
+    void SampleTimeline(uint32_t nowMs, uint32_t hp, uint32_t maxHp, uint32_t victimGuid,
+                        std::string const& victimName)
+    {
+        if (!timeline_ || !inFight_ || ctx_.bossEntry == 0)
+            return;
+        // Unsigned difference, like the core's getMSTimeDiff: a sample after the 32-bit timer wrap reads the small
+        // elapsed time it is, and a fight never lasts half the timer range.
+        uint32_t const elapsed = nowMs - startMs_;
+        if (maxHp != 0 && (!hpSeen_ || elapsed >= lastHpMs_ + kTimelineHpMs))
+        {
+            hpSeen_ = true;
+            lastHpMs_ = elapsed;
+            uint64_t const pct10 = (static_cast<uint64_t>(hp) * 1000 + maxHp / 2) / maxHp;
+            bossHp_.push_back(TimelineHp{elapsed, static_cast<uint32_t>(pct10 > 1000 ? 1000 : pct10),
+                                         ctx_.bossPhaseEntry});
+            while (bossHp_.size() > kMaxTimelineHp)
+                bossHp_.pop_front();
+        }
+        if (!victimSeen_ || victimGuid != lastVictimGuid_)
+        {
+            victimSeen_ = true;
+            lastVictimGuid_ = victimGuid;
+            TimelineVictim v;
+            v.atMs = elapsed;
+            v.guid = victimGuid;
+            v.name = victimName;
+            if (victimGuid != 0 && IsMember(victimGuid))
+                v.role = TimelineRoleOf(order_[index_[victimGuid]].info.role);
+            victims_.push_back(std::move(v));
+            while (victims_.size() > kMaxTimelineVictims)
+                victims_.pop_front();
+        }
+    }
+
+    // A watched aura's apply/remove on a member (the service filters the watch list and the members). A spell applied
+    // by several aura effects is one event: the count only flips at the first apply and the last remove.
+    void OnTimelineAura(uint32_t botGuid, uint32_t spellId, bool applied, uint32_t nowMs)
+    {
+        if (!timeline_ || !inFight_ || spellId == 0 || !IsMember(botGuid))
+            return;
+        uint64_t const key = (static_cast<uint64_t>(botGuid) << 32) | spellId;
+        auto it = auraHolders_.find(key);
+        int count = it == auraHolders_.end() ? 0 : it->second;
+        if (applied)
+        {
+            if (count++ != 0)
+            {
+                it->second = count;
+                return;
+            }
+        }
+        else
+        {
+            if (count <= 0)
+                return;
+            if (--count != 0)
+            {
+                it->second = count;
+                return;
+            }
+        }
+        if (count == 0)
+            auraHolders_.erase(key);
+        else
+            auraHolders_[key] = count;
+        TimelineAura a;
+        a.atMs = nowMs - startMs_;   // unsigned: correct across the world timer's wrap
+        a.botGuid = botGuid;
+        a.spellId = spellId;
+        a.applied = applied;
+        auras_.push_back(a);
+        while (auras_.size() > kMaxTimelineAuras)
+            auras_.pop_front();
+    }
+
     // The open fight's engaged creatures, one row per entry (its lowest guid and
     // the entry's name), in engaged_ order; empty outside a fight.
     std::vector<EngagedUnit> EngagedNow() const
@@ -844,14 +1020,18 @@ public:
         {
             if (f.takes >= 2)
                 continue;
-            auto build = [&](size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots) {
+            auto build = [&](size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots, bool timeline = true) {
                 return BuildFightJson(f, protocolVersion, session, 0, ts, commander, commanderGuid, groupId, mapId,
-                                      maxSpells, maxHits, truncated, maxBots);
+                                      maxSpells, maxHits, truncated, maxBots, timeline);
             };
             // Measured with seq 0: keep room for the widest seq (20 digits) the
             // resequence puts in, so a queued payload never crosses the budget.
             size_t const fit = kPayloadByteBudget - kSeqDigitsMax;
             std::string js = build(kMaxSpellsPerBot, kLastHits, false, f.bots.size());
+            // The timeline is the optional detail: an oversized fight first drops just it, so the numbers that were in
+            // the record before it keep their full form.
+            if (js.size() > fit)
+                js = build(kMaxSpellsPerBot, kLastHits, false, f.bots.size(), false);
             if (js.size() > fit)
                 js = build(3, kLastHits, false, f.bots.size());
             if (js.size() > fit)
@@ -999,6 +1179,9 @@ private:
         uint64_t sampled = 0;
         std::map<std::string, uint64_t> up;
         std::deque<Death> deaths;
+        std::deque<TimelineHp> bossHp;
+        std::deque<TimelineVictim> victims;
+        std::vector<TimelineAura> auras;
         uint32_t takes = 0;
     };
 
@@ -1019,7 +1202,8 @@ private:
     static std::string BuildFightJson(FinishedFight const& f, int protocolVersion, uint64_t session,
                                       uint64_t seqNum, int64_t ts, std::string const& commander,
                                       uint32_t commanderGuid, uint32_t groupId, uint32_t mapId,
-                                      size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots)
+                                      size_t maxSpells, size_t maxHits, bool truncated, size_t maxBots,
+                                      bool timeline = true)
     {
         // truncated: every variable-length text is bounded and only the first maxBots bot rows go out
         auto text = [truncated](std::string const& v, size_t maxRaw) {
@@ -1114,7 +1298,47 @@ private:
                        << "\",\"d\":" << d.hits[j].amount << ",\"t_ms\":" << d.hits[j].atMs << "}";
                 ss << "]}";
             }
-        ss << "]}}";
+        ss << "]";
+        // The boss timeline rides after the deaths, so every field before it keeps its place. The truncated form drops
+        // it with the other variable-length detail; a build that only exceeds the budget by its timeline drops the
+        // timeline alone (the ladder's rung before the truncated one).
+        if (timeline && !truncated)
+        {
+            if (!f.bossHp.empty())
+            {
+                ss << ",\"boss_hp\":[";
+                for (size_t i = 0; i < f.bossHp.size(); ++i)
+                {
+                    TimelineHp const& h = f.bossHp[i];
+                    ss << (i ? "," : "") << "[" << h.atMs << "," << F1(static_cast<float>(h.hpPct10) / 10.0f) << ","
+                       << h.phaseEntry << "]";
+                }
+                ss << "]";
+            }
+            if (!f.victims.empty())
+            {
+                ss << ",\"victims\":[";
+                for (size_t i = 0; i < f.victims.size(); ++i)
+                {
+                    TimelineVictim const& v = f.victims[i];
+                    ss << (i ? "," : "") << "[" << v.atMs << "," << v.guid << ",\"" << JsonEscape(v.name) << "\",\""
+                       << TimelineRoleName(v.role) << "\"]";
+                }
+                ss << "]";
+            }
+            if (!f.auras.empty())
+            {
+                ss << ",\"auras\":[";
+                for (size_t i = 0; i < f.auras.size(); ++i)
+                {
+                    TimelineAura const& a = f.auras[i];
+                    ss << (i ? "," : "") << "[" << a.atMs << "," << a.botGuid << "," << a.spellId << ","
+                       << (a.applied ? 1 : -1) << "]";
+                }
+                ss << "]";
+            }
+        }
+        ss << "}}";
         std::string out = ss.str();
         if (truncated)
         {
@@ -1271,6 +1495,13 @@ private:
             f.sampled = debuffSampled_;
             f.up = debuffUp_;
             f.deaths = deaths_;
+            f.bossHp = bossHp_;
+            f.victims = victims_;
+            f.auras.assign(auras_.begin(), auras_.end());
+            // Aura hooks run on map threads, so their events can land out of time order: the saved timeline is
+            // chronological, equal times in arrival order.
+            std::stable_sort(f.auras.begin(), f.auras.end(),
+                [](TimelineAura const& a, TimelineAura const& b) { return a.atMs < b.atMs; });
             finished_.push_back(f);
             while (finished_.size() > kMaxFightsKept)
                 finished_.pop_front();
@@ -1292,6 +1523,16 @@ private:
     std::unordered_set<uint32_t> enemyDeaths_;   // enemy entries that died before the sampler picked a boss
     bool outOfCombat_ = false;
     uint32_t outOfCombatSince_ = 0;
+    bool timeline_ = false;
+    uint64_t bossGuid_ = 0;
+    std::deque<TimelineHp> bossHp_;
+    std::deque<TimelineVictim> victims_;
+    std::deque<TimelineAura> auras_;
+    std::unordered_map<uint64_t, int> auraHolders_;   // (bot low guid << 32 | spell id) -> live aura effects
+    uint32_t lastHpMs_ = 0;
+    uint64_t lastVictimGuid_ = 0;
+    bool hpSeen_ = false;
+    bool victimSeen_ = false;
     std::map<uint32_t, EngagedData> engaged_;
     uint32_t engagedGuids_ = 0;     // distinct guids in engaged_, all entries together
     std::unordered_set<uint64_t> droppedGuids_;   // guids past the cap, at most kMaxDroppedTracked

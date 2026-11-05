@@ -8,13 +8,16 @@
 #include "CombatMonitorService.h"
 // Test seam: compile the service TU with -DCOMBAT_MONITOR_TEST_CONFIG and put a
 // stub "playerbot/PlayerbotAIConfig.h" (struct PlayerbotAIConfig { bool
-// combatMonitor; } + sPlayerbotAIConfig) on the include path.
+// combatMonitor; bool combatTimeline; } + sPlayerbotAIConfig) on the include path.
 #ifdef COMBAT_MONITOR_TEST_CONFIG
 #include "playerbot/PlayerbotAIConfig.h"
 #else
 #include "../ai/playerbot/PlayerbotAIConfig.h"
+#include "Database/DatabaseEnv.h"
 #include "Log.h"
 #endif
+
+#include <memory>
 
 namespace TortoiseBots {
 
@@ -124,6 +127,7 @@ uint64_t CombatMonitorService::TestPublishCount()
 void CombatMonitorService::StartBook(uint32_t groupId, CombatMonitor::Book& book,
                                      CombatMonitor::FightContext const& ctx)
 {
+    book.SetTimeline(TimelineEnabled());
     book.Start(m_lastNowMs, m_lastUnixNow, ctx, ++m_fightSeq[groupId]);
 }
 
@@ -138,6 +142,7 @@ void CombatMonitorService::Refresh(uint32_t groupId, std::vector<CombatMonitor::
     m_lastUnixNow = static_cast<int64_t>(time(nullptr));
     m_ctx[groupId] = ctx;
     CombatMonitor::Book& book = m_books[groupId];
+    book.SetTimeline(TimelineEnabled());
     // The member set (and with it the bitset and snapshot) is republished only when it changed.
     size_t held = 0;
     for (auto const& kv : m_memberGroup)
@@ -171,7 +176,7 @@ void CombatMonitorService::Refresh(uint32_t groupId, std::vector<CombatMonitor::
 
 // The sampler's boss: the first pick of a fight wins, and a run's own boss is
 // never replaced (Book::NoteBoss).
-void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const* name)
+void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const* name, uint64_t guid)
 {
     if (!Enabled() || groupId == 0 || entry == 0 || !name)
         return;
@@ -180,6 +185,105 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     if (it == m_books.end())
         return;
     it->second.NoteBoss(entry, name);
+    it->second.NoteBossGuid(guid);
+}
+
+void CombatMonitorService::NoteBossGuid(uint32_t groupId, uint64_t guid)
+{
+    if (!Enabled() || groupId == 0 || guid == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    it->second.NoteBossGuid(guid);
+}
+
+uint64_t CombatMonitorService::BossGuid(uint32_t groupId) const
+{
+    if (!Enabled() || groupId == 0)
+        return 0;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    return it == m_books.end() ? 0 : it->second.BossGuid();
+}
+
+#ifdef COMBAT_MONITOR_TEST_CONFIG
+void CombatMonitorService::LoadTimelineWatch()
+{
+    // Test builds have no world database: the tests set the watch list with SetTimelineWatch.
+}
+#else
+void CombatMonitorService::LoadTimelineWatch()
+{
+    // One pass at startup: the watch list is data (world table ai_combat_aura_watch), never a spell id in code.
+    std::vector<uint32_t> ids;
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `spell_id` FROM `ai_combat_aura_watch`"));
+    if (result)
+    {
+        do
+        {
+            uint32_t const id = result->Fetch()[0].GetUInt32();
+            if (id)
+                ids.push_back(id);
+        } while (result->NextRow());
+    }
+    SetTimelineWatch(std::move(ids));
+    sLog.outString(">> Loaded %u combat timeline aura watch rows", static_cast<uint32_t>(
+        std::atomic_load(&m_watchedAuras)->size()));
+}
+#endif
+
+void CombatMonitorService::SetTimelineWatch(std::vector<uint32_t> spellIds)
+{
+    auto watched = std::make_shared<std::unordered_set<uint32_t>>();
+    for (uint32_t id : spellIds)
+        if (id)
+            watched->insert(id);
+    std::atomic_store(&m_watchedAuras,
+        std::make_shared<std::unordered_set<uint32_t> const>(std::move(*watched)));
+}
+
+bool CombatMonitorService::TimelineEnabled() const
+{
+    return Enabled() && sPlayerbotAIConfig.combatTimeline;
+}
+
+void CombatMonitorService::SampleTimeline(uint32_t groupId, uint32_t hp, uint32_t maxHp, uint32_t victimGuid,
+                                          char const* victimName, uint32_t nowMs)
+{
+    if (!TimelineEnabled() || groupId == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end() || !it->second.InFight())
+        return;
+    it->second.SampleTimeline(nowMs, hp, maxHp, victimGuid, victimName ? victimName : "");
+}
+
+// Hook side: the same lock-free member pre-filter as the damage and cast hooks, plus the watch list test before the
+// lock, so an aura nobody watches costs one atomic load and one hash probe.
+void CombatMonitorService::OnTimelineAura(uint32_t botGuidLow, uint32_t spellId, bool applied, uint32_t nowMs)
+{
+    if (!TimelineEnabled() || spellId == 0 || m_memberCount.load(std::memory_order_relaxed) == 0)
+        return;
+    std::shared_ptr<std::unordered_set<uint32_t> const> watched = std::atomic_load(&m_watchedAuras);
+    if (!watched || watched->find(spellId) == watched->end())
+        return;
+    if (!MaybeMember(botGuidLow))
+        return;
+    NoteSnapshotLoad();
+    std::shared_ptr<MemberMap const> members = std::atomic_load(&m_snapshot);
+    auto const member = members->find(botGuidLow);
+    if (member == members->end())
+        return;
+    uint32_t const group = member->second;
+    NoteHookLock();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const book = m_books.find(group);
+    if (book == m_books.end())
+        return;
+    book->second.OnTimelineAura(botGuidLow, spellId, applied, nowMs);
 }
 
 // The entry the fight's boss unit reads now (the sampler, every tick): a script

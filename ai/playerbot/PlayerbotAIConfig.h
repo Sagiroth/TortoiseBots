@@ -965,6 +965,8 @@ public:
 
     // Per-fight combat numbers of every bound group for the observability dashboard.
     bool combatMonitor = false;
+    // The boss timeline in each fight record (health, victims, watched auras); needs combatMonitor and Observability.
+    bool combatTimeline = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;

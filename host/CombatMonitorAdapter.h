@@ -1,6 +1,7 @@
 #pragma once
 // The combat monitor's core seams: one UnitScript (damage, heal, heal received,
-// enter combat, death) and one PlayerScript (spell cast), both on the map threads.
+// enter combat, death, aura apply/remove for the boss timeline) and one PlayerScript
+// (spell cast), both on the map threads.
 #include "ScriptObjects.h"
 
 namespace TortoiseBots {
@@ -15,6 +16,8 @@ public:
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
     void OnUnitEnterCombat(Unit* unit, Unit* enemy) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
+    void OnAuraApply(Unit* unit, Aura* aura) override;
+    void OnAuraRemove(Unit* unit, Aura* aura) override;
 };
 
 class CombatMonitorCastAdapter final : public PlayerScript
