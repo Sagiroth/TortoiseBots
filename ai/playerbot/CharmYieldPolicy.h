@@ -46,6 +46,15 @@ namespace ai
         return keyOn && charmedAllyUp;
     }
 
+    // Whether one group member (the bot itself included) holds the pet hold up: it is alive, in the world, on the
+    // bot's map and a creature (not a player) charms it. The bot's own charm counts: its pet and guardians are
+    // controlled units of their own that keep an attack under way or assist the charmed owner against the group, so
+    // they stand down for the bot's own charm exactly as for a charmed neighbour's.
+    inline bool MemberHoldsPetHold(bool alive, bool inWorld, bool sameMap, bool hasCharmer, bool charmerIsPlayer)
+    {
+        return alive && inWorld && sameMap && hasCharmer && !charmerIsPlayer;
+    }
+
     // Whether an area action stands down for the charmed member: its effect point (or the bot itself, for a
     // self-centred blast) lies within kCharmedAllyAreaYd of the member. `allyToPointYd` is only read for a
     // point-centred action and `allyToBotYd` only for a self-centred one.

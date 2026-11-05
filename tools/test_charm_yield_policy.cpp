@@ -59,6 +59,16 @@ int main()
     CHECK(!CharmedAllyParksPet(true, false));
     CHECK(!CharmedAllyParksPet(false, false));
 
+    // The hold is raised by any live same-map member a creature charms, the bot itself included (its own pet and
+    // guardians would otherwise keep fighting for the charmed owner). A dead, absent, off-map, uncharmed or
+    // player-charmed member does not raise it.
+    CHECK(MemberHoldsPetHold(true, true, true, true, false));
+    CHECK(!MemberHoldsPetHold(false, true, true, true, false));
+    CHECK(!MemberHoldsPetHold(true, false, true, true, false));
+    CHECK(!MemberHoldsPetHold(true, true, false, true, false));
+    CHECK(!MemberHoldsPetHold(true, true, true, false, false));
+    CHECK(!MemberHoldsPetHold(true, true, true, true, true));
+
     std::cout << "All charm-yield policy tests passed.\n";
     return 0;
 }

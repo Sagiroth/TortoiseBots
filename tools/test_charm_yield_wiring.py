@@ -88,8 +88,12 @@ class CharmYieldWiring(unittest.TestCase):
         hold = body(PLAYERBOT_AI_CPP, "void PlayerbotAI::UpdateCharmedAllyPetHold()")
         self.assertIn("CharmedAllyParksPet(sPlayerbotAIConfig.dungeonRunCharmYield, charmedAllyUp)", hold)
         self.assertIn("for (Player* member : LiveGroupMembers(bot->GetGroup()))", hold)
-        self.assertIn("if (charmer.IsEmpty() || charmer.IsPlayer())", hold)
-        self.assertIn("member->GetMap() != bot->GetMap()", hold)
+        self.assertIn("MemberHoldsPetHold(member->IsAlive(), member->IsInWorld(), member->GetMap() == bot->GetMap(),", hold)
+        # The bot itself counts (Codex t1105c): its own charm parks its own pet and guardians, no `member == bot` skip.
+        self.assertIn("ObjectGuid const ownCharmer = bot->GetCharmerGuid();", hold)
+        self.assertIn("MemberHoldsPetHold(bot->IsAlive(), bot->IsInWorld(), true, !ownCharmer.IsEmpty(),", hold)
+        self.assertNotIn("member == bot", hold)
+        self.assertLess(hold.index("ownCharmer"), hold.index("LiveGroupMembers(bot->GetGroup())"))
         self.assertIn("pet->SetReactState(REACT_PASSIVE);", hold)
         self.assertIn("pet->AttackStop();", hold)
         self.assertIn("bot->CallForAllControlledUnits(ParkGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS)", hold)
@@ -110,6 +114,8 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertLess(stance.index("if (ai->IsCharmPetHoldActive())"), stance.index("pet->SetReactState(REACT_DEFENSIVE);"))
         self.assertIn("CHECK(CharmedAllyParksPet(true, true));", CHARM_POLICY_TEST)
         self.assertIn("CHECK(!CharmedAllyParksPet(false, true));", CHARM_POLICY_TEST)
+        self.assertIn("CHECK(MemberHoldsPetHold(true, true, true, true, false));", CHARM_POLICY_TEST)
+        self.assertIn("CHECK(!MemberHoldsPetHold(true, true, true, true, true));", CHARM_POLICY_TEST)
 
     def test_success_facade_ischarmed_stays_player_only(self):
         start = SERVER_FACADE.index("        bool IsCharmed(Unit *unit)")

@@ -4727,18 +4727,26 @@ void PlayerbotAI::UpdateCharmedAllyPetHold()
         return;
 
     bool charmedAllyUp = false;
-    if (sPlayerbotAIConfig.dungeonRunCharmYield && bot->GetGroup())
+    if (sPlayerbotAIConfig.dungeonRunCharmYield)
     {
-        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        // The bot itself counts: when a creature charms this bot, its own pet and guardians must stand down too.
+        ObjectGuid const ownCharmer = bot->GetCharmerGuid();
+        charmedAllyUp = MemberHoldsPetHold(bot->IsAlive(), bot->IsInWorld(), true, !ownCharmer.IsEmpty(),
+                                           ownCharmer.IsPlayer());
+        if (!charmedAllyUp && bot->GetGroup())
         {
-            if (!member || member == bot || !member->IsAlive() || !member->IsInWorld() ||
-                member->GetMap() != bot->GetMap())
-                continue;
-            ObjectGuid const charmer = member->GetCharmerGuid();
-            if (charmer.IsEmpty() || charmer.IsPlayer())
-                continue;
-            charmedAllyUp = true;
-            break;
+            for (Player* member : LiveGroupMembers(bot->GetGroup()))
+            {
+                if (!member)
+                    continue;
+                ObjectGuid const charmer = member->GetCharmerGuid();
+                if (MemberHoldsPetHold(member->IsAlive(), member->IsInWorld(), member->GetMap() == bot->GetMap(),
+                                       !charmer.IsEmpty(), charmer.IsPlayer()))
+                {
+                    charmedAllyUp = true;
+                    break;
+                }
+            }
         }
     }
 
