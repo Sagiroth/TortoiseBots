@@ -831,9 +831,9 @@ bool GuildDisenchantServiceAction::isUseful()
     if (!bot->GetGuildId())
         return false;
     bool hasWork = !SyncedServiceQueue(bot).empty();
-    // Moving does not block: Execute stops the bot first, like the loot disenchant.
+    // Moving or mounted does not block: the cast stops and dismounts the bot.
     return TortoiseBots::GuildOrders::DisenchantCastReady(bot->IsInCombat(), false,
-        bot->IsMounted(), bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
+        false, bot->IsNonMeleeSpellCasted(false), bot->GetTrader() != nullptr, hasWork);
 }
 
 // Mails one stack back to its sender (the live bag stack: the intake moved
