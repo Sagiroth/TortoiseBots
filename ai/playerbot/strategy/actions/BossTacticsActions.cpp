@@ -5132,6 +5132,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
     int const mySlot = TankSlotOf(guids, me);
     std::vector<bool> canTaunt(roles.tanks.size(), false);
     std::vector<bool> canHold(roles.tanks.size(), false);
+    std::vector<bool> available(roles.tanks.size(), false);
     for (const BossTacticRow* row : fight.rows)
     {
         // Only `until_tank` is implemented: `blink` and the spell triggers stay accepted by the loader and ignored here,
@@ -5166,7 +5167,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             bool const onNonTank = victimIsPlayer && !victimIsTank;
             // A tank that can take the taunt back right now (in control, not silenced, its taunt off cooldown, in melee
             // of the subject with it as its target, and not its victim) is a window's first choice; a stunned, hexed or
-            // silenced tank never holds up a window that another one can take, and never keeps one either.
+            // silenced tank never takes a window that another one can take. Readiness is only read for this pick: a
+            // holder keeps its window on availability alone (TauntAfterTankAvailable), so the cooldown its own cast
+            // just started never hands the window to a second tank.
             for (std::size_t i = 0; i < roles.tanks.size(); ++i)
             {
                 Player* const tank = roles.tanks[i];
@@ -5177,6 +5180,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 bool const silenced = tank &&
                     (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
                 bool const ready = taunt && tankAi->CanCastSpell(taunt, unit);
+                available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);
                 canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);
                 canTaunt[i] = TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,
                     tank && tank->GetSelectionGuid() == unit->GetObjectGuid(), victim == tank,
@@ -5207,22 +5211,23 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                         reported->second = nowMs;
                 }
                 int const holderSlot = TankSlotOf(guids, state.holder);
-                // The holder keeps its window only while it can still cast the taunt: a dead, charmed, hexed, stunned,
-                // feared, polymorphed or silenced holder hands it over at once.
-                bool const holderHolds = holderSlot >= 0 &&
+                // The holder keeps its window unless it is genuinely incapacitated (dead or out of the order, charmed,
+                // hexed, stunned, feared, polymorphed or silenced): its taunt being on cooldown after its own cast is
+                // not a reason to hand the window to a second tank.
+                bool const holderAvailable = holderSlot >= 0 &&
                     holderSlot < static_cast<int>(usable.size()) && usable[holderSlot] &&
-                    holderSlot < static_cast<int>(canHold.size()) && canHold[holderSlot];
+                    holderSlot < static_cast<int>(available.size()) && available[holderSlot];
                 int const owner = TauntWindowOwner(usable, holderSlot, static_cast<int>(row->priority));
-                // One tank advances the window (its holder while it can still take the taunt, else the order's first
+                // One tank advances the window (its holder while it is still an available tank, else the order's first
                 // usable tank), so a window's transitions and their outcome rows happen once each. A holder nobody
                 // has read for kTauntAfterOwnerSilentMs stands out of the scan and hands the advance over.
                 if (TauntWindowAdvance(owner, mySlot, nowMs, state.advancedMs, kTauntAfterOwnerSilentMs))
                 {
                     state.advancedMs = nowMs;
                     std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                    // One tank holds a window: the pick is read when the window opens (or when its tank can no longer
-                    // take the taunt), never again mid-window, so a rival becoming eligible cannot restart the deadline.
-                    // The deadline instant is still the old window's, as TauntAfterDue has it: the holder changes only
+                    // One tank holds a window: the pick is read when the window opens (or when its tank is no longer
+                    // available), never again mid-window, so a rival becoming ready cannot restart the deadline. The
+                    // deadline instant is still the old window's, as TauntAfterDue has it: the holder changes only
                     // from the millisecond after it.
                     bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);
                     // A window whose holder cast its taunt and still lost the subject (a resist, a taunt that missed)
@@ -5231,7 +5236,7 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                         ? holderSlot + 1
                         : static_cast<int>(row->priority);
                     int const assigned =
-                        TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt, canHold);
+                        TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold);
                     if (assigned >= 0 && assigned < static_cast<int>(roles.tanks.size()))
                     {
                         bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];

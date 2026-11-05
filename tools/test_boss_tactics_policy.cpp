@@ -2335,6 +2335,7 @@ int main()
         {
             std::vector<std::uint64_t> const guids = {11, 22, 33};
             std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const available = {true, true, true};
             std::vector<bool> const canTaunt = {true, true, true};
             std::vector<bool> const canHold = {true, true, true};
             bool open = true;
@@ -2345,8 +2346,8 @@ int main()
                 std::uint32_t const sinceMs = now - startMs;
                 bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
                 int const wanted = (opening && open && taunted) ? holderSlot + 1 : 0;
-                bool const holderHolds = holderSlot >= 0 && usable[holderSlot] && canHold[holderSlot];
-                int const assigned = TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt,
+                bool const holderAvailable = holderSlot >= 0 && usable[holderSlot] && available[holderSlot];
+                int const assigned = TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt,
                     canHold);
                 TauntEpisodeRead const out = TauntEpisodeTick(true, true, false, open, sinceMs, 10000, false);
                 if (out.starts)
@@ -2366,16 +2367,115 @@ int main()
             CHECK(after.starts && after.missed);
         }
 
-        // A holder that loses control mid-window (a stun, a fear, a hex, a silence, its taunt on cooldown) hands the
-        // window over at once instead of keeping it and wasting its deadline.
+        // A holder that loses control mid-window (a stun, a fear, a hex, a silence, a polymorph) hands the window
+        // over at once instead of keeping it and wasting its deadline; a holder whose taunt is merely on cooldown
+        // after its cast keeps it, since its availability is not its readiness (TauntAfterTankAvailable).
         {
             std::vector<bool> const usable = {true, true, true};
             std::vector<bool> const canTaunt = {false, true, true};
             std::vector<bool> const canHold = {false, true, true};
             CHECK(TauntWindowAssign(false, false, 0, 1, usable, canTaunt, canHold) == 1); // the holder lost control
-            CHECK(TauntWindowAssign(false, true, 0, 1, usable, canTaunt, canHold) == 0);  // it can cast: it keeps it
+            CHECK(TauntWindowAssign(false, true, 0, 1, usable, canTaunt, canHold) == 0);  // it holds: the window is its
             CHECK(TauntWindowAssign(false, false, -1, 1, usable, canTaunt, canHold) == 1); // its slot is gone
             CHECK(TauntWindowAssign(true, true, 0, 2, usable, canTaunt, canHold) == 2); // a new window picks afresh
+            // Availability ignores the taunt's cooldown; readiness (canHold) reads it only to pick a new holder.
+            CHECK(TauntAfterTankAvailable(true, false, true));    // ready or cooling: the holder still holds
+            CHECK(!TauntAfterTankAvailable(false, false, true));  // stunned, feared, confused, hexed or charmed
+            CHECK(!TauntAfterTankAvailable(true, true, true));    // silenced or pacified
+            CHECK(!TauntAfterTankAvailable(true, false, false));  // no taunt known
+            CHECK(TauntAfterTankCanHold(true, false, true, true));
+            CHECK(!TauntAfterTankCanHold(true, false, true, false)); // on cooldown: no pick
+        }
+
+        // The holder's own taunt cooldown never drops it: the scans right after its cast keep the window on it and
+        // no rival becomes due, a hex hands the window over at once, and the next window opens with a fresh pick.
+        {
+            std::vector<std::uint64_t> const guids = {11, 22, 33};
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> inControl = {true, true, true};
+            std::vector<bool> const silenced = {false, false, false};
+            std::vector<bool> tauntReady = {true, true, true}; // the holder's taunt cools from its cast at 2 s
+            bool open = false;
+            std::uint32_t startMs = 0;
+            std::uint32_t advancedMs = 0;
+            bool taunted = false; // the holder cast its taunt at 2 s
+            std::uint64_t holder = 0;
+            auto const scan = [&](std::uint32_t now) {
+                std::vector<bool> canTaunt(guids.size(), false);
+                std::vector<bool> canHold(guids.size(), false);
+                std::vector<bool> available(guids.size(), false);
+                for (std::size_t i = 0; i < guids.size(); ++i)
+                {
+                    canTaunt[i] = TauntAfterTankCanTaunt(inControl[i], silenced[i], true, tauntReady[i], true,
+                        false, true);
+                    canHold[i] = TauntAfterTankCanHold(inControl[i], silenced[i], true, tauntReady[i]);
+                    available[i] = TauntAfterTankAvailable(inControl[i], silenced[i], true);
+                }
+                unsigned acts = 0; // the tanks the glue would make act in this scan
+                for (int reader = 0; reader < static_cast<int>(guids.size()); ++reader)
+                {
+                    int const holderSlot = TankSlotOf(guids, holder);
+                    int const owner = TauntWindowOwner(usable, holderSlot, 0);
+                    if (TauntWindowAdvance(owner, reader, now, advancedMs, 1000))
+                    {
+                        advancedMs = now;
+                        std::uint32_t const sinceMs = open ? now - startMs : 0;
+                        bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
+                        int const wanted = (opening && open && taunted && holderSlot >= 0) ? holderSlot + 1 : 0;
+                        bool const holds = holderSlot >= 0 && usable[holderSlot] && available[holderSlot];
+                        int const assigned = TauntWindowAssign(opening, holds, holderSlot, wanted, usable, canTaunt,
+                            canHold);
+                        TauntEpisodeRead const read = TauntEpisodeTick(true, true, false, open, sinceMs, 10000, false);
+                        if (read.starts)
+                        {
+                            startMs = now;
+                            taunted = false;
+                        }
+                        open = read.open;
+                        holder = guids[assigned];
+                    }
+                    if (open && holder == guids[reader] && TauntAfterDue(true, now - startMs, 10000, false))
+                        acts |= 1u << reader;
+                }
+                return acts;
+            };
+            std::uint64_t holderAfterCast = 0;
+            std::uint64_t holderAfterHex = 0;
+            std::uint64_t holderNextWindow = 0;
+            for (std::uint32_t now = 0; now <= 11000; now += 100)
+            {
+                if (now == 2000)
+                {
+                    taunted = true;          // its taunt landed: the window stays open on it
+                    tauntReady[0] = false;   // and the taunt is on cooldown
+                }
+                if (now == 5000)
+                    inControl[0] = false;    // hexed mid-window
+                if (now == 5200)
+                    inControl[0] = true;
+                unsigned const acts = scan(now);
+                CHECK(__builtin_popcount(acts) <= 1); // never two tanks due at once
+                if (now >= 2100 && now < 5000)
+                {
+                    CHECK(holder == guids[0]); // the cooling holder keeps the window
+                    CHECK(acts == (1u << 0));
+                    holderAfterCast = holder;
+                }
+                if (now >= 5100 && now < 10100)
+                {
+                    CHECK(holder == guids[1]); // the hex handed it over at once
+                    CHECK(acts == (1u << 1));
+                    holderAfterHex = holder;
+                }
+                if (now == 10100 || now == 11000)
+                {
+                    CHECK(holder == guids[2]); // the next window opened with a fresh pick
+                    holderNextWindow = holder;
+                }
+            }
+            CHECK(holderAfterCast == guids[0]);
+            CHECK(holderAfterHex == guids[1]);
+            CHECK(holderNextWindow == guids[2]);
         }
 
         // Jin'do: one window per tank-hold left the row dead after its first miss, and a wiped threat list never gave
@@ -2458,6 +2558,7 @@ int main()
         {
             std::vector<std::uint64_t> const guids = {11, 22, 33};
             std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const available = {true, true, true};
             std::vector<bool> const canTaunt = {true, true, true};
             std::vector<bool> const canHold = {true, true, true};
             CHECK(TankSlotOf(guids, 22) == 1);
@@ -2489,7 +2590,7 @@ int main()
                 {
                     int const readerSlot = TankSlotOf(guids, reader);
                     int const holderSlot = TankSlotOf(guids, holder);
-                    bool const holderUsable = holderSlot >= 0 && usable[holderSlot];
+                    bool const holderAvailable = holderSlot >= 0 && usable[holderSlot] && available[holderSlot];
                     int const owner = TauntWindowOwner(usable, holderSlot, 0);
                     if (TauntWindowAdvance(owner, readerSlot, now, advancedMs, 1000))
                     {
@@ -2498,7 +2599,7 @@ int main()
                         bool const opening = !open || TauntDeadlinePassed(sinceMs, 10000);
                         int const wanted = (opening && open && holderSlot >= 0) ? holderSlot + 1 : 0;
                         int const assigned =
-                            TauntWindowAssign(opening, holderUsable, holderSlot, wanted, usable, canTaunt, canHold);
+                            TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold);
                         TauntEpisodeRead const read =
                             TauntEpisodeTick(true, !victimIsTank, victimIsTank, open, sinceMs, 10000, false);
                         if (read.missed)

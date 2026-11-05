@@ -108,7 +108,7 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn('"boss tactics taunt after",\n        NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));',
                       STRATEGY)
         self.assertIn("BossTauntAfter ai::FindBossTauntAfter(", ACTIONS)
-        self.assertIn("TauntWindowAssign(opening, holderHolds, holderSlot, wanted, usable, canTaunt, canHold)", ACTIONS)
+        self.assertIn("TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold)", ACTIONS)
         self.assertIn("TauntAfterTankPick", POLICY)
         self.assertIn("TauntEpisodeTick(tauntable, onNonTank, victimIsTank,", ACTIONS)
         self.assertIn("deadlineMs, victimIsAssigned);", ACTIONS)
@@ -160,14 +160,18 @@ class CharmYieldWiring(unittest.TestCase):
         self.assertIn("bool const opening = !state.open || TauntDeadlinePassed(sinceMs, deadlineMs);", scan)
         self.assertIn("if (missed)\n                LogTauntAfter(ai, unit, windowSlot, closed, false);", scan)
         self.assertIn("if (regained)\n                LogTauntAfter(ai, unit, windowSlot, closed, true);", scan)
-        # A tank that cannot cast now (stunned, hexed, polymorphed, silenced, taunt on cooldown) never holds a window
-        # and never keeps one: the runner reads it for the pick's fallback and for the holder's fitness.
+        # A tank that cannot cast now (stunned, hexed, polymorphed, silenced, taunt on cooldown) never takes a
+        # window; readiness is read only for the pick, while the holder is kept on availability (no cooldown), so
+        # its own cast never hands the window to a second tank.
         self.assertIn("TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,", scan)
         self.assertIn("canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);", scan)
+        self.assertIn("available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);", scan)
         self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", scan)
         self.assertIn("!tank->IsPolymorphed()", scan)
         self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", scan)
-        self.assertIn("holderSlot < static_cast<int>(canHold.size()) && canHold[holderSlot];", scan)
+        self.assertIn("bool const holderAvailable = holderSlot >= 0 &&", scan)
+        self.assertIn("holderSlot < static_cast<int>(available.size()) && available[holderSlot];", scan)
+        self.assertIn("inline bool TauntAfterTankAvailable(bool inControl, bool silencedOrPacified, bool hasTaunt)", POLICY)
         # A creature-charmed tank is out of the order, and the row needs its own key as well (M5, L8).
         self.assertIn("TauntAfterTankUsable(", scan)
         self.assertIn("sPlayerbotAIConfig.dungeonRunCharmYield", scan)
