@@ -78,6 +78,8 @@ namespace ai
         UntilTank = 8, // dps_hold_after, taunt_after_cast: until the subject is on a tank
         Invalid = 9,
         TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
+        Assigned = 11, // interrupt: a directed row the run leader may order (F3), inert until its key reads it
+        All = 12,      // avoid_cast: every bot leaves the blast while the spell is cast, tanks too (F4-A)
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -119,6 +121,10 @@ namespace ai
             case BossTacticKind::UseObject:
                 if (text == "tank_anchor")
                     return TacticMode::TankAnchor;
+                break;
+            case BossTacticKind::AvoidCast:
+                if (text == "all")
+                    return TacticMode::All;
                 break;
             default:
                 break;
@@ -931,11 +937,30 @@ namespace ai
     // healers shocked the raid when the tanks walked out too, but holding every tank in every blast walked tanks into
     // blasts that kill them (the Gurubashi Bat Rider's 10 yd explosion, where nothing is gained by staying); so the
     // second case is opt-in per caster and, within that, only the tank already on the caster (every other tank leaves
-    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds.
+    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds. While a row in mode `all`
+    // lists the cast in progress no bot holds the caster, so every tank walks out of that blast too (F4-A).
     inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank, bool botTargetsCaster,
-                            bool casterTankHoldRow)
+                            bool casterTankHoldRow, bool allRowCasting = false)
     {
+        if (allRowCasting)
+            return false;
         return botIsTank && (casterIsOnBot || (casterTankHoldRow && casterIsOnNonTank && botTargetsCaster));
+    }
+
+    // Whether an avoid_cast row in mode `all` lists the caster's cast in progress: while that spell is cast no bot
+    // holds the caster, tanks included (the Rider instakills itself, so there is no threat to keep). The call sites
+    // pass the caster's own current generic and channelled spell ids; an empty slot (id 0) lists nothing.
+    inline bool AvoidCastAllRow(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t genericId,
+                                std::uint32_t channeledId)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::AvoidCast && row->mode == TacticMode::All &&
+                TacticSubjectEntry(*row) == casterEntry &&
+                (row->spellId == genericId || row->spellId == channeledId))
+                return true;
+        }
+        return false;
     }
 
     // Whether a tank takes the raid mark (rti). When the mark's own entry is listed by a tank_hold row it is the loose

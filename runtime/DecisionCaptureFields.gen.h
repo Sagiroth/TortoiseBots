@@ -105,7 +105,7 @@ namespace DecisionCapture {
 #define TB_DCAP_ENUMVALUES_BossTacticKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14) X(15) X(16) X(17) X(18) X(19) X(20) X(21) X(22)
 #define TB_DCAP_ENUMVALUES_LegNeedMode(X) X(0) X(1) X(2) X(3)
 #define TB_DCAP_ENUMVALUES_PlanStepKind(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14)
-#define TB_DCAP_ENUMVALUES_TacticMode(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10)
+#define TB_DCAP_ENUMVALUES_TacticMode(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12)
 
 #define TB_DCAP_ENUMS(E) \
     E(CcFamily, TortoiseBots::DungeonRun::CcFamily) \
@@ -1289,10 +1289,10 @@ enum RezClass: None=0,Priest=1,Paladin=2,Shaman=3,Druid=4
 enum BossTacticKind: None=0,Interrupt=1,KillFirst=2,Behind=3,AvoidCast=4,TankHold=5,HoldKill=6,OneAtATime=7,LinkedDeath=8,DpsHoldAfter=9,DispelPriority=10,FleeOnAura=11,FreezeOnAura=12,TauntAfterCast=13,SwapOnAura=14,UseObject=15,SeekAura=16,PullGate=17,Spread=18,NeedsAura=19,BurnMana=20,RangedOnly=21,ThreatSuccessor=22
 enum LegNeedMode: None=0,Optional=1,Door=2,Blocking=3
 enum PlanStepKind: None=0,Move=1,MoveDirect=2,Pull=3,Boss=4,Loot=5,Open=6,UseItem=7,WaitObject=8,WaitClear=9,Rest=10,Ritual=11,Hold=12,Gossip=13,UseOn=14
-enum TacticMode: Default=0,Now=1,Clear=2,Never=3,Away=4,ToTank=5,Engage=6,Blink=7,UntilTank=8,Invalid=9,TankAnchor=10
+enum TacticMode: Default=0,Now=1,Clear=2,Never=3,Away=4,ToTank=5,Engage=6,Blink=7,UntilTank=8,Invalid=9,TankAnchor=10,Assigned=11,All=12
 )TBSCHEMA";
 
-inline constexpr char kDecisionSchemaHash[] = "b41fb51b7598cc20";
+inline constexpr char kDecisionSchemaHash[] = "dd4b44970a695366";
 
 struct DecisionSampleField
 {

@@ -36,7 +36,8 @@ Two extra opt-ins:
 
 - `linked_death` needs `AiPlayerbot.DungeonRunLinkedDeath = 1` (default `0`). Rows exist but are unread while it is off.
 - Aura rows need `AiPlayerbot.DungeonRunAuraTactics = 1` (default `0`). These are `dps_hold_after`, `dispel_priority`, `flee_on_aura`, `freeze_on_aura`, `taunt_after_cast`, `swap_on_aura`.
-- `.reload config` re-reads both keys without a restart.
+- An `avoid_cast` row in mode `all` needs `AiPlayerbot.DungeonRunAvoidCastAll = 1` (default `0`): with it off the row holds a tank the caster is on like a default row.
+- `.reload config` re-reads these keys without a restart.
 
 ## The table
 
@@ -54,7 +55,7 @@ Two extra opt-ins:
 | `spell_id` | `interrupt` / `avoid_cast` spell. `seek_aura`: the aura a bot must carry; `pull_gate`: the aura the boss must not wear; `spread`: the splash the spacing answers (documents the row only). |
 | `priority` | `kill_first`: lower dies first. `hold_kill`: budget, how many blockers may live before DPS stop (`0` = not one more). `linked_death`: group id. `seek_aura`: the health % at which DPS stop on the source while the gather is not ready; `pull_gate`: most stacks allowed (`0` = none); `taunt_after_cast` with mode `until_tank`: which raid tank takes the subject. |
 | `param` | `behind`: yards of front kept clear. `avoid_cast`: yards left. `linked_death`: hold percent, 0-100 exclusive of 0. `dps_hold_after`: hold seconds, 0-30. `seek_aura`: gather radius around the source; `pull_gate`: seconds the run leader holds before ending the run (1-300); `spread`: yards the ranged raid keeps apart (5-30); `taunt_after_cast`: deadline seconds. |
-| `tactic_mode` | Only some kinds read it. `until_tank`: a `taunt_after_cast` row assigns a tank by raid order while the subject stays off a tank. |
+| `tactic_mode` | Only some kinds read it. `until_tank`: a `taunt_after_cast` row assigns a tank by raid order while the subject stays off a tank. `all`: an `avoid_cast` row clears the tanks too while the listed spell is cast (needs `AiPlayerbot.DungeonRunAvoidCastAll = 1`), instead of letting a tank the caster is on hold it. |
 | `window_s` | `linked_death`: burn window seconds (default 7). `seek_aura`: dose window opens this many seconds before the cycle is due. `0` for every other kind. |
 | `cycle_spell`, `cycle_s` | `seek_aura` only: boss spell whose aura restarts the cycle clock, and the cycle length in seconds. `0` for every other kind. |
 | `spot_x`, `spot_y`, `spot_z` | `seek_aura` only: where the source is held and killed. `0` for every other kind. |
@@ -76,7 +77,7 @@ The loader skips unusable rows and logs the count: unknown kind, interrupt witho
 | `one_at_a_time` | All DPS kill one living unit of the entry at a time: lowest-health fighting unit, lowest guid breaks ties. CC and evading units are never picked. | DPS |
 | `linked_death` | The group must die together. Free DPS take the highest-health-fraction living member within 50 yd. A member at or below `param` % is held: never picked, AoE leaves it out, area and DoT casts are vetoed. Burn order applies once released. Release latches with `window_s` once armed (5 s, default 7 s); evade resets it. | Free DPS |
 | `behind` | Within `param` yd in the front half, step 120 degrees off the boss facing at the same distance. | Everyone except tanks and the bot the boss attacks |
-| `avoid_cast` | Within `param` yd 3D of the caster (channel slot included), walk to 2 yd past the radius on ring points, shortest walk first. Listed blasts hold reach, chase, heal, follow, and stay-back moves until the cast ends or the caster dies. | Everyone the row covers |
+| `avoid_cast` | Within `param` yd 3D of the caster (channel slot included), walk to 2 yd past the radius on ring points, shortest walk first. Listed blasts hold reach, chase, heal, follow, and stay-back moves until the cast ends or the caster dies. A row in mode `all` also clears the tanks while its spell is cast (no tank holds it); with `AiPlayerbot.DungeonRunAvoidCastAll = 0` the row holds like a default row. | Everyone the row covers (tanks included for `all`) |
 | `tank_hold` | Opt-in per caster, `target_entry` 0. A tank whose target is that caster stays in the blast, keeps it, and is the preferred pickup. Only its own caster's blast, and only while that caster is on a non-tank; the pickup outranks the raid mark when nearer. | Tanks |
 | `dps_hold_after` * | Hold DPS after the trigger, `param` seconds. | DPS; needs `DungeonRunAuraTactics = 1` |
 | `dispel_priority` * | Ranks aura removal. | Dispensers; needs `DungeonRunAuraTactics = 1` |

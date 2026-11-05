@@ -361,7 +361,10 @@ int main()
     CHECK(ParseTacticMode(BossTacticKind::TauntAfterCast, "now") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::Interrupt, "now") == TacticMode::Invalid);
     CHECK(ParseTacticMode(BossTacticKind::Interrupt, "") == TacticMode::Default);
-
+    CHECK(ParseTacticMode(BossTacticKind::AvoidCast, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::AvoidCast, "all") == TacticMode::All);
+    CHECK(ParseTacticMode(BossTacticKind::Interrupt, "all") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::KillFirst, "all") == TacticMode::Invalid);
     // Loader: nothing is visible before the seal, and the first row of a key wins.
     {
         BossTacticTable table;
@@ -986,6 +989,48 @@ int main()
         CHECK(MustLeaveCast(HoldsCaster(false, false, true, true, true), 13.0f, 2.0f));   // the healer still leaves
     }
 
+    // F4-A: mode `all` clears every tank while the row's spell is cast. With the flag off the row holds like a
+    // default row; with it on, no bot holds the caster. A default row never reads the flag.
+    {
+        CHECK(HoldsCaster(true, true, false, true, false, /*allRowCasting*/ true) == false);  // the Rider's tank walks out
+        CHECK(HoldsCaster(true, true, false, false, false, true) == false);                  // ... even without target
+        CHECK(HoldsCaster(true, false, true, true, true, true) == false);    // a tank_hold row yields to `all` too
+        CHECK(HoldsCaster(false, true, false, false, false, true) == false); // a non-tank never held anyway
+        CHECK(HoldsCaster(true, true, false, false, false, false) == true);  // default row: the tank still holds it
+        CHECK(HoldsCaster(true, true, false, true, false) == true);          // the old call shape still holds
+    }
+
+    // AvoidCastAllRow: only an `all` row listing the cast slot's spell matches.
+    {
+        auto allRow = []()
+        {
+            BossTacticRow row = Row(309, 14750, BossTacticKind::AvoidCast, 0, 24024, 0, 13.0f);
+            row.mode = TacticMode::All;
+            return row;
+        };
+        const std::vector<BossTacticRow> rows = {
+            allRow(),
+            Row(309, 15146, BossTacticKind::AvoidCast, 0, 24614, 0, 8.0f),   // a default row: never an `all` row
+        };
+        const ActiveBossRows active = Active(rows);
+        CHECK(AvoidCastAllRow(active, 14750, 24024, 0));       // the generic cast is the listed spell
+        CHECK(AvoidCastAllRow(active, 14750, 0, 24024));       // ... or the channel
+        CHECK(AvoidCastAllRow(active, 14750, 24024, 24614));   // either slot listing it is enough
+        CHECK(!AvoidCastAllRow(active, 14750, 24611, 0));      // another spell of the same caster: not listed
+        CHECK(!AvoidCastAllRow(active, 14751, 24024, 0));      // the same spell from another caster
+        CHECK(!AvoidCastAllRow(active, 15146, 24614, 0));      // a default row never counts, spell or not
+        CHECK(!AvoidCastAllRow(ActiveBossRows(), 14750, 24024, 0));
+        BossTacticRow wrongKind = allRow();
+        wrongKind.kind = BossTacticKind::Interrupt;
+        CHECK(!AvoidCastAllRow(Active({wrongKind}), 14750, 24024, 0));  // an interrupt row is not an avoid row
+        CHECK(!AvoidCastAllRow(active, 14750, 0, 0));          // both slots empty
+        BossTacticTable table;
+        BossTacticRow stored = allRow();
+        CHECK(table.Add(stored));                              // the loader keeps the new mode word
+        BossTacticRow foreign = Row(309, 14750, BossTacticKind::Interrupt, 0, 24024);
+        foreign.mode = ParseTacticMode(foreign.kind, "all");
+        CHECK(foreign.mode == TacticMode::Invalid);
+    }
     // The tank_hold lookup: the row is keyed by the caster's entry (target_entry 0 -> the boss entry itself), so the
     // loader takes it, and an avoid_cast row is not a tank_hold.
     {

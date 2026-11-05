@@ -1032,6 +1032,15 @@ AiPlayerbot.DungeonRunCharmYield = 0
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 
+# An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
+# tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
+# With the key off the row behaves like a default row (a tank the caster is on still holds it). This is its own
+# key on top of AiPlayerbot.DungeonTactics (or a commander-bound group) because the mode changes what the tanks
+# do mid-fight. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: `all` rows hold casters like default rows (Default)
+# 1 - on
+AiPlayerbot.DungeonRunAvoidCastAll = 0
+
 # The burn_mana boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): while the row's
 # boss stands at or above the row's start percent of mana, the first `priority` eligible bots (no tank, no healer, a
 # priest with Mana Burn, a warlock with Drain Mana or a hunter with Viper Sting, ordered by guid; 0 means every

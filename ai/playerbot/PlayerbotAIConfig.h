@@ -652,6 +652,10 @@ public:
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
+    // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
+    // gate; default off).
+    bool dungeonRunAvoidCastAll = false;
     // The burn_mana boss-tactic kind (a few eligible bots drain the boss's mana while it is above the row's start %,
     // Moam's Drain Mana refills him so the burners keep him from a full-mana eruption): off, the rows are ignored
     // (default off).
