@@ -5017,6 +5017,10 @@ struct TauntAfterEpisode
 
 std::mutex g_tauntAfterMutex;
 std::map<TauntAfterKey, TauntAfterEpisode> g_tauntAfter;
+// The taunt-immune subjects this fight already reported, keyed like the episode (map, instance, subject and row) with
+// the last read: the row can never move such a subject, so one line per fight says why, and the tanks that read the
+// same subject afterwards stay quiet.
+std::map<TauntAfterKey, std::uint32_t> g_tauntAfterImmune;
 std::atomic<std::uint32_t> g_tauntAfterPruneMs{0};
 // A subject nobody read for two minutes left the fight; the episode goes with it.
 constexpr std::uint32_t kTauntAfterStaleMs = 120000;
@@ -5057,6 +5061,11 @@ void PruneTauntAfter(PlayerbotAI* ai, std::uint32_t instanceId, std::uint32_t no
             drop = subject && !subject->IsAlive();
         }
         it = drop ? g_tauntAfter.erase(it) : std::next(it);
+    }
+    for (auto it = g_tauntAfterImmune.begin(); it != g_tauntAfterImmune.end();)
+    {
+        bool const drop = std::get<1>(it->first) == instanceId && nowMs - it->second > kTauntAfterStaleMs;
+        it = drop ? g_tauntAfterImmune.erase(it) : std::next(it);
     }
 }
 
@@ -5155,12 +5164,28 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             TauntAfterEpisode episode;
             bool close = false;
             bool regained = false;
+            const bool tauntable = !TargetTauntImmune(unit);
             {
                 std::lock_guard<std::mutex> lock(g_tauntAfterMutex);
-                TauntAfterEpisode& state = g_tauntAfter[TauntAfterKeyOf(bot, unit, *row)];
+                TauntAfterKey const key = TauntAfterKeyOf(bot, unit, *row);
+                TauntAfterEpisode& state = g_tauntAfter[key];
                 state.lastReadMs = nowMs;
+                // A taunt-immune subject opens no episode at all (TauntEpisodeTick), so the row is dead weight for this
+                // fight; one line per fight says so instead of the row silently doing nothing.
+                if (!tauntable)
+                {
+                    auto const reported = g_tauntAfterImmune.find(key);
+                    if (reported == g_tauntAfterImmune.end())
+                    {
+                        g_tauntAfterImmune[key] = nowMs;
+                        sLog.outString("taunt_after skipped: target taunt-immune (map %u, entry %u)",
+                                       unit->GetMapId(), unit->GetEntry());
+                    }
+                    else
+                        reported->second = nowMs;
+                }
                 std::uint32_t const sinceMs = state.open ? nowMs - state.startMs : 0;
-                const TauntEpisodeRead read = TauntEpisodeTick(!TargetTauntImmune(unit), onNonTank, victimIsTank,
+                const TauntEpisodeRead read = TauntEpisodeTick(tauntable, onNonTank, victimIsTank,
                     state.open, state.spent,
                     sinceMs, deadlineMs, victimIsAssigned);
                 if (read.starts)
