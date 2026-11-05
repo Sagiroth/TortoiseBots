@@ -126,8 +126,8 @@ class SeekWalkWiring(unittest.TestCase):
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
         for rule in ("SeekDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
-                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(",
-                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(",
+                     "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
+                     "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
@@ -266,10 +266,9 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("bot->UnsummonAllTotems()", act)
         hold = body(ACTIONS, "float BossTacticsSeekPetHoldMultiplier::GetValue(")
         self.assertIn("SeekTotemSpell(cast->GetSpellName())", hold)
-        self.assertIn("SeekPetCallAction(name)", hold)
-        # A warlock's Infernal/Doomguard is held for the whole fight, not just the window.
-        self.assertIn("SeekGuardianSummonAction(name)", hold)
-        self.assertIn("SeekFightLive(ai, bot) ? 0.0f : 1.0f", hold)
+        self.assertIn("SeekPetCallAction(action->getName())", hold)
+        # A warlock's demon summons and its Infernal/Doomguard are held for the whole fight, not just the window.
+        self.assertIn("BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f", hold)
         self.assertIn("inline bool SeekTotemSpell(", POLICY)
         self.assertIn("inline bool SeekGuardianSummonAction(", POLICY)
 

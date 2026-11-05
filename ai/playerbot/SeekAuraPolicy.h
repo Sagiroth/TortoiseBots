@@ -78,6 +78,14 @@ namespace ai
         return spell.size() > 6 && spell.compare(spell.size() - 6, 6, " totem") == 0;
     }
 
+    // When a class's pet has to be out of the fight: a hunter's pet only around the siphon (it waits in the current
+    // slot and is called back), a warlock's demon from the engage on — a new one costs a soul shard and a 10 s cast,
+    // so it is not resummoned once per siphon.
+    inline bool SeekClassPetMustLeave(bool warlock, int dueInMs, bool siphonActive)
+    {
+        return warlock || SeekPetMustLeave(dueInMs, siphonActive);
+    }
+
     // A guardian a warlock's spell leaves behind (the Infernal of Inferno, a Doomguard): it fights for the whole
     // window and is one more unit for the siphon's hit, so it is never summoned in the fight at all.
     inline bool SeekGuardianSummonAction(const std::string& name)

@@ -209,6 +209,15 @@ int main()
     CHECK(!SeekGuardianSummonAction("summon imp"));
     CHECK(!SeekGuardianSummonAction("call pet"));
 
+    // SeekWarlockDemonLeavesOnce: a warlock's demon goes at the engage and does not come back — the class rule is
+    // true at any time in the fight, so the dismiss runs once and the summon hold stays up all fight. A hunter keeps
+    // the window cycle and its pet waits in the current slot for the call back.
+    CHECK(SeekClassPetMustLeave(true, 90000, false));
+    CHECK(SeekClassPetMustLeave(true, -30000, false));
+    CHECK(!SeekClassPetMustLeave(false, 6000, false));
+    CHECK(SeekClassPetMustLeave(false, 5000, false));
+    CHECK(!SeekClassPetMustLeave(false, -2001, false));
+
     // The cycle clock starts over on a re-pull: the boss out of combat, or a read gap longer than a re-pull (L1).
     CHECK(SeekClockStartOver(false, 0, 5000));
     CHECK(!SeekClockStartOver(true, 1000, 1500));

@@ -500,8 +500,9 @@ namespace ai
     // Whether the bot is in a seek phase right now: the move hold and the raid spread stand-down read it.
     bool BossSeeking(PlayerbotAI* ai, Player* bot);
 
-    // Whether this hunter's or warlock's pet has to be out of the siphon now: from 5 s before the due time until 2 s
-    // after it, and while the siphon's dummy aura is on the bot. True only in a live seek_aura fight.
+    // Whether this hunter's or warlock's pet has to be out of the siphon now: a hunter's from 5 s before the due time
+    // until 2 s after it (and while the siphon's dummy aura is on the bot), a warlock's for the whole fight (one
+    // dismiss at the engage, no resummon). True only in a live seek_aura fight.
     bool BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot);
     // Whether this shaman's totems have to be out of the siphon now: the same window as the pets (from 5 s before the
     // due time until 2 s after it, and while the siphon's dummy aura is on the bot). True only in a live seek_aura
@@ -514,15 +515,16 @@ namespace ai
         BossTacticsSeekTotemAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek totem") {}
         bool Execute(Event& event) override;
     };
-    // A pet is dismissed at once; the class's own call or summon brings it back after the window.
+    // A pet is dismissed at once; a hunter's pet waits in its current slot for the call back after the window, a
+    // warlock's demon is not kept.
     class BossTacticsSeekPetAction : public Action
     {
     public:
         BossTacticsSeekPetAction(PlayerbotAI* ai) : Action(ai, "boss tactics seek pet") {}
         bool Execute(Event& event) override;
     };
-    // A pet is called, revived or summoned back, or a totem placed, while the siphon is close or landing: the action
-    // is held (each would be one more heal). Only the seek_aura fight reads it.
+    // A pet is called, revived or summoned back, or a totem placed, while it would stand in the siphon: the action is
+    // held (each would be one more heal). Only the seek_aura fight reads it.
     class BossTacticsSeekPetHoldMultiplier : public Multiplier
     {
     public:

@@ -1338,14 +1338,6 @@ bool ReadSeekFightCached(PlayerbotAI* ai, Player* bot, SeekFight& out)
     return read;
 }
 
-// Whether this bot stands in a live seek_aura fight at all, window or not: a guardian summoned between two siphons
-// still lives through one.
-bool SeekFightLive(PlayerbotAI* ai, Player* bot)
-{
-    SeekFight state;
-    return ReadSeekFightCached(ai, bot, state);
-}
-
 bool IsSeekSource(const SeekFight& state, Unit* unit)
 {
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
@@ -1424,8 +1416,11 @@ bool ai::BossSeekPetMustLeave(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return false;
+    // A warlock's demon goes at the engage and stays gone: a new one costs a soul shard and a 10 s cast, and the
+    // dismissed one would be back in the siphon by the next cycle. A hunter's pet waits in its current slot instead
+    // and is called back once the window is over.
     const bool siphonActive = state.row && bot->HasAura(state.row->cycleSpell);
-    return SeekPetMustLeave(state.dueSignedMs, siphonActive);
+    return SeekClassPetMustLeave(bot->GetClass() == CLASS_WARLOCK, state.dueSignedMs, siphonActive);
 }
 
 // A shaman's totems stand inside the siphon too: each is one more undosed unit to the core's hit, and the pulse keeps
@@ -1481,13 +1476,8 @@ float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)
     }
     if (bot->GetClass() != CLASS_HUNTER && bot->GetClass() != CLASS_WARLOCK)
         return 1.0f;
-    const std::string& name = action->getName();
-    if (!SeekPetCallAction(name))
+    if (!SeekPetCallAction(action->getName()))
         return 1.0f;
-    // An Infernal or a Doomguard is never summoned in the fight: it lives through the whole window and is one more
-    // undosed unit for the siphon. The pet call and the demon summons wait for the window instead.
-    if (bot->GetClass() == CLASS_WARLOCK && SeekGuardianSummonAction(name))
-        return SeekFightLive(ai, bot) ? 0.0f : 1.0f;
     return BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f;
 }
 
