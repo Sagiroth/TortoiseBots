@@ -208,6 +208,7 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Bat Rider | `avoid_cast` Unstable Concoction 13 yd (no interrupt: uninterruptible) |
 | Voidwalker | `avoid_cast` Consuming Shadows 8 yd; `tank_hold` row |
 | Mad Servant | `interrupt` Flamestrike; `hold_kill` budget 0; `one_at_a_time` |
+| Gurubashi Berserker (11352) | `taunt_after_cast` mode `until_tank`, tank 1, 5 s (Knock Away 11130 and Intimidating Roar 16508 both reset threat; the first off-tank takes it back while it stands on a non-tank). Needs `DungeonRunAuraTactics` and `DungeonRunCharmYield` (both default `0`). |
 | Venoxis | `interrupt` Holy Fire; ranged and healer stand set |
 | Thekal, Lor'Khan, Zath | `linked_death` group, hold 2 %, burn order Zealots then Thekal; Lor'Khan `interrupt` Greater Heal |
 | Hakkar the Soulflayer | `seek_aura` Poisonous Blood 24321 on a Son of Hakkar, hold at 30 %, gather 4 yd; `pull_gate` on Hakkar Power 24692, 0 allowed, hold 30 s; `spread` 12 yd on Corrupted Blood 24328; `taunt_after_cast` mode `until_tank`, tank 1, 10 s (inert: Hakkar is taunt-immune, the row opens no episode); `threat_successor` (the damage dealers' threat cap is the assigned off-tanks' highest). Needs `DungeonRunSeekAura`, `DungeonRunPullGate`, `DungeonRunCharmYield` and `DungeonRunBossSpread` (all default `0`), plus aura tactics for the taunt row. |
@@ -231,7 +232,7 @@ Before each Blood Siphon (every 90 s) the raid takes a Poisonous Blood dose from
 
 ## Known limits
 
-Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so the spell-less Mandokir and Hakkar rows were removed. Mandokir is covered: it keys an `until_tank` row on Threatening Gaze. Hakkar's `until_tank` row on Cause Insanity stays inert because the game makes him immune to taunts (see the Hakkar section above): there the `threat_successor` row's cap at the assigned off-tanks is what keeps the boss off the damage dealers.
+Recurring threat-reset holds need a cast trigger. A `dps_hold_after` row with `spell_id` 0 fires only its engage edge, so the spell-less Mandokir and Hakkar rows were removed. Mandokir is covered: it keys an `until_tank` row on Threatening Gaze. Hakkar's `until_tank` row on Cause Insanity stays inert because the game makes him immune to taunts (see the Hakkar section above): there the `threat_successor` row's cap at the assigned off-tanks is what keeps the boss off the damage dealers. By contrast, a spell-less `taunt_after_cast` mode `until_tank` covers a scripted threat reset: Gurubashi Knock Away and Intimidating Roar leave the Berserker on a non-tank victim, which the episode watches for directly, so no cast slot is needed (see the Zul'Gurub table above).
 
 ## Stand sets
 
