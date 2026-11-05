@@ -114,6 +114,7 @@ struct EnchantEntry
     EnchantSlot slot = EnchantSlot::Unknown;
     uint32_t reqSkill = 0;
     std::vector<std::pair<uint32_t, uint32_t>> reagents;
+    std::vector<uint32_t> tools;
 };
 
 // Sort for both searches: required skill ascending, then name. Craft keeps
@@ -140,14 +141,12 @@ struct EnchantTargetFacts
     // spell data carries the weapon class, but the core exempts cloaks.
     uint32_t spellId = 0;
 };
-
 struct EnchantTargetItem
 {
     uint32_t itemClass = 0;
     uint32_t subClass = 0;
     uint32_t inventoryType = 0;
 };
-
 // Whether the spell's equipped-item masks admit the item, mirroring the
 // core's own fit check (Item::IsFitToSpellRequirements): -1 class means any
 // class with no subclass check, a zero mask means any of that axis, and the
@@ -177,8 +176,6 @@ inline bool EnchantFitsItem(EnchantTargetFacts const& spell, EnchantTargetItem c
 // min_value to the catalogue: skill 333 (SKILL_ENCHANTING), and the spell
 // really is a permanent enchant (caller resolves hasEnchantEffect off the
 // SpellEntry: any effect slot with Effect == 53 and no Effect == 24, which
-// excludes oils, wands and rods that create an item). Note EffectItemType on
-// an enchant effect is the enchant id, not a made item.
 inline bool IsCatalogueEnchantRow(uint32_t skillId, bool hasPermanentEnchantEffect,
     bool createsItem, bool isSkillStep, uint32_t effect0)
 {
