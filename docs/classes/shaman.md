@@ -90,7 +90,7 @@ Shamans maintain 4-element totem sets tailored to group composition:
 - **Interrupts:** Casts *Earth Shock* to interrupt dangerous enemy spellcasters and healing mobs.
 - **Weapon Imbues:** Enhancement prioritizes *Windfury Weapon*, others *Flametongue Weapon*; first-known fallback is *Frostbrand Weapon*, then *Rockbiter Weapon*. A tank shaman always keeps *Rockbiter Weapon*.
 - **Dispels:** Strips enemy buffs with *Purge* and cleanses allies using *Cure Poison* and *Cure Disease*.
-- **Earth Shield:** Maintains *Earth Shield* on the group tank in the raid buff strategy.
+- **Earth Shield:** On Turtle Earth Shield is a self-only elemental shield sharing the slot with Water and Lightning Shield; the healer keeps Water Shield and does not cast Earth Shield.
 - **Resurrection:** Revives dead allies out of combat with *Ancestral Spirit*.
 - **Ghost Wolf:** Shifts to *Ghost Wolf* when carrying a flag in PvP.
 - **Player Totem Controls:** Players can customize totem sets via [`.bot totem`](../play/commands/bot-panel.md#bot-totem) or manage them with `drop` and `status`.

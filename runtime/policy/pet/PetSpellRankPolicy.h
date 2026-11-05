@@ -127,7 +127,8 @@ inline PetRankLadder const& ThunderstompLadder()
 inline PetRankLadder const& NaturalArmorLadder()
 {
     static PetRankLadder const ladder = {
-        {1, 24545}, {12, 24549}, {18, 24550}, {24, 24551},
+        {1, 24545}, {12, 24549}, {18, 24550}, {24, 24551}, {30, 24552},
+        {36, 24553}, {42, 24554}, {48, 24555}, {54, 24629}, {60, 24630},
     };
     return ladder;
 }
@@ -141,22 +142,37 @@ inline PetRankLadder const& GreatStaminaLadder()
     return ladder;
 }
 
-inline uint32_t ShellShieldSpell() { return 26064; } // single rank, pet level 20
-
-inline uint32_t HunterPetResistanceMinLevel() { return 20; }
-
-inline std::vector<uint32_t> const& HunterPetResistanceSpells()
+// Resistances: ranks 1-4 at 20/30/40/50. The DB lists Shadow rank 4 at 40
+// next to rank 3; kept at 50 like the other schools.
+inline PetRankLadder const& ArcaneResistanceLadder()
 {
-    static std::vector<uint32_t> const spells = {
-        24493, // Arcane
-        23992, // Fire
-        24446, // Frost
-        24492, // Nature
-        24488, // Shadow
-    };
-    return spells;
+    static PetRankLadder const ladder = { {20, 24493}, {30, 24497}, {40, 24500}, {50, 24501} };
+    return ladder;
 }
 
+inline PetRankLadder const& FireResistanceLadder()
+{
+    static PetRankLadder const ladder = { {20, 23992}, {30, 24439}, {40, 24444}, {50, 24445} };
+    return ladder;
+}
+
+inline PetRankLadder const& FrostResistanceLadder()
+{
+    static PetRankLadder const ladder = { {20, 24446}, {30, 24447}, {40, 24448}, {50, 24449} };
+    return ladder;
+}
+
+inline PetRankLadder const& NatureResistanceLadder()
+{
+    static PetRankLadder const ladder = { {20, 24492}, {30, 24502}, {40, 24503}, {50, 24504} };
+    return ladder;
+}
+
+inline PetRankLadder const& ShadowResistanceLadder()
+{
+    static PetRankLadder const ladder = { {20, 24488}, {30, 24505}, {40, 24506}, {50, 24507} };
+    return ladder;
+}
 
 // Turtle custom family abilities (trainable per the SkillLineAbility DBC).
 inline PetRankLadder const& BubbleBarrierLadder() // crab
@@ -181,206 +197,210 @@ inline PetRankLadder const& SavageRendLadder() // raptor
     return ladder;
 }
 
-inline uint32_t CobraReflexesSpell() { return 25076; }   // raptor, pet level 10
-inline uint32_t StriderPresenceSpell() { return 36531; } // tallstrider, pet level 10
-inline uint32_t PackleaderSpell() { return 36532; }     // hyena, pet level 20
-inline uint32_t RoarOfFortitudeSpell() { return 36535; } // bear, pet level 30
-
 inline PetRankLadder const& PoisonSpitLadder() // serpent (Turtle family 35)
 {
     static PetRankLadder const ladder = { {15, 46271}, {45, 46272}, {60, 46273} };
     return ladder;
 }
 
-inline uint32_t PollenBurstSpell() { return 42051; } // moth (Turtle family 39), pet level 52
+// Single-rank family abilities, as one-row ladders so every ability goes
+// through the same planner.
+inline PetRankLadder const& CobraReflexesLadder() { static PetRankLadder const l = { {10, 25076} }; return l; }   // raptor, passive
+inline PetRankLadder const& StriderPresenceLadder() { static PetRankLadder const l = { {10, 36531} }; return l; } // tallstrider
+inline PetRankLadder const& PackleaderLadder() { static PetRankLadder const l = { {20, 36532} }; return l; }      // hyena
+inline PetRankLadder const& RoarOfFortitudeLadder() { static PetRankLadder const l = { {30, 36535} }; return l; } // bear
+inline PetRankLadder const& ShellShieldLadder() { static PetRankLadder const l = { {20, 26064} }; return l; }     // turtle
+inline PetRankLadder const& WebLadder() { static PetRankLadder const l = { {20, 36533} }; return l; }             // spider
+inline PetRankLadder const& GraceLadder() { static PetRankLadder const l = { {10, 46296} }; return l; }           // fox
+inline PetRankLadder const& PollenBurstLadder() { static PetRankLadder const l = { {52, 42051} }; return l; }     // moth
 
-// Hunter pet family spells by beast_family (CreatureFamily DBC). Families 35
-// (Serpent), 36 (Fox) and 39 (Moth) are Turtle additions with no vanilla
-// table; without them those pets kept only Growl + passives. Growl and the
-// passive/resistance rows are NOT per-family ladders below: the shared
-// HunterPetWantedSpellIds helper adds them for every family, and both the
-// missing-rank check and the teach path walk that one helper - so isUseful
-// can never name a spell the teach path cannot add. Unknown families fall
-// back to Bite + Cower so any future family still deals damage.
-inline std::vector<PetRankLadder const*> HunterPetLadders(uint32_t beastFamily)
+// The core caps a hunter pet at 4 active abilities, Growl included
+// (Pet::CanTakeMoreActiveSpells, ACTIVE_SPELLS_MAX), and spends training
+// points of (loyalty - 1) x pet level; a pet that loads above level x 5
+// spent points has every spell wiped (Pet::LoadPetFromDB).
+inline constexpr uint32_t kHunterPetActiveSlots = 4;
+
+inline int32_t HunterPetTrainingBudget(uint32_t petLevel, uint32_t loyaltyLevel)
 {
-    static PetRankLadder const empty;
+    return loyaltyLevel > 1 ? int32_t(petLevel * (loyaltyLevel - 1)) : 0;
+}
+
+struct HunterPetBuildEntry
+{
+    PetRankLadder const* ladder = nullptr;
+    bool passive = false;
+};
+
+// Best family build: the active abilities after Growl, in priority order,
+// plus free family passives. Picks follow the Turtle hunter community:
+// Bite as the damage button where the family has it, the family special,
+// then a utility skill. Bite and Claw are never both in one build: with
+// both on autocast the pet only ever casts Claw. Cower and Prowl are left
+// out (threat drop / stealth the bot never uses).
+inline std::vector<HunterPetBuildEntry> HunterPetBuild(uint32_t beastFamily)
+{
+    auto active = [](PetRankLadder const& ladder) { return HunterPetBuildEntry{&ladder, false}; };
+    auto passive = [](PetRankLadder const& ladder) { return HunterPetBuildEntry{&ladder, true}; };
     switch (beastFamily)
     {
-        case 1: // wolf
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DashLadder(), &FuriousHowlLadder() };
-            return ladders;
-        }
-        case 2: // cat
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &ClawLadder(), &CowerLadder(), &DashLadder(), &ProwlLadder() };
-            return ladders;
-        }
-        case 3: // spider
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder() };
-            return ladders;
-        }
-        case 4: // bear
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &ClawLadder(), &CowerLadder() };
-            return ladders;
-        }
-        case 5: // boar
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &ChargeLadder(), &CowerLadder(), &DashLadder() };
-            return ladders;
-        }
-        case 6: // crocolisk
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DeathRollLadder() };
-            return ladders;
-        }
-        case 7: // carrion bird
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &ClawLadder(), &CowerLadder(), &DiveLadder(), &ScreechLadder() };
-            return ladders;
-        }
-        case 8: // crab
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &ClawLadder(), &CowerLadder(), &BubbleBarrierLadder() };
-            return ladders;
-        }
-        case 9: // gorilla
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &ThunderstompLadder() };
-            return ladders;
-        }
-        case 11: // raptor
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &ClawLadder(), &CowerLadder(), &DashLadder(), &SavageRendLadder() };
-            return ladders;
-        }
-        case 12: // tallstrider
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DashLadder() };
-            return ladders;
-        }
-        case 20: // scorpid
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &ClawLadder(), &CowerLadder(), &ScorpidPoisonLadder() };
-            return ladders;
-        }
-        case 21: // turtle
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder() };
-            return ladders;
-        }
-        case 24: // bat
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DiveLadder(), &ScreechLadder() };
-            return ladders;
-        }
-        case 25: // hyena
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DashLadder() };
-            return ladders;
-        }
-        case 26: // owl
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &ClawLadder(), &CowerLadder(), &DiveLadder(), &ScreechLadder() };
-            return ladders;
-        }
-        case 27: // wind serpent
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DiveLadder(), &LightningBreathLadder() };
-            return ladders;
-        }
-        case 35: // serpent (Turtle)
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &PoisonSpitLadder() };
-            return ladders;
-        }
-        case 36: // fox (Turtle)
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DashLadder() };
-            return ladders;
-        }
-        case 39: // moth (Turtle)
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder(), &DiveLadder() };
-            return ladders;
-        }
-        default:
-        {
-            static std::vector<PetRankLadder const*> ladders;
-            if (ladders.empty())
-                ladders = { &BiteLadder(), &CowerLadder() };
-            return ladders;
-        }
+        case 1:  // wolf
+        case 37: // plagued (wolf skill line)
+        case 38: // horse (wolf skill line)
+            return { active(BiteLadder()), active(FuriousHowlLadder()), active(DashLadder()) };
+        case 2:  return { active(ClawLadder()), active(DashLadder()) };                                     // cat
+        case 3:  return { active(BiteLadder()), active(WebLadder()) };                                      // spider
+        case 4:  return { active(ClawLadder()), active(RoarOfFortitudeLadder()) };                          // bear
+        case 5:  return { active(BiteLadder()), active(ChargeLadder()), active(DashLadder()) };             // boar
+        case 6:  return { active(BiteLadder()), active(DeathRollLadder()) };                                // crocolisk
+        case 7:  return { active(BiteLadder()), active(ScreechLadder()), active(DiveLadder()) };            // carrion bird
+        case 8:  return { active(ClawLadder()), active(BubbleBarrierLadder()) };                            // crab
+        case 9:  return { active(BiteLadder()), active(ThunderstompLadder()) };                             // gorilla
+        case 11: return { active(BiteLadder()), active(SavageRendLadder()), active(DashLadder()),
+                          passive(CobraReflexesLadder()) };                                                 // raptor
+        case 12: return { active(BiteLadder()), active(StriderPresenceLadder()), active(DashLadder()) };   // tallstrider
+        case 20: return { active(ClawLadder()), active(ScorpidPoisonLadder()) };                           // scorpid
+        case 21: return { active(BiteLadder()), active(ShellShieldLadder()) };                              // turtle
+        case 24: return { active(BiteLadder()), active(ScreechLadder()), active(DiveLadder()) };            // bat
+        case 25: return { active(BiteLadder()), active(PackleaderLadder()), active(DashLadder()) };         // hyena
+        case 26: return { active(ClawLadder()), active(ScreechLadder()), active(DiveLadder()) };            // owl
+        case 27: return { active(BiteLadder()), active(LightningBreathLadder()), active(DiveLadder()) };    // wind serpent
+        case 35: return { active(BiteLadder()), active(PoisonSpitLadder()) };                              // serpent (Turtle)
+        case 36: return { active(BiteLadder()), active(GraceLadder()), active(DashLadder()) };              // fox (Turtle)
+        case 39: return { active(BiteLadder()), active(PollenBurstLadder()), active(DiveLadder()) };        // moth (Turtle)
+        default: return { active(BiteLadder()) };
     }
 }
 
-// Single-rank family spells taught alongside the ladders: (beastFamily,
-// minLevel, spellId). Cobra Reflexes / Strider Presence / Packleader / Roar
-// of Fortitude / Pollen Burst / Shell Shield.
-inline std::vector<std::pair<uint32_t, uint32_t>> HunterPetSingleSpells(uint32_t beastFamily)
+// Every hunter pet ladder the module trains or may find on a pet: the
+// pool rebuild unlearns what the plan does not name, and an alt keeps the
+// actives its player chose. Passive ladders are marked so they never take
+// an active slot.
+inline std::vector<HunterPetBuildEntry> const& HunterPetManagedLadders()
 {
-    switch (beastFamily)
-    {
-        case 4: return { {30, RoarOfFortitudeSpell()} };
-        case 8: return {};
-        case 11: return { {10, CobraReflexesSpell()} };
-        case 12: return { {10, StriderPresenceSpell()} };
-        case 21: return { {20, ShellShieldSpell()} };
-        case 25: return { {20, PackleaderSpell()} };
-        case 39: return { {52, PollenBurstSpell()} };
-        default: return {};
-    }
+    static std::vector<HunterPetBuildEntry> const ladders = {
+        {&GrowlLadder(), false}, {&BiteLadder(), false}, {&ClawLadder(), false}, {&CowerLadder(), false},
+        {&DashLadder(), false}, {&DiveLadder(), false}, {&ProwlLadder(), false}, {&ScreechLadder(), false},
+        {&FuriousHowlLadder(), false}, {&ChargeLadder(), false}, {&ScorpidPoisonLadder(), false},
+        {&LightningBreathLadder(), false}, {&ThunderstompLadder(), false}, {&BubbleBarrierLadder(), false},
+        {&DeathRollLadder(), false}, {&SavageRendLadder(), false}, {&PoisonSpitLadder(), false},
+        {&StriderPresenceLadder(), false}, {&PackleaderLadder(), false}, {&RoarOfFortitudeLadder(), false},
+        {&ShellShieldLadder(), false}, {&WebLadder(), false}, {&GraceLadder(), false},
+        {&PollenBurstLadder(), false},
+        {&CobraReflexesLadder(), true}, {&NaturalArmorLadder(), true}, {&GreatStaminaLadder(), true},
+        {&ArcaneResistanceLadder(), true}, {&FireResistanceLadder(), true}, {&FrostResistanceLadder(), true},
+        {&NatureResistanceLadder(), true}, {&ShadowResistanceLadder(), true},
+    };
+    return ladders;
 }
 
-// Shared rank-upkeep helpers: the missing-rank CHECK (action isUseful) and
-// the TEACH path (factory InitPetSpells) both derive from these, so the
-// check can never name a spell the teach path cannot add. The check looks
-// only at the TOP rank each ladder allows: the core's Pet::AddSpell replaces
-// a lower rank when the higher is learned, so lower ranks stay "unknown"
-// forever and must not count as missing (else isUseful never clears).
+// The managed ladder holding this spell id, with its rank index; nullptr
+// for spells the module does not train (Avoidance, family passives the
+// core teaches itself, ...).
+inline HunterPetBuildEntry const* FindHunterPetLadder(uint32_t spellId, int& rankIndex)
+{
+    for (HunterPetBuildEntry const& entry : HunterPetManagedLadders())
+        for (size_t i = 0; i < entry.ladder->size(); ++i)
+            if ((*entry.ladder)[i].second == spellId)
+            {
+                rankIndex = int(i);
+                return &entry;
+            }
+    rankIndex = -1;
+    return nullptr;
+}
+
+// One planned spell: the rank the pet should end up with.
+struct PetWantedSpell
+{
+    uint32_t spellId = 0;
+    bool passive = false;
+};
+
+// Plans the pet's whole spell set within its training budget:
+//   1. Growl (free, always);
+//   2. `kept` - actives the alt's player taught, ranked up, never dropped;
+//   3. the family build, until the 4 active slots are full;
+//   4. Great Stamina, Natural Armor, then the five resistances one rank at a
+//      time with whatever points are left.
+// Each ladder takes its highest rank the level allows and the points cover.
+// `cost(spellId)` is the rank's training-point cost (the caller returns a
+// huge value for ids this core cannot teach, so they are never picked);
+// `knownRank(ladder)` is the rank index the pet already holds or -1 - a
+// held rank is never planned lower (the core will not learn a lower rank
+// over a higher one) and its cost is charged as is.
+template<typename CostFn, typename KnownFn, typename Sink>
+inline void PlanHunterPetSpells(uint32_t beastFamily, uint32_t petLevel, int32_t budget,
+    std::vector<PetRankLadder const*> const& kept, CostFn&& cost, KnownFn&& knownRank, Sink&& sink)
+{
+    uint32_t slots = kHunterPetActiveSlots;
+    auto take = [&](PetRankLadder const& ladder, bool passive) -> bool
+    {
+        int known = knownRank(ladder);
+        for (int i = int(ladder.size()) - 1; i >= 0; --i)
+        {
+            uint32_t const spellId = ladder[size_t(i)].second;
+            bool const held = i <= known;
+            if (!held && (petLevel < ladder[size_t(i)].first || cost(spellId) > budget))
+                continue;
+            budget -= cost(spellId);
+            sink(PetWantedSpell{spellId, passive});
+            return true;
+        }
+        return false;
+    };
+    auto isKept = [&kept](PetRankLadder const* ladder)
+    {
+        for (PetRankLadder const* k : kept)
+            if (k == ladder)
+                return true;
+        return false;
+    };
+
+    if (take(GrowlLadder(), false))
+        --slots;
+    for (PetRankLadder const* ladder : kept)
+        if (ladder && slots > 0 && take(*ladder, false))
+            --slots;
+    for (HunterPetBuildEntry const& entry : HunterPetBuild(beastFamily))
+    {
+        if (isKept(entry.ladder))
+            continue;
+        if (entry.passive)
+            take(*entry.ladder, true);
+        else if (slots > 0 && take(*entry.ladder, false))
+            --slots;
+    }
+    take(GreatStaminaLadder(), true);
+    take(NaturalArmorLadder(), true);
+
+    PetRankLadder const* const schools[] = { &FireResistanceLadder(), &NatureResistanceLadder(),
+        &ShadowResistanceLadder(), &FrostResistanceLadder(), &ArcaneResistanceLadder() };
+    int rank[5] = { -1, -1, -1, -1, -1 };
+    for (int s = 0; s < 5; ++s)
+    {
+        rank[s] = knownRank(*schools[s]);
+        if (rank[s] >= 0)
+            budget -= cost((*schools[s])[size_t(rank[s])].second);
+    }
+    for (size_t r = 0; r < 4; ++r)
+        for (int s = 0; s < 5; ++s)
+        {
+            PetRankLadder const& ladder = *schools[s];
+            if (rank[s] >= int(r) || rank[s] != int(r) - 1 || petLevel < ladder[r].first)
+                continue;
+            int32_t const delta = cost(ladder[r].second) - (r ? cost(ladder[r - 1].second) : 0);
+            if (delta > budget)
+                continue;
+            budget -= delta;
+            rank[s] = int(r);
+        }
+    for (int s = 0; s < 5; ++s)
+        if (rank[s] >= 0)
+            sink(PetWantedSpell{(*schools[s])[size_t(rank[s])].second, true});
+}
+
+// Highest rank of a ladder the level allows (warlock demons: no training
+// points, every rank at its level).
 inline uint32_t TopRankAtLevel(PetRankLadder const& ladder, uint32_t petLevel)
 {
     uint32_t spellId = 0;
@@ -391,41 +411,6 @@ inline uint32_t TopRankAtLevel(PetRankLadder const& ladder, uint32_t petLevel)
         spellId = rank.second;
     }
     return spellId;
-}
-
-// One flat (spellId, isPassive) row the check and the teach path both walk:
-// top rank per ladder plus singles, in teach order. Passive rows (armor /
-// stamina / resistances) ARE wanted - LearnSpell casts them once - but the
-// callers skip ToggleAutocast for them, same as before. No vector: the
-// caller passes a tiny sink, so the per-tick check pays no allocation.
-struct PetWantedSpell
-{
-    uint32_t spellId = 0;
-    bool passive = false;
-};
-
-template<typename Sink>
-inline void ForEachHunterWantedSpell(uint32_t beastFamily, uint32_t petLevel, Sink&& sink)
-{
-    for (PetRankLadder const* ladder : HunterPetLadders(beastFamily))
-    {
-        if (!ladder)
-            continue;
-        if (uint32_t top = TopRankAtLevel(*ladder, petLevel))
-            sink(PetWantedSpell{top, false});
-    }
-    for (auto const& single : HunterPetSingleSpells(beastFamily))
-        if (petLevel >= single.first)
-            sink(PetWantedSpell{single.second, false});
-    if (uint32_t growl = TopRankAtLevel(GrowlLadder(), petLevel))
-        sink(PetWantedSpell{growl, false});
-    if (uint32_t armor = TopRankAtLevel(NaturalArmorLadder(), petLevel))
-        sink(PetWantedSpell{armor, true});
-    if (uint32_t stamina = TopRankAtLevel(GreatStaminaLadder(), petLevel))
-        sink(PetWantedSpell{stamina, true});
-    if (petLevel >= HunterPetResistanceMinLevel())
-        for (uint32_t spellId : HunterPetResistanceSpells())
-            sink(PetWantedSpell{spellId, true});
 }
 
 // Warlock demon rank ladders by pet entry. Levels verified against

@@ -127,6 +127,9 @@ New here? Read [Getting Started](getting-started.md) first.
 | :--- | :---: | :--- | :--- |
 | Learn class trainer spells for free on level-up (pool bots and hires) | Yes | [`AiPlayerbot.AutoLearnTrainerSpells`](../server/settings/world-population.md#aiplayerbotautolearntrainerspells) | [Class spells](../world/living-world.md#class-spells) |
 | Learn class quest spells for free | Yes | [`AiPlayerbot.AutoLearnQuestSpells`](../server/settings/world-population.md#aiplayerbotautolearnquestspells) | [Class spells](../world/living-world.md#class-spells) |
+| Your alts learn class quest spells for free | No | [`AiPlayerbot.AutoLearnQuestSpellsAlts`](../server/settings/world-population.md#aiplayerbotautolearnquestspellsalts) | [Class spells](../world/living-world.md#class-spells) |
+| Hunter and warlock pets train themselves on level-up (pool bots and hires) | Yes | [`AiPlayerbot.PetAutoTrain`](../server/settings/world-population.md#aiplayerbotpetautotrain) | [Class spells](../world/living-world.md#class-spells) |
+| Your alts' pets train themselves on level-up | No | [`AiPlayerbot.PetAutoTrainAlts`](../server/settings/world-population.md#aiplayerbotpetautotrainalts) | [Class spells](../world/living-world.md#class-spells) |
 | Learn spells from dungeon and raid books at 60 | No | [`AiPlayerbot.AutoLearnDroppedSpells`](../server/settings/world-population.md#aiplayerbotautolearndroppedspells) | [Class spells](../world/living-world.md#class-spells) |
 | Starter outfit for new bots | Yes | [`AiPlayerbot.RandomGearUpgradeEnabled`](../server/settings/world-population.md#aiplayerbotrandomgearupgradeenabled) | [Starter gear](../world/living-world.md#field-kits--equipment-upkeep) |
 | Gear upgrades at level milestones | Yes | [`AiPlayerbot.RandomGearProgression`](../server/settings/world-population.md#aiplayerbotrandomgearprogression) | [Gear](../world/living-world.md#gear-evaluation--upgrades) |

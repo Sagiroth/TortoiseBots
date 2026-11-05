@@ -5,6 +5,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
+#include "Pet.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 
 using namespace ai;
@@ -226,6 +227,26 @@ bool BossTacticsSeekTrigger::IsActive()
     if (!Ready(ai, bot))
         return false;
     return FindBossSeek(ai, bot).valid;
+}
+
+bool BossTacticsSeekPetTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    Pet* pet = bot->GetPet();
+    return pet && pet->IsAlive() && BossSeekPetMustLeave(ai, bot);
+}
+
+bool BossTacticsSeekTotemTrigger::IsActive()
+{
+    if (!Ready(ai, bot) || bot->GetClass() != CLASS_SHAMAN)
+        return false;
+    for (int slot = 0; slot < MAX_TOTEM_SLOT; ++slot)
+    {
+        if (!bot->GetTotemGuid(TotemSlot(slot)).IsEmpty())
+            return BossSeekTotemsMustLeave(ai, bot);
+    }
+    return false;
 }
 
 bool BossTacticsSeekTankTrigger::IsActive()

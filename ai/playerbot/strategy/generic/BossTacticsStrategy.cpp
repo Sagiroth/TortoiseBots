@@ -119,6 +119,18 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics seek kill",
         NextAction::array(0, new NextAction("boss tactics seek kill", ACTION_HIGH + 2), NULL)));
 
+    // A hunter's or warlock's pet stands in the siphon: it is dismissed before the cycle lands and may come back
+    // after. Level with the walk-outs and above the seek walk, which consumes every tick while it runs; an instant
+    // dismissal is never worth less than the walk it would otherwise wait behind.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek pet",
+        NextAction::array(0, new NextAction("boss tactics seek pet", ACTION_EMERGENCY + 6), NULL)));
+
+    // A shaman's totems are one more undosed unit each: cleared with the pets and not replaced before the siphon.
+    triggers.push_back(new TriggerNode(
+        "boss tactics seek totem",
+        NextAction::array(0, new NextAction("boss tactics seek totem", ACTION_EMERGENCY + 6), NULL)));
+
     // A stand set applies (ai_boss_stand): the walk to the seat comes before every cast and heal, the way the
     // reactive Deep Breath dodge does.
     triggers.push_back(new TriggerNode(
@@ -197,6 +209,7 @@ void BossTacticsStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipli
     multipliers.push_back(new BossTacticsCastHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsDispelHoldMultiplier(ai));
     multipliers.push_back(new BossTacticsSeekHoldMultiplier(ai));
+    multipliers.push_back(new BossTacticsSeekPetHoldMultiplier(ai));
 }
 
 // The hold on the non-combat engine too: a held bot out of combat itself would walk back to its stay spot in the

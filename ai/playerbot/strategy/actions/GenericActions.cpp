@@ -139,16 +139,11 @@ bool InitializePetAction::Execute(Event& event)
     // SetDeathState(JUST_DIED) ("force dismiss to fix missing flags"), so the
     // InitPet path below runs only when no pet is out (a dismissed row still
     // in character_pet is re-called by InitPet without harming anything live).
-    bool upkeepAllowed =
-        (ai->HasCheat(BotCheatMask::item) && sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId())) ||
-        (!sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) && sPlayerbotAIConfig.autoLearnTrainerSpells);
-    if (pet && upkeepAllowed && !ai->HasRealPlayerMaster() &&
+    if (pet && PlayerbotFactory::PetAutoTrainAllowed(bot) &&
         (bot->GetClass() == CLASS_HUNTER || bot->GetClass() == CLASS_WARLOCK))
     {
-        // Rank upkeep on a LIVE pet: teach only. The same shared-table walks
-        // drive the missing-rank check, so this teaches exactly what
-        // isUseful named: top rank per line + singles, skipping ids with no
-        // SpellEntry (unteachable) and pinning autocast.
+        // Rank upkeep on a LIVE pet: the same planner drives the check in
+        // isUseful, so this changes exactly what the check named.
         // PET-3: the teach tick pins autocast per spell; taunt spells follow
         // the same situation read as the sweep so a fresh rank doesn't flip
         // Growl/Torment back on under a live tank until the next sweep.
@@ -160,29 +155,17 @@ bool InitializePetAction::Execute(Event& event)
             return TortoiseBots::ShouldPetSpellAutocastDefault(spellId);
         };
         if (bot->GetClass() == CLASS_HUNTER)
-        {
-            CreatureInfo const* petInfo = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
-            uint32 beastFamily = petInfo ? petInfo->beast_family : 0;
-            TortoiseBots::ForEachHunterWantedSpell(beastFamily, pet->GetLevel(),
-                [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
-            {
-                if (!sSpellMgr.GetSpellEntry(wanted.spellId))
-                    return;
-                if (!pet->HasSpell(wanted.spellId))
-                    pet->LearnSpell(wanted.spellId);
-                if (!wanted.passive && pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
-                    pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
-            });
-        }
+            PlayerbotFactory::TrainHunterPet(bot, pet, true, autocastDefault);
         else
         {
             TortoiseBots::ForEachWarlockWantedSpell(pet->GetEntry(), pet->GetLevel(),
                 [pet, &autocastDefault](TortoiseBots::PetWantedSpell wanted)
             {
-                if (!sSpellMgr.GetSpellEntry(wanted.spellId))
+                if (!sSpellMgr.GetSpellEntry(wanted.spellId) || pet->HasSpell(wanted.spellId))
                     return;
-                if (!pet->HasSpell(wanted.spellId))
-                    pet->LearnSpell(wanted.spellId);
+                // Only a fresh spell gets the default: a new rank keeps the
+                // autocast state of the one it replaces (a player's choice).
+                pet->LearnSpell(wanted.spellId);
                 if (pet->HasSpell(wanted.spellId) && !IsPassiveSpell(wanted.spellId))
                     pet->ToggleAutocast(wanted.spellId, autocastDefault(wanted.spellId));
             });
@@ -207,6 +190,31 @@ bool InitializePetAction::isUseful()
     if (bot->GetClass() == CLASS_HUNTER && bot->GetLevel() < TortoiseBots::HUNTER_PET_MIN_LEVEL)
         return false;
 
+    // Rank upkeep on a live pet (AiPlayerbot.PetAutoTrain / PetAutoTrainAlts).
+    // Cheap enough for the "often" trigger: a handful of map lookups.
+    if (Pet* pet = bot->GetPet())
+    {
+        // Presence-flip tracking for the stored-pet cache below.
+        storedPetLookup.ShouldQuery(true, time(nullptr));
+        if (!PlayerbotFactory::PetAutoTrainAllowed(bot))
+            return false;
+        if (bot->GetClass() == CLASS_HUNTER)
+            return PlayerbotFactory::TrainHunterPet(bot, pet, false, [](uint32) { return true; });
+        if (bot->GetClass() != CLASS_WARLOCK)
+            return false;
+        // Top rank per demon line + singles, SpellEntry-less ids skipped.
+        bool missing = false;
+        TortoiseBots::ForEachWarlockWantedSpell(pet->GetEntry(), pet->GetLevel(),
+            [pet, &missing](TortoiseBots::PetWantedSpell wanted)
+        {
+            if (missing || !sSpellMgr.GetSpellEntry(wanted.spellId))
+                return;
+            if (!pet->HasSpell(wanted.spellId))
+                missing = true;
+        });
+        return missing;
+    }
+
     // Only for random bots with item cheats enabled
     if ((ai->HasCheat(BotCheatMask::item) && sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId())) ||
         // Or if alt bot and autoLearnTrainerSpells is true
@@ -222,16 +230,9 @@ bool InitializePetAction::isUseful()
             // every 5 ticks. StoredPetLookupCache::kRecheckSeconds bounds the
             // staleness of answers for row changes no flip can show (e.g.
             // abandoning a pet from a stable slot).
-            bool hasLivePet = bot->GetPet();
+            // No live pet here: the live-pet case returned above.
             bool hasTamedPet = false;
-            if (hasLivePet)
-            {
-                // Presence flip tracking only: with a live pet the query is
-                // never reached (hasTamedPet is true below either way).
-                storedPetLookup.ShouldQuery(true, time(nullptr));
-                hasTamedPet = true;
-            }
-            else if (storedPetLookup.ShouldQuery(false, time(nullptr)))
+            if (storedPetLookup.ShouldQuery(false, time(nullptr)))
             {
                 std::unique_ptr<QueryResult> queryResult(CharacterDatabase.PQuery("SELECT id, entry, owner "
                                                                                     "FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u') ",
@@ -249,58 +250,9 @@ bool InitializePetAction::isUseful()
             {
                 hasTamedPet = storedPetLookup.CachedHasStoredPet();
             }
-            if (hasTamedPet)
-            {
-                // Rank-upkeep check, not creation: true only when the live pet
-                // misses a spell the teach path can actually add. Same shared
-                // table as Execute/factory (top rank per ladder + singles),
-                // and ids with no SpellEntry are skipped, so an unteachable
-                // row (custom spell missing from this core's DBC) can never
-                // pin this true - the old per-rank scan stayed true forever
-                // because AddSpell drops lower ranks. Owned/hired pets never
-                // upkeep. Cheap ("often" = every 5 ticks): HasSpell map hits
-                // only while everything is known; the SpellEntry lookup runs
-                // only for the few wanted ids, not per known spell.
-                Pet* pet = bot->GetPet();
-                if (!pet || ai->HasRealPlayerMaster())
-                    return false;
-                CreatureInfo const* petInfo = sObjectMgr.GetCreatureTemplate(pet->GetEntry());
-                uint32 beastFamily = petInfo ? petInfo->beast_family : 0;
-                bool missing = false;
-                TortoiseBots::ForEachHunterWantedSpell(beastFamily, pet->GetLevel(),
-                    [pet, &missing](TortoiseBots::PetWantedSpell wanted)
-                {
-                    if (missing)
-                        return;
-                    if (!sSpellMgr.GetSpellEntry(wanted.spellId))
-                        return;
-                    if (!pet->HasSpell(wanted.spellId))
-                        missing = true;
-                });
-                return missing;
-            }
-            return true;
-        }
-        else if (bot->GetClass() == CLASS_WARLOCK)
-        {
-            // Same shared-table rule as the hunter path: top rank per demon
-            // line + singles, SpellEntry-less ids skipped. Ding upgrades
-            // ranks without resummoning; steady state is map hits only.
-            Pet* pet = bot->GetPet();
-            if (!pet || ai->HasRealPlayerMaster())
-                return false;
-            bool missing = false;
-            TortoiseBots::ForEachWarlockWantedSpell(pet->GetEntry(), pet->GetLevel(),
-                [pet, &missing](TortoiseBots::PetWantedSpell wanted)
-            {
-                if (missing)
-                    return;
-                if (!sSpellMgr.GetSpellEntry(wanted.spellId))
-                    return;
-                if (!pet->HasSpell(wanted.spellId))
-                    missing = true;
-            });
-            return missing;
+            // A stored pet that is not out yet: Call Pet brings it back,
+            // nothing to create.
+            return !hasTamedPet;
         }
     }
 

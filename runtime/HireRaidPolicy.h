@@ -808,4 +808,33 @@ inline bool BuildHireRaidRoster(HireRaidRequest const& request, HireRaidSpread c
     return true;
 }
 
+// The pool-account race: a hire's character row is saved async, so a SQL COUNT right after a create
+// can miss it while the core's own COUNT a moment later sees it and refuses with
+// CHAR_CREATE_SERVER_LIMIT (core SharedDefines.h ResponseCodes; values kept as literals because this
+// header stays core-free for the standalone test). Room is judged on the larger of this COUNT and the
+// core's synchronous per-account cache (core ObjectMgr::GetPlayerDataForAccount, updated by
+// CreateCharacter, cleared by Player::DeleteFromDB). A dismissed hire's row still counts (the core
+// refuses until the row is deleted), so there is no departing credit.
+constexpr uint8_t kHireCreateServerLimit = 52;
+constexpr uint8_t kHireCreateAccountLimit = 53;
+constexpr uint8_t kHireCreatePvpTeamsViolation = 51;
+constexpr uint32_t kHireCreateAccountRetries = 3;
+
+inline bool HireAccountHasRoom(uint32_t sqlCount, uint32_t cacheCount, uint32_t limit)
+{
+    uint32_t const seen = sqlCount > cacheCount ? sqlCount : cacheCount;
+    return seen < limit;
+}
+
+// A full-account or opposite-faction refusal means the core saw an account state this COUNT missed:
+// another account (or a fresh one) may still have room. Every other non-name error stays terminal.
+// attempt counts the refusals so far; at most kHireCreateAccountRetries retries.
+inline bool HireCreateRetryable(uint8_t result, uint32_t attempt)
+{
+    if (attempt >= kHireCreateAccountRetries)
+        return false;
+    return result == kHireCreateServerLimit || result == kHireCreateAccountLimit ||
+        result == kHireCreatePvpTeamsViolation;
+}
+
 } // namespace TortoiseBots
