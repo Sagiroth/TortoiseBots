@@ -23,6 +23,7 @@
 #include "runtime/GuildOrderEnchantLifecyclePolicy.h"
 #include "runtime/GuildOrderEnchantPolicy.h"
 #include "runtime/GuildOrderMeetPolicy.h"
+#include "runtime/GuildOrderDelivery.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 
@@ -906,6 +907,12 @@ bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
                     {
                         TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
                             TortoiseBots::GuildOrders::OrderState::Done, TortoiseBots::GuildOrders::OrderReason::None);
+                        {
+                            std::vector<std::pair<uint32_t, uint32_t>> used;
+                            for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(order.itemId))
+                                used.push_back({ reagent.itemId, reagent.count });
+                            TortoiseBots::GuildOrders::ReturnEnchantSurplus(bot, used);
+                        }
                         TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
                         TortoiseBots::GuildOrders::ClearMeet(bot->GetGUIDLow());
                         // One-line thanks; the surplus reagents the order

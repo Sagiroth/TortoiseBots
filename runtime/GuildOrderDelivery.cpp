@@ -1009,6 +1009,21 @@ private:
 
 } // namespace
 
+void ReturnEnchantSurplus(Player* bot, std::vector<std::pair<uint32_t, uint32_t>> const& usedReagents)
+{
+    if (!bot)
+        return;
+    // The cast spent the giver's materials first.
+    for (auto const& used : usedReagents)
+        NoteGivenSpent(bot->GetGUIDLow(), used.first, used.second);
+    std::optional<OrderRecord> order = Find(bot->GetGUIDLow());
+    if (!order)
+        return;
+    std::string const name = OrderDisplayName(*order);
+    for (auto const& used : usedReagents)
+        DeliverGiverSurplus(bot, used.first, *order, name);
+}
+
 void UpdateDeliveries()
 {
     DeliveryDrain::Instance().Update();

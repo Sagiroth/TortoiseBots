@@ -13,6 +13,7 @@
 #include "runtime/GuildOrderEnchantLifecyclePolicy.h"
 #include "runtime/GuildOrderEnchantPolicy.h"
 #include "runtime/GuildOrderMeetPolicy.h"
+#include "runtime/GuildOrderDelivery.h"
 #include "runtime/GuildOrderStore.h"
 
 using namespace ai;
@@ -184,6 +185,12 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             !HasAllEnchantReagents(bot, order.itemId))
         {
             SetState(bot->GetGUIDLow(), OrderState::Done, OrderReason::None);
+            {
+                std::vector<std::pair<uint32_t, uint32_t>> used;
+                for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(order.itemId))
+                    used.push_back({ reagent.itemId, reagent.count });
+                ReturnEnchantSurplus(bot, used);
+            }
             NoteEnchantTradeClosed(bot->GetGUIDLow());
             NoteEnchantParked(bot->GetGUIDLow(), 0);
             ClearMeet(bot->GetGUIDLow());
