@@ -12,7 +12,16 @@
 #include "../../runtime/PoolBotTradePolicy.h"
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
-#include "SetCraftAction.h"
+#include "playerbot/policy/guild/EnchantTradePolicy.h"
+#include "playerbot/GuildOrderEnchants.h"
+#include "playerbot/GuildOrderCraft.h"
+#include "runtime/EnchantCapital.h"
+#include "runtime/GuildOrderContract.h"
+#include "runtime/GuildOrderEnchantLifecyclePolicy.h"
+#include "runtime/GuildOrderEnchantPolicy.h"
+#include "runtime/GuildOrderMeetPolicy.h"
+#include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderNeedPolicy.h"
 
 using namespace ai;
 
@@ -80,10 +89,15 @@ bool TradeStatusAction::Execute(Event& event)
 
     if (!shouldTrade)
     {
-        WorldPacket p;
-        uint32 status = 0;
-        p << status;
-        bot->GetSession()->HandleCancelTradeOpcode(p);
+        // Enchant rows bypass the master/group gate: the hook owns the
+        // packet (wrong-player cancel, trade checks, done) and returns
+        // true when it ran. Anything else falls into the cancel below.
+        if (HandleEnchantOrderTrade(event, trader))
+            return true;
+        WorldPacket noTrade;
+        uint32 noTradeStatus = 0;
+        noTrade << noTradeStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(noTrade);
         return false;
     }
 
@@ -494,4 +508,353 @@ bool TradeStatusAction::PoolBotMayTradeWith(Player* trader)
     return TortoiseBots::PoolBotTradeAllowed(
         TortoiseBots::ParsePoolBotTradeMode(sPlayerbotAIConfig.poolBotTradeMode),
         true, false, false, false);
+}
+
+namespace
+{
+// Live window snapshot for one enchant-trade verdict: reads the trader's
+// normal slots and gold, the parked non-traded item, and the catalogue fit.
+bool EnchantHookWindowFacts(Player* bot, Player* trader, uint32_t spellId,
+    ai::EnchantTradeState& tradeState, std::string& currentEnchant)
+{
+    tradeState.traderIsGiver = false;
+    tradeState.hasItem = false;
+    tradeState.fitsEnchant = false;
+    tradeState.hasPermanentEnchant = false;
+    tradeState.replaceConfirmed = false;
+    tradeState.traderExtras = false;
+    currentEnchant.clear();
+    TradeData* ours = bot ? bot->GetTradeData() : nullptr;
+    TradeData* theirs = trader ? trader->GetTradeData() : nullptr;
+    if (!ours || !theirs)
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> row =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!row || row->giverGuidLow == 0)
+        return false;
+    tradeState.traderIsGiver = trader->getObjectGuid() ==
+        ObjectGuid(HIGHGUID_PLAYER, row->giverGuidLow);
+    tradeState.traderExtras = theirs->GetMoney() != 0;
+    for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT && !tradeState.traderExtras; ++slot)
+        if (theirs->GetItem(static_cast<TradeSlots>(slot)))
+            tradeState.traderExtras = true;
+    Item* parked = theirs->GetItem(TRADE_SLOT_NONTRADED);
+    tradeState.hasItem = parked != nullptr;
+    if (!parked || !parked->GetProto())
+        return true;
+    ItemPrototype const* proto = parked->GetProto();
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell)
+        return true;
+    TortoiseBots::GuildOrders::EnchantTargetFacts facts;
+    facts.equippedItemClass = spell->EquippedItemClass;
+    facts.subClassMask = spell->EquippedItemSubClassMask;
+    facts.invTypeMask = spell->EquippedItemInventoryTypeMask;
+    facts.itemTarget = true;
+    facts.spellId = spellId;
+    TortoiseBots::GuildOrders::EnchantTargetItem item;
+    item.itemClass = proto->Class;
+    item.subClass = proto->SubClass;
+    item.inventoryType = proto->InventoryType;
+    tradeState.fitsEnchant = TortoiseBots::GuildOrders::EnchantFitsItem(facts, item);
+    uint32_t parkedEnchant = parked->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
+    tradeState.hasPermanentEnchant = parkedEnchant != 0;
+    if (parkedEnchant)
+        currentEnchant = "that enchant";
+    return true;
+}
+} // namespace
+
+bool TradeStatusAction::HandleEnchantOrderTrade(Event& event, Player* trader)
+{
+    if (!bot || !trader)
+        return false;
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> stored =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    if (!stored || stored->type != TortoiseBots::GuildOrders::OrderType::Enchant ||
+        stored->cancelled || TortoiseBots::GuildOrders::IsFinished(stored->state) ||
+        (stored->state != TortoiseBots::GuildOrders::OrderState::Coming &&
+            stored->state != TortoiseBots::GuildOrders::OrderState::Enchanting))
+        return false;
+    TortoiseBots::GuildOrders::OrderRecord order = *stored;
+    ObjectGuid giverGuid(HIGHGUID_PLAYER, order.giverGuidLow);
+    bool open = bot->GetTradeData() != nullptr && trader->GetTradeData() != nullptr;
+
+    WorldPacket packet(event.GetPacket());
+    uint32_t status = 0;
+    if (!packet.empty())
+    {
+        packet.rpos(0);
+        packet >> status;
+    }
+
+    // A trade with anyone but the giver never touches the row's window:
+    // refuse with the reason whisper and cancel. Covers a stranger opening
+    // a trade with the bot while Coming/Enchanting.
+    if (open && trader->getObjectGuid() != giverGuid)
+    {
+        ai->TellPlayerNoFacing(trader, ai::kEnchantWrongPlayerText,
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        WorldPacket cancel;
+        uint32 cancelStatus = 0;
+        cancel << cancelStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
+        return true;
+    }
+
+
+
+    // Cancelled/closed without completing: back to Coming so the walk
+    // re-opens the trade. The session closes: the next window opens a new
+    // try, and the replace answer resets with it.
+    if (!open ||
+        status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_CLOSE_WINDOW ||
+        status == TRADE_STATUS_TRADE_REJECTED)
+    {
+        if (order.state == TortoiseBots::GuildOrders::OrderState::Enchanting)
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                TortoiseBots::GuildOrders::OrderState::Coming, TortoiseBots::GuildOrders::OrderReason::None);
+        TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
+        return open || status != 0;
+    }
+
+    bool needMaterials = order.state == TortoiseBots::GuildOrders::OrderState::Waiting ||
+        order.reason == TortoiseBots::GuildOrders::OrderReason::NeedItems;
+    if (order.state == TortoiseBots::GuildOrders::OrderState::Coming)
+    {
+        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+            TortoiseBots::GuildOrders::OrderState::Enchanting, TortoiseBots::GuildOrders::OrderReason::None);
+        TortoiseBots::GuildOrders::NoteEnchantTradeOpened(bot->GetGUIDLow(), WorldTimer::getMSTime());
+    }
+    else if (order.state == TortoiseBots::GuildOrders::OrderState::Enchanting)
+    {
+        // First update of a giver-opened window: no open was tracked yet.
+        TortoiseBots::GuildOrders::EnchantTradeSession session =
+            TortoiseBots::GuildOrders::GetEnchantTrade(bot->GetGUIDLow());
+        if (session.openedMs == 0)
+            TortoiseBots::GuildOrders::NoteEnchantTradeOpened(bot->GetGUIDLow(), WorldTimer::getMSTime());
+    }
+
+    // Window updates run the per-trade verdicts. The materials trade owns
+    // the row while reagents are still missing; else the enchant trade.
+    if (needMaterials)
+    {
+        ai::MaterialsTradeState materials;
+        for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(order.itemId))
+        {
+            uint32_t have = bot->GetItemCount(reagent.itemId);
+            uint32_t need = reagent.count > have ? reagent.count - have : 0;
+            materials.allowed.push_back(ai::EnchantReagentNeed{ reagent.itemId, need });
+        }
+        TradeData* theirs = trader->GetTradeData();
+        for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
+            if (Item* offered = theirs->GetItem(static_cast<TradeSlots>(slot)))
+                materials.offered.push_back(ai::OfferedStack{ offered->GetProto()->ItemId, offered->GetCount() });
+        materials.traderGold = theirs->GetMoney();
+        ai::MaterialsTradeResult checked = ai::CheckMaterialsTrade(materials);
+        if (checked.verdict == ai::MaterialsTradeVerdict::NotMaterial)
+        {
+            ai->TellPlayerNoFacing(trader, ai::kMaterialsNotMaterialText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            WorldPacket cancel;
+            uint32 cancelStatus = 0;
+            cancel << cancelStatus;
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            return true;
+        }
+        if (checked.verdict == ai::MaterialsTradeVerdict::NoGold)
+        {
+            ai->TellPlayerNoFacing(trader, ai::kMaterialsNoGoldText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            WorldPacket cancel;
+            uint32 cancelStatus = 0;
+            cancel << cancelStatus;
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            return true;
+        }
+        // All materials offered and the giver accepted: accept, then count
+        // the completion straight into the ready check. The window is gone
+        // after the accept, so the check below runs on the live bags.
+        if (theirs->IsAccepted())
+        {
+            WorldPacket accept;
+            uint32 acceptStatus = TRADE_STATUS_TRADE_ACCEPT;
+            accept << acceptStatus;
+            bot->GetSession()->HandleAcceptTradeOpcode(accept);
+            if (!bot->GetTrader())
+            {
+                TortoiseBots::GuildOrders::NoteSupplyProgress(bot->GetGUIDLow());
+                TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
+                // The refresh runs on the bot's map thread with the spell
+                // map readable: complete goes to the enchant trade at once,
+                // still short stays Waiting needitems.
+                std::optional<TortoiseBots::GuildOrders::OrderRecord> after =
+                    TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                if (after)
+                {
+                    bool complete = true;
+                    for (ai::GuildOrderEnchantMaterial const& reagent :
+                        ai::GuildOrderEnchantReagents(after->itemId))
+                        if (bot->GetItemCount(reagent.itemId) < reagent.count)
+                        {
+                            complete = false;
+                            break;
+                        }
+                    TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                        complete ? TortoiseBots::GuildOrders::OrderState::Enchanting :
+                            TortoiseBots::GuildOrders::OrderState::Waiting,
+                        complete ? TortoiseBots::GuildOrders::OrderReason::None :
+                            TortoiseBots::GuildOrders::OrderReason::NeedItems);
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    TortoiseBots::GuildOrders::EnchantTradeSession session =
+        TortoiseBots::GuildOrders::GetEnchantTrade(bot->GetGUIDLow());
+    uint32_t nowMs = WorldTimer::getMSTime();
+
+    // Try budget: an idle window past the deadline cancels and re-opens
+    // (next try), or gives up after the last one: one whisper, meet state
+    // back to Ready/Waiting. A trader mid-placement holds the window one
+    // more deadline through the policy's traderActive input.
+    bool traderActive = trader->GetTradeData() && trader->GetTradeData()->IsAccepted();
+    switch (ai::CheckTradeTry(nowMs, session.openedMs, session.tries ? session.tries : 1, traderActive))
+    {
+        case ai::TradeTryAction::CancelRetry:
+        {
+            WorldPacket cancel;
+            uint32 cancelStatus = 0;
+            cancel << cancelStatus;
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            return true;
+        }
+        case ai::TradeTryAction::GiveUp:
+        {
+            ai->TellPlayerNoFacing(trader, ai::kTradeGiveUpText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            WorldPacket cancel;
+            uint32 cancelStatus = 0;
+            cancel << cancelStatus;
+            bot->GetSession()->HandleCancelTradeOpcode(cancel);
+            bool need = order.reason == TortoiseBots::GuildOrders::OrderReason::NeedItems;
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                need ? TortoiseBots::GuildOrders::OrderState::Waiting :
+                    TortoiseBots::GuildOrders::OrderState::Ready,
+                need ? TortoiseBots::GuildOrders::OrderReason::NeedItems :
+                    TortoiseBots::GuildOrders::OrderReason::None);
+            TortoiseBots::GuildOrders::ClearMeet(bot->GetGUIDLow());
+            return true;
+        }
+        case ai::TradeTryAction::KeepWaiting:
+            break;
+    }
+
+    // The replace wait runs on the same clock: a "yes" confirms (consumed
+    // through the whisper hook below), anything else cancels the window and
+    // keeps the materials.
+    if (session.replaceAskedMs != 0 && ai::ReplaceWaitExpired(nowMs, session.replaceAskedMs))
+    {
+        WorldPacket cancel;
+        uint32 cancelStatus = 0;
+        cancel << cancelStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
+        return true;
+    }
+
+    ai::EnchantTradeState tradeState;
+    std::string currentEnchant;
+    if (!EnchantHookWindowFacts(bot, trader, order.itemId, tradeState, currentEnchant))
+        return true;
+    tradeState.replaceConfirmed = session.replaceConfirmed;
+    switch (ai::CheckEnchantTrade(tradeState))
+    {
+        case ai::EnchantTradeVerdict::WrongPlayer:
+            ai->TellPlayerNoFacing(trader, ai::kEnchantWrongPlayerText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            break;
+        case ai::EnchantTradeVerdict::Extras:
+            ai->TellPlayerNoFacing(trader, ai::kEnchantExtrasText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            break;
+        case ai::EnchantTradeVerdict::NoItem:
+            ai->TellPlayerNoFacing(trader, ai::kEnchantNoItemText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            break;
+        case ai::EnchantTradeVerdict::WrongItem:
+            ai->TellPlayerNoFacing(trader, ai::kEnchantWrongItemText,
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            break;
+        case ai::EnchantTradeVerdict::AskReplace:
+            // Ask once per window: the whisper hook confirms a "yes" from
+            // the giver only, and the expiry above closes a silent window.
+            if (session.replaceAskedMs == 0)
+            {
+                ai->TellPlayerNoFacing(trader, ai::EnchantAskReplaceText(currentEnchant),
+                    PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                TortoiseBots::GuildOrders::NoteEnchantReplaceAsked(bot->GetGUIDLow(), nowMs);
+            }
+            break;
+        case ai::EnchantTradeVerdict::Ok:
+        {
+            // Cast once, then accept: the core remembers the spell
+            // (SetSpell) and applies it when both sides accept, taking the
+            // bot's reagents. A cancelled trade consumes nothing.
+            uint32_t duration = 0;
+            if (!bot->GetTradeData() || bot->GetTradeData()->GetSpell() == 0)
+                ai->CastSpell(order.itemId, nullptr, nullptr, true, &duration);
+            if (trader->GetTradeData() && trader->GetTradeData()->IsAccepted())
+            {
+                // The giver accepted last: snapshot the parked item's guid
+                // first, so the post-accept verify reads the same item.
+                Item* parkedBefore = trader->GetTradeData()->GetItem(TRADE_SLOT_NONTRADED);
+                ObjectGuid parkedGuid = parkedBefore ? parkedBefore->GetObjectGuid() : ObjectGuid();
+                WorldPacket accept;
+                uint32 acceptStatus = TRADE_STATUS_TRADE_ACCEPT;
+                accept << acceptStatus;
+                bot->GetSession()->HandleAcceptTradeOpcode(accept);
+                if (!bot->GetTrader() && !parkedGuid.IsEmpty())
+                {
+                    // The window is gone: the core applied the enchant with
+                    // the accept. The ordered enchant's EffectMiscValue id
+                    // must sit in the parked permanent slot now.
+                    bool verified = false;
+                    if (Item* done = giverGuid.GetCounter() ?
+                        sObjectAccessor.FindPlayer(giverGuid)->GetItemByGuid(parkedGuid) : nullptr)
+                    {
+                        SpellEntry const* ordered = sServerFacade.LookupSpellInfo(order.itemId);
+                        uint32_t want = 0;
+                        if (ordered)
+                            for (uint8_t e = 0; e < MAX_EFFECT_INDEX; ++e)
+                                if (ordered->Effect[e] == SPELL_EFFECT_ENCHANT_ITEM)
+                                    want = uint32_t(ordered->EffectMiscValue[e]);
+                        uint32_t got = done->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
+                        verified = TortoiseBots::GuildOrders::EnchantDoneVerified(got, want);
+                    }
+                    if (verified)
+                    {
+                        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                            TortoiseBots::GuildOrders::OrderState::Done, TortoiseBots::GuildOrders::OrderReason::None);
+                        TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
+                        TortoiseBots::GuildOrders::ClearMeet(bot->GetGUIDLow());
+                        // One-line thanks; the surplus reagents the order
+                        // gained ride the delivery leg to the guild bank
+                        // through the existing craft-leftovers path.
+                        ai->TellPlayerNoFacing(trader, "Enchanted, thank you.",
+                            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                    }
+                    else
+                    {
+                        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(),
+                            TortoiseBots::GuildOrders::OrderState::Ready, TortoiseBots::GuildOrders::OrderReason::None);
+                        TortoiseBots::GuildOrders::NoteEnchantTradeClosed(bot->GetGUIDLow());
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return true;
 }

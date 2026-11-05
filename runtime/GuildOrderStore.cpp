@@ -146,6 +146,62 @@ public:
         m_meet[botGuidLow] = MeetRequest{ giverGuidLow, WorldTimer::getMSTime() };
     }
 
+    EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        EnchantTradeSession out;
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return out;
+        out.openedMs = it->second.enchantTradeOpenedMs;
+        out.tries = it->second.enchantTradeTries;
+        out.replaceAskedMs = it->second.enchantReplaceAskedMs;
+        out.replaceConfirmed = it->second.enchantReplaceConfirmed;
+        return out;
+    }
+
+    void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantTradeOpenedMs = nowMs;
+        ++it->second.enchantTradeTries;
+        it->second.enchantReplaceAskedMs = 0;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantTradeClosed(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantTradeOpenedMs = 0;
+        it->second.enchantReplaceAskedMs = 0;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantReplaceAskedMs = nowMs;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantReplaceConfirmed(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantReplaceConfirmed = true;
+    }
+
     std::optional<MeetRequest> GetMeet(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -236,6 +292,16 @@ public:
                     record.hours = kDefaultOrderHours;
                 if (!record.rootGiverGuidLow && !record.parentBotGuidLow)
                     record.rootGiverGuidLow = record.giverGuidLow;
+                // A restart drops the meet request (no meet survives), so a
+                // row caught mid-visit loads back as Ready (or Waiting
+                // needitems): the giver presses Meet again.
+                if (record.type == OrderType::Enchant &&
+                    (record.state == OrderState::Coming || record.state == OrderState::Enchanting))
+                {
+                    bool need = record.reason == OrderReason::NeedItems || !record.needItems.empty();
+                    record.state = need ? OrderState::Waiting : OrderState::Ready;
+                    record.reason = need ? OrderReason::NeedItems : OrderReason::None;
+                }
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
             } while (result->NextRow());
@@ -2301,9 +2367,16 @@ public:
         // its own (the ladder's WaitOnSubOrders return is step None) and a
         // child row is still unfinished: the clock stays paused then. A parent
         // working its own leg keeps every clock, so a stalled leg still ends
-        // the round and hands the order back to the ladder.
+        // the round and hands the order back to the ladder. An enchant row
+        // waiting on the giver (Ready, Coming, Enchanting, or parked
+        // needitems) pauses the same way: the wait is the player's, not the
+        // bot's.
+        bool enchantMeetWait = record.type == OrderType::Enchant &&
+            (record.state == OrderState::Ready || record.state == OrderState::Coming ||
+                record.state == OrderState::Enchanting ||
+                (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems));
         if (!wasFinished && in.botOnline && in.botAlive && !in.grouped &&
-            record.state == OrderState::Working &&
+            record.state == OrderState::Working && !enchantMeetWait &&
             !PauseOrderClocks(record.supplyStep, static_cast<int>(in.unfinishedSubOrders)))
         {
             stored.workedCarryMs += in.workedMs;
@@ -2616,6 +2689,13 @@ private:
         uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
         uint32_t relistCount = 0;
         uint32_t relistUnitPrice = 0;
+        // Enchant-order trade window (memory only, a restart drops it with
+        // the meet request): the current window's open time, the try count
+        // for this Enchanting leg, and the replace question state.
+        uint32_t enchantTradeOpenedMs = 0;
+        uint32_t enchantTradeTries = 0;
+        uint32_t enchantReplaceAskedMs = 0;
+        bool enchantReplaceConfirmed = false;
     };
 
     // Memory only, like the cycle itself: no row write for a bookkeeping
@@ -3280,6 +3360,31 @@ void ClearMeet(uint32_t botGuidLow)
     if (!botGuidLow)
         return;
     OrderStore::Instance().DropMeet(botGuidLow);
+}
+
+EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().GetEnchantTrade(botGuidLow);
+}
+
+void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteEnchantTradeOpened(botGuidLow, nowMs);
+}
+
+void NoteEnchantTradeClosed(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantTradeClosed(botGuidLow);
+}
+
+void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteEnchantReplaceAsked(botGuidLow, nowMs);
+}
+
+void NoteEnchantReplaceConfirmed(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantReplaceConfirmed(botGuidLow);
 }
 
 void RefreshOrderProtectedSet(Player* bot)

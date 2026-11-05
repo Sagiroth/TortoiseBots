@@ -17,7 +17,10 @@ namespace ai
         bool PoolBotMayTradeWith(Player* trader);
         void BeginTrade();
         void AutoShareConjured(Player* trader);
-        bool CheckTrade();
+        // Guild enchant order (Coming/Enchanting row): per-update window
+        // checks, the replace answer, the try budget and the done verify.
+        // True when the row owned the packet (the caller returns at once).
+        bool HandleEnchantOrderTrade(Event& event, Player* trader);
         int32 CalculateCost(Player *player, bool sell);
     };
 }

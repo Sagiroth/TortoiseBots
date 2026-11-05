@@ -8,6 +8,8 @@
 #include "strategy/values/TargetValue.h"
 #include "BotActionLog.h"
 #include "playerbot/WandPolicy.h"
+#include "playerbot/policy/guild/EnchantTradePolicy.h"
+#include "runtime/GuildOrderStore.h"
 
 using namespace ai;
 
@@ -297,6 +299,28 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
             if (guid1 != bot->getObjectGuid())
             {
+                // Enchant-order replace answer: the giver's "yes" confirms the
+                // open askreplace question even when they never grouped with
+                // the bot (meet in the capital), so this runs before the
+                // master/group gate below. Giver-only, Enchanting only.
+                if (msgtype == CHAT_MSG_WHISPER && lang != LANG_ADDON)
+                {
+                    if (Player* sender = sObjectAccessor.FindPlayer(guid1))
+                    {
+                        std::optional<TortoiseBots::GuildOrders::OrderRecord> enchantRow =
+                            TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+                        TortoiseBots::GuildOrders::EnchantTradeSession enchantSession =
+                            TortoiseBots::GuildOrders::GetEnchantTrade(bot->GetGUIDLow());
+                        if (enchantRow && enchantRow->type == TortoiseBots::GuildOrders::OrderType::Enchant &&
+                            enchantRow->state == TortoiseBots::GuildOrders::OrderState::Enchanting &&
+                            sender->getObjectGuid() == ObjectGuid(HIGHGUID_PLAYER, enchantRow->giverGuidLow) &&
+                            enchantSession.replaceAskedMs != 0 && !enchantSession.replaceConfirmed)
+                        {
+                            if (ai::ReplaceAnswerIsYes(message))
+                                TortoiseBots::GuildOrders::NoteEnchantReplaceConfirmed(bot->GetGUIDLow());
+                        }
+                    }
+                }
                 // Dispatch party chat and whispers from authorized real players (group master / members) to HandleCommand
                 if ((msgtype == CHAT_MSG_PARTY || msgtype == CHAT_MSG_WHISPER) && lang != LANG_ADDON)
                 {

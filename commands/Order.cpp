@@ -15,6 +15,7 @@
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/GuildOrderWhoSearchPolicy.h"
 #include "../runtime/GuildOrderMeetPolicy.h"
+#include "../runtime/EnchantCapital.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
@@ -172,35 +173,8 @@ bool ParseHours(std::string const& token, uint32_t& hours)
     return hours >= GuildOrders::kMinOrderHours && hours <= GuildOrders::kMaxOrderHours;
 }
 
-// The zone check behind Meet lives in GiverInBotCapital in
-// GuildOrderMeetPolicy.h: giver zone against the bot's main capital
-// (Stormwind for the Alliance, Orgrimmar for the Horde).
-
-// True while the bot is tied up for a Meet visit: in a dungeon, raid or
-// battleground, or grouped with a real player.
-bool BotBusyForMeet(Player* bot)
-{
-    if (!bot || !bot->IsInWorld())
-        return false;
-    if (bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid() ||
-        bot->GetMap()->IsBattleGround()))
-        return true;
-    if (bot->InBattleGround())
-        return true;
-    Group* group = bot->GetGroup();
-    if (!group)
-        return false;
-    for (Group::MemberSlot const& slot : group->GetMemberSlots())
-    {
-        if (slot.guid == bot->getObjectGuid())
-            continue;
-        Player* member = sObjectAccessor.FindPlayer(slot.guid);
-        if (member && member->IsInWorld() && member->GetSession() &&
-            member->GetSession()->HasNetworkTransport())
-            return true;
-    }
-    return false;
-}
+// (BotBusyForMeet lives in runtime/EnchantCapital.h, shared with the
+// lifecycle action.)
 
 // True when the giver ranks as guild master or may remove guild members
 // (an officer): replacing another giver's running enchant order.
@@ -242,7 +216,7 @@ bool HandleOrderMeet(ChatHandler* handler, Player* requester, std::string const&
         return true;
     }
     bool giverInCapital = GuildOrders::GiverInBotCapital(requester->GetZoneId(), !bot || bot->GetTeam() == ALLIANCE);
-    bool botTiedUp = BotBusyForMeet(bot);
+    bool botTiedUp = TortoiseBots::EnchantCapital::BotBusyForMeet(bot);
     bool online = bot && bot->IsInWorld();
     bool gathering;
     if (!online)
@@ -697,6 +671,15 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
     {
         OrderError(handler, "invalid", "That bot has no order.");
         return true;
+    }
+    // Cancel in any state closes the trade window first: the materials the
+    // order gained still walk to the guild bank through the cancel path.
+    if (bot && bot->IsInWorld() && bot->GetTrader())
+    {
+        WorldPacket cancel;
+        uint32 cancelStatus = 0;
+        cancel << cancelStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
     }
     GuildOrders::Cancel(guid.GetCounter());
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "cancel");
