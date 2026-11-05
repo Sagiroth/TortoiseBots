@@ -1,30 +1,29 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
-// Pure policy for the mesa lifts (Freewind Post, Thunder Bluff). The core
-// keeps lifts as static objects and never carries a passenger: a player
-// rides because the client animates the car from the server clock and
+// Pure policy for the city lifts (Undercity, Thunder Bluff, Freewind Post).
+// The core keeps lifts as static objects and never carries a passenger: a
+// player rides because the client animates the car from the server clock and
 // reports its own position. A bot has no client, so it walked to the foot of
-// the mesa and gave up (#1478). The module rides for it: the car's height
-// follows the client animation (TransportAnimation.dbc, below) at phase
-// server-ms-time % period, the bot boards a car parked at its level and steps
-// off when the car parks at the other one. The world-facing part lives in
-// MoveToTravelTargetAction.
+// a mesa and gave up (#1478), or stood in the Undercity throne room. The
+// module rides for it: the car's height follows the client animation
+// (TransportAnimation.dbc, below) at phase server-ms-time % period, the bot
+// boards a car parked at its level and steps off when the car parks at the
+// other one. The world-facing part lives in MoveToTravelTargetAction.
 
 namespace ai
 {
-    inline constexpr uint32_t kMesaLiftMapId = 1;
-
     struct LiftKey
     {
         uint32_t ms;
         float dz;
     };
 
-    // TransportAnimation.dbc: every car parks 5 s at its spawn level, rides
-    // 10 s, parks 5 s at the other level and rides back (30 s cycle).
+    // TransportAnimation.dbc: height above the spawn over one cycle; equal
+    // neighbouring keys are a stop at a level.
     inline constexpr LiftKey kTbWestDown[] = { {0, 0.0f}, {5000, 0.0f}, {6100, -1.75f}, {6933, -5.18f}, {12867, -56.81f},
         {13833, -59.85f}, {15000, -61.24f}, {20000, -61.24f}, {21333, -59.83f}, {22233, -56.74f}, {28133, -5.25f},
         {28800, -1.59f}, {30033, 0.0f} };
@@ -43,10 +42,12 @@ namespace ai
     inline constexpr LiftKey kFreewindUp[] = { {0, 0.0f}, {5000, 0.0f}, {5900, 1.2f}, {6667, 4.69f}, {13100, 121.52f},
         {14067, 127.64f}, {15000, 129.55f}, {20000, 129.55f}, {21000, 127.6f}, {21800, 122.33f}, {27933, 8.59f},
         {28967, 1.97f}, {30000, 0.0f} };
-
-    // Parked at the spawn level from 0 ms, at the other level from 15000 ms.
-    inline constexpr uint32_t kLiftParkMs = 5000;
-    inline constexpr uint32_t kLiftOtherParkStartMs = 15000;
+    inline constexpr LiftKey kUndercityNorth[] = { {0, 0.0f}, {1833, -55.47f}, {6833, -55.47f}, {10333, 41.04f},
+        {15167, 41.04f}, {16667, 0.0f} };
+    inline constexpr LiftKey kUndercityEast[] = { {0, 0.0f}, {167, 0.0f}, {3667, 96.5f}, {8500, 96.5f}, {11833, 0.0f},
+        {16667, 0.0f} };
+    inline constexpr LiftKey kUndercityWest[] = { {0, 0.0f}, {167, 0.0f}, {3500, 0.0f}, {7000, 96.5f}, {11833, 96.5f},
+        {15167, 0.0f}, {16667, 0.0f} };
 
     struct LiftCar
     {
@@ -72,19 +73,47 @@ namespace ai
         return 0.0f;
     }
 
-    inline bool LiftSpawnOnTop(LiftCar const& car) { return LiftCarOffset(car, kLiftOtherParkStartMs) < 0.0f; }
-
-    inline float LiftLevelZ(LiftCar const& car, bool top)
+    inline float LiftLevelDz(LiftCar const& car, bool top)
     {
-        return top == LiftSpawnOnTop(car) ? car.z : car.z + LiftCarOffset(car, kLiftOtherParkStartMs);
+        float dz = car.keys[0].dz;
+        for (int i = 1; i < car.keyCount; ++i)
+            dz = top ? std::max(dz, car.keys[i].dz) : std::min(dz, car.keys[i].dz);
+        return dz;
+    }
+
+    inline float LiftLevelZ(LiftCar const& car, bool top) { return car.z + LiftLevelDz(car, top); }
+
+    // Key segment i runs from keys[i] to keys[i + 1]; it is a stop at the
+    // level when both ends stand there.
+    inline bool LiftSegmentStops(LiftCar const& car, int i, float levelDz)
+    {
+        return std::fabs(car.keys[i].dz - levelDz) < 0.05f && std::fabs(car.keys[i + 1].dz - levelDz) < 0.05f;
+    }
+
+    inline int LiftSegmentAt(LiftCar const& car, uint32_t t)
+    {
+        for (int i = 0; i + 1 < car.keyCount; ++i)
+            if (t < car.keys[i + 1].ms)
+                return i;
+        return car.keyCount - 2;
     }
 
     // Milliseconds the car still stands at the level (0: not parked there).
+    // A stop may run over the end of the cycle into its start.
     inline uint32_t LiftParkedLeft(LiftCar const& car, uint32_t serverMs, bool top)
     {
-        uint32_t const t = serverMs % LiftPeriod(car);
-        uint32_t const start = top == LiftSpawnOnTop(car) ? 0 : kLiftOtherParkStartMs;
-        return t >= start && t < start + kLiftParkMs ? start + kLiftParkMs - t : 0;
+        float const level = LiftLevelDz(car, top);
+        int const segments = car.keyCount - 1;
+        int i = LiftSegmentAt(car, serverMs % LiftPeriod(car));
+        uint32_t t = serverMs % LiftPeriod(car);
+        uint32_t left = 0;
+        for (int n = 0; n < segments && LiftSegmentStops(car, i, level); ++n)
+        {
+            left += car.keys[i + 1].ms - t;
+            i = (i + 1) % segments;
+            t = car.keys[i].ms;
+        }
+        return left;
     }
 
     // Milliseconds until the car next parks at the level (0: parked now).
@@ -92,58 +121,89 @@ namespace ai
     {
         if (LiftParkedLeft(car, serverMs, top))
             return 0;
+        float const level = LiftLevelDz(car, top);
         uint32_t const period = LiftPeriod(car);
         uint32_t const t = serverMs % period;
-        uint32_t const start = top == LiftSpawnOnTop(car) ? 0 : kLiftOtherParkStartMs;
-        return t < start ? start - t : period - t + start;
+        int const segments = car.keyCount - 1;
+        int i = LiftSegmentAt(car, t);
+        for (int n = 1; n <= segments; ++n)
+        {
+            int const next = (i + n) % segments;
+            if (LiftSegmentStops(car, next, level))
+            {
+                uint32_t const start = car.keys[next].ms;
+                return start > t ? start - t : period - t + start;
+            }
+        }
+        return period;
     }
 
     struct MesaLift
     {
         char const* name;
-        LiftCar cars[2];
+        LiftCar const* cars;
+        int carCount;
     };
 
+    // A place a lift leads into: within radius of the centre, above splitZ
+    // for a mesa top, below it for an underground city.
     struct Mesa
     {
-        // The mesa top: within radius of the centre and above minZ.
-        float centreX, centreY, radius, minZ;
+        uint32_t mapId;
+        float centreX, centreY, radius, splitZ;
+        bool underground;
         MesaLift const* lifts;
         int liftCount;
     };
 
-    template <int N> constexpr int LiftKeyCount(LiftKey const (&)[N]) { return N; }
-
-    inline constexpr MesaLift kFreewindLifts[] = {
-        { "Freewind Post", { { 11898, -5399.19f, -2504.62f, 89.02f, kFreewindDown, LiftKeyCount(kFreewindDown) },
-                             { 11899, -5382.5f, -2489.42f, -40.53f, kFreewindUp, LiftKeyCount(kFreewindUp) } } },
+    inline constexpr LiftCar kFreewindCars[] = {
+        { 11898, -5399.19f, -2504.62f, 89.02f, kFreewindDown, 14 },
+        { 11899, -5382.5f, -2489.42f, -40.53f, kFreewindUp, 13 },
     };
+    inline constexpr LiftCar kTbWestCars[] = {
+        { 4170, -1286.24f, 189.72f, 130.08f, kTbWestDown, 13 },
+        { 4171, -1308.38f, 185.29f, 68.59f, kTbWestUp, 15 },
+    };
+    inline constexpr LiftCar kTbEastCars[] = {
+        { 47297, -1037.27f, -49.24f, 140.5f, kTbEastDown, 13 },
+        { 47296, -1028.04f, -28.36f, 69.02f, kTbEastUp, 15 },
+    };
+    inline constexpr LiftCar kUndercityNorthCar[] = { { 20649, 1596.15f, 291.8f, 14.68f, kUndercityNorth, 6 } };
+    inline constexpr LiftCar kUndercityEastCar[] = { { 20652, 1595.26f, 188.64f, -40.78f, kUndercityEast, 6 } };
+    inline constexpr LiftCar kUndercityWestCar[] = { { 20655, 1544.24f, 240.77f, -40.78f, kUndercityWest, 7 } };
+
+    inline constexpr MesaLift kFreewindLifts[] = { { "Freewind Post", kFreewindCars, 2 } };
     inline constexpr MesaLift kThunderBluffLifts[] = {
-        { "Thunder Bluff west", { { 4170, -1286.24f, 189.72f, 130.08f, kTbWestDown, LiftKeyCount(kTbWestDown) },
-                                  { 4171, -1308.38f, 185.29f, 68.59f, kTbWestUp, LiftKeyCount(kTbWestUp) } } },
-        { "Thunder Bluff east", { { 47297, -1037.27f, -49.24f, 140.5f, kTbEastDown, LiftKeyCount(kTbEastDown) },
-                                  { 47296, -1028.04f, -28.36f, 69.02f, kTbEastUp, LiftKeyCount(kTbEastUp) } } },
+        { "Thunder Bluff west", kTbWestCars, 2 },
+        { "Thunder Bluff east", kTbEastCars, 2 },
+    };
+    inline constexpr MesaLift kUndercityLifts[] = {
+        { "Undercity north", kUndercityNorthCar, 1 },
+        { "Undercity east", kUndercityEastCar, 1 },
+        { "Undercity west", kUndercityWestCar, 1 },
     };
 
     // Freewind NPCs stand at z 89-90, the needles floor below at z -60..-45.
     // Thunder Bluff NPCs stand at z 120-170, the Mulgore ground around it and
-    // the lower lift stations at z 69 and below.
+    // the lower lift stations at z 69 and below. Undercity creatures stand at
+    // z -85..-23 under the Ruins of Lordaeron (z 55-69).
     inline constexpr Mesa kMesas[] = {
-        { -5430.0f, -2450.0f, 150.0f, 60.0f, kFreewindLifts, 1 },
-        { -1200.0f, 50.0f, 350.0f, 85.0f, kThunderBluffLifts, 2 },
+        { 1, -5430.0f, -2450.0f, 150.0f, 60.0f, false, kFreewindLifts, 1 },
+        { 1, -1200.0f, 50.0f, 350.0f, 85.0f, false, kThunderBluffLifts, 2 },
+        { 0, 1530.0f, 250.0f, 320.0f, -15.0f, true, kUndercityLifts, 3 },
     };
 
-    inline bool OnMesa(Mesa const& mesa, uint32_t mapId, float x, float y, float z)
+    inline bool InMesa(Mesa const& mesa, uint32_t mapId, float x, float y, float z)
     {
-        return mapId == kMesaLiftMapId && z > mesa.minZ &&
+        return mapId == mesa.mapId && (mesa.underground ? z < mesa.splitZ : z > mesa.splitZ) &&
             std::hypot(x - mesa.centreX, y - mesa.centreY) < mesa.radius;
     }
 
     enum class MesaLiftDir
     {
         None,
-        Up,   // bot below, destination on the mesa
-        Down, // bot on the mesa, destination off it
+        Up,
+        Down,
     };
 
     struct MesaLiftPick
@@ -152,26 +212,33 @@ namespace ai
         MesaLift const* lift = nullptr;
     };
 
-    // The lift a same-map trip needs: the one with the shortest straight
-    // line bot -> lift -> destination.
+    // A bot further out than this past the place's edge walks its normal
+    // route first.
+    inline constexpr float kLiftApproachYd = 250.0f;
+
+    // The lift a trip needs to get into or out of a place: the one with the
+    // shortest straight line bot -> lift -> destination. A destination on
+    // another map counts as outside.
     inline MesaLiftPick MesaLiftFor(uint32_t botMap, float bx, float by, float bz,
         uint32_t goalMap, float gx, float gy, float gz)
     {
         MesaLiftPick pick;
-        if (botMap != kMesaLiftMapId || goalMap != botMap)
-            return pick;
         for (Mesa const& mesa : kMesas)
         {
-            bool const botOn = OnMesa(mesa, botMap, bx, by, bz);
-            bool const goalOn = OnMesa(mesa, goalMap, gx, gy, gz);
-            if (botOn == goalOn)
+            if (botMap != mesa.mapId ||
+                std::hypot(bx - mesa.centreX, by - mesa.centreY) > mesa.radius + kLiftApproachYd)
                 continue;
-            pick.dir = goalOn ? MesaLiftDir::Up : MesaLiftDir::Down;
+            bool const botIn = InMesa(mesa, botMap, bx, by, bz);
+            bool const goalIn = InMesa(mesa, goalMap, gx, gy, gz);
+            if (botIn == goalIn)
+                continue;
+            pick.dir = goalIn != mesa.underground ? MesaLiftDir::Up : MesaLiftDir::Down;
             float best = 0.0f;
             for (int i = 0; i < mesa.liftCount; ++i)
             {
                 LiftCar const& car = mesa.lifts[i].cars[0];
-                float const cost = std::hypot(bx - car.x, by - car.y) + std::hypot(gx - car.x, gy - car.y);
+                float const cost = std::hypot(bx - car.x, by - car.y) +
+                    (goalMap == botMap ? std::hypot(gx - car.x, gy - car.y) : 0.0f);
                 if (!pick.lift || cost < best)
                 {
                     pick.lift = &mesa.lifts[i];
@@ -186,6 +253,10 @@ namespace ai
     // The car to wait for: the one whose shaft is nearest the bot.
     inline int NearestLiftCar(MesaLift const& lift, float x, float y)
     {
-        return std::hypot(x - lift.cars[0].x, y - lift.cars[0].y) <= std::hypot(x - lift.cars[1].x, y - lift.cars[1].y) ? 0 : 1;
+        int best = 0;
+        for (int i = 1; i < lift.carCount; ++i)
+            if (std::hypot(x - lift.cars[i].x, y - lift.cars[i].y) < std::hypot(x - lift.cars[best].x, y - lift.cars[best].y))
+                best = i;
+        return best;
     }
 }

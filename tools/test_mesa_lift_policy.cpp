@@ -1,7 +1,7 @@
-// Standalone policy test for the mesa lifts: a bot below Freewind Post or
-// Thunder Bluff with a destination on top takes the nearest lift up, a bot on
-// top with a destination off it goes down, everything else walks; the car
-// schedule follows the client animation.
+// Standalone policy test for the city lifts: a bot below Freewind Post or
+// Thunder Bluff with a destination on top takes the nearest lift up, a bot in
+// Undercity with a destination outside goes up, the way back goes down,
+// everything else walks; the car schedule follows the client animation.
 // Mirrors ai/playerbot/policy/travel/MesaLiftPolicy.h; no server headers needed.
 //
 // Build and run:
@@ -37,8 +37,10 @@ int main()
     // Foot of Freewind (the #1478 stuck spot) -> trade vendor on top: up.
     ai::MesaLiftPick p = MesaLiftFor(1, -5356.7f, -2487.1f, -45.9f, 1, -5441.9f, -2432.0f, 89.6f);
     CHECK(p.dir == MesaLiftDir::Up && Named(p, "Freewind Post"));
-    // Far away in the needles -> Freewind flight master: still up the lift.
-    CHECK(MesaLiftFor(1, -5900.0f, -3900.0f, -58.0f, 1, -5407.1f, -2419.6f, 89.7f).dir == MesaLiftDir::Up);
+    // Near Freewind in the needles -> flight master: up the lift; far away
+    // (Shimmering Flats): the normal route first.
+    CHECK(MesaLiftFor(1, -5600.0f, -2700.0f, -50.0f, 1, -5407.1f, -2419.6f, 89.7f).dir == MesaLiftDir::Up);
+    CHECK(MesaLiftFor(1, -5900.0f, -3900.0f, -58.0f, 1, -5407.1f, -2419.6f, 89.7f).dir == MesaLiftDir::None);
     // Freewind top -> needles floor: down.
     p = MesaLiftFor(1, -5441.9f, -2432.0f, 89.6f, 1, -5409.9f, -2532.2f, -48.1f);
     CHECK(p.dir == MesaLiftDir::Down && Named(p, "Freewind Post"));
@@ -57,28 +59,37 @@ int main()
     // The lower lift station itself counts as below.
     CHECK(MesaLiftFor(1, -1330.2f, 193.4f, 60.2f, 1, -1277.9f, 138.5f, 131.9f).dir == MesaLiftDir::Up);
 
-    // Every car: the lower level is below its mesa top, the upper one on it;
-    // both cars of a lift serve the same two levels.
+    // Every car: the lower level is outside a mesa top / inside an
+    // underground city, the upper one the other way round; the cars of a
+    // lift serve the same two levels and stop at both.
     for (ai::Mesa const& mesa : ai::kMesas)
         for (int i = 0; i < mesa.liftCount; ++i)
         {
             ai::MesaLift const& lift = mesa.lifts[i];
-            for (ai::LiftCar const& car : lift.cars)
+            for (int c = 0; c < lift.carCount; ++c)
             {
-                CHECK(!ai::OnMesa(mesa, 1, car.x, car.y, ai::LiftLevelZ(car, false)));
-                CHECK(ai::OnMesa(mesa, 1, car.x, car.y, ai::LiftLevelZ(car, true)));
-                CHECK(ai::LiftPeriod(car) >= 30000 && ai::LiftPeriod(car) <= 30100);
+                ai::LiftCar const& car = lift.cars[c];
+                CHECK(ai::InMesa(mesa, mesa.mapId, car.x, car.y, ai::LiftLevelZ(car, false)) == mesa.underground);
+                CHECK(ai::InMesa(mesa, mesa.mapId, car.x, car.y, ai::LiftLevelZ(car, true)) != mesa.underground);
+                CHECK(car.keys[car.keyCount - 1].dz == 0.0f && car.keys[0].dz == 0.0f);
+                for (bool top : { false, true })
+                {
+                    uint32_t moving = 0;
+                    while (ai::LiftParkedLeft(car, moving, top))
+                        moving += 100;
+                    uint32_t const wait = ai::LiftUntilParked(car, moving, top);
+                    CHECK(wait > 0 && wait < ai::LiftPeriod(car));
+                    CHECK(ai::LiftParkedLeft(car, moving + wait + 10, top) >= 3000);
+                }
+                CHECK(std::fabs(ai::LiftLevelZ(car, true) - ai::LiftLevelZ(lift.cars[0], true)) < 1.0f);
+                CHECK(std::fabs(ai::LiftLevelZ(car, false) - ai::LiftLevelZ(lift.cars[0], false)) < 1.0f);
             }
-            CHECK(std::fabs(ai::LiftLevelZ(lift.cars[0], true) - ai::LiftLevelZ(lift.cars[1], true)) < 1.0f);
-            CHECK(std::fabs(ai::LiftLevelZ(lift.cars[0], false) - ai::LiftLevelZ(lift.cars[1], false)) < 1.0f);
-            CHECK(ai::LiftSpawnOnTop(lift.cars[0]) != ai::LiftSpawnOnTop(lift.cars[1]));
         }
 
     // Thunder Bluff west: the up car (4171) parks below at 0-5 s, rides up,
     // parks on top at 15-20 s; the down car mirrors it.
     ai::LiftCar const& upCar = ai::kThunderBluffLifts[0].cars[1];
     ai::LiftCar const& downCar = ai::kThunderBluffLifts[0].cars[0];
-    CHECK(!ai::LiftSpawnOnTop(upCar) && ai::LiftSpawnOnTop(downCar));
     CHECK(ai::LiftParkedLeft(upCar, 60000 + 1000, false) == 4000);
     CHECK(ai::LiftParkedLeft(upCar, 60000 + 1000, true) == 0);
     CHECK(ai::LiftParkedLeft(upCar, 60000 + 16000, true) == 4000);
@@ -90,14 +101,40 @@ int main()
     CHECK(std::fabs(ai::LiftCarOffset(upCar, 2000)) < 0.01f);
     float const mid = ai::LiftCarOffset(upCar, 10567 + (13100 - 10567) / 2);
     CHECK(mid > 32.55f && mid < 53.47f);
-    CHECK(std::fabs(ai::LiftCarOffset(downCar, 17000) + 61.24f) < 0.01f);
+    CHECK(ai::LiftParkedLeft(downCar, 16000, false) == 4000);
     // The nearest shaft: next to the 4171 shaft, next to the 4170 shaft.
     CHECK(ai::NearestLiftCar(ai::kThunderBluffLifts[0], -1310.0f, 183.0f) == 1);
     CHECK(ai::NearestLiftCar(ai::kThunderBluffLifts[0], -1284.0f, 192.0f) == 0);
 
-    // Other maps, cross-map trips: never.
+    // Undercity west (20655): below from 15.2 s over the cycle end to 3.5 s,
+    // on top 7-11.8 s; north (20649) starts mid-shaft.
+    ai::LiftCar const& ucWest = ai::kUndercityLifts[2].cars[0];
+    CHECK(ai::LiftParkedLeft(ucWest, 16000, false) == 667 + 3500);
+    CHECK(ai::LiftParkedLeft(ucWest, 1000, false) == 2500);
+    CHECK(ai::LiftParkedLeft(ucWest, 8000, true) == 3833);
+    CHECK(ai::LiftUntilParked(ucWest, 4000, true) == 3000);
+    CHECK(ai::LiftUntilParked(ucWest, 12000, false) == 3167);
+    ai::LiftCar const& ucNorth = ai::kUndercityLifts[0].cars[0];
+    CHECK(ai::LiftParkedLeft(ucNorth, 0, false) == 0 && ai::LiftParkedLeft(ucNorth, 0, true) == 0);
+    CHECK(ai::LiftUntilParked(ucNorth, 0, false) == 1833);
+    CHECK(std::fabs(ai::LiftLevelZ(ucNorth, false) + 40.79f) < 0.05f && std::fabs(ai::LiftLevelZ(ucNorth, true) - 55.72f) < 0.05f);
+
+    // Undercity: throne room -> auctioneer below goes down, the auction
+    // house -> Brill or another map goes up, inside to inside walks.
+    CHECK(MesaLiftFor(0, 1567.2f, 240.6f, 57.6f, 0, 1542.4f, 255.2f, -56.8f).dir == MesaLiftDir::Down);
+    CHECK(MesaLiftFor(0, 1609.7f, 187.2f, -56.8f, 0, 2260.0f, 290.0f, 34.0f).dir == MesaLiftDir::Up);
+    CHECK(MesaLiftFor(0, 1609.7f, 187.2f, -56.8f, 1, 1600.0f, -4400.0f, 10.0f).dir == MesaLiftDir::Up);
+    CHECK(MesaLiftFor(0, 1609.7f, 187.2f, -56.8f, 0, 1542.4f, 255.2f, -56.8f).dir == MesaLiftDir::None);
+    CHECK(MesaLiftFor(0, 1567.2f, 240.6f, 57.6f, 0, 2260.0f, 290.0f, 34.0f).dir == MesaLiftDir::None);
+    // Brill or further to the city: the normal route to the ruins first.
+    CHECK(MesaLiftFor(0, 2260.0f, 290.0f, 34.0f, 0, 1542.4f, 255.2f, -56.8f).dir == MesaLiftDir::None);
+    // The ruins courtyard outside the throne room: down.
+    CHECK(MesaLiftFor(0, 1700.0f, 240.0f, 62.0f, 0, 1542.4f, 255.2f, -56.8f).dir == MesaLiftDir::Down);
+
+    // Other map with the same coordinates: never.
     CHECK(MesaLiftFor(0, -5356.7f, -2487.1f, -45.9f, 0, -5441.9f, -2432.0f, 89.6f).dir == MesaLiftDir::None);
-    CHECK(MesaLiftFor(1, -5356.7f, -2487.1f, -45.9f, 0, -5441.9f, -2432.0f, 89.6f).dir == MesaLiftDir::None);
+    // Cross-map goal from the Freewind top: down (leave the mesa first).
+    CHECK(MesaLiftFor(1, -5441.9f, -2432.0f, 89.6f, 0, 1600.0f, 200.0f, -50.0f).dir == MesaLiftDir::Down);
 
     if (failures)
     {

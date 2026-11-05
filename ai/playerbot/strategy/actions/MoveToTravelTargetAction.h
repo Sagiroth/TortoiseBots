@@ -17,7 +17,6 @@ namespace ai
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
-        bool TryUndercityLift(WorldPosition const& location);
         bool TryMesaLift(WorldPosition const& location, float& x, float& y, float& z, bool& staged);
 
         // Stuck-hand-in fallback, shared with the re-pick observation in
@@ -87,6 +86,7 @@ namespace ai
 
         // The lift car this bot stands on (MesaLiftPolicy.h), null when not riding.
         ai::MesaLift const* rideLift = nullptr;
+        uint32 rideMapId = 0;
         int rideCar = 0;
         bool rideToTop = false;
         ObjectGuid rideCarGuid;
