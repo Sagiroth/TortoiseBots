@@ -188,13 +188,13 @@ void BuildGuildOrderEnchantIndex()
             continue;
         bySpell[ability->spellId].push_back(ability);
     }
+    std::vector<EnchantEntry>& index = EnchantIndex();
     for (auto const& [spellId, rows] : bySpell)
     {
         SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
         if (!spell)
             continue;
         bool hasEnchant = false;
-        bool createsItem = false;
         for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
         {
             if (spell->Effect[e] == SPELL_EFFECT_ENCHANT_ITEM)
