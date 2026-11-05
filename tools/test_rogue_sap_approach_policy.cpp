@@ -174,8 +174,9 @@ void TestSapSkipWindow()
 }
 
 // One plan per Sap order: a second call within the window asks the navmesh
-// nothing; the window ends after kSapReplanMs, or once the target or a
-// pack-mate moves more than kSapReplanMoveYd, or on another target.
+// nothing while the rogue is on the proved path and the pack still leaves it
+// clear; the window ends after kSapReplanMs, or when the target moves more than
+// kSapReplanTargetYd, or on another target.
 void TestPlanCachedWithinWindow()
 {
     int queries = 0;
@@ -196,9 +197,10 @@ void TestPlanCachedWithinWindow()
     int const first = queries;
     CHECK(first >= 1);
 
-    // The rogue walked 10 yd, the pack mates shuffled under 3 yd, 4 s later: cached.
-    std::vector<SapPackMate> shuffled{{-4.0f, 1.5f, 7.0f}};
-    SapApproachPlan const& again = SapPlanFor(cache, 7, SapPoint{1.0f, 20.0f}, SapPoint{0.5f, 0.5f},
+    // The rogue walked 10 yd along the proved path, a mate shuffled 0.5 yd away
+    // from it, the target 0.3 yd, 4 s later: cached.
+    std::vector<SapPackMate> shuffled{{-5.5f, 0.0f, 7.0f}};
+    SapApproachPlan const& again = SapPlanFor(cache, 7, SapPoint{0.3f, 20.0f}, SapPoint{0.3f, 0.0f},
         3.0f, 15.0f, shuffled, 1000 + kSapReplanMs - 1, counting, &replanned);
     CHECK(!replanned);
     CHECK(queries == first);
@@ -207,18 +209,87 @@ void TestPlanCachedWithinWindow()
     // Window over.
     SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, mates, 1000 + kSapReplanMs, counting, &replanned);
     CHECK(replanned);
-    // A mate moved 4 yd.
+    // The target moved 1 yd (over kSapReplanTargetYd, under the old 3 yd).
     int const before = queries;
-    std::vector<SapPackMate> moved{{-5.0f, 4.0f, 7.0f}};
-    SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 10, counting, &replanned);
+    SapPlanFor(cache, 7, rogue, SapPoint{1.0f, 0.0f}, 3.0f, 15.0f, mates, 1000 + kSapReplanMs + 10, counting, &replanned);
     CHECK(replanned);
     CHECK(queries > before);
-    // The target moved 4 yd.
-    SapPlanFor(cache, 7, rogue, SapPoint{4.0f, 0.0f}, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 20, counting, &replanned);
-    CHECK(replanned);
     // Another target.
-    SapPlanFor(cache, 8, rogue, SapPoint{4.0f, 0.0f}, 3.0f, 15.0f, moved, 1000 + kSapReplanMs + 30, counting, &replanned);
+    SapPlanFor(cache, 8, rogue, SapPoint{1.0f, 0.0f}, 3.0f, 15.0f, mates, 1000 + kSapReplanMs + 20, counting, &replanned);
     CHECK(replanned);
+}
+
+// Codex #1527 round 2, finding 1: the rogue left the path the plan proved (it
+// was pushed or chased sideways). MoveTo would path from the new spot, which
+// nothing checked against the pack: replan.
+void TestPlanDroppedWhenRogueLeavesRoute()
+{
+    auto straight = [](SapPoint from, SapPoint to, SapPath& out) { return StraightPath(from, to, out); };
+    SapPoint const target{0.0f, 0.0f};
+    SapPoint const rogue{0.0f, 30.0f};
+    std::vector<SapPackMate> mates{{-5.0f, 0.0f, 7.0f}};
+    SapPlanCache cache;
+    bool replanned = false;
+    SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, mates, 1000, straight, &replanned);
+    CHECK(replanned);
+    // 10 yd off the path, 1 s later: replanned.
+    SapPlanFor(cache, 7, SapPoint{-9.0f, 20.0f}, target, 3.0f, 15.0f, mates, 2000, straight, &replanned);
+    CHECK(replanned);
+    // Pinned directly: the rogue stands 5 yd to the side of the line it was proved on.
+    SapPlanCache pinned;
+    SapPlanFor(pinned, 7, rogue, target, 3.0f, 15.0f, mates, 1000, straight, &replanned);
+    CHECK(!SapPlanStale(pinned, 7, target, mates, SapPoint{0.0f, 29.0f}, 1500));
+    CHECK(SapPlanStale(pinned, 7, target, mates, SapPoint{5.0f, 20.0f}, 1500));
+}
+
+// Finding 1 (second half) and 2: a pack-mate that drifts less than the old 3 yd
+// toward the cached path is caught by re-proving the rest of the path against the
+// pack as it stands now.
+void TestPlanDroppedWhenMateEntersRoute()
+{
+    auto straight = [](SapPoint from, SapPoint to, SapPath& out) { return StraightPath(from, to, out); };
+    SapPoint const target{0.0f, 0.0f};
+    SapPoint const rogue{0.0f, 30.0f};
+    // Clearance 7: the stand point (3, 0) is 8 yd from the mate, 1 yd of slack.
+    std::vector<SapPackMate> mates{{-5.0f, 0.0f, 7.0f}};
+    SapPlanCache cache;
+    bool replanned = false;
+    SapApproachPlan const first = SapPlanFor(cache, 7, rogue, target, 3.0f, 15.0f, mates, 1000, straight, &replanned);
+    CHECK(first.found);
+    CHECK(!first.viaWaypoint);
+
+    // The mate stepped 2.5 yd toward the route (old tolerance: 3 yd, cached).
+    std::vector<SapPackMate> stepped{{-2.5f, 0.0f, 7.0f}};
+    CHECK(SapDist(SapPoint{-5.0f, 0.0f}, SapPoint{-2.5f, 0.0f}) < 3.0f);
+    CHECK(SapPlanStale(cache, 7, target, stepped, rogue, 1500));
+    // 0.5 yd within the slack: still cached.
+    std::vector<SapPackMate> slack{{-4.5f, 0.0f, 7.0f}};
+    CHECK(!SapPlanStale(cache, 7, target, slack, rogue, 1500));
+
+    // The same mate step from the middle of the walk, before the stand point:
+    // the rogue at (0.3, 20) with a mate stepping onto the remaining path.
+    std::vector<SapPackMate> onPath{{-1.5f, 8.0f, 7.0f}};
+    CHECK(SapDist(SapPoint{-5.0f, 0.0f}, SapPoint{-1.5f, 8.0f}) > 3.0f);
+    CHECK(SapPlanStale(cache, 7, target, onPath, SapPoint{0.3f, 20.0f}, 1500));
+}
+
+// Finding 1: a clear leg from the planning start becomes one crossing a mate
+// once the rogue stands elsewhere on the route; a clear plan from the new spot
+// is rebuilt, not the old destination reused.
+void TestPlanRebuiltFromNewPosition()
+{
+    auto straight = [](SapPoint from, SapPoint to, SapPath& out) { return StraightPath(from, to, out); };
+    SapPoint const target{0.0f, 0.0f};
+    std::vector<SapPackMate> mates{{-6.0f, 10.0f, 5.0f}};
+    SapPlanCache cache;
+    bool replanned = false;
+    SapApproachPlan const first = SapPlanFor(cache, 7, SapPoint{10.0f, 30.0f}, target, 3.0f, 15.0f, mates, 1000, straight, &replanned);
+    CHECK(first.found);
+    SapPoint const dest = first.viaWaypoint ? first.waypoint : first.stand;
+    // The leg from the new position to the same destination crosses the mate...
+    CHECK(!SapPathClear(SapPoint{-14.0f, 20.0f}, SapPath{dest}, mates));
+    // ...so the cache does not hand it out.
+    CHECK(SapPlanStale(cache, 7, target, mates, SapPoint{-14.0f, 20.0f}, 1500));
 }
 
 // A plan never asks more than kSapMaxPathQueries, even with nothing reachable.
@@ -251,6 +322,9 @@ int main()
     TestStealthDetectRange();
     TestSapSkipWindow();
     TestPlanCachedWithinWindow();
+    TestPlanDroppedWhenRogueLeavesRoute();
+    TestPlanDroppedWhenMateEntersRoute();
+    TestPlanRebuiltFromNewPosition();
     TestQueryBudget();
     std::cout << "rogue sap approach policy tests passed\n";
     return 0;

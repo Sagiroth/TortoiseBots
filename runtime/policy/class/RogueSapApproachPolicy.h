@@ -48,7 +48,13 @@ constexpr float kSapPackRadius = 30.0f; // hostiles this close to the target are
 constexpr float kSapStealthAlertYd = 5.0f;
 constexpr float kSapClearanceMargin = 2.0f;
 constexpr unsigned kSapReplanMs = 5000;  // a plan is kept at most this long
-constexpr float kSapReplanMoveYd = 3.0f; // or until the target or a pack-mate moves this far
+constexpr float kSapReplanMoveYd = 3.0f; // a cached "no approach" is retried once a pack-mate moves this far
+// A cached approach is re-proved on every use against the pack as it stands now
+// (SapPlanStale); it is dropped once the target moves this far (the stand point
+// would leave Sap range: ReachSapAction keeps at least 1 yd of slack) or the rogue
+// strays this far from the path that was proved.
+constexpr float kSapReplanTargetYd = 0.5f;
+constexpr float kSapRouteOffYd = 1.5f;
 constexpr unsigned kSapSkipMs = 30000;   // a skipped Sap is not tried again on that mob for this long
 // "manual int" keys that carry a skip from ReachSapAction to the "sap cc mark" trigger.
 constexpr char const* kSapSkipTargetKey = "sap skip target";
@@ -132,6 +138,9 @@ struct SapApproachPlan
     bool viaWaypoint = false;
     SapPoint waypoint;
     SapPoint stand;
+    // The path the plan proved clear, after the planning start: every navmesh leg
+    // to the detour point (if any) and on to the stand point.
+    SapPath route;
     int pathQueries = 0;
 };
 
@@ -192,13 +201,14 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
     {
         plan.found = true;
         plan.stand = stands.front();
+        plan.route.push_back(plan.stand);
         return plan;
     }
 
-    auto clearPath = [&](SapPoint from, SapPoint to) -> bool
+    auto clearPath = [&](SapPoint from, SapPoint to, SapPath& path) -> bool
     {
         ++plan.pathQueries;
-        SapPath path;
+        path.clear();
         if (!pathFn(from, to, path))
             return false;
         if (path.empty() || SapDist(path.back(), to) > 1.0f)
@@ -210,10 +220,12 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
     {
         if (plan.pathQueries >= kSapMaxPathQueries)
             return plan;
-        if (clearPath(start, s))
+        SapPath path;
+        if (clearPath(start, s, path))
         {
             plan.found = true;
             plan.stand = s;
+            plan.route = path;
             return plan;
         }
     }
@@ -252,37 +264,47 @@ SapApproachPlan PlanSapApproach(SapPoint start, SapPoint target, float standDist
 
     // A detour point the rogue cannot reach cleanly is not asked again.
     std::vector<int> reach(waypoints.size(), -1);
+    std::vector<SapPath> reachPath(waypoints.size());
     for (Detour const& d : detours)
     {
         if (reach[d.w] < 0)
         {
             if (plan.pathQueries >= kSapMaxPathQueries)
                 return plan;
-            reach[d.w] = clearPath(start, waypoints[d.w]) ? 1 : 0;
+            reach[d.w] = clearPath(start, waypoints[d.w], reachPath[d.w]) ? 1 : 0;
         }
         if (reach[d.w] == 0)
             continue;
         if (plan.pathQueries >= kSapMaxPathQueries)
             return plan;
-        if (clearPath(waypoints[d.w], stands[d.s]))
+        SapPath second;
+        if (clearPath(waypoints[d.w], stands[d.s], second))
         {
             plan.found = true;
             plan.viaWaypoint = true;
             plan.waypoint = waypoints[d.w];
             plan.stand = stands[d.s];
+            plan.route = reachPath[d.w];
+            plan.route.insert(plan.route.end(), second.begin(), second.end());
             return plan;
         }
     }
     return plan;
 }
 
-// One plan per Sap order: kept while the target and its pack stand still (none
-// moved kSapReplanMoveYd), for at most kSapReplanMs, and rebuilt once the rogue
-// reaches its detour point (the next leg starts there).
+// One plan per Sap order: kept for at most kSapReplanMs and while it still holds
+// on every use. A found plan is re-proved against the pack as it stands now (no
+// navmesh query): the rogue is still on the path that was proved (within
+// kSapRouteOffYd), the rest of that path and the stand point stay outside every
+// current clearance, the pack has the same size and the target has not moved
+// kSapReplanTargetYd. It is rebuilt once the rogue reaches its detour point (the
+// next leg starts there). A cached "no approach" is retried when the target or a
+// pack-mate moves kSapReplanMoveYd.
 struct SapPlanCache
 {
     bool valid = false;
     unsigned targetId = 0;
+    SapPoint startAt;
     SapPoint targetAt;
     std::vector<SapPoint> matesAt;
     unsigned planMs = 0;
@@ -296,11 +318,38 @@ inline bool SapPlanStale(SapPlanCache const& cache, unsigned targetId, SapPoint 
         return true;
     if (nowMs - cache.planMs >= kSapReplanMs)
         return true;
-    if (SapDist(cache.targetAt, targetAt) > kSapReplanMoveYd)
-        return true;
-    if (cache.plan.found && cache.plan.viaWaypoint && SapDist(here, cache.plan.waypoint) < 2.0f)
-        return true;
     if (cache.matesAt.size() != mates.size())
+        return true;
+
+    if (cache.plan.found)
+    {
+        if (SapDist(cache.targetAt, targetAt) > kSapReplanTargetYd)
+            return true;
+        if (cache.plan.viaWaypoint && SapDist(here, cache.plan.waypoint) < 2.0f)
+            return true;
+        SapPath line;
+        line.push_back(cache.startAt);
+        line.insert(line.end(), cache.plan.route.begin(), cache.plan.route.end());
+        std::size_t best = 0;
+        float bestDist = std::numeric_limits<float>::infinity();
+        for (std::size_t i = 0; i + 1 < line.size(); ++i)
+        {
+            float const d = SapSegmentDist(line[i], line[i + 1], here);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = i;
+            }
+        }
+        if (bestDist > kSapRouteOffYd)
+            return true;
+        SapPath rest(line.begin() + static_cast<std::ptrdiff_t>(best) + 1, line.end());
+        if (!SapPathClear(here, rest, mates))
+            return true;
+        return SapPointMargin(cache.plan.stand, mates) < 0.0f;
+    }
+
+    if (SapDist(cache.targetAt, targetAt) > kSapReplanMoveYd)
         return true;
     // The grid search returns the pack in no fixed order: every mate must still
     // stand within kSapReplanMoveYd of a cached position.
@@ -334,6 +383,7 @@ SapApproachPlan const& SapPlanFor(SapPlanCache& cache, unsigned targetId, SapPoi
         cache.plan = PlanSapApproach(here, targetAt, standDist, waypointRadius, mates, pathFn);
         cache.valid = true;
         cache.targetId = targetId;
+        cache.startAt = here;
         cache.targetAt = targetAt;
         cache.matesAt.clear();
         for (SapPackMate const& m : mates)
