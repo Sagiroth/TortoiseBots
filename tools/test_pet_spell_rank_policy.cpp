@@ -15,6 +15,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 using namespace TortoiseBots;
 
@@ -60,10 +61,14 @@ static void TestRankLevels()
     CHECK(ThunderstompLadder()[3] == PetRankLadder::value_type(56, 51156));
     CHECK(ScorpidPoisonLadder()[1] == PetRankLadder::value_type(24, 24583));
     CHECK(LightningBreathLadder()[1] == PetRankLadder::value_type(12, 25008));
-    CHECK(ShellShieldSpell() == 26064);
+    CHECK(ShellShieldLadder()[0] == PetRankLadder::value_type(20, 26064));
     CHECK(PoisonSpitLadder()[0] == PetRankLadder::value_type(15, 46271));
-    CHECK(PollenBurstSpell() == 42051);
-    CHECK(PackleaderSpell() == 36532);
+    CHECK(PollenBurstLadder()[0] == PetRankLadder::value_type(52, 42051));
+    CHECK(PackleaderLadder()[0] == PetRankLadder::value_type(20, 36532));
+    CHECK(WebLadder()[0] == PetRankLadder::value_type(20, 36533));
+    CHECK(GraceLadder()[0] == PetRankLadder::value_type(10, 46296));
+    CHECK(NaturalArmorLadder().size() == 10);
+    CHECK(NaturalArmorLadder()[9] == PetRankLadder::value_type(60, 24630));
 }
 
 // Every ladder ascends (teaching in order never downgrades).
@@ -86,27 +91,157 @@ static void TestAscending()
     CheckAscending(DeathRollLadder(), "deathroll");
     CheckAscending(SavageRendLadder(), "rend");
     CheckAscending(PoisonSpitLadder(), "poisonspit");
+    CheckAscending(NaturalArmorLadder(), "armor");
+    CheckAscending(GreatStaminaLadder(), "stamina");
+    CheckAscending(ArcaneResistanceLadder(), "arcane");
+    CheckAscending(FireResistanceLadder(), "fire");
+    CheckAscending(FrostResistanceLadder(), "frost");
+    CheckAscending(NatureResistanceLadder(), "nature");
+    CheckAscending(ShadowResistanceLadder(), "shadow");
 }
 
-// Turtle custom families resolve to their own abilities, not Growl-only.
-static void TestCustomFamilies()
+static bool BuildHas(uint32_t family, PetRankLadder const& ladder)
 {
-    bool serpent = false, fox = false, moth = false;
-    for (PetRankLadder const* ladder : HunterPetLadders(35))
-        if (ladder == &PoisonSpitLadder())
-            serpent = true;
-    for (PetRankLadder const* ladder : HunterPetLadders(36))
-        if (ladder == &DashLadder())
-            fox = true;
-    for (PetRankLadder const* ladder : HunterPetLadders(39))
-        if (ladder == &DiveLadder())
-            moth = true;
-    CHECK(serpent);
-    CHECK(fox);
-    CHECK(moth);
-    CHECK(HunterPetSingleSpells(39).size() == 1); // Pollen Burst
-    // Unknown families still get damage, not silence.
-    CHECK(HunterPetLadders(999).size() == 2);
+    for (HunterPetBuildEntry const& entry : HunterPetBuild(family))
+        if (entry.ladder == &ladder)
+            return true;
+    return false;
+}
+
+// Every family build fits the core's 4 active slots (Growl + 3), never
+// pairs Bite with Claw, and the Turtle families get their own specials.
+static void TestBuilds()
+{
+    for (uint32_t family = 0; family <= 40; ++family)
+    {
+        uint32_t actives = 0;
+        for (HunterPetBuildEntry const& entry : HunterPetBuild(family))
+            if (!entry.passive)
+                ++actives;
+        CHECK(actives + 1 <= kHunterPetActiveSlots);
+        CHECK(!(BuildHas(family, BiteLadder()) && BuildHas(family, ClawLadder())));
+        CHECK(!BuildHas(family, CowerLadder()));
+    }
+    CHECK(BuildHas(3, WebLadder()));            // spider
+    CHECK(BuildHas(36, GraceLadder()));         // fox
+    CHECK(BuildHas(35, PoisonSpitLadder()));    // serpent
+    CHECK(BuildHas(39, PollenBurstLadder()));   // moth
+    CHECK(BuildHas(37, FuriousHowlLadder()));   // plagued = wolf line
+    CHECK(BuildHas(38, FuriousHowlLadder()));   // horse = wolf line
+    CHECK(BuildHas(11, SavageRendLadder()));    // raptor
+    CHECK(BuildHas(999, BiteLadder()));         // unknown family still bites
+}
+
+// SkillLineAbility training-point costs (client DBC) for the spells the
+// plans below touch; anything else costs 0.
+static int32_t Cost(uint32_t spellId)
+{
+    static std::pair<uint32_t, int32_t> const costs[] = {
+        {17253, 1}, {17255, 4}, {17256, 7}, {17257, 10}, {17258, 13}, {17259, 17}, {17260, 21}, {17261, 25}, // Bite
+        {16827, 1}, {16828, 4}, {16829, 7}, {16830, 10}, {16831, 13}, {16832, 17}, {3010, 21}, {3009, 25},   // Claw
+        {24604, 10}, {24605, 15}, {24603, 20}, {24597, 25},  // Furious Howl
+        {23099, 15}, {23109, 20}, {23110, 25},               // Dash
+        {24450, 15}, {24452, 20}, {24453, 25},               // Prowl
+        {4187, 5}, {4188, 10}, {4189, 15}, {4190, 25}, {4191, 50}, {4192, 75}, {4193, 100}, {4194, 125}, {5041, 150}, {5042, 185},
+        {24545, 1}, {24549, 5}, {24550, 10}, {24551, 15}, {24552, 25}, {24553, 50}, {24554, 75}, {24555, 100}, {24629, 125}, {24630, 150},
+        {24493, 5}, {24497, 15}, {24500, 45}, {24501, 90},
+        {23992, 5}, {24439, 15}, {24444, 45}, {24445, 90},
+        {24446, 5}, {24447, 15}, {24448, 45}, {24449, 90},
+        {24492, 5}, {24502, 15}, {24503, 45}, {24504, 90},
+        {24488, 5}, {24505, 15}, {24506, 45}, {24507, 90},
+    };
+    for (auto const& c : costs)
+        if (c.first == spellId)
+            return c.second;
+    return 0;
+}
+
+static std::vector<PetWantedSpell> Plan(uint32_t family, uint32_t level, int32_t budget,
+    std::vector<PetRankLadder const*> const& kept = {}, PetRankLadder const* heldLadder = nullptr, int heldRank = -1)
+{
+    std::vector<PetWantedSpell> plan;
+    PlanHunterPetSpells(family, level, budget, kept, Cost,
+        [&](PetRankLadder const& ladder) { return &ladder == heldLadder ? heldRank : -1; },
+        [&](PetWantedSpell wanted) { plan.push_back(wanted); });
+    return plan;
+}
+
+static bool Has(std::vector<PetWantedSpell> const& plan, uint32_t spellId)
+{
+    for (PetWantedSpell const& wanted : plan)
+        if (wanted.spellId == spellId)
+            return true;
+    return false;
+}
+
+static int32_t Spent(std::vector<PetWantedSpell> const& plan)
+{
+    int32_t total = 0;
+    for (PetWantedSpell const& wanted : plan)
+        total += Cost(wanted.spellId);
+    return total;
+}
+
+static uint32_t Actives(std::vector<PetWantedSpell> const& plan)
+{
+    uint32_t n = 0;
+    for (PetWantedSpell const& wanted : plan)
+        if (!wanted.passive)
+            ++n;
+    return n;
+}
+
+// The planner stays within the budget and the 4 slots, and spends the
+// points in order: top-rank actives, stamina, armor, then resistances.
+static void TestPlan()
+{
+    // Level-60 Best Friend wolf: 300 points, every point used.
+    std::vector<PetWantedSpell> wolf = Plan(1, 60, HunterPetTrainingBudget(60, 6));
+    CHECK(HunterPetTrainingBudget(60, 6) == 300);
+    CHECK(Has(wolf, 14921));  // Growl 7
+    CHECK(Has(wolf, 17261));  // Bite 8
+    CHECK(Has(wolf, 24597));  // Furious Howl 4
+    CHECK(Has(wolf, 23110));  // Dash 3
+    CHECK(Has(wolf, 5042));   // Great Stamina 10
+    CHECK(Has(wolf, 24552));  // Natural Armor 5 (25 of the 40 left)
+    CHECK(!Has(wolf, 1742) && !Has(wolf, 16697)); // no Cower
+    CHECK(Actives(wolf) == 4);
+    CHECK(Spent(wolf) == 300);
+
+    // Every family at every level: never over budget, never over 4 actives.
+    for (uint32_t family = 0; family <= 40; ++family)
+        for (uint32_t level = 1; level <= 60; ++level)
+        {
+            for (uint32_t loyalty = 1; loyalty <= 6; ++loyalty)
+            {
+                std::vector<PetWantedSpell> plan = Plan(family, level, HunterPetTrainingBudget(level, loyalty));
+                CHECK(Spent(plan) <= HunterPetTrainingBudget(level, loyalty));
+                CHECK(Actives(plan) <= kHunterPetActiveSlots);
+            }
+        }
+
+    // Level 10: Bite 2 + Howl 1 + Stamina 1 + Armor 1 = 20 of 50; no rank
+    // above the level (Dash needs 30, resistances 20).
+    std::vector<PetWantedSpell> low = Plan(1, 10, 50);
+    CHECK(Has(low, 17255) && Has(low, 24604) && Has(low, 4187) && Has(low, 24545));
+    CHECK(!Has(low, 23099) && !Has(low, 24493));
+
+    // A loyalty-1 pet has no points: Growl only, nothing that costs.
+    std::vector<PetWantedSpell> rebel = Plan(1, 40, HunterPetTrainingBudget(40, 1));
+    CHECK(Spent(rebel) == 0);
+    CHECK(Has(rebel, 14919)); // Growl 5
+
+    // An alt's own pick (Prowl on a wolf) is kept and ranked up, and the
+    // build fills only the slots left: Growl + Prowl + Bite + Howl.
+    std::vector<PetWantedSpell> alt = Plan(1, 60, 300, { &ProwlLadder() });
+    CHECK(Has(alt, 24453));   // Prowl 3
+    CHECK(Has(alt, 17261) && Has(alt, 24597));
+    CHECK(!Has(alt, 23110));  // no slot left for Dash
+    CHECK(Actives(alt) == 4);
+
+    // A held rank is never planned lower, even when the points are short.
+    std::vector<PetWantedSpell> held = Plan(1, 60, 10, {}, &BiteLadder(), 7);
+    CHECK(Has(held, 17261));
 }
 
 // Warlock ladders resolve per demon.
@@ -145,26 +280,6 @@ static void TestSharedHelpers()
     CHECK(TopRankAtLevel(GrowlLadder(), 20) == 14917);
     CHECK(TopRankAtLevel(BiteLadder(), 20) == 17256);
     CHECK(TopRankAtLevel(BiteLadder(), 1) == 17253);
-    // Wolf L20 wanted set: Bite-3 + Cower-2 + Growl-3 + armor-3 + stamina-3,
-    // never the dropped lower ranks.
-    {
-        bool hasBite3 = false, hasGrowl3 = false, hasBite1 = false, hasGrowl1 = false;
-        ForEachHunterWantedSpell(1, 20, [&](PetWantedSpell wanted)
-        {
-            if (wanted.spellId == 17256)
-                hasBite3 = true;
-            if (wanted.spellId == 14917)
-                hasGrowl3 = true;
-            if (wanted.spellId == 17253)
-                hasBite1 = true;
-            if (wanted.spellId == 2649)
-                hasGrowl1 = true;
-        });
-        CHECK(hasBite3);
-        CHECK(hasGrowl3);
-        CHECK(!hasBite1);
-        CHECK(!hasGrowl1);
-    }
     // Voidwalker L20: Torment-2 (7809) only, never Torment-1 (3716).
     {
         bool hasT2 = false, hasT1 = false;
@@ -192,9 +307,6 @@ static void TestSharedHelpers()
         CHECK(hasSL2);
         CHECK(!hasSL1);
     }
-    // Passives ride the same helper (no second table to drift).
-    CHECK(TopRankAtLevel(NaturalArmorLadder(), 20) == 24550);
-    CHECK(TopRankAtLevel(GreatStaminaLadder(), 20) == 4189);
 }
 
 int main()
@@ -204,8 +316,10 @@ int main()
     std::printf("  [PASS] rank levels\n");
     TestAscending();
     std::printf("  [PASS] ladders ascend\n");
-    TestCustomFamilies();
-    std::printf("  [PASS] custom families\n");
+    TestBuilds();
+    std::printf("  [PASS] family builds\n");
+    TestPlan();
+    std::printf("  [PASS] training-point plans\n");
     TestWarlockLadders();
     std::printf("  [PASS] warlock ladders\n");
     TestAutocastDefaults();
