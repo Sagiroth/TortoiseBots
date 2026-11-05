@@ -144,7 +144,10 @@ bool TeleportToCapitalInn(Player* bot)
         return false;
 
     bool const alliance = bot->GetTeam() == ALLIANCE;
-    CapitalInn inn = FindCapitalInn(alliance);
+    // The spawn table scan runs once per capital, not per teleport.
+    static CapitalInn const allianceInn = FindCapitalInn(true);
+    static CapitalInn const hordeInn = FindCapitalInn(false);
+    CapitalInn inn = alliance ? allianceInn : hordeInn;
     if (!inn.found)
         inn = FallbackInn(alliance);
 
@@ -172,11 +175,6 @@ bool TeleportToCapitalInn(Player* bot)
         bot->GetTransport()->RemovePassenger(bot);
         bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
     }
-    // Hearthstone look without the item: the spell alone (8690) is the 10 s
-    // cast. Triggered so it is visual only: no cast time, no cooldown, and it
-    // never touches the bot's real hearthstone state or homebind.
-    bot->CastSpell(bot, kHearthstoneSpellId, TRIGGERED_OLD_TRIGGERED);
-
     bool const moved = bot->TeleportTo(inn.mapId, inn.x, inn.y, inn.z, inn.o);
     if (!moved)
         return false;
