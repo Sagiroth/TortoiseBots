@@ -852,9 +852,12 @@ bool MoveToTravelTargetAction::TryUndercityLift(WorldPosition const& location)
 
 
 // Mesa lifts (MesaLiftPolicy.h): a trip between a mesa top and the ground
-// walks to the lift station first, then rides a teleport to the other
-// station. Same guards as the Undercity lift. A bot at the station waits
-// while someone watches either end. `staged` puts the walk on the station.
+// walks to the shaft of the next car at the bot's level, waits for it, rides
+// it and steps off at the other level. The core moves no passenger on a lift,
+// so the module does: the bot is marked as standing on the car (watching
+// clients carry it along, as they carry a player) and its server position
+// follows the car's animation. Same pool-only guards as the Undercity lift.
+// `staged` puts the walk on the shaft.
 bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float& x, float& y, float& z, bool& staged)
 {
     ai::MesaLiftPick const pick = ai::MesaLiftFor(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
@@ -862,40 +865,91 @@ bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float&
     if (pick.dir == ai::MesaLiftDir::None || !MayRideLift(ai, bot))
         return false;
 
-    bool const up = pick.dir == ai::MesaLiftDir::Up;
-    ai::MesaLift const& lift = *pick.lift;
-    WorldPosition enter(ai::kMesaLiftMapId, up ? lift.footX : lift.topX, up ? lift.footY : lift.topY, up ? lift.footZ : lift.topZ);
-    WorldPosition leave(ai::kMesaLiftMapId, up ? lift.topX : lift.footX, up ? lift.topY : lift.footY, up ? lift.topZ : lift.footZ);
-    // The car spot is the shaft; the floor beside it is the station.
-    if (enter.isMmapLoaded(bot->GetInstanceId()))
-        enter.ClosestCorrectPoint(15.0f, 10.0f, bot->GetInstanceId());
+    bool const fromTop = pick.dir == ai::MesaLiftDir::Down;
+    uint32 const now = WorldTimer::getMSTime();
+    int const carIndex = ai::NextLiftCar(*pick.lift, now, fromTop);
+    ai::LiftCar const& car = pick.lift->cars[carIndex];
+    WorldPosition stop(ai::kMesaLiftMapId, car.x, car.y, ai::LiftLevelZ(car, fromTop));
+    if (stop.isMmapLoaded(bot->GetInstanceId()))
+        stop.ClosestCorrectPoint(8.0f, 6.0f, bot->GetInstanceId());
 
     staged = true;
     WorldPosition const botPos(bot);
-    if (botPos.distance(enter) > 6.0f)
+    if (botPos.sqDistance2d(stop) > 4.0f * 4.0f || fabs(botPos.getZ() - stop.getZ()) > 6.0f)
     {
-        x = enter.getX();
-        y = enter.getY();
-        z = enter.getZ();
+        x = stop.getX();
+        y = stop.getY();
+        z = stop.getZ();
         return false;
     }
 
-    // Short cooldown: a bot whose destination flips between the levels
-    // would otherwise ride every tick.
-    AiObjectContext* context = ai->GetAiObjectContext();
-    time_t const now = time(0);
-    if (AI_VALUE2(time_t, "manual time", "mesa lift") + 30 > now)
-        return false;
-    if (!leave.isMmapLoaded(bot->GetInstanceId()) || !leave.ClosestCorrectPoint(15.0f, 10.0f, bot->GetInstanceId()))
-        return false;
-    if (ai->HasPlayerNearby(botPos, sPlayerbotAIConfig.reactDistance) || ai->HasPlayerNearby(leave, sPlayerbotAIConfig.reactDistance))
-        return false;
-    if (!bot->TeleportTo(leave.GetMapId(), leave.getX(), leave.getY(), leave.getZ(), leave.GetAngleTo(location)))
+    GameObject* carObject = bot->FindNearestGameObject(car.entry, 20.0f);
+    if (!carObject)
         return false;
 
-    SET_AI_VALUE2(time_t, "manual time", "mesa lift", now);
+    // Board with a second to spare; otherwise wait at the shaft.
     noProgressArmed = false;
-    sPlayerbotAIConfig.logEvent(ai, "MesaLift", lift.name, up ? "up" : "down");
+    uint32 const parkedLeft = ai::LiftParkedLeft(car, now, fromTop);
+    if (parkedLeft < 1000)
+    {
+        uint32 const wait = parkedLeft ? parkedLeft : ai::LiftUntilParked(car, now, fromTop);
+        SetDuration(std::min<uint32>(wait + 100, 2000));
+        return true;
+    }
+
+    ai->StopMoving();
+    bot->m_movementInfo.SetTransportData(carObject->GetObjectGuid(), 0.0f, 0.0f, 0.0f, bot->GetOrientation(), now);
+    bot->m_movementInfo.AddMovementFlag(MOVEFLAG_ONTRANSPORT);
+    bot->GetMap()->PlayerRelocation(bot, car.x, car.y, car.z + ai::LiftCarOffset(car, now), bot->GetOrientation());
+    bot->SendHeartBeat();
+
+    rideLift = pick.lift;
+    rideCar = carIndex;
+    rideToTop = !fromTop;
+    rideCarGuid = carObject->GetObjectGuid();
+    sPlayerbotAIConfig.logEvent(ai, "MesaLift", pick.lift->name, fromTop ? "board-down" : "board-up");
+    SetDuration(std::min<uint32>(ai::LiftUntilParked(car, now, rideToTop) + 100, 2000));
+    return true;
+}
+
+// One tick of a ride: follow the car, step off once it parks at the other
+// level. A ride cut short (teleport, death, the transport mark cleared)
+// leaves the car at its nearest level.
+bool MoveToTravelTargetAction::ContinueMesaLiftRide()
+{
+    ai::LiftCar const& car = rideLift->cars[rideCar];
+    uint32 const now = WorldTimer::getMSTime();
+    float const carZ = car.z + ai::LiftCarOffset(car, now);
+    bool const arrived = ai::LiftParkedLeft(car, now, rideToTop) > 0;
+    bool const onCar = bot->m_movementInfo.GetTransportGuid() == rideCarGuid;
+    bool const placeable = bot->IsInWorld() && !bot->IsBeingTeleported() && bot->GetMapId() == ai::kMesaLiftMapId;
+    bool const abort = !onCar || !placeable || !bot->IsAlive();
+
+    noProgressArmed = false;
+    if (!arrived && !abort)
+    {
+        bot->GetMap()->PlayerRelocation(bot, car.x, car.y, carZ, bot->GetOrientation());
+        SetDuration(std::min<uint32>(ai::LiftUntilParked(car, now, rideToTop) + 100, 2000));
+        return true;
+    }
+
+    bool const top = arrived ? rideToTop :
+        fabs(carZ - ai::LiftLevelZ(car, true)) < fabs(carZ - ai::LiftLevelZ(car, false));
+    if (onCar)
+    {
+        bot->m_movementInfo.ClearTransportData();
+        bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
+    }
+    if (placeable)
+    {
+        WorldPosition off(ai::kMesaLiftMapId, car.x, car.y, ai::LiftLevelZ(car, top));
+        if (off.isMmapLoaded(bot->GetInstanceId()))
+            off.ClosestCorrectPoint(8.0f, 6.0f, bot->GetInstanceId());
+        bot->GetMap()->PlayerRelocation(bot, off.getX(), off.getY(), off.getZ(), bot->GetOrientation());
+        bot->SendHeartBeat();
+    }
+    sPlayerbotAIConfig.logEvent(ai, "MesaLift", rideLift->name, arrived ? (top ? "arrived-up" : "arrived-down") : "aborted");
+    rideLift = nullptr;
     return true;
 }
 
@@ -927,6 +981,9 @@ static void CountGuildOrderAuctionArrival(PlayerbotAI* ai, Player* bot)
 
 bool MoveToTravelTargetAction::Execute(Event& event)
 {
+    if (rideLift)
+        return ContinueMesaLiftRide();
+
     TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
 
     if (target->GetStatus() == TravelStatus::TRAVEL_STATUS_READY)
@@ -1377,6 +1434,9 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
+    if (rideLift) // a bot on a lift car rides it to the end
+        return true;
+
     if (TravelBlockedInsideInstance(ai))
         return false;
 

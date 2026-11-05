@@ -1,6 +1,7 @@
-// Standalone policy test for the mesa lift teleport: a bot below Freewind
-// Post or Thunder Bluff with a destination on top goes up the nearest lift,
-// a bot on top with a destination off it goes down, everything else walks.
+// Standalone policy test for the mesa lifts: a bot below Freewind Post or
+// Thunder Bluff with a destination on top takes the nearest lift up, a bot on
+// top with a destination off it goes down, everything else walks; the car
+// schedule follows the client animation.
 // Mirrors ai/playerbot/policy/travel/MesaLiftPolicy.h; no server headers needed.
 //
 // Build and run:
@@ -8,6 +9,7 @@
 
 #include "../ai/playerbot/policy/travel/MesaLiftPolicy.h"
 
+#include <cmath>
 #include <cstring>
 #include <iostream>
 
@@ -55,13 +57,44 @@ int main()
     // The lower lift station itself counts as below.
     CHECK(MesaLiftFor(1, -1330.2f, 193.4f, 60.2f, 1, -1277.9f, 138.5f, 131.9f).dir == MesaLiftDir::Up);
 
-    // Every station: foot below its mesa top, top on it.
+    // Every car: the lower level is below its mesa top, the upper one on it;
+    // both cars of a lift serve the same two levels.
     for (ai::Mesa const& mesa : ai::kMesas)
         for (int i = 0; i < mesa.liftCount; ++i)
         {
-            CHECK(!ai::OnMesa(mesa, 1, mesa.lifts[i].footX, mesa.lifts[i].footY, mesa.lifts[i].footZ));
-            CHECK(ai::OnMesa(mesa, 1, mesa.lifts[i].topX, mesa.lifts[i].topY, mesa.lifts[i].topZ));
+            ai::MesaLift const& lift = mesa.lifts[i];
+            for (ai::LiftCar const& car : lift.cars)
+            {
+                CHECK(!ai::OnMesa(mesa, 1, car.x, car.y, ai::LiftLevelZ(car, false)));
+                CHECK(ai::OnMesa(mesa, 1, car.x, car.y, ai::LiftLevelZ(car, true)));
+                CHECK(ai::LiftPeriod(car) >= 30000 && ai::LiftPeriod(car) <= 30100);
+            }
+            CHECK(std::fabs(ai::LiftLevelZ(lift.cars[0], true) - ai::LiftLevelZ(lift.cars[1], true)) < 1.0f);
+            CHECK(std::fabs(ai::LiftLevelZ(lift.cars[0], false) - ai::LiftLevelZ(lift.cars[1], false)) < 1.0f);
+            CHECK(ai::LiftSpawnOnTop(lift.cars[0]) != ai::LiftSpawnOnTop(lift.cars[1]));
         }
+
+    // Thunder Bluff west: the up car (4171) parks below at 0-5 s, rides up,
+    // parks on top at 15-20 s; the down car mirrors it.
+    ai::LiftCar const& upCar = ai::kThunderBluffLifts[0].cars[1];
+    ai::LiftCar const& downCar = ai::kThunderBluffLifts[0].cars[0];
+    CHECK(!ai::LiftSpawnOnTop(upCar) && ai::LiftSpawnOnTop(downCar));
+    CHECK(ai::LiftParkedLeft(upCar, 60000 + 1000, false) == 4000);
+    CHECK(ai::LiftParkedLeft(upCar, 60000 + 1000, true) == 0);
+    CHECK(ai::LiftParkedLeft(upCar, 60000 + 16000, true) == 4000);
+    CHECK(ai::LiftParkedLeft(upCar, 60000 + 10000, true) == 0 && ai::LiftParkedLeft(upCar, 60000 + 10000, false) == 0);
+    CHECK(ai::LiftUntilParked(upCar, 60000 + 6000, true) == 9000);
+    CHECK(ai::LiftUntilParked(upCar, 60000 + 21000, false) == 9000);
+    CHECK(ai::LiftUntilParked(upCar, 60000 + 2000, false) == 0);
+    CHECK(std::fabs(ai::LiftCarOffset(upCar, 17000) - 61.5f) < 0.01f);
+    CHECK(std::fabs(ai::LiftCarOffset(upCar, 2000)) < 0.01f);
+    float const mid = ai::LiftCarOffset(upCar, 10567 + (13100 - 10567) / 2);
+    CHECK(mid > 32.55f && mid < 53.47f);
+    CHECK(std::fabs(ai::LiftCarOffset(downCar, 17000) + 61.24f) < 0.01f);
+    // Waiting below at 2 s: the up car is parked there now.
+    CHECK(ai::NextLiftCar(ai::kThunderBluffLifts[0], 2000, false) == 1);
+    // Waiting below at 16 s: the down car arrived there.
+    CHECK(ai::NextLiftCar(ai::kThunderBluffLifts[0], 16000, false) == 0);
 
     // Other maps, cross-map trips: never.
     CHECK(MesaLiftFor(0, -5356.7f, -2487.1f, -45.9f, 0, -5441.9f, -2432.0f, 89.6f).dir == MesaLiftDir::None);
