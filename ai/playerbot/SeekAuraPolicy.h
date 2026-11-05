@@ -248,14 +248,40 @@ namespace ai
             nearestSourceToSpotYd <= kSeekFallbackYd;
     }
 
-    // The pull branch's own step: a Son that stands out of the fight stays its target until the pulling tank's own
-    // swing puts it in combat. The branch used to set the target and give the tick back, so the tank never moved and
-    // the rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). The attack order carries the
-    // walk and the swing alike (its reach form), so only the branch's end is a decision: once the Son fights or follows
-    // the tank, the take/drag branches own it.
-    inline bool SeekTankPullNeeded(bool sonInCombat, bool sonOnTank)
+    // A latched pull keeps after its Son while the Son stands inside this reach of B and the latch is younger than the
+    // latch window. The Son patrols from 32 to 112 yd out, so the pickup radius alone dropped the tank from a Son it
+    // was already walking to the moment the Son stepped past 60 yd (walk 41: the tank targeted the Son in 1-5 frames a
+    // window and stood still in all of them).
+    constexpr float kSeekPullLatchYd = 90.0f;
+    constexpr std::uint32_t kSeekPullLatchMs = 20000;
+
+    inline bool SeekPullLatchKeeps(bool hasLatch, float sonToSpotYd, std::uint32_t elapsedMs)
     {
-        return !sonInCombat && !sonOnTank;
+        return hasLatch && sonToSpotYd <= kSeekPullLatchYd && elapsedMs <= kSeekPullLatchMs;
+    }
+
+    // The pull branch's own step. Walk: the Son is out of reach and not fighting, so the tank runs to it and takes the
+    // tick itself (the drag back to B moves with the same MoveTo). Hit: at melee reach, the attack lands and the Son
+    // joins the fight. Done: it already fights or already follows this tank, so the take/drag branches own it. The
+    // branch used to set the target and give the tick back, so the tank never moved and the rotation returned to the
+    // boss (walk 40: 75 of 83 siphons had no Son in combat; walk 41: the closest tank-to-Son was 27-54 yd in every
+    // undosed window).
+    constexpr float kSeekPullHitYd = 5.0f;
+
+    enum class SeekPullStep : std::uint8_t
+    {
+        Walk = 0,
+        Hit = 1,
+        Done = 2,
+    };
+
+    inline SeekPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
+    {
+        if (sonInCombat || sonOnTank)
+            return SeekPullStep::Done;
+        if (tankToSonYd <= kSeekPullHitYd)
+            return SeekPullStep::Hit;
+        return SeekPullStep::Walk;
     }
 
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive

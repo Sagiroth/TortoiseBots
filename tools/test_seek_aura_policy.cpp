@@ -166,14 +166,30 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
-    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to and hit, not dropped after one
-    // target set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son
-    // in combat). The attack order carries the walk and the swing itself; once the Son fights, or follows the tank,
-    // the take/drag branch owns it.
-    CHECK(SeekTankPullNeeded(false, false));
-    CHECK(!SeekTankPullNeeded(true, false));
-    CHECK(!SeekTankPullNeeded(false, true));
-    CHECK(!SeekTankPullNeeded(true, true));
+    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to (the tank moves itself), only a
+    // Son at melee reach is hit, and once the Son fights or follows the tank the take/drag branch owns it. The old
+    // branch set the target and gave the tick back on every read, so the tank never moved (walk 41: 27-54 yd between
+    // tank and Son in every undosed window).
+    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, kSeekPullLatchYd) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(false, false, kSeekPullHitYd) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekPullStep::Done);
+    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekPullStep::Done);
+    CHECK(SeekTankPullStep(true, true, 0.0f) == SeekPullStep::Done);
+
+    // SeekPullLatchKeepsLeavingSon: a latched pull keeps after its Son while the Son is within 90 yd of B and the latch
+    // is younger than 20 s — the pickup radius (60 yd) alone dropped a Son that walked out mid-pull, which is why the
+    // tank never arrived (walk 41: the Son patrols 32 -> 112 yd from B).
+    CHECK(kSeekPullLatchYd == 90.0f);
+    CHECK(kSeekPullLatchMs == 20000);
+    CHECK(SeekPullLatchKeeps(true, 75.0f, 8000));
+    CHECK(SeekPullLatchKeeps(true, 30.0f, 0));
+    CHECK(!SeekPullLatchKeeps(false, 30.0f, 8000));
+    CHECK(!SeekPullLatchKeeps(true, 90.1f, 8000));
+    CHECK(!SeekPullLatchKeeps(true, 30.0f, 20001));
+    // The pickup rule still refuses a fresh pull past its own radius; the latch is what keeps a running one.
+    CHECK(!SeekTankPullDue(true, false, 3, 75.0f));
 
     // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
     // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.

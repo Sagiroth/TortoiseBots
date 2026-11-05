@@ -35,6 +35,10 @@ namespace ai
         std::uint32_t cycleSpell = 0;
         std::uint64_t gatherSourceGuid = 0;
         std::uint32_t gatherStartMs = 0;
+        // The pull's latch: the Son the running pull goes to and when it started. The pickup search reaches 60 yd of
+        // B, but the Son patrols from 32 to 112 yd out, so the tank kept dropping a Son it was already walking to.
+        std::uint64_t pullTargetGuid = 0;
+        std::uint32_t pullStartMs = 0;
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;

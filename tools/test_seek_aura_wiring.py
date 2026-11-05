@@ -130,8 +130,8 @@ class SeekWalkWiring(unittest.TestCase):
         for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
-                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullNeeded(", "SeekPullRoleOf(",
-                     "SeekPullHitExempt(", "SeekRolledDueMs("):
+                     "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
+                     "SeekPullRoleOf(", "SeekPullHitExempt(", "SeekRolledDueMs("):
             self.assertIn(rule, ACTIONS, rule)
         self.assertIn("kSeekLatencyMs", POLICY)
         self.assertIn("kSeekGatherMaxMs", POLICY)
@@ -242,15 +242,17 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("tanks[1]", find)
         self.assertIn("FindSeekFallbackPuller(", find)
         self.assertIn("SeekPullRoleOf(", POLICY)
-        # The pull rule and the gather radius are the policy's.
-        self.assertIn("SeekTankPullDue(", find)
+        # The pull rule and the gather radius are the policy's, and the pull's pick (latch included) is the read's.
+        self.assertIn("SeekTankPullDue(", body(ACTIONS, "bool ReadSeekFight("))
+        self.assertIn("state.pullTarget", find)
         # The pickup search and the drag's arrival are the policy's own distances.
         self.assertIn("kSeekPickupYd", find)
         self.assertIn("kSeekTankArriveYd", find)
-        # The pull branch walks the Son down with the attack's reach form; it used to set the target and give the
-        # tick back, so the tank never moved and the Son never aggroed.
-        self.assertIn("SeekTankPullNeeded(", tank)
-        self.assertIn("Attack(bot, task.source, kSeekPickupYd)", tank)
+        # The pull branch walks the Son down itself; the attack order alone never moved the tank (it returns true with
+        # the target set, so the rotation went back to the boss and the Son stayed out of the fight).
+        self.assertIn("SeekTankPullStep(", tank)
+        self.assertIn("SeekPullStep::Walk", tank)
+        self.assertIn("MoveTo(bot->GetMapId(), x, y, z, false, false, false, true)", tank)
         self.assertIn("DoSpecificAction(\"shoot\", event, true)", tank)
         # The gather's own radius comes from the spot's read; without the third tank the search widens to the
         # fallback (M3).
@@ -260,6 +262,23 @@ class SeekRolesWiring(unittest.TestCase):
         # healers was never selected at the spot's radius).
         self.assertIn("engagedSon = true", read)
         self.assertIn("unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd", read)
+
+    def test_the_pull_walk_moves_the_tank(self):
+        # The Walk step is the tank's own movement: the branch calls the same MoveTo the drag back to B uses, aimed at
+        # the Son, and takes the tick. Attack alone returns true with the target set, so the rotation went back to the
+        # boss and the tank never left the spot (walk 41: 27-54 yd to the Son in every undosed window).
+        tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        pull = tank[tank.index("if (task.pull)"):tank.index("if (task.walkToSpot)")]
+        self.assertIn("SeekTankPullStep(task.source->IsInCombat(), task.source->GetVictim() == bot, yd)", pull)
+        self.assertLess(pull.index("SeekPullStep::Walk"), pull.index("MoveTo(bot->GetMapId(), x, y, z"))
+        self.assertIn("MoveTo(bot->GetMapId(), x, y, z, false, false, false, true)", pull)
+        self.assertIn("return Attack(bot, task.source);", pull)  # the Hit step
+        self.assertIn("LogSeekPull(ai, bot, task.source, yd, step)", pull)
+        self.assertIn('"seek pull: %s -> %u %.1f yd %s"', ACTIONS)
+        self.assertIn("BossTacticsSeekPull", ACTIONS)
+        self.assertIn("kSeekPullLatchYd", POLICY)
+        self.assertIn("kSeekPullLatchMs", POLICY)
+        self.assertIn("kSeekPullHitYd", POLICY)
 
     def test_the_seek_leaves_exactly_the_three_tanks_out(self):
         # The main tank (the boss's victim) and the two off-tanks; a fourth tank has no such job and seeks with the
@@ -295,6 +314,10 @@ class SeekRolesWiring(unittest.TestCase):
         read = body(ACTIONS, "bool ReadSeekFight(")
         self.assertIn("const RaidTankRoles roles = GetRaidTankRoles(ai);", read)
         self.assertIn("out.puller = thirdTank || fallback;", read)
+        # The pick is the running pull's latch while it holds (the Son patrols past the pickup radius), else the
+        # tick's due pickup.
+        self.assertIn("SeekPullLatchKeeps(true, latchedPull->GetDistance2dToCenter(row->spotX, row->spotY),", read)
+        self.assertIn("out.pullTarget = latchedPull;", read)
         self.assertIn("out.pullTarget = pullDue ? nearest : nullptr;", read)
         self.assertNotIn("IsSeekPuller(", ACTIONS)
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")
@@ -310,7 +333,7 @@ class SeekRolesWiring(unittest.TestCase):
         # classic auto shot for a bow, gun or crossbow, the wand's "shoot" otherwise) and the branch casts no spell at
         # all, so no periodic aura can be applied; Serpent Sting, the hunter's own class pull, is never cast here.
         tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
-        pull = tank[tank.index("if (task.rangedPull)"):tank.index("// The attack order carries the walk")]
+        pull = tank[tank.index("if (task.rangedPull)"):tank.index("const float yd =")]
         self.assertNotIn("serpent sting", pull.lower())
         self.assertNotIn("CastSpell(", pull)
         self.assertNotIn("CanCastSpell(", pull)
