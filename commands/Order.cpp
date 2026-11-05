@@ -9,6 +9,7 @@
 #include "../runtime/GuildOrderCraftPolicy.h"
 #include "../runtime/GuildOrderPlayerBuyPolicy.h"
 #include "../runtime/GuildOrderStore.h"
+#include "../runtime/GuildOrderWhoSearchPolicy.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
@@ -650,16 +651,29 @@ bool HandleOrder(ChatHandler* handler, char const* args)
 
     if (lower == "search")
     {
-        // order search <bot> <farm|buy|craft> [cat=<kind>] <text>
+        // order search <craft|enchant> <text> (no bot: guild-wide who-search)
+        // or order search <bot> <farm|buy|craft> [cat=<kind>] <text>. A first
+        // argument that is one of farm|buy|craft|enchant means "no bot".
         std::string botName, typeToken;
         if (!(in >> botName >> typeToken))
         {
             OrderError(handler, "invalid", "Usage: order search <bot> <farm|buy|craft> [cat=<kind>] <text>.");
             return true;
         }
-        std::string text;
         std::getline(in, text);
         text = Trim(text);
+        // A first argument that is one of farm|buy|craft|enchant means "no
+        // bot": the giver's guild is searched instead. A bot literally named
+        // like a type keyword is not resolved here.
+        std::string lowerFirst = botName;
+        std::transform(lowerFirst.begin(), lowerFirst.end(), lowerFirst.begin(), ::tolower);
+        if (GuildOrders::IsNoBotFirstArg(lowerFirst))
+        {
+            std::string combined = typeToken;
+            if (!text.empty())
+                combined += " " + text;
+            return HandleOrderWhoSearch(handler, requester, lowerFirst, combined);
+        }
         // The search command answers the usage errors; this only skips the
         // bot lookups for text that is certainly too short. A cat= word
         // anywhere may still leave browsable text behind.

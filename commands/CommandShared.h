@@ -4,15 +4,18 @@
 
 #include "../ai/playerbot/BotState.h"
 #include "../runtime/RemoteCommanderPolicy.h"
+#include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
 
 #include <cstdint>
 #include <string>
-
+#include <unordered_map>
+#include <vector>
 class ChatHandler;
 class Player;
 class PlayerbotAI;
 class Unit;
+class SkillLineAbilityEntry;
 
 namespace TortoiseBots {
 namespace BotCommands {
@@ -26,6 +29,25 @@ bool ResolveOwnedBot(ChatHandler* handler, char const* args, Player*& bot, BotRe
 
 // TBM protocol lines: pipe-safe escaping and the shared action ack/err
 // answers (the commander's order log notes every reply).
+// Professions.cpp: one bot's orderable craft recipes (spell, made item,
+// skill, reagents), read live for the guild-wide who-search. The snapshot
+// runs on the world thread; the caller only maps it onto names.
+struct CraftRecipeReagent
+{
+    uint32_t itemId = 0;
+    uint32_t need = 0;
+    uint32_t have = 0;
+};
+struct CraftRecipeSnapshot
+{
+    uint32_t spellId = 0;
+    uint32_t itemId = 0;
+    uint32_t skillId = 0;
+    uint32_t skillValue = 0;
+    uint32_t reqSkillValue = 0;
+    std::vector<CraftRecipeReagent> reagents;
+};
+std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot);
 std::string ProtocolSafe(std::string value);
 void NoteCommanderOrderResult(ChatHandler* handler, std::string const& intent, bool ok, std::string const& result);
 void SendActionError(ChatHandler* handler, std::string const& intent, char const* code, char const* message);

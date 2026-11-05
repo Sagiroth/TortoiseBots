@@ -106,7 +106,7 @@ For the auction house step the bot picks one auction house and walks there.
   - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that).
   - Every query word must match somewhere in the name, in any order.
   - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text.
-  - The search needs the bot online; giving the order does not. A craft order on an offline bot is refused (`norecipe`).
+  - `.bot order search craft <text>` asks the whole guild instead of one bot: each match lists every online guild bot that knows an orderable recipe for it, with its profession skill, how many distinct reagents it already holds in full, and whether it already runs an order. At most 30 matches, same order as the per-bot craft search.
 - **One order per bot.** A new order replaces the old one. `cancel` removes it (and its whole sub-order branch) and the bot goes back to normal life.
 
 <details>
@@ -180,9 +180,9 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 .bot order <BotName> steps
 .bot order list
 .bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order search craft <text>
 .bot order reassign <SubOrderBot> <NewBot>
 ```
-
 `.bot order <BotName> steps` lists the order's last 16 steps with their age (the same steps the status shows), read-only and memory only, so it starts empty after a restart, a new order or a reassign.
 
 ## Known limitations

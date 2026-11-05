@@ -22,10 +22,15 @@
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Spells/SpellMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
+#include "Mail/Mail.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "MapNodes/MasterPlayer.h"
+// pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAI.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -160,6 +165,36 @@ bool TaughtByAnyTrainer(uint32_t spellId, uint32_t& reqSkill)
     return found;
 }
 
+// Bags plus mailbox of one item, the same two places the order's own stock
+// check counts before naming a need. Duplicated from the preview: the two
+// files share no helpers beyond CommandShared.
+uint32_t SnapshotMailItems(Player* bot, uint32_t itemId)
+{
+    if (!bot || !bot->GetSession() || !itemId)
+        return 0;
+    MasterPlayer* master = bot->GetSession()->GetMasterPlayer();
+    if (!master)
+        return 0;
+    uint32_t count = 0;
+    time_t curTime = time(nullptr);
+    for (PlayerMails::iterator itr = master->GetMailBegin(); itr != master->GetMailEnd(); ++itr)
+    {
+        Mail* mail = *itr;
+        if (!mail || mail->state == MAIL_STATE_DELETED || curTime < mail->deliver_time)
+            continue;
+        if (!mail->has_items)
+            continue;
+        for (MailItemInfoVec::const_iterator itemItr = mail->items.begin(); itemItr != mail->items.end();
+            ++itemItr)
+            if (itemItr->item_template == itemId)
+            {
+                Item* mailItem = master->GetMItem(itemItr->item_guid);
+                count += mailItem ? mailItem->GetCount() : 1;
+            }
+    }
+    return count;
+}
+
 void FillAbilityRow(AbilityRow& row, SkillLineAbilityEntry const* ability, Player* bot)
 {
     row.skillId = ability->skillId;
@@ -277,6 +312,63 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
 }
 
 } // namespace
+
+// Every known recipe of the bot that may be ordered as Craft: the spell,
+// the made item, the profession skill and its value, the required skill,
+// and the distinct reagents with what the bot holds (bags plus mailbox).
+// Snapshotted live (spell map, bags, mail) for the guild-wide who-search;
+// the caller only maps it onto names, so no core state escapes this file.
+std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot)
+{
+    std::vector<CraftRecipeSnapshot> recipes;
+    if (!bot)
+        return recipes;
+    std::unordered_set<uint32_t> professionSkills;
+    for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
+    {
+        SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
+        if (!skill || !IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
+            continue;
+        if (bot->HasSkill(skill->id))
+            professionSkills.insert(skill->id);
+    }
+    std::unordered_map<uint32_t, std::vector<SkillLineAbilityEntry const*>> const& bySkill = AbilityBySkill();
+    for (uint32_t skillId : professionSkills)
+    {
+        auto found = bySkill.find(skillId);
+        if (found == bySkill.end())
+            continue;
+        for (SkillLineAbilityEntry const* ability : found->second)
+        {
+            AbilityRow row;
+            FillAbilityRow(row, ability, bot);
+            if (!IsKnownRecipe(row) || !row.createsItem || row.isEnchant ||
+                CraftOrderField(row) != GuildOrders::CraftOrderToken(GuildOrders::OrderReason::None))
+                continue;
+            CraftRecipeSnapshot recipe;
+            recipe.spellId = row.spellId;
+            recipe.itemId = row.createdItemId;
+            recipe.skillId = row.skillId;
+            recipe.skillValue = bot->GetSkillValue(row.skillId);
+            recipe.reqSkillValue = row.reqSkillValue;
+            if (SpellEntry const* spell = sSpellMgr.GetSpellEntry(row.spellId))
+            {
+                for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
+                {
+                    if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
+                        continue;
+                    CraftRecipeReagent reagent;
+                    reagent.itemId = uint32_t(spell->Reagent[e]);
+                    reagent.need = uint32_t(spell->ReagentCount[e]);
+                    reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
+                    recipe.reagents.push_back(reagent);
+                }
+            }
+            recipes.push_back(std::move(recipe));
+        }
+    }
+    return recipes;
+}
 
 bool HandleProfessions(ChatHandler* handler, char const* args)
 {
