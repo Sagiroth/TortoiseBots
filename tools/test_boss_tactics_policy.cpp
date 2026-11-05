@@ -1682,8 +1682,8 @@ int main()
         CHECK(fired == DpsHoldTrigger::Engage);
     }
 
-    // A re-pull re-arms the opening hold: the evade or wipe (boss out of combat, or back at full health) resets the
-    // edge, so the next engage holds again. No new edge without a reset.
+    // A re-pull re-arms the opening hold: the evade or wipe (boss out of combat) resets the edge, so the next engage
+    // holds again. No new edge without a reset, and an in-combat read at 100 % is not a reset.
     {
         DpsHoldState repull;
         DpsHoldInputs in;
@@ -1693,15 +1693,33 @@ int main()
         CHECK(DpsHoldTick(repull, in, 1000, nullptr));
         CHECK(repull.engageSeen);
         CHECK(!DpsHoldTick(repull, in, 1000 + 6000, nullptr));
-        DpsHoldResetOnBossReset(repull, true, 80.0f);
+        DpsHoldResetOnBossReset(repull, true);
         CHECK(repull.engageSeen);                               // the fight is on: still spent
         CHECK(!DpsHoldTick(repull, in, 1000 + 7000, nullptr));
-        DpsHoldResetOnBossReset(repull, false, 80.0f);          // evade: the boss left combat
+        DpsHoldResetOnBossReset(repull, false);                 // evade or wipe: the boss left combat
         CHECK(!repull.engageSeen);
         CHECK(DpsHoldTick(repull, in, 20000, nullptr));         // the re-pull holds again
-        DpsHoldResetOnBossReset(repull, true, 100.0f);          // wipe: back at full health
+        DpsHoldResetOnBossReset(repull, false);
         CHECK(!repull.engageSeen);
         CHECK(DpsHoldTick(repull, in, 30000, nullptr));
+    }
+    // An in-combat boss back at full health (Blood Siphon) is not a reset: a running hold stays running and the spent
+    // engage edge does not fire again (the old '|| hp >= 100' reset restarted the 5 s deadline on every read).
+    {
+        DpsHoldState mid;
+        DpsHoldInputs in;
+        in.engaged = true;
+        in.engageEnabled = true;
+        in.holdSec = 5.0f;
+        CHECK(DpsHoldTick(mid, in, 1000, nullptr));             // deadline 6000
+        for (std::uint32_t t = 2000; t <= 5000; t += 1000)
+            DpsHoldResetOnBossReset(mid, true);                 // the boss reads 100 % in combat: nothing resets
+        CHECK(mid.engageSeen);
+        CHECK(mid.untilMs == 6000);
+        CHECK(DpsHoldTick(mid, in, 5999, nullptr));             // still the original hold
+        CHECK(!DpsHoldTick(mid, in, 6000, nullptr));            // released on time, not restarted
+        DpsHoldResetOnBossReset(mid, true);
+        CHECK(!DpsHoldTick(mid, in, 7000, nullptr));            // the spent edge does not re-arm
     }
     // A band opening restarts the hold: closed -> open is the edge, and a band that stays open does not extend it.
     {

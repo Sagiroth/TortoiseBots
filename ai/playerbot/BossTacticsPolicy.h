@@ -1975,11 +1975,12 @@ namespace ai
         return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
     }
 
-    // The boss left combat, evaded or was wiped back to full health (the same signal ReadSeekFight uses to start the
-    // cycle over): the fight the state held is over, so the engage edge must fire again on the re-pull.
-    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat, float bossHpPct)
+    // The boss left combat (an evade or a wipe both end with it out of combat): the fight the state held is over, so
+    // the engage edge must fire again on the re-pull. Health plays no part: an in-combat boss that is back at 100 %
+    // (Blood Siphon heals him) is still the same fight and keeps its spent edge and running hold.
+    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat)
     {
-        if (!bossInCombat || bossHpPct >= 100.0f)
+        if (!bossInCombat)
             state = DpsHoldState();
     }
 

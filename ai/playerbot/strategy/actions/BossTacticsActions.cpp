@@ -215,8 +215,7 @@ bool ReadDpsHold(PlayerbotAI* ai, Player* bot, Unit* subject, const BossTacticRo
         std::lock_guard<std::mutex> lock(g_dpsHoldMutex);
         DpsHoldState& state = g_dpsHolds[key];
         const Unit* const fightBoss = bossUnit ? bossUnit : subject;
-        DpsHoldResetOnBossReset(state, fightBoss->IsInCombat(),
-                                static_cast<float>(fightBoss->GetHealthPercent()));
+        DpsHoldResetOnBossReset(state, fightBoss->IsInCombat());
         held = DpsHoldTick(state, in, WorldTimer::getMSTime(), fired);
         lastTrigger = state.lastTrigger;
         lastTriggerMs = state.lastTriggerMs;
