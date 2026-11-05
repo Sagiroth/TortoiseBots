@@ -327,7 +327,7 @@ std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot)
     for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
     {
         SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
-        if (!skill || !IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
+        if (!skill || !ProfessionSnapshotPolicy::IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
             continue;
         if (bot->HasSkill(skill->id))
             professionSkills.insert(skill->id);

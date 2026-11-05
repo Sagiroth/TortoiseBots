@@ -660,6 +660,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
             OrderError(handler, "invalid", "Usage: order search <bot> <farm|buy|craft> [cat=<kind>] <text>.");
             return true;
         }
+        std::string text;
         std::getline(in, text);
         text = Trim(text);
         // A first argument that is one of farm|buy|craft|enchant means "no
