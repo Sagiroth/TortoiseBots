@@ -36,6 +36,8 @@ NEAREST = (ROOT / "ai/playerbot/strategy/values/NearestGameObjects.cpp").read_te
 AOE = (ROOT / "ai/playerbot/strategy/values/AoeValues.cpp").read_text()
 DUNGEON_TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/DungeonTriggers.cpp").read_text()
 DUNGEON_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/DungeonActions.cpp").read_text()
+SPELL_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.cpp").read_text()
+SPELL_ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/GenericSpellActions.h").read_text()
 CONFIG_USAGE = (ROOT / "tools/verify_config_usage.py").read_text()
 
 
@@ -301,6 +303,25 @@ class SeekRolesWiring(unittest.TestCase):
         drop = body(ACTIONS, "Unit* ai::FindBossHoldKill(")
         self.assertIn("SeekPullHitExempt(state.puller, current == state.pullTarget, current->IsInCombat())", drop)
         self.assertIn("inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)", POLICY)
+
+    def test_the_fallback_pull_is_the_auto_shot_and_casts_no_dot(self):
+        # The fallback puller's one hit must leave nothing ticking on the Son: a DoT's ticks run through the hold and
+        # the shut window and kill the source the next siphon needs. The opener is the shoot action's weapon hit (the
+        # classic auto shot for a bow, gun or crossbow, the wand's "shoot" otherwise) and the branch casts no spell at
+        # all, so no periodic aura can be applied; Serpent Sting, the hunter's own class pull, is never cast here.
+        tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
+        pull = tank[tank.index("if (task.rangedPull)"):tank.index("// The attack order carries the walk")]
+        self.assertNotIn("serpent sting", pull.lower())
+        self.assertNotIn("CastSpell(", pull)
+        self.assertNotIn("CanCastSpell(", pull)
+        self.assertIn('DoSpecificAction("shoot", event, true)', pull)
+        # The shoot action is the codebase's ranged auto attack: it resolves the equipped weapon's own shot.
+        self.assertIn('CastSpellAction(ai, "shoot")', SPELL_ACTIONS_H)
+        update = body(SPELL_ACTIONS, "void CastShootAction::UpdateWeaponInfo()")
+        for token in ('spellName += " gun"', 'spellName += " bow"', 'spellName += " crossbow"',
+                      'spellName = "throw"'):
+            self.assertIn(token, update)
+        self.assertIn("CURRENT_AUTOREPEAT_SPELL", body(SPELL_ACTIONS, "bool CastShootAction::Execute("))
 
     def test_the_dot_and_off_tank_holds_answer_every_damage_cast(self):
         # A melee debuff on the attacker ("rend on attacker") resolves to "attacker without aura", so it reaches the

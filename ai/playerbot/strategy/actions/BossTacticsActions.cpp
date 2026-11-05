@@ -4910,19 +4910,15 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             return false;
         if (task.rangedPull)
         {
-            // The shot is aimed at the Son: the attack order sets it as the target and carries the walk into range
-            // with it (the reach action). One ranged shot opens the Son for the off-tank's pickup: the hunter's own
-            // pull spell (its class pull is Serpent Sting, HunterAiObjectContext) or, for any ranged bot, the shoot
-            // action, which resolves the equipped weapon (wand, bow, gun, crossbow, thrown) itself. Out of range the
-            // tick is left to the walk and the next read tries again.
+            // The shot opens the Son for the off-tank's pickup: the shoot action resolves the equipped ranged weapon
+            // itself (CastShootAction: a bow, gun or crossbow fires the classic auto-repeat shot, a wand its "shoot",
+            // thrown a "throw"), and a weapon hit applies no spell aura at all. The hunter's class pull, Serpent
+            // Sting, is never cast here: its periodic damage aura's ticks would run through the seek hold and the shut
+            // window and kill the Son before the next siphon needs it. Out of range the tick is left to the walk and
+            // the next read tries again.
             if (AI_VALUE(Unit*, "current target") != task.source)
                 return Attack(bot, task.source, kSeekPickupYd);
-            if (bot->GetClass() == CLASS_HUNTER && ai->CanCastSpell("serpent sting", task.source) &&
-                ai->CastSpell("serpent sting", task.source))
-                return true;
-            if (ai->DoSpecificAction("shoot", event, true))
-                return true;
-            return false;
+            return ai->DoSpecificAction("shoot", event, true);
         }
         // The attack order carries the walk to the Son with it (the reach action) and the swing at contact arms the
         // fight. The branch used to return false once the target was set, so the tank never moved.
