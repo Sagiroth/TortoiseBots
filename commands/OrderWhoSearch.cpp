@@ -108,7 +108,7 @@ bool HandleOrderWhoSearch(ChatHandler* handler, Player* requester, std::string c
     {
         if (!bot || !bot->IsInWorld() || bot->GetGuildId() != guildId)
             continue;
-        std::vector<CraftRecipeSnapshot> recipes = OrderableCraftRecipes(bot);
+        std::vector<CraftRecipeSnapshot> recipes = OrderableCraftRecipes(bot, words);
         if (recipes.empty())
             continue;
         bool busy = BotBusy(bot->GetGUIDLow());
@@ -119,18 +119,15 @@ bool HandleOrderWhoSearch(ChatHandler* handler, Player* requester, std::string c
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(recipe.itemId);
             if (!proto)
                 continue;
-            std::string name = proto->Name1;
-            std::string lower = ToLower(name);
-            if (!SearchNameMatches(lower, words))
-                continue;
+            // Prefiltered by OrderableCraftRecipes: the name already matches.
             Match& match = matches[recipe.itemId];
             if (match.itemId == 0)
             {
                 match.itemId = recipe.itemId;
-                match.name = name;
-                match.lower = lower;
+                match.name = proto->Name1;
+                match.lower = ToLower(match.name);
                 match.quality = proto->Quality;
-                match.rank = SearchNameRank(lower, needle);
+                match.rank = SearchNameRank(match.lower, needle);
             }
             std::vector<GuildOrders::WhoReagent> reagents;
             for (CraftRecipeReagent const& reagent : recipe.reagents)
@@ -144,9 +141,10 @@ bool HandleOrderWhoSearch(ChatHandler* handler, Player* requester, std::string c
             entry.need = need;
             entry.busy = busy;
             match.bots.push_back(std::move(entry));
+            if (match.reqSkill == 0 || recipe.reqSkillValue < match.reqSkill)
+                match.reqSkill = recipe.reqSkillValue;
         }
     }
-
     std::vector<Match const*> scored;
     scored.reserve(matches.size());
     for (auto const& entry : matches)

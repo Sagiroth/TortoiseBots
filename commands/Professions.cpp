@@ -5,6 +5,7 @@
 
 #include "../runtime/BotManager.h"
 #include "../runtime/GuildOrderCraftPolicy.h"
+#include "../runtime/GuildOrderSearchPolicy.h"
 #include "../runtime/GuildOrderStore.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
@@ -29,6 +30,7 @@
 #include "playerbot/PlayerbotAI.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <string>
@@ -313,12 +315,16 @@ void SendProfessionSnapshot(ChatHandler* handler, Player* bot)
 
 } // namespace
 
-// Every known recipe of the bot that may be ordered as Craft: the spell,
-// the made item, the profession skill and its value, the required skill,
-// and the distinct reagents with what the bot holds (bags plus mailbox).
-// Snapshotted live (spell map, bags, mail) for the guild-wide who-search;
-// the caller only maps it onto names, so no core state escapes this file.
-std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot)
+// Every known recipe of the bot that may be ordered as Craft and whose made
+// item name matches the search words: the spell, the made item, the
+// profession skill and its value, the required skill, and the distinct
+// reagents with what the bot holds (bags plus mailbox). The name check runs
+// before the bag/mail walks, so non-matching recipes cost an item lookup,
+// never a mailbox scan; the created item is known from the ability row, so
+// FillAbilityRow only runs for matches. Snapshotted live (spell map, bags,
+// mail) for the guild-wide who-search; the caller only maps it onto names,
+// so no core state escapes this file.
+std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot, std::vector<std::string> const& words)
 {
     std::vector<CraftRecipeSnapshot> recipes;
     if (!bot)
@@ -340,6 +346,30 @@ std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot)
             continue;
         for (SkillLineAbilityEntry const* ability : found->second)
         {
+            if (!ability || !ability->spellId || !bot->HasSpell(ability->spellId))
+                continue;
+            SpellEntry const* spell = sSpellMgr.GetSpellEntry(ability->spellId);
+            if (!spell)
+                continue;
+            uint32_t createdItemId = 0;
+            for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
+            {
+                if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[e])
+                {
+                    createdItemId = spell->EffectItemType[e];
+                    break;
+                }
+            }
+            if (!createdItemId)
+                continue;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(createdItemId);
+            if (!proto)
+                continue;
+            std::string lower = proto->Name1;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                [](unsigned char c) { return char(std::tolower(c)); });
+            if (!GuildOrders::SearchNameMatches(lower, words))
+                continue;
             AbilityRow row;
             FillAbilityRow(row, ability, bot);
             if (!IsKnownRecipe(row) || !row.createsItem || row.isEnchant ||
@@ -351,18 +381,15 @@ std::vector<CraftRecipeSnapshot> OrderableCraftRecipes(Player* bot)
             recipe.skillId = row.skillId;
             recipe.skillValue = bot->GetSkillValue(row.skillId);
             recipe.reqSkillValue = row.reqSkillValue;
-            if (SpellEntry const* spell = sSpellMgr.GetSpellEntry(row.spellId))
+            for (uint32 e = 0; e < MAX_SPELL_REAGENTS; ++e)
             {
-                for (uint32 e = 0; e < MAX_EFFECT_INDEX; ++e)
-                {
-                    if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
-                        continue;
-                    CraftRecipeReagent reagent;
-                    reagent.itemId = uint32_t(spell->Reagent[e]);
-                    reagent.need = uint32_t(spell->ReagentCount[e]);
-                    reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
-                    recipe.reagents.push_back(reagent);
-                }
+                if (!spell->ReagentCount[e] || spell->Reagent[e] <= 0)
+                    continue;
+                CraftRecipeReagent reagent;
+                reagent.itemId = uint32_t(spell->Reagent[e]);
+                reagent.need = uint32_t(spell->ReagentCount[e]);
+                reagent.have = bot->GetItemCount(reagent.itemId) + SnapshotMailItems(bot, reagent.itemId);
+                recipe.reagents.push_back(reagent);
             }
             recipes.push_back(std::move(recipe));
         }

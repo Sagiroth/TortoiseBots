@@ -47,6 +47,11 @@ int main()
     std::vector<WhoReagent> full = {{1, 1}};
     CountWhoReagents(full, have, need);
     CHECK(have == 1 && need == 1);
+    // Recipes with more than three reagents count them all: spell reagents
+    // run up to eight rows, not three effects.
+    std::vector<WhoReagent> five = {{1, 1}, {2, 0}, {3, 3}, {4, 5}, {1, 0}};
+    CountWhoReagents(five, have, need);
+    CHECK(have == 3 && need == 5);
 
     // Reply framing matches the addon contract exactly.
     CHECK(FormatWhoBegin("craft", 2) == "TBM:ORDER_WHO_BEGIN|craft|2");
