@@ -232,6 +232,9 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("IsFreeDps(ai, bot)", kill)
         # Every source but the selected one is held all fight, and the selected one obeys SeekHoldDecision.
         self.assertIn("SeekHoldsUnit(state, state.source)", kill)
+        # The kill pick asks for the window before the pick: with it shut the Son is held at whatever health it has.
+        self.assertIn("!state.windowOpen", kill)
+        self.assertLess(kill.index("!state.windowOpen"), kill.index("SeekHoldsUnit(state, state.source)"))
 
     def test_the_sources_are_held_by_the_dps_hold_multiplier(self):
         hold = body(ACTIONS, "float BossTacticsHoldMultiplier::GetValue(")

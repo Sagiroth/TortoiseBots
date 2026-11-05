@@ -77,6 +77,11 @@ int main()
     CHECK(SeekHoldDecision(true, true, false, false, 29.0f, 30.0f, 5.0f)); // 29 <= 30: still the hold
     CHECK(!SeekHoldDecision(true, true, false, false, 31.0f, 30.0f, 5.0f)); // above the hold: burn it down
 
+    // SeekKillPickOnlyInsideTheWindow: with the window shut (due - 3 s through the siphon and its tail) the picked
+    // Son is held at whatever health it has, so it serves the next siphon; a 12 % Son is not a kill pick.
+    CHECK(SeekHoldDecision(true, false, true, false, 12.0f, 30.0f, 5.0f));
+    CHECK(SeekHoldDecision(true, false, false, true, 12.0f, 30.0f, 5.0f));
+
     // SeekForcedBurnReleasesTheHold: the forced burn (the window is about to close) releases the picked source even
     // before the gather is ready, and the gather row's readiness release is the same rule.
     CHECK(!SeekHoldDecision(true, true, false, true, 14.0f, 30.0f, 5.0f));

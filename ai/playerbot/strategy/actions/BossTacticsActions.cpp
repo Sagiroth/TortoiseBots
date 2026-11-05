@@ -4385,11 +4385,12 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return nullptr;
-    if (!state.source)
+    if (!state.source || !state.windowOpen)
         return nullptr;
-    // Outside the window nothing damages a source unless it already stands at the hold percent and fights (the
-    // finishable pick); inside it the pre-damage stops at the row's percent until the gather is ready, and the burn
-    // runs on after (SeekHoldsUnit).
+    // Inside the window the pre-damage stops at the row's percent until the gather is ready, and the burn runs on
+    // after (SeekHoldDecision). With the window shut (due - 3 s until the siphon has landed and its cloud expired)
+    // the picked Son is held at whatever health it has, so it serves the next siphon instead of dying with no cloud
+    // wanted yet.
     if (SeekHoldsUnit(state, state.source))
         return nullptr;
     return state.source;
