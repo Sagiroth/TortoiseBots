@@ -320,7 +320,8 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     uint32_t spellId = enchantRoot ? itemId : SnapshotCraftSpell(bot, snap, itemId);
     // A farm or buy order's item has no recipe: bags and mailbox are the
     // whole stock, as before.
-    if (!spellId || IsUnlimitedVendorItem(itemId))
+    // An enchant's key is a spell id that may also name a vendor item.
+    if (!spellId || (!enchantRoot && IsUnlimitedVendorItem(itemId)))
     {
         uint32_t owned = SnapshotBags(ai, snap, itemId) + SnapshotMail(bot, snap, itemId);
         if (owned < count)
@@ -691,7 +692,7 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
             return;
         }
         std::vector<NeedItem> missing;
-        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot, &order);
         if (missing.empty())
             missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
@@ -706,7 +707,7 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
             return;
         }
         std::vector<NeedItem> missing;
-        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot, &order);
         if (missing.empty())
             missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
