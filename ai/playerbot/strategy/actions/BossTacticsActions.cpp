@@ -1533,7 +1533,7 @@ void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
 }
 
 // One move of the task (the walk to its stand): the result is noted, and kSeekWalkoutMoveFails refused moves in a row
-// abort the task ("move failed"), its walk back starting.
+// abort the task unspent ("move failed"), its walk back starting.
 void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved)
 {
     SeekWalkoutState state;
@@ -1547,8 +1547,12 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved)
         state = it->second.state;
         if (abort)
         {
+            // No pull happened: like a cast fail the Son and the cycle stay free, and this puller sits out the next
+            // picks so another bot takes the Son.
+            std::uint32_t const nowMs = WorldTimer::getMSTime();
             bool const before = WalkoutBusy(it->second.state);
-            WalkoutFinish(it->second.state, WalkoutEnd::Abort, WorldTimer::getMSTime());
+            WalkoutAbortUnspent(it->second.state, nowMs);
+            WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
             NoteWalkoutBusy(before, it->second.state);
         }
     }
@@ -1621,7 +1625,8 @@ bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, flo
 // only one inside the anchor whose own shot (WalkoutShotSpell) it can cast at `son` now, range aside), the best by
 // role, then the nearest to the boss; the navmesh path to the stand is asked in that order and the first with one is it.
 Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son, const BossAnchorCircle& circle,
-                              float standX, float standY, float standZ)
+                              float standX, float standY, float standZ, const SeekWalkoutState& state,
+                              std::uint32_t nowMs)
 {
     Group* group = bot->GetGroup();
     if (!group || !boss || !son)
@@ -1652,6 +1657,7 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
         c.inside = InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());
+        c.excluded = WalkoutExcluded(state, c.guid, nowMs);
         c.yd = member->GetDistance2d(boss);
         // The costly questions last, only for a bot that passes every other: its threat against the main tank's and
         // its own cast at the Son (range and sight are the walk's to answer).
@@ -1816,7 +1822,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     else
     {
         const float shotRange = ai->GetRange("spell");
-        float nearestYd = std::numeric_limits<float>::max();
+        std::vector<Creature*> sons;
+        std::vector<float> sonYd;
         scan.blocked = false;
         for (Creature* candidate : SeekSourcesNear(bot, row.targetEntry, tank.x, tank.y, tank.z, kSeekWalkoutSearchYd))
         {
@@ -1826,28 +1833,32 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 AnchorShotStandFor(bot, shooter, candidate, shotRange, sx, sy, sz))
             {
                 scan.blocked = true;
-                scan.son = nullptr;
+                sons.clear();
                 break;
             }
             if (std::find(state.walkedSons.begin(), state.walkedSons.end(), candidate->GetObjectGuid().GetRawValue()) !=
                 state.walkedSons.end())
                 continue;
-            const float yd = BossAnchorDistance2d(tank, candidate->GetPositionX(), candidate->GetPositionY());
-            if (yd < nearestYd)
-            {
-                scan.son = candidate;
-                nearestYd = yd;
-            }
+            sons.push_back(candidate);
+            sonYd.push_back(BossAnchorDistance2d(tank, candidate->GetPositionX(), candidate->GetPositionY()));
         }
-        // The stand on the platform for that Son (the shorter, non-hunter reach, so any puller's shot reaches), and the
-        // puller with a path to it. No stand: no walk-out for this Son.
+        // The Son, nearest first, that has a stand on the platform (the shorter, non-hunter reach, so any puller's shot
+        // reaches), and the puller with a path to it. A Son without a stand never blocks the next one; only when none
+        // has one is "no stand" logged.
         bool noStandLog = false;
-        if (!scan.blocked && scan.son)
+        if (!scan.blocked && !sons.empty())
         {
-            scan.stand = FindSeekWalkoutStand(bot, shooter, scan.son, WalkoutShotRangeYd(false), scan.x, scan.y, scan.z);
+            int const pickSon = PickWalkoutSon(sonYd, [&](int i)
+            {
+                return FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)], WalkoutShotRangeYd(false),
+                                            scan.x, scan.y, scan.z);
+            });
+            scan.stand = pickSon >= 0;
+            scan.son = scan.stand ? sons[static_cast<std::size_t>(pickSon)] : nullptr;
             if (scan.stand)
             {
-                Player* const pick = FindSeekWalkoutPuller(ai, bot, boss, scan.son, shooter, scan.x, scan.y, scan.z);
+                Player* const pick = FindSeekWalkoutPuller(ai, bot, boss, scan.son, shooter, scan.x, scan.y, scan.z,
+                                                           state, nowMs);
                 scan.puller = pick ? pick->GetObjectGuid().GetRawValue() : 0;
             }
         }
@@ -1864,7 +1875,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             record.scanStandX = scan.x;
             record.scanStandY = scan.y;
             record.scanStandZ = scan.z;
-            if (!scan.blocked && scan.son && !scan.stand && nowMs - record.noStandLogMs >= 10000)
+            if (!scan.blocked && !sons.empty() && !scan.stand && nowMs - record.noStandLogMs >= 10000)
             {
                 record.noStandLogMs = nowMs;
                 noStandLog = true;

@@ -147,7 +147,7 @@ class SeekWalkoutRound1(unittest.TestCase):
 class SeekWalkoutLiveFixes(unittest.TestCase):
     def test_the_stand_stays_on_the_platform(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("FindSeekWalkoutStand(bot, shooter, scan.son,", update)
+        self.assertIn("FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)],", update)
         stand = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
         for call in ("WalkoutStandCandidates(c, son->GetPositionX(), son->GetPositionY())", "GetHeight(", "WalkoutStandOk(",
                      "isInLineOfSight("):
@@ -188,6 +188,21 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
     def test_the_hunter_pet_comment_is_gone(self):
         policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
         self.assertNotIn("a pet to tank", policy)
+
+
+class SeekWalkoutRound3(unittest.TestCase):
+    def test_a_move_failed_abort_is_unspent_and_excludes_the_puller(self):
+        note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved)")
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs)", note)
+        self.assertIn("WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs)", note)
+        self.assertNotIn("WalkoutFinish(", note)
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
+        self.assertIn("c.excluded = WalkoutExcluded(state, c.guid, nowMs);", pick)
+
+    def test_the_scan_takes_the_nearest_son_with_a_stand(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("PickWalkoutSon(sonYd,", update)
+        self.assertIn("FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)],", update)
 
 
 if __name__ == "__main__":

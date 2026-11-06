@@ -34,6 +34,7 @@ namespace ai
     constexpr float kSeekWalkoutStandStepYd = 2.0f; // the stand search's step, out from the anchor's edge
     constexpr float kSeekWalkoutThreatShare = 0.9f; // a puller at this share of the main tank's threat stops
     constexpr int kSeekWalkoutMoveFails = 2;        // this many refused moves in a row abort the task
+    constexpr std::uint32_t kSeekWalkoutExcludeMs = 60000; // a puller whose moves failed is left out of the picks
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -84,6 +85,7 @@ namespace ai
         bool highThreat = false; // its threat on the boss is at kSeekWalkoutThreatShare of the main tank's or more
         bool inside = true;      // it stands inside the anchor (a bot left out on a ledge is never sent)
         bool pathOk = true;      // it has a navmesh path to the stand
+        bool excluded = false;   // its last task's moves failed less than kSeekWalkoutExcludeMs ago
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
         bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
@@ -93,7 +95,7 @@ namespace ai
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
-            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk;
+            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
     }
 
     // Whether a bot's threat on the boss is close enough to the main tank's to turn him: kSeekWalkoutThreatShare of it or
@@ -223,6 +225,8 @@ namespace ai
         float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
         int moveFails = 0;
         bool lastMoveOk = false;
+        // Pullers left out of the picks until a time (their moves failed): guid, until.
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> excluded;
         // The marks the running task undoes when its cast fails (WalkoutAbortUnspent).
         bool prevCycleSpent = false;
         std::uint32_t prevLastCycle = 0;
@@ -279,6 +283,43 @@ namespace ai
         s.lastMoveOk = moved;
         s.moveFails = moved ? 0 : s.moveFails + 1;
         return s.moveFails >= kSeekWalkoutMoveFails;
+    }
+
+    // The puller whose moves failed sits out kSeekWalkoutExcludeMs, so the next pick takes another bot.
+    inline void WalkoutExclude(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
+    {
+        for (std::pair<std::uint64_t, std::uint32_t>& entry : s.excluded)
+        {
+            if (entry.first == bot)
+            {
+                entry.second = nowMs + kSeekWalkoutExcludeMs;
+                return;
+            }
+        }
+        s.excluded.emplace_back(bot, nowMs + kSeekWalkoutExcludeMs);
+    }
+
+    inline bool WalkoutExcluded(const SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
+    {
+        for (const std::pair<std::uint64_t, std::uint32_t>& entry : s.excluded)
+            if (entry.first == bot && static_cast<std::int32_t>(entry.second - nowMs) > 0)
+                return true;
+        return false;
+    }
+
+    // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in
+    // that order, so a Son without one never blocks the rest). -1: none has one.
+    template <typename HasStand>
+    inline int PickWalkoutSon(const std::vector<float>& yd, HasStand hasStand)
+    {
+        std::vector<int> order;
+        for (int i = 0; i < static_cast<int>(yd.size()); ++i)
+            order.push_back(i);
+        std::sort(order.begin(), order.end(), [&yd](int a, int b) { return yd[a] != yd[b] ? yd[a] < yd[b] : a < b; });
+        for (int i : order)
+            if (hasStand(i))
+                return i;
+        return -1;
     }
 
     inline void WalkoutNoteShot(SeekWalkoutState& s)

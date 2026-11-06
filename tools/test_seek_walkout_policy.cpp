@@ -386,6 +386,41 @@ static void TestMoveFailsAbort()
     CHECK(WalkoutNoteMove(s, false));   // two failed moves in a row: abort ("move failed")
 }
 
+static void TestMoveFailAbortUnspendsAndExcludes()
+{
+    // Two refused moves abort, unspent like a cast fail: no pull happened, so the Son and the cycle stay free, and the
+    // puller is left out of the picks for 60 s so another bot takes the next one.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutNoteMove(s, false);
+    CHECK(WalkoutNoteMove(s, false));
+    WalkoutAbortUnspent(s, 2000);
+    WalkoutExclude(s, 7, 2000);
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutExcluded(s, 7, 2000));
+    CHECK(WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs - 1));
+    CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
+    CHECK(!WalkoutExcluded(s, 8, 2000));
+    WalkoutCandidate c = Cand(7, WalkoutRole::Hunter, 5.0f);
+    c.excluded = true;
+    CHECK(!WalkoutEligible(c));
+    std::vector<WalkoutCandidate> raid = {c, Cand(8, WalkoutRole::Caster, 20.0f)};
+    CHECK(PickWalkoutPuller(raid) == 1);
+}
+
+static void TestSonsNearestFirstWithAStand()
+{
+    // The nearest Son without a stand does not block the others: the first, nearest first, that has one is taken.
+    const std::vector<float> yd = {60.0f, 40.0f, 80.0f};
+    std::vector<int> asked;
+    auto const standFor = [&](int i) { asked.push_back(i); return i == 0; };
+    CHECK(PickWalkoutSon(yd, standFor) == 0);
+    CHECK(asked.size() == 2 && asked[0] == 1 && asked[1] == 0);
+    CHECK(PickWalkoutSon(yd, [](int) { return false; }) == -1);
+    CHECK(PickWalkoutSon({}, [](int) { return true; }) == -1);
+}
+
 int main()
 {
     TestRoleOrder();
@@ -405,6 +440,8 @@ int main()
     TestThreatRule();
     TestPullerInsideWithAPath();
     TestMoveFailsAbort();
+    TestMoveFailAbortUnspendsAndExcludes();
+    TestSonsNearestFirstWithAStand();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }
