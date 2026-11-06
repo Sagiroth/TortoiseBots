@@ -2987,6 +2987,7 @@ struct HeldAttack
     uint64 commanderRaw = 0;
     uint64 targetRaw = 0;
     uint32 heldMs = 0;
+    bool automated = false; // the run issued it (s_runIssuing when held): marked as the run's when it fires
 };
 
 std::unordered_map<uint64, HeldAttack>& HeldAttacks()
@@ -3103,6 +3104,18 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
 
 } // namespace
 
+// The run's own focus or attack order (`automated`): mark the target it set as the automation's, so the carrier
+// override (ai::OrderIsAutomated) may take it over for a Shade. A player's order is never marked: every command commit
+// clears the mark (AttackAction's CommitExplicitAttackTarget), so the player's target or focus wins.
+static void NoteRunOrder(PlayerbotAI* ai, bool automated)
+{
+    ai::AiObjectContext* const context = ai->GetAiObjectContext();
+    auto* const mark = context->GetValue<ObjectGuid>("automated attack target");
+    uint64 const next = ai::RunOrderMark(automated, true,
+        context->GetValue<ObjectGuid>("explicit attack target")->Get().GetRawValue(), mark->Get().GetRawValue());
+    mark->Set(ObjectGuid(next));
+}
+
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
 // carrying the GUID-named target: AttackMyTargetAction reads its event
 // owner's selection. The commander's own selection is never touched.
@@ -3158,6 +3171,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
             held.commanderRaw = commanderRaw;
             held.targetRaw = targetGuid.GetRawValue();
             held.heldMs = 0;
+            held.automated = s_runIssuing;
             heldBots.push_back(bot->GetName());
             ++succeeded;
             continue;
@@ -3165,7 +3179,10 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
         // The lead bot's selection is set again for every bot: an earlier
         // bot's first AI step may be the lead bot's own, which can change it.
         if (RunBotAttackOrder(ai, bot, order.lead, targetGuid, onlyBot != nullptr))
+        {
+            NoteRunOrder(ai, s_runIssuing);
             ++succeeded;
+        }
     }
     if (!succeeded)
     {
@@ -3205,6 +3222,7 @@ static void UpdateHeldAttacks(uint32 diff)
     {
         uint64 botRaw;
         uint64 targetRaw;
+        bool automated; // the run issued the held order (HeldAttack::automated)
     };
     std::vector<Due> due;
     for (auto it = held.begin(); it != held.end();)
@@ -3225,7 +3243,7 @@ static void UpdateHeldAttacks(uint32 diff)
                 ++it;
                 break;
             case RemoteCommander::HeldAttackStep::Run:
-                due.push_back({it->first, it->second.targetRaw});
+                due.push_back({it->first, it->second.targetRaw, it->second.automated});
                 it = held.erase(it);
                 break;
             case RemoteCommander::HeldAttackStep::Drop:
@@ -3238,9 +3256,18 @@ static void UpdateHeldAttacks(uint32 diff)
     {
         Player* bot = FindCharacter(order.botRaw);
         PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        // The commit cleared the mark; a held run order is the run's again (NoteRunOrder), a player's stays unmarked.
         if (ai)
-            RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw));
+            if (RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw)))
+                NoteRunOrder(ai, order.automated);
     }
+}
+
+// The first boss whose tank_ignore row names the entry on the map, 0 for none (DungeonRun::UnitFact::tankIgnoreBoss).
+static uint32 TankIgnoreBossOf(uint32 map, uint32 entry)
+{
+    const std::vector<std::uint32_t>& bosses = ai::GetBossTactics().TankIgnoreBosses(map, entry);
+    return bosses.empty() ? 0 : bosses.front();
 }
 
 // Whether the focus target is a creature a tank_hold row names (ai_boss_tactic): a caster whose avoid_cast blast a
@@ -3290,8 +3317,12 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
         // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
         // whole party (the run leader counts on every focus order doing that).
+        // A Delusions carrier with its Shade of Jin'do within the hold reach stays on the Shade (t1105h J1): the run's
+        // focus, and the 3 s ward refocus that repeats it, would pull it back. A player's focus arms it like any bot.
+        bool const carrier = TortoiseBots::DungeonRun::CarrierFocusSkip(automatedKillFirst,
+            automatedKillFirst && ai::FindBossCarrierPick(ai, bot) != nullptr);
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
-                totemTarget, totemFocus))
+                totemTarget, totemFocus, carrier))
             continue;
         bool accepted;
         if (totemFocus)
@@ -3302,6 +3333,8 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
             accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
             ExecuteQuietNextAction(ai, true);
         }
+        if (accepted)
+            NoteRunOrder(ai, automatedKillFirst);
         if (accepted)
             ++succeeded;
     }
@@ -9531,6 +9564,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.engaged = true;
             fact.hitting = true;
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
+            fact.tankIgnoreBoss = TankIgnoreBossOf(lead->GetMapId(), fact.entry); // DungeonRun::TankIgnoredFact
             f.leadHasAttacker = true;
         }
         // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
@@ -9622,6 +9656,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
+            // A tank_ignore entry: no tank is sent at it while its boss fights (DungeonRun::TankIgnoredFact).
+            fact.tankIgnoreBoss = TankIgnoreBossOf(anchor->GetMapId(), fact.entry);
             if ((raidBoss || raidTrashOffTanks) && !petVictim)
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
@@ -13065,6 +13101,8 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
+            // A tank_ignore entry: no tank is sent at it while its boss fights (DungeonRun::TankIgnoredFact).
+            fact.tankIgnoreBoss = TankIgnoreBossOf(anchor->GetMapId(), fact.entry);
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;

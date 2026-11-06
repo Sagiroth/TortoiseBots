@@ -1,5 +1,9 @@
 # Changelog
 
+- Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out that fails early in the cycle gets one more try.
+- Hakkar in Zul'Gurub: a Son of Hakkar on a healer or damage dealer is now taken by an off-tank, and killed if no tank takes it within seconds; the walk-out brings a Son only near the next Blood Siphon.
+- Fixed: a player's own attack or focus order is never overridden by the Jin'do Shade switch, a cursed damage dealer on its Shade is not pulled back by the run's refocus, the Shade-victim heal boost never puts a damage dealer ahead of a lower tank, an off-tank takes a pit troll that hits a healer when no ranged damage dealer can, and the Hakkar walk-out aborts again when the puller's threat reaches the top tank's.
+- Jin'do in Zul'Gurub: a damage dealer cursed by Delusions turns on its Shade even under the run's focus, healers favour the member a Shade attacks, the tanks leave the Sacrificed Trolls to the damage dealers (new boss tactic `tank_ignore`), and the damage dealers stay below the off-tank; the two taunt rows that could never land on him are gone.
 - Hakkar in Zul'Gurub: when no Son of Hakkar is in reach of the platform, one ranged damage dealer walks out, shoots the nearest Son and leads it back to the raid, so the raid gets its Poisonous Blood before each Blood Siphon.
 - Fixed: a plan list over 16 entries no longer drops the plan's other crowd-control and kill-first lists.
 - Hakkar in Zul'Gurub: the raid now fights him on his platform (every boss and raid move stays within 30 yd of his spawn, the Son pull skips Sons off the platform), so he no longer resets; a fight that ends in a boss reset is now recorded as `evade` instead of a plain end.

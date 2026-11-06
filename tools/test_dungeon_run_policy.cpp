@@ -27782,6 +27782,94 @@ static void TestGuardSkipsAuraGatedShade()
     }
 }
 
+// t1105h J1: a Delusions carrier with its Shade in reach is no focus target, whatever the focus is: the run's focus and
+// the 3 s ward refocus would pull it back off the only unit its damage counts on. Once the curse ends it joins again.
+static void TestFocusSkipsDelusionsCarrier()
+{
+    for (bool totemKey : {true, false})
+        for (bool totemTarget : {true, false})
+        {
+            CHECK(FocusSkipsBot(false, false, false, totemTarget, totemKey, true));
+            CHECK(!FocusSkipsBot(false, false, false, totemTarget, totemKey, false));
+        }
+    // Only the run's own focus leaves a carrier on its Shade (Codex HIGH, t1105h review): a player's focus arms it. The
+    // hold reaches kCarrierHoldReachYd (40 yd), so a Shade at 20 yd keeps a melee carrier out of the 3 s refocus.
+    CHECK(CarrierFocusSkip(true, true));    // automated focus + curse, Shade within 40 yd: no refocus
+    CHECK(!CarrierFocusSkip(false, true));  // player focus + curse: the carrier takes the player's focus
+    CHECK(!CarrierFocusSkip(true, false));  // no Shade within the hold reach (or the curse is gone): it joins
+    CHECK(!FocusSkipsBot(false, false, false, true, true));   // an uncursed DPS still joins the totem focus
+    CHECK(!FocusSkipsBot(false, false, true, false, false));  // and a tank_hold focus
+}
+
+// t1105h J2: the Sacrificed Trolls 14826 go to the damage dealers while Jin'do fights. The run's boss here is 10184, so
+// the test's troll names that entry as its tank_ignore boss: no off-tank and no main tank is sent at it, and the
+// healer guard's ranged dps still is.
+static void TestJindoTrollGoesToDpsNotTank()
+{
+    UnitFact troll = Hitter(45201, 14826, 20, false);
+    {
+        // Off-tanks: a troll on a DPS is no pick-up while the boss fights.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact ignored = troll;
+        ignored.tankIgnoreBoss = 10184;
+        f.partyAttackers = {ignored};
+        CHECK(TankIgnoredFact(f, f.partyAttackers[0]));
+        for (int k = 0; k < 40; ++k)
+            CHECK(Tick(r, f).empty());
+        CHECK(GuardPick(f, 0.0f, &r, &r) == nullptr);
+    }
+    {
+        // No row: an ordinary add, picked up as before.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.partyAttackers = {troll};
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // The row's boss is not in this fight: the troll is a normal mob again.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact other = troll;
+        other.tankIgnoreBoss = 11380;
+        f.partyAttackers = {other};
+        CHECK(!TankIgnoredFact(f, f.partyAttackers[0]));
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // A troll on a healer still gets the healer guard's ranged dps.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact onHealer = Hitter(45202, 14826, 18, true);
+        onHealer.tankIgnoreBoss = 10184;
+        f.partyAttackers = {onHealer};
+        CHECK(GuardTick(r, f) == "attack 45202 NearDps");
+    }
+    {
+        // The main tank's own engage on arrival leaves it too.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.leadHasAttacker = true;
+        f.leadAttacker = troll;
+        f.leadAttacker.victimLead = true;
+        f.leadAttacker.tankIgnoreBoss = 10184;
+        CHECK(EngageTarget(r, f) == nullptr);
+        f.leadAttacker.tankIgnoreBoss = 0;
+        CHECK(EngageTarget(r, f) != nullptr);
+    }
+}
+
 // The totem focus is issued before the guard: a totem kill-first unit takes the tick over a guard-worthy healer add.
 // With the key off the guard's order goes out first and the focus waits for the next tick, as today.
 static void TestTotemFocusBeatsGuard()
@@ -31621,6 +31709,105 @@ static void TestRaidTrashHealerGuardMainTankLastResort()
             CHECK(GuardTick(r, f).empty());
     }
 }
+
+// Opus 4 (t1105h review): a tank_ignore unit on a healer with no free ranged dps goes to an OFF-tank, never the main
+// tank. The test's tank_ignore "boss" is the fight's own engaged entry (12130 on the main tank in the trash fixture, the
+// run's boss 10184 in the boss fixture).
+static void TestTankIgnoreHealerAddGoesToTheOffTank()
+{
+    {
+        // A raid trash fight with an off-tank and no ranged dps: GuardPickHealerAdd hands the troll to the off-tank.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact troll = Hitter(50081, 14826, 20, true);
+        troll.x = 20.0f;
+        troll.tankIgnoreBoss = 12130;
+        f.partyAttackers = {troll};
+        CHECK(GuardPickHealerAdd(r, f) == &f.partyAttackers[0]);
+        std::string got;
+        for (int k = 0; k < 20 && got.find("attack 50081 ") != 0; ++k)
+            got = GuardTick(r, f);
+        CHECK(got.find("attack 50081 ") == 0);
+        CHECK(got != "attack 50081 Tanky");
+    }
+    {
+        // No off-tank at all: the main tank's last resort never takes a tank_ignore unit.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts(false);
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact troll = Hitter(50082, 14826, 20, true);
+        troll.x = 20.0f;
+        troll.tankIgnoreBoss = 12130;
+        f.partyAttackers = {troll};
+        for (int k = 0; k < 30; ++k)
+            CHECK(GuardTick(r, f).find("attack 50082") != 0);
+        // A second add on a healer, farther: the troll does not hold the main tank's last resort back from it.
+        UnitFact other = Hitter(50085, 11368, 22, true);
+        other.x = 22.0f;
+        f.partyAttackers = {troll, other};
+        std::string last;
+        for (int k = 0; k < 30 && last.find("attack 50085") != 0; ++k)
+        {
+            last = GuardTick(r, f);
+            CHECK(last.find("attack 50082") != 0);
+        }
+        CHECK(last == "attack 50085 Tanky");
+        // The same add without the row is the main tank's last resort, as before.
+        DungeonPlan plan2;
+        Facts g = RaidTrashFacts(false);
+        g.raid.healerGuard = true;
+        g.leadHasAttacker = true;
+        g.leadHit = true;
+        Run r2 = StartRaidTrashFight(plan2, g);
+        g.members = {Mem("Tanky", 0)};
+        g.leadAttacker = f.leadAttacker;
+        UnitFact plain = troll;
+        plain.tankIgnoreBoss = 0;
+        g.partyAttackers = {plain};
+        std::string got;
+        for (int k = 0; k < 30 && got.find("attack 50082") != 0; ++k)
+            got = GuardTick(r2, g);
+        CHECK(got == "attack 50082 Tanky");
+    }
+    {
+        // Jin'do's boss fight: no ranged dps in reach, the troll on the healer goes to an off-tank (RaidGuardTick).
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        f.members = {Mem("Tanky", 0), Mem("Healy", 20)};
+        UnitFact troll = Hitter(50083, 14826, 18, true);
+        troll.tankIgnoreBoss = 10184;
+        f.partyAttackers = {troll};
+        std::string got;
+        for (int k = 0; k < 40 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack 50083 Offy");
+        // On a damage dealer it is still nobody's but the dps' (TestJindoTrollGoesToDpsNotTank).
+        DungeonPlan plan2;
+        Run r2 = RaidBossRun(plan2);
+        Facts g = RaidHealerGuardFacts();
+        g.members = f.members;
+        UnitFact onDps = Hitter(50084, 14826, 18, false);
+        onDps.tankIgnoreBoss = 10184;
+        g.partyAttackers = {onDps};
+        for (int k = 0; k < 40; ++k)
+            CHECK(GuardTick(r2, g).empty());
+    }
+}
+
 
 // The last resort is not held by the guard's budgets: with guardOrders at kGuardOrdersPerFight and fightOrders at
 // kGuardOrdersFightCap (both spent by earlier pick-ups), a loose healer add still goes to the main tank 8 s after it
@@ -37106,6 +37293,9 @@ int main()
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
     TestTotemFocusSkipsTanksAndHealers();
     TestTotemFocusKeyOffJoinsAll();
+    TestFocusSkipsDelusionsCarrier();
+    TestJindoTrollGoesToDpsNotTank();
+    TestTankIgnoreHealerAddGoesToTheOffTank();
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();

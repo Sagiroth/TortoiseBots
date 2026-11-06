@@ -63,6 +63,7 @@ namespace ai
         RangedOnly = 21,      // melee bots leave the boss alone while it stands `param` yd or more above them
         ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
         Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
+        TankIgnore = 24,      // while the boss fights, tanks leave `target_entry` to the damage dealers (no guard, no taunt)
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -182,6 +183,8 @@ namespace ai
             return BossTacticKind::ThreatSuccessor;
         if (text == "anchor")
             return BossTacticKind::Anchor;
+        if (text == "tank_ignore")
+            return BossTacticKind::TankIgnore;
         return BossTacticKind::None;
     }
 
@@ -416,7 +419,7 @@ namespace ai
             // consulted.
             if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
                     row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath ||
-                    row.kind == BossTacticKind::ThreatSuccessor))
+                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore))
                 return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
@@ -506,6 +509,11 @@ namespace ai
             if (row.kind == BossTacticKind::ThreatSuccessor &&
                 (row.targetEntry != 0 || row.mode != TacticMode::Default))
                 return false;
+            // tank_ignore: the entry the tanks leave alone while the row's boss fights, and nothing else. It is read
+            // straight from the table (the tank pickers, the run guard), so it carries no gate (see above) and no mode.
+            if (row.kind == BossTacticKind::TankIgnore &&
+                (row.targetEntry == 0 || row.spellId != 0 || row.mode != TacticMode::Default))
+                return false;
             // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
             // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
             // It takes no mode word.
@@ -570,6 +578,8 @@ namespace ai
                 rangedOnlyGaps_[row.map].emplace(row.targetEntry != 0 ? row.targetEntry : row.bossEntry, row.param);
             if (row.kind == BossTacticKind::ThreatSuccessor)
                 threatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+            if (row.kind == BossTacticKind::TankIgnore)
+                tankIgnoreBosses_[row.map][row.targetEntry].push_back(row.bossEntry);
             if (row.kind == BossTacticKind::LinkedDeath)
             {
                 linkedDeathMaps_[row.map] = true;
@@ -717,6 +727,27 @@ namespace ai
             return byMap != threatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
         }
 
+        // The bosses whose tank_ignore row names the entry on this map (empty: none): while one of them fights, the
+        // tanks leave the entry to the damage dealers (TankIgnoresUnit). Empty before the seal.
+        const std::vector<std::uint32_t>& TankIgnoreBosses(std::uint32_t map, std::uint32_t entry) const
+        {
+            static const std::vector<std::uint32_t> none;
+            if (!sealed_.load(std::memory_order_acquire) || tankIgnoreBosses_.empty())
+                return none;
+            auto const byMap = tankIgnoreBosses_.find(map);
+            if (byMap == tankIgnoreBosses_.end())
+                return none;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? none : it->second;
+        }
+
+        // Whether the map has a needs_aura row (the healers' Shade-victim weighting looks only there). False before
+        // the seal.
+        bool HasRequiredAuraMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && requiredAura_.find(map) != requiredAura_.end();
+        }
+
         // Whether the boss carries a row of the kind (dev's Ossirian runner yields to the use_object row). False
         // before the seal.
         bool HasKindFor(std::uint32_t map, std::uint32_t bossEntry, BossTacticKind kind) const
@@ -820,6 +851,8 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
+        // tank_ignore: map -> the ignored entry -> the bosses whose row names it.
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>> tankIgnoreBosses_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> noCcEntries_;
         std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> freezeAuras_;
@@ -2549,6 +2582,108 @@ namespace ai
             }
         }
         return best;
+    }
+
+    // A kill_first row a bot opens only while it carries the row's `bot_aura`: the Shade of Jin'do 14986, which only a
+    // Delusions 24306 carrier can see and hurt (boss_jindo.cpp:326-330). The fight scan drops a gated row for a bot without
+    // the aura, so an open one in the bot's rows means the bot carries it now.
+    inline bool CarrierKillFirstRow(const BossTacticRow& row)
+    {
+        return row.kind == BossTacticKind::KillFirst && row.botAura != 0;
+    }
+
+    inline bool HasCarrierKillFirstRow(const ActiveBossRows& active)
+    {
+        for (const BossTacticRow* row : active)
+            if (CarrierKillFirstRow(*row))
+                return true;
+        return false;
+    }
+
+    // How far a carrier turns on its subject from under an explicit attack order (t1105h J1): a melee bot only a Shade
+    // within 15 yd (the Shade is summoned on the carrier and then walks off to a healer, so a melee carrier may chase it a
+    // short way), a ranged one within its spell range. Distances are GetDistance's, bounding radii already off.
+    constexpr float kCarrierMeleeReachYd = 15.0f;
+    constexpr float kCarrierSpellReachYd = 30.0f;
+
+    inline float CarrierReachYd(bool ranged)
+    {
+        return ranged ? kCarrierSpellReachYd : kCarrierMeleeReachYd;
+    }
+
+    // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
+    // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
+    // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
+    // overridden: the player's target or focus wins. Tanks and healers keep their jobs.
+    enum class KillFirstPickMode : std::uint8_t { None, Free, Carrier };
+
+    inline KillFirstPickMode KillFirstPickModeFor(bool battleDps, bool explicitOrder, bool orderAutomated,
+                                                  bool carrierRowOpen)
+    {
+        if (!battleDps)
+            return KillFirstPickMode::None;
+        if (!explicitOrder)
+            return KillFirstPickMode::Free;
+        return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
+    }
+
+    // Whether the bot's explicit attack target is the run's automated order: the run marks the target its focus or
+    // attack order set ("automated attack target"), and every command commit (a player's `attack`, a mark order) clears
+    // that mark, so only an order the run itself issued still matches it.
+    inline bool OrderIsAutomated(std::uint64_t explicitTarget, std::uint64_t automatedTarget)
+    {
+        return explicitTarget != 0 && explicitTarget == automatedTarget;
+    }
+
+    // The bot's "automated attack target" mark after an order: `runIssued` is whether the run issued it (for a held
+    // attack, recorded when it was held, since it fires outside the run's issuing), `accepted` whether the bot took it,
+    // `explicitTarget` the explicit target the order committed (the commit already cleared the mark: `currentMark`).
+    // Only a taken run order marks its target; anything else leaves the mark as it is.
+    inline std::uint64_t RunOrderMark(bool runIssued, bool accepted, std::uint64_t explicitTarget,
+                                      std::uint64_t currentMark)
+    {
+        return runIssued && accepted ? explicitTarget : currentMark;
+    }
+
+    // How far the carrier hold reaches (t1105h review): once on its Shade the carrier is a free DPS whose kill_first pick
+    // chases to kBossTacticsEngageRange, so the run's focus skips it out to the same range; CarrierReachYd is only the
+    // first override of an automated order.
+    constexpr float kCarrierHoldReachYd = kBossTacticsEngageRange;
+
+    // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
+    inline int PickCarrierOverride(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates,
+                                   float reachYd)
+    {
+        int best = -1;
+        for (std::size_t i = 0; i < candidates.size(); ++i)
+        {
+            const TacticCandidate& c = candidates[i];
+            if (!c.pickable || c.distance > reachYd)
+                continue;
+            bool carried = false;
+            for (const BossTacticRow* row : active)
+                if (CarrierKillFirstRow(*row) && TacticSubjectEntry(*row) == c.entry)
+                    carried = true;
+            if (!carried)
+                continue;
+            if (best < 0 || c.distance < candidates[best].distance)
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // tank_ignore (t1105h J2): a tank leaves a unit alone (no guard pick, no engage, no taunt, no tank target) while one
+    // of the bosses whose row names its entry (`bosses`, BossTacticTable::TankIgnoreBosses) fights. The damage dealers
+    // keep it: it is only the tanks' pick that is closed.
+    inline bool TankIgnoresUnit(bool tank, const std::vector<std::uint32_t>& bosses,
+                                const std::function<bool(std::uint32_t)>& bossEngaged)
+    {
+        if (!tank)
+            return false;
+        for (std::uint32_t const boss : bosses)
+            if (bossEngaged(boss))
+                return true;
+        return false;
     }
 
     // Index of the nearest candidate a free DPS bot may attack: the same candidate rules the kill_first pick applies

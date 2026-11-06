@@ -160,13 +160,45 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
-    // SeekTakeFightingSonOnHealer: a Son that sits on a healer (or any other non-tank) is the first off-tank's own
-    // take once the third off-tank cannot take it — dead, or holding a Son of its own — and the non-tank has had it
-    // for 8 s. While the third off-tank can take it, the first off-tank leaves the Son alone.
+    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 8 s is the first
+    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 8 s (walk 45: with three
+    // tanks alive the old gate never let the first off-tank take one, and 87 of 99 deaths from Sons were non-tanks).
     CHECK(kSeekHealerTakeMs == 8000);
-    CHECK(SeekTakeFightingSonOnHealer(false, 8000));
-    CHECK(!SeekTakeFightingSonOnHealer(false, 7999));
-    CHECK(!SeekTakeFightingSonOnHealer(true, 8000));
+    CHECK(SeekTakeFightingSonOnHealer(8000));
+    CHECK(!SeekTakeFightingSonOnHealer(7999));
+    // An off-tank that is Hakkar's victim (Cause Insanity, then the threat successor) takes no Son and walks no drag:
+    // it would bring Hakkar onto the gather. The other off-tank takes it.
+    CHECK(SeekTankTakeAllowed(false));
+    CHECK(!SeekTankTakeAllowed(true));
+
+    // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
+    // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.
+    {
+        const SeekPullActors normal = SeekPullActorsFor(3, false, false);
+        CHECK(normal.thirdTank && !normal.fallback);
+        const SeekPullActors victim = SeekPullActorsFor(3, true, false);
+        CHECK(!victim.thirdTank && victim.fallback);
+        const SeekPullActors two = SeekPullActorsFor(2, false, false);
+        CHECK(!two.thirdTank && two.fallback);
+        // The anchored shot opens the fallback beside an idle third off-tank (the tanks have no Son to walk to).
+        const SeekPullActors anchored = SeekPullActorsFor(3, false, true);
+        CHECK(!anchored.thirdTank && anchored.fallback);
+        const SeekPullActors none = SeekPullActorsFor(1, false, false);
+        CHECK(!none.thirdTank && !none.fallback);
+    }
+
+    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
+    // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),
+    // the hold is today's.
+    CHECK(kSeekNonTankBurnMs == kSeekHealerTakeMs + 4000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 11999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 12000));
+    // Not the pick, the window shut, far from the spot, the raid dosed: released all the same.
+    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 12000));
+    CHECK(SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 0));
+    // On a tank (no non-tank time): held exactly as before.
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0) ==
+          SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5));
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
@@ -444,6 +476,33 @@ int main()
     CHECK(!SeekClockStartOver(true, 1000, 1500));
     CHECK(SeekClockStartOver(true, 1000, 12000));
     CHECK(!SeekClockStartOver(true, 0, 12000));
+
+    // SeekSonAtAnchorNorthEdgeInReach: with a live boss anchor the reach is measured from the anchor's centre (the
+    // boss's spawn) as well as from B. A Son the walk-out brought to the anchor's north edge stands 25 yd from the
+    // spawn but 37.7 yd from B (15 yd south of it): it is in reach, picked, and released for the forced burn.
+    {
+        const float fromB = 37.7f;
+        const float fromAnchor = 25.0f;
+        CHECK(fromB > kSeekFallbackYd);
+        const float anchorYd = 30.0f;
+        const float reach = SeekReachYd(fromB, fromAnchor, true, anchorYd);
+        CHECK(reach <= kSeekFallbackYd);
+        CHECK(!SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, reach, 10));
+        CHECK(SeekFinishableInReach(true, 25.0f, 30.0f, reach, 10));
+        // Unanchored, the reach is still B's alone: the same Son is held.
+        const float unanchored = SeekReachYd(fromB, fromAnchor, false, anchorYd);
+        CHECK(unanchored > kSeekFallbackYd);
+        CHECK(SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, unanchored, 10));
+        // The nearer of the two counts: a Son near B but far from the spawn stays in reach.
+        CHECK(SeekReachYd(10.0f, 40.0f, true, anchorYd) <= kSeekFallbackYd);
+        // The anchor's part of the reach ends at its own radius: a Son 33 yd from the spawn is outside the 30 yd
+        // anchor, so only its 37.7 yd from B counts and it is held.
+        CHECK(SeekReachYd(fromB, 33.0f, true, anchorYd) > kSeekFallbackYd);
+        CHECK(SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, SeekReachYd(fromB, 33.0f, true, anchorYd), 10));
+        CHECK(SeekReachYd(fromB, 30.0f, true, anchorYd) <= kSeekFallbackYd);
+        // A Son past both reaches is held.
+        CHECK(SeekReachYd(50.0f, 36.0f, true, anchorYd) > kSeekFallbackYd);
+    }
 
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
