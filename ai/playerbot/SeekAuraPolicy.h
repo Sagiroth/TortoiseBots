@@ -192,12 +192,14 @@ namespace ai
         return SeekSourceFinishable(inCombat, hpPct, holdPct, seekers) && distFromSpotYd <= kSeekFallbackYd;
     }
 
-    // The seek's reach of a Son: its distance from B, or with a live boss anchor the nearer of that and its distance
-    // from the anchor's centre (the boss's spawn). B sits 15 yd from Hakkar's spawn, so a Son brought to the far edge
-    // of the anchor stood 37-38 yd from B, beyond kSeekFallbackYd, and was held through the siphon.
-    inline float SeekReachYd(float distFromSpotYd, float distFromAnchorYd, bool anchored)
+    // The seek's reach of a Son: its distance from B, or with a live boss anchor, for a Son inside the anchor's own
+    // radius (`anchorRadiusYd`, the raid's), the nearer of that and its distance from the anchor's centre (the boss's
+    // spawn). B sits 15 yd from Hakkar's spawn, so a Son brought to the far edge of the anchor stood 37-38 yd from B,
+    // beyond kSeekFallbackYd, and was held through the siphon.
+    inline float SeekReachYd(float distFromSpotYd, float distFromAnchorYd, bool anchored, float anchorRadiusYd)
     {
-        return anchored ? std::min(distFromSpotYd, distFromAnchorYd) : distFromSpotYd;
+        return anchored && distFromAnchorYd <= anchorRadiusYd ? std::min(distFromSpotYd, distFromAnchorYd)
+                                                              : distFromSpotYd;
     }
 
     // A Son that has fought a non-tank this long goes to the first off-tank (SeekTakeFightingSonOnHealer); this long

@@ -787,7 +787,7 @@ struct SeekFight
     // The boss's anchor centre (its spawn), when the boss has an anchor row: the seek's reach is measured from it
     // too (SeekReachYd).
     bool anchored = false;
-    float anchorX = 0.0f, anchorY = 0.0f, anchorZ = 0.0f;
+    float anchorX = 0.0f, anchorY = 0.0f, anchorZ = 0.0f, anchorRadius = 0.0f;
 };
 
 // The seek's reach of a Son (SeekReachYd): from B, or the nearer of B and the anchor's centre.
@@ -797,7 +797,7 @@ float SeekReachOf(const SeekFight& state, Unit* unit)
     const float fromAnchorYd = state.anchored
         ? unit->GetDistance3dToCenter(state.anchorX, state.anchorY, state.anchorZ)
         : fromSpotYd;
-    return SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored);
+    return SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored, state.anchorRadius);
 }
 
 struct SeekTickCache
@@ -1580,7 +1580,9 @@ void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
             return;
         state = it->second.state;
         bool const before = WalkoutBusy(it->second.state);
-        WalkoutAbortUnspent(it->second.state, WorldTimer::getMSTime());
+        WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());
+        // The cached scan may name this bot: the next read scans afresh.
+        it->second.scanned = false;
         NoteWalkoutBusy(before, it->second.state);
     }
     LogSeekWalkoutAbort(ai, "cast failed", sonYd, state);
@@ -1911,7 +1913,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
-    if (!wanted || !WalkoutCycleOpen(state, cycleNo))
+    if (!wanted || !WalkoutCycleOpen(state, cycleNo) || !WalkoutRetryStartInTime(state, cycleNo, nowMs))
         return;
     // The start check's scan: nothing else can pull (no Son fights, none in the tanks' reach or the anchored shot's),
     // and the Son out of combat nearest the anchor's centre not walked to yet. One grid walk per instance a second.
@@ -2192,6 +2194,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.anchorX = reachAnchor.x;
         out.anchorY = reachAnchor.y;
         out.anchorZ = reachAnchor.z;
+        out.anchorRadius = reachAnchor.radius;
     }
     bool belowHold = false;
     bool engagedSon = false;

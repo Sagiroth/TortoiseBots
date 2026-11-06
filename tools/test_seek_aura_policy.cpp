@@ -484,18 +484,24 @@ int main()
         const float fromB = 37.7f;
         const float fromAnchor = 25.0f;
         CHECK(fromB > kSeekFallbackYd);
-        const float reach = SeekReachYd(fromB, fromAnchor, true);
+        const float anchorYd = 30.0f;
+        const float reach = SeekReachYd(fromB, fromAnchor, true, anchorYd);
         CHECK(reach <= kSeekFallbackYd);
         CHECK(!SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, reach, 10));
         CHECK(SeekFinishableInReach(true, 25.0f, 30.0f, reach, 10));
         // Unanchored, the reach is still B's alone: the same Son is held.
-        const float unanchored = SeekReachYd(fromB, fromAnchor, false);
+        const float unanchored = SeekReachYd(fromB, fromAnchor, false, anchorYd);
         CHECK(unanchored > kSeekFallbackYd);
         CHECK(SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, unanchored, 10));
         // The nearer of the two counts: a Son near B but far from the spawn stays in reach.
-        CHECK(SeekReachYd(10.0f, 40.0f, true) <= kSeekFallbackYd);
+        CHECK(SeekReachYd(10.0f, 40.0f, true, anchorYd) <= kSeekFallbackYd);
+        // The anchor's part of the reach ends at its own radius: a Son 33 yd from the spawn is outside the 30 yd
+        // anchor, so only its 37.7 yd from B counts and it is held.
+        CHECK(SeekReachYd(fromB, 33.0f, true, anchorYd) > kSeekFallbackYd);
+        CHECK(SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, SeekReachYd(fromB, 33.0f, true, anchorYd), 10));
+        CHECK(SeekReachYd(fromB, 30.0f, true, anchorYd) <= kSeekFallbackYd);
         // A Son past both reaches is held.
-        CHECK(SeekReachYd(50.0f, 36.0f, true) > kSeekFallbackYd);
+        CHECK(SeekReachYd(50.0f, 36.0f, true, anchorYd) > kSeekFallbackYd);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

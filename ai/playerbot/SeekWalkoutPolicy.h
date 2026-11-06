@@ -365,15 +365,26 @@ namespace ai
         return false;
     }
 
+    // A retry (a second walk-out in the cycle) starts only while the siphon is still more than kSeekWalkoutRetryMinMs
+    // away, read when it starts against the deadline stored by the cycle's first walk-out: the failed puller's walk
+    // back (up to kSeekWalkoutReturnMs) runs between the end that reopened the cycle and this start.
+    inline bool WalkoutRetryStartInTime(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint32_t nowMs)
+    {
+        if (s.countedCycle != cycleNo || s.cycleStarts < 1)
+            return true;
+        return static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(kSeekWalkoutRetryMinMs);
+    }
+
     // A new task for this puller: WalkoutMayStart, the bot not sitting out its exclusion (a scan cached before the
-    // exclusion may still name it), and the next Blood Siphon due in kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once
+    // exclusion may still name it), a retry still in time (WalkoutRetryStartInTime), and the next Blood Siphon due in
+    // kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once
     // due): the dose window's whole length, so the Son is back and burned before the siphon (the 12 s non-tank burn,
     // SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the healers meanwhile).
     inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
                                    std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs)
     {
         return dueInMs <= kSeekWalkoutSiphonLeadMs && WalkoutMayStart(s, cycleNo, son) &&
-            !WalkoutExcluded(s, bot, nowMs);
+            !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs);
     }
 
     // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in
@@ -492,6 +503,16 @@ namespace ai
             s.lastCycle = s.prevLastCycle;
         }
         WalkoutFinish(s, WalkoutEnd::Abort, nowMs);
+    }
+
+    // The shot could not be cast at the stand: abort unspent, and the puller sits out the picks like a move fail, so the
+    // retry goes to another bot (the cached scan would hand it the same puller, Son and stand, to fail again).
+    inline void WalkoutCastFailed(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s))
+            return;
+        WalkoutAbortUnspent(s, nowMs);
+        WalkoutExclude(s, bot, nowMs);
     }
 
     // Walked Sons that died (or left the map) are forgotten, the running task's own Son excepted: the two Sons near the

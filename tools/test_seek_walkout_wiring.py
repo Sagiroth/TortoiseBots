@@ -116,7 +116,7 @@ class SeekWalkoutRound1(unittest.TestCase):
         self.assertIn("ai->CanCastSpell(spell, task.source)", walk)
         self.assertLess(walk.index("ai->CanCastSpell(spell, task.source)"), walk.index("ai->CastSpell(spell, task.source)"))
         self.assertIn("AbortSeekWalkoutUnspent(ai, bot, sonYd);", walk)
-        self.assertIn("WalkoutAbortUnspent(", body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)"))
+        self.assertIn("WalkoutCastFailed(", body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)"))
 
     def test_any_end_walks_back_without_attacking(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -237,7 +237,7 @@ class SeekWalkoutT1105h(unittest.TestCase):
 class SeekWalkoutT1105j(unittest.TestCase):
     def test_a_failed_walkout_may_retry_once_in_the_cycle(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo))", update)
+        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo) ||", update)
         self.assertIn("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);", update)
         self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs);", update)
         # A walked Son that died is forgotten before the scan, so its respawn is the retry's Son.
@@ -249,6 +249,16 @@ class SeekWalkoutT1105j(unittest.TestCase):
         self.assertIn("LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened);",
                       update)
         self.assertIn('"seek pull: walk-out timeout shot=%d dist=%.1f retry=%d"', ACTIONS)
+
+    def test_the_retry_time_is_read_at_the_start(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs)", update)
+
+    def test_a_cast_fail_excludes_the_puller_and_rescans(self):
+        abort = body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)")
+        self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());",
+                      abort)
+        self.assertIn("it->second.scanned = false;", abort)
 
 
 if __name__ == "__main__":

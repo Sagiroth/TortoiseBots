@@ -455,7 +455,7 @@ static void TestExcludedPullerNeverRestarts()
     // Two quick move failures, an immediate return inside, and a start while the scan still names the same bot: the
     // start check under the lock refuses the excluded bot; another bot may start.
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3, 60000);
+    WalkoutStart(s, 7, 100, 1000, 3, 89000); // due at 90000: the retry is still in time at 61500
     WalkoutNoteMove(s, false);
     WalkoutNoteMove(s, false);
     WalkoutAbortUnspent(s, 1500);
@@ -608,8 +608,47 @@ static void TestWalkoutForgetsDeadSons()
     CHECK(!WalkoutMayStart(s, 3, 200));
 }
 
+static void TestWalkoutRetryTimeCheckedAtStart()
+{
+    // The retry's 25 s minimum is checked when the replacement starts, against the stored siphon deadline: a timeout
+    // with 40 s left reopens the cycle, but a walk back that ends with 20 s left leaves no time for a second Son.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 65000); // the siphon is due at 66000
+    CHECK(WalkoutFinish(s, WalkoutEnd::Timeout, 26000)); // 40 s left
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStartFor(s, 3, 200, 8, 26000, 40000));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 46000, 20000)); // the walk back ended with 20 s left
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 41000, 25000)); // exactly 25 s is not more
+    CHECK(WalkoutMayStartFor(s, 3, 200, 8, 40999, 25001));
+    // The check is the retry's only: the next cycle's first walk-out keeps the plain lead.
+    CHECK(WalkoutMayStartFor(s, 4, 200, 8, 70000, 20000));
+    // An unspent abort's retry is held to the same deadline.
+    SeekWalkoutState u;
+    WalkoutStart(u, 7, 100, 1000, 3, 65000);
+    WalkoutAbortUnspent(u, 2000);
+    WalkoutReturnDone(u);
+    CHECK(WalkoutMayStartFor(u, 3, 100, 8, 2000, 64000));
+    CHECK(!WalkoutMayStartFor(u, 3, 100, 8, 46000, 20000));
+}
+
+static void TestCastFailExcludesPuller()
+{
+    // A cast that fails at the stand frees the Son and (with time left) the cycle, and the puller sits out the picks
+    // for 60 s like a move fail: the retry goes to another bot instead of the same puller, Son and stand.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 65000);
+    WalkoutCastFailed(s, 7, 2000);
+    WalkoutReturnDone(s);
+    CHECK(WalkoutExcluded(s, 7, 2000));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 2500, 63500));
+    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 2500, 63500));
+    CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
+}
+
 int main()
 {
+    TestWalkoutRetryTimeCheckedAtStart();
+    TestCastFailExcludesPuller();
     TestWalkoutTimeoutLeavesCycleOpen();
     TestWalkoutTimeoutLateSpendsCycle();
     TestWalkoutUnspentRetryNeedsTimeAndCap();

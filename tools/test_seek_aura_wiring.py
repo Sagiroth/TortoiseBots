@@ -529,9 +529,10 @@ class SeekReachFromAnchor(unittest.TestCase):
     # walk-out brings to the anchor's far edge stands 37-38 yd from B and was held through the siphon.
     def test_the_reach_reads_the_anchor_centre(self):
         reach = body(ACTIONS, "float SeekReachOf(const SeekFight& state, Unit* unit)")
-        self.assertIn("SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored)", reach)
+        self.assertIn("SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored, state.anchorRadius)", reach)
         read = body(ACTIONS, "bool ReadSeekFight(")
         self.assertIn("out.anchored = BossAnchorOfBoss(bot->GetMapId(), row->bossEntry, false, reachAnchor);", read)
+        self.assertIn("out.anchorRadius = reachAnchor.radius;", read)
         self.assertLess(read.index("out.anchored = BossAnchorOfBoss("), read.index("const float reachYd = SeekReachOf(out, unit);"))
         self.assertIn("SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, reachYd, out.seekers)",
                       read)
