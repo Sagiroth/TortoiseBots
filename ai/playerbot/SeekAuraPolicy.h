@@ -5,6 +5,7 @@
 // another Son of Hakkar 11357. Tested in tools/test_seek_aura_policy.cpp; callers pass plain numbers so this header
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -189,6 +190,14 @@ namespace ai
     inline bool SeekFinishableInReach(bool inCombat, float hpPct, float holdPct, float distFromSpotYd, int seekers)
     {
         return SeekSourceFinishable(inCombat, hpPct, holdPct, seekers) && distFromSpotYd <= kSeekFallbackYd;
+    }
+
+    // The seek's reach of a Son: its distance from B, or with a live boss anchor the nearer of that and its distance
+    // from the anchor's centre (the boss's spawn). B sits 15 yd from Hakkar's spawn, so a Son brought to the far edge
+    // of the anchor stood 37-38 yd from B, beyond kSeekFallbackYd, and was held through the siphon.
+    inline float SeekReachYd(float distFromSpotYd, float distFromAnchorYd, bool anchored)
+    {
+        return anchored ? std::min(distFromSpotYd, distFromAnchorYd) : distFromSpotYd;
     }
 
     // A Son that has fought a non-tank this long goes to the first off-tank (SeekTakeFightingSonOnHealer); this long

@@ -234,5 +234,22 @@ class SeekWalkoutT1105h(unittest.TestCase):
         self.assertIn("lastMove.movePathType", walk)
 
 
+class SeekWalkoutT1105j(unittest.TestCase):
+    def test_a_failed_walkout_may_retry_once_in_the_cycle(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo))", update)
+        self.assertIn("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);", update)
+        self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs);", update)
+        # A walked Son that died is forgotten before the scan, so its respawn is the retry's Son.
+        self.assertIn("WalkoutForgetGoneSons(it->second.state,", update)
+        self.assertLess(update.index("WalkoutForgetGoneSons("), update.index("state = it->second.state;"))
+
+    def test_a_timeout_logs_the_shot_and_the_distance(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened);",
+                      update)
+        self.assertIn('"seek pull: walk-out timeout shot=%d dist=%.1f retry=%d"', ACTIONS)
+
+
 if __name__ == "__main__":
     unittest.main()

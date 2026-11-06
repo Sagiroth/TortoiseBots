@@ -264,7 +264,7 @@ class SeekRolesWiring(unittest.TestCase):
         # A Son already fighting inside the reach is the pick wherever it stands (11-25 yd from the spot on the
         # healers was never selected at the spot's radius).
         self.assertIn("engagedSon = true", read)
-        self.assertIn("unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd", read)
+        self.assertIn("unit->IsInCombat() && reachYd <= kSeekFallbackYd", read)
 
     def test_the_pull_walk_moves_the_tank(self):
         # The Walk step is the tank's own movement: the branch calls the same MoveTo the drag back to B uses, aimed at
@@ -522,6 +522,24 @@ class DeclarationsMatchDefinitions(unittest.TestCase):
         for header, declaration, source, definition in pairs:
             self.assertIn(declaration, header)
             self.assertIn(definition, source)
+
+
+class SeekReachFromAnchor(unittest.TestCase):
+    # With the boss's anchor row the seek's reach is the nearer of B and the anchor's centre (SeekReachYd): a Son the
+    # walk-out brings to the anchor's far edge stands 37-38 yd from B and was held through the siphon.
+    def test_the_reach_reads_the_anchor_centre(self):
+        reach = body(ACTIONS, "float SeekReachOf(const SeekFight& state, Unit* unit)")
+        self.assertIn("SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored)", reach)
+        read = body(ACTIONS, "bool ReadSeekFight(")
+        self.assertIn("out.anchored = BossAnchorOfBoss(bot->GetMapId(), row->bossEntry, false, reachAnchor);", read)
+        self.assertLess(read.index("out.anchored = BossAnchorOfBoss("), read.index("const float reachYd = SeekReachOf(out, unit);"))
+        self.assertIn("SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, reachYd, out.seekers)",
+                      read)
+        self.assertIn("anchorReach ? SeekReachOf(out, candidate)", read)
+        self.assertIn("SeekReachOf(out, latched) <= kSeekFallbackYd", read)
+        hold = body(ACTIONS, "bool SeekHoldsUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("SeekReachOf(state, unit)", hold)
+        self.assertNotIn("distFromSpotYd", hold)
 
 
 if __name__ == "__main__":

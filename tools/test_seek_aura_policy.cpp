@@ -477,6 +477,27 @@ int main()
     CHECK(SeekClockStartOver(true, 1000, 12000));
     CHECK(!SeekClockStartOver(true, 0, 12000));
 
+    // SeekSonAtAnchorNorthEdgeInReach: with a live boss anchor the reach is measured from the anchor's centre (the
+    // boss's spawn) as well as from B. A Son the walk-out brought to the anchor's north edge stands 25 yd from the
+    // spawn but 37.7 yd from B (15 yd south of it): it is in reach, picked, and released for the forced burn.
+    {
+        const float fromB = 37.7f;
+        const float fromAnchor = 25.0f;
+        CHECK(fromB > kSeekFallbackYd);
+        const float reach = SeekReachYd(fromB, fromAnchor, true);
+        CHECK(reach <= kSeekFallbackYd);
+        CHECK(!SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, reach, 10));
+        CHECK(SeekFinishableInReach(true, 25.0f, 30.0f, reach, 10));
+        // Unanchored, the reach is still B's alone: the same Son is held.
+        const float unanchored = SeekReachYd(fromB, fromAnchor, false);
+        CHECK(unanchored > kSeekFallbackYd);
+        CHECK(SeekHoldDecision(true, true, false, true, 60.0f, 30.0f, unanchored, 10));
+        // The nearer of the two counts: a Son near B but far from the spawn stays in reach.
+        CHECK(SeekReachYd(10.0f, 40.0f, true) <= kSeekFallbackYd);
+        // A Son past both reaches is held.
+        CHECK(SeekReachYd(50.0f, 36.0f, true) > kSeekFallbackYd);
+    }
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

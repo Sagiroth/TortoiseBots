@@ -784,7 +784,21 @@ struct SeekFight
     // The fight's Sons on a non-tank, and since when (the healer clock): the hold lets one go once it has sat there too
     // long (SeekHoldDecision's non-tank time).
     std::map<std::uint64_t, SeekHeldSon> nonTankSince;
+    // The boss's anchor centre (its spawn), when the boss has an anchor row: the seek's reach is measured from it
+    // too (SeekReachYd).
+    bool anchored = false;
+    float anchorX = 0.0f, anchorY = 0.0f, anchorZ = 0.0f;
 };
+
+// The seek's reach of a Son (SeekReachYd): from B, or the nearer of B and the anchor's centre.
+float SeekReachOf(const SeekFight& state, Unit* unit)
+{
+    const float fromSpotYd = unit->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
+    const float fromAnchorYd = state.anchored
+        ? unit->GetDistance3dToCenter(state.anchorX, state.anchorY, state.anchorZ)
+        : fromSpotYd;
+    return SeekReachYd(fromSpotYd, fromAnchorYd, state.anchored);
+}
 
 struct SeekTickCache
 {
@@ -1487,6 +1501,16 @@ void LogSeekWalkoutEnd(PlayerbotAI* ai, WalkoutEnd end)
     LogSeekWalkout(ai, info1);
 }
 
+// A timeout's row: whether the shot landed (the Son joined the fight), the puller's distance to its Son (-1: unknown),
+// and whether the cycle stays open for one more walk-out.
+void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry)
+{
+    char info1[128];
+    snprintf(info1, sizeof(info1), "seek pull: walk-out timeout shot=%d dist=%.1f retry=%d", shot ? 1 : 0, sonYd,
+             retry ? 1 : 0);
+    LogSeekWalkout(ai, info1);
+}
+
 // An abort's row: why, the puller's distance to its Son (-1: unknown), the stand, the last move's result, and for the last
 // refused move the path type, the path's length to the stand and the mover's reason.
 void LogSeekWalkoutAbort(PlayerbotAI* ai, const char* reason, float sonYd, const SeekWalkoutState& s)
@@ -1742,6 +1766,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         auto const it = g_walkouts.find(instanceId);
         if (it != g_walkouts.end())
         {
+            WalkoutForgetGoneSons(it->second.state, [map](std::uint64_t guid)
+            {
+                Creature* const son = map->GetCreature(ObjectGuid(guid));
+                return !son || !sServerFacade.IsAlive(son);
+            });
             state = it->second.state;
             it->second.touchedMs = nowMs;
             scanFresh = it->second.scanned && nowMs - it->second.scanMs < 1000;
@@ -1780,6 +1809,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             WalkoutNoteShot(state);
         bool const backInside = puller && WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
         WalkoutEnd const end = WalkoutCheck(state, nowMs, pullerOk, sonOk, backInside);
+        bool reopened = false;
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
@@ -1791,7 +1821,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             if (end != WalkoutEnd::None)
             {
                 bool const before = WalkoutBusy(it->second.state);
-                WalkoutFinish(it->second.state, end, nowMs);
+                reopened = WalkoutFinish(it->second.state, end, nowMs);
                 NoteWalkoutBusy(before, it->second.state);
             }
         }
@@ -1799,6 +1829,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         {
             LogSeekWalkoutAbort(ai, problem ? problem : "son gone", puller && son ? puller->GetDistance(son) : -1.0f,
                                 state);
+            return;
+        }
+        if (end == WalkoutEnd::Timeout)
+        {
+            LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened);
             return;
         }
         if (end != WalkoutEnd::None)
@@ -1876,7 +1911,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
-    if (!wanted || (state.cycleSpent && state.lastCycle == cycleNo))
+    if (!wanted || !WalkoutCycleOpen(state, cycleNo))
         return;
     // The start check's scan: nothing else can pull (no Son fights, none in the tanks' reach or the anchored shot's),
     // and the Son out of combat nearest the anchor's centre not walked to yet. One grid walk per instance a second.
@@ -1976,7 +2011,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))
             return;
         bool const before = WalkoutBusy(record.state);
-        WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo);
+        WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);
         record.state.standX = scan.x;
         record.state.standY = scan.y;
         record.state.standZ = scan.z;
@@ -2151,19 +2186,26 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     // the seek's reach: waiting for the next window let the off-spot Son reset (read from the fight's units, before
     // the grid walk below). A Son farther than the reach is not counted: it can neither widen the search nor drop the
     // gather latch, since the gather cannot stand around it without leaving B.
+    {
+        BossAnchorCircle reachAnchor;
+        out.anchored = BossAnchorOfBoss(bot->GetMapId(), row->bossEntry, false, reachAnchor);
+        out.anchorX = reachAnchor.x;
+        out.anchorY = reachAnchor.y;
+        out.anchorZ = reachAnchor.z;
+    }
     bool belowHold = false;
     bool engagedSon = false;
     for (Unit* unit : fight.units)
     {
         if (unit->GetEntry() != row->targetEntry)
             continue;
-        const float distFromSpotYd = unit->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
+        const float reachYd = SeekReachOf(out, unit);
         // A Son already fighting inside the seek's reach is the pick wherever it stands (the one left on the healers
         // at 11-25 yd from the spot was never selected at the spot's radius).
-        if (unit->IsInCombat() && distFromSpotYd <= kSeekFallbackYd)
+        if (unit->IsInCombat() && reachYd <= kSeekFallbackYd)
             engagedSon = true;
         if (!belowHold &&
-            SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, distFromSpotYd, out.seekers))
+            SeekFinishableInReach(unit->IsInCombat(), unit->GetHealthPercent(), holdPct, reachYd, out.seekers))
             belowHold = true;
         if (belowHold && engagedSon)
             break;
@@ -2177,17 +2219,27 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     // reach, the search reaches 35 yd, so the gather goes to the source wherever it stands.
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     const float searchYd = SeekSourceSearchYd(roles.tanks.size() >= 3, out.forceBurn, belowHold, engagedSon);
-    const std::vector<Creature*> sources =
-        SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, searchYd);
+    // At the full reach the search is the anchor-aware one: the walk widens by the anchor centre's distance from B
+    // and keeps the Sons inside SeekReachOf. The spot's own radius stays B's.
+    const bool anchorReach = out.anchored && searchYd >= kSeekFallbackYd;
+    const float spotToAnchorYd = std::sqrt((row->spotX - out.anchorX) * (row->spotX - out.anchorX) +
+        (row->spotY - out.anchorY) * (row->spotY - out.anchorY) + (row->spotZ - out.anchorZ) * (row->spotZ - out.anchorZ));
+    const float walkYd = anchorReach ? searchYd + spotToAnchorYd : searchYd;
+    std::vector<Creature*> sources = SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, walkYd);
+    sources.erase(std::remove_if(sources.begin(), sources.end(), [&](Creature* candidate)
+    {
+        const float yd = anchorReach ? SeekReachOf(out, candidate)
+                                     : candidate->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ);
+        return yd > searchYd;
+    }), sources.end());
     std::vector<SeekSourceChoice> atSpot;
     atSpot.reserve(sources.size());
     for (Creature* candidate : sources)
     {
-        // The search walk is bounded by the row's own radius; what it brings is the pick only while the Son fights and
-        // the raid still misses the dose (SeekSourceSelectable). A dosed raid picks nothing new: the current latch, if
-        // any, is kept by SeekLatchedGatherSource and the hold rule leaves it alone.
-        if (candidate->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) > searchYd)
-            continue;
+        // The search walk is bounded by the row's own radius (the anchor-aware reach at the fallback's); what it brings
+        // is the pick only while the Son fights and the raid still misses the dose (SeekSourceSelectable). A dosed
+        // raid picks nothing new: the current latch, if any, is kept by SeekLatchedGatherSource and the hold rule
+        // leaves it alone.
         if (!SeekSourceSelectable(candidate->IsInCombat(), out.seekers))
             continue;
         atSpot.push_back(SeekSourceChoice{candidate->GetObjectGuid().GetRawValue(), candidate->GetHealthPercent()});
@@ -2371,7 +2423,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     }
     Creature* latched = gatherGuid ? bot->GetMap()->GetCreature(ObjectGuid(gatherGuid)) : nullptr;
     const bool latchInReach = latched && latched->GetEntry() == row->targetEntry && sServerFacade.IsAlive(latched) &&
-        latched->GetDistance3dToCenter(row->spotX, row->spotY, row->spotZ) <= kSeekFallbackYd;
+        SeekReachOf(out, latched) <= kSeekFallbackYd;
     const std::uint64_t chosenGuid = SeekLatchedGatherSource(latchInReach, gatherGuid, atSpot);
     Unit* source = nullptr;
     for (Creature* candidate : sources)
@@ -2486,9 +2538,8 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
     if (!IsSeekSource(state, unit))
         return false;
     const float holdPct = static_cast<float>(state.row->priority);
-    const float distFromSpotYd = unit->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
-                            unit->GetHealthPercent(), holdPct, distFromSpotYd, state.seekers,
+                            unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
                             SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
 }
 
