@@ -49,6 +49,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.EnableGreet`](#aiplayerbotenablegreet) | `1` | Enables text emote greetings when a bot encounters a human player. |
 | [`AiPlayerbot.GreetCooldown`](#aiplayerbotgreetcooldown) | `600` | Cooldown in seconds before a bot may greet the same player again. |
 | [`AiPlayerbot.RandomBotGreet`](#aiplayerbotrandombotgreet) | `0` | Allows masterless pool bots to greet players in addition to owned bots. |
+| [`AiPlayerbot.PassingBuffs`](#aiplayerbotpassingbuffs) | `1` | Pool bots buff (and sometimes heal) real players they pass in the world. |
 | [`AiPlayerbot.RandomBotShowHelmet` / `RandomBotShowCloak`](#aiplayerbotrandombotshowhelmet--randombotshowcloak) | `1` / `1` | Helmet/cloak visibility for pool bots; `0` hides them on the bots' next login. |
 | [`AiPlayerbot.PoolBotTradeMode`](#aiplayerbotpoolbottrademode) | `0` | Governs whether masterless pool bots accept trade requests from players. |
 | [`AiPlayerbot.TradeActionExcludedPrefixes`](#aiplayerbottradeactionexcludedprefixes) | `RPLL_H_,DBMv4` | Chat prefixes ignored by bots so addons do not trigger trade windows. |
@@ -514,6 +515,15 @@ Allows masterless pool bots to greet players in addition to player-owned bots.
 By default (`0`), greeting emotes are restricted to bots with a live (online) master. This prevents hundreds of roaming pool bots in starting zones from overwhelming visitors with greeting emotes.
 
 Set to `1` to allow all masterless open-world pool bots to greet players.
+
+### `AiPlayerbot.PassingBuffs`
+Pool bots buff (and sometimes heal) real players they pass in the world.
+**Default:** `1` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+A passing priest casts Power Word: Fortitude, a druid Mark of the Wild, a mage Arcane Intellect (mana users only), a paladin one Blessing fitting the player's class; a passing priest or druid lands Renew or Rejuvenation on a player below 35% health. Only instant casts on the move: the bot never stops, turns around or leaves its travel. Buffs roll 1 in 5 per meeting with a 10-minute cooldown per bot-player pair; heals roll 1 in 2 with a 60-second cooldown.
 
 </details>
 

@@ -7,6 +7,7 @@
 #include "playerbot/policy/combat/AttackersAoeDensityPolicy.h"
 #include "Movement/spline/MoveSpline.h"
 #include "playerbot/policy/combat/RunnerFinishPolicy.h"
+#include "playerbot/CharmYieldPolicy.h"
 #include "Maps/PathFinder.h"
 #include "runtime/RunReleaseHold.h"
 
@@ -387,9 +388,27 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
     return inCombat;
 }
 
+bool AttackersValue::CharmedAllyOffLimits(Unit* target, Player* player)
+{
+    if (!sPlayerbotAIConfig.dungeonRunCharmYield || !target || !player)
+        return false;
+    Player* ally = dynamic_cast<Player*>(target);
+    if (!ally || ally == player)
+        return false;
+    Group* group = player->GetGroup();
+    bool const sameGroup = group && ally->GetGroup() == group;
+    ObjectGuid const charmer = ally->GetCharmerGuid();
+    return ai::CharmedAllyIsOffLimits(true, sameGroup, !charmer.IsEmpty(), charmer.IsPlayer());
+}
+
 bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool checkInCombat, bool validatePossibleTarget)
 {
     Player* playerToCheckAgainst = owner != nullptr ? owner : player;
+
+    // AiPlayerbot.DungeonRunCharmYield: a group member a creature is charming is nobody's target, an explicit attack
+    // order included (the order itself is refused on the attack path).
+    if (target && CharmedAllyOffLimits(target, playerToCheckAgainst))
+        return false;
 
     // An explicit attack order is the player's pull: the target is valid before either
     // side has threat, so it passes the combat-only gate below until the pull begins.

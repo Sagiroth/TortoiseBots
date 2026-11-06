@@ -139,16 +139,17 @@ Disengages scoped bots (selected bot if targeted, else party) into passive follo
 Pulls your hostile target with the party tank while other bots hold at your position.
 
 ```text
-.bot action pull [seconds] [ranged]
+.bot action pull [seconds] [ranged|body]
 ```
 
-- `[seconds]` (0 to 60, default 10) and `[ranged]` in either order.
+- `[seconds]` (0 to 60, default 10) and `[ranged]` or `[body]` in either order; `ranged` and `body` exclude each other.
 - Others hold at your position for the delay after the tank engages, then join combat.
 - The tank's rotation takes over; no second order needed.
 - The join window runs on its own clock.
 - `attack` and `flee` end the window early; combat end, death, or movement orders only release the anchor hold.
 - A plain pull walks into melee unless every ranged-opening condition holds.
 - `ranged` walks to a firing position first; `pullback` always opens from range.
+- `body` walks in and pulls in melee whatever the mob is, over the conditions below.
 - If the tank cannot shoot, it walks in instead.
 
 Ranged-opening conditions (all must hold):
@@ -183,11 +184,12 @@ Ranged-opening conditions (all must hold):
 Pulls the target from range and retreats to your position, breaking line of sight around corners.
 
 ```text
-.bot action pullback [seconds] [ranged]
+.bot action pullback [seconds] [ranged|body]
 ```
 
-- `[seconds]` (0 to 60, default 5) and `[ranged]` in either order.
+- `[seconds]` (0 to 60, default 5) and `[ranged]` or `[body]` in either order; `ranged` and `body` exclude each other.
 - The tank shoots, then returns to where you stand.
+- `body` makes it walk in and pull in melee first, then return the same way.
 - Others attack once the tank is back and the join delay stamped at the shot has run out.
 - No working ranged weapon: the tank strikes once in melee and sprints back.
 - The tank holds at your position for the fight the pull brought in.
@@ -227,6 +229,7 @@ Resumes follow formation behind you on scoped bots (selected bot if targeted, el
 - If `AiPlayerbot.DungeonFollowHoldBeforePacks` is on, a trailing bot in a dungeon or raid holds outside unpulled packs and whispers you a warning.
 - It resumes when the pack dies or you return.
 - The hold opens past 30 yards and closes inside 25 yards.
+- When you step through a party mage's city portal, bots that follow you walk to it and step through too, the mage last. A bot that misses the portal before it closes is brought to you.
 
 ### `.bot action focus skull`
 

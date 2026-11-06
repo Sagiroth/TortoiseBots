@@ -55,5 +55,11 @@ void OnBotRankDisband(uint32_t guildId);
 // rank information (`TBM:ORDER_ACCESS|-|-|-|-|0|0`). World thread only.
 std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow);
 
+// Number of unlocked bank tabs of the guild, 0 when the guild never bought
+// a bank (no guild_bank_tabs row). Reads the same rows the core loads its
+// bank state from. Sync database read: travel requests and arrival checks
+// only, never per-tick logic.
+uint32_t GuildBankTabCount(uint32_t guildId);
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

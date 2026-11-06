@@ -146,6 +146,25 @@ bool HandleList(ChatHandler* handler, char const* /*args*/)
         handler->PSendSysMessage("No owned PlayerBots are online.");
     return true;
 }
+
+bool HandleAlts(ChatHandler* handler, char const* /*args*/)
+{
+    Player* requester = Requester(handler);
+    if (!requester || !requester->GetSession())
+    {
+        handler->PSendSysMessage("You must be in-game.");
+        return true;
+    }
+    auto lines = AltBotService::Instance().AwayLines(requester->GetSession()->GetAccountId());
+    for (auto const& named : lines)
+    {
+        handler->PSendSysMessage("%s", named.second.c_str());
+        handler->PSendSysMessage("TBM:ALTSUM|%s|%s",
+            ProtocolSafe(named.first).c_str(), ProtocolSafe(named.second).c_str());
+    }
+    handler->PSendSysMessage("TBM:ALTSUM_END|%u", static_cast<uint32>(lines.size()));
+    return true;
+}
 bool HandleStats(ChatHandler* handler, char const* /*args*/)
 {
     Player* requester = Requester(handler);

@@ -25,7 +25,8 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
 ## What the bot does in combat
 
 ### Protection (Tank)
-- **Pull & Engagement:** Opens with *Charge* on distant targets before swapping to Defensive Stance. Ranged pulls using bows, guns, or thrown weapons fire when line of sight or distance requires it.
+- **Pull & Engagement:** With [`AiPlayerbot.WarriorGapCloser`](../server/settings/class-behaviour.md#aiplayerbotwarriorgapcloser) on (off by default), out of combat, with a target 8-25 yards away, swaps to Battle Stance and opens with *Charge*, then swaps back to Defensive Stance. A mob already hitting a party member (a pack a rogue or healer pulled) is charged first; a crowd-controlled mob never is. In a dungeon an unengaged pack is only charged on a melee pull or attack order. Ranged pulls using bows, guns, or thrown weapons fire when line of sight or distance requires it ([`AiPlayerbot.WarriorGapCloser`](../server/settings/class-behaviour.md#aiplayerbotwarriorgapcloser)).
+- **Healer Rescue:** In combat, a mob hitting the healer or another non-tank member 8-25 yards away gets *Intercept* (a Berserker Stance swap and back) when the rage left after the swap pays for it; otherwise the tank runs in and taunts.
 - **Threat Generation:**
   - Maintains *Shield Block* on cooldown, which opens up *Revenge*.
   - Stacks *Sunder Armor* to 5 stacks, refreshing before expiry.
@@ -41,6 +42,7 @@ Warriors serve as primary dungeon tanks or powerful melee DPS, managing dynamic 
   - Saves *Challenging Shout* for real emergencies: 3 or more loose mobs on non-tanks, not for a pack it already holds.
 
 ### Arms & Fury (Melee DPS)
+  - With `AiPlayerbot.WarriorGapCloser` on (off by default), out of combat and with the target 8-25 yards away, opens with *Charge* (Fury swaps to Battle Stance for it and back to Berserker Stance after); a crowd-controlled mob is never charged, and in a dungeon only a mob already in the fight is.
   - Fights in Battle Stance, maintaining *Rend*, casting *Mortal Strike* on cooldown and *Overpower* on dodges. It swaps to Berserker Stance for *Pummel* and *Intercept*, then back to Battle Stance, but never dances for anything else — and never casts *Thunder Clap* in a group (a tank-only spell; solo Arms keeps it).
   - Cleaves packs with *Sweeping Strikes* (Battle Stance, 3 or more attackers in melee) and *Whirlwind* (only while already in Berserker Stance). *Sweeping Strikes* and its rage spenders agree on the pack size, so on two targets Arms keeps its single-target cycle instead of holding damage back for a buff that never fires. *Sweeping Strikes* is never started, and is dropped, beside a mob under the party's crowd control.
 - **Fury:**

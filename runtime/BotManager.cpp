@@ -10,6 +10,7 @@
 #include "ClaimLifecycle.h"
 #include "AltBotService.h"
 #include "DowntimeService.h"
+#include "PassingBuffsService.h"
 #include "PlayerbotAIAdapter.h"
 #include "PlayerbotAIStorage.h"
 #include "RandomBotAccountRegistry.h"
@@ -987,6 +988,7 @@ void BotManager::OnPlayerLogin(::Player* player)
         if (it != m_bots.end())
             ReleaseToClient(player);
         RebindOwnedBots(player);
+        AltBotService::Instance().OnOwnerLogin(player);
         return;
     }
 
@@ -2342,6 +2344,7 @@ void BotManager::OnWorldUpdate(uint32_t diff)
 {
     AltBotService::Instance().Update();
     TortoiseBots::DowntimeService::Instance().Update();
+    TortoiseBots::PassingBuffsService::Instance().Update(diff);
     // Core owns Headless session lifecycle (queue, LoginPlayer dispatch, reclaim).
     // Module only tracks BotRecord and polls adapter state. No pending promotion.
     for (auto it = m_bots.begin(); it != m_bots.end(); )

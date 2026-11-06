@@ -138,6 +138,13 @@ int main()
     CHECK(DeliveryMailsAfterNoBanker(3));
     CHECK(DeliveryMailsAfterNoBanker(9));
 
+    // A guild with no bank tabs at all skips the banker search: the
+    // delivery walks straight to a mailbox instead of hunting a banker
+    // whose bank has nowhere to put the items.
+    CHECK(DeliverySkipsBanker(0));
+    CHECK(!DeliverySkipsBanker(1));
+    CHECK(!DeliverySkipsBanker(5));
+
     // One request per bot pending; the drain takes all in arrival order.
     DeliveryQueue queue;
     CHECK(queue.PendingCount() == 0);

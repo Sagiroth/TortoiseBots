@@ -148,6 +148,26 @@ int main()
     CHECK(!SeekHoldDecision(true, true, false, true, 14.0f, 30.0f, 5.0f, 5));
     CHECK(!SeekHoldDecision(true, true, true, false, 80.0f, 30.0f, 5.0f, 5));
 
+    // SeekLateEngagedSonForcesBurn: a picked Son that only joins the fight with the siphon due inside 30 s is burnt at
+    // once, not at the forced burn's own 15 s, so its cloud still lands in time (walk 41 left three such Sons at 67-90 %
+    // seconds before the siphon). A Son that is not fighting, a due time further out, and a fight with no due time do
+    // not force it; an overdue pick is late by definition.
+    CHECK(kSeekLateEngageMs == 30000);
+    CHECK(SeekLateEngagedBurn(true, 91000, 25000));
+    CHECK(SeekLateEngagedBurn(true, 91000, 30000));
+    CHECK(!SeekLateEngagedBurn(true, 91000, 30001));
+    CHECK(!SeekLateEngagedBurn(false, 91000, 25000));
+    CHECK(!SeekLateEngagedBurn(true, 0, 0));
+    CHECK(SeekLateEngagedBurn(true, 91000, 0));
+
+    // SeekTakeFightingSonOnHealer: a Son that sits on a healer (or any other non-tank) is the first off-tank's own
+    // take once the third off-tank cannot take it — dead, or holding a Son of its own — and the non-tank has had it
+    // for 8 s. While the third off-tank can take it, the first off-tank leaves the Son alone.
+    CHECK(kSeekHealerTakeMs == 8000);
+    CHECK(SeekTakeFightingSonOnHealer(false, 8000));
+    CHECK(!SeekTakeFightingSonOnHealer(false, 7999));
+    CHECK(!SeekTakeFightingSonOnHealer(true, 8000));
+
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
     CHECK(!SeekWanted(true, true, false, false, true, false, true));
@@ -166,26 +186,41 @@ int main()
     CHECK(!SeekTankPullDue(true, true, 3, 59.0f));
     CHECK(!SeekTankPullDue(false, false, 3, 59.0f));
 
-    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to and hit, not dropped after one
-    // target set (the tank stayed near the spot and the rotation returned to the boss, so 75 of 83 siphons had no Son
-    // in combat). The attack order carries the walk and the swing itself; once the Son fights, or follows the tank,
-    // the take/drag branch owns it.
-    CHECK(SeekTankPullNeeded(false, false));
-    CHECK(!SeekTankPullNeeded(true, false));
-    CHECK(!SeekTankPullNeeded(false, true));
-    CHECK(!SeekTankPullNeeded(true, true));
+    // SeekTankPullWalksToOutOfCombatSon: a Son 30 yd out and not fighting is walked to (the tank moves itself), only a
+    // Son at melee reach is hit, and once the Son fights or follows the tank the take/drag branch owns it. The old
+    // branch set the target and gave the tick back on every read, so the tank never moved (walk 41: 27-54 yd between
+    // tank and Son in every undosed window).
+    CHECK(SeekTankPullStep(false, false, 30.0f) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, kSeekPullLatchYd) == SeekPullStep::Walk);
+    CHECK(SeekTankPullStep(false, false, 4.0f) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(false, false, kSeekPullHitYd) == SeekPullStep::Hit);
+    CHECK(SeekTankPullStep(true, false, 30.0f) == SeekPullStep::Done);
+    CHECK(SeekTankPullStep(false, true, 30.0f) == SeekPullStep::Done);
+    CHECK(SeekTankPullStep(true, true, 0.0f) == SeekPullStep::Done);
 
-    // SeekTankPullHitNotHeld: the pulling tank's own hit on the one Son it is fetching, at 100 % and not fighting, is
-    // exempt from the seek hold, or the hold would stand the swing down and the Son would never aggro.
-    CHECK(SeekPullHitExempt(true, true, false));
-    // Only the picked Son: a puller's hit on another Son stays held, so the spare source is not damaged.
-    CHECK(!SeekPullHitExempt(true, false, false));
-    // Once the Son fights the hold applies to it like to any other Son; a bot that is not the puller never exempts.
-    CHECK(!SeekPullHitExempt(true, true, true));
-    CHECK(!SeekPullHitExempt(false, true, false));
-    CHECK(!SeekPullHitExempt(false, false, true));
+    // SeekPullLatchKeepsLeavingSon: a latched pull keeps after its Son while the Son is within 90 yd of B and the latch
+    // is younger than 20 s — the pickup radius (60 yd) alone dropped a Son that walked out mid-pull, which is why the
+    // tank never arrived (walk 41: the Son patrols 32 -> 112 yd from B).
+    CHECK(kSeekPullLatchYd == 90.0f);
+    CHECK(kSeekPullLatchMs == 20000);
+    CHECK(SeekPullLatchKeeps(true, 75.0f, 8000));
+    CHECK(SeekPullLatchKeeps(true, 30.0f, 0));
+    CHECK(!SeekPullLatchKeeps(false, 30.0f, 8000));
+    CHECK(!SeekPullLatchKeeps(true, 90.1f, 8000));
+    CHECK(!SeekPullLatchKeeps(true, 30.0f, 20001));
+    // The pickup rule still refuses a fresh pull past its own radius; the latch is what keeps a running one.
+    CHECK(!SeekTankPullDue(true, false, 3, 75.0f));
+
+    // SeekPullHitExemptOnLatchedTarget: the pulling tank's own hit on the Son its pull latched is exempt from the seek
+    // hold — before it fights and after, or the hold would stand the swing down and the Son would never come to the
+    // spot. Only that Son: a puller's hit on another Son stays held, so the spare source is not damaged, and a bot
+    // that is not the puller never exempts.
+    CHECK(SeekPullHitExemptOnLatch(true, true));
+    CHECK(!SeekPullHitExemptOnLatch(true, false));
+    CHECK(!SeekPullHitExemptOnLatch(false, true));
+    CHECK(!SeekPullHitExemptOnLatch(false, false));
     // The hold itself still answers true for a Son that is not the pick: the exemption is the caller's, on the puller's
-    // own strike against the Son it has not engaged yet.
+    // own strike against the Son its latch names.
     CHECK(SeekHoldDecision(false, true, false, false, 100.0f, 30.0f, 30.0f, 5));
 
     // SeekPullFallsBackToHunter: with fewer than three tanks alive the third off-tank's pull is a hunter's shot, then

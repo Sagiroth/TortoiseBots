@@ -28,6 +28,7 @@
 #include "../../runtime/AltBotPolicy.h"
 #include "../../runtime/AltBotService.h"
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/WhyTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/GuildOrderStore.h"
@@ -63,6 +64,7 @@
     // master pulls away, instead of finishing the meal.
 #include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
+#include "playerbot/PortalFollowPolicy.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -341,6 +343,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
     // thread and the same tick, after the maps may have despawned an add of the cached scan.
     ai::BossTacticsScanScope bossTacticsScan;
+    ai::ReleaseWalkoutPet(bot);
     ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
@@ -351,6 +354,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     }
 
     SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
+
+    // Before every engine and before any early return: a pet that reacted to the charmed member on its own, or kept
+    // an attack from before the charm, is stood down even while this bot's AI is throttled or yielding.
+    UpdateCharmedAllyPetHold();
 
     // Action log scope (AiPlayerbot.ActionLogScope = commanded): re-read at most
     // every 15 s per bot, here because the group, binding and hire lookups are
@@ -2724,7 +2731,7 @@ PlayerbotAI::BotCommandAuthTier PlayerbotAI::AuthTierForCommand(std::string cons
         word == "release" || word == "revive" || word == "corpse" || word == "trainer" ||
         word == "skill" || word == "faction" || word == "outfit" ||
         word == "go" || word == "range" || word == "flag" || word == "speak" ||
-        word == "cast" || word == "castnc" || word == "spell" ||
+        word == "cast" || word == "castnc" || word == "spell" || word == "portal" ||
         word == "pet" || word == "buff" || word == "share" || word == "accept" || word == "talk" ||
         word == "roll" || word == "ll" || word == "ss" || word == "chat" || word == "home" ||
         word == "logout" || word == "r" || word == "reward" ||
@@ -2829,6 +2836,10 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
     if (type == CHAT_MSG_SYSTEM)
         return;
+
+    // `.bot why`: an order this bot received (whisper/party/raid chat,
+    // run-leader or commander included), recorded for the trace.
+    TortoiseBots::WhyTraceService::Instance().NoteOrder(this, &fromPlayer, filtered);
 
     if (filtered.find(sPlayerbotAIConfig.commandSeparator) != std::string::npos)
     {
@@ -3133,6 +3144,9 @@ void PlayerbotAI::ChangeEngine(BotState type)
 void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 {
     SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
+    // `.bot why`: closes the tick line on every return path, and does nothing
+    // unless this bot is the one being traced.
+    TortoiseBots::WhyTraceService::TickScope whyScope(this);
     const bool previousActivityOverride = explicitActivityOverride;
     explicitActivityOverride = previousActivityOverride || forceActivity;
 
@@ -3416,6 +3430,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName(), master->GetName());
         }
 
+        UpdatePortalFollow(master, group);
+
         if (!group && sRandomBotFacade.IsFreeBot(bot) && !IsRealPlayer())
         {
             if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
@@ -3434,6 +3450,206 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     }
 
     explicitActivityOverride = previousActivityOverride;
+}
+
+// Mage-portal follow: the master stepped through a party mage's city portal
+// (often to another continent) and the bot is still behind. Walk to that
+// portal and step through it; the caster goes last; a bot that misses the
+// portal before the window runs out is summoned like the dungeon catch-up.
+namespace
+{
+bool IsPortalTeleportSpell(uint32 spellId)
+{
+    SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId);
+    if (!info)
+        return false;
+    if (info->EffectTriggerSpell[0])
+        info = sServerFacade.LookupSpellInfo(info->EffectTriggerSpell[0]);
+    if (!info)
+        return false;
+    return info->Effect[0] == SPELL_EFFECT_TELEPORT_UNITS ||
+        info->Effect[1] == SPELL_EFFECT_TELEPORT_UNITS ||
+        info->Effect[2] == SPELL_EFFECT_TELEPORT_UNITS;
+}
+
+class PartyPortalCheck
+{
+public:
+    explicit PartyPortalCheck(WorldObject const* origin, float range, Group const* group, ObjectGuid botGuid)
+        : i_origin(origin), i_range(range), i_group(group), i_botGuid(botGuid) {}
+    bool operator()(GameObject* go)
+    {
+        if (!go || !i_origin->IsWithinDistInMap(go, i_range) || !sServerFacade.isSpawned(go))
+            return false;
+        GameObjectInfo const* goInfo = go->GetGOInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_SPELLCASTER || !goInfo->spellcaster.partyOnly)
+            return false;
+        if (!IsPortalTeleportSpell(goInfo->spellcaster.spellId))
+            return false;
+        if (go->GetGoState() != GO_STATE_READY || go->getLootState() == GO_ACTIVATED)
+            return false;
+        if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+            return false;
+        return PortalOwnerInGroup(go);
+    }
+
+    static bool PortalOwnerInGroup(GameObject* go, Group const* group, ObjectGuid botGuid)
+    {
+        if (!go)
+            return false;
+        ObjectGuid const owner = go->GetOwnerGuid();
+        if (owner.IsEmpty())
+            return false;
+        if (owner == botGuid)
+            return true;
+        return group && group->IsMember(owner);
+    }
+
+    bool PortalOwnerInGroup(GameObject* go) const { return PortalOwnerInGroup(go, i_group, i_botGuid); }
+
+private:
+    WorldObject const* i_origin;
+    float i_range;
+    Group const* i_group;
+    ObjectGuid i_botGuid;
+};
+}
+
+void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
+{
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!m_portalFollowGuid.IsEmpty())
+    {
+        uint32 const elapsed = nowMs - m_portalFollowStartMs;
+        bool const crossMap = master && master->IsInWorld() && !master->IsBeingTeleported() &&
+            bot->GetMapId() != master->GetMapId();
+        float const masterDistance = master && !crossMap ? sServerFacade.getDistance2d(bot, master) : 0.0f;
+        bool const masterGone = master && master->IsInWorld() && !master->IsBeingTeleported() &&
+            ai::PortalFollowMasterGone(crossMap, masterDistance);
+        bool const atMaster = master && master->IsInWorld() &&
+            ai::PortalFollowAtMaster(crossMap, masterDistance);
+        bool const followStrategy = HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
+            !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+            !HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT);
+        if (!master || !master->IsInWorld() || !group || group != master->GetGroup() ||
+            !HasActivePlayerMaster() || !bot->IsAlive() || bot->IsInCombat() ||
+            !followStrategy || atMaster || !masterGone ||
+            ai::PortalFollowWindowExpired(elapsed))
+        {
+            if (ai::PortalFollowWindowExpired(elapsed) && masterGone && bot->IsAlive() &&
+                !bot->IsInCombat() && master && master->IsInWorld() && !master->IsBeingTeleported() &&
+                group && group == master->GetGroup() && HasActivePlayerMaster() &&
+                followStrategy)
+            {
+                if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+                    sLog.outString("TortoiseBots: bringing bot %s to master %s after missing the mage portal",
+                        bot->GetName(), master->GetName());
+            }
+            m_portalFollowGuid.Clear();
+            return;
+        }
+
+        Map* map = bot->GetMap();
+        GameObject* portal = map ? map->GetGameObject(m_portalFollowGuid) : nullptr;
+        if (!portal || !portal->IsInWorld() || portal->GetMapId() != m_portalFollowMap ||
+            !sServerFacade.isSpawned(portal) || portal->GetGoState() != GO_STATE_READY ||
+            portal->getLootState() == GO_ACTIVATED ||
+            portal->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT) ||
+            !PartyPortalCheck::PortalOwnerInGroup(portal, group, bot->getObjectGuid()))
+        {
+            if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+                sLog.outString("TortoiseBots: bringing bot %s to master %s after the mage portal closed",
+                    bot->GetName(), master->GetName());
+            m_portalFollowGuid.Clear();
+            return;
+        }
+
+        if (bot->GetClass() == CLASS_MAGE && portal->GetOwnerGuid() == bot->getObjectGuid())
+        {
+            bool othersPending = false;
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member || member == bot || member == master)
+                    continue;
+                PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+                if (!memberAi || memberAi->IsRealPlayer() || member->IsInCombat() || !member->IsAlive())
+                    continue;
+                bool const memberCrossMap = member->GetMapId() != master->GetMapId();
+                if (ai::PortalFollowAtMaster(memberCrossMap,
+                        memberCrossMap ? 0.0f : sServerFacade.getDistance2d(member, master)))
+                    continue;
+                othersPending = true;
+                break;
+            }
+            if (ai::PortalFollowMageWaits(othersPending, elapsed))
+                return;
+        }
+
+        float const distance = bot->GetDistance(portal);
+        // The core's use range is measured differently from GetDistance: a bot that stopped at the edge
+        // keeps walking to the portal's centre until the core lets it use the portal.
+        if (ai::PortalFollowReached(distance) &&
+            bot->GetGameObjectIfCanInteractWith(portal->getObjectGuid(), MAX_GAMEOBJECT_TYPE))
+        {
+            if (m_portalFollowUsedMs && nowMs - m_portalFollowUsedMs < 2000)
+                return;
+            m_portalFollowUsedMs = nowMs;
+            std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
+            *packet << portal->getObjectGuid();
+            bot->GetSession()->QueuePacket(packet.release());
+            return;
+        }
+
+        if (!CanMove())
+            return;
+        bot->GetMotionMaster()->MovePoint(m_portalFollowMap,
+            portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(),
+            MOVE_RUN_MODE | MOVE_PATHFINDING);
+        return;
+    }
+
+    if (!master || !master->IsInWorld() || master->IsBeingTeleported() ||
+        !group || group != master->GetGroup() ||
+        !HasActivePlayerMaster() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+        !bot->IsAlive() || bot->IsInCombat() ||
+        !HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+        HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) ||
+        HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
+        return;
+    bool const crossMap = bot->GetMapId() != master->GetMapId();
+    float const masterDistance = crossMap ? 0.0f : sServerFacade.getDistance2d(bot, master);
+    if (!ai::PortalFollowMasterGone(crossMap, masterDistance))
+        return;
+    if (m_portalFollowScanMs && nowMs - m_portalFollowScanMs < ai::kPortalFollowScanIntervalMs)
+        return;
+    m_portalFollowScanMs = nowMs;
+
+    std::list<GameObject*> targets;
+    PartyPortalCheck check(bot, sPlayerbotAIConfig.sightDistance, group, bot->getObjectGuid());
+    MaNGOS::GameObjectListSearcher<PartyPortalCheck> searcher(targets, check);
+    Cell::VisitAllObjects((const WorldObject*)bot, searcher, sPlayerbotAIConfig.sightDistance);
+    GameObject* portal = nullptr;
+    float best = sPlayerbotAIConfig.sightDistance * sPlayerbotAIConfig.sightDistance;
+    for (GameObject* candidate : targets)
+    {
+        if (!candidate)
+            continue;
+        float const dx = candidate->GetPositionX() - bot->GetPositionX();
+        float const dy = candidate->GetPositionY() - bot->GetPositionY();
+        float const distSq = dx * dx + dy * dy;
+        if (distSq < best)
+        {
+            best = distSq;
+            portal = candidate;
+        }
+    }
+    if (!portal)
+        return;
+
+    m_portalFollowGuid = portal->getObjectGuid();
+    m_portalFollowMap = portal->GetMapId();
+    m_portalFollowStartMs = nowMs;
+    m_portalFollowUsedMs = 0;
 }
 
 void PlayerbotAI::ReInitCurrentEngine()
@@ -3558,6 +3774,10 @@ bool PlayerbotAI::CanDoSpecificAction(const std::string& name, bool isUseful, bo
 bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool silent)
 {
     Player* requester = event.getOwner();
+    // `.bot why`: an action somebody ordered (chat, commander or run leader)
+    // is an order the trace shows. Internal callers pass the bot as owner.
+    if (requester && bot && requester->GetObjectGuid() != bot->GetObjectGuid())
+        TortoiseBots::WhyTraceService::Instance().NoteOrderAction(this, requester, name, event.getSource());
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         Engine* engine = engines[i];
@@ -4715,6 +4935,105 @@ void PlayerbotAI::RestorePullHoldPet()
     if (pet->GetReactState() != REACT_PASSIVE)
         return;
     pet->SetReactState(stance);
+}
+
+void PlayerbotAI::UpdateCharmedAllyPetHold()
+{
+    if (!bot)
+        return;
+
+    bool charmedAllyUp = false;
+    if (sPlayerbotAIConfig.dungeonRunCharmYield)
+    {
+        // The bot itself counts: when a creature charms this bot, its own pet and guardians must stand down too.
+        ObjectGuid const ownCharmer = bot->GetCharmerGuid();
+        charmedAllyUp = MemberHoldsPetHold(bot->IsAlive(), bot->IsInWorld(), true, !ownCharmer.IsEmpty(),
+                                           ownCharmer.IsPlayer());
+        if (!charmedAllyUp && bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(bot->GetGroup()))
+            {
+                if (!member)
+                    continue;
+                ObjectGuid const charmer = member->GetCharmerGuid();
+                if (MemberHoldsPetHold(member->IsAlive(), member->IsInWorld(), member->GetMap() == bot->GetMap(),
+                                       !charmer.IsEmpty(), charmer.IsPlayer()))
+                {
+                    charmedAllyUp = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!CharmedAllyParksPet(sPlayerbotAIConfig.dungeonRunCharmYield, charmedAllyUp))
+    {
+        if (!charmHoldActive_)
+            return;
+        charmHoldActive_ = false;
+
+        // Undo only our own park: a stance the pull hold or the player set meanwhile is not the charm's to touch.
+        if (charmHoldPetStance_ != kNoSavedStance)
+        {
+            Pet* pet = bot->GetPet();
+            if (pet && pet->getObjectGuid() == charmHoldPetGuid_ && pet->GetReactState() == REACT_PASSIVE &&
+                pullHoldPetStance_ == kNoSavedStance)
+                pet->SetReactState(static_cast<ReactStates>(charmHoldPetStance_));
+            charmHoldPetStance_ = kNoSavedStance;
+            charmHoldPetGuid_.Clear();
+        }
+
+        struct RestoreGuardian
+        {
+            std::map<ObjectGuid, int> const& saved;
+            void operator()(Unit* unit) const
+            {
+                Creature* creature = dynamic_cast<Creature*>(unit);
+                if (!creature || creature->IsTotem())
+                    return;
+                auto it = saved.find(creature->getObjectGuid());
+                if (it == saved.end() || creature->GetReactState() != REACT_PASSIVE)
+                    return;
+                creature->SetReactState(static_cast<ReactStates>(it->second));
+            }
+        };
+        bot->CallForAllControlledUnits(RestoreGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
+        charmHoldGuardianStances_.clear();
+        return;
+    }
+
+    charmHoldActive_ = true;
+
+    if (Pet* pet = bot->GetPet())
+    {
+        ObjectGuid const guid = pet->getObjectGuid();
+        if (pet->GetReactState() != REACT_PASSIVE && (charmHoldPetStance_ == kNoSavedStance || charmHoldPetGuid_ != guid))
+        {
+            charmHoldPetStance_ = static_cast<int>(pet->GetReactState());
+            charmHoldPetGuid_ = guid;
+        }
+        pet->SetReactState(REACT_PASSIVE);
+        // The stance keeps the core's PetAI from re-acquiring the member after this update; the stop takes the
+        // attack already under way now. Both are needed: AttackStop does not reset the strike timer.
+        pet->AttackStop();
+    }
+
+    struct ParkGuardian
+    {
+        std::map<ObjectGuid, int>& saved;
+        void operator()(Unit* unit) const
+        {
+            Creature* creature = dynamic_cast<Creature*>(unit);
+            if (!creature || creature->IsTotem())
+                return;
+            ObjectGuid const guid = creature->getObjectGuid();
+            if (creature->GetReactState() != REACT_PASSIVE && saved.find(guid) == saved.end())
+                saved[guid] = static_cast<int>(creature->GetReactState());
+            creature->SetReactState(REACT_PASSIVE);
+            creature->AttackStop();
+        }
+    };
+    bot->CallForAllControlledUnits(ParkGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
 }
 
 size_t PlayerbotAI::DropQueuedMovementOrders()

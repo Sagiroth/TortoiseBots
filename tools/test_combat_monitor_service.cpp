@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-struct PlayerbotAIConfig { bool combatMonitor = false; };
+struct PlayerbotAIConfig { bool combatMonitor = false; bool combatTimeline = false; };
 #define COMBAT_MONITOR_TEST_CONFIG 1
 #include "../runtime/CombatMonitorService.h"
 #undef COMBAT_MONITOR_TEST_CONFIG
@@ -702,6 +702,55 @@ static void TestEventShrinkRequeuesTheRest()
     svc.Forget(84);
 }
 
+// The boss timeline through the service: the watch list is data (SetTimelineWatch stands in for the startup read of
+// ai_combat_aura_watch), only a watched spell on a member is recorded, and the payload carries the three arrays.
+static void TestTimelineWatchFromData()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    sPlayerbotAIConfig.combatTimeline = true;
+    svc.SyncConfig(true);
+    svc.SetTimelineWatch({24321});
+    svc.Refresh(91, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.NoteBoss(91, 11502, "Magmadar", 777);
+    svc.SampleTimeline(91, 5000, 10000, 7, "Tanky", 1000);
+    svc.OnTimelineAura(7, 24321, true, 1500);
+    svc.OnTimelineAura(7, 9999, true, 1600);   // not in the watch table
+    svc.OnTimelineAura(99, 24321, true, 1700); // not a member
+    svc.Refresh(91, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.Refresh(91, Members(), false, false, CommanderCtx(), {}, 9000);
+    std::string const fight = TakeOne(svc, 91, 1700010000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("\"boss_hp\":[[0,50.0,11502]]") != std::string::npos);
+    CHECK(fight.find("\"victims\":[[0,7,\"Tanky\",\"tank\"]]") != std::string::npos);
+    CHECK(fight.find("\"auras\":[[500,7,24321,1]]") != std::string::npos);
+    CHECK(fight.find("9999") == std::string::npos);
+    svc.Forget(91);
+}
+
+// AiPlayerbot.CombatTimeline off: a fight otherwise identical carries none of the timeline keys.
+static void TestTimelineOffLeavesNoFields()
+{
+    CombatMonitorService& svc = CombatMonitorService::Instance();
+    sPlayerbotAIConfig.combatMonitor = true;
+    sPlayerbotAIConfig.combatTimeline = false;
+    svc.SyncConfig(true);
+    svc.SetTimelineWatch({24321});
+    svc.Refresh(92, Members(), true, false, CommanderCtx(), {}, 1000);
+    svc.NoteBoss(92, 11502, "Magmadar", 777);
+    svc.SampleTimeline(92, 5000, 10000, 7, "Tanky", 1000);
+    svc.OnTimelineAura(7, 24321, true, 1500);
+    svc.Refresh(92, Members(), false, false, CommanderCtx(), {}, 6000);
+    svc.Refresh(92, Members(), false, false, CommanderCtx(), {}, 9000);
+    std::string const fight = TakeOne(svc, 92, 1700010000);
+    CHECK(!fight.empty());
+    CHECK(fight.find("boss_hp") == std::string::npos);
+    CHECK(fight.find("victims") == std::string::npos);
+    CHECK(fight.find("auras") == std::string::npos);
+    svc.Forget(92);
+    sPlayerbotAIConfig.combatTimeline = true;
+}
+
 int main()
 {
     TestSyncConfigUngated();
@@ -730,6 +779,8 @@ int main()
     TestRetiredBookDrainsThenErased();
     TestRunStopMidFightKeepsRecording();
     TestEventShrinkRequeuesTheRest();
+    TestTimelineWatchFromData();
+    TestTimelineOffLeavesNoFields();
     std::printf("combat monitor service: %d checks passed\n", checks);
     return 0;
 }

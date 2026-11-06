@@ -2,6 +2,7 @@
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "playerbot/BattleShoutPolicy.h"
 #include "playerbot/WarriorRageGatePolicy.h"
+#include "WarriorGapCloser.h"
 
 namespace ai
 {
@@ -113,6 +114,17 @@ namespace ai
     SNARE_TRIGGER(ThunderClapSnareTrigger, "thunder clap");
     DEBUFF_TRIGGER(ThunderClapTrigger, "thunder clap");
     SNARE_TRIGGER(TauntSnareTrigger, "taunt");
+    // The gap closer DecideWarriorGapCloser picks this tick is `kind`.
+    class WarriorGapCloserTrigger : public Trigger
+    {
+    public:
+        WarriorGapCloserTrigger(PlayerbotAI* ai, std::string name, WarriorGapCloser kind) : Trigger(ai, name), kind(kind) {}
+        virtual bool IsActive() override { return DecideWarriorGapCloser(ai) == kind; }
+
+    private:
+        WarriorGapCloser kind;
+    };
+
     SNARE_TRIGGER(InterceptSnareTrigger, "intercept");
     CD_TRIGGER(InterceptCanCastTrigger, "intercept");
     BOOST_TRIGGER(DeathWishTrigger, "death wish");

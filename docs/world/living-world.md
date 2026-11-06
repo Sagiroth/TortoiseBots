@@ -63,6 +63,7 @@ The table below summarizes autonomous activities in the open world:
 | **Gathering** | Bots gather nearby herbs and mining nodes, and skin beasts they kill. |
 | **Fishing** | Idle pool bots fish in nearby open water. |
 | **Town services** | Bots visit nearby trainers, repair gear at blacksmiths, and sell vendor trash. |
+| **Passing buffs** | A pool bot passing a real player casts a class buff on them (1 in 5 per meeting) and keeps going; a passing priest or druid heals a player below 35% health (1 in 2). See [Social interaction](social.md#passing-buffs). |
 <details>
 <summary>Travel & flight paths in detail</summary>
 

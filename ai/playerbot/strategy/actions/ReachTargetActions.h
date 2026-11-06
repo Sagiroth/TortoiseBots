@@ -6,6 +6,7 @@
 #include "MovementActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/PullStartPolicy.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/NamedObjectContext.h"
 #include "playerbot/strategy/values/MoveStyleValue.h"
@@ -710,6 +711,23 @@ namespace ai
         }
     };
 
+    // The floor under a pull target that hangs more than kAirbornePullFloorYd above it (a
+    // hovering boss, a flier), for a body pull's walk to its ground position: true with
+    // `groundZ` set. One height query, and only for a pull's own reach.
+    inline bool AirbornePullGround(Unit* target, float& groundZ)
+    {
+        if (!target || !target->GetMap())
+            return false;
+        float const x = target->GetPositionX();
+        float const y = target->GetPositionY();
+        float const z = target->GetPositionZ();
+        float const floor = target->GetMap()->GetHeight(x, y, z, true);
+        if (floor <= INVALID_HEIGHT || !PullTargetAirborne(true, z, floor))
+            return false;
+        groundZ = floor;
+        return true;
+    }
+
     class ReachPullAction : public ReachTargetAction
     {
     public:
@@ -745,6 +763,10 @@ namespace ai
                 if (PullStrategy* strategy = PullStrategy::Get(ai))
                     strategy->NotePullApproach(target->GetDistance(bot), sServerFacade.isMoving(bot));
             }
+            // The order's start check reads this: an airborne target's launch waits for the next
+            // tick only after the reach really ran (commands/Action.cpp, PullWalkStarted).
+            if (PullStrategy* strategy = PullStrategy::Get(ai))
+                strategy->NoteReachPullAttempted();
             return ReachTargetAction::Execute(event);
         }
 
@@ -765,7 +787,18 @@ namespace ai
         {
             PullStrategy* strategy = PullStrategy::Get(ai);
             if (!strategy || strategy->GetPullActionName() == "reach pull")
+            {
+                // A body pull at a target hanging above the floor (a hovering boss, a
+                // flier): its melee contact point lies below the target, which no chase
+                // from the target reaches, so the core drops the chase and the tank stands
+                // still. Walk to the target's ground position instead (the floor under it,
+                // one height query) and let the pull's own aggro start there.
+                float groundZ = 0.0f;
+                if (AirbornePullGround(target, groundZ) &&
+                    MoveTo(target->GetMapId(), target->getPositionX(), target->getPositionY(), groundZ))
+                    return true;
                 return ChaseTo(target, distance, bot->GetAngle(target));
+            }
 
             bool const inLos = bot->IsWithinLOSInMap(target, true);
 

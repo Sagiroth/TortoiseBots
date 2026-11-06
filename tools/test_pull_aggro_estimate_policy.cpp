@@ -531,6 +531,35 @@ int main()
         CHECK(e.bodiesIfPatrolsPass == 0); // the ring path reads no patrol-free count
     }
 
+    // TestEliteBodiesExcludeNormalRank: both estimates carry the bodies that are not CREATURE_ELITE_NORMAL (the
+    // automatic crowd control's count): a dungeon's trash is mostly non-elite, so the raw count cannot serve it.
+    // Mutation: drop the `elite` counter from detail::Count / detail::RingCount and the two checks read 3.
+    {
+        std::vector<AggroMob> mobs = {Mob(0.0f, 0.0f), Mob(-8.0f, 0.0f), Mob(-23.0f, 0.0f)};
+        mobs[0].groupId = 7;
+        mobs[1].groupId = 7;
+        AggroEstimateParams old = Params();
+        old.engageY = 1000.0f;
+        AggroEstimate const flat = EstimateAggro(mobs, 0, old);
+        CHECK(flat.bodies == 3 && flat.bodiesElite == 3);
+        AggroEstimate const ring = EstimateAggroRing(mobs, 0, farGeometry(), Params());
+        CHECK(ring.bodies == 3 && ring.bodiesElite == 3);
+        mobs[1].normalRank = true;
+        mobs[2].normalRank = true;
+        CHECK(EstimateAggro(mobs, 0, old).bodiesElite == 1);
+        CHECK(EstimateAggroRing(mobs, 0, farGeometry(), Params()).bodiesElite == 1);
+        // A normal-rank target is no elite body either; the elite joiner still is.
+        mobs[0].normalRank = true;
+        mobs[2].normalRank = false;
+        CHECK(EstimateAggro(mobs, 0, old).bodiesElite == 1);
+        CHECK(EstimateAggroRing(mobs, 0, farGeometry(), Params()).bodiesElite == 1);
+        // All normal: no body of the automatic cc's count.
+        mobs[1].normalRank = true;
+        mobs[2].normalRank = true;
+        CHECK(EstimateAggro(mobs, 0, old).bodiesElite == 0);
+        CHECK(EstimateAggroRing(mobs, 0, farGeometry(), Params()).bodiesElite == 0);
+    }
+
     // The plan ceiling replaces the config one: bodies, not joiners.
     {
         CHECK(PullCeilingBodies(0, 6) == 7);

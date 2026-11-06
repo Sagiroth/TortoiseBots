@@ -4,6 +4,9 @@
 #include "Queue.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
+
+#include <algorithm>
+
 using namespace ai;
 
 
@@ -110,4 +113,20 @@ void Queue::RemoveExpired()
         }
         delete basket;
     }
+}
+
+void Queue::Snapshot(std::vector<PendingAction>& out, size_t limit)
+{
+    out.clear();
+    for (ActionBasket* basket : actions)
+    {
+        ActionNode* node = basket ? basket->getAction() : nullptr;
+        if (!node)
+            continue;
+        out.push_back(PendingAction{ node->getName(), basket->getRelevance() });
+    }
+    std::sort(out.begin(), out.end(),
+        [](PendingAction const& a, PendingAction const& b) { return a.relevance > b.relevance; });
+    if (out.size() > limit)
+        out.resize(limit);
 }

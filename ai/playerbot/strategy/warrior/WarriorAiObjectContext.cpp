@@ -163,6 +163,8 @@ namespace ai
                 creators["intercept"] = [](PlayerbotAI* ai) { return new InterceptInterruptSpellTrigger(ai); };
                 creators["taunt on snare target"] = [](PlayerbotAI* ai) { return new TauntSnareTrigger(ai); };
                 creators["intercept on snare target"] = [](PlayerbotAI* ai) { return new InterceptSnareTrigger(ai); };
+                creators["warrior gap closer charge"] = [](PlayerbotAI* ai) { return new WarriorGapCloserTrigger(ai, "warrior gap closer charge", WarriorGapCloser::Charge); };
+                creators["warrior gap closer intercept"] = [](PlayerbotAI* ai) { return new WarriorGapCloserTrigger(ai, "warrior gap closer intercept", WarriorGapCloser::Intercept); };
                 creators["sudden death"] = [](PlayerbotAI* ai) { return new SuddenDeathTrigger(ai); };
                 creators["instant slam"] = [](PlayerbotAI* ai) { return new SlamInstantTrigger(ai); };
                 creators["taste for blood"] = [](PlayerbotAI* ai) { return new TasteForBloodTrigger(ai); };
@@ -236,6 +238,10 @@ namespace ai
                 creators["taunt on attacker"] = [](PlayerbotAI* ai) { return new CastTauntOnAttackerAction(ai); };
                 creators["intercept on enemy healer"] = [](PlayerbotAI* ai) { return new CastInterceptOnEnemyHealerAction(ai); };
                 creators["intercept on snare target"] = [](PlayerbotAI* ai) { return new CastInterceptOnSnareTargetAction(ai); };
+                creators["gap closer charge"] = [](PlayerbotAI* ai) { return new CastGapCloserChargeAction(ai); };
+                creators["gap closer intercept"] = [](PlayerbotAI* ai) { return new CastGapCloserInterceptAction(ai); };
+                creators["battle stance for charge"] = [](PlayerbotAI* ai) { return new CastBattleStanceForChargeAction(ai); };
+                creators["berserker stance for intercept"] = [](PlayerbotAI* ai) { return new CastBerserkerStanceForInterceptAction(ai); };
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateWarriorRaidStrategiesAction(ai); };

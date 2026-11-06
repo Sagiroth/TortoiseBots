@@ -7,6 +7,7 @@
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/WhyTrace.h"
 #include "../runtime/AltBotPolicy.h"
 #include "../runtime/AltBotService.h"
 #include "../runtime/HireProvisionService.h"
@@ -514,6 +515,64 @@ bool HandleHelp(ChatHandler* handler, char const* /*args*/)
     return true;
 }
 
+// `.bot why <bot> [seconds]` (GM): one bot's AI decisions for a short window,
+// as TBWHY| lines in the server log plus a summary here. Off until used; one
+// trace per server. runtime/WhyTrace.h owns the recorder.
+static bool HandleWhy(ChatHandler* handler, char const* args)
+{
+    Player* requester = Requester(handler);
+    if (requester ? !IsBotAdministrator(requester) : !IsGmCliHandler(handler))
+    {
+        SendActionError(handler, "why", "forbidden", "Only a GameMaster may trace a bot's decisions with .bot why.");
+        return true;
+    }
+
+    std::string const text = Trim(args ? args : "");
+    size_t const split = text.find_first_of(" \t");
+    std::string const name = split == std::string::npos ? text : text.substr(0, split);
+    std::string const rest = split == std::string::npos ? std::string() : Trim(text.substr(split));
+    if (name.empty())
+    {
+        SendActionError(handler, "why", "invalid", "Usage: .bot why <bot> [seconds] (default 30, at most 120)");
+        return true;
+    }
+    unsigned seconds = 0;
+    if (!TortoiseBots::WhyTrace::ParseSeconds(rest, seconds))
+    {
+        SendActionError(handler, "why", "invalid", "The seconds must be a whole number (default 30, at most 120).");
+        return true;
+    }
+
+    // A GameMaster may trace any online bot's AI, not only one they control:
+    // this is the diagnostic for a party the GM does not own.
+    std::string lookup = name;
+    Player* bot = nullptr;
+    if (normalizePlayerName(lookup))
+        bot = sObjectMgr.GetPlayer(lookup.c_str());
+    if (!bot)
+        bot = sObjectAccessor.FindPlayerByName(lookup.c_str());
+    if (!bot)
+    {
+        SendActionError(handler, "why", "no-bot", ("No online bot named " + name + ".").c_str());
+        return true;
+    }
+    if (!PlayerbotAIStorage::Instance().GetAI(bot))
+    {
+        SendActionError(handler, "why", "no-bot", (std::string(bot->GetName()) + " has no AI controller.").c_str());
+        return true;
+    }
+
+    std::string message;
+    if (!TortoiseBots::WhyTraceService::Instance().Start(bot, seconds, requester, message))
+    {
+        SendActionError(handler, "why", "refused", message.c_str());
+        return true;
+    }
+    handler->PSendSysMessage("%s", message.c_str());
+    SendActionAck(handler, "why", "bot:" + std::string(bot->GetName()), seconds, bot->GetName());
+    return true;
+}
+
 // One row per `.bot` subcommand: primary name, handler, short usage, aliases, and whether it shows
 // in the top-level usage line. Dispatch and the docs check (tools/verify_command_docs.py) read every
 // row; the usage line skips the work-in-progress commands while their flags are off (typed anyway,
@@ -538,6 +597,7 @@ static BotCommandEntry const botCommands[] = {
     {"commander", HandleCommander, "commander <bind|unbind|status|view ...>", {}, CommanderVisible},
     {"cmd", HandleCommanderOrder, "cmd <order>", {}, CommanderVisible},
     {"trace", HandleTrace, "trace <start|stop|status> ...", {}, TraceVisible},
+    {"why", HandleWhy, "why <bot> [seconds]", {}, AlwaysVisible},
     {"run", HandleDungeonRun, "run <start|pause|resume|skip|stop|status|list|here> ...", {}, RunVisible},
     {"scout", HandleScout, "scout <cfg|path|walk|where> ...", {}, CommanderVisible},
     {"add", HandleAdd, "add <characterName>", {}, AlwaysVisible},
@@ -556,6 +616,7 @@ static BotCommandEntry const botCommands[] = {
     {"formation", HandleFormation, "formation [botName] <formation>", {}, AlwaysVisible},
     {"cc", HandleCc, "cc <mark> [bot] | cc clear [bot]", {}, AlwaysVisible},
     {"list", HandleList, "list", {}, AlwaysVisible},
+    {"alts", HandleAlts, "alts", {}, AlwaysVisible},
     {"stats", HandleStats, "stats", {}, AlwaysVisible},
     {"status", HandleStatus, "status <online bot name>", {}, AlwaysVisible},
     {"lease", HandleLease, "lease [status]", {}, AlwaysVisible},
@@ -585,6 +646,7 @@ static BotCommandEntry const botCommands[] = {
     {"inv", HandleInventory, "inv <online bot you control>", {"inventory"}, AlwaysVisible},
     {"professions", HandleProfessions, "professions <online bot you control>", {}, AlwaysVisible},
     {"item", HandleItem, "item <bot> <trade|equip|unequip|give ...>", {}, AlwaysVisible},
+    {"service", HandleService, "service <bot> [portal <spellId>]", {}, AlwaysVisible},
     {"behavior", HandleBehavior, "behavior <bot|party|raid> <behavior> <on|off>", {"behaviour"}, AlwaysVisible},
     {"totem", HandleTotem, "totem <bot|party|raid> ...", {}, AlwaysVisible},
     {"strategy", HandleStrategy, "strategy <+/-/~><strategy name> [role or botName] | strategy reset", {}, AlwaysVisible},

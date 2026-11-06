@@ -21,6 +21,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | :--- | :---: | :--- |
 | [`AiPlayerbot.AvoidCreatureAuras`](#aiplayerbotavoidcreatureauras) | `1` | Steers bots away from permanent damaging creature auras and hazardous monsters. |
 | [`AiPlayerbot.CombatMonitor`](#aiplayerbotcombatmonitor) | `0` | Per-fight combat numbers of every bound group for the observability dashboard (needs `AiPlayerbot.Observability`). |
+| [`AiPlayerbot.CombatTimeline`](#aiplayerbotcombattimeline) | `0` | The boss timeline in each fight record: health every 2 s, victim changes, watched auras (needs `AiPlayerbot.CombatMonitor`). |
 | [`AiPlayerbot.BombRunoutDistance`](#aiplayerbotbombrunoutdistance) | `30.0` | Distance in yards bomb debuff carriers run clear of the living group. |
 | [`AiPlayerbot.BotAreaTriggers`](#aiplayerbotbotareatriggers) | *(empty)* | Audited allowlist of scripted area triggers a bot party may fire (off when empty; opt in with `962`). |
 | [`AiPlayerbot.BotLfgChat`](#aiplayerbotbotlfgchat) | `1` | A waiting group posts in LookingForGroup and invites a player who whispers "inv". |
@@ -33,9 +34,11 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
 | [`AiPlayerbot.DungeonRunAggroWalkRing`](#aiplayerbotdungeonrunaggrowalkring) | `0` | The estimate also counts what the walk, the stand and the fight point wake, and calls for help from every member. |
+| [`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `0` | `1`: a fight held only by fast-respawning units at their spawn, none hitting the party, is no fight; a regroup never gathers on one. |
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
+| [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
-| [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, and no area action lands on a charmed group member (needs no rows or tactics). |
+| [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
 | [`AiPlayerbot.DungeonRunKillFirstGrid`](#aiplayerbotdungeonrunkillfirstgrid) | `0` | `1`: the boss tactics find a kill-first unit (a ward on the boss, a Shade) by a grid search when no bot's attacker list shows it. |
@@ -121,6 +124,23 @@ Collects per-fight combat numbers of every bound group for the observability das
 - a player outside every bound group costs one atomic bit test (no lock); a member event takes the lock
 - past 500 distinct engaged creatures, the rest counts in `fight.dropped` (distinct guids; stops at 4096)
 - needs `AiPlayerbot.Observability`
+
+</details>
+
+### `AiPlayerbot.CombatTimeline`
+Adds the boss timeline to each finished fight record, so a fight can be replayed against the boss's health and its targets.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Needs `AiPlayerbot.CombatMonitor = 1` and `AiPlayerbot.Observability`. The fight record (the JSON behind the dashboard's fight detail and the `combat-fight-*.json` files a walk saves) gains three arrays, all times in ms since the fight's start:
+
+- `boss_hp`: `[t_ms, hp_pct, phase_entry]`, the fought boss's health each 2 s (one decimal) with the entry it reads then; at most 600 samples.
+- `victims`: `[t_ms, guid, name, role]`, one row per change of the boss's current victim; `guid` is the unit's low guid (the same value as a bot row's `guid`), and `role` is `tank`, `healer`, `dps`, or `none` for a player, a pet or nobody. At most 400 rows.
+- `auras`: `[t_ms, bot guid, spell id, 1/-1]`, an apply (`1`) or remove (`-1`) of a watched aura on a bot of the group. The watched spells are the rows of the world table `ai_combat_aura_watch` (one pass at startup), never spell ids in code. At most 1000 rows.
+
+Each cap drops the oldest row. Existing fields keep their place; a reader that does not know the arrays ignores them. A fight whose payload has to shrink drops the timeline before it shrinks below its other detail. The shipped rows are Zul'Gurub's Mark of Arlokk, Delusions of Jin'do, Banish, Poisonous Blood, Cause Insanity and Corrupted Blood; more auras are added with a migration.
 
 </details>
 
@@ -302,10 +322,10 @@ Turns on the aura-based boss tactic rows and the per-row health and bot-aura gat
 - `dps_hold_after`: holds free DPS off a subject for a row's seconds after a pull, health-band opening, cast, aura, or blink
 - `flee_on_aura`: moves a carrier out of the group (or to the main tank)
 - `freeze_on_aura`: stands a carrier still and vetoes every action while the aura lasts
-- `taunt_after_cast`: sends a rotation tank to taunt a subject back inside a deadline
+- `taunt_after_cast`: sends a rotation tank to taunt a subject back, and retries every window while the subject stays off a tank; one tank holds a window even while its taunt cools down after the cast, and only a tank that lost control or is silenced hands it over, while the pick of a new window skips a tank whose taunt is on cooldown; a failed taunt hands the next window to another tank; only mode `until_tank` acts, `blink` and spell-keyed rows in other modes are loaded and ignored
 - `swap_on_aura`: rotates two tanks at a stack count
 - the same key opens the row gates: a row whose `hp_min`/`hp_max` or `bot_aura` does not match is ignored while off
-- the `until_tank` mode also needs `AiPlayerbot.DungeonRunCharmYield`: a creature-charmed tank yields its AI and cannot take the taunt back
+- the `until_tank` mode runs on this key alone; a creature-charmed tank only leaves the order while `AiPlayerbot.DungeonRunCharmYield` is also on
 
 </details>
 
@@ -317,6 +337,17 @@ Leaves a unit a `needs_aura` boss-tactic row gates to the bots that carry the ro
 <summary>How it works in detail</summary>
 
 **Aura-gated targets:** the `needs_aura` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): `boss_entry` is the unit and `spell` the aura it takes damage from. A bot without the aura does no damage to it, so with this key on the target picks, boss-tactic taunts and the run's guard leave it out, and an explicit attack order on it is refused.
+
+</details>
+
+### `AiPlayerbot.DungeonRunRespawnNest`
+Keeps the run leader out of fights that only a fast-respawning spawn holds open.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Respawn nest:** a unit that respawns within 60 s and stands within 22 yd of its own spawn point (ZG Jin'do's pit: ten Sacrificed Trolls, 10 s). A combat that only such units hold, none of them hitting a party bot or pet, is no fight: the run orders the bots back to the step. A regroup also gathers at the step point instead of within 30 yd of one. A nest unit that attacks the party is always a real fight and a guard target, and a unit the plan's own boss, hold or pull step names is never a nest.
 
 </details>
 
@@ -520,7 +551,7 @@ Focuses a totem the plan kills first on the damage dealers alone, and before the
 <details>
 <summary>How it works in detail</summary>
 
-**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick, and sends only the damage dealers at it: no tank, no healer. A totem a boss summons is read the moment it stands, even when no bot's attackers list carries it. On the focus the damage dealers cut their own current cast or channel — only an offensive one on an enemy, never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a run crowd-control spell, a resurrect or the hearthstone — open with an instant where the class has one, and take the attack by GUID: the skull stays on the boss, so tanks and healers never follow it. A retreat in progress keeps the tick: the totem waits until the living are back. The kill-first check runs every second while the key is on. The guard and the engage on arrival leave such a totem alone while the key is on, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. The DPS-only rule is the run leader's own order only: a player's explicit focus on a totem still arms every bot. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line (the run's lead bot and instance id name its run in a log shared by every run), so a walk measures a kill-first unit's lifetime. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#totem-focus).
+**Totem focus:** only read while `AiPlayerbot.DungeonSelfClear = 1`. A creature of type totem (11) whose entry is on the plan's kill_first list — Jin'do's Brain Wash Totem, a healing ward — dies in 1-2 s and holds nobody, so with this key the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick, and sends only the damage dealers at it: no tank, no healer. A totem a boss summons is read the moment it stands, even when no bot's attackers list carries it. On the focus the damage dealers cut their own current cast or channel — only an offensive one on an enemy, never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a run crowd-control spell, a resurrect or the hearthstone — open with an instant where the class has one, and take the attack by GUID: the skull stays on the boss, so tanks and healers never follow it. A retreat in progress keeps the tick: the totem waits until the living are back. The kill-first check runs every second while the key is on, and the focus is sent again every 3 s while its totem lives and no damage dealer is attacking it, so a damage dealer that left it after one burst comes back to finish it (a kill-first unit that is no totem is focused once, not repeated). The guard and the engage on arrival leave such a totem alone while the key is on, so the focus is not starved for a tick. A totem the plan does not kill first is an ordinary add and stays the guard's, as before. The DPS-only rule is the run leader's own order only: a player's explicit focus on a totem still arms every bot. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line (the run's lead bot and instance id name its run in a log shared by every run), so a walk measures a kill-first unit's lifetime. See [Dungeon Run Leader](../../play/dungeon-run-leader.md#totem-focus).
 
 </details>
 
@@ -649,6 +680,16 @@ Whether the boss tactics widen the ranged raid's spacing while a `spread` row's 
 **Boss spread:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while a row's boss is in the fight the ranged bots and the healers keep the row's `param` yards apart instead of the ordinary spacing, and a stay order no longer exempts a bot from spreading. The row's spell only documents the splash the spacing answers (Hakkar's row: Corrupted Blood 24328 hits 10 yd around a random attacker, the row keeps 12). Melee and tanks never spread.
 
 </details>
+### `AiPlayerbot.DungeonRunAvoidCastAll`
+Whether an `avoid_cast` row in mode `all` also clears the tanks while its spell is cast.
+**Default:** `0` · **Values:** `0` off (the row holds like a default row: a tank the caster is on stays in the blast), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Avoid-cast all:** the AI boss tactics table's `avoid_cast` mode `all` (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while the row's spell is in its cast window no bot holds the caster, so every tank walks out of that blast too. The Zul'Gurub Bat Rider instakills itself, so there is no threat to keep. A binary without the mode turns the word into an invalid row and skips it, so the row ships in the same change as the code.
+
+</details>
 ### `AiPlayerbot.DungeonRunBurnMana`
 Whether the boss tactics keep their `burn_mana` rows: a few eligible bots drain the boss's mana while it stands above the row's start percent.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -670,13 +711,13 @@ Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subje
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`
-Whether a bot a creature charms yields its AI, and area actions stand down near a charmed group member.
+Whether a bot a creature charms yields its AI, and no action lands on a charmed group member.
 **Default:** `0` · **Values:** `0` off (bots play as before), `1` on (needs no rows or tactics) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
-**Charm yield:** while the key is on, a bot a creature has charmed yields its AI to the charmer (no engine runs, no move goes out), so nothing it does fights the core's own charm control; a bot a player charms is the core's business and is left alone. On any map, while a group member has a non-player charmer, every area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the Sweeping Strikes and Blade Flurry toggles, and damage-dealer area damage) whose target point — or the bot itself, for a self-centred one — lies within 10 yd of such a member stands down. Bots never take a charmed group member as a target, and healers keep healing: a hostile charmed tank cannot be healed or targeted by them anyway. Hakkar's Cause Insanity 24327 is why (his victim fights the raid for 10 s), and the same yield covers Will of Hakkar 24178, which only the Zul'Gurub trash-pile Guru casts.
+**Charm yield:** while the key is on, a bot a creature has charmed yields its AI to the charmer (no engine runs, no move goes out), so nothing it does fights the core's own charm control; a bot a player charms is the core's business and is left alone. On any map, while a group member has a non-player charmer, every area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the Sweeping Strikes and Blade Flurry toggles, and damage-dealer area damage) whose target point — or the bot itself, for a self-centred one — lies within 10 yd of such a member stands down. The same member is never a target: the damage-dealer and tank picks skip it (the attacker list, the possible targets, an explicit order and a raid mark), an attack order on it is refused, a pet is never sent at it, and every pet and guardian of the group's bots is parked passive with its attack stopped for as long as such a member is up (a pet that reacts to the member on its own, or keeps an attack started before the charm, cannot strike it; the stances come back when none is up), its cast is never interrupted, and a harmful single-target action aimed at it (a swing, a taunt, a damage, interrupt or crowd-control cast, a wand shot) stands down. A target already held is dropped on the next tick. Healing, buffing, curing and protecting the member stay allowed. Hakkar's Cause Insanity 24327 is why (his victim fights the raid for 10 s, and five charmed damage dealers were killed by their own raid within 3-7 s), and the same yield covers Will of Hakkar 24178, which only the Zul'Gurub trash-pile Guru casts.
 
 </details>
 
@@ -802,7 +843,9 @@ Marks crowd control on a pack from what the raid actually has, instead of only t
 - before a pull over [`AiPlayerbot.DungeonRunAutoCcAbove`](#aiplayerbotdungeonrunautoccabove) (or the row's smaller `max_bodies`), the run marks the row's own pack, one order a tick
 - order: casters and healers first, then plan rank (`cc_always`, then `cc_priority`), then family reliability, then higher level, then farther from target
 - risky Fear and Scare Beast go last and only with this key's risky flag on
-- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a DB-spawned unit that respawns within a minute (it would be marked again on every respawn; a temporary summon's lifetime is not a respawn) — and such a unit is not counted as a body of the pull either
+- never marked: pull target, tank selection, held add, fight focus, `kill_first`, held unit, hit unit, healer-guard add, a non-elite (NORMAL-rank) unit the plan does not list, a `cc_never` entry of the plan, and a DB-spawned unit that respawns within a minute (it would be marked again on every respawn; a temporary summon's lifetime is not a respawn) — and such a respawning unit is not counted as a body of the pull either
+- a non-elite unit neither counts toward the pre-pull body count nor the fight's engaged total that starts a mark, and neither does its hold: only elites, rares and bosses do; a `cc_never` unit still counts as a body (it is dangerous even though it cannot be held)
+- the plan's `cc_never` list (`ai_dungeon_plan`) excludes those entries from the automatic pick entirely, before the pull, in the fight and on a re-send; the plan's own list with the key off is unchanged
 - in the fight: marks joiners two seconds apart; re-sends a broken mark twice per unit; a dead bot frees its hold
 - tanks and the lead bot never do crowd control; a healer only while 4 healers (1 in a party) stay free, holding one unit
 - at most 24 auto orders a step; uses seven marks (skull stays the fight focus); a player's icon is never moved
@@ -817,7 +860,7 @@ How many bodies a pull may bring before the automatic crowd control starts.
 <details>
 <summary>How it works in detail</summary>
 
-**Threshold:** the run's body count is the ring estimate's count when it read the pull (`AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`), else the old joiner estimate with the target, else the row's own living pullable units. The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
+**Threshold:** the run's body count is the elite bodies of the pull's estimate when it read the pull (either the ring estimate under `AiPlayerbot.DungeonRunAggroEstimate` and `AiPlayerbot.DungeonRunAggroWalkRing`, or the joiner estimate with the target), else the row's own living pullable units that are not non-elite (a NORMAL-rank unit is no body, and no mark unless the plan lists it). The threshold is the smaller of this key and the row's ceiling (`max_bodies`), so a deliberately sized pull still gets crowd control. Only read while [`AiPlayerbot.DungeonRunAutoCc`](#aiplayerbotdungeonrunautocc) is `1`.
 
 </details>
 
@@ -916,6 +959,7 @@ How far (yards) a party bot may be from the lead bot before the run leader bring
 - when the lead bot stands in an unpulled pack's reach, the bot lands at the nearest clear point beside it (same floor, in sight, outside every pack's reach)
 - not within 10 yd after 5 s: sent again; after three tries the run names it and never tells it to walk back
 - not toward a dead or separated lead bot, not while the lead bot's own rescue is due, not with a plan boss engaged
+- never onto a lead bot that stands off the floor (more than 3 yards of air under it, read with the teleport landing's own floor: the map's floor and the feet probe, the higher one winning): the bot is brought to the nearest member out of combat instead, or holds; a lead bot on a game-object platform or elevator (a transport under it, or a surface within 2 yards under its feet that the core's height read finds) counts as on the floor; a lead bot off the floor for 30 seconds pauses the run at whichever summon was refused, and names both heights
 
 </details>
 

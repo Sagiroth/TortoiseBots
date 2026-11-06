@@ -14,19 +14,37 @@
 
 namespace ai
 {
+    // A target standing this far above the floor under it is aloft: a hovering boss, a
+    // flier over the pull. Its point move lands on an air point the core drops, and the
+    // reach only re-picks on the next AI tick, so its walk can never launch inside the
+    // order's own tick.
+    constexpr float kAirbornePullFloorYd = 5.0f;
+
+    inline bool PullTargetAirborne(bool floorKnown, float targetZ, float floorZ)
+    {
+        return floorKnown && targetZ - floorZ > kAirbornePullFloorYd;
+    }
+
     struct PullStartFacts
     {
         bool hasTarget = true;       // the pull target is in the world
         bool moving = false;         // the unit already reads as moving
         bool motionLaunched = false; // a point or chase movement generator is set
+        bool airborne = false;       // the target hangs more than kAirbornePullFloorYd above the floor under it
+        bool reachAttempted = false; // "reach pull" ran for this order (it may have launched nothing)
         float distance = 0.0f;       // tank to the pull target
         float range = 0.0f;          // the pull's shooting range
     };
 
     inline bool PullWalkStarted(PullStartFacts const& facts)
     {
+        // An airborne target's launch comes on the next movement tick: judging it in the
+        // order's own tick refused pulls whose reach had only to re-pick its firing
+        // position once more. That only holds once the reach was really attempted: airborne
+        // geometry alone is no proof that a walk was requested (the queued decision may have
+        // gone to another action).
         return !facts.hasTarget || facts.moving || facts.motionLaunched ||
-            facts.distance <= facts.range;
+            facts.distance <= facts.range || (facts.airborne && facts.reachAttempted);
     }
 
     // What the order clears on the tank before its decisions. A pull often
