@@ -49,13 +49,16 @@ static void ReadDungeonPlanRows(DungeonPlanTable& table, PlanLoadCounts& counts,
                 counts.Note("ai_dungeon_plan '" + plan + "' (map " + std::to_string(fields[1].GetUInt32()) +
                     "): an empty name, map 0 or a second row of the name");
             }
-            else if (!table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString(),
-                         fields[5].GetCppString()))
+            else
             {
-                ++counts.badUnits;
-                counts.Note("ai_dungeon_plan '" + plan + "': cc_priority, cc_always, kill_first or cc_never is not a list of creature entries");
-                sLog.outError("ai_dungeon_plan: plan '%s': cc_priority, cc_always, kill_first or cc_never is not a "
-                    "list of creature entries; the plan runs without crowd control and kill-first targets", plan.c_str());
+                std::string unitsError;
+                if (!table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString(),
+                        fields[5].GetCppString(), unitsError))
+                {
+                    ++counts.badUnits;
+                    counts.Note("ai_dungeon_plan '" + plan + "': " + unitsError);
+                    sLog.outError("ai_dungeon_plan: %s", unitsError.c_str());
+                }
             }
         } while (result->NextRow());
     }

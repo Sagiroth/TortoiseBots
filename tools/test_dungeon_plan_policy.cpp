@@ -424,8 +424,23 @@ static void TestPlanUnits()
     DungeonPlanTable table;
     CHECK(table.AddPlan("zulfarrak", 209));
     CHECK(!table.SetUnits("nope", "", "", "", ""));
-    CHECK(!table.SetUnits("zulfarrak", "5650,x", "", "", "")); // not a list: none kept
-    CHECK(!table.SetUnits("zulfarrak", "", "", "", "5650,x")); // cc_never is a list too
+    std::string keptError;
+    CHECK(!table.SetUnits("zulfarrak", "5650,x", "7246", "", "", keptError)); // bad list alone dropped, the rest stored
+    CHECK(keptError.find("cc_priority") != std::string::npos);
+    CHECK(keptError.find("cc_always") == std::string::npos);
+
+    table.Seal();
+    const DungeonPlan* kept = table.Find("zulfarrak");
+    CHECK(kept && kept->ccPriority.empty() && kept->ccAlways.size() == 1 && kept->ccAlways.front() == 7246 &&
+        kept->killFirst.empty() && kept->ccNever.empty());
+    CHECK(!table.SetUnits("zulfarrak", "", "", "", "")); // sealed
+}
+
+static void TestPlanUnitsRanks()
+{
+    DungeonPlanTable table;
+    CHECK(table.AddPlan("zulfarrak", 209));
+    CHECK(!table.SetUnits("zulfarrak", "", "", "", "5650,x")); // cc_never is a list too: dropped by itself
     CHECK(table.SetUnits("zulfarrak", "5650,7247,7246,5648", "5650,7246,9999", "8179,5650,7247", "7246,5648"));
     table.Seal();
     CHECK(!table.SetUnits("zulfarrak", "", "", "", ""));
@@ -453,6 +468,40 @@ static void TestPlanUnits()
     CHECK(bare.Find("u")->CcRank(5650) == -1 && bare.Find("u")->KillFirstRank(8179) == -1 &&
         !bare.Find("u")->CcNever(5650));
 }
+
+// One bad plan list must not drop the other three: each list is parsed on
+// its own, a list past kPlanMaxEntries keeps its first entries, and every
+// dropped or cut list is named in the error.
+static void TestPlanListsFailOnTheirOwn()
+{
+    DungeonPlanTable table;
+    CHECK(table.AddPlan("zul_gurub", 309));
+    std::string prio;
+    for (int i = 1; i <= 19; ++i)
+        prio += (i > 1 ? "," : "") + std::to_string(1000 + i);
+    std::string error;
+    CHECK(!table.SetUnits("zul_gurub", prio, "", "8179,5650", "", error)); // cut, still stored
+    CHECK(error.find("plan 'zul_gurub'") != std::string::npos);
+    CHECK(error.find("cc_priority") != std::string::npos);
+    CHECK(error.find("19") != std::string::npos);
+    CHECK(error.find("kill_first") == std::string::npos);
+    table.Seal();
+    const DungeonPlan* zg = table.Find("zul_gurub");
+    CHECK(zg && zg->ccPriority.size() == kPlanMaxEntries && zg->ccPriority.front() == 1001 &&
+        zg->ccPriority.back() == 1016);
+    CHECK(zg->killFirst.size() == 2 && zg->KillFirstRank(8179) == 0 && zg->KillFirstRank(5650) == 1);
+
+    DungeonPlanTable bad;
+    CHECK(bad.AddPlan("u", 70));
+    std::string badError;
+    CHECK(!bad.SetUnits("u", "5650,7247", "", "5650,x", "", badError)); // kill_first dropped by itself
+    CHECK(badError.find("kill_first") != std::string::npos);
+    CHECK(badError.find("cc_priority") == std::string::npos);
+    bad.Seal();
+    const DungeonPlan* u = bad.Find("u");
+    CHECK(u && u->ccPriority.size() == 2 && u->killFirst.empty());
+}
+
 
 static void TestBossEntries()
 {
@@ -919,6 +968,8 @@ int main()
     TestHoldTimeoutCeiling();
     TestBossStepsJoinTheirTacticSubjects();
     TestPlanUnits();
+    TestPlanUnitsRanks();
+    TestPlanListsFailOnTheirOwn();
     TestKinds();
     TestEntries();
     TestNormalize();

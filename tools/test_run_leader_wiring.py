@@ -340,7 +340,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never` FROM `ai_dungeon_plan`", loader)
         self.assertRegex(loader,
                          r"table\.SetUnits\(plan,\s*fields\[2\]\.GetCppString\(\),\s*fields\[3\]\.GetCppString\(\),\s*"
-                         r"fields\[4\]\.GetCppString\(\),\s*fields\[5\]\.GetCppString\(\)\)")
+                         r"fields\[4\]\.GetCppString\(\),\s*fields\[5\]\.GetCppString\(\),\s*\w+\)")
 
     def test_auto_cc_is_wired(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()

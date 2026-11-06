@@ -8,7 +8,7 @@
 // sealed tables, the same code and the same row checks as at startup. CommitPlanReload then decides:
 //   - a failed query or a table that changed while it was read (JudgeTableReads: the core's Query answers null for an
 //     error and for no rows alike, so each table's row count and checksum are read before and after the load);
-//   - any refused row (a plan, leg, step, need or boss row skipped, a plan's unit lists that do not parse, a tactic row
+//   - any refused row (a plan, leg, step, need or boss row skipped, a plan's cut or dropped unit list, a tactic row
 //     skipped), a plan of the old set that is gone or has no steps any more: the old tables stay, nothing changes, the
 //     reason is returned (at startup such rows are skipped with an error line; a reload is stricter, since the old set
 //     works);
@@ -86,7 +86,7 @@ namespace ai
         std::uint32_t skippedSteps = 0;
         std::uint32_t skippedBosses = 0;
         std::uint32_t skippedNeeds = 0;      // refused ai_dungeon_leg_need rows
-        std::uint32_t badUnits = 0;          // plans whose cc_priority / cc_always / kill_first / cc_never did not parse
+        std::uint32_t badUnits = 0;          // plans with a cut or dropped cc_priority / cc_always / kill_first / cc_never list
         std::vector<std::string> refusals;   // the first kNamedRefusals refused rows, in words
         // Rows each query handed the loader (accepted or not): a reload compares them with the table's row count
         // (TableRead), since the core's Query answers null both for an error and for no rows.

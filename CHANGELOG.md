@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: a plan list over 16 entries no longer drops the plan's other crowd-control and kill-first lists.
 - Fixed: a world-server crash when a Brain Wash Totem died while the run moved its focus.
 - A run leader whose tank cannot get a ranged pull going now walks in and pulls instead of pausing the run.
 - Pull orders take the word `body` (`.bot action pull`, `.bot action pullback`, `.bot cmd pull`, `.bot cmd pullback`): the tank walks in and pulls in melee whatever the target is.
