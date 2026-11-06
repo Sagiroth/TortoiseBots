@@ -10428,6 +10428,14 @@ inline bool FocusSkipsBot(bool isTank, bool isHealer, bool tankHoldTarget, bool 
     return tankHoldTarget && isTank;
 }
 
+// FocusSkipsBot's `carrier` (t1105h review): only the run's own focus (`automatedKillFirst`) leaves a Delusions carrier
+// on its Shade, while the Shade lives within the hold reach (ai::kCarrierHoldReachYd, 40 yd: the carrier's free pick
+// chases that far, so a shorter skip would let the 3 s refocus pull it back at the edge). A player's focus arms it.
+inline bool CarrierFocusSkip(bool automatedKillFirst, bool shadeWithinHoldReach)
+{
+    return automatedKillFirst && shadeWithinHoldReach;
+}
+
 // The DPS-only totem focus is the run leader's own automated kill-first order, never a player's: an explicit
 // `.bot action focus` (or `.bot cmd focus`) on a totem is the player's order and arms every bot.
 inline bool AutomatedTotemFocus(bool automatedKillFirst, bool totemTarget, bool totemKeyOn)
@@ -17975,6 +17983,14 @@ inline bool TankSkipsUnit(const DungeonPlan* plan, const Facts& f, const UnitFac
     return GuardSkipsUnit(plan, f, u) || TankIgnoredFact(f, u);
 }
 
+// An OFF-tank's pick-up of an add on a healer (t1105h review): a tank_ignore unit on a healer is the ranged dps' first
+// (RaidHealerGuard), and the off-tank's when none is free; the main tank never takes one (CheckGuard's last resort, the
+// party guard). On anyone else it stays the dps' alone (TankSkipsUnit).
+inline bool OffTankSkipsUnit(const DungeonPlan* plan, const Facts& f, const UnitFact& u)
+{
+    return GuardSkipsUnit(plan, f, u) || (TankIgnoredFact(f, u) && !u.victimHealer);
+}
+
 // A raid boss fight's or a raid trash fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, with the main tank
 // holding the boss or its current target): an add that hits a healer is the ranged dps' job, not the off-tank's. The
 // nearest free ranged dps within
@@ -18171,7 +18187,7 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
         for (const UnitFact& u : f.partyAttackers)
         {
             if (!u.hostile || !u.attackable || u.evading || u.polymorphed || !u.hitting ||
-                TankSkipsUnit(r.plan, f, u) || u.distLead > kRaidBossGuardYd)
+                OffTankSkipsUnit(r.plan, f, u) || u.distLead > kRaidBossGuardYd)
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
@@ -18314,7 +18330,10 @@ inline const UnitFact* GuardPick(const Facts& f, float holdRadius, const Run* ca
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (TankSkipsUnit(plan, f, u))
+        // A raid trash fight with a living off-tank hands every pick to an off-tank (CheckGuard's round robin), so a
+        // tank_ignore unit on a healer may be picked there (OffTankSkipsUnit); anywhere else the pick may be the main
+        // tank's, and it is skipped.
+        if (raidTrash && !f.raid.offTanksAlive.empty() ? OffTankSkipsUnit(plan, f, u) : TankSkipsUnit(plan, f, u))
             continue;
         if (!GuardEligible(u, holdRadius, capped, ccRun, raidTrash))
             continue;
@@ -18348,7 +18367,10 @@ inline const UnitFact* GuardPickHealerAdd(const Run& r, const Facts& f)
     const UnitFact* best = nullptr;
     for (const UnitFact& u : f.partyAttackers)
     {
-        if (!u.victimHealer || u.victimLead || TankSkipsUnit(r.plan, f, u) || !GuardEligible(u, 0.0f, &r, &r, true))
+        // A tank_ignore unit is the off-tanks' fallback only: with none alive the pick would be the main tank's last
+        // resort, so it is skipped and another healer add gets that resort.
+        bool const skip = f.raid.offTanksAlive.empty() ? TankSkipsUnit(r.plan, f, u) : OffTankSkipsUnit(r.plan, f, u);
+        if (!u.victimHealer || u.victimLead || skip || !GuardEligible(u, 0.0f, &r, &r, true))
             continue;
         if (GuardHeldByRun(r, u.guid) || r.healerGuardDps.count(u.guid) || HealerGuardHasFreeDps(r, f, u, taken))
             continue;
@@ -19019,7 +19041,7 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
     }
     // The last resort (mainTankLastResort) has its own budget: the add has not had one from the main tank this fight, and
     // fewer than kRaidHealerGuardLastResortsPerFight adds have. The guard's spacing and ordinary budgets do not hold it.
-    bool const mainTankLastResort = healerGuardAdd && free.empty() &&
+    bool const mainTankLastResort = healerGuardAdd && free.empty() && !TankIgnoredFact(f, *u) &&
         r.healerGuardLooseMs >= kRaidHealerGuardLastResortMs && HealerGuardMainTankMayTake(r, f) &&
         r.healerGuardLastResortGuids.count(u->guid) == 0 &&
         r.healerGuardLastResortGuids.size() < kRaidHealerGuardLastResortsPerFight;

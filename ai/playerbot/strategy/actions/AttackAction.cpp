@@ -29,6 +29,9 @@ void CommitExplicitAttackTarget(PlayerbotAI* ai, ObjectGuid guid)
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<ObjectGuid>("attack target")->Set(guid);
     context->GetValue<ObjectGuid>("explicit attack target")->Set(guid);
+    // A command commit is a player's order until the run marks it as its own (Commander's NoteRunOrder, after the
+    // action): the carrier override never takes a player's target away (OrderIsAutomated).
+    context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
 
     // A player's order outranks an earlier reach give-up. That give-up puts the
     // creature and its whole kind on the "unreachable" lists for five minutes,

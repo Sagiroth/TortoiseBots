@@ -2114,7 +2114,8 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
                       "                totemTarget, totemFocus, carrier)", COMMANDS)
         # A Delusions carrier with its Shade in reach is skipped (t1105h J1).
-        self.assertIn("bool const carrier = ai::FindBossCarrierPick(ai, bot) != nullptr;", COMMANDS)
+        self.assertIn("bool const carrier = TortoiseBots::DungeonRun::CarrierFocusSkip(automatedKillFirst,\n"
+                      "            automatedKillFirst && ai::FindBossCarrierPick(ai, bot) != nullptr);", COMMANDS)
         # The focus order hands the tick to the totem before the guard (and now before every other order) can spend it.
         policy = strip_comments(self.POLICY)
         totem = policy.index("if (f.totemFocus && !r.retreatOn)")
@@ -2132,7 +2133,13 @@ class RunFactKeyWiringTest(unittest.TestCase):
         # The healer guard's ranged dps read GuardSkipsUnit alone; every site that sends a tank reads TankSkipsUnit
         # (GuardSkipsUnit plus a tank_ignore unit while its boss fights, t1105h).
         self.assertEqual(self.POLICY.count("GuardSkipsUnit(r.plan, f, u)"), 1)
-        self.assertEqual(self.POLICY.count("TankSkipsUnit(r.plan, f, u)"), 7)
+        self.assertEqual(len(re.findall(r"(?<!Off)TankSkipsUnit\(r\.plan, f, u\)", self.POLICY)), 6)
+        # An add on a healer may go to an off-tank (t1105h review): GuardPickHealerAdd with an off-tank alive, and
+        # RaidGuardTick's off-tank pick-up.
+        self.assertEqual(self.POLICY.count("OffTankSkipsUnit(r.plan, f, u)"), 2)
+        off = body(strip_comments(self.POLICY), "inline bool OffTankSkipsUnit(", "\n}\n")
+        self.assertIn("return GuardSkipsUnit(plan, f, u) || (TankIgnoredFact(f, u) && !u.victimHealer);", off)
+        self.assertIn("healerGuardAdd && free.empty() && !TankIgnoredFact(f, *u) &&", self.POLICY)
         tank = body(strip_comments(self.POLICY), "inline bool TankSkipsUnit(", "\n}\n")
         self.assertIn("return GuardSkipsUnit(plan, f, u) || TankIgnoredFact(f, u);", tank)
         healer = body(strip_comments(self.POLICY), "inline bool RaidHealerGuard(", "\n}\n")

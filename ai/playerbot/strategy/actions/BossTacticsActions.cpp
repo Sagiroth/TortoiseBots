@@ -1731,9 +1731,22 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         Player* const puller = map->GetPlayer(ObjectGuid(state.puller));
         Creature* const son = map->GetCreature(ObjectGuid(state.son));
+        // The running threat abort (t1105h review): the puller against the live top tank on the boss's list this tick.
+        bool threatHigh = false;
+        if (puller && puller->IsInWorld())
+        {
+            std::vector<float> tankThreats;
+            if (Group* const group = puller->GetGroup())
+                for (Player* member : LiveGroupMembers(group))
+                    if (member && member != puller && member->IsInWorld() && sServerFacade.IsAlive(member) &&
+                        PlayerbotAI::IsTank(member))
+                        tankThreats.push_back(boss->GetThreatManager().getThreat(member));
+            threatHigh = WalkoutRunningThreatTooHigh(boss->GetThreatManager().getThreat(puller),
+                WalkoutTopTankThreat(tankThreats));
+        }
         const char* const problem = !puller || !puller->IsInWorld() ? "gone" :
             WalkoutPullerProblem(sServerFacade.IsAlive(puller), !puller->GetCharmerGuid().IsEmpty(),
-                puller->HasAura(kHakkarCauseInsanitySpell), boss->GetVictim() == puller);
+                puller->HasAura(kHakkarCauseInsanitySpell), boss->GetVictim() == puller, threatHigh);
         bool const pullerOk = problem == nullptr;
         bool const sonOk = son && sServerFacade.IsAlive(son);
         bool const shotNow = sonOk && (son->IsInCombat() || son->GetVictim() == puller);
@@ -2894,7 +2907,8 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
 
 namespace
 {
-Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode);
+Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
+    float carrierReachYd);
 }
 
 Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -2902,10 +2916,13 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     if (fight.rows.empty())
         return nullptr;
     AiObjectContext* context = ai->GetAiObjectContext();
-    // A free DPS takes every open row; one under an explicit order (the run's focus) only the carrier override.
-    const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot),
-        !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty(), HasCarrierKillFirstRow(fight.rows));
-    return PickBossKillFirst(ai, bot, fight, mode);
+    // A free DPS takes every open row; one under the run's own order (the focus, the refocus) only the carrier
+    // override; a player's order wins outright (OrderIsAutomated: the run's mark matches the explicit target).
+    ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
+    const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
+        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()),
+        HasCarrierKillFirstRow(fight.rows));
+    return PickBossKillFirst(ai, bot, fight, mode, CarrierReachYd(ai->IsRanged(bot)));
 }
 
 bool ai::TankIgnoresTarget(PlayerbotAI* ai, Player* bot, Unit* target)
@@ -2935,12 +2952,14 @@ Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     if (!HasCarrierKillFirstRow(fight.rows))
         return nullptr;
-    return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier);
+    // The hold reach (kCarrierHoldReachYd): as far as the carrier's free pick chases, so the refocus never pulls it back.
+    return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
 }
 
 namespace
 {
-Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode)
+Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
+    float carrierReachYd)
 {
     if (fight.rows.empty() || mode == KillFirstPickMode::None)
         return nullptr;
@@ -3024,7 +3043,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
         }
     }
     const int picked = mode == KillFirstPickMode::Carrier
-        ? PickCarrierOverride(fight.rows, candidates, CarrierReachYd(ai->IsRanged(bot)))
+        ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
         : PickKillFirst(fight.rows, candidates);
     return picked < 0 ? nullptr : units[picked];
 }
@@ -3630,12 +3649,17 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
     Unit* current = AI_VALUE(Unit*, "current target");
     if (current == pick)
         return false;
-    // Under an explicit order the pick can only be the carrier override (t1105h J1): the order is dropped, so the bot
-    // is a free DPS on its Shade and nothing re-picks the ordered unit while the curse lasts. Once the curse ends the
-    // gated row closes and the bot's normal targeting (the skull, the run's next focus) takes over.
+    // Under an explicit order the pick can only be the carrier override (t1105h J1), and only for the run's own order
+    // (FindBossKillFirst: a player's order gets no pick at all): that order is dropped, so the bot is a free DPS on its
+    // Shade and nothing re-picks the ordered unit while the curse lasts. Once the curse ends the gated row closes and the
+    // bot's normal targeting (the skull, the run's next focus) takes over.
     ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
-    if (!ordered.IsEmpty() && ordered != pick->GetObjectGuid())
+    if (!ordered.IsEmpty() && ordered != pick->GetObjectGuid() &&
+        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()))
+    {
         context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
+        context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
+    }
     return Attack(bot, pick);
 }
 

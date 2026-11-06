@@ -2612,18 +2612,33 @@ namespace ai
     }
 
     // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
-    // under an order (the run's focus, the 3 s ward refocus) takes only the carrier override (PickCarrierOverride): its
-    // own subject's damage counts and nobody else's does, so no order may keep it off. Tanks and healers keep their jobs.
+    // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
+    // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
+    // overridden: the player's target or focus wins. Tanks and healers keep their jobs.
     enum class KillFirstPickMode : std::uint8_t { None, Free, Carrier };
 
-    inline KillFirstPickMode KillFirstPickModeFor(bool battleDps, bool explicitOrder, bool carrierRowOpen)
+    inline KillFirstPickMode KillFirstPickModeFor(bool battleDps, bool explicitOrder, bool orderAutomated,
+                                                  bool carrierRowOpen)
     {
         if (!battleDps)
             return KillFirstPickMode::None;
         if (!explicitOrder)
             return KillFirstPickMode::Free;
-        return carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
+        return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
     }
+
+    // Whether the bot's explicit attack target is the run's automated order: the run marks the target its focus or
+    // attack order set ("automated attack target"), and every command commit (a player's `attack`, a mark order) clears
+    // that mark, so only an order the run itself issued still matches it.
+    inline bool OrderIsAutomated(std::uint64_t explicitTarget, std::uint64_t automatedTarget)
+    {
+        return explicitTarget != 0 && explicitTarget == automatedTarget;
+    }
+
+    // How far the carrier hold reaches (t1105h review): once on its Shade the carrier is a free DPS whose kill_first pick
+    // chases to kBossTacticsEngageRange, so the run's focus skips it out to the same range; CarrierReachYd is only the
+    // first override of an automated order.
+    constexpr float kCarrierHoldReachYd = kBossTacticsEngageRange;
 
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
     inline int PickCarrierOverride(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates,

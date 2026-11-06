@@ -117,13 +117,13 @@ namespace ai
     BossInterruptScan FindBossInterrupt(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
     // The kill_first creature this DPS bot should be on, or null. Tanks and healers never get one; a bot under an
-    // explicit attack order gets only the carrier override (KillFirstPickMode::Carrier): a Delusions carrier's Shade of
-    // Jin'do within its reach (t1105h J1).
+    // explicit attack order the run issued gets only the carrier override (KillFirstPickMode::Carrier): a Delusions
+    // carrier's Shade of Jin'do within its reach (t1105h J1). A player's order gets none.
     Unit* FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
-    // The carrier override alone, whatever the bot's orders: the nearest live unit of an aura-gated kill_first row
-    // whose aura this DPS bot carries, within its reach (CarrierReachYd). The run's focus skips such a bot
-    // (DungeonRun::FocusSkipsBot), so the order does not pull it back off its Shade.
+    // The carrier hold, whatever the bot's orders: the nearest live unit of an aura-gated kill_first row whose aura
+    // this DPS bot carries, within kCarrierHoldReachYd (the free pick's own range). The run's own focus skips such a bot
+    // (DungeonRun::CarrierFocusSkip, FocusSkipsBot), so its refocus does not pull it back off its Shade.
     Unit* FindBossCarrierPick(PlayerbotAI* ai, Player* bot);
 
     // tank_ignore (t1105h J2): whether this bot, a tank, leaves the target alone because a boss whose tank_ignore row

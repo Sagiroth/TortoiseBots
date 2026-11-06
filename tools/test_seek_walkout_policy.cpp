@@ -358,6 +358,34 @@ static void TestThreatRule()
     CHECK(std::string(WalkoutPullerProblem(true, false, false, true)) == "victim");
 }
 
+// t1105h review (Codex HIGH): a running task aborts on threat again, at 1.0 x the live top tank's threat (the highest
+// tank on the boss's list this tick, never a cached main tank). The 0.7 pick margin and the victim abort stay.
+static void TestRunningThreatAbort()
+{
+    // Growth during the task: below the top tank goes on, level with it aborts with reason `threat`.
+    std::vector<float> tanks{1000.0f, 400.0f};
+    CHECK(Near(WalkoutTopTankThreat(tanks), 1000.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(800.0f, WalkoutTopTankThreat(tanks)));
+    CHECK(WalkoutPullerProblem(true, false, false, false, WalkoutRunningThreatTooHigh(800.0f, 1000.0f)) == nullptr);
+    CHECK(WalkoutRunningThreatTooHigh(1000.0f, WalkoutTopTankThreat(tanks)));
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, false,
+        WalkoutRunningThreatTooHigh(1000.0f, 1000.0f))) == "threat");
+    // The pick margin is still 0.7: 800 of 1000 is never picked, though it runs on.
+    CHECK(WalkoutThreatTooHigh(800.0f, 1000.0f));
+    // A main-tank swap: the old main tank (index 0) dropped to 500 and the off-tank holds 1200. The bot at 1000 compares
+    // against the new top tank and goes on; against the old main tank it would have aborted.
+    std::vector<float> swapped{500.0f, 1200.0f};
+    CHECK(Near(WalkoutTopTankThreat(swapped), 1200.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(1000.0f, WalkoutTopTankThreat(swapped)));
+    CHECK(WalkoutRunningThreatTooHigh(1000.0f, swapped[0]));
+    // No living tank on the list: only the victim rule speaks.
+    CHECK(Near(WalkoutTopTankThreat({}), 0.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(5000.0f, 0.0f));
+    // The other reasons come first: dead, charmed, insanity and victim keep their words.
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, true, true)) == "victim");
+    CHECK(std::string(WalkoutPullerProblem(false, false, false, false, true)) == "dead");
+}
+
 static void TestPullerInsideWithAPath()
 {
     // Only a bot inside the anchor with a navmesh path to the stand (the hunter on the 51 yd ledge never moved).
@@ -493,6 +521,7 @@ int main()
     TestPetHoldsAgeOut();
     TestStandSearchStaysOnThePlatform();
     TestThreatRule();
+    TestRunningThreatAbort();
     TestPullerInsideWithAPath();
     TestMoveFailsAbort();
     TestMoveFailAbortUnspendsAndExcludes();

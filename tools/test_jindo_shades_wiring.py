@@ -24,10 +24,13 @@ COMMANDS = read("commands/Commander.cpp")
 
 class JindoShadesWiring(unittest.TestCase):
     def test_kill_first_reads_the_carrier_mode(self):
-        self.assertIn("const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot),\n"
-                      "        !AI_VALUE(ObjectGuid, \"explicit attack target\").IsEmpty(), "
-                      "HasCarrierKillFirstRow(fight.rows));", ACTIONS)
-        self.assertIn("? PickCarrierOverride(fight.rows, candidates, CarrierReachYd(ai->IsRanged(bot)))", ACTIONS)
+        self.assertIn("const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),\n"
+                      "        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, \"automated attack target\")"
+                      ".GetRawValue()),", ACTIONS)
+        self.assertIn("return PickBossKillFirst(ai, bot, fight, mode, CarrierReachYd(ai->IsRanged(bot)));", ACTIONS)
+        self.assertIn("return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);",
+                      ACTIONS)
+        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd)", ACTIONS)
         # The old gate is gone from the pick: an explicit order no longer returns before the carrier override.
         start = ACTIONS.index("Unit* ai::FindBossKillFirst(")
         self.assertNotIn("IsFreeDps", ACTIONS[start:ACTIONS.index("Unit* ai::FindBossCarrierPick(", start)])
@@ -36,6 +39,17 @@ class JindoShadesWiring(unittest.TestCase):
         start = ACTIONS.index("bool BossTacticsKillFirstAction::Execute(")
         action = ACTIONS[start:ACTIONS.index("\n}\n", start)]
         self.assertIn("context->GetValue<ObjectGuid>(\"explicit attack target\")->Set(ObjectGuid());", action)
+
+    def test_only_the_runs_orders_are_marked_automated(self):
+        # Every command commit clears the mark; only the run's focus and attack orders set it again (t1105h review).
+        attack = read("ai/playerbot/strategy/actions/AttackAction.cpp")
+        commit = attack[attack.index("void CommitExplicitAttackTarget("):]
+        commit = commit[:commit.index("\n}\n")]
+        self.assertIn("context->GetValue<ObjectGuid>(\"automated attack target\")->Set(ObjectGuid());", commit)
+        self.assertIn("NoteRunOrder(ai, automatedKillFirst);", COMMANDS)
+        self.assertIn("NoteRunOrder(ai, s_runIssuing);", COMMANDS)
+        self.assertIn('creators["automated attack target"]', read("ai/playerbot/strategy/values/ValueContext.h"))
+        self.assertIn("CapHuntedBoost(candidates, bands);", HEAL)
 
     def test_tanks_refuse_a_tank_ignore_target(self):
         self.assertIn("if (botAi && TankIgnoresTarget(botAi, player, target))", TARGETS)

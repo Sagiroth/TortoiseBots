@@ -318,6 +318,8 @@ Unit* PartyMemberToHeal::Calculate()
 
     if (candidates.empty())
         return nullptr;
+    // The Shade-victim boost never lifts a non-tank over a tank in a more urgent band (t1105h review).
+    CapHuntedBoost(candidates, bands);
     std::sort(candidates.begin(), candidates.end(), [&](HealingCandidate const& left, HealingCandidate const& right)
         { return HealingPriority(left, right, bands); });
     return targets.at(candidates[HealingAssignment(candidates, bands, healerOrdinal)].guid);

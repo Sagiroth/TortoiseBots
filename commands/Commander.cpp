@@ -3103,6 +3103,18 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
 
 } // namespace
 
+// The run's own focus or attack order (`automated`): mark the target it set as the automation's, so the carrier
+// override (ai::OrderIsAutomated) may take it over for a Shade. A player's order is never marked: every command commit
+// clears the mark (AttackAction's CommitExplicitAttackTarget), so the player's target or focus wins.
+static void NoteRunOrder(PlayerbotAI* ai, bool automated)
+{
+    if (!automated)
+        return;
+    ai::AiObjectContext* const context = ai->GetAiObjectContext();
+    context->GetValue<ObjectGuid>("automated attack target")->Set(
+        context->GetValue<ObjectGuid>("explicit attack target")->Get());
+}
+
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
 // carrying the GUID-named target: AttackMyTargetAction reads its event
 // owner's selection. The commander's own selection is never touched.
@@ -3165,7 +3177,10 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
         // The lead bot's selection is set again for every bot: an earlier
         // bot's first AI step may be the lead bot's own, which can change it.
         if (RunBotAttackOrder(ai, bot, order.lead, targetGuid, onlyBot != nullptr))
+        {
+            NoteRunOrder(ai, s_runIssuing);
             ++succeeded;
+        }
     }
     if (!succeeded)
     {
@@ -3297,9 +3312,10 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
         // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
         // whole party (the run leader counts on every focus order doing that).
-        // A Delusions carrier with its Shade of Jin'do in reach stays on the Shade (t1105h J1): the focus, and the 3 s
-        // ward refocus that repeats it, would pull it back to the one unit its damage does not need to be on.
-        bool const carrier = ai::FindBossCarrierPick(ai, bot) != nullptr;
+        // A Delusions carrier with its Shade of Jin'do within the hold reach stays on the Shade (t1105h J1): the run's
+        // focus, and the 3 s ward refocus that repeats it, would pull it back. A player's focus arms it like any bot.
+        bool const carrier = TortoiseBots::DungeonRun::CarrierFocusSkip(automatedKillFirst,
+            automatedKillFirst && ai::FindBossCarrierPick(ai, bot) != nullptr);
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
                 totemTarget, totemFocus, carrier))
             continue;
@@ -3312,6 +3328,8 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
             accepted = set && ExecuteQuietAction(ai, "attack rti target", ai::Event("focus skull", "", order.lead));
             ExecuteQuietNextAction(ai, true);
         }
+        if (accepted)
+            NoteRunOrder(ai, automatedKillFirst);
         if (accepted)
             ++succeeded;
     }

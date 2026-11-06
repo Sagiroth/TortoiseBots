@@ -3168,14 +3168,23 @@ int main()
         CHECK(HasCarrierKillFirstRow(Active(jindo)));
         CHECK(!HasCarrierKillFirstRow(Active(uncursed)));
         // TestDelusionsCarrierPicksShadeOverOrder: a DPS under an order is in the carrier mode only while it carries.
-        CHECK(KillFirstPickModeFor(true, false, false) == KillFirstPickMode::Free);
-        CHECK(KillFirstPickModeFor(true, false, true) == KillFirstPickMode::Free);
-        CHECK(KillFirstPickModeFor(true, true, true) == KillFirstPickMode::Carrier);
+        // Arguments: battle DPS, an explicit order, the order is the run's automation, a carrier row open.
+        CHECK(KillFirstPickModeFor(true, false, false, false) == KillFirstPickMode::Free);
+        CHECK(KillFirstPickModeFor(true, false, false, true) == KillFirstPickMode::Free);
+        // Automated focus + curse: the carrier switches to the Shade.
+        CHECK(KillFirstPickModeFor(true, true, true, true) == KillFirstPickMode::Carrier);
         // TestUncursedBotIgnoresShadeUnderOrder: the order holds for an uncursed DPS, as before.
-        CHECK(KillFirstPickModeFor(true, true, false) == KillFirstPickMode::None);
+        CHECK(KillFirstPickModeFor(true, true, true, false) == KillFirstPickMode::None);
+        // Player focus + curse (Codex HIGH, t1105h review): the player's target wins, no override.
+        CHECK(KillFirstPickModeFor(true, true, false, true) == KillFirstPickMode::None);
         // Tanks and healers keep their jobs, cursed or not.
-        CHECK(KillFirstPickModeFor(false, false, true) == KillFirstPickMode::None);
-        CHECK(KillFirstPickModeFor(false, true, true) == KillFirstPickMode::None);
+        CHECK(KillFirstPickModeFor(false, false, false, true) == KillFirstPickMode::None);
+        CHECK(KillFirstPickModeFor(false, true, true, true) == KillFirstPickMode::None);
+        // The order is the automation's only while the run's own mark names the explicit target.
+        CHECK(OrderIsAutomated(0x500, 0x500));
+        CHECK(!OrderIsAutomated(0x500, 0x501));   // a player's order to another unit since
+        CHECK(!OrderIsAutomated(0x500, 0));       // a player's order (the mark is cleared by every command commit)
+        CHECK(!OrderIsAutomated(0, 0));           // no order at all
         // The carrier pick: the nearest live Shade within reach, never the ward the order names.
         std::vector<TacticCandidate> c(4);
         c[0].entry = 14987; c[0].distance = 2.0f; c[0].pickable = true;  // the ordered ward, nearest of all
@@ -3192,6 +3201,18 @@ int main()
         CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == 2);  // melee reach
         CHECK(Near(kCarrierMeleeReachYd, 15.0f));
         CHECK(PickCarrierOverride(Active(uncursed), c, CarrierReachYd(true)) == -1); // curse over: no override
+        // The hold reach (Opus 2, t1105h review): once the carrier is on its Shade it stays a free DPS whose pick chases
+        // to kBossTacticsEngageRange, so the run's refocus leaves it alone out to that range too. At 20 yd the melee
+        // carrier's first override does not fire (15 yd), but the hold does: no refocus pulls it back.
+        {
+            std::vector<TacticCandidate> at20(1);
+            at20[0].entry = 14986; at20[0].distance = 20.0f; at20[0].pickable = true;
+            CHECK(PickCarrierOverride(Active(jindo), at20, CarrierReachYd(false)) == -1);
+            CHECK(PickCarrierOverride(Active(jindo), at20, kCarrierHoldReachYd) == 0);
+            CHECK(Near(kCarrierHoldReachYd, kBossTacticsEngageRange));
+            at20[0].distance = 41.0f;
+            CHECK(PickCarrierOverride(Active(jindo), at20, kCarrierHoldReachYd) == -1);
+        }
         CHECK(Near(CarrierReachYd(false), kCarrierMeleeReachYd) && Near(CarrierReachYd(true), kCarrierSpellReachYd));
         // An ungated kill_first row never makes a carrier pick (the ward stays the order's).
         std::vector<TacticCandidate> wardOnly(1, c[0]);

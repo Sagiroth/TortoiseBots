@@ -33,6 +33,7 @@ namespace ai
     constexpr float kSeekWalkoutMinStandZ = 46.5f;  // the stand's floor: above Hakkar's 45.8 evade line, with margin
     constexpr float kSeekWalkoutStandStepYd = 2.0f; // the stand search's step, out from the anchor's edge
     constexpr float kSeekWalkoutThreatShare = 0.7f; // a bot at this share of the main tank's threat is not picked
+    constexpr float kSeekWalkoutAbortThreatShare = 1.0f; // a running puller at this share of the top tank's aborts
     constexpr int kSeekWalkoutMoveFails = 3;        // this many refused moves in a row abort the task
     constexpr std::uint32_t kSeekWalkoutReplanMs = 1000;  // the stand is re-planned from the Son's live spot this often
     constexpr std::uint32_t kSeekWalkoutNoStandMs = 5000; // this long straight without any stand aborts ("no stand")
@@ -101,16 +102,37 @@ namespace ai
     }
 
     // Whether a bot's threat on the boss is too close to the main tank's to be sent: kSeekWalkoutThreatShare of it or
-    // more (the pick's margin; a running task never aborts on threat, only on becoming the victim). Without a
-    // main-tank reference (dead, charmed) only the victim rule speaks.
+    // more (the pick's margin; a running task aborts at kSeekWalkoutAbortThreatShare of the top tank's,
+    // WalkoutRunningThreatTooHigh). Without a main-tank reference (dead, charmed) only the victim rule speaks.
     inline bool WalkoutThreatTooHigh(float botThreat, float mainTankThreat)
     {
         return mainTankThreat > 0.0f && botThreat >= kSeekWalkoutThreatShare * mainTankThreat;
     }
 
+    // The live top tank's threat on the boss this tick: the highest of the living tanks' (`tankThreats`), never a cached
+    // main tank, so a tank swap moves the reference with it. 0 with no tank on the list.
+    inline float WalkoutTopTankThreat(const std::vector<float>& tankThreats)
+    {
+        float top = 0.0f;
+        for (float const threat : tankThreats)
+            if (threat > top)
+                top = threat;
+        return top;
+    }
+
+    // Whether the running task's puller has caught the top tank (t1105h review): its threat at
+    // kSeekWalkoutAbortThreatShare of the live top tank's or more. The next swing or DoT tick hands it the boss, so the
+    // task aborts (`threat`) before the boss turns to it. With no tank reference only the victim rule speaks.
+    inline bool WalkoutRunningThreatTooHigh(float botThreat, float topTankThreat)
+    {
+        return topTankThreat > 0.0f && botThreat >= kSeekWalkoutAbortThreatShare * topTankThreat;
+    }
+
     // Why the running task's puller cannot go on (the abort's logged reason), or null: dead, charmed, under Cause
-    // Insanity, or the boss's victim (the real danger: he turns toward it, off the platform).
-    inline const char* WalkoutPullerProblem(bool alive, bool charmed, bool insane, bool bossVictim)
+    // Insanity, the boss's victim (the real danger: he turns toward it, off the platform), or its threat level with the
+    // live top tank's (`threatHigh`, WalkoutRunningThreatTooHigh).
+    inline const char* WalkoutPullerProblem(bool alive, bool charmed, bool insane, bool bossVictim,
+        bool threatHigh = false)
     {
         if (!alive)
             return "dead";
@@ -120,6 +142,8 @@ namespace ai
             return "insanity";
         if (bossVictim)
             return "victim";
+        if (threatHigh)
+            return "threat";
         return nullptr;
     }
 

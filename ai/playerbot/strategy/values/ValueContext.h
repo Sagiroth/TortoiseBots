@@ -339,6 +339,9 @@ namespace ai
             creators["talk target"] = [](PlayerbotAI* ai) { return new TalkTargetValue(ai); };
             creators["attack target"] = [](PlayerbotAI* ai) { return new AttackTargetValue(ai); };
             creators["explicit attack target"] = [](PlayerbotAI* ai) { return new ExplicitAttackTargetValue(ai); };
+            // The target of the run's own last focus or attack order (Commander), cleared by every command commit: the
+            // carrier override (OrderIsAutomated) tells the run's order from a player's by it.
+            creators["automated attack target"] = [](PlayerbotAI* ai) { return new ExplicitAttackTargetValue(ai, "automated attack target"); };
             creators["pull target"] = [](PlayerbotAI* ai) { return new PullTargetValue(ai); };
             creators["follow target"] = [](PlayerbotAI* ai) { return new FollowTargetValue(ai); };
             creators["manual follow target"] = [](PlayerbotAI* ai) { return new ManualFollowTargetValue(ai); };
