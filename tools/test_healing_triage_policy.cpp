@@ -79,5 +79,19 @@ int main()
     CHECK(HealingPriority(caster, equal, bands)); // reproducible tie, not roster insertion order
     CHECK(!HealingPriority(equal, caster, bands));
     CHECK(!HealingPriority(caster, caster, bands));
+    // t1105h J1: a member a Shade of Jin'do hunts (Shadow Shock 602 every 2 s and its melee) is healed one band earlier
+    // and with the tank's in-band lead; an emergency elsewhere still comes first.
+    HealingCandidate hunted{10, 5500, 10000, 0, false, false, false};  // 55 %: the medium band
+    HealingCandidate dps{11, 4800, 10000, 0, false, false, false};     // 48 %: the low band
+    CHECK(HealingPriority(dps, hunted, bands));          // unhunted: the lower band first, as before
+    hunted.hunted = true;
+    CHECK(HealingUrgency(hunted, bands) == 1);
+    CHECK(HealingPriority(hunted, dps, bands));          // hunted: same band, and its lead wins
+    HealingCandidate critical{12, 1500, 10000, 0, false, false, false}; // 15 %: critical
+    HealingCandidate huntedLow{13, 3000, 10000, 0, false, false, false, true, true}; // 30 %: low -> critical
+    CHECK(HealingUrgency(huntedLow, bands) == 0);
+    CHECK(HealingPriority(critical, huntedLow, bands));  // in an emergency the lowest health wins
+    HealingCandidate huntedTop{14, 9950, 10000, 0, false, false, false, true, true};
+    CHECK(!NeedsPartyHealing(huntedTop, bands));         // the weighting never makes a full member a heal target
     std::cout << "healing triage policy: OK\n";
 }

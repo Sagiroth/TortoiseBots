@@ -3243,6 +3243,13 @@ static void UpdateHeldAttacks(uint32 diff)
     }
 }
 
+// The first boss whose tank_ignore row names the entry on the map, 0 for none (DungeonRun::UnitFact::tankIgnoreBoss).
+static uint32 TankIgnoreBossOf(uint32 map, uint32 entry)
+{
+    const std::vector<std::uint32_t>& bosses = ai::GetBossTactics().TankIgnoreBosses(map, entry);
+    return bosses.empty() ? 0 : bosses.front();
+}
+
 // Whether the focus target is a creature a tank_hold row names (ai_boss_tactic): a caster whose avoid_cast blast a
 // tank may hold, and whose own loose adds only a tank can take off a non-tank. On such a target the focus order arms
 // the DPS and the healers and leaves the tanks to their own pick; every other target, and every map without such a
@@ -3290,8 +3297,11 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // A tank on a tank_hold focus target (a Zul'Gurub Mad Voidwalker) keeps its own pick instead of joining the
         // focus, so it can take the row's loose adds off the healers; the un-stay above still runs for it, like the
         // whole party (the run leader counts on every focus order doing that).
+        // A Delusions carrier with its Shade of Jin'do in reach stays on the Shade (t1105h J1): the focus, and the 3 s
+        // ward refocus that repeats it, would pull it back to the one unit its damage does not need to be on.
+        bool const carrier = ai::FindBossCarrierPick(ai, bot) != nullptr;
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
-                totemTarget, totemFocus))
+                totemTarget, totemFocus, carrier))
             continue;
         bool accepted;
         if (totemFocus)
@@ -9531,6 +9541,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.engaged = true;
             fact.hitting = true;
             fact.attackable = GroupCanAttack(lead, nearestHit); // never engaged when it cannot be attacked
+            fact.tankIgnoreBoss = TankIgnoreBossOf(lead->GetMapId(), fact.entry); // DungeonRun::TankIgnoredFact
             f.leadHasAttacker = true;
         }
         // Every mob on the lead bot, each once (the automatic cc counts them with the party's attackers; the nearest
@@ -9622,6 +9633,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
+            // A tank_ignore entry: no tank is sent at it while its boss fights (DungeonRun::TankIgnoredFact).
+            fact.tankIgnoreBoss = TankIgnoreBossOf(anchor->GetMapId(), fact.entry);
             if ((raidBoss || raidTrashOffTanks) && !petVictim)
                 fact.victimName = victim->GetName(); // RaidGuardTick: never the off-tank holding the boss; the trash
                                                      // round robin keeps an off-tank on its own add (RaidTrashOffTankHolds)
@@ -13065,6 +13078,8 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
                 fact.auraGated = ai::GetBossTactics().RequiredAura(anchor->GetMapId(), fact.entry) != 0;
+            // A tank_ignore entry: no tank is sent at it while its boss fights (DungeonRun::TankIgnoredFact).
+            fact.tankIgnoreBoss = TankIgnoreBossOf(anchor->GetMapId(), fact.entry);
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
             fact.partyHits = partyVictims.count(fact.guid) != 0;

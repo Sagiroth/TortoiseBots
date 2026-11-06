@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/FankrissGauntletPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleTargetsValue.h"
@@ -311,6 +312,15 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     {
         std::uint32_t const requiredAura = GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry());
         if (AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura)))
+            return false;
+    }
+
+    // A tank_ignore entry (t1105h J2, Jin'do's Sacrificed Trolls 14826) is no tank's target while its boss fights: no tank
+    // pick, no attacker-of-non-tank or snare taunt, so the tanks stay on the boss and the damage dealers kill it.
+    if (target && player && !GetBossTactics().TankIgnoreBosses(player->GetMapId(), target->GetEntry()).empty())
+    {
+        PlayerbotAI* const botAi = PlayerbotAIStorage::Instance().GetAI(player);
+        if (botAi && TankIgnoresTarget(botAi, player, target))
             return false;
     }
 

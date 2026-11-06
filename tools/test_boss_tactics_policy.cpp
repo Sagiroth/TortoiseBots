@@ -3154,6 +3154,79 @@ int main()
         }
     }
 
+    // t1105h J1: a Delusions 24306 carrier turns on its Shade of Jin'do 14986 even under an explicit attack order (the
+    // run's focus and the 3 s ward refocus give every DPS one). The scan already dropped the gated row for a bot without
+    // the aura, so an open aura-gated kill_first row means "this bot carries it".
+    {
+        std::vector<BossTacticRow> jindo;
+        BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 0);
+        shade.botAura = 24306;
+        jindo.push_back(shade);
+        jindo.push_back(Row(309, 11380, BossTacticKind::KillFirst, 14987, 0, 1));
+        jindo.push_back(Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 2));
+        std::vector<BossTacticRow> uncursed(jindo.begin() + 1, jindo.end()); // the scan without the gated row
+        CHECK(HasCarrierKillFirstRow(Active(jindo)));
+        CHECK(!HasCarrierKillFirstRow(Active(uncursed)));
+        // TestDelusionsCarrierPicksShadeOverOrder: a DPS under an order is in the carrier mode only while it carries.
+        CHECK(KillFirstPickModeFor(true, false, false) == KillFirstPickMode::Free);
+        CHECK(KillFirstPickModeFor(true, false, true) == KillFirstPickMode::Free);
+        CHECK(KillFirstPickModeFor(true, true, true) == KillFirstPickMode::Carrier);
+        // TestUncursedBotIgnoresShadeUnderOrder: the order holds for an uncursed DPS, as before.
+        CHECK(KillFirstPickModeFor(true, true, false) == KillFirstPickMode::None);
+        // Tanks and healers keep their jobs, cursed or not.
+        CHECK(KillFirstPickModeFor(false, false, true) == KillFirstPickMode::None);
+        CHECK(KillFirstPickModeFor(false, true, true) == KillFirstPickMode::None);
+        // The carrier pick: the nearest live Shade within reach, never the ward the order names.
+        std::vector<TacticCandidate> c(4);
+        c[0].entry = 14987; c[0].distance = 2.0f; c[0].pickable = true;  // the ordered ward, nearest of all
+        c[1].entry = 14986; c[1].distance = 25.0f; c[1].pickable = true; c[1].victimHealer = true;
+        c[2].entry = 14986; c[2].distance = 12.0f; c[2].pickable = true;
+        c[3].entry = 14986; c[3].distance = 3.0f; c[3].pickable = false; // dead or not attackable
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(true)) == 2);   // a caster: 30 yd, the nearer
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == -1); // melee: none in reach
+        c[2].distance = 4.0f;
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == 2);  // melee reach
+        CHECK(PickCarrierOverride(Active(uncursed), c, CarrierReachYd(true)) == -1); // curse over: no override
+        CHECK(Near(CarrierReachYd(false), kCarrierMeleeReachYd) && Near(CarrierReachYd(true), kCarrierSpellReachYd));
+        // An ungated kill_first row never makes a carrier pick (the ward stays the order's).
+        std::vector<TacticCandidate> wardOnly(1, c[0]);
+        CHECK(PickCarrierOverride(Active(jindo), wardOnly, CarrierReachYd(true)) == -1);
+    }
+
+    // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.
+    {
+        BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);
+        CHECK(ParseBossTacticKind("tank_ignore") == BossTacticKind::TankIgnore);
+        {
+            BossTacticTable table;
+            CHECK(table.TankIgnoreBosses(309, 14826).empty()); // not sealed
+            CHECK(table.Add(ignore));
+            table.Seal();
+            CHECK(table.TankIgnoreBosses(309, 14826) == std::vector<std::uint32_t>{11380});
+            CHECK(table.TankIgnoreBosses(309, 11380).empty());
+            CHECK(table.TankIgnoreBosses(509, 14826).empty());
+        }
+        // The row's shape: a target, nothing else; read straight from the table, so no gate and no mode word.
+        BossTacticRow noTarget = ignore; noTarget.targetEntry = 0;
+        BossTacticRow spell = ignore; spell.spellId = 24306;
+        BossTacticRow gated = ignore; gated.hpMax = 50;
+        BossTacticRow aura = ignore; aura.botAura = 24306;
+        BossTacticRow mode = ignore; mode.mode = TacticMode::UntilTank;
+        for (const BossTacticRow& bad : {noTarget, spell, gated, aura, mode})
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        // TestTankNoTauntOnTankIgnoreEntry: a tank leaves the troll alone while Jin'do fights, a DPS never does.
+        auto const engaged = [](std::uint32_t boss) { return boss == 11380; };
+        auto const idle = [](std::uint32_t) { return false; };
+        std::vector<std::uint32_t> const bosses{11380};
+        CHECK(TankIgnoresUnit(true, bosses, engaged));
+        CHECK(!TankIgnoresUnit(false, bosses, engaged));          // DPS still kill the trolls
+        CHECK(!TankIgnoresUnit(true, bosses, idle));              // no Jin'do fight: a normal mob
+        CHECK(!TankIgnoresUnit(true, std::vector<std::uint32_t>{}, engaged)); // no row
+    }
+
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;
 }

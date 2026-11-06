@@ -116,9 +116,21 @@ namespace ai
     };
     BossInterruptScan FindBossInterrupt(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
-    // The kill_first creature this DPS bot should be on, or null (tanks, healers
-    // and bots under an explicit attack order never get one).
+    // The kill_first creature this DPS bot should be on, or null. Tanks and healers never get one; a bot under an
+    // explicit attack order gets only the carrier override (KillFirstPickMode::Carrier): a Delusions carrier's Shade of
+    // Jin'do within its reach (t1105h J1).
     Unit* FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The carrier override alone, whatever the bot's orders: the nearest live unit of an aura-gated kill_first row
+    // whose aura this DPS bot carries, within its reach (CarrierReachYd). The run's focus skips such a bot
+    // (DungeonRun::FocusSkipsBot), so the order does not pull it back off its Shade.
+    Unit* FindBossCarrierPick(PlayerbotAI* ai, Player* bot);
+
+    // tank_ignore (t1105h J2): whether this bot, a tank, leaves the target alone because a boss whose tank_ignore row
+    // names the target's entry fights within kBossTacticsEngageRange of it (alive, not evading, engaged with our group).
+    // The attack pickers (PossibleAttackTargetsValue::IsValid: the tank target, the attacker-of-non-tank taunt, the
+    // snare taunt) and the taunt_after_cast taunt read it. False for any bot that is no tank, and on a map without rows.
+    bool TankIgnoresTarget(PlayerbotAI* ai, Player* bot, Unit* target);
 
     // The held boss entry this DPS bot is on right now, or null: its current target's entry has a hold_kill row whose
     // blocker (a Mad Voidwalker, a Portal of Madness) still lives within kHoldKillRangeYd. Tanks, healers and bots
