@@ -88,6 +88,7 @@
 #include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
+#include "../runtime/policy/movement/TeleportLandingPolicy.h" // the feet probe an off-floor lead bot is read with
 #include "CreatureGroups.h"
 #include "Group/CreatureLinkingMgr.h"
 #include "Maps/InstanceData.h"
@@ -3048,8 +3049,8 @@ static bool TotemFocusResurrects(SpellEntry const* info)
 
 // Cuts one current spell slot by the totem focus' rule (TotemFocusMayInterrupt): only a generic cast or a channel, only
 // an offensive cast on a hostile target, and only a spell the fight does not need. A delayed generic spell is left
-// alone, as InterruptNonMeleeSpells left it.
-static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
+// alone, as InterruptNonMeleeSpells left it. A cast whose unit guid is already the focus' target guid is left alone too.
+static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot, ObjectGuid focusGuid)
 {
     TortoiseBots::DungeonRun::TotemFocusSpell kind;
     if (slot == CURRENT_GENERIC_SPELL)
@@ -3061,12 +3062,24 @@ static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot)
     Spell* const spell = bot->GetCurrentSpell(slot);
     if (!spell || !spell->m_spellInfo)
         return;
-    // The cast's own target; a destination-targeted spell (Rain of Fire) carries no unit target, so the bot's
-    // selection stands in for it.
-    Unit* const target = spell->m_targets.getUnitTarget() ? spell->m_targets.getUnitTarget() : bot->GetSelectedUnit();
+    // The cast's own target, looked up by guid on the bot's map. SpellCastTargets::m_unitTarget (getUnitTarget) is a
+    // raw pointer the map thread refreshes only in the caster's next Spell::update, and Map::Remove frees a dead
+    // totem at the end of the map tick, so on this World thread it can point at a freed unit: it is never read here.
+    // getUnitTargetGuid() is a value (Spell.h SpellCastTargets). A guid whose unit is gone (or out of the world) means
+    // the cast's target no longer exists, and the cut is right. A destination-targeted spell (Rain of Fire) carries
+    // no unit guid, so the bot's selection stands in for it (Player::GetSelectedUnit is itself a map lookup by guid).
+    Map* const map = bot->GetMap();
+    ObjectGuid const castGuid = spell->m_targets.getUnitTargetGuid();
+    Unit* target = nullptr;
+    if (map)
+        target = castGuid ? map->GetUnit(castGuid) : bot->GetSelectedUnit();
+    if (target && !target->IsInWorld())
+        target = nullptr;
     if (!TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind, spell->m_spellInfo->Id,
             TotemFocusResurrects(spell->m_spellInfo), spell->m_spellInfo->IsPositiveSpell(),
-            target && bot->IsHostileTo(target)))
+            TortoiseBots::DungeonRun::TotemFocusTargetHostile(!castGuid.IsEmpty(), target != nullptr,
+                target && bot->IsHostileTo(target)),
+            !castGuid.IsEmpty() && castGuid == focusGuid))
         return;
     bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL);
 }
@@ -3076,8 +3089,8 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
     ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
     // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
     // and the hearthstone are never cut (TotemFocusMayInterrupt).
-    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL);
-    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL);
+    TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL, targetGuid);
+    TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL, targetGuid);
     selectionOwner->SetSelectionGuid(targetGuid);
     bool const attacked = ExecuteQuietAction(ai, "attack my target", ai::Event("focus totem", "", selectionOwner));
     if (attacked)
@@ -6644,7 +6657,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
         std::string option;
         if (parts.empty() || parts.size() > (pull ? 3u : scoped ? 2u : 1u))
         {
-            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds] [ranged]" : scoped ? " [bot]" : "");
+            std::string message = "Usage: .bot cmd " + verb + " <guid>" + (pull ? " [seconds] [ranged|body]" : scoped ? " [bot]" : "");
             SendActionError(handler, intent, "invalid", message.c_str());
             return true;
         }
@@ -6676,7 +6689,7 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
             if (!ai::ParsePullOrderOption(words, parsed))
             {
                 SendActionError(handler, intent, "invalid",
-                    "After the guid: the join delay (0-60 seconds) and/or the word ranged, in either order.");
+                    "After the guid: the join delay (0-60 seconds) and/or the word ranged or body, once each.");
                 return true;
             }
             option = PullOptionText(parsed);
@@ -7399,6 +7412,11 @@ bool ApproachStandSearch(Player* lead, TortoiseBots::DungeonRun::Run const& run,
             ai::PlanDistance(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), step.x, step.y, step.z) <= reach)
             hostiles.push_back(StandHostile{unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), unit->GetEntry()});
     std::vector<StandCandidate> candidates;
+    // A boss step whose boss has an anchor row (ai_boss_tactic kind `anchor`): the stand is where the fight happens,
+    // so a ring point outside the anchor is no stand (Hakkar evades when the fight drifts off his platform).
+    ai::BossAnchorCircle anchor;
+    bool const anchored = step.kind == ai::PlanStepKind::Boss &&
+        ai::BossAnchorOfBoss(lead->GetMapId(), step.entry, PlayerbotAI::IsTank(lead), anchor);
     float const minRing = ApproachStandMinRing(step);
     for (float ring = minRing; ring <= kApproachStandYd + 0.01f; ring += 5.0f)
         for (int i = 0; i < 12; ++i)
@@ -7406,6 +7424,8 @@ bool ApproachStandSearch(Player* lead, TortoiseBots::DungeonRun::Run const& run,
             float const angle = static_cast<float>(i) * 3.14159265f / 6.0f;
             float const px = step.x + ring * std::cos(angle);
             float const py = step.y + ring * std::sin(angle);
+            if (anchored && !ai::InsideAnchor(anchor, px, py))
+                continue;
             float const ground = map->GetHeight(px, py, step.z + 5.0f);
             if (ground <= INVALID_HEIGHT || std::fabs(ground - step.z) > 10.0f)
                 continue;
@@ -8414,6 +8434,16 @@ bool HasAnyAura(Unit const* unit, uint32 const (&spells)[N])
     return false;
 }
 
+// The creature's rank is CREATURE_ELITE_NORMAL (DungeonRun::UnitFact::normalRank): a dungeon's trivial trash is no
+// automatic crowd control's candidate and no body of its engaged count (AiPlayerbot.DungeonRunAutoCc). A rare (rank
+// 4) is not normal: the core's IsElite() would call one non-elite, the automatic pick must keep handling it.
+bool RunNormalRank(Unit* unit)
+{
+    Creature* const creature = unit ? unit->ToCreature() : nullptr;
+    CreatureInfo const* const info = creature ? creature->GetCreatureInfo() : nullptr;
+    return info && info->rank == CREATURE_ELITE_NORMAL;
+}
+
 // The run cc families a creature is immune to (DungeonRun::UnitFact::ccImmune):
 // the mechanic of each family's first rank against its creature_template
 // mechanic_immune_mask (Creature::IsImmuneToSpell's test) or a live mechanic
@@ -8453,6 +8483,54 @@ uint32 RunRespawnSec(Unit* unit)
         return 0;
     Creature* const creature = static_cast<Creature*>(unit);
     return SpawnRespawnSec(creature->HasStaticDBSpawnData(), creature->GetRespawnDelay());
+}
+
+// How far a creature stands from its own spawn point (DungeonRun::UnitFact::homeYd): the core's home position
+// (Creature::GetRespawnCoord), the read the evade diagnostic makes too. -1 for a player or a unit with no static DB
+// spawn of its own (a summon, a pet): the respawn-nest rule needs both halves and leaves those alone.
+float RunHomeYd(Unit* unit)
+{
+    if (!unit || !unit->IsCreature())
+        return -1.0f;
+    Creature* const creature = static_cast<Creature*>(unit);
+    if (!creature->HasStaticDBSpawnData())
+        return -1.0f;
+    float homeX = 0.0f, homeY = 0.0f, homeZ = 0.0f;
+    creature->GetRespawnCoord(homeX, homeY, homeZ);
+    float const dx = unit->GetPositionX() - homeX;
+    float const dy = unit->GetPositionY() - homeY;
+    float const dz = unit->GetPositionZ() - homeZ;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// The respawn nests near the lead bot (DungeonRun::Facts::nestUnits): a living hostile creature that comes back
+// within a minute and stands within kNestYd of its spawn point (InRespawnNest). Read on the tick a regroup would
+// gather, so the gather goes to the step point instead of standing the party on a nest (GatherAnchorInNest); no
+// other phase reads it, and it is one bounded grid search a regroup.
+void ReadNestUnits(Player* lead, TortoiseBots::DungeonRun::Facts& f)
+{
+    using namespace TortoiseBots::DungeonRun;
+    std::list<Unit*> around;
+    HostileCreaturesAround(lead, kNestGatherYd + kNestYd + 10.0f, around);
+    for (Unit* unit : around)
+    {
+        if (!unit->IsAlive())
+            continue;
+        UnitFact fact;
+        fact.guid = unit->GetObjectGuid().GetRawValue();
+        fact.entry = unit->GetEntry();
+        fact.x = unit->GetPositionX();
+        fact.y = unit->GetPositionY();
+        fact.z = unit->GetPositionZ();
+        fact.respawnSec = RunRespawnSec(unit);
+        if (!RespawnsQuickly(fact.respawnSec))
+            continue;
+        fact.homeYd = RunHomeYd(unit);
+        if (!InRespawnNest(fact))
+            continue;
+        f.nestUnits.push_back(fact);
+    }
+    f.nestUnitsRead = true;
 }
 
 // A run crowd-control aura is on it (DungeonRun::UnitFact::polymorphed), of
@@ -8660,6 +8738,16 @@ void ReadEngagedWith(Player* lead, Player* judge, Unit* unit, std::unordered_set
         fact.health = other->GetHealth();
         fact.maxHealth = other->GetMaxHealth();
         fact.partyHits = ep && ep->victims.count(fact.guid) != 0;
+        // It hits a party bot or pet now (DungeonRun::NestLeavable: such a nest unit is a real fight).
+        if (ep)
+        {
+            Unit* const victim = other->GetVictim();
+            fact.hitsParty = victim && ep->party.count(victim->GetObjectGuid().GetRawValue()) != 0;
+        }
+        fact.respawnSec = RunRespawnSec(other);
+        // The nest read: only a fast respawn needs its home position (InRespawnNest).
+        if (TortoiseBots::DungeonRun::RespawnsQuickly(fact.respawnSec))
+            fact.homeYd = RunHomeYd(other);
         out.push_back(fact);
     };
     for (Unit* attacker : unit->GetAttackers())
@@ -9108,6 +9196,17 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
+        // A damage dealer (not a tank, not a healer) of the party attacking it now: the held totem focus is not sent
+        // again while one does (DungeonRun::FocusResendDue).
+        for (Player* bot : bots)
+        {
+            if (bot && bot->IsAlive() && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot) &&
+                bot->GetVictim() == unit)
+            {
+                fact.dpsOnIt = true;
+                break;
+            }
+        }
         f.killFirst.push_back(fact);
     };
     std::list<ObjectGuid> guids;
@@ -9443,8 +9542,8 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
                 !sServerFacade.IsFriendlyTo(attacker, lead) &&
                 !TortoiseBots::DungeonRun::RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker)) &&
                 seenLead.insert(attacker->GetObjectGuid().GetRawValue()).second)
-                f.leadAttackers.push_back(
-                    {attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker), RunRespawnSec(attacker)});
+                f.leadAttackers.push_back({attacker->GetObjectGuid().GetRawValue(), RunCcHeld(attacker),
+                    RunNormalRank(attacker), RunRespawnSec(attacker)});
     }
     // A raid's walk fight (#1368): the pack that broke out behind the main tank parked at the walk's end is outside
     // every kGuardYd pick, which needs the MOB within kGuardYd of the lead bot. Each mob goes in f.raid.walkAttackers
@@ -9505,6 +9604,7 @@ void ReadGuardFacts(Player* lead, std::vector<Player*> const& bots, TortoiseBots
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType(); // which run cc fits a joiner (DungeonRun::CcFits)
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             fact.caster = attacker->GetMaxPower(POWER_MANA) > 0;
             fact.level = attacker->GetLevel();
@@ -10009,6 +10109,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
         m.noAggro = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_AGGRO);
         m.noAssist = c->HasExtraFlag(CREATURE_FLAG_EXTRA_NO_ASSIST);
         m.patroller = c->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE;
+        m.normalRank = RunNormalRank(c); // the automatic cc counts only the elite bodies it estimates
         if (CreatureGroup* group = c->GetCreatureGroup())
             if (group->HasGroupFlag(OPTION_AGGRO_TOGETHER))
                 m.groupId = static_cast<uint32>(group->GetOriginalLeaderGuid().GetCounter());
@@ -10065,6 +10166,7 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             if (TortoiseBots::DungeonRun::PullUnitEstimate const* done = estimates.Find(stepIndex, stepPass, unit.guid))
             {
                 unit.estBodies = done->bodies;
+                unit.estBodiesElite = done->eliteBodies;
                 unit.estGuids = done->guids;
                 unit.estLosBudget = done->losBudgetSpent;
                 unit.joiners = done->bodies > 0 ? done->bodies - 1 : 0;
@@ -10148,11 +10250,13 @@ void ReadPullJoiners(Player* lead, std::vector<Player*> const& bots, ai::PlanSte
             unit.joiners = estimate.joiners;
             unit.joinersPatrol = estimate.patrolIsTheCause;
         }
+        unit.estBodiesElite = estimate.bodiesElite;
         if (walkRing)
         {
             TortoiseBots::DungeonRun::PullUnitEstimate& store = estimates.At(stepIndex, stepPass, unit.guid);
             store.read = true;
             store.bodies = unit.estBodies;
+            store.eliteBodies = unit.estBodiesElite;
             store.guids = unit.estGuids;
             store.losBudgetSpent = unit.estLosBudget;
         }
@@ -11416,6 +11520,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     // them mid-run.
     f.totemFocus = sPlayerbotAIConfig.dungeonRunTotemFocus;
     f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;
+    f.respawnNest = sPlayerbotAIConfig.dungeonRunRespawnNest; // AiPlayerbot.DungeonRunRespawnNest
     // The guard's walk back after a won fight (DungeonRun::GuardWalkBackWanted): read every tick, so a config
     // reload switches it mid-run.
     f.walkBackAfterWonFight = sPlayerbotAIConfig.dungeonRunWalkBackAfterWonFight;
@@ -11455,6 +11560,45 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
     f.leadX = lead->GetPositionX();
     f.leadY = lead->GetPositionY();
     f.leadZ = lead->GetPositionZ();
+    // A lead bot off the floor is no summon point: Banish 24466 leaves a bot 12.3 yd over the ZG pit floor and, with no
+    // client, nothing makes it fall; the summon then parked the party beside it. The floor is read the way the teleport
+    // landing reads it (PlayerbotAI::HandleTeleportAck): the map's floor, and the feet probe only when that floor is
+    // more than kLandingYd under the feet, the higher of the two winning. A map without the mesh cannot judge, so the
+    // flag stays clear.
+    {
+        float const leadZ = lead->GetPositionZ();
+        float mapFloorZ = leadZ;
+        lead->UpdateAllowedPositionZ(lead->GetPositionX(), lead->GetPositionY(), mapFloorZ);
+        ai::WorldPosition feet(lead->GetMapId(), lead->GetPositionX(), lead->GetPositionY(),
+            leadZ - ai::TeleportLandingPolicy::kFeetProbeDepth);
+        bool const mmapLoaded = feet.isMmapLoaded(lead->GetInstanceId());
+        bool probeFound = false;
+        float probeZ = leadZ;
+        if (mmapLoaded && leadZ - mapFloorZ > ai::TeleportLandingPolicy::kLandingYd &&
+            feet.ClosestCorrectPoint(ai::TeleportLandingPolicy::kFeetProbeRange,
+                ai::TeleportLandingPolicy::kFeetProbeDepth, lead->GetInstanceId()))
+        {
+            probeZ = feet.getZ();
+            probeFound = true;
+        }
+        // A game-object floor (an elevator, a platform) is in neither the map's floor nor the mesh: a transport under
+        // the lead bot, or the core's own height read (terrain, models and game-object collision, cast down from just
+        // above the feet) finding a surface within kSurfaceYd of them, is a floor (DungeonRun::LeadOnSurface).
+        float surfaceZ = leadZ;
+        bool surfaceFound = false;
+        if (Map* const surfaceMap = lead->GetMap())
+        {
+            float const height = surfaceMap->GetHeight(lead->GetPositionX(), lead->GetPositionY(), leadZ + 0.5f);
+            surfaceFound = height > INVALID_HEIGHT + 1.0f;
+            if (surfaceFound)
+                surfaceZ = height;
+        }
+        bool const onSurface = TortoiseBots::DungeonRun::LeadOnSurface(leadZ, lead->GetTransport() != nullptr,
+            surfaceFound, surfaceZ);
+        f.leadFloorZ = TortoiseBots::DungeonRun::LeadFloorZ(mapFloorZ, probeFound, probeZ);
+        f.leadOffFloor = mmapLoaded && TortoiseBots::DungeonRun::LeadOffFloor(leadZ, mapFloorZ, probeFound, probeZ,
+            lead->IsInWater() || lead->IsUnderwater(), onSurface);
+    }
     // The terrain read the rescue, strand and return pickers share (DungeonRun::Facts::pointLiquid): a point in or
     // under liquid at its own z is never one to walk or teleport the lead bot to (ZG walk 33: the rescue put it in
     // the canal at -11944.3 -1353.9 62.3 and the run stranded there).
@@ -11800,6 +11944,12 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
             TortoiseBots::DungeonRun::RaidBossRulesFight(slot.run, f),
             TortoiseBots::DungeonRun::RaidTrashOffTanks(slot.run, f), raidWalk);
     }
+    // A regroup's gather spot against the respawn nests around it (DungeonRun::GatherAnchorInNest): read on the
+    // tick its gather would go out, so a party that wiped on a banished tank's body in a nest gathers at the step
+    // point instead of standing on the respawns. A bot still fighting the nest keeps the raw combat flag, so the
+    // read does not wait for it.
+    if (f.respawnNest && slot.run.regroup && !slot.run.regroupGatherSent && !TortoiseBots::DungeonRun::PartyGathered(f))
+        ReadNestUnits(lead, f);
 
     // A hold's done condition on every tick, its spot in sight or not
     // (DungeonRun::HoldDoneNote): the run's own step, also during a walk back.
@@ -12071,6 +12221,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
@@ -12334,6 +12485,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     unit.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(creature, lead);
                     unit.creatureType = creature->GetCreatureType(); // which run cc fits it (DungeonRun::CcFits)
                     unit.ccImmune = RunCcImmune(creature);
+                    unit.normalRank = RunNormalRank(creature); // trivial trash: never an automatic cc pick
                     unit.respawnSec = RunRespawnSec(creature); // a respawning unit is no cc target (RunAutoCcFightTick)
                     unit.caster = creature->GetMaxPower(POWER_MANA) > 0; // casters first (RunAutoCcBetter)
                     unit.level = creature->GetLevel();
@@ -12908,6 +13060,7 @@ void AddPlayerAttackers(Player* lead, std::vector<Player*> const& bots, std::vec
             fact.partyDots = sPlayerbotAIConfig.dungeonRunAutoCc && PartyDotOn(attacker, lead);
             fact.creatureType = attacker->GetCreatureType();
             fact.ccImmune = attacker->IsCreature() ? RunCcImmune(static_cast<Creature*>(attacker)) : 0;
+            fact.normalRank = RunNormalRank(attacker); // trivial trash: no body of the automatic cc's count
             fact.respawnSec = RunRespawnSec(attacker); // a respawning unit is no cc target and no pull body
             // A needs_aura entry (BossTacticsPolicy.h): the guard sends nobody without the row's aura at it.
             if (f.auraGatedTargets)
@@ -16440,6 +16593,21 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+    // The timeline's boss: the plan's boss step, found among the engaged facts (a script-changed entry still matches
+    // through formOf); the first unit found is the fight's. A unit that reads another entry than the plan's is noted
+    // as the fight's phase here too, the same way the bound sampler does it (the run path never calls NoteFightBoss).
+    if (ctx.bossEntry)
+        for (DungeonRun::UnitFact const& u : facts.engagedUnits)
+        {
+            if (u.formOf == ctx.bossEntry && u.entry != ctx.bossEntry)
+                CombatMonitorService::Instance().NoteBossForm(binding.groupId, u.entry);
+            if (u.entry == ctx.bossEntry || u.formOf == ctx.bossEntry)
+            {
+                CombatMonitorService::Instance().NoteBossGuid(binding.groupId, u.guid);
+                break;
+            }
+        }
+    SampleFightTimeline(binding.groupId, lead);
 }
 
 // The fight's boss from data: world-boss rank, an instance-bind flag, or a
@@ -16483,7 +16651,40 @@ void NoteFightBoss(uint32 groupId, Player* anchor)
     int const picked = BoundFight::PickBoss(candidates);
     if (picked >= 0)
         CombatMonitorService::Instance().NoteBoss(groupId, candidates[picked].entry,
-            candidates[picked].name.c_str());
+            candidates[picked].name.c_str(), candidates[picked].guid);
+}
+
+// The boss timeline's sample: the boss unit's health and its current victim. The unit is resolved by guid, so a script
+// that changes the boss's entry mid-fight (Thekal) keeps the timeline on the same body.
+void SampleFightTimeline(uint32 groupId, Player* anchor)
+{
+    using namespace TortoiseBots;
+    CombatMonitorService& monitor = CombatMonitorService::Instance();
+    if (!anchor)
+        return;
+    uint64_t const guid = monitor.BossGuid(groupId);
+    if (!guid)
+        return;
+    Unit* boss = ObjectAccessor::GetUnit(*anchor, ::ObjectGuid(guid));
+    if (!boss)
+        return;
+    // The boss's state for the fight's outcome, with or without the timeline: a fight that ends with him alive and
+    // running home, or home again at full health, is an evade (CombatMonitor::FightEndedInEvade).
+    Creature* const creature = boss->ToCreature();
+    bool atHome = false;
+    if (creature)
+    {
+        float homeX = 0.0f, homeY = 0.0f, homeZ = 0.0f;
+        creature->GetRespawnCoord(homeX, homeY, homeZ);
+        atHome = boss->GetDistance2d(homeX, homeY) <= CombatMonitor::kBossHomeYd;
+    }
+    monitor.NoteBossState(groupId, boss->IsAlive(), boss->IsInCombat(), creature && creature->IsInEvadeMode(),
+        boss->IsAlive() && boss->GetHealth() >= boss->GetMaxHealth(), atHome);
+    if (!monitor.TimelineEnabled())
+        return;
+    Unit* victim = boss->GetVictim();
+    monitor.SampleTimeline(groupId, boss->IsAlive() ? boss->GetHealth() : 0, boss->GetMaxHealth(),
+        victim ? victim->GetGUIDLow() : 0, victim ? victim->GetName() : "", WorldTimer::getMSTime());
 }
 
 // The bound-group sampler (task R1): every standing binding whose run did not
@@ -16550,6 +16751,7 @@ static void SampleBoundFights(uint32 diff)
         if (!CombatMonitorService::Instance().InFight(binding->groupId))
             continue;
         NoteFightBoss(binding->groupId, lead);
+        SampleFightTimeline(binding->groupId, lead);
     }
     int64_t const us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started).count();

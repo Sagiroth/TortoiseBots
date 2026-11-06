@@ -622,6 +622,7 @@ bool RaidSpreadAction::Execute(Event& event)
     const float spread = std::min(radius + 1.0f, sPlayerbotAIConfig.hazardEvasionDistance);
     const float angles[] = { 0.0f, 0.6f, -0.6f, 1.2f, -1.2f, (float)M_PI };
     WorldPosition out(botPos);
+    bool anchorRejected = false;
     for (int pass = 0; pass < 2; ++pass)
     {
         bool const vetoSecondPass = (pass == 1);
@@ -630,8 +631,20 @@ bool RaidSpreadAction::Execute(Event& event)
             float heading = away + d;
             if (!vetoSecondPass && !lastMove.spreadFailures.IsHeadingFree(heading, nowMs))
                 continue;
-            if (FindStep(ai, bot, botPos, heading, spread, out) &&
-                MoveTo(bot->GetMapId(), out.getX(), out.getY(), out.getZ(), false, IsReaction(), false, true))
+            if (!FindStep(ai, bot, botPos, heading, spread, out))
+                continue;
+            // A live boss anchor: a step that would leave it is no spacing step (the clamp would put the bot back
+            // beside the friendly it steps away from), so the next heading is tried instead.
+            float stepX = out.getX();
+            float stepY = out.getY();
+            float stepZ = out.getZ();
+            if (!ClampMoveToBossAnchor(ai, bot, stepX, stepY, stepZ) ||
+                std::fabs(stepX - out.getX()) > 0.5f || std::fabs(stepY - out.getY()) > 0.5f)
+            {
+                anchorRejected = true;
+                continue;
+            }
+            if (MoveTo(bot->GetMapId(), stepX, stepY, stepZ, false, IsReaction(), false, true))
             {
                 lastMove.spreadFailures.BeginAttempt(nearest->GetObjectGuid().GetRawValue(),
                     bot->GetMapId(), botPos.GetAngleTo(out), nearestDist, nowMs, bot->movespline->GetId());
@@ -647,6 +660,10 @@ bool RaidSpreadAction::Execute(Event& event)
             }
         }
     }
+    // The anchor left no heading this tick: rest the spread for its cooldown instead of probing every heading again
+    // on the next tick.
+    if (anchorRejected)
+        lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
     return false;
 }
 bool DragonTankFaceAwayAction::Execute(Event& event)

@@ -27,6 +27,25 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATES = ["ai/playerbot/aiplayerbot.conf.dist.in", "conf/tortoise_bots.conf.dist"]
+LINE = re.compile(r'^(#?\s*)(AiPlayerbot\.[A-Za-z0-9_.]+)\s*=\s*(.*?)\s*$')
+
+
+def active_duplicates(path):
+    """Return {key: [(line, value), ...]} for keys set twice in one template file.
+
+    Commented examples may repeat freely; two live rows for one key leave the
+    shipped value to parser order, so editing the first changes nothing.
+    """
+    path = pathlib.Path(path)
+    hits = {}
+    for lineno, line in enumerate(path.read_text(errors='replace').splitlines(), 1):
+        m = LINE.match(line)
+        if not m or m.group(1).startswith('#'):
+            continue
+        value = re.split(r'\s+#', m.group(3))[0].rstrip()
+        hits.setdefault(m.group(2), []).append((lineno, value))
+    return {key: rows for key, rows in hits.items() if len(rows) > 1}
+
 
 CALL = re.compile(
     r'Get(?:Int|Bool|Float|String)Default\(\s*"(AiPlayerbot\.[A-Za-z0-9_.]+)"\s*,\s*')
@@ -221,7 +240,7 @@ def values_equal(code_value, template_value):
 def parse_template(path):
     """Return {key: [(active, value), ...]} for AiPlayerbot.* lines."""
     entries = {}
-    line_re = re.compile(r'^(#?\s*)(AiPlayerbot\.[A-Za-z0-9_.]+)\s*=\s*(.*?)\s*$')
+    line_re = LINE
     for line in path.read_text(errors='replace').splitlines():
         m = line_re.match(line)
         if not m:
@@ -253,6 +272,10 @@ def check(root=None):
     """Run the check; return a list of human-readable findings."""
     root = pathlib.Path(root) if root else ROOT
     findings = []
+    for rel in TEMPLATES:
+        for key, rows in sorted(active_duplicates(root / rel).items()):
+            where = ', '.join(f"line {n} (`{v}`)" for n, v in rows)
+            findings.append(f"{rel}: {key} is set more than once: {where}")
     template = {}
     for rel in TEMPLATES:
         for key, entries in parse_template(root / rel).items():

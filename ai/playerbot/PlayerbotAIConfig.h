@@ -591,6 +591,8 @@ public:
     bool warlockRaidRotation;
     // Rogue Feint (and Vanish as the last resort) on medium/high threat in 5-man dungeons (opt-in).
     bool rogueDungeonThreatDrops;
+    bool sapApproachAvoidPack;
+    bool warriorGapCloser;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
     // Paladin bots keep Judgement of Wisdom / Light up on the boss in groups (opt-in).
@@ -629,6 +631,10 @@ public:
     // nobody at it): on, the rows are read; off, the rows load but nothing reads them (its own key on top of the
     // tactics gate; default off).
     bool dungeonRunAuraGatedTargets = false;
+    // The run leader's respawn-nest rules (DungeonRun::NestLeavable, GatherAnchorInNest): a unit that respawns within a
+    // minute and stands at its spawn, and hits nobody in the party, does not hold a fight open, and a regroup never
+    // gathers on one (default on).
+    bool dungeonRunRespawnNest = false;
     // The boss-tactic kill_first candidates come from a grid search too, not only from the bot's own attackers list:
     // off, the candidates are the fight's units as today (its own key; default off).
     bool dungeonRunKillFirstGrid = false;
@@ -652,6 +658,10 @@ public:
     // The spread boss-tactic kind (the ranged raid keeps the row's spacing while the boss fights): off, the rows are
     // ignored (default off).
     bool dungeonRunBossSpread = false;
+    // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
+    // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
+    // gate; default off).
+    bool dungeonRunAvoidCastAll = false;
     // The burn_mana boss-tactic kind (a few eligible bots drain the boss's mana while it is above the row's start %,
     // Moam's Drain Mana refills him so the burners keep him from a full-mana eruption): off, the rows are ignored
     // (default off).
@@ -965,6 +975,8 @@ public:
 
     // Per-fight combat numbers of every bound group for the observability dashboard.
     bool combatMonitor = false;
+    // The boss timeline in each fight record (health, victims, watched auras); needs combatMonitor and Observability.
+    bool combatTimeline = false;
     bool raidBossDiagnostics = false;
     std::list<std::string> allowedLogFiles;
     std::list<std::string> debugFilter;

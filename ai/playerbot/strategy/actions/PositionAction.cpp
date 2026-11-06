@@ -4,6 +4,7 @@
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "PositionAction.h"
+#include "BossTacticsActions.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/ServerFacade.h"
 #include "Movement/spline/MoveSpline.h"
@@ -218,13 +219,32 @@ bool ReturnToStayPositionAction::isPossible()
 // Crescent Grove r26 step 272: the old 2D rule minus the bounding radius refused a
 // tauren lead bot 5.67 yd from its point on the ground and 6.6 yd below it while the
 // trigger fired every tick.
+// The point the stay walk goes to: the stay itself, or under a live boss anchor its point on the anchor's circle (the
+// main tank's stay is the lead's approach stand or a landed pullback's anchor, and the boss follows the tank there).
+// False: the clamped point has no floor on the anchor's level; the stay is left as it is and the walk to it is refused,
+// so the walk's back-off rests it.
+bool ai::StayWalkPoint(PlayerbotAI* ai, Player* bot, PositionEntry& stay)
+{
+    float x = stay.x;
+    float y = stay.y;
+    float z = stay.z;
+    if (!ClampMoveToBossAnchor(ai, bot, x, y, z))
+        return false;
+    stay.x = x;
+    stay.y = y;
+    stay.z = z;
+    return true;
+}
+
 bool ai::StayWalkDueNow(PlayerbotAI* ai, Player* bot, PositionEntry const& stayPosition)
 {
+    PositionEntry point = stayPosition;
+    StayWalkPoint(ai, bot, point);
     TortoiseBots::StayWalkBackoff& backoff = ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().stayWalk;
-    TortoiseBots::StayWalkTrack(backoff, stayPosition.x, stayPosition.y, stayPosition.z, stayPosition.mapId);
-    float const dx = bot->GetPositionX() - stayPosition.x;
-    float const dy = bot->GetPositionY() - stayPosition.y;
-    float const dz = bot->GetPositionZ() - stayPosition.z;
+    TortoiseBots::StayWalkTrack(backoff, point.x, point.y, point.z, point.mapId);
+    float const dx = bot->GetPositionX() - point.x;
+    float const dy = bot->GetPositionY() - point.y;
+    float const dz = bot->GetPositionZ() - point.z;
     bool const moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
     return TortoiseBots::StayWalkDue(backoff, TortoiseBots::StayPointReached(dx, dy, dz, ai->GetRange("follow")),
         TortoiseBots::StayPointDistance(dx, dy, dz), moving, bot->IsInCombat(), bot->GetTransport() != nullptr, WorldTimer::getMSTime());
@@ -242,12 +262,19 @@ bool ReturnToStayPositionAction::isUseful()
 // accepted one starts an attempt that StayWalkDueNow judges by where it takes the bot.
 bool ReturnToStayPositionAction::Execute(Event& event)
 {
+    (void)event;
     PositionEntry stayPosition = AI_VALUE(PositionMap&, "position")["stay"];
-    bool const moved = MoveToPositionAction::Execute(event);
+    if (!stayPosition.isSet())
+        return false;
+    // The walk's point is the trigger's (StayWalkDueNow): the stay, or its clamp under a live boss anchor.
+    PositionEntry point = stayPosition;
+    bool const pointOk = StayWalkPoint(ai, bot, point);
+    bool const moved = pointOk && MoveTo(bot->GetMapId(), point.x, point.y, point.z, idle);
+    AI_VALUE(LastMovement&, "last movement").positionMoveFailMs = moved ? 0 : (WorldTimer::getMSTime() | 1u);
     TortoiseBots::StayWalkBackoff& backoff = AI_VALUE(LastMovement&, "last movement").stayWalk;
-    TortoiseBots::StayWalkTrack(backoff, stayPosition.x, stayPosition.y, stayPosition.z, stayPosition.mapId);
-    TortoiseBots::StayWalkDispatched(backoff, moved, TortoiseBots::StayPointDistance(bot->GetPositionX() - stayPosition.x,
-        bot->GetPositionY() - stayPosition.y, bot->GetPositionZ() - stayPosition.z), bot->IsInCombat(),
+    TortoiseBots::StayWalkTrack(backoff, point.x, point.y, point.z, point.mapId);
+    TortoiseBots::StayWalkDispatched(backoff, moved, TortoiseBots::StayPointDistance(bot->GetPositionX() - point.x,
+        bot->GetPositionY() - point.y, bot->GetPositionZ() - point.z), bot->IsInCombat(),
         bot->GetTransport() != nullptr, WorldTimer::getMSTime());
     return moved;
 }

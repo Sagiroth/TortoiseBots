@@ -167,6 +167,7 @@ if(TORTOISE_MODULE_CMAKE_PHASE STREQUAL "DISCOVERY")
     "${TORTOISEBOTS_ROOT}/runtime/CombatMonitorService.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/BotManager.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTrace.cpp"
+    "${TORTOISEBOTS_ROOT}/runtime/WhyTrace.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/RunTraceWriter.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/DecisionCapture.cpp"
     "${TORTOISEBOTS_ROOT}/runtime/DecisionCaptureFiles.cpp"

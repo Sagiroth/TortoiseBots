@@ -47,6 +47,9 @@ public:
         creators["intervene"] = &intervene;
 
         creators["berserker rage"] = &berserker_rage;
+
+        creators["gap closer charge"] = &gap_closer_charge;
+        creators["gap closer intercept"] = &gap_closer_intercept;
     }
 
 private:
@@ -99,6 +102,10 @@ private:
     ACTION_NODE_P(intervene, "intervene", "defensive stance");
 
     ACTION_NODE_P(berserker_rage, "berserker rage", "berserker stance");
+
+    ACTION_NODE_P(gap_closer_charge, "gap closer charge", "battle stance for charge");
+
+    ACTION_NODE_P(gap_closer_intercept, "gap closer intercept", "berserker stance for intercept");
 };
 
 WarriorStrategy::WarriorStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
@@ -136,6 +143,14 @@ void WarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "shield bash on enemy healer",
         NextAction::array(0, new NextAction("shield bash on enemy healer", ACTION_INTERRUPT), NULL)));
+
+    // Out of combat with the target 8-25 yd away: Charge, through Battle
+    // Stance. Above the spec's own stance row (Fury Berserker at MOVE) so the
+    // swap and the Charge land back to back; the old "enemy out of melee"
+    // charge row (MOVE+1) only fired once the walk in had closed the gap.
+    triggers.push_back(new TriggerNode(
+        "warrior gap closer charge",
+        NextAction::array(0, new NextAction("gap closer charge", ACTION_INTERRUPT + 2), NULL)));
 }
 
 void WarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

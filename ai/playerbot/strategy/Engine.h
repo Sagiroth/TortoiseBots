@@ -134,6 +134,14 @@ namespace ai
         uint32 GetLastOutcomeCastFail() const { return lastOutcomeCastFail; }
         const Action* GetLastExecutedAction() const { return lastExecutedAction; }
         std::string const& GetLastExecutedTrigger() const { return lastExecutedTrigger; }
+        BotState GetState() const { return state; }
+        // Why trace (runtime/WhyTrace.cpp): whether an attached strategy still
+        // defines an action name.
+        bool HasActionNode(std::string const& name) const
+        {
+            auto it = actionNodePrototypes.find(name);
+            return it != actionNodePrototypes.end() && it->second != nullptr;
+        }
 
     public:
 	    virtual bool DoNextAction(Unit*, int depth, bool minimal, bool isStunned);

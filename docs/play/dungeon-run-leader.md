@@ -41,8 +41,11 @@ Plans are read at startup into a cache, one pass per table, and nothing reads th
 | `cc_priority` | Comma entry list, `''` for none. |
 | `cc_always` | Comma entry list, `''` for none. |
 | `kill_first` | Comma entry list, `''` for none. |
+| `cc_never` | Comma entry list, `''` for none: entries the automatic crowd control under `AiPlayerbot.DungeonRunAutoCc` never marks (trivial non-elite units need no list, their rank excludes them, unless the plan itself lists them in `cc_priority`/`cc_always`). |
 | `source` | Where the rows came from, for the reader. |
 | `comment` | Free text. |
+
+Each of the four lists is read on its own: a list with more than 16 entries keeps its first 16, any other bad list is dropped by itself, and the rest are kept. The server log names every cut or dropped list.
 
 ### `ai_dungeon_leg`
 
@@ -161,6 +164,8 @@ The run protects itself with these rules:
 
 - It gathers the party before a pull and pulls only what is near.
 - It guards from the stand, attacking mobs that hit the party.
+- A unit in its respawn nest (it comes back within a minute and stands within 22 yd of its spawn point) that hits nobody in the party does not hold a fight open: a bot whose only enemies are such units is not in a fight, the regroup starts and the step goes on without it. A nest unit that attacks a party member is always a real fight and a guard target, and a unit the plan's own boss, hold or pull step names is never a nest. `AiPlayerbot.DungeonRunRespawnNest` (default `0`, off) switches it.
+- A gather never stands within 30 yd of a nest: the party gathers at the current step's point instead of on a dead tank's body at the nest's rim.
 - It never pulls what a later step owns.
 - It ends a pull or boss step past the 180 s fight ceiling once the game confirms that step's own units are dead or gone from the map (a unit that merely dropped out of the run's reads is not dead) and lets the walk go on, even while unrelated mobs (respawning trash, a patrol that walked in) still fight: those are fought by the bots' ordinary combat and do not hold the step. A boss step ends as soon as the boss's corpse is confirmed, whatever keeps the party in the combat afterwards. Younger fights, a combat flag with nothing engaged, and a row with its own units left keep the rules as before.
 - It judges no unseen pack or boss, only what the lead bot sees within 60 yd.
@@ -180,6 +185,7 @@ The run protects itself with these rules:
 - It retries a refused gather once and then skips it.
 - It summons a straggler at the gather ceiling (30 s, 60 s on regroup), once per bot per step.
 - It first walks a straggler by path and summons it when it is still out.
+- It never summons a member onto a lead bot that stands off the floor: more than 3 yards of air under it, read the way the teleport landing reads the floor (the map's floor, and the feet probe under the feet, the higher one winning), so a lead bot left hovering in mid-air, as Jin'do's Banish does, is no summon point and its own landing or rescue comes first. A wedged member's teleport return is no summon and still runs: it lands beside another member, not at the lead bot's feet. A lead bot on a game-object platform or an elevator (a transport under it, or a surface within 2 yards under its feet that the core's height read finds) counts as on the floor. A lead bot left hanging that way for 30 seconds pauses the run with both heights (the lead bot's and the floor's), whichever summon (the gather's, a runaway's, a revived or stuck member's) was refused, instead of the gather starting over every window, and a lead bot that lands inside those 30 seconds carries on as before.
 - It runs a member with attackers back to the party as a passive follower within 120 yd.
 - It pauses once on a missing item and then skips the dependent steps.
 - It still treats a boss that changed entry mid-fight as the boss.
@@ -192,6 +198,7 @@ The run protects itself with these rules:
 - Orders are bots-only, offline holds, a player hold lasts 5 min, and summon/revive never pause.
 - A rest walk is resent once when the lead gains under 2 yd in 3 s.
 - A patroller within 30 yd past the radius is waited up to 60 s.
+- **A pull the tank cannot start from range is retried once as a walk-in pull.** When the tank's shot at a boss or pack cannot get it moving (a target hovering above the floor, a firing spot out of reach), the run orders a melee pull at the target's ground position before it searches for a standing spot; only when that starts no fight either does the standing search, the deferral and the pause apply. The standing search around a boss now looks 15-25 yd out like any other (it was 35-25 yd for the default boss radius, so it never found anything and a boss pull that failed always paused the run).
 - **A refused pull whose stand search found none with the lead bot on a navmesh island hopped it off first, not paused** (scarlet_graveyard step 32, 2026-11-04: the step-31 fight left the tank on a 3 yd island of the mesh at the foot of a tomb slab, 1796.5 1324.3 z 19.4, a floor sliver that connects to nothing; with the pack in sight its firing stand read, the reach pull and all 36 stand candidates came back NOPATH from that start polygon, the pullback was refused *unreachable* and the run paused *not reachable from this floor: no safe stand 15.0-25.0 yd from it the lead bot has a path to* four times, each resume standing in place, until the stop rule ended it; the island check ran only on the approach hops, the walk backs and the move steps, so an in-sight pull had no way off an island). From then on the glue's stand search, when it found nothing, read the lead bot's own path to the step's point into the answer, and a refusal with the lead bot on an island (no path, or a partial one ending where it stands) reset the stand state and the firing stand's tries (*no firing stand found* had spent them), set the island suspicion and hopped the lead bot off toward the pack on the next tick (`IslandEscape`); the pull then read a firing stand afresh from the mesh the hop ended on. The hops' caps stay: past `kIslandEscapes` (2, or `kStepEscapes` 4 a step), or past `kIslandRounds` (3) rounds that a fight's *wait* answer refunded, a pack that may be deferred is still deferred, as it was before the hops; only a pack that cannot be is paused, and the note names the island (*... move it off, then .bot run resume*). Not an island (a path that gets somewhere): the deferral and the old pause stayed as they were.
 
 - `AiPlayerbot.DungeonRunAutoCcRisky = 1` (default `0`) adds the risky fear families, only with room to run.
@@ -207,6 +214,7 @@ The dry walk is opt-in with `AiPlayerbot.DungeonRunDryWalk = 1` (default `0`), s
 
 - A stale flag gets 20 s grace, then the ceiling runs.
 - An unattackable-only fight is let go, with no ceiling.
+- A pause for the fight ceiling goes on by itself when only such idle nest units keep the party in combat.
 - Charmed and fake-death units read as cannot-attack.
 - A game-event-gated boss is skipped, not paused.
 - Off-plan-map bots never hold fights, and bots never leave the plan map by follow, flee, or trigger.
@@ -240,7 +248,7 @@ Related opt-ins, one line each:
 
 ### Totem focus
 
-Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick. Only the damage dealers go: no tank, no healer. A totem a boss summons is read as soon as it stands, even when no bot has it on its attackers list. The damage dealers cut their own cast or channel first, but only an offensive one on an enemy — never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a crowd-control spell of the run, a resurrect or a hearthstone; they open with an instant where their class has one, and take the attack by GUID, so the skull stays on the boss and nobody follows it to the totem. While the party is pulling back from a lost fight, the totem waits. The kill-first check runs every second while the key is on. The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line when a kill-first unit is first seen and when it dies.
+Opt-in (`AiPlayerbot.DungeonRunTotemFocus = 1`, default `0`). A totem on the plan's kill-first list dies in 1-2 s, so the run focuses it first in the fight, before the guard, the crowd control or any other order can spend the tick. Only the damage dealers go: no tank, no healer. A totem a boss summons is read as soon as it stands, even when no bot has it on its attackers list. The damage dealers cut their own cast or channel first, but only an offensive one on an enemy — never a heal, a shield, a buff or a defensive cooldown, never an Auto Shot or a wand's shot, and never a crowd-control spell of the run, a resurrect or a hearthstone; they open with an instant where their class has one, and take the attack by GUID, so the skull stays on the boss and nobody follows it to the totem. While the party is pulling back from a lost fight, the totem waits. The kill-first check runs every second while the key is on, and the focus is sent again every 3 s while its totem lives and no damage dealer is attacking it, so a damage dealer that left it after one burst comes back to finish it (a kill-first unit that is no totem is focused once, not repeated). The server log carries a `TBM:KILLFIRST|<plan>|<lead>|<instance>|<seen|dead|gone>|<entry>|<guid>[|<ms>]` line when a kill-first unit is first seen and when it dies.
 
 ### Events
 

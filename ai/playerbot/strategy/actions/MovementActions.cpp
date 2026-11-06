@@ -4,6 +4,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
+#include "BossTacticsActions.h"
 #include "Movement/MotionMaster.h"
 #include "Movement/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
@@ -2373,6 +2374,18 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (sPlayerbotAIConfig.avoidCreatureAuras && HoldChaseOutsideKeepout(obj, distance))
         return true;
 
+    // A live boss anchor (BossAnchorPolicy.h, Hakkar's platform): no chase to a hostile beyond its radius plus the melee
+    // reach, and every chase destination stays on the circle. Without a live anchor row none of this runs.
+    BossAnchorCircle anchor;
+    const bool anchored = LiveBossAnchor(ai, bot, anchor);
+    Unit* const chased = dynamic_cast<Unit*>(obj);
+    if (anchored && chased && bot->IsHostileTo(chased) &&
+        !AnchorAllowsChase(anchor, obj->GetPositionX(), obj->GetPositionY(), kBossAnchorChaseReachYd))
+    {
+        sLog.outDetail("[BOT CHASE] %s -> %s: outside the boss anchor, held", bot->GetName(), obj->GetName());
+        return false;
+    }
+
 
     if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
         angle = GetFollowAngle() / 3 + obj->getOrientation() + M_PI;
@@ -2398,12 +2411,29 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     // and a bot on the hill above it that point is the hill - the bot walks there,
     // still sees nothing and repeats, or falls back to a chase that does not move.
     if (distanceToTarget > sPlayerbotAIConfig.sightDistance || !bot->IsWithinLOSInMap(obj, true))
-        return MoveTo(targetPosition.GetMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
+    {
+        float farX = targetPosition.getX();
+        float farY = targetPosition.getY();
+        float farZ = targetPosition.getZ();
+        if (anchored && !ClampMoveToBossAnchor(ai, bot, farX, farY, farZ))
+            return false;
+        return MoveTo(targetPosition.GetMapId(), farX, farY, farZ);
+    }
 
     const Vector3 directionToTarget = (targetPoint - botPoint).directionOrZero();
-    const Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
+    Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
     WorldPosition endPosition(obj->GetMapId(), endPoint.x, endPoint.y, endPoint.z);
     endPosition.setZ(endPosition.GetHeight());
+    if (anchored)
+    {
+        float endX = endPosition.getX();
+        float endY = endPosition.getY();
+        float endZ = endPosition.getZ();
+        if (anchored && !ClampMoveToBossAnchor(ai, bot, endX, endY, endZ))
+            return false;
+        endPosition = WorldPosition(obj->GetMapId(), endX, endY, endZ);
+        endPoint = Vector3(endX, endY, endZ);
+    }
 
     // Check if the end position is inside a hazard
     HazardPosition hazardPosition;
@@ -2413,25 +2443,58 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         const Vector3 hazardPoint = hazardPosition.first.GetVector3();
         const float hazardRangeOffset = hazardPosition.second * 1.5f;
 
-        // Generate point translated to the left
-        Vector3 possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
-
-        // Check if point is valid
-        WorldPosition possibleEndPosition(bot->GetMapId(), possibleEndPoint.x, possibleEndPoint.y, possibleEndPoint.z);
-        if (IsValidPosition(possibleEndPosition, botPosition))
+        if (anchored)
         {
-            endPosition.x = possibleEndPoint.x;
-            endPosition.y = possibleEndPoint.y;
-            endPosition.z = possibleEndPoint.z;
+            // A live boss anchor: both dodges, left then right, are clamped onto the circle and must clear the hazard,
+            // stand on the platform floor and pass the hazard and navigation checks; the first that passes is taken,
+            // and with neither the chase is held this tick.
+            const Vector3 left = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
+            const Vector3 right = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+            const float dodgeXs[2] = {left.x, right.x};
+            const float dodgeYs[2] = {left.y, right.y};
+            float dodgeX = 0.0f;
+            float dodgeY = 0.0f;
+            float dodgeZ = 0.0f;
+            auto const accept = [&](float px, float py)
+            {
+                Map* map = bot->GetMap();
+                float const floor = map ? map->GetHeight(px, py, anchor.z + 5.0f) : INVALID_HEIGHT;
+                if (!AnchorFloorOk(anchor, floor > INVALID_HEIGHT, floor))
+                    return false;
+                WorldPosition const candidate(obj->GetMapId(), px, py, floor);
+                if (IsHazardNearPosition(candidate) || !IsValidPosition(candidate, botPosition))
+                    return false;
+                dodgeZ = floor;
+                return true;
+            };
+            if (AnchorPickDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeXs, dodgeYs,
+                    dodgeX, dodgeY, accept) < 0)
+                return false;
+            endPosition = WorldPosition(obj->GetMapId(), dodgeX, dodgeY, dodgeZ);
         }
         else
         {
-            // Generate point translated to the right
-            possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+            // The original dodge, unchanged without an anchor.
+            // Generate point translated to the left
+            Vector3 possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
 
-            endPosition.x = possibleEndPoint.x;
-            endPosition.y = possibleEndPoint.y;
-            endPosition.z = possibleEndPoint.z;
+            // Check if point is valid
+            WorldPosition possibleEndPosition(bot->GetMapId(), possibleEndPoint.x, possibleEndPoint.y, possibleEndPoint.z);
+            if (IsValidPosition(possibleEndPosition, botPosition))
+            {
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }
+            else
+            {
+                // Generate point translated to the right
+                possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }
         }
     }
 
@@ -2441,7 +2504,20 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (IsValidPosition(endPosition, botPosition))
     {
         std::vector<WorldPosition> path = botPosition.GetPathTo(endPosition,bot);
-        if (GeneratePathAvoidingHazards(path))
+        bool const hazardPath = GeneratePathAvoidingHazards(path);
+        // The hazard-avoiding path inserts sideways points; under a live boss anchor every one must stay inside, or
+        // the chase is held this tick.
+        std::vector<std::pair<float, float>> pathXY;
+        if (anchored && hazardPath)
+            for (const WorldPosition& point : path)
+                pathXY.emplace_back(point.getX(), point.getY());
+        if (anchored && hazardPath && !AnchorPathInside(anchor, pathXY))
+        {
+            sLog.outDetail("[BOT CHASE] %s -> %s: hazard path leaves the boss anchor, held", bot->GetName(),
+                obj->GetName());
+            return false;
+        }
+        if (hazardPath)
         {
             float distance = botPosition.GetPathLength(path);
             mm.Clear(false, true);
@@ -2494,6 +2570,10 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 
     if (!endPosition.isValid()) return false;
     if (angle > 20) angle = 0;
+
+    // The core chase follows its target wherever it goes: never toward one outside a live boss anchor.
+    if (anchored && !InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY()))
+        return false;
 
     bot->SetTargetGuid(obj->getObjectGuid()); //Needed to keep chase going in combat.
     bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.
@@ -4153,6 +4233,9 @@ bool TankFaceAwayAction::Execute(Event& event)
         }
     }
     if (!found)
+        return false;
+    // A live boss anchor keeps the tank's sidestep on the boss's platform (Hakkar evades off it).
+    if (!ClampMoveToBossAnchor(ai, bot, bestX, bestY, bestZ))
         return false;
     return MoveTo(bot->GetMapId(), bestX, bestY, bestZ);
 }

@@ -54,6 +54,8 @@ using BotChatAdapter = Service<10>;
 using BotPacketAdapter = Service<11>;
 // The opt-in run trace: one atomic load per tick while no run is active.
 using RunTraceService = Service<13>;
+// `.bot why`: the trace timeout, a traced bot leaving the world.
+using WhyTraceService = Service<18>;
 // Decision capture: reaps the segment writers a finished capture left.
 struct DecisionCaptureService {
     static DecisionCaptureService& Instance() { static DecisionCaptureService service; return service; }
@@ -74,11 +76,12 @@ int main() {
     // Disabled: only the queued-command drain (#833) runs, every tick, so
     // player commands never execute off the world thread, and the run trace,
     // so a running trace ends ("disabled"); other services stay inert.
-    // The run trace (13) is ticked too, so a trace cannot outlive the AI.
+    // The run trace (13) and the bot why trace (18) are ticked too, so neither
+    // can outlive the AI.
     for (unsigned i = 0; i < 2500; ++i) adapter.OnUpdate(50);
-    assert(calls.size() == 7500);
-    for (size_t i = 0; i < calls.size(); i += 3)
-        assert(calls[i] == 10 && calls[i + 1] == 13 && calls[i + 2] == 17);
+    assert(calls.size() == 10000);
+    for (size_t i = 0; i < calls.size(); i += 4)
+        assert(calls[i] == 10 && calls[i + 1] == 13 && calls[i + 2] == 17 && calls[i + 3] == 18);
     assert(adapter.m_ticks == 0);
     calls.clear();
     sPlayerbotAIConfig.enabled = true;
@@ -87,11 +90,11 @@ int main() {
     // up to the bound the command drain returned, then the services (the
     // remote commander sweep, 12, right after the bot update; the observed-raid sampler, 16, after it; the run trace, 13, then the decision capture, 17, last).
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,17}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,18,17}));
     assert(adapter.m_ticks == 1);
     sPlayerbotAIConfig.enabled = false;
     adapter.OnUpdate(50);
-    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,17,10,13,17}));
+    assert((calls == std::vector<unsigned>{1,10,11,2,12,16,3,4,5,6,15,7,8,9,14,13,18,17,10,13,17,18}));
     assert(adapter.m_ticks == 1);
     // A config reload: the run leader's keys are read again once, on the next tick, enabled or not.
     assert(sPlayerbotAIConfig.reloads == 0);
