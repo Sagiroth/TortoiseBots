@@ -1310,6 +1310,24 @@ void LogSeekPull(PlayerbotAI* ai, Player* bot, Unit* son, float yd, SeekPullStep
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
+// The pull this cycle skipped because no Son stood inside the live boss anchor (on its level, within the puller's radius
+// plus the hit reach): one row per bot and 5 s on the pull rows' own throttle, so a skip is visible next to the walks
+// it replaced. A no-op unless bot_events.csv is in AllowedLogFiles.
+void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        std::uint32_t& last = g_seekPullLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kSeekLogGapMs)
+            return;
+        last = nowMs;
+    }
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: skip anchor", "");
+}
+
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
 bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
@@ -1531,11 +1549,22 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.puller = thirdTank || fallback;
         if (out.puller)
         {
+            // A live boss anchor: only a Son inside it (the puller's radius plus the hit reach, on the centre's level)
+            // may be pulled, latched or new; the puller never walks off the platform for one.
+            BossAnchorCircle pullAnchor;
+            const bool anchored = LiveBossAnchor(ai, bot, pullAnchor);
+            auto const inAnchor = [&](Unit* son)
+            {
+                return !anchored ||
+                    SeekPullSonInAnchor(pullAnchor, son->GetPositionX(), son->GetPositionY(), son->GetPositionZ());
+            };
             Creature* latchedPull = thirdTank && pullGuid ? bot->GetMap()->GetCreature(ObjectGuid(pullGuid)) : nullptr;
             const bool latchKept = latchedPull && latchedPull->GetEntry() == row->targetEntry &&
                 sServerFacade.IsAlive(latchedPull) &&
                 SeekPullLatchKeeps(true, latchedPull->GetDistance2dToCenter(row->spotX, row->spotY),
-                                   nowMs - pullStartMs);
+                                   nowMs - pullStartMs) &&
+                (!anchored || SeekPullSonInAnchor(pullAnchor, latchedPull->GetPositionX(), latchedPull->GetPositionY(),
+                                                  latchedPull->GetPositionZ()));
             if (latchKept)
                 out.pullTarget = latchedPull;
             else
@@ -1543,12 +1572,18 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
                 Unit* nearest = nullptr;
                 float nearestYd = std::numeric_limits<float>::max();
                 bool anyInCombat = false;
+                bool skippedForAnchor = false;
                 for (Creature* candidate : SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ,
                         kSeekPickupYd))
                 {
                     const float toSpot = candidate->GetDistance2dToCenter(row->spotX, row->spotY);
                     if (candidate->IsInCombat())
                         anyInCombat = true;
+                    if (!inAnchor(candidate))
+                    {
+                        skippedForAnchor = true;
+                        continue;
+                    }
                     if (toSpot < nearestYd)
                     {
                         nearest = candidate;
@@ -1559,6 +1594,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
                     ? SeekTankPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd)
                     : SeekFallbackPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd);
                 out.pullTarget = pullDue ? nearest : nullptr;
+                if (!nearest && skippedForAnchor && !anyInCombat)
+                    LogSeekPullSkipAnchor(ai, bot);
             }
             {
                 // The latch follows the read of the one bot that pulls: a new pick starts its clock, a kept one keeps
@@ -4315,30 +4352,40 @@ bool BossTacticsStandAction::Execute(Event& event)
 {
     (void)event;
     const BossStandTarget stand = FindBossStand(ai, bot);
-    if (!stand.valid || StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))
+    if (!stand.valid)
+    {
+        hasLast = false;
+        return false;
+    }
+    // The seat as the bot walks to it: a live boss anchor moves a seat outside it onto its circle.
+    float seatX = stand.x;
+    float seatY = stand.y;
+    float seatZ = stand.z;
+    if (!ClampMoveToBossAnchor(ai, bot, seatX, seatY, seatZ) ||
+        StandArrived(bot->GetPositionX(), bot->GetPositionY(), seatX, seatY))
     {
         hasLast = false;
         return false;
     }
     // Already walking to this seat: leave the spline alone.
     if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
-        std::fabs(lastX - stand.x) < 1.0f && std::fabs(lastY - stand.y) < 1.0f)
+        std::fabs(lastX - seatX) < 1.0f && std::fabs(lastY - seatY) < 1.0f)
         return true;
 
     // The mover ignores a destination whose z is off the floor, so the seat is put back on the ground. A far seat's
     // floor can lie above the row's z, so the probe starts above both the row's and the bot's own; a probe that
     // comes back unchanged found nothing and the row's z stays.
-    const float probeZ = StandProbeZ(stand.z, bot->GetPositionZ());
+    const float probeZ = StandProbeZ(seatZ, bot->GetPositionZ());
     float z = probeZ;
-    bot->UpdateGroundPositionZ(stand.x, stand.y, z);
-    z = StandSnappedZ(stand.z, probeZ, z);
+    bot->UpdateGroundPositionZ(seatX, seatY, z);
+    z = StandSnappedZ(seatZ, probeZ, z);
     bot->AttackStop();
     // The cast of a bot on its way out is of no use: stop it, as the reactive dodge does - unless it is already close
     // to its seat, where a cast in progress is let finish.
-    if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))
+    if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), seatX, seatY))
         bot->CastStop();
     const uint64 key = bot->GetObjectGuid().GetRawValue();
-    if (!MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true))
+    if (!MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true))
     {
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
@@ -4355,8 +4402,8 @@ bool BossTacticsStandAction::Execute(Event& event)
             g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
         }
     }
-    lastX = stand.x;
-    lastY = stand.y;
+    lastX = seatX;
+    lastY = seatY;
     hasLast = true;
     return true;
 }
@@ -4920,6 +4967,82 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
     return WidestSpreadYd(params, fallback);
 }
 
+bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)
+{
+    if (!ai || !bot || !bot->IsInWorld() || !GetBossTactics().HasAnchorMap(bot->GetMapId()))
+        return false;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (row->kind != BossTacticKind::Anchor)
+            continue;
+        // The boss itself must be engaged: one of the side's attackers, alive, in combat and not running home. A row
+        // the vanish memory carries without its unit in the list holds nobody.
+        for (Unit* unit : fight.units)
+        {
+            if (unit->GetEntry() != row->bossEntry || !sServerFacade.IsAlive(unit) || !unit->IsInCombat())
+                continue;
+            Creature* creature = unit->ToCreature();
+            if (creature && creature->IsInEvadeMode())
+                continue;
+            out = AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z)
+{
+    BossAnchorCircle circle;
+    if (!LiveBossAnchor(ai, bot, circle))
+        return true;
+    float cx = x;
+    float cy = y;
+    if (!ClampToAnchor(circle, cx, cy))
+        return true;
+    // The floor at the clamped point, probed from the centre's level: the platform's top, never a ledge below it.
+    Map* map = bot->GetMap();
+    float const floor = map ? map->GetHeight(cx, cy, circle.z + 5.0f) : INVALID_HEIGHT;
+    if (!AnchorFloorOk(circle, floor > INVALID_HEIGHT, floor))
+        return false;
+    x = cx;
+    y = cy;
+    z = floor;
+    return true;
+}
+
+bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit)
+{
+    if (!unit)
+        return false;
+    BossAnchorCircle circle;
+    if (!LiveBossAnchor(ai, bot, circle))
+        return false;
+    return !InsideAnchor(circle, unit->GetPositionX(), unit->GetPositionY());
+}
+
+bool ai::BossAnchorOfBoss(std::uint32_t map, std::uint32_t bossEntry, bool tank, BossAnchorCircle& out)
+{
+    const BossTacticTable& table = GetBossTactics();
+    if (!table.HasAnchorMap(map))
+        return false;
+    const std::vector<BossTacticRow>* rows = table.Rows(map, bossEntry);
+    if (!rows)
+        return false;
+    for (const BossTacticRow& row : *rows)
+    {
+        if (row.kind == BossTacticKind::Anchor)
+        {
+            out = AnchorCircleOf(row, tank);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out)
 {
     out = SeekCycleView();
@@ -5094,6 +5217,14 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     if (SeekFallbackPullDue(state.windowOpen, anyInCombat, state.seekers,
                             nearest ? nearestToSpot : std::numeric_limits<float>::max()))
     {
+        // A live boss anchor: the shot goes only to a Son inside it, the same rule as the third off-tank's pick.
+        BossAnchorCircle shotAnchor;
+        if (LiveBossAnchor(ai, bot, shotAnchor) &&
+            !SeekPullSonInAnchor(shotAnchor, nearest->GetPositionX(), nearest->GetPositionY(), nearest->GetPositionZ()))
+        {
+            LogSeekPullSkipAnchor(ai, bot);
+            return task;
+        }
         task.valid = true;
         task.source = nearest;
         task.pull = true;
@@ -5137,13 +5268,21 @@ bool BossTacticsSeekAction::Execute(Event& event)
         }
         return false;
     }
-    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
-        std::fabs(lastY - task.y) < 1.0f)
-        return true;
-    if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true))
+    float x = task.x;
+    float y = task.y;
+    float z = task.z;
+    if (!ClampMoveToBossAnchor(ai, bot, x, y, z))
+    {
+        hasLast = false;
         return false;
-    lastX = task.x;
-    lastY = task.y;
+    }
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
+        std::fabs(lastY - y) < 1.0f)
+        return true;
+    if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+        return false;
+    lastX = x;
+    lastY = y;
     hasLast = true;
     return true;
 }
@@ -5189,7 +5328,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             case CLASS_DRUID: taunt = "growl"; break;
             default: break;
         }
-        if (AI_VALUE(Unit*, "current target") != task.source)
+        // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
+        // it stands, and the Son comes in to it.
+        const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source);
+        if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
             if (Attack(bot, task.source) && (!taunt || !ai->CanCastSpell(taunt, task.source)))
                 return true;
@@ -5226,6 +5368,11 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             float y = task.source->GetPositionY();
             float z = task.source->GetPositionZ();
             bot->UpdateGroundPositionZ(x, y, z);
+            if (!ClampMoveToBossAnchor(ai, bot, x, y, z))
+            {
+                hasLast = false;
+                return false;
+            }
             if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
                 std::fabs(lastY - y) < 1.0f)
                 return true;
@@ -5248,15 +5395,22 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     if (task.walkToSpot)
     {
         // The source follows the tank to the spot, where the gather stands around it.
+        float x = task.x;
+        float y = task.y;
         float z = task.z;
-        bot->UpdateGroundPositionZ(task.x, task.y, z);
-        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
-            std::fabs(lastY - task.y) < 1.0f)
-            return true;
-        if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+        bot->UpdateGroundPositionZ(x, y, z);
+        if (!ClampMoveToBossAnchor(ai, bot, x, y, z))
+        {
+            hasLast = false;
             return false;
-        lastX = task.x;
-        lastY = task.y;
+        }
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
+            std::fabs(lastY - y) < 1.0f)
+            return true;
+        if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+            return false;
+        lastX = x;
+        lastY = y;
         hasLast = true;
         return true;
     }

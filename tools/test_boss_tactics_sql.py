@@ -22,7 +22,7 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor"}
@@ -250,7 +250,7 @@ def new_kind_problem(row):
     """BossTacticTable::Add's refusals of a seek_aura, pull_gate or spread row, or None for a usable one."""
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
-    if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor") and (
+    if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
     if kind == "burn_mana":
@@ -298,6 +298,22 @@ def new_kind_problem(row):
             return "threat_successor with a target"
         if row["tactic_mode"]:
             return "a mode word on threat_successor"
+        return None
+    if kind == "anchor":
+        # The boss itself (target_entry 0, no spell): spot_x/y/z the centre, param the radius for everyone (10-60 yd),
+        # priority the tanks' radius (0 = param, never wider), no mode word and no cycle columns.
+        if row["target_entry"] or row["spell_id"]:
+            return "anchor with a target or a spell"
+        if not has_spot:
+            return "anchor without its centre"
+        if not 10.0 <= row["param"] <= 60.0:
+            return "anchor radius outside [10, 60]"
+        if row["priority"] > row["param"]:
+            return "anchor tank radius wider than the radius"
+        if row["tactic_mode"]:
+            return "a mode word on anchor"
+        if row["cycle_spell"] or row["cycle_s"]:
+            return "cycle columns on another kind"
         return None
     if kind == "needs_aura":
         # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
@@ -604,7 +620,8 @@ class BossTacticsSql(unittest.TestCase):
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         seek = live.get((309, 14834, "seek_aura", 11357, 24321))
         self.assertIsNotNone(seek, "the Hakkar seek_aura row is missing")
-        self.assertEqual((30, 4.0, 80.0, 24324, 90.0, -11802.0, -1683.0, 52.9),
+        # 20261106030000 moved the spot onto his platform, 15 yd S of his spawn; every other column is the old row's.
+        self.assertEqual((30, 4.0, 80.0, 24324, 90.0, -11787.4, -1664.3, 54.0),
                          (seek["priority"], seek["param"], seek["window_s"], seek["cycle_spell"],
                           seek["cycle_s"], seek["spot_x"], seek["spot_y"], seek["spot_z"]),
                          "the Hakkar seek_aura row drifted")
@@ -634,6 +651,55 @@ class BossTacticsSql(unittest.TestCase):
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
+
+    def test_hakkar_anchor_rows(self):
+        # 20261106030000_world.sql: the fight stays on his platform. The anchor centre is his spawn (tw_world creature
+        # guid 49678, z 54.10), 30 yd for everyone and 25 yd for the tanks (priority); the script evades him below
+        # z 45.8, which runs 45-50 yd SW of the spawn. The seek spot moves from 37 yd SW to 15 yd S of the spawn.
+        name = "20261106030000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Hakkar anchor migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        anchor = live.get((309, 14834, "anchor", 0, 0))
+        self.assertIsNotNone(anchor, "the Hakkar anchor row is missing")
+        self.assertEqual(name, anchor["file"], "the anchor migration owns the row")
+        self.assertEqual((25, 30.0, "", 0, 100, 0, 0, 0.0, -11787.4, -1649.34, 54.1),
+                         (anchor["priority"], anchor["param"], anchor["tactic_mode"], anchor["hp_min"],
+                          anchor["hp_max"], anchor["bot_aura"], anchor["cycle_spell"], anchor["cycle_s"],
+                          anchor["spot_x"], anchor["spot_y"], anchor["spot_z"]),
+                         "the Hakkar anchor row drifted")
+        self.assertIsNone(new_kind_problem(anchor))
+        anchors = [key for key in live if key[2] == "anchor"]
+        self.assertEqual([(309, 14834, "anchor", 0, 0)], anchors, "only Hakkar is anchored")
+        seek = live[(309, 14834, "seek_aura", 11357, 24321)]
+        self.assertEqual(name, seek["file"], "the anchor migration re-inserts the seek_aura row")
+        self.assertEqual((-11787.4, -1664.3, 54.0), (seek["spot_x"], seek["spot_y"], seek["spot_z"]))
+        # The moved spot sits inside the anchor, 15 yd from the centre.
+        dist = ((seek["spot_x"] - anchor["spot_x"]) ** 2 + (seek["spot_y"] - anchor["spot_y"]) ** 2) ** 0.5
+        self.assertLess(dist, 16.0)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for kind, target, spell in (("anchor", 0, 0), ("seek_aura", 11357, 24321)):
+            self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                          "AND `kind` = '%s' AND `target_entry` = %d AND `spell_id` = %d "
+                          "AND `hp_min` = 0 AND `hp_max` = 100;" % (kind, target, spell), text)
+        self.assertEqual(2, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertNotIn("ALTER TABLE", text, "the anchor kind needs no new column")
+        # The other Hakkar rows stay.
+        for key in ((309, 14834, "pull_gate", 0, 24692), (309, 14834, "spread", 0, 24328),
+                    (309, 14834, "taunt_after_cast", 0, 0), (309, 14834, "threat_successor", 0, 0),
+                    (309, 14834, "dps_hold_after", 0, 0)):
+            self.assertIn(key, live)
+
+    def test_anchor_row_shape_refused(self):
+        anchor = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="anchor", priority=25, param=30.0,
+                      spot_x=-11787.4, spot_y=-1649.34, spot_z=54.1)
+        self.assertIsNone(new_kind_problem(anchor))
+        for broken in (dict(anchor, spot_x=0.0, spot_y=0.0, spot_z=0.0), dict(anchor, param=5.0),
+                       dict(anchor, param=80.0), dict(anchor, priority=40), dict(anchor, target_entry=11357),
+                       dict(anchor, spell_id=24321), dict(anchor, hp_min=20), dict(anchor, tactic_mode="all"),
+                       dict(anchor, cycle_spell=24324)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
 
     def test_hakkar_opening_hold_migration(self):
         # 20261107120000_world.sql: D1 the 5 s opening threat hold. Its DELETE names that one key's full key, because

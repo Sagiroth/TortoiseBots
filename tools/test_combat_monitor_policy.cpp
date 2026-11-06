@@ -759,6 +759,82 @@ static void TestCloseUnfinished()
     CHECK(Contains(q[0], "\"outcome\":\"kill\""));
 }
 
+// A boss that resets with the raid up (Hakkar's anti-exploit Z box evades him with 17-20 members alive) is an `evade`,
+// not a plain `end`: the boss is alive, left the fight and either runs home (evade mode) or is back at full health or
+// at home. A wipe and a kill keep their own outcome, and a boss still fighting (or never sampled) leaves `end`.
+static std::string EndedOutcomeWith(std::function<void(Book&)> const& feed, bool wipe = false)
+{
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, BossCtx(), 1);
+    feed(b);
+    if (wipe)
+    {
+        b.OnDeath(1, "Hakkar", 0.0f, 0.0f, 0.0f, 6000);
+        b.OnDeath(2, "Hakkar", 0.0f, 0.0f, 0.0f, 6000);
+        b.OnDeath(3, "Hakkar", 0.0f, 0.0f, 0.0f, 6000);
+    }
+    else
+    {
+        b.SetInCombat(false, false, 6000);
+        b.SetInCombat(false, false, 9000);
+    }
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700009000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 1);
+    size_t const at = p[0].find("\"outcome\":\"");
+    CHECK(at != std::string::npos);
+    size_t const from = at + 11;
+    return p[0].substr(from, p[0].find('"', from) - from);
+}
+
+static void TestBossEvadeOutcome()
+{
+    CHECK(std::string(OutcomeName(Outcome::Evade)) == "evade");
+    // Running home in evade mode, half health: an evade.
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, false, true, false, false); }) == "evade");
+    // Out of combat, back at full health (the regen on reaching home).
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, false, false, true, false); }) == "evade");
+    // Out of combat, back at his home position.
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, false, false, false, true); }) == "evade");
+    // The latest sample counts: one in the fight, then the reset.
+    CHECK(EndedOutcomeWith([](Book& b)
+    {
+        b.NoteBossState(true, true, false, false, false);
+        b.NoteBossState(true, false, true, false, false);
+    }) == "evade");
+    // Still in combat, wounded, away from home: nothing says he reset.
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, true, false, false, false); }) == "end");
+    // Out of combat but wounded and away from home (the raid walked off): no reset seen.
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, false, false, false, false); }) == "end");
+    // Never sampled, or dead: end.
+    CHECK(EndedOutcomeWith([](Book&) {}) == "end");
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(false, false, false, false, false); }) == "end");
+    // A wipe stays a wipe, a kill stays a kill.
+    CHECK(EndedOutcomeWith([](Book& b) { b.NoteBossState(true, false, true, false, false); }, true) == "wipe");
+    CHECK(EndedOutcomeWith([](Book& b)
+    {
+        b.NoteBossState(true, false, true, false, false);
+        b.NoteBossDied(11502, 0);
+    }) == "kill");
+    // Outside a fight the sample is ignored, and a new fight starts without the last one's.
+    Book b;
+    b.SetMembers(Trio());
+    b.NoteBossState(true, false, true, false, false);
+    b.Start(0, 1700000000, BossCtx(), 1);
+    b.NoteBossState(true, false, true, false, false);
+    b.SetInCombat(false, false, 6000);
+    b.SetInCombat(false, false, 9000);
+    b.Start(10000, 1700000010, BossCtx(), 2);
+    b.SetInCombat(false, false, 16000);
+    b.SetInCombat(false, false, 19000);
+    Seq seq;
+    std::vector<std::string> p = b.TakeFightPayloads(1, 9, seq.fn(), 1700019000, "Cmdr", 123, 55, 409);
+    CHECK(p.size() == 2);
+    CHECK(Contains(p[0], "\"outcome\":\"evade\"") != Contains(p[1], "\"outcome\":\"evade\""));
+    CHECK(Contains(p[0], "\"outcome\":\"end\"") || Contains(p[1], "\"outcome\":\"end\""));
+}
+
 static void TestEngagedNowListsEntries()
 {
     Book b;
@@ -1567,6 +1643,7 @@ int main()
     TestBossFormDeathIsKill();
     TestAddDeathIsNoKill();
     TestCloseUnfinished();
+    TestBossEvadeOutcome();
     TestEngagedNowListsEntries();
     TestEventsJsonHalvesUnderBudget();
     TestEventsJsonBoundsHugeNames();

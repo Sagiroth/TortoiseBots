@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "BossAnchorPolicy.h"
 #include "policy/combat/RearFlankPolicy.h"
 #include "policy/heal/DispelTargetPolicy.h"
 
@@ -61,6 +62,7 @@ namespace ai
         BurnMana = 20,        // up to `priority` eligible bots drain the boss's mana while it is at or above `param` %
         RangedOnly = 21,      // melee bots leave the boss alone while it stands `param` yd or more above them
         ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
+        Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -178,6 +180,8 @@ namespace ai
             return BossTacticKind::RangedOnly;
         if (text == "threat_successor")
             return BossTacticKind::ThreatSuccessor;
+        if (text == "anchor")
+            return BossTacticKind::Anchor;
         return BossTacticKind::None;
     }
 
@@ -210,6 +214,18 @@ namespace ai
 
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
+
+    // An anchor row's circle for one bot: the row's spot, and the tanks' radius (`priority`, 0: the shared one) or the
+    // shared radius (`param`).
+    inline BossAnchorCircle AnchorCircleOf(const BossTacticRow& row, bool tank)
+    {
+        BossAnchorCircle c;
+        c.x = row.spotX;
+        c.y = row.spotY;
+        c.z = row.spotZ;
+        c.radius = BossAnchorRadius(row.param, static_cast<float>(row.priority), tank);
+        return c;
+    }
 
     // Whether the row carries a gate at all. Only the scan-read kinds may: hold_kill, tank_hold, one_at_a_time and
     // linked_death are read straight from the table, so they could never answer it.
@@ -490,15 +506,24 @@ namespace ai
             if (row.kind == BossTacticKind::ThreatSuccessor &&
                 (row.targetEntry != 0 || row.mode != TacticMode::Default))
                 return false;
-            // The cycle and spot columns are the seek_aura kind's.
-            if (row.kind != BossTacticKind::SeekAura &&
-                (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
+            // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
+            // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
+            // It takes no mode word.
+            if (row.kind == BossTacticKind::Anchor &&
+                (row.targetEntry != 0 || row.spellId != 0 || !row.HasSpot() || !(row.param >= 10.0f) ||
+                    row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
+                    row.mode != TacticMode::Default))
+                return false;
+            // The cycle columns are the seek_aura kind's, the spot columns the seek_aura and anchor kinds'.
+            if (row.kind != BossTacticKind::SeekAura && (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+                return false;
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor && row.HasSpot())
                 return false;
             // A gate is a fight-scan question; these five answer it themselves or not at all (a pull gate already
             // decides the run).
             if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
                     row.kind == BossTacticKind::Spread || row.kind == BossTacticKind::BurnMana ||
-                    row.kind == BossTacticKind::RangedOnly))
+                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -536,6 +561,8 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::Anchor)
+                anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
             // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
@@ -644,6 +671,12 @@ namespace ai
         bool HasSpreadMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
+        }
+
+        // Whether the map has an anchor row (the movers' clamp looks for a live one only there). False before the seal.
+        bool HasAnchorMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && anchorMaps_.find(map) != anchorMaps_.end();
         }
 
         // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
@@ -783,6 +816,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;

@@ -199,6 +199,18 @@ void CombatMonitorService::NoteBossGuid(uint32_t groupId, uint64_t guid)
     it->second.NoteBossGuid(guid);
 }
 
+void CombatMonitorService::NoteBossState(uint32_t groupId, bool alive, bool inCombat, bool evading, bool fullHp,
+                                         bool atHome)
+{
+    if (!Enabled() || groupId == 0)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    it->second.NoteBossState(alive, inCombat, evading, fullHp, atHome);
+}
+
 uint64_t CombatMonitorService::BossGuid(uint32_t groupId) const
 {
     if (!Enabled() || groupId == 0)

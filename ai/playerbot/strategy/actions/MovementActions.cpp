@@ -4,6 +4,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
+#include "BossTacticsActions.h"
 #include "Movement/MotionMaster.h"
 #include "Movement/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
@@ -4153,6 +4154,9 @@ bool TankFaceAwayAction::Execute(Event& event)
         }
     }
     if (!found)
+        return false;
+    // A live boss anchor keeps the tank's sidestep on the boss's platform (Hakkar evades off it).
+    if (!ClampMoveToBossAnchor(ai, bot, bestX, bestY, bestZ))
         return false;
     return MoveTo(bot->GetMapId(), bestX, bestY, bestZ);
 }

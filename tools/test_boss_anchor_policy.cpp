@@ -1,0 +1,242 @@
+// Standalone check for ai/playerbot/BossAnchorPolicy.h and the `anchor` kind of ai/playerbot/BossTacticsPolicy.h:
+//   g++ -std=c++17 -Wall -Wextra tools/test_boss_anchor_policy.cpp -o /tmp/test_boss_anchor_policy && /tmp/test_boss_anchor_policy
+#include "../ai/playerbot/BossAnchorPolicy.h"
+#include "../ai/playerbot/BossTacticsPolicy.h"
+
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+
+#define CHECK(x) do { \
+    if (!(x)) { \
+        std::cerr << "Assertion failed at line " << __LINE__ << ": " #x "\n"; \
+        std::exit(1); \
+    } \
+} while (0)
+
+using namespace ai;
+
+static bool Near(float a, float b) { return std::fabs(a - b) < 0.01f; }
+
+// Hakkar's spawn (tw_world creature guid 49678) and the shipped radii: 30 yd for everyone, 25 yd for the tanks.
+static BossAnchorCircle Hakkar(bool tank)
+{
+    BossAnchorCircle c;
+    c.x = -11787.4f;
+    c.y = -1649.34f;
+    c.z = 54.1f;
+    c.radius = BossAnchorRadius(30.0f, 25.0f, tank);
+    return c;
+}
+
+static float Dist2d(const BossAnchorCircle& c, float x, float y)
+{
+    return std::sqrt((x - c.x) * (x - c.x) + (y - c.y) * (y - c.y));
+}
+
+static void TestInsideUnchanged()
+{
+    const BossAnchorCircle c = Hakkar(false);
+    float x = c.x + 10.0f;
+    float y = c.y - 15.0f;
+    CHECK(InsideAnchor(c, x, y));
+    CHECK(!ClampToAnchor(c, x, y));
+    CHECK(Near(x, c.x + 10.0f) && Near(y, c.y - 15.0f));
+    // The centre itself and a point right on the circle stay where they are.
+    float cx = c.x, cy = c.y;
+    CHECK(!ClampToAnchor(c, cx, cy));
+    float ex = c.x + 30.0f, ey = c.y;
+    CHECK(InsideAnchor(c, ex, ey));
+    CHECK(!ClampToAnchor(c, ex, ey));
+    CHECK(Near(ex, c.x + 30.0f));
+}
+
+static void TestOutsideProjectedOntoCircle()
+{
+    const BossAnchorCircle c = Hakkar(false);
+    // The authored seek spot of 20261104020000 (-11802, -1683): 37 yd SW of his spawn.
+    float x = -11802.0f;
+    float y = -1683.0f;
+    CHECK(!InsideAnchor(c, x, y));
+    const float before = Dist2d(c, x, y);
+    CHECK(before > 36.0f);
+    const float dirX = (x - c.x) / before;
+    const float dirY = (y - c.y) / before;
+    CHECK(ClampToAnchor(c, x, y));
+    CHECK(Near(Dist2d(c, x, y), 30.0f));
+    // On the line from the centre toward the destination.
+    CHECK(Near(x, c.x + dirX * 30.0f));
+    CHECK(Near(y, c.y + dirY * 30.0f));
+    CHECK(InsideAnchor(c, x, y));
+    // Far out along an axis.
+    float fx = c.x - 80.0f, fy = c.y;
+    CHECK(ClampToAnchor(c, fx, fy));
+    CHECK(Near(fx, c.x - 30.0f) && Near(fy, c.y));
+}
+
+static void TestTankRadius25()
+{
+    const BossAnchorCircle tank = Hakkar(true);
+    const BossAnchorCircle other = Hakkar(false);
+    CHECK(Near(tank.radius, 25.0f));
+    CHECK(Near(other.radius, 30.0f));
+    // 28 yd out: inside for a healer, clamped to 25 for a tank.
+    float hx = other.x, hy = other.y + 28.0f;
+    CHECK(!ClampToAnchor(other, hx, hy));
+    float tx = tank.x, ty = tank.y + 28.0f;
+    CHECK(ClampToAnchor(tank, tx, ty));
+    CHECK(Near(tx, tank.x) && Near(ty, tank.y + 25.0f));
+    // A row without a tank radius (0) holds the tanks at the shared radius.
+    CHECK(Near(BossAnchorRadius(30.0f, 0.0f, true), 30.0f));
+    CHECK(Near(BossAnchorRadius(30.0f, 25.0f, false), 30.0f));
+}
+
+static void TestFloor()
+{
+    const BossAnchorCircle c = Hakkar(false);
+    CHECK(AnchorFloorOk(c, true, 54.0f));
+    CHECK(AnchorFloorOk(c, true, 50.2f));
+    // The SW slope (z 47 / 44 / 41) is off the platform: the move is skipped.
+    CHECK(!AnchorFloorOk(c, true, 47.0f));
+    CHECK(!AnchorFloorOk(c, true, 41.0f));
+    // No floor read at all.
+    CHECK(!AnchorFloorOk(c, false, 54.0f));
+}
+
+static void TestSeekPullSonSelection()
+{
+    // The third off-tank is a tank: its own radius (25) plus the hit reach (5).
+    const BossAnchorCircle c = Hakkar(true);
+    // The walk 42 Son 49034 (-11842.9, -1594.18, z 40.75): 78 yd NW and 13 yd lower. Skipped.
+    CHECK(!SeekPullSonInAnchor(c, -11842.9f, -1594.18f, 40.75f));
+    // Inside the radius on the platform: picked.
+    CHECK(SeekPullSonInAnchor(c, c.x + 10.0f, c.y - 12.0f, 54.0f));
+    // Inside radius + 5 yd: picked (the clamped walk ends within the hit reach).
+    CHECK(SeekPullSonInAnchor(c, c.x, c.y + 29.5f, 54.0f));
+    // Outside radius + 5 yd: skipped.
+    CHECK(!SeekPullSonInAnchor(c, c.x, c.y + 30.5f, 54.0f));
+    // Inside the radius but more than 4 yd below the centre: skipped.
+    CHECK(!SeekPullSonInAnchor(c, c.x + 5.0f, c.y + 5.0f, 49.9f));
+    CHECK(SeekPullSonInAnchor(c, c.x + 5.0f, c.y + 5.0f, 50.2f));
+    // Above too.
+    CHECK(!SeekPullSonInAnchor(c, c.x + 5.0f, c.y + 5.0f, 58.3f));
+}
+
+static BossTacticRow AnchorRow()
+{
+    BossTacticRow row;
+    row.map = 309;
+    row.bossEntry = 14834;
+    row.kind = BossTacticKind::Anchor;
+    row.param = 30.0f;
+    row.priority = 25;
+    row.windowSec = 0.0f;
+    row.spotX = -11787.4f;
+    row.spotY = -1649.34f;
+    row.spotZ = 54.1f;
+    return row;
+}
+
+static void TestAnchorKindParsesAndLoads()
+{
+    CHECK(ParseBossTacticKind("anchor") == BossTacticKind::Anchor);
+    CHECK(ParseTacticMode(BossTacticKind::Anchor, "") == TacticMode::Default);
+    CHECK(ParseTacticMode(BossTacticKind::Anchor, "all") == TacticMode::Invalid);
+    BossTacticTable table;
+    CHECK(table.Add(AnchorRow()));
+    table.Seal();
+    CHECK(table.HasAnchorMap(309));
+    CHECK(!table.HasAnchorMap(409));
+    const std::vector<BossTacticRow>* rows = table.Rows(309, 14834);
+    CHECK(rows && rows->size() == 1);
+    const BossAnchorCircle tank = AnchorCircleOf(rows->front(), true);
+    const BossAnchorCircle other = AnchorCircleOf(rows->front(), false);
+    CHECK(Near(tank.radius, 25.0f) && Near(other.radius, 30.0f));
+    CHECK(Near(other.x, -11787.4f) && Near(other.y, -1649.34f) && Near(other.z, 54.1f));
+    // A table without an anchor row says so (data-gated: nothing is clamped).
+    BossTacticTable empty;
+    empty.Seal();
+    CHECK(!empty.HasAnchorMap(309));
+}
+
+static void TestAnchorRowShapeRefused()
+{
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.spotX = row.spotY = row.spotZ = 0.0f;   // no centre
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.param = 0.0f;   // no radius
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.param = 80.0f;  // a radius past 60 yd anchors nothing
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.priority = 40;  // the tank radius cannot be wider than everyone's
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.targetEntry = 11357;
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.spellId = 24321;
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.hpMin = 20;     // no gate: the anchor holds the whole fight
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.cycleSpell = 24324;
+        CHECK(!t.Add(row));
+    }
+    {
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.priority = 0;   // no tank radius: the tanks take the shared one
+        CHECK(t.Add(row));
+        t.Seal();
+        CHECK(Near(AnchorCircleOf(t.Rows(309, 14834)->front(), true).radius, 30.0f));
+    }
+    {
+        // The spot columns stay the seek_aura and anchor kinds' own.
+        BossTacticTable t;
+        BossTacticRow row = AnchorRow();
+        row.kind = BossTacticKind::Spread;
+        row.param = 12.0f;
+        row.priority = 0;
+        CHECK(!t.Add(row));
+    }
+}
+
+int main()
+{
+    TestInsideUnchanged();
+    TestOutsideProjectedOntoCircle();
+    TestTankRadius25();
+    TestFloor();
+    TestSeekPullSonSelection();
+    TestAnchorKindParsesAndLoads();
+    TestAnchorRowShapeRefused();
+    std::cout << "boss anchor policy: all checks passed\n";
+    return 0;
+}
