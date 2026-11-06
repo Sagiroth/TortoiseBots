@@ -50,23 +50,23 @@ namespace ai
     constexpr std::uint32_t kSeekHealerStaleMs = 20000;
 
     // The Son-on-a-non-tank clock after one bot's read. Every bot of the fight feeds the one record, and a read only
-    // sees the Sons inside ITS reach (a range-limited grid search), so a Son the read did not see says nothing: only a
-    // Son this read saw dead, out of combat, or on a tank leaves the clock; one it saw on a non-tank enters it (or
-    // refreshes `seenMs`, never `sinceMs`); anything else stays untouched until the sweep drops what no read has seen on
-    // a non-tank for kSeekHealerStaleMs. Erasing every guid the read did not list kept the clock from ever reaching
+    // sees the Sons inside ITS reach (a range-limited grid search), so a Son the read did not see says nothing: a Son
+    // this read saw anywhere but on a non-tank (dead, out of combat, on a tank, with no victim or on a pet) leaves the
+    // clock; one it saw on a non-tank enters it (or refreshes `seenMs`, never `sinceMs`); a Son it did not see stays
+    // untouched until the sweep drops what no read has seen on a non-tank for kSeekHealerStaleMs. Erasing every guid the read did not list kept the clock from ever reaching
     // 8 s, since the bots that did not see the Son erased it between the ones that did.
     inline void SeekHealerClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekSonSeen>& seen,
                                     std::uint32_t nowMs)
     {
         for (const SeekSonSeen& son : seen)
         {
-            if (!son.alive || !son.inCombat || son.victimTank)
+            // Seen off a non-tank (dead, out of combat, on a tank, no victim, a pet): the victim changed, so its clock
+            // goes. Only a read that does not see the Son at all keeps the entry.
+            if (!son.alive || !son.inCombat || !son.victimNonTank)
             {
                 held.erase(son.guid);
                 continue;
             }
-            if (!son.victimNonTank)
-                continue;
             auto it = held.find(son.guid);
             if (it == held.end())
                 held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs}));

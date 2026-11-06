@@ -244,12 +244,24 @@ int main()
         SeekHealerClockTick(held, {onHealer}, 11000);
         SeekHealerClockTick(held, {SeekSonSeen{7, true, false, false, true}}, 11500);
         CHECK(held.empty());
-        // A Son whose victim is neither (no victim, a pet) keeps its entry; the sweep drops what nobody sees.
+        // A read that SEES the Son off a non-tank (no victim, a pet) erases its clock: the victim changed. Only a read
+        // that does not see it at all (out of the bot's range) keeps the entry; the sweep drops what nobody sees.
         SeekHealerClockTick(held, {onHealer}, 20000);
         SeekHealerClockTick(held, {SeekSonSeen{7, true, true, false, false}}, 30000);
+        CHECK(held.empty());
+        SeekHealerClockTick(held, {onHealer}, 20000);
+        SeekHealerClockTick(held, {}, 25000);
         CHECK(held.count(7) == 1);
         SeekHealerClockTick(held, {}, 20000 + kSeekHealerStaleMs + 1);
         CHECK(held.empty());
+        // Codex: 6 s on a healer, then seen on a tank, then back on a healer: the 12 s release counts from the new
+        // start, never from the first one.
+        SeekHealerClockTick(held, {onHealer}, 100000);
+        SeekHealerClockTick(held, {SeekSonSeen{7, true, true, true, false}}, 106000);
+        CHECK(held.empty());
+        CHECK(SeekNonTankHeldMs(held, 7, 112000) == 0);
+        SeekHealerClockTick(held, {onHealer}, 110000);
+        CHECK(SeekNonTankHeldMs(held, 7, 112000) == 2000);
         // The lowest guid among the due entries is the take.
         SeekHealerClockTick(held, {SeekSonSeen{12, true, true, false, true}, SeekSonSeen{5, true, true, false, true}}, 40000);
         CHECK(SeekHealerTakeGuid(held, 48000) == 5);

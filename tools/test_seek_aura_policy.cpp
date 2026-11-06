@@ -166,6 +166,10 @@ int main()
     CHECK(kSeekHealerTakeMs == 8000);
     CHECK(SeekTakeFightingSonOnHealer(8000));
     CHECK(!SeekTakeFightingSonOnHealer(7999));
+    // An off-tank that is Hakkar's victim (Cause Insanity, then the threat successor) takes no Son and walks no drag:
+    // it would bring Hakkar onto the gather. The other off-tank takes it.
+    CHECK(SeekTankTakeAllowed(false));
+    CHECK(!SeekTankTakeAllowed(true));
 
     // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
     // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),

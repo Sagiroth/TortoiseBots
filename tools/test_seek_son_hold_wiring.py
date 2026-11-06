@@ -50,5 +50,18 @@ class SeekSonHoldWiring(unittest.TestCase):
         self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out)", read)
 
 
+class SeekSonHoldReview(unittest.TestCase):
+    def test_the_boss_victim_takes_no_son(self):
+        tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
+        gate = tank.index("SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot)")
+        self.assertLess(tank.index("ReadSeekFightCached(ai, bot, state)"), gate)
+        self.assertLess(gate, tank.index("if (onTank)"))
+
+    def test_no_comment_keeps_the_three_tank_gate(self):
+        for stale in ("once the third off-tank cannot take it", "while the third off-tank cannot",
+                      "Nothing\n        // here when the third off-tank can still take it"):
+            self.assertNotIn(stale, ACTIONS)
+
+
 if __name__ == "__main__":
     unittest.main()

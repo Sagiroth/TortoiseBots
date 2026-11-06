@@ -313,6 +313,13 @@ namespace ai
         return heldMs >= kSeekHealerTakeMs;
     }
 
+    // Whether an off-tank may take a Son, drag one or walk a pull at all: never while it is the boss's victim (after
+    // Cause Insanity the threat successor can hand Hakkar to it, and its walk would bring him onto the gather).
+    inline bool SeekTankTakeAllowed(bool isBossVictim)
+    {
+        return !isBossVictim;
+    }
+
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive
     // the off-tank (tanks[1]) takes the Son over instead, and the raid's nearest hunter pulls it with one ranged shot;
     // without a hunter the nearest ranged damage dealer does. Nobody pulls when there is no off-tank to take it over.

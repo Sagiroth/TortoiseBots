@@ -775,8 +775,8 @@ struct SeekFight
     // This bot runs the fight's walk-out task (SeekWalkoutPolicy.h): out to shoot pullTarget, or back once shot.
     bool walkout = false;
     bool walkoutShot = false;
-    // A Son that fights a non-tank while the third off-tank cannot take it: the first off-tank's own take, once the
-    // fight record says the non-tank has had it for a while (SeekTakeFightingSonOnHealer).
+    // A Son that fights a non-tank: the first off-tank's own take once the fight record says the non-tank has had it
+    // for kSeekHealerTakeMs (SeekTakeFightingSonOnHealer), whatever the third off-tank does.
     Unit* healerSon = nullptr;
     // The fight's Sons on a non-tank, and since when (the healer clock): the hold lets one go once it has sat there too
     // long (SeekHoldDecision's non-tank time).
@@ -2331,8 +2331,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
         LiveBossAnchorRow(ai, bot);
     UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out);
-    // A Son camped on a non-tank: the first off-tank's own take once the third off-tank cannot take it (dead, or
-    // holding a Son of its own) and the non-tank has had it for a while. The fight record times it (the take must not
+    // A Son camped on a non-tank: the first off-tank's own take once the non-tank has had it for kSeekHealerTakeMs,
+    // whatever the third off-tank does (it had those seconds). The fight record times it (the take must not
     // flip with every read, and the healer gets its 8 s first). The Sons it judges are the fight-wide set, never
     // fight.units alone: under "focus rti targets" that list collapses to the raid mark, so a Son on a healer would
     // never be seen. They are the group's attackers and the source walk's Sons (out.sons) plus the "sole kill
@@ -5952,8 +5952,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     // false before the fight read.
     const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
     const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
-    // The first off-tank also takes a Son off a healer while the third off-tank cannot (dead, or holding one of its
-    // own); the state's healer pick says whether one has been waiting long enough.
+    // The first off-tank also takes a Son off a healer once the state's healer pick says it has waited long enough
+    // there, whatever the third off-tank does.
     const bool healerTaker = roles.tanks.size() >= 3 && roles.tanks[1] == bot;
     if (!thirdTank && !pickupTank && !healerTaker)
     {
@@ -6001,6 +6001,11 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     }
     if (!thirdTank && !pickupTank && !healerTaker &&
         (roles.tanks.size() >= 3 || FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot))
+        return task;
+    // An off-tank that is the boss's victim takes no Son, drags none and walks no pull: it would bring the boss onto
+    // the gather (after Cause Insanity the threat successor can hand Hakkar to it). The other off-tank takes the Son.
+    if ((thirdTank || pickupTank || healerTaker) &&
+        !SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -6081,8 +6086,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     }
     if (healerTaker)
     {
-        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot. Nothing
-        // here when the third off-tank can still take it.
+        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot.
         if (state.healerSon)
         {
             task.valid = true;
