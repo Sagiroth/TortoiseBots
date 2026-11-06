@@ -2250,8 +2250,8 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
             }
         }
     }
-    const int index = PickKillFirst(fight.rows, candidates);
-    return index < 0 ? nullptr : units[index];
+    const int picked = PickKillFirst(fight.rows, candidates);
+    return picked < 0 ? nullptr : units[picked];
 }
 
 Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
