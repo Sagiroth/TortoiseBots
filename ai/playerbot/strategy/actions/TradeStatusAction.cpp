@@ -255,33 +255,51 @@ void TradeStatusAction::ConjureAndPlace(uint32 itemId, uint32 count)
     ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     for (Item* candidate : visitor.GetResult())
     {
-        if (candidate && !candidate->IsInTrade() && candidate->GetCount() <= count)
+        if (candidate && !candidate->IsInTrade() && candidate->GetCount() == count)
         {
             item = candidate;
-            count = candidate->GetCount();
             break;
         }
     }
     if (!item)
     {
-        ItemPosCountVec dest;
-        uint32 noSpace = 0;
-        InventoryResult store = bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count, &noSpace);
-        if (store != EQUIP_ERR_OK)
+        bool haveSlot = false;
+        uint8 freeBag = INVENTORY_SLOT_BAG_0;
+        uint8 freeSlot = NULL_SLOT;
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
         {
-            if (store != EQUIP_ERR_INVENTORY_FULL && store != EQUIP_ERR_CANT_CARRY_MORE_OF_THIS)
-                return;
-            if (noSpace >= count)
-                return;
-            count -= noSpace;
-            dest.clear();
-            if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count) != EQUIP_ERR_OK)
-                return;
+            if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            {
+                freeBag = INVENTORY_SLOT_BAG_0;
+                freeSlot = slot;
+                haveSlot = true;
+                break;
+            }
         }
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !haveSlot; ++bag)
+        {
+            if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            {
+                for (uint32 slot = 0; slot < pack->GetBagSize(); ++slot)
+                {
+                    if (!pack->GetItemByPos(slot))
+                    {
+                        freeBag = bag;
+                        freeSlot = static_cast<uint8>(slot);
+                        haveSlot = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!haveSlot)
+            return;
+        ItemPosCountVec dest;
+        if (bot->CanStoreNewItem(freeBag, freeSlot, dest, itemId, count) != EQUIP_ERR_OK)
+            return;
         item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
         if (!item)
             return;
-        item->SetCount(count);
     }
     TradeData* trade = bot->GetTradeData();
     for (uint8 i = 0; i < TRADE_SLOT_TRADED_COUNT; ++i)
@@ -298,6 +316,8 @@ void TradeStatusAction::ConjureAndPlace(uint32 itemId, uint32 count)
 void TradeStatusAction::AutoShareConjured(Player* trader)
 {
     if (!sPlayerbotAIConfig.autoShareConjuredOnTrade || !trader || !bot->GetTradeData())
+        return;
+    if (PlayerbotAIStorage::Instance().GetAI(trader))
         return;
     if (!bot->GetTrader() || bot->GetTrader() != trader)
         return;
