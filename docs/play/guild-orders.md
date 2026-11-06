@@ -55,7 +55,7 @@ Recipe tools stay available as long as [`AiPlayerbot.CraftToolsAlways`](../serve
 | `working` | Working on the order, with progress (delivered / want). It may already carry a missing-material list the bot is working around. |
 | `waiting` | The bot is in a player's group; the order resumes when it leaves. |
 | `waiting` with reason `needitems` | Nothing else is left to source: the bot needs the listed materials from the giver. It resumes when they appear in its bags, mailbox or accessible guild bank. |
-| `delivering` | Amount reached (or bags full), on the way to the guild banker. |
+| `delivering` | Amount reached (or bags full), on the way to the guild banker, or to a mailbox when the guild has no bank. |
 | `done` | Deposited in the guild bank. |
 | `stocked` | Keep order: delivered, the bank holds the ordered amount, watching it (checks about every 10 minutes). |
 | `mailed` | The bank refused, mailed to the guild master. |

@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "playerbot/GuildOrderSources.h"
+#include "runtime/GuildOrderAccess.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderAuctionPolicy.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
@@ -2580,6 +2581,13 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         uint32 botFaction = bot->GetFactionTemplateId();
         bool mailLeg = TortoiseBots::GuildOrders::DeliveryMailsAfterNoBanker(
             uint32(AI_VALUE2(int32, "manual int", "guild order no banker")));
+        // A guild with no bank tabs has nowhere to deposit: skip the banker
+        // search and walk straight to a mailbox. Read once per request; the
+        // arrival action and the drain read the flag below instead.
+        bool noBank = TortoiseBots::GuildOrders::DeliverySkipsBanker(
+            TortoiseBots::GuildOrders::GuildBankTabCount(bot->GetGuildId()));
+        mailLeg = mailLeg || noBank;
+        SET_AI_VALUE2(bool, "manual bool", "guild order no bank", noBank);
         if (mailLeg)
         {
             *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async((sPlayerbotAIConfig.asyncTravelPartitions ? std::launch::async : std::launch::deferred), [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center]() mutable

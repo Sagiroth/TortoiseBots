@@ -106,6 +106,13 @@ inline bool DeliveryMailsAfterNoBanker(uint32_t noBankerSearches)
     return noBankerSearches >= kDeliveryNoBankerMails;
 }
 
+// A guild with no bank tabs at all has nowhere to deposit: the delivery
+// skips the banker search and mails the order instead.
+inline bool DeliverySkipsBanker(uint32_t bankTabCount)
+{
+    return bankTabCount == 0;
+}
+
 // One stack per mail; the server takes a single item per mail.
 inline uint32_t DeliveryMailCount(size_t stacksLeft) { return uint32_t(stacksLeft); }
 

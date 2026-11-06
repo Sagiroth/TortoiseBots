@@ -105,6 +105,7 @@ Multiple whisper commands can be chained in a single line using `\\` as a delimi
 | `spell` | `<spell link\|name>` | Owner or GM | Queries information about a specific spell. |
 | `cast <spell>` | `<spell link\|name>` | Owner or GM | Commands the bot to cast a known spell in combat. |
 | `castnc <spell>` | `<spell link\|name>` | Owner or GM | Commands the bot to cast a known spell out of combat. |
+| `portal [city]` | `[city name or prefix]` | Owner or GM | Lists the mage's learned portals, or casts that portal where it stands. |
 | `ss` | `<spell link\|name>` | Owner or GM | Skips or toggles automatic usage of a specific spell. |
 | `save ai <name>` | `<name>` | GM Only | Saves the current strategy setup under a name. |
 | `load ai <name>` | `<name>` | GM Only | Loads a saved strategy setup. |
@@ -215,6 +216,18 @@ Note: Autonomous alt-bots accept guild invitations only from their owner's accou
 ---
 
 ## Detailed Whisper Reference
+
+<a id="w--portal"></a>
+### `/w <BotName> portal`
+
+Bare `portal` whispers back the cities the mage knows (`Portals: Ironforge, Stormwind, ...`). With a city it casts that portal where the bot stands, then confirms.
+
+```text
+/w <BotName> portal
+/w <BotName> portal iron
+```
+
+City matching is case-insensitive; a unique prefix (`iron` for Ironforge) works. Out of combat only; a moving bot stops first, then casts. The rune is free (the bot gets one if missing, so the cast never fails for lack of a rune). Refusals name the reason: in combat, not a mage, portal not learned or unknown city, dead, or busy casting.
 
 <a id="w--trainer"></a>
 ### `/w <BotName> trainer`

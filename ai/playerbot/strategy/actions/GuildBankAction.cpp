@@ -146,6 +146,11 @@ Unit* GuildBankAction::FindNearbyGuildBanker()
 
 bool GuildBankAction::MailLegActive() const
 {
+    // Set on the delivery travel request when the guild has no bank tabs:
+    // the bot walks to a mailbox instead of a banker, so the counter the
+    // banker searches build never applies.
+    if (AI_VALUE2(bool, "manual bool", "guild order no bank"))
+        return true;
     return TortoiseBots::GuildOrders::DeliveryMailsAfterNoBanker(
         uint32(AI_VALUE2(int32, "manual int", "guild order no banker")));
 }

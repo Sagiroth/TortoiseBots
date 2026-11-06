@@ -21,6 +21,7 @@ TortoiseBots provides tools to manage owned alternate characters (alts) as bots,
 | :--- | :--- | :--- |
 | [`.bot roster`](#bot-roster) | None | Displays owned character states and active CC marks. |
 | [`.bot add`](#bot-add) | `<Name>` | Logs in an owned alt as an active companion bot. |
+| [`.bot alts`](#bot-alts) | None | Shows what each autonomous alt did since your last logout. |
 | [`.bot remove`](#bot-remove) | `<Name>` | Logs out an owned bot or dismisses a hired companion. |
 | [`.bot hire`](#bot-hire) | `<class> [role] [race] [gender] [tier] [level=<n>]` | Recruits a mercenary companion from a recruiter. |
 | [`.bot hire raid`](#bot-hire-raid) | `<preset\|composition> [tier] [level=<n>]` | Recruits up to 39 mercenary companions for a raid (40 in a commander's bound raid). |
@@ -50,6 +51,17 @@ Shows the characters on your account that the roster looks up (deleted character
 
 - **Character States:** Reports account character lifecycle states (`offline`, `online`, `starting`, `removing`) along with a distinct `grouped` flag indicating party membership.
 - **CC Snapshot:** Lists active crowd control mark assignments for bots you can control in your party. A bot is included only if it is in your party, has the `cc` combat strategy active, and has a mark set (since Moon is the default, mark presence alone is insufficient). Hires in your party are included in CC assignments even though they are omitted from the account character roster. When you are ungrouped, the snapshot falls back to the bots you control.
+
+### `.bot alts`
+
+Shows one line per autonomous alt-bot on your account: what it did since your last logout (levels, gold, quests, deaths, newly equipped green-or-better items, where it is and what it is doing). An alt with no change reports `no change` with its zone and activity.
+
+```text
+.bot alts
+```
+
+You also get the same lines in chat the moment you log in. The addon reads the matching `TBM:ALTSUM|<name>|<text>` lines (closed by `TBM:ALTSUM_END|<count>`); the chat text stays plain so it works without the addon. Only your own autonomous alts are listed, never hires or pool bots.
+
 
 ### `.bot add`
 
@@ -343,7 +355,7 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 | Play it yourself | Log into it from the character screen. |
 
 - **Where it goes:** if it was in an instance, a battleground or on a boat, it first leaves through the instance entrance portal, or to its battleground entry or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level (like a pool bot); below 10 it skips only the scatter and stays where it is.
-- **What it tells you:** when it starts it whispers you how to stop it; when it stops it whispers a summary (levels, quests, deaths, gold).
+- **What it tells you:** when it starts it whispers you how to stop it; when it stops it whispers a summary (levels, quests, deaths, gold). When you log in you get one line per alt for what it did since your last logout; [`.bot alts`](#bot-alts) repeats the same lines any time.
 - **How long it plays:** while you are logged out too, until you stop it or the server restarts. With [`AiPlayerbot.AltBotsLogoutWithOwner`](../../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` it logs out with you. A server crash can lose progress it had not saved yet.
 - **Pool size:** each alt-bot takes the place of one pool bot, which comes back when the alt-bot stops.
 - **Hardcore characters** never become alt-bots.

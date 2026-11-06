@@ -25,6 +25,7 @@
 #include "../../runtime/BotManager.h"
 
 class Player;
+class Group;
 class ChatHandler;
 
 using namespace ai;
@@ -1076,6 +1077,10 @@ private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void UpdateLeadTrail();
+    void UpdatePortalFollow(Player* master, Group* group);
+public:
+    bool PortalFollowActive() const { return !m_portalFollowGuid.IsEmpty(); }
+private:
     std::vector<FollowTrailPoint> leadTrail;
 
 protected:
@@ -1084,6 +1089,14 @@ protected:
 	uint8 m_forcedRole = 0;
 	bool m_petTauntAutocastOrdered = false;
 	time_t m_dungeonCatchUpAt = 0;
+	// Mage-portal follow: the party portal the master just stepped through
+	// (map it stands on), the tick the episode started, and the last tick a
+	// portal use packet went out. Empty guid: no episode.
+	ObjectGuid m_portalFollowGuid;
+	uint32 m_portalFollowMap = 0;
+	uint32 m_portalFollowStartMs = 0;
+	uint32 m_portalFollowUsedMs = 0;
+	uint32 m_portalFollowScanMs = 0;
 	// GUID-shadow of `master` so we can verify the pointer is still
 	// alive each tick without dereferencing it. Set in SetMaster().
 	// Used by RevalidateMasterPointer() at the top of UpdateAI.

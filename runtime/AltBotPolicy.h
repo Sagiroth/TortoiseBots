@@ -95,6 +95,109 @@ inline std::string FormatAltBotSummary(std::string const& name, AltBotSessionCou
     return out;
 }
 
+// Away summary: one line per autonomous alt since the owner's last logout.
+// The window is per owner account, not per session: the owner's logout
+// snapshots each alt (level, money, quest and death totals, equipped item
+// entries per slot); an alt whose session starts later uses its session start
+// as the baseline instead. Baselines live only in memory: alts do not survive
+// a restart anyway. The service feeds plain values; the diff and the line
+// stay here for the standalone test.
+constexpr uint32_t kAltBotAwayEquipSlots = 19; // core EQUIPMENT_SLOT_END
+
+struct AltBotAwayPoint
+{
+    uint32_t level = 0;
+    uint32_t money = 0; // copper
+    uint32_t quests = 0;
+    uint32_t deaths = 0;
+    std::vector<uint32_t> equipped; // item entry per equipment slot, 0 = empty
+};
+
+// What changed across the window; the line skips every part that is zero.
+struct AltBotAwayDiff
+{
+    uint32_t fromLevel = 0;
+    uint32_t toLevel = 0;
+    int64_t money = 0; // copper, signed
+    uint32_t quests = 0;
+    uint32_t deaths = 0;
+};
+
+inline AltBotAwayDiff DiffAltBotAway(AltBotAwayPoint const& from, AltBotAwayPoint const& to)
+{
+    AltBotAwayDiff diff;
+    diff.fromLevel = from.level;
+    diff.toLevel = to.level;
+    diff.money = static_cast<int64_t>(to.money) - static_cast<int64_t>(from.money);
+    diff.quests = to.quests >= from.quests ? to.quests - from.quests : 0;
+    diff.deaths = to.deaths >= from.deaths ? to.deaths - from.deaths : 0;
+    return diff;
+}
+
+// Activity word for the line tail. Priority: dead, fighting, questing (on a
+// quest errand), travelling, in town, resting, else grinding.
+inline char const* AltBotAwayActivityWord(bool dead, bool fighting, bool questTravel, bool anyTravel,
+    bool inTown, bool resting)
+{
+    if (dead)
+        return "dead";
+    if (fighting)
+        return "fighting";
+    if (questTravel)
+        return "questing";
+    if (anyTravel)
+        return "travelling";
+    if (inTown)
+        return "in town";
+    if (resting)
+        return "resting";
+    return "grinding";
+}
+
+inline std::string FormatAltBotAwayLine(std::string const& name, AltBotAwayDiff const& diff,
+    std::vector<std::string> const& equippedLinks, std::string const& zone, std::string const& activity)
+{
+    std::vector<std::string> parts;
+    if (diff.toLevel > diff.fromLevel)
+        parts.push_back("level " + std::to_string(diff.fromLevel) + " -> " + std::to_string(diff.toLevel));
+    if (diff.money != 0)
+        parts.push_back(FormatAltBotMoney(diff.money));
+    if (diff.quests == 1)
+        parts.push_back("1 quest");
+    else if (diff.quests > 1)
+        parts.push_back(std::to_string(diff.quests) + " quests");
+    if (diff.deaths == 1)
+        parts.push_back("died once");
+    else if (diff.deaths == 2)
+        parts.push_back("died twice");
+    else if (diff.deaths > 2)
+        parts.push_back("died " + std::to_string(diff.deaths) + " times");
+    if (!equippedLinks.empty())
+    {
+        std::string equipped = "equipped";
+        for (std::string const& link : equippedLinks)
+            equipped += " " + link;
+        parts.push_back(equipped);
+    }
+
+    std::string out = name + ": ";
+    if (parts.empty())
+        out += "no change";
+    else
+    {
+        out += parts[0];
+        for (size_t i = 1; i < parts.size(); ++i)
+            out += ", " + parts[i];
+    }
+    if (!zone.empty() && !activity.empty())
+        out += ", now in " + zone + ", " + activity;
+    else if (!zone.empty())
+        out += ", now in " + zone;
+    else if (!activity.empty())
+        out += ", now " + activity;
+    return out + ".";
+}
+
 // F37: each active alt displaces one pool bot. Only a bot that nobody is
 // using can go: not grouped, not in combat, not in an instance, no master.
 struct PoolDisplaceCandidate

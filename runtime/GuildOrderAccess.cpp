@@ -396,5 +396,11 @@ std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow)
     return out.str();
 }
 
+uint32_t GuildBankTabCount(uint32_t guildId)
+{
+    std::optional<std::vector<uint32_t>> tabMinRanks = BankTabMinRanks(guildId);
+    return tabMinRanks ? uint32_t(tabMinRanks->size()) : 0;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots
