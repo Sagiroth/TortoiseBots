@@ -22,6 +22,27 @@ POSITION = (ROOT / "ai/playerbot/strategy/actions/PositionAction.cpp").read_text
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
 
 CLAMP = "ClampMoveToBossAnchor(ai, bot, "
+# The pre-anchor hazard dodge of MovementAction::ChaseTo, kept verbatim (one indent deeper) for the anchor-less path.
+ORIGINAL_DODGE = """            // Generate point translated to the left
+            Vector3 possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
+
+            // Check if point is valid
+            WorldPosition possibleEndPosition(bot->GetMapId(), possibleEndPoint.x, possibleEndPoint.y, possibleEndPoint.z);
+            if (IsValidPosition(possibleEndPosition, botPosition))
+            {
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }
+            else
+            {
+                // Generate point translated to the right
+                possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }"""
 
 
 def body(text, signature):
@@ -174,9 +195,17 @@ class BossAnchorChase(unittest.TestCase):
         # The hazard dodge that replaces the end point is clamped and re-checked, and the hazard-avoiding path's points
         # must all stay inside; otherwise the move is refused this tick.
         hazard = fn[fn.index("if (IsHazardNearPosition(endPosition, &hazardPosition))"):fn.index("MotionMaster& mm")]
-        self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, dodgeX, dodgeY, dodgeZ))", hazard)
-        self.assertIn("if (anchored && !AnchorHazardDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeX, dodgeY))", hazard)
-        self.assertIn("if (anchored && (IsHazardNearPosition(endPosition) || !IsValidPosition(endPosition, botPosition)))", hazard)
+        # Under the anchor both dodges, left then right, run the full pipeline (clamp, floor, hazard, navigation) and the
+        # first that passes is taken; refused only when both fail.
+        anchored_block = hazard[hazard.index("if (anchored)\n"):hazard.index("        else\n        {\n            // The original dodge")]
+        self.assertIn("AnchorPickDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeXs, dodgeYs,", anchored_block)
+        self.assertIn("CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true)", anchored_block)
+        self.assertIn("CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false)", anchored_block)
+        for check in ("AnchorFloorOk(anchor,", "IsHazardNearPosition(candidate)", "!IsValidPosition(candidate, botPosition)"):
+            self.assertIn(check, anchored_block)
+        self.assertIn("< 0)\n                return false;", anchored_block)
+        # Without an anchor the dodge is exactly the old one.
+        self.assertIn(ORIGINAL_DODGE, hazard)
         spline = fn[fn.index("bool const hazardPath = GeneratePathAvoidingHazards(path);"):fn.index("init.Launch();")]
         self.assertIn("if (anchored && hazardPath && !AnchorPathInside(anchor, pathXY))", spline)
         self.assertLess(spline.index("AnchorPathInside("), spline.index("if (hazardPath)\n"))

@@ -132,6 +132,27 @@ namespace ai
         return std::sqrt(dx * dx + dy * dy) > hazardYd;
     }
 
+    // The chase's hazard dodge under a live anchor: the two candidates (left, then right) each go through
+    // AnchorHazardDodge and then `accept` (the glue's floor, hazard and navigation checks on the clamped point); the
+    // first that passes is (x, y) and its index is returned. -1: neither passes, the move is refused.
+    template <typename Accept>
+    inline int AnchorPickDodge(const BossAnchorCircle& c, float hazardX, float hazardY, float hazardYd, const float (&xs)[2],
+                               const float (&ys)[2], float& x, float& y, Accept accept)
+    {
+        for (int i = 0; i < 2; ++i)
+        {
+            float px = xs[i];
+            float py = ys[i];
+            if (AnchorHazardDodge(c, hazardX, hazardY, hazardYd, px, py) && accept(px, py))
+            {
+                x = px;
+                y = py;
+                return i;
+            }
+        }
+        return -1;
+    }
+
     // Whether every point of a path (x, y pairs) stays inside the circle: the hazard-avoiding path inserts points
     // sideways of each hazard it meets, and one of them can lie outside.
     inline bool AnchorPathInside(const BossAnchorCircle& c, const std::vector<std::pair<float, float>>& path)

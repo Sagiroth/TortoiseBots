@@ -2442,39 +2442,59 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
         const Vector3 hazardPoint = hazardPosition.first.GetVector3();
         const float hazardRangeOffset = hazardPosition.second * 1.5f;
 
-        // Generate point translated to the left
-        Vector3 possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
-
-        // Check if point is valid
-        WorldPosition possibleEndPosition(bot->GetMapId(), possibleEndPoint.x, possibleEndPoint.y, possibleEndPoint.z);
-        if (IsValidPosition(possibleEndPosition, botPosition))
+        if (anchored)
         {
-            endPosition.x = possibleEndPoint.x;
-            endPosition.y = possibleEndPoint.y;
-            endPosition.z = possibleEndPoint.z;
+            // A live boss anchor: both dodges, left then right, are clamped onto the circle and must clear the hazard,
+            // stand on the platform floor and pass the hazard and navigation checks; the first that passes is taken,
+            // and with neither the chase is held this tick.
+            const Vector3 left = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
+            const Vector3 right = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+            const float dodgeXs[2] = {left.x, right.x};
+            const float dodgeYs[2] = {left.y, right.y};
+            float dodgeX = 0.0f;
+            float dodgeY = 0.0f;
+            float dodgeZ = 0.0f;
+            auto const accept = [&](float px, float py)
+            {
+                Map* map = bot->GetMap();
+                float const floor = map ? map->GetHeight(px, py, anchor.z + 5.0f) : INVALID_HEIGHT;
+                if (!AnchorFloorOk(anchor, floor > INVALID_HEIGHT, floor))
+                    return false;
+                WorldPosition const candidate(obj->GetMapId(), px, py, floor);
+                if (IsHazardNearPosition(candidate) || !IsValidPosition(candidate, botPosition))
+                    return false;
+                dodgeZ = floor;
+                return true;
+            };
+            if (AnchorPickDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeXs, dodgeYs,
+                    dodgeX, dodgeY, accept) < 0)
+                return false;
+            endPosition = WorldPosition(obj->GetMapId(), dodgeX, dodgeY, dodgeZ);
         }
         else
         {
-            // Generate point translated to the right
-            possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+            // The original dodge, unchanged without an anchor.
+            // Generate point translated to the left
+            Vector3 possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, true).GetVector3();
 
-            endPosition.x = possibleEndPoint.x;
-            endPosition.y = possibleEndPoint.y;
-            endPosition.z = possibleEndPoint.z;
+            // Check if point is valid
+            WorldPosition possibleEndPosition(bot->GetMapId(), possibleEndPoint.x, possibleEndPoint.y, possibleEndPoint.z);
+            if (IsValidPosition(possibleEndPosition, botPosition))
+            {
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }
+            else
+            {
+                // Generate point translated to the right
+                possibleEndPoint = CalculatePerpendicularPoint(endPoint, hazardPoint, hazardRangeOffset, false).GetVector3();
+
+                endPosition.x = possibleEndPoint.x;
+                endPosition.y = possibleEndPoint.y;
+                endPosition.z = possibleEndPoint.z;
+            }
         }
-        // A live boss anchor: the dodge replaced the clamped end point, so it is clamped again, on the platform floor
-        // and still clear of the hazard; a dodge that cannot be both is no move this tick.
-        float dodgeX = endPosition.getX();
-        float dodgeY = endPosition.getY();
-        float dodgeZ = endPosition.getZ();
-        if (anchored && !ClampMoveToBossAnchor(ai, bot, dodgeX, dodgeY, dodgeZ))
-            return false;
-        if (anchored && !AnchorHazardDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeX, dodgeY))
-            return false;
-        if (anchored)
-            endPosition = WorldPosition(obj->GetMapId(), dodgeX, dodgeY, dodgeZ);
-        if (anchored && (IsHazardNearPosition(endPosition) || !IsValidPosition(endPosition, botPosition)))
-            return false;
     }
 
     MotionMaster& mm = *bot->GetMotionMaster();

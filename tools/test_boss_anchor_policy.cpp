@@ -210,6 +210,46 @@ static void TestHazardDodgeNeverLeavesTheAnchor()
     }
 }
 
+static void TestDodgePickTriesBothSides()
+{
+    // Hazard 5 yd on the circle's edge, 28 yd E of the centre. The glue's accept stands for its floor, hazard and
+    // navigation checks on the clamped point.
+    const BossAnchorCircle c = Hakkar(false);
+    const float hx = c.x + 28.0f, hy = c.y;
+    float x = 0.0f, y = 0.0f;
+    // Left lands outside and its clamp falls back into the hazard; right stays clear: right is used.
+    {
+        const float xs[2] = {c.x + 34.0f, c.x + 22.0f};
+        const float ys[2] = {c.y + 1.0f, c.y - 6.0f};
+        CHECK(AnchorPickDodge(c, hx, hy, 5.0f, xs, ys, x, y, [](float, float) { return true; }) == 1);
+        CHECK(Near(x, c.x + 22.0f) && Near(y, c.y - 6.0f));
+    }
+    // Left clamps clear but the accept refuses it (no floor there); right passes: right is used.
+    {
+        const float xs[2] = {c.x + 33.0f, c.x + 22.0f};
+        const float ys[2] = {c.y + 7.5f, c.y - 6.0f};
+        const float leftClampedY = c.y + 7.5f * 30.0f / std::sqrt(33.0f * 33.0f + 7.5f * 7.5f);
+        auto const noFloorLeft = [&](float, float py) { return !Near(py, leftClampedY); };
+        CHECK(AnchorPickDodge(c, hx, hy, 5.0f, xs, ys, x, y, noFloorLeft) == 1);
+        CHECK(Near(x, c.x + 22.0f));
+    }
+    // Left passes: left is used, right never asked.
+    {
+        const float xs[2] = {c.x + 33.0f, c.x + 22.0f};
+        const float ys[2] = {c.y + 7.5f, c.y - 6.0f};
+        int asked = 0;
+        CHECK(AnchorPickDodge(c, hx, hy, 5.0f, xs, ys, x, y, [&](float, float) { ++asked; return true; }) == 0);
+        CHECK(asked == 1);
+        CHECK(InsideAnchor(c, x, y));
+    }
+    // Both fail: refused.
+    {
+        const float xs[2] = {c.x + 34.0f, c.x + 22.0f};
+        const float ys[2] = {c.y + 1.0f, c.y - 6.0f};
+        CHECK(AnchorPickDodge(c, hx, hy, 5.0f, xs, ys, x, y, [](float, float) { return false; }) == -1);
+    }
+}
+
 static void TestPathInsideAnchor()
 {
     const BossAnchorCircle c = Hakkar(false);
@@ -340,6 +380,7 @@ int main()
     TestChaseRefusedOutsideReach();
     TestHazardDodgeNeverLeavesTheAnchor();
     TestPathInsideAnchor();
+    TestDodgePickTriesBothSides();
     TestAnchorKindParsesAndLoads();
     TestAnchorRowShapeRefused();
     std::cout << "boss anchor policy: all checks passed\n";
