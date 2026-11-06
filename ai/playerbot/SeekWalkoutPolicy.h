@@ -39,7 +39,7 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutNoStandMs = 5000; // this long straight without any stand aborts ("no stand")
     constexpr std::uint32_t kSeekWalkoutExcludeMs = 60000; // a puller whose moves failed is left out of the picks
     constexpr std::uint32_t kSeekWalkoutSiphonLeadMs = 75000; // a walk-out starts only this close to the next siphon
-    constexpr int kSeekWalkoutMaxPerCycle = 2;             // walk-outs started in one seek cycle, the retry included
+    constexpr int kSeekWalkoutMaxPerCycle = 1;             // walk-outs started in one seek cycle: no retry
     constexpr std::uint32_t kSeekWalkoutRetryMinMs = 25000; // a failed walk-out reopens the cycle only with more left
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
@@ -205,6 +205,13 @@ namespace ai
         return floorFound && floorZ >= kSeekWalkoutMinStandZ && toSonYd <= rangeYd && sight;
     }
 
+    // Whether the puller at the stand keeps waiting for a cast already under way: only one aimed at the walk-out's
+    // Son. Its Auto Shot or a wand's Shoot still on the boss is not the shot that pulls, so it is interrupted instead.
+    inline bool WalkoutShotWaits(bool castOnSon, bool anyCast)
+    {
+        return anyCast && castOnSon;
+    }
+
     // The shot's reach: a hunter's 35 yd, a wand's or a spell's 30 yd, less the margin.
     inline float WalkoutShotRangeYd(bool hunter)
     {
@@ -289,8 +296,8 @@ namespace ai
         return WalkoutActive(s) || s.returner != 0;
     }
 
-    // The seek cycle still takes a walk-out: not spent by one (a failed one may reopen it, WalkoutRetryAllowed), and
-    // fewer than kSeekWalkoutMaxPerCycle started in it.
+    // The seek cycle still takes a walk-out: not spent by one, and fewer than kSeekWalkoutMaxPerCycle started in it
+    // (with one per cycle, no second start).
     inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo)
     {
         if (s.cycleSpent && s.lastCycle == cycleNo)
@@ -455,9 +462,9 @@ namespace ai
         return WalkoutEnd::None;
     }
 
-    // A failed walk-out (a timeout, no stand, a refused cast or move) leaves the cycle open for one more only while
-    // the siphon is more than kSeekWalkoutRetryMinMs away (a later Son is not back and burned before it) and fewer
-    // than kSeekWalkoutMaxPerCycle started in the cycle.
+    // A failed walk-out (a timeout, no stand, a refused cast or move) leaves the cycle open only while the siphon is
+    // more than kSeekWalkoutRetryMinMs away (a later Son is not back and burned before it) and fewer than
+    // kSeekWalkoutMaxPerCycle started in the cycle: with one per cycle, never.
     inline bool WalkoutRetryAllowed(const SeekWalkoutState& s, std::uint32_t nowMs)
     {
         return s.cycleStarts < kSeekWalkoutMaxPerCycle &&
@@ -466,7 +473,8 @@ namespace ai
 
     // The task ends: a Back end is inside already; a timeout or an abort leaves the puller outside, so its walk back
     // starts (exempt for kSeekWalkoutReturnMs at most). A timeout undoes the task's cycle mark when a retry is allowed
-    // (its Son stays walked, so the retry goes to another one). True: the cycle was reopened.
+    // (its Son stays walked, so the retry goes to another one); with one walk-out per cycle that is never. True: the
+    // cycle was reopened.
     inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs)
     {
         bool reopened = false;
