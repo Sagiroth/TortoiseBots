@@ -2600,10 +2600,10 @@ namespace ai
         return false;
     }
 
-    // How far a carrier turns on its subject from under an explicit attack order (t1105h J1): a melee bot only a Shade in
-    // its melee reach (the Shade is summoned on the carrier, so that is where it starts), a ranged one within its spell
-    // range. Distances are GetDistance's, bounding radii already off.
-    constexpr float kCarrierMeleeReachYd = 5.0f;
+    // How far a carrier turns on its subject from under an explicit attack order (t1105h J1): a melee bot only a Shade
+    // within 15 yd (the Shade is summoned on the carrier and then walks off to a healer, so a melee carrier may chase it a
+    // short way), a ranged one within its spell range. Distances are GetDistance's, bounding radii already off.
+    constexpr float kCarrierMeleeReachYd = 15.0f;
     constexpr float kCarrierSpellReachYd = 30.0f;
 
     inline float CarrierReachYd(bool ranged)

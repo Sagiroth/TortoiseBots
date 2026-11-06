@@ -3180,12 +3180,17 @@ int main()
         std::vector<TacticCandidate> c(4);
         c[0].entry = 14987; c[0].distance = 2.0f; c[0].pickable = true;  // the ordered ward, nearest of all
         c[1].entry = 14986; c[1].distance = 25.0f; c[1].pickable = true; c[1].victimHealer = true;
-        c[2].entry = 14986; c[2].distance = 12.0f; c[2].pickable = true;
+        c[2].entry = 14986; c[2].distance = 18.0f; c[2].pickable = true;
         c[3].entry = 14986; c[3].distance = 3.0f; c[3].pickable = false; // dead or not attackable
         CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(true)) == 2);   // a caster: 30 yd, the nearer
-        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == -1); // melee: none in reach
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == -1); // melee: none within 15 yd
+        c[2].distance = 15.5f;
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == -1); // just past the melee reach
+        c[2].distance = 14.0f;
+        CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == 2);  // a Shade that walked off 14 yd: chased
         c[2].distance = 4.0f;
         CHECK(PickCarrierOverride(Active(jindo), c, CarrierReachYd(false)) == 2);  // melee reach
+        CHECK(Near(kCarrierMeleeReachYd, 15.0f));
         CHECK(PickCarrierOverride(Active(uncursed), c, CarrierReachYd(true)) == -1); // curse over: no override
         CHECK(Near(CarrierReachYd(false), kCarrierMeleeReachYd) && Near(CarrierReachYd(true), kCarrierSpellReachYd));
         // An ungated kill_first row never makes a carrier pick (the ward stays the order's).
