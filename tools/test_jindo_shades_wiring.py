@@ -46,13 +46,20 @@ class JindoShadesWiring(unittest.TestCase):
 
     def test_a_carrier_that_does_not_switch_is_logged_with_its_reason(self):
         # t1106b: the walk could not tell why a cursed DPS stayed on Jin'do; the action now says it, once per 5 s.
+        start = ACTIONS.index("bool BossTacticsKillFirstAction::Execute(")
+        action = ACTIONS[start:ACTIONS.index("\n}\n", start)]
         self.assertIn("constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;", ACTIONS)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);', ACTIONS)
         self.assertIn("CarrierNoSwitchReason(true, shade != nullptr, pickable, shadeYd, kCarrierHoldReachYd)", ACTIONS)
         # The no-pick case is only the trigger's to see (the action runs once there is a pick).
         self.assertIn("LogCarrierNoSwitch(ai, bot, fight, nullptr, AI_VALUE(Unit*, \"current target\"));", TRIGGERS)
-        self.assertIn('LogCarrierNoSwitch(ai, bot, fight, pick, current, "kept_target");', ACTIONS)
-        self.assertIn("if (bot->GetVictim() != pick)", ACTIONS)
+        # t1106b r2: the target value can name the pick while the live victim is another unit; the trigger must still
+        # fire and the action must re-attack, not only log.
+        self.assertIn('LogCarrierNoSwitch(ai, bot, fight, pick, current, "reattack");', ACTIONS)
+        self.assertIn('return KillFirstNeedsAttack(true, AI_VALUE(Unit*, "current target") == pick, '
+                      "bot->GetVictim() == pick);", TRIGGERS)
+        self.assertIn("if (bot->GetVictim() != pick)", action)
+        self.assertIn("return Attack(bot, pick);", action)
         self.assertIn("reason = \"not_read\";", ACTIONS)
         self.assertIn("reason = \"player_order\";", ACTIONS)
         # The reason rule lives in the policy, not the glue.

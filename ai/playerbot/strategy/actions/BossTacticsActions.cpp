@@ -3731,12 +3731,14 @@ bool BossTacticsDispelSweepAction::Execute(Event& event)
     return SweepBossDispelCures(ai, bot, true);
 }
 
-// The kill-first action's no-switch row: a Delusions carrier whose Shade it did not turn on this action tick, with the
-// reason and what the bot was striking instead. The Shades are the one subject only a carrier can hurt, so a carrier
-// left on Jin'do is a Shade nobody kills (ZG t1106a: 82 % of Shade frames had no carrier on the Shade, 49 % of cursed
-// ranged DPS stayed on Jin'do with a Shade within 5 yd). At most one row per bot per kCarrierNoSwitchLogGapMs: the
-// action runs every 2 s under the kill-first trigger, and a bot can stand off its Shade for a whole fight.
-//   info1 = "reason=<not_read|not_attackable|beyond_reach|kept_target|player_order>"
+// The kill-first action's no-switch row: a Delusions carrier whose Shade it was not attacking this action tick, with
+// the reason and what the bot was striking instead (`reattack`: the target value named the Shade while the live
+// victim was another unit, and the action attacked it again). The Shades are the one subject only a carrier can hurt,
+// so a carrier left on Jin'do is a Shade nobody kills (ZG t1106a: 82 % of Shade frames had no carrier on the Shade,
+// 49 % of cursed ranged DPS stayed on Jin'do with a Shade within 5 yd). At most one row per bot per
+// kCarrierNoSwitchLogGapMs: the action runs every 2 s under the kill-first trigger, and a bot can stand off its Shade
+// for a whole fight.
+//   info1 = "reason=<not_read|not_attackable|beyond_reach|reattack|player_order>"
 //   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,pick=<entry>:<guid low>|none,current=<entry>:<guid low>|none"
 constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;
 std::mutex g_carrierNoSwitchLogMutex;
@@ -3836,10 +3838,13 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
         return false;
     if (current == pick)
     {
-        // The bookkeeping already names the pick while the bot strikes another unit: the trigger sees no reason to run
-        // again, so this is the one no-switch the action can still report.
+        // The bookkeeping already names the pick while the bot strikes another unit: the trigger keeps this action
+        // running on that state, so re-attack rather than report and stop (the victim must be the pick).
         if (bot->GetVictim() != pick)
-            LogCarrierNoSwitch(ai, bot, fight, pick, current, "kept_target");
+        {
+            LogCarrierNoSwitch(ai, bot, fight, pick, current, "reattack");
+            return Attack(bot, pick);
+        }
         return false;
     }
     // Under an explicit order the pick can only be the carrier override (t1105h J1), and only for the run's own order

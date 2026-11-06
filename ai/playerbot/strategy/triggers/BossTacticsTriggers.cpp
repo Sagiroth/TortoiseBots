@@ -81,8 +81,7 @@ bool BossTacticsKillFirstTrigger::IsActive()
         LogCarrierNoSwitch(ai, bot, fight, nullptr, AI_VALUE(Unit*, "current target"));
         return false;
     }
-    AiObjectContext* context = ai->GetAiObjectContext();
-    return AI_VALUE(Unit*, "current target") != pick;
+    return KillFirstNeedsAttack(true, AI_VALUE(Unit*, "current target") == pick, bot->GetVictim() == pick);
 }
 
 bool BossTacticsHoldKillTrigger::IsActive()

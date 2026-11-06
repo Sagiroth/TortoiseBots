@@ -2616,6 +2616,14 @@ namespace ai
         return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
     }
 
+    // Whether the kill_first trigger has work: the current target is not the pick, or the bookkeeping already names the
+    // pick while the live victim is another unit (or none). The target value can lead the swing by a tick; testing only
+    // the target left the trigger off for the rest of the fight, and the action's kept-target branch never attacked.
+    inline bool KillFirstNeedsAttack(bool hasPick, bool currentIsPick, bool victimIsPick)
+    {
+        return hasPick && (!currentIsPick || !victimIsPick);
+    }
+
     // Whether the bot's explicit attack target is the run's automated order: the run marks the target its focus or
     // attack order set ("automated attack target"), and every command commit (a player's `attack`, a mark order) clears
     // that mark, so only an order the run itself issued still matches it.
