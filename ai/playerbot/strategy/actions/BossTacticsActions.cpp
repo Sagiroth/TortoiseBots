@@ -997,8 +997,20 @@ std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
 // anchor's exemption check skip the lock while no task runs.
 const std::uint32_t kHakkarCauseInsanitySpell = 24327;
 std::mutex g_walkoutMutex;
-std::unordered_map<std::uint32_t, SeekWalkoutState> g_walkouts;
-std::atomic<int> g_walkoutsActive{0};
+// One record per map instance: the task state, the boss it belongs to, the last read, and the start check's Son scan,
+// shared by the readers for a second so the grid walk runs once per instance, not once per bot.
+struct WalkoutRecord
+{
+    SeekWalkoutState state;
+    std::uint64_t bossGuid = 0;
+    std::uint32_t touchedMs = 0;
+    std::uint32_t scanMs = 0;
+    bool scanned = false;
+    bool scanBlocked = true;   // a Son fights, or the tanks or the anchored shot reach one
+    std::uint64_t scanSon = 0; // the Son out of combat nearest the anchor's centre, not walked to yet
+};
+std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
+std::atomic<int> g_walkoutsActive{0}; // records whose task or walk back runs (WalkoutBusy)
 
 // Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
 // per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
@@ -1376,15 +1388,56 @@ bool AnchorShotStandFor(Player* bot, const BossAnchorCircle& c, Unit* son, float
     return map->isInLineOfSight(x, y, z + 2.0f, son->GetPositionX(), son->GetPositionY(), son->GetPositionZ() + 2.0f, true);
 }
 
-// Whether the anchor lets this bot go: it is the puller of its instance's running walk-out task (SeekWalkoutExempts).
+// The busy count follows one record's change (WalkoutBusy before and after).
+void NoteWalkoutBusy(bool before, const SeekWalkoutState& after)
+{
+    bool const now = WalkoutBusy(after);
+    if (before && !now)
+        g_walkoutsActive.fetch_sub(1, std::memory_order_relaxed);
+    else if (!before && now)
+        g_walkoutsActive.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::unordered_map<std::uint32_t, WalkoutRecord>::iterator DropWalkoutRecord(
+    std::unordered_map<std::uint32_t, WalkoutRecord>::iterator it)
+{
+    NoteWalkoutBusy(WalkoutBusy(it->second.state), SeekWalkoutState());
+    return g_walkouts.erase(it);
+}
+
+// Called with g_walkoutMutex held. Drops this map instance's record once its boss died or left the fight, and (at most
+// once a second) every record nobody touched for kSeekWalkoutStaleMs: an instance that unloaded.
+void SweepSeekWalkouts(Map* map, std::uint32_t nowMs)
+{
+    if (map)
+    {
+        auto const it = g_walkouts.find(map->GetInstanceId());
+        if (it != g_walkouts.end() && it->second.bossGuid != 0)
+        {
+            Creature* const boss = map->GetCreature(ObjectGuid(it->second.bossGuid));
+            if (!boss || !sServerFacade.IsAlive(boss) || !boss->IsInCombat())
+                DropWalkoutRecord(it);
+        }
+    }
+    static std::uint32_t lastSweepMs = 0;
+    if (nowMs - lastSweepMs < 1000)
+        return;
+    lastSweepMs = nowMs;
+    for (auto it = g_walkouts.begin(); it != g_walkouts.end();)
+        it = nowMs - it->second.touchedMs > kSeekWalkoutStaleMs ? DropWalkoutRecord(it) : std::next(it);
+}
+
+// Whether the anchor lets this bot go: the puller of its instance's running walk-out task, or of a timed-out or aborted
+// one walking back (SeekWalkoutExempts).
 bool SeekWalkoutExemptsBot(Player* bot)
 {
     if (g_walkoutsActive.load(std::memory_order_relaxed) == 0)
         return false;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    SweepSeekWalkouts(bot->GetMap(), nowMs);
     auto const it = g_walkouts.find(bot->GetInstanceId());
-    return it != g_walkouts.end() &&
-        WalkoutExempts(it->second, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());
+    return it != g_walkouts.end() && WalkoutExempts(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
 }
 
 void LogSeekWalkout(PlayerbotAI* ai, const char* text)
@@ -1400,6 +1453,40 @@ void LogSeekWalkoutEnd(PlayerbotAI* ai, WalkoutEnd end)
     LogSeekWalkout(ai, info1);
 }
 
+// The puller's pet goes back to the stance it had before the task held it passive. Called with g_walkoutMutex held.
+void RestoreWalkoutPet(Player* puller, SeekWalkoutState& state)
+{
+    std::uint8_t react = 0;
+    if (!WalkoutTakePetReact(state, react) || !puller)
+        return;
+    if (Pet* pet = puller->GetPet())
+        pet->SetReactState(static_cast<ReactStates>(react));
+}
+
+// While its task or walk back runs the puller's pet stays out of it: passive, off any target, at the puller's heels.
+// The generic attack would send it in, and a pet holding the Son keeps the Son outside the anchor.
+void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)
+{
+    (void)ai;
+    Pet* pet = bot->GetPet();
+    if (!pet)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it == g_walkouts.end())
+            return;
+        WalkoutSavePetReact(it->second.state, static_cast<std::uint8_t>(pet->GetReactState()));
+    }
+    pet->SetReactState(REACT_PASSIVE);
+    if (pet->GetVictim())
+        pet->AttackStop();
+    if (CharmInfo* charm = pet->GetCharmInfo())
+        charm->SetCommandState(COMMAND_FOLLOW);
+    if (pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+        pet->GetMotionMaster()->MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
+}
+
 // A re-pull or an evade ends the instance's walk-out with the seek record: a running task is closed as an abort.
 void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
 {
@@ -1409,25 +1496,35 @@ void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
         auto const it = g_walkouts.find(instanceId);
         if (it == g_walkouts.end())
             return;
-        wasActive = WalkoutActive(it->second);
-        if (wasActive)
-            g_walkoutsActive.fetch_sub(1, std::memory_order_relaxed);
-        g_walkouts.erase(it);
+        wasActive = WalkoutActive(it->second.state);
+        Map* const map = ai && ai->GetBot() ? ai->GetBot()->GetMap() : nullptr;
+        std::uint64_t const owner = it->second.state.puller ? it->second.state.puller : it->second.state.returner;
+        if (map && owner)
+            RestoreWalkoutPet(map->GetPlayer(ObjectGuid(owner)), it->second.state);
+        DropWalkoutRecord(it);
     }
     if (wasActive)
         LogSeekWalkoutEnd(ai, WalkoutEnd::Abort);
 }
 
-// The walk-out puller: one ranged damage dealer of the raid (SeekWalkoutPolicy.h WalkoutRoleOf, WalkoutEligible:
-// never a tank, a healer, the boss's victim, one of his two highest threats, a charmed bot or one under Cause
-// Insanity), the nearest to the boss within its role. Only bots: a player cannot be sent.
-Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss)
+// The shot cannot be cast at the stand: the task aborts at once, its Son and cycle stay free, and the walk back starts.
+void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot)
 {
-    Group* group = bot->GetGroup();
-    if (!group || !boss)
-        return nullptr;
-    // The two highest threats on the boss.
-    ObjectGuid top[2];
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+            return;
+        bool const before = WalkoutBusy(it->second.state);
+        WalkoutAbortUnspent(it->second.state, WorldTimer::getMSTime());
+        NoteWalkoutBusy(before, it->second.state);
+    }
+    LogSeekWalkoutEnd(ai, WalkoutEnd::Abort);
+}
+
+// The two highest threats on the boss.
+void TopTwoThreat(Unit* boss, ObjectGuid (&top)[2])
+{
     float topThreat[2] = {-1.0f, -1.0f};
     for (HostileReference const* ref : boss->GetThreatManager().getThreatList())
     {
@@ -1445,12 +1542,34 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss)
             topThreat[1] = threat;
         }
     }
+}
+
+bool InTopTwoThreat(Unit* boss, Player* player)
+{
+    ObjectGuid top[2];
+    TopTwoThreat(boss, top);
+    return player->GetObjectGuid() == top[0] || player->GetObjectGuid() == top[1];
+}
+
+// The walk-out puller: one ranged damage dealer of the raid (SeekWalkoutPolicy.h WalkoutRoleOf, WalkoutEligible:
+// never a tank, a healer, the boss's victim, one of his two highest threats, a charmed bot or one under Cause
+// Insanity, and only one whose own shot (WalkoutShotSpell) it can cast at `son` now, range aside), the nearest to the
+// boss within its role. Only bots: a player cannot be sent.
+Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son)
+{
+    Group* group = bot->GetGroup();
+    if (!group || !boss || !son)
+        return nullptr;
+    ObjectGuid top[2];
+    TopTwoThreat(boss, top);
     std::vector<Player*> members;
     std::vector<WalkoutCandidate> candidates;
     for (Player* member : LiveGroupMembers(group))
     {
-        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
-            !PlayerbotAIStorage::Instance().GetAI(member))
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            continue;
+        PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAi)
             continue;
         uint8 const cls = member->GetClass();
         bool const healer = PlayerbotAI::IsHeal(member);
@@ -1467,6 +1586,12 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss)
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
         c.yd = member->GetDistance2d(boss);
+        // The cast is the last question, and only for a bot that passes every other: the spell check is the costly
+        // one. Range and sight are the walk's to answer.
+        const char* const spell = WalkoutShotSpell(cls);
+        c.canShoot = *spell != '\0';
+        if (c.canShoot && WalkoutEligible(c))
+            c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);
         members.push_back(member);
         candidates.push_back(c);
     }
@@ -1475,23 +1600,18 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss)
 }
 
 // The walk-out task from one bot's read. A running task is checked (the shot landed once its Son fights; back, the
-// 25 s timeout or an abort ends it), and its puller's read makes it the fight's puller with the Son as its pull
-// target until the shot, so that one shot passes the seek hold and nothing after it does. A new task starts when
-// `wanted` (a live anchor, the dose window open, the raid short of the poison), no Son fights near the spot, none
-// stands in the tanks' reach or the anchored shot's, and this bot is the pick: it goes for the nearest Son out of
-// combat within kSeekWalkoutSearchYd of the anchor's centre (one per Son, one per seek cycle, one at a time).
+// 25 s timeout or an abort ends it, and an abort comes the moment the puller is no longer usable: dead, charmed,
+// under Cause Insanity, the boss's victim or in his top two threats), and its puller's read makes it the fight's
+// puller with the Son as its pull target until the shot, so that one shot passes the seek hold and nothing after it
+// does. A timeout or an abort is followed by the puller's exempt walk back (15 s at most). A new task starts when
+// `wanted` (a live anchor, the dose window open, the raid short of the poison), no Son fights, none stands in the
+// tanks' reach or the anchored shot's, and this bot is the pick: it goes for the Son out of combat nearest the
+// anchor's centre within kSeekWalkoutSearchYd (one per Son, one per seek cycle, one at a time).
 void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss, std::uint32_t cycleNo,
                        std::uint32_t nowMs, bool wanted, SeekFight& out)
 {
     const std::uint32_t instanceId = bot->GetInstanceId();
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
-    SeekWalkoutState state;
-    {
-        std::lock_guard<std::mutex> lock(g_walkoutMutex);
-        auto const it = g_walkouts.find(instanceId);
-        if (it != g_walkouts.end())
-            state = it->second;
-    }
     BossAnchorCircle tank;
     BossAnchorCircle shooter;
     if (!BossAnchorOfBoss(bot->GetMapId(), row.bossEntry, true, tank) ||
@@ -1500,13 +1620,31 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     Map* map = bot->GetMap();
     if (!map)
         return;
+    SeekWalkoutState state;
+    bool scanFresh = false;
+    bool scanBlocked = true;
+    std::uint64_t scanSon = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        // The boss's death or leaving the fight drops the record here too, busy or not (its walked Sons and cycle).
+        SweepSeekWalkouts(map, nowMs);
+        auto const it = g_walkouts.find(instanceId);
+        if (it != g_walkouts.end())
+        {
+            state = it->second.state;
+            it->second.touchedMs = nowMs;
+            scanFresh = it->second.scanned && nowMs - it->second.scanMs < 1000;
+            scanBlocked = it->second.scanBlocked;
+            scanSon = it->second.scanSon;
+        }
+    }
     if (WalkoutActive(state))
     {
         Player* const puller = map->GetPlayer(ObjectGuid(state.puller));
         Creature* const son = map->GetCreature(ObjectGuid(state.son));
-        bool const pullerOk = puller && puller->IsInWorld() && sServerFacade.IsAlive(puller) &&
-            puller->GetCharmerGuid().IsEmpty() && !puller->HasAura(kHakkarCauseInsanitySpell) &&
-            boss->GetVictim() != puller;
+        bool const pullerOk = puller && puller->IsInWorld() &&
+            WalkoutPullerUsable(sServerFacade.IsAlive(puller), !puller->GetCharmerGuid().IsEmpty(),
+                puller->HasAura(kHakkarCauseInsanitySpell), boss->GetVictim() == puller, InTopTwoThreat(boss, puller));
         bool const sonOk = son && sServerFacade.IsAlive(son);
         bool const shotNow = sonOk && (son->IsInCombat() || son->GetVictim() == puller);
         if (shotNow)
@@ -1516,14 +1654,18 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
-            if (it == g_walkouts.end() || it->second.puller != state.puller || it->second.startMs != state.startMs)
+            if (it == g_walkouts.end() || it->second.state.puller != state.puller ||
+                it->second.state.startMs != state.startMs)
                 return; // another read closed or replaced it
             if (shotNow)
-                WalkoutNoteShot(it->second);
+                WalkoutNoteShot(it->second.state);
             if (end != WalkoutEnd::None)
             {
-                WalkoutFinish(it->second);
-                g_walkoutsActive.fetch_sub(1, std::memory_order_relaxed);
+                bool const before = WalkoutBusy(it->second.state);
+                if (end == WalkoutEnd::Back)
+                    RestoreWalkoutPet(puller, it->second.state);
+                WalkoutFinish(it->second.state, end, nowMs);
+                NoteWalkoutBusy(before, it->second.state);
             }
         }
         if (end != WalkoutEnd::None)
@@ -1540,51 +1682,106 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
+    if (state.returner != 0)
+    {
+        // The walk back after a timeout or an abort: over once the puller is inside, gone, or the 15 s are up.
+        Player* const returner = map->GetPlayer(ObjectGuid(state.returner));
+        bool const done = !returner || !sServerFacade.IsAlive(returner) || !WalkoutReturning(state, nowMs) ||
+            WalkoutBackArrived(tank, returner->GetPositionX(), returner->GetPositionY());
+        if (done)
+        {
+            std::lock_guard<std::mutex> lock(g_walkoutMutex);
+            auto const it = g_walkouts.find(instanceId);
+            if (it != g_walkouts.end() && it->second.state.returner == state.returner)
+            {
+                bool const before = WalkoutBusy(it->second.state);
+                RestoreWalkoutPet(returner, it->second.state);
+                WalkoutReturnDone(it->second.state);
+                NoteWalkoutBusy(before, it->second.state);
+            }
+            return;
+        }
+        if (state.returner == self)
+        {
+            out.walkout = true;
+            out.walkoutShot = true;
+            out.puller = false;
+            out.pullTarget = nullptr;
+        }
+        return;
+    }
     if (!wanted || (state.cycleSpent && state.lastCycle == cycleNo))
         return;
-    if (FindSeekWalkoutPuller(ai, bot, boss) != bot)
-        return;
-    // Nothing else can pull: no Son fights near the spot, none stands in the tanks' reach, none in the anchored shot's.
-    const float shotRange = ai->GetRange("spell");
-    Creature* nearest = nullptr;
-    float nearestYd = std::numeric_limits<float>::max();
-    for (Creature* candidate : SeekSourcesNear(bot, row.targetEntry, tank.x, tank.y, tank.z, kSeekWalkoutSearchYd))
+    // The start check's scan: nothing else can pull (no Son fights, none in the tanks' reach or the anchored shot's),
+    // and the Son out of combat nearest the anchor's centre not walked to yet. One grid walk per instance a second.
+    struct
     {
-        if (candidate->IsInCombat())
-            return;
-        if (SeekPullSonInAnchor(tank, candidate->GetPositionX(), candidate->GetPositionY(), candidate->GetPositionZ()))
-            return;
-        float sx = 0.0f, sy = 0.0f, sz = 0.0f;
-        if (AnchorShotStandFor(bot, shooter, candidate, shotRange, sx, sy, sz))
-            return;
-        if (std::find(state.walkedSons.begin(), state.walkedSons.end(), candidate->GetObjectGuid().GetRawValue()) !=
-            state.walkedSons.end())
-            continue;
-        const float yd = bot->GetDistance2d(candidate);
-        if (yd < nearestYd)
-        {
-            nearest = candidate;
-            nearestYd = yd;
-        }
+        bool blocked = true;
+        Creature* son = nullptr;
+    } scan;
+    if (scanFresh)
+    {
+        scan.blocked = scanBlocked;
+        scan.son = scanSon ? map->GetCreature(ObjectGuid(scanSon)) : nullptr;
     }
-    if (!nearest)
+    else
+    {
+        const float shotRange = ai->GetRange("spell");
+        float nearestYd = std::numeric_limits<float>::max();
+        scan.blocked = false;
+        for (Creature* candidate : SeekSourcesNear(bot, row.targetEntry, tank.x, tank.y, tank.z, kSeekWalkoutSearchYd))
+        {
+            float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+            if (candidate->IsInCombat() ||
+                SeekPullSonInAnchor(tank, candidate->GetPositionX(), candidate->GetPositionY(), candidate->GetPositionZ()) ||
+                AnchorShotStandFor(bot, shooter, candidate, shotRange, sx, sy, sz))
+            {
+                scan.blocked = true;
+                scan.son = nullptr;
+                break;
+            }
+            if (std::find(state.walkedSons.begin(), state.walkedSons.end(), candidate->GetObjectGuid().GetRawValue()) !=
+                state.walkedSons.end())
+                continue;
+            const float yd = BossAnchorDistance2d(tank, candidate->GetPositionX(), candidate->GetPositionY());
+            if (yd < nearestYd)
+            {
+                scan.son = candidate;
+                nearestYd = yd;
+            }
+        }
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        WalkoutRecord& record = g_walkouts[instanceId];
+        record.bossGuid = boss->GetObjectGuid().GetRawValue();
+        record.touchedMs = nowMs;
+        record.scanned = true;
+        record.scanMs = nowMs;
+        record.scanBlocked = scan.blocked;
+        record.scanSon = scan.son ? scan.son->GetObjectGuid().GetRawValue() : 0;
+    }
+    if (scan.blocked || !scan.son || scan.son->IsInCombat() || !sServerFacade.IsAlive(scan.son))
         return;
-    const std::uint64_t sonGuid = nearest->GetObjectGuid().GetRawValue();
+    if (FindSeekWalkoutPuller(ai, bot, boss, scan.son) != bot)
+        return;
+    const std::uint64_t sonGuid = scan.son->GetObjectGuid().GetRawValue();
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
-        SeekWalkoutState& live = g_walkouts[instanceId];
-        if (!WalkoutMayStart(live, cycleNo, sonGuid))
+        WalkoutRecord& record = g_walkouts[instanceId];
+        record.bossGuid = boss->GetObjectGuid().GetRawValue();
+        record.touchedMs = nowMs;
+        if (!WalkoutMayStart(record.state, cycleNo, sonGuid))
             return;
-        WalkoutStart(live, self, sonGuid, nowMs, cycleNo);
-        g_walkoutsActive.fetch_add(1, std::memory_order_relaxed);
+        bool const before = WalkoutBusy(record.state);
+        WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo);
+        NoteWalkoutBusy(before, record.state);
     }
     char info1[128];
-    snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), nearest->GetGUIDLow());
+    snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), scan.son->GetGUIDLow());
     LogSeekWalkout(ai, info1);
     out.walkout = true;
     out.walkoutShot = false;
     out.puller = true;
-    out.pullTarget = nearest;
+    out.pullTarget = scan.son;
 }
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
@@ -5665,8 +5862,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     }
     if (task.walkout)
     {
-        // The walk-out puller is exempt from the anchor while its task runs (LiveBossAnchorRow), so these moves are
-        // its own: out to the nearest stand in shot range and sight of the Son, one shot, then straight back.
+        // The walk-out puller is exempt from the anchor while its task or walk back runs (LiveBossAnchorRow), so these
+        // moves are its own: out to the nearest stand in shot range and sight of the Son, one shot, then straight back.
+        // Its pet stays out of it the whole time.
+        HoldWalkoutPet(ai, bot);
         float x = bot->GetPositionX();
         float y = bot->GetPositionY();
         float z = bot->GetPositionZ();
@@ -5677,9 +5876,20 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (inRange && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;
-                if (AI_VALUE(Unit*, "current target") != task.source)
-                    return Attack(bot, task.source);
-                return ai->DoSpecificAction("shoot", event, true);
+                // A cast or the auto shot already under way: let it land.
+                if (bot->IsNonMeleeSpellCasted(false, false, false))
+                    return true;
+                if (!bot->IsStopped())
+                    ai->StopMoving();
+                // The exact cast, cast directly: the generic attack would send the pet in. A shot that cannot be cast
+                // here aborts at once, and the Son and the cycle stay free.
+                const char* const spell = WalkoutShotSpell(bot->GetClass());
+                if (!*spell || !ai->CanCastSpell(spell, task.source))
+                {
+                    AbortSeekWalkoutUnspent(ai, bot);
+                    return false;
+                }
+                return ai->CastSpell(spell, task.source);
             }
             // In reach but blind: half the reach, for a sight line.
             WalkoutShotPoint(task.source->GetPositionX(), task.source->GetPositionY(), bot->GetPositionX(),
@@ -5688,6 +5898,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         }
         else
         {
+            // Back (shot, or the walk back after a timeout or an abort): nothing is attacked on the way.
+            if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+                bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            bot->AttackStop();
             BossAnchorCircle tank;
             if (!task.row || !BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, true, tank))
                 return false;

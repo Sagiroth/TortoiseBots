@@ -99,7 +99,7 @@ static void TestExemptOnlyWhileActive()
     CHECK(!WalkoutExempts(s, 8, 1000));
     // Past the timeout the exemption ends even before anyone closes the task.
     CHECK(!WalkoutExempts(s, 7, 1000 + kSeekWalkoutTimeoutMs));
-    WalkoutFinish(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 2000);
     CHECK(!WalkoutActive(s));
     CHECK(!WalkoutExempts(s, 7, 2000));
 }
@@ -126,14 +126,14 @@ static void TestEndsAndLimits()
     CHECK(std::string(WalkoutEndName(WalkoutEnd::Back)) == "back");
     CHECK(std::string(WalkoutEndName(WalkoutEnd::Timeout)) == "timeout");
     CHECK(std::string(WalkoutEndName(WalkoutEnd::Abort)) == "abort");
-    WalkoutFinish(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 7000);
     // One pull per seek cycle: cycle 3 is spent, cycle 4 may start.
     CHECK(!WalkoutMayStart(s, 3, 200));
     CHECK(WalkoutMayStart(s, 4, 200));
     // One walk-out per Son: Son 100 is spent whatever the cycle.
     CHECK(!WalkoutMayStart(s, 4, 100));
     WalkoutStart(s, 8, 200, 99000, 4);
-    WalkoutFinish(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 99500);
     CHECK(!WalkoutMayStart(s, 5, 200));
     CHECK(WalkoutMayStart(s, 5, 300));
 }
@@ -165,6 +165,106 @@ static void TestShotAndBackPoints()
     CHECK(Near(x, 100.0f) && Near(y, 100.0f));
 }
 
+static void TestShotSpellPerClass()
+{
+    // Hunter: Auto Shot 75; mage, warlock, priest: the wand's Shoot 5019; druid: Wrath 5176; shaman: Lightning Bolt
+    // 403. Anyone else has no shot.
+    CHECK(std::string(WalkoutShotSpell(3)) == "auto shot");
+    CHECK(std::string(WalkoutShotSpell(8)) == "shoot");
+    CHECK(std::string(WalkoutShotSpell(9)) == "shoot");
+    CHECK(std::string(WalkoutShotSpell(5)) == "shoot");
+    CHECK(std::string(WalkoutShotSpell(11)) == "wrath");
+    CHECK(std::string(WalkoutShotSpell(7)) == "lightning bolt");
+    CHECK(std::string(WalkoutShotSpell(1)).empty());
+    CHECK(std::string(WalkoutShotSpell(4)).empty());
+    // A bot that cannot fire now (no wand, no ammo, out of mana, silenced, the cast on cooldown) is no puller.
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    c.canShoot = false;
+    CHECK(!WalkoutEligible(c));
+    std::vector<WalkoutCandidate> raid = {c, Cand(2, WalkoutRole::Ranged, 40.0f)};
+    CHECK(PickWalkoutPuller(raid) == 1);
+}
+
+static void TestPullerUsable()
+{
+    CHECK(WalkoutPullerUsable(true, false, false, false, false));
+    CHECK(!WalkoutPullerUsable(false, false, false, false, false));
+    CHECK(!WalkoutPullerUsable(true, true, false, false, false));
+    CHECK(!WalkoutPullerUsable(true, false, true, false, false));
+    CHECK(!WalkoutPullerUsable(true, false, false, true, false));
+    // Entering the boss's top two threats aborts the task at once, not only becoming his victim.
+    CHECK(!WalkoutPullerUsable(true, false, false, false, true));
+}
+
+static void TestCastFailAbortUnspends()
+{
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3);
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    // The shot cannot be cast at the stand: abort, and neither the Son nor the cycle counts as spent.
+    WalkoutAbortUnspent(s, 2000);
+    CHECK(!WalkoutActive(s));
+    CHECK(WalkoutReturning(s, 2000));
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStart(s, 3, 100));
+    // A cycle spent before the task stays spent (the unspend only undoes this task's own marks).
+    SeekWalkoutState t;
+    WalkoutStart(t, 7, 100, 1000, 3);
+    WalkoutFinish(t, WalkoutEnd::Timeout, 2000);
+    WalkoutReturnDone(t);
+    WalkoutStart(t, 7, 300, 3000, 4);
+    WalkoutAbortUnspent(t, 4000);
+    WalkoutReturnDone(t);
+    CHECK(!WalkoutMayStart(t, 3, 300)); // cycle 3 was the timed-out task's
+    CHECK(WalkoutMayStart(t, 4, 300));
+    CHECK(!WalkoutMayStart(t, 4, 100)); // Son 100 was walked to by the timed-out task
+}
+
+static void TestWalkBackAfterAnyEnd()
+{
+    // Timeout and abort leave the puller outside: it stays exempt for a walk back of at most 15 s, then the clamp
+    // holds it again. A Back end is already inside: no walk back.
+    for (WalkoutEnd end : {WalkoutEnd::Timeout, WalkoutEnd::Abort})
+    {
+        SeekWalkoutState s;
+        WalkoutStart(s, 7, 100, 1000, 0);
+        WalkoutFinish(s, end, 26000);
+        CHECK(!WalkoutActive(s));
+        CHECK(WalkoutBusy(s));
+        CHECK(WalkoutReturning(s, 26000));
+        CHECK(WalkoutExempts(s, 7, 26000));
+        CHECK(WalkoutExempts(s, 7, 26000 + kSeekWalkoutReturnMs - 1));
+        CHECK(!WalkoutExempts(s, 8, 26000));
+        CHECK(!WalkoutExempts(s, 7, 26000 + kSeekWalkoutReturnMs));
+        CHECK(!WalkoutReturning(s, 26000 + kSeekWalkoutReturnMs));
+        // No new task while the walk back runs.
+        CHECK(!WalkoutMayStart(s, 1, 200));
+        WalkoutReturnDone(s);
+        CHECK(!WalkoutBusy(s));
+        CHECK(!WalkoutExempts(s, 7, 27000));
+        CHECK(WalkoutMayStart(s, 1, 200));
+    }
+    SeekWalkoutState back;
+    WalkoutStart(back, 7, 100, 1000, 0);
+    WalkoutNoteShot(back);
+    WalkoutFinish(back, WalkoutEnd::Back, 9000);
+    CHECK(!WalkoutBusy(back));
+    CHECK(!WalkoutExempts(back, 7, 9000));
+}
+
+static void TestPetStanceSavedOnce()
+{
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 0);
+    std::uint8_t react = 0;
+    CHECK(!WalkoutTakePetReact(s, react));
+    WalkoutSavePetReact(s, 1);   // defensive
+    WalkoutSavePetReact(s, 0);   // already held passive: the first stance is kept
+    CHECK(WalkoutTakePetReact(s, react));
+    CHECK(react == 1);
+    CHECK(!WalkoutTakePetReact(s, react));
+}
+
 int main()
 {
     TestRoleOrder();
@@ -172,6 +272,11 @@ int main()
     TestExemptOnlyWhileActive();
     TestEndsAndLimits();
     TestShotAndBackPoints();
+    TestShotSpellPerClass();
+    TestPullerUsable();
+    TestCastFailAbortUnspends();
+    TestWalkBackAfterAnyEnd();
+    TestPetStanceSavedOnce();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

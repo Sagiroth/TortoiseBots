@@ -24,6 +24,25 @@ namespace ai
     constexpr float kSeekWalkoutShotMarginYd = 2.0f;       // the stand sits this far inside the shot's reach
     constexpr float kSeekWalkoutBackInsetYd = 5.0f;        // the walk back ends this far inside the tanks' radius
     constexpr float kSeekWalkoutBackSlackYd = 2.0f;        // ... and counts as arrived this far short of that point
+    constexpr std::uint32_t kSeekWalkoutReturnMs = 15000;  // a timed-out or aborted puller walks back this long, exempt
+    constexpr std::uint32_t kSeekWalkoutStaleMs = 120000;  // a fight's record nobody touched this long is dropped
+
+    // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
+    // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
+    // rank 1). Empty: the class has no ranged opener here.
+    inline const char* WalkoutShotSpell(std::uint8_t classId)
+    {
+        switch (classId)
+        {
+            case 3: return "auto shot";
+            case 5:
+            case 8:
+            case 9: return "shoot";
+            case 11: return "wrath";
+            case 7: return "lightning bolt";
+            default: return "";
+        }
+    }
 
     // The puller's rank: a hunter (the longest shot, a pet to tank the Son's first hits), then a mage, warlock or
     // shadow priest, then any other ranged damage dealer. None: no puller.
@@ -57,13 +76,21 @@ namespace ai
         bool topThreat = false;  // one of the two highest on the boss's threat list
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
+        bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
         float yd = 0.0f;         // to the Son (or the anchor's centre when no Son is known)
     };
 
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.topThreat &&
-            !c.charmed && !c.insane;
+            !c.charmed && !c.insane && c.canShoot;
+    }
+
+    // Whether the running task's puller can go on: alive, not charmed or under Cause Insanity, and neither the boss's
+    // victim nor one of his two highest threats (either turns him toward it, off the platform).
+    inline bool WalkoutPullerUsable(bool alive, bool charmed, bool insane, bool bossVictim, bool topThreat)
+    {
+        return alive && !charmed && !insane && !bossVictim && !topThreat;
     }
 
     // The puller: the best role among the eligible, then the nearest, then the lowest guid (every bot's read picks the
@@ -148,6 +175,15 @@ namespace ai
         bool cycleSpent = false;
         std::uint32_t lastCycle = 0;
         std::vector<std::uint64_t> walkedSons;
+        // The marks the running task undoes when its cast fails (WalkoutAbortUnspent).
+        bool prevCycleSpent = false;
+        std::uint32_t prevLastCycle = 0;
+        // The walk back after a timeout or an abort: that puller, exempt until it is inside or kSeekWalkoutReturnMs.
+        std::uint64_t returner = 0;
+        std::uint32_t returnStartMs = 0;
+        // The puller's pet stance while the task holds the pet passive.
+        bool petHeld = false;
+        std::uint8_t petReact = 0;
     };
 
     inline bool WalkoutActive(const SeekWalkoutState& s)
@@ -155,10 +191,21 @@ namespace ai
         return s.puller != 0;
     }
 
+    inline bool WalkoutReturning(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        return s.returner != 0 && nowMs - s.returnStartMs < kSeekWalkoutReturnMs;
+    }
+
+    // A task or its walk back holds the fight's one slot.
+    inline bool WalkoutBusy(const SeekWalkoutState& s)
+    {
+        return WalkoutActive(s) || s.returner != 0;
+    }
+
     // A new task: none running, none yet in this seek cycle (one per Blood Siphon), and never twice for one Son.
     inline bool WalkoutMayStart(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son)
     {
-        if (WalkoutActive(s) || son == 0)
+        if (WalkoutBusy(s) || son == 0)
             return false;
         if (s.cycleSpent && s.lastCycle == cycleNo)
             return false;
@@ -168,6 +215,8 @@ namespace ai
     inline void WalkoutStart(SeekWalkoutState& s, std::uint64_t puller, std::uint64_t son, std::uint32_t nowMs,
                              std::uint32_t cycleNo)
     {
+        s.prevCycleSpent = s.cycleSpent;
+        s.prevLastCycle = s.lastCycle;
         s.puller = puller;
         s.son = son;
         s.startMs = nowMs;
@@ -183,13 +232,6 @@ namespace ai
             s.shot = true;
     }
 
-    inline void WalkoutFinish(SeekWalkoutState& s)
-    {
-        s.puller = 0;
-        s.son = 0;
-        s.startMs = 0;
-        s.shot = false;
-    }
 
     enum class WalkoutEnd : std::uint8_t
     {
@@ -213,6 +255,58 @@ namespace ai
         return WalkoutEnd::None;
     }
 
+    // The task ends: a Back end is inside already; a timeout or an abort leaves the puller outside, so its walk back
+    // starts (exempt for kSeekWalkoutReturnMs at most).
+    inline void WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs)
+    {
+        if (end == WalkoutEnd::Timeout || end == WalkoutEnd::Abort)
+        {
+            s.returner = s.puller;
+            s.returnStartMs = nowMs;
+        }
+        s.puller = 0;
+        s.son = 0;
+        s.startMs = 0;
+        s.shot = false;
+    }
+
+    // The cast failed at the stand: abort, and undo the task's marks so the Son and the cycle are still free.
+    inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s))
+            return;
+        std::vector<std::uint64_t>::iterator const it = std::find(s.walkedSons.begin(), s.walkedSons.end(), s.son);
+        if (it != s.walkedSons.end())
+            s.walkedSons.erase(it);
+        s.cycleSpent = s.prevCycleSpent;
+        s.lastCycle = s.prevLastCycle;
+        WalkoutFinish(s, WalkoutEnd::Abort, nowMs);
+    }
+
+    inline void WalkoutReturnDone(SeekWalkoutState& s)
+    {
+        s.returner = 0;
+        s.returnStartMs = 0;
+    }
+
+    // The pet's stance: saved once when the task first holds it, handed back once at the end.
+    inline void WalkoutSavePetReact(SeekWalkoutState& s, std::uint8_t react)
+    {
+        if (s.petHeld)
+            return;
+        s.petHeld = true;
+        s.petReact = react;
+    }
+
+    inline bool WalkoutTakePetReact(SeekWalkoutState& s, std::uint8_t& react)
+    {
+        if (!s.petHeld)
+            return false;
+        react = s.petReact;
+        s.petHeld = false;
+        return true;
+    }
+
     inline const char* WalkoutEndName(WalkoutEnd end)
     {
         switch (end)
@@ -224,10 +318,12 @@ namespace ai
         }
     }
 
-    // Whether the anchor lets this bot go: it is the running task's puller and the task is inside its time. The
-    // exemption lapses at the timeout even before a read closes the task.
+    // Whether the anchor lets this bot go: it is the running task's puller inside the task's time, or the puller of a
+    // timed-out or aborted task inside its walk back. Both lapse on their own clock, before any read closes them.
     inline bool WalkoutExempts(const SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
     {
-        return WalkoutActive(s) && s.puller == bot && nowMs - s.startMs < kSeekWalkoutTimeoutMs;
+        if (WalkoutActive(s) && s.puller == bot && nowMs - s.startMs < kSeekWalkoutTimeoutMs)
+            return true;
+        return s.returner == bot && WalkoutReturning(s, nowMs);
     }
 }

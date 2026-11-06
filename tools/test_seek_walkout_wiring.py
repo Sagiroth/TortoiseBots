@@ -32,23 +32,24 @@ class SeekWalkoutWiring(unittest.TestCase):
         self.assertIn("LiveBossAnchor(ai, bot, anchor)", body(MOVEMENT, "bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)"))
 
     def test_the_puller_is_picked_by_the_policy(self):
-        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss)")
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son)")
         self.assertIn("PickWalkoutPuller(", pick)
         self.assertIn("WalkoutRoleOf(", pick)
         for guard in ("PlayerbotAI::IsTank(member)", "PlayerbotAI::IsHeal(member)", "boss->GetVictim() == member",
-                      "getThreatList()", "GetCharmerGuid()", "kHakkarCauseInsanitySpell"):
+                      "TopTwoThreat(boss, top)", "GetCharmerGuid()", "kHakkarCauseInsanitySpell"):
             self.assertIn(guard, pick)
+        self.assertIn("getThreatList()", body(ACTIONS, "void TopTwoThreat(Unit* boss, ObjectGuid (&top)[2])"))
 
     def test_the_seek_read_runs_the_task(self):
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
         self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, walkoutWanted, out)", read)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         for call in ("WalkoutCheck(", "WalkoutMayStart(", "WalkoutStart(", "WalkoutNoteShot(", "WalkoutFinish(",
-                     "FindSeekWalkoutPuller(ai, bot, boss) != bot"):
+                     "FindSeekWalkoutPuller(ai, bot, boss, scan.son) != bot"):
             self.assertIn(call, update)
         # Its one shot is the pull: exempt from the seek hold like the other pullers' until the shot lands, then held.
         self.assertIn("out.puller = true;", update)
-        self.assertIn("out.pullTarget = nearest;", update)
+        self.assertIn("out.pullTarget = scan.son;", update)
         self.assertIn("out.puller = !state.shot;", update)
         self.assertIn("out.pullTarget = !state.shot && sonOk ? son : nullptr;", update)
         self.assertIn('"seek pull: ranged walk-out %s -> %u"', ACTIONS)
@@ -64,11 +65,67 @@ class SeekWalkoutWiring(unittest.TestCase):
         walk = fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
         self.assertIn("WalkoutShotPoint(", walk)
         self.assertIn("WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER)", walk)
-        self.assertIn('ai->DoSpecificAction("shoot", event, true)', walk)
         self.assertIn("WalkoutBackPoint(", walk)
         self.assertIn("IsWithinLOSInMap(task.source)", walk)
         # The clamp is asked even here: a no-op while the task exempts the bot, the anchor again once it lapses.
         self.assertLess(walk.index("ClampMoveToBossAnchor(ai, bot, x, y, z)"), walk.index("MoveTo(bot->GetMapId(), x, y, z"))
+
+
+class SeekWalkoutRound1(unittest.TestCase):
+    def walk(self):
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        return fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
+
+    def test_the_pet_is_held_and_the_shot_is_cast_directly(self):
+        walk = self.walk()
+        # No generic Attack: it sends the pet in, the pet takes the Son and keeps it outside.
+        self.assertNotIn("Attack(bot, task.source)", walk)
+        self.assertNotIn('DoSpecificAction("shoot"', walk)
+        self.assertIn("HoldWalkoutPet(ai, bot);", walk)
+        self.assertLess(walk.index("HoldWalkoutPet(ai, bot);"), walk.index("ai->CastSpell(spell, task.source)"))
+        hold = body(ACTIONS, "void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)")
+        for call in ("SetReactState(REACT_PASSIVE)", "WalkoutSavePetReact(", "AttackStop()", "MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE)"):
+            self.assertIn(call, hold)
+        restore = body(ACTIONS, "void RestoreWalkoutPet(Player* puller, SeekWalkoutState& state)")
+        self.assertIn("WalkoutTakePetReact(state, react)", restore)
+        self.assertIn("SetReactState(static_cast<ReactStates>(react))", restore)
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertGreaterEqual(update.count("RestoreWalkoutPet("), 2, "on a Back end and when the walk back ends")
+
+    def test_only_a_bot_that_can_fire_is_picked(self):
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son)")
+        self.assertIn("WalkoutShotSpell(cls)", pick)
+        self.assertIn("memberAi->CanCastSpell(spell, son, 0, nullptr, true, true)", pick)
+        self.assertIn("c.canShoot =", pick)
+        walk = self.walk()
+        # At the stand the exact cast is checked; a cast that fails aborts at once and spends nothing.
+        self.assertIn("ai->CanCastSpell(spell, task.source)", walk)
+        self.assertLess(walk.index("ai->CanCastSpell(spell, task.source)"), walk.index("ai->CastSpell(spell, task.source)"))
+        self.assertIn("AbortSeekWalkoutUnspent(ai, bot);", walk)
+        self.assertIn("WalkoutAbortUnspent(", body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot)"))
+
+    def test_any_end_walks_back_without_attacking(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("WalkoutFinish(it->second.state, end, nowMs)", update)
+        self.assertIn("WalkoutReturning(", update)
+        self.assertIn("WalkoutReturnDone(", update)
+        walk = self.walk()
+        back = walk[walk.index("WalkoutBackPoint(") - 400:]
+        self.assertIn("InterruptSpell(CURRENT_AUTOREPEAT_SPELL)", back)
+        self.assertIn("bot->AttackStop();", back)
+
+    def test_top_threat_aborts(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("WalkoutPullerUsable(", update)
+        self.assertIn("InTopTwoThreat(boss, puller)", update)
+
+    def test_stale_state_is_dropped(self):
+        exempt = body(ACTIONS, "bool SeekWalkoutExemptsBot(Player* bot)")
+        self.assertIn("SweepSeekWalkouts(", exempt)
+        sweep = body(ACTIONS, "void SweepSeekWalkouts(Map* map, std::uint32_t nowMs)")
+        self.assertIn("kSeekWalkoutStaleMs", sweep)
+        self.assertIn("IsInCombat()", sweep)
+        self.assertIn("IsAlive", sweep)
 
 
 if __name__ == "__main__":
