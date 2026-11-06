@@ -43,6 +43,9 @@ bool EligibleBot(Player* bot)
         return false;
     if (sServerFacade.IsInCombat(bot))
         return false;
+    // Sitting is eating or drinking: a cast would stand it up mid-meal.
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+        return false;
     return true;
 }
 
@@ -170,17 +173,9 @@ void PassingBuffsService::SweepNow(std::vector<Player*> const& realPlayers)
                 ++casts;
         }
     }
+    // Only the pairs in range now: leaving and coming back is a new meeting;
+    // the cooldown maps keep a recast away.
     m_seenPairs.swap(m_seenPairsNext);
-
-    for (auto it = m_seenPairs.begin(); it != m_seenPairs.end();)
-    {
-        if (m_seenPairsNext.find(it->first) == m_seenPairsNext.end() &&
-            m_buffCooldowns.find(it->first) == m_buffCooldowns.end() &&
-            m_healCooldowns.find(it->first) == m_healCooldowns.end())
-            it = m_seenPairs.erase(it);
-        else
-            ++it;
-    }
 }
 
 bool PassingBuffsService::TryHeal(Player* bot, Player* player, time_t now)
@@ -217,7 +212,9 @@ bool PassingBuffsService::TryHeal(Player* bot, Player* player, time_t now)
         return false;
     if (!ai->CanCastSpell(healId, player))
         return false;
-    if (!ai->CastSpell(healId, player, nullptr, false))
+    // A friendly instant needs no facing: the core cast skips the AI's turn-first delay, which
+    // fails every cast of a bot walking past.
+    if (bot->CastSpell(player, healId, false) != SPELL_CAST_OK)
         return false;
     m_healCooldowns[key] = now;
     TB_LOG_BASIC("TortoiseBots: passing heal %s -> %s (%s)", bot->GetName(), player->GetName(), heal);
@@ -286,7 +283,7 @@ bool PassingBuffsService::TryBuff(Player* bot, Player* player, time_t now)
         return false;
     if (!ai->CanCastSpell(spellId, player))
         return false;
-    if (!ai->CastSpell(spellId, player, nullptr, false))
+    if (bot->CastSpell(player, spellId, false) != SPELL_CAST_OK)
         return false;
     m_buffCooldowns[key] = now;
     TB_LOG_BASIC("TortoiseBots: passing buff %s -> %s (%s)", bot->GetName(), player->GetName(), buff);
