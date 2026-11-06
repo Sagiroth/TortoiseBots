@@ -189,6 +189,12 @@ class BossAnchorChase(unittest.TestCase):
         self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, farX, farY, farZ))", fn)
         self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, endX, endY, endZ))", fn)
         self.assertLess(fn.index("ClampMoveToBossAnchor(ai, bot, endX, endY, endZ)"), fn.index("IsHazardNearPosition(endPosition"))
+        # The end point rebuild (which rewrites endPoint's z) sits inside `if (anchored)`: with no live anchor endPoint
+        # keeps its pre-anchor value and the old hazard dodges see the same point they always did.
+        rebuild = fn.index("    if (anchored)\n    {\n        float endX = endPosition.getX();")
+        assign = fn.index("endPoint = Vector3(endX, endY, endZ);")
+        self.assertLess(rebuild, assign)
+        self.assertLess(assign, fn.index("// Check if the end position is inside a hazard"))
         self.assertIn("if (anchored && !InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY()))", fn)
         self.assertLess(fn.index("!InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY())"),
                         fn.index("mm.MoveChase((Unit*)obj, distance, angle);"))

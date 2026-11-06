@@ -2424,6 +2424,7 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
     WorldPosition endPosition(obj->GetMapId(), endPoint.x, endPoint.y, endPoint.z);
     endPosition.setZ(endPosition.GetHeight());
+    if (anchored)
     {
         float endX = endPosition.getX();
         float endY = endPosition.getY();
