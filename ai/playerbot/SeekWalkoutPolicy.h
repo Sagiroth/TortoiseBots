@@ -32,8 +32,10 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutPetHoldMs = 120000; // a held pet's stance older than this is dropped
     constexpr float kSeekWalkoutMinStandZ = 46.5f;  // the stand's floor: above Hakkar's 45.8 evade line, with margin
     constexpr float kSeekWalkoutStandStepYd = 2.0f; // the stand search's step, out from the anchor's edge
-    constexpr float kSeekWalkoutThreatShare = 0.9f; // a puller at this share of the main tank's threat stops
-    constexpr int kSeekWalkoutMoveFails = 2;        // this many refused moves in a row abort the task
+    constexpr float kSeekWalkoutThreatShare = 0.7f; // a bot at this share of the main tank's threat is not picked
+    constexpr int kSeekWalkoutMoveFails = 3;        // this many refused moves in a row abort the task
+    constexpr std::uint32_t kSeekWalkoutReplanMs = 1000;  // the stand is re-planned from the Son's live spot this often
+    constexpr std::uint32_t kSeekWalkoutNoStandMs = 5000; // this long straight without any stand aborts ("no stand")
     constexpr std::uint32_t kSeekWalkoutExcludeMs = 60000; // a puller whose moves failed is left out of the picks
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
@@ -98,17 +100,17 @@ namespace ai
             !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
     }
 
-    // Whether a bot's threat on the boss is close enough to the main tank's to turn him: kSeekWalkoutThreatShare of it or
-    // more. Without a main-tank reference (dead, charmed) only the victim rule speaks. Being in the top two is not
-    // enough: the off-tanks hold little threat on Hakkar, so a damage dealer is nearly always second.
+    // Whether a bot's threat on the boss is too close to the main tank's to be sent: kSeekWalkoutThreatShare of it or
+    // more (the pick's margin; a running task never aborts on threat, only on becoming the victim). Without a
+    // main-tank reference (dead, charmed) only the victim rule speaks.
     inline bool WalkoutThreatTooHigh(float botThreat, float mainTankThreat)
     {
         return mainTankThreat > 0.0f && botThreat >= kSeekWalkoutThreatShare * mainTankThreat;
     }
 
     // Why the running task's puller cannot go on (the abort's logged reason), or null: dead, charmed, under Cause
-    // Insanity, the boss's victim, or at his main tank's threat.
-    inline const char* WalkoutPullerProblem(bool alive, bool charmed, bool insane, bool bossVictim, bool highThreat)
+    // Insanity, or the boss's victim (the real danger: he turns toward it, off the platform).
+    inline const char* WalkoutPullerProblem(bool alive, bool charmed, bool insane, bool bossVictim)
     {
         if (!alive)
             return "dead";
@@ -118,14 +120,12 @@ namespace ai
             return "insanity";
         if (bossVictim)
             return "victim";
-        if (highThreat)
-            return "threat";
         return nullptr;
     }
 
-    inline bool WalkoutPullerUsable(bool alive, bool charmed, bool insane, bool bossVictim, bool highThreat)
+    inline bool WalkoutPullerUsable(bool alive, bool charmed, bool insane, bool bossVictim)
     {
-        return WalkoutPullerProblem(alive, charmed, insane, bossVictim, highThreat) == nullptr;
+        return WalkoutPullerProblem(alive, charmed, insane, bossVictim) == nullptr;
     }
 
     // The eligible candidates, best first: the role, then the nearest, then the lowest guid (every reader ranks them
@@ -223,7 +223,13 @@ namespace ai
         std::vector<std::uint64_t> walkedSons;
         // The stand the task walks to (the platform search), and its refused moves in a row.
         float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
+        std::uint32_t standMs = 0;       // the stand's last re-plan
+        std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
         int moveFails = 0;
+        // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
+        std::uint32_t failReason = 0;
+        std::uint32_t failPathType = 0;
+        float failPathYd = 0.0f;
         bool lastMoveOk = false;
         // Pullers left out of the picks until a time (their moves failed): guid, until.
         std::vector<std::pair<std::uint64_t, std::uint32_t>> excluded;
@@ -271,6 +277,8 @@ namespace ai
         s.startMs = nowMs;
         s.shot = false;
         s.moveFails = 0;
+        s.standMs = nowMs;
+        s.noStandSinceMs = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
@@ -328,6 +336,30 @@ namespace ai
             if (hasStand(i))
                 return i;
         return -1;
+    }
+
+    // Whether the stand is due a re-plan from the Son's live spot (kSeekWalkoutReplanMs since the last).
+    inline bool WalkoutReplanDue(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        return nowMs - s.standMs >= kSeekWalkoutReplanMs;
+    }
+
+    // One re-plan: a found stand replaces the old one and restarts the no-stand clock; none keeps the old stand and
+    // runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
+    inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs)
+    {
+        s.standMs = nowMs;
+        if (found)
+        {
+            s.standX = x;
+            s.standY = y;
+            s.standZ = z;
+            s.noStandSinceMs = 0;
+            return false;
+        }
+        if (s.noStandSinceMs == 0)
+            s.noStandSinceMs = nowMs;
+        return nowMs - s.noStandSinceMs >= kSeekWalkoutNoStandMs;
     }
 
     inline void WalkoutNoteShot(SeekWalkoutState& s)

@@ -183,13 +183,12 @@ static void TestShotSpellPerClass()
 
 static void TestPullerUsable()
 {
-    CHECK(WalkoutPullerUsable(true, false, false, false, false));
-    CHECK(!WalkoutPullerUsable(false, false, false, false, false));
-    CHECK(!WalkoutPullerUsable(true, true, false, false, false));
-    CHECK(!WalkoutPullerUsable(true, false, true, false, false));
-    CHECK(!WalkoutPullerUsable(true, false, false, true, false));
-    // Entering the boss's top two threats aborts the task at once, not only becoming his victim.
-    CHECK(!WalkoutPullerUsable(true, false, false, false, true));
+    CHECK(WalkoutPullerUsable(true, false, false, false));
+    CHECK(!WalkoutPullerUsable(false, false, false, false));
+    CHECK(!WalkoutPullerUsable(true, true, false, false));
+    CHECK(!WalkoutPullerUsable(true, false, true, false));
+    // Becoming his victim is the danger; threat alone no longer aborts a running task.
+    CHECK(!WalkoutPullerUsable(true, false, false, true));
 }
 
 static void TestCastFailAbortUnspends()
@@ -348,16 +347,15 @@ static void TestThreatRule()
 {
     // Only the victim, or a threat at 90 % of the main tank's or more: a damage dealer is nearly always in the top two
     // when the off-tanks hold little threat.
-    CHECK(!WalkoutThreatTooHigh(800.0f, 1000.0f));
-    CHECK(WalkoutThreatTooHigh(900.0f, 1000.0f));
+    CHECK(!WalkoutThreatTooHigh(600.0f, 1000.0f));
+    CHECK(WalkoutThreatTooHigh(700.0f, 1000.0f));
     CHECK(WalkoutThreatTooHigh(1200.0f, 1000.0f));
     CHECK(!WalkoutThreatTooHigh(500.0f, 0.0f));   // no main-tank reference: the victim rule alone
-    CHECK(WalkoutPullerProblem(true, false, false, false, false) == nullptr);
-    CHECK(std::string(WalkoutPullerProblem(false, false, false, false, false)) == "dead");
-    CHECK(std::string(WalkoutPullerProblem(true, true, false, false, false)) == "charmed");
-    CHECK(std::string(WalkoutPullerProblem(true, false, true, false, false)) == "insanity");
-    CHECK(std::string(WalkoutPullerProblem(true, false, false, true, false)) == "victim");
-    CHECK(std::string(WalkoutPullerProblem(true, false, false, false, true)) == "threat");
+    CHECK(WalkoutPullerProblem(true, false, false, false) == nullptr);
+    CHECK(std::string(WalkoutPullerProblem(false, false, false, false)) == "dead");
+    CHECK(std::string(WalkoutPullerProblem(true, true, false, false)) == "charmed");
+    CHECK(std::string(WalkoutPullerProblem(true, false, true, false)) == "insanity");
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, true)) == "victim");
 }
 
 static void TestPullerInsideWithAPath()
@@ -383,7 +381,8 @@ static void TestMoveFailsAbort()
     CHECK(!WalkoutNoteMove(s, false));
     CHECK(!WalkoutNoteMove(s, true));   // a good move resets the count
     CHECK(!WalkoutNoteMove(s, false));
-    CHECK(WalkoutNoteMove(s, false));   // two failed moves in a row: abort ("move failed")
+    CHECK(!WalkoutNoteMove(s, false));
+    CHECK(WalkoutNoteMove(s, false));   // three failed moves in a row: abort ("move failed")
 }
 
 static void TestMoveFailAbortUnspendsAndExcludes()
@@ -392,6 +391,7 @@ static void TestMoveFailAbortUnspendsAndExcludes()
     // puller is left out of the picks for 60 s so another bot takes the next one.
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutNoteMove(s, false);
     WalkoutNoteMove(s, false);
     CHECK(WalkoutNoteMove(s, false));
     WalkoutAbortUnspent(s, 2000);
@@ -438,6 +438,44 @@ static void TestExcludedPullerNeverRestarts()
     CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs));
 }
 
+static void TestWalkoutReplansStandWhenSonMoves()
+{
+    // The stand follows the Son's live position: re-planned every second, the newest one walked to; only 5 s straight
+    // without any stand aborts ("no stand").
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 0);
+    s.standX = 1.0f;
+    s.standY = 2.0f;
+    s.standZ = 50.0f;
+    s.standMs = 1000;
+    CHECK(!WalkoutReplanDue(s, 1999));
+    CHECK(WalkoutReplanDue(s, 2000));
+    CHECK(!WalkoutNoteStand(s, true, 5.0f, 6.0f, 51.0f, 2000));
+    CHECK(Near(s.standX, 5.0f) && Near(s.standY, 6.0f) && Near(s.standZ, 51.0f));
+    CHECK(!WalkoutReplanDue(s, 2500));
+    // The Son walked out of every stand's reach: the old stand is kept a while.
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 3000));
+    CHECK(Near(s.standX, 5.0f));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 7999));
+    // It came back: the clock restarts.
+    CHECK(!WalkoutNoteStand(s, true, 8.0f, 9.0f, 52.0f, 8000));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 9000));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 13999));
+    CHECK(WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 14000));
+}
+
+static void TestWalkoutPickMarginBelowAbort()
+{
+    // Picked only below 0.7 of the main tank's threat; there is no threat abort any more (only the victim one).
+    CHECK(Near(kSeekWalkoutThreatShare, 0.7f));
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    c.highThreat = WalkoutThreatTooHigh(0.69f * 1000.0f, 1000.0f);
+    CHECK(WalkoutEligible(c));
+    c.highThreat = WalkoutThreatTooHigh(0.71f * 1000.0f, 1000.0f);
+    CHECK(!WalkoutEligible(c));
+    CHECK(WalkoutPullerUsable(true, false, false, false));
+}
+
 int main()
 {
     TestRoleOrder();
@@ -460,6 +498,8 @@ int main()
     TestMoveFailAbortUnspendsAndExcludes();
     TestSonsNearestFirstWithAStand();
     TestExcludedPullerNeverRestarts();
+    TestWalkoutReplansStandWhenSonMoves();
+    TestWalkoutPickMarginBelowAbort();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }
