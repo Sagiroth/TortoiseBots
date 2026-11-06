@@ -974,6 +974,7 @@ bool PlayerbotAIConfig::Initialize()
     enableGreet = config.GetBoolDefault("AiPlayerbot.EnableGreet", true);
     greetCooldown = config.GetIntDefault("AiPlayerbot.GreetCooldown", 600);
     randomBotGreet = config.GetBoolDefault("AiPlayerbot.RandomBotGreet", false);
+    passingBuffs = config.GetBoolDefault("AiPlayerbot.PassingBuffs", true);
     playerbotsXPrate = config.GetFloatDefault("AiPlayerbot.XPRate", 3.0f);
     disableActivityPriorities = config.GetBoolDefault("AiPlayerbot.DisableActivityPriorities", true);
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
