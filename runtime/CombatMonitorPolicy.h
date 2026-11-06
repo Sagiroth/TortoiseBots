@@ -20,6 +20,27 @@ namespace CombatMonitor {
 
 constexpr uint32_t kMinFightMs = 5000;        // shorter fights are dropped
 constexpr uint32_t kOutOfCombatEndMs = 3000;  // a fight ends this long after the last member left combat
+constexpr float kBossHomeYd = 5.0f;           // the boss stands this near his spawn: he is home (the evade outcome)
+
+// A fight that ends with members alive (not a wipe) and the boss not dead is an evade when the boss's last sample shows
+// him alive and out of the fight: running home in evade mode, or out of combat and back at full health or at home.
+// A boss still in combat, wounded and away, or never sampled, leaves the plain end.
+// An evade needs survivors: at least max(3, 20 % of the members at the fight's start) alive at its end. Fewer is the
+// raid's loss, a wipe, whatever the boss does afterwards.
+inline bool EvadeHasSurvivors(uint32_t membersAtStart, uint32_t aliveAtEnd)
+{
+    uint32_t const fifth = (membersAtStart + 4) / 5;
+    return aliveAtEnd >= (fifth > 3 ? fifth : 3);
+}
+
+inline bool FightEndedInEvade(bool sampled, bool alive, bool inCombat, bool evading, bool fullHp, bool atHome)
+{
+    if (!sampled || !alive)
+        return false;
+    if (evading)
+        return true;
+    return !inCombat && (fullHp || atHome);
+}
 constexpr uint32_t kWindowMs = 10000;         // the rolling window
 // The boss timeline (AiPlayerbot.CombatTimeline): the boss's health every 2 s, its victim changes and the watched
 // auras our bots gain or lose. The caps bound the record; past one, the oldest row goes.
@@ -97,12 +118,14 @@ inline std::vector<std::string> DebuffKeys(std::string const& spellName, uint32_
 }
 
 enum class Role : uint8_t { Tank, Healer, Damage };
-enum class Outcome : uint8_t { Kill, Wipe, Unfinished, End };
+enum class Outcome : uint8_t { Kill, Wipe, Unfinished, End, Evade };
 
-inline char const* OutcomeName(Outcome o)    // "kill", "wipe", "unfinished", "end"
+inline char const* OutcomeName(Outcome o)    // "kill", "wipe", "unfinished", "end", "evade"
 {
     switch (o)
     {
+    case Outcome::Evade:
+        return "evade";
     case Outcome::Kill:
         return "kill";
     case Outcome::Wipe:
@@ -549,6 +572,7 @@ public:
             ctx_.bossPhaseEntry = ctx_.bossEntry;
         }
         bossDied_ = false;
+        bossState_ = BossState();
         enemyDeaths_.clear();
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
@@ -799,6 +823,19 @@ public:
         if (!inFight_ || ctx_.bossEntry == 0 || guid == 0 || bossGuid_ != 0)
             return;
         bossGuid_ = guid;
+    }
+
+    // The boss unit's state (the sampler, 1 Hz, timeline or not); the last sample before the end decides an evade.
+    void NoteBossState(bool alive, bool inCombat, bool evading, bool fullHp, bool atHome)
+    {
+        if (!inFight_)
+            return;
+        bossState_.sampled = true;
+        bossState_.alive = alive;
+        bossState_.inCombat = inCombat;
+        bossState_.evading = evading;
+        bossState_.fullHp = fullHp;
+        bossState_.atHome = atHome;
     }
 
     uint64_t BossGuid() const { return bossGuid_; }
@@ -1459,6 +1496,14 @@ private:
             o = Outcome::Kill;
         else if (unfinished)
             o = Outcome::Unfinished;
+        else if (FightEndedInEvade(bossState_.sampled, bossState_.alive, bossState_.inCombat, bossState_.evading,
+                                   bossState_.fullHp, bossState_.atHome))
+        {
+            // The members at the start are the book's members; a member who died in the fight is in dead_.
+            uint32_t const members = static_cast<uint32_t>(order_.size());
+            uint32_t const dead = static_cast<uint32_t>(dead_.size());
+            o = EvadeHasSurvivors(members, members > dead ? members - dead : 0) ? Outcome::Evade : Outcome::Wipe;
+        }
         uint32_t const dur = endMs >= startMs_ ? endMs - startMs_ : 0;
         lastDurMs_ = dur;
         LiveEvent ev;
@@ -1508,6 +1553,7 @@ private:
         }
         inFight_ = false;
         bossDied_ = false;
+        bossState_ = BossState();
         enemyDeaths_.clear();
         outOfCombat_ = false;
         outOfCombatSince_ = 0;
@@ -1520,6 +1566,16 @@ private:
     int64_t startUnix_ = 0;
     FightContext ctx_;
     bool bossDied_ = false;
+    struct BossState
+    {
+        bool sampled = false;
+        bool alive = false;
+        bool inCombat = false;
+        bool evading = false;
+        bool fullHp = false;
+        bool atHome = false;
+    };
+    BossState bossState_;
     std::unordered_set<uint32_t> enemyDeaths_;   // enemy entries that died before the sampler picked a boss
     bool outOfCombat_ = false;
     uint32_t outOfCombatSince_ = 0;

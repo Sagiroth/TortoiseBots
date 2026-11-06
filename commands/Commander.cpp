@@ -7412,6 +7412,11 @@ bool ApproachStandSearch(Player* lead, TortoiseBots::DungeonRun::Run const& run,
             ai::PlanDistance(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), step.x, step.y, step.z) <= reach)
             hostiles.push_back(StandHostile{unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), unit->GetEntry()});
     std::vector<StandCandidate> candidates;
+    // A boss step whose boss has an anchor row (ai_boss_tactic kind `anchor`): the stand is where the fight happens,
+    // so a ring point outside the anchor is no stand (Hakkar evades when the fight drifts off his platform).
+    ai::BossAnchorCircle anchor;
+    bool const anchored = step.kind == ai::PlanStepKind::Boss &&
+        ai::BossAnchorOfBoss(lead->GetMapId(), step.entry, PlayerbotAI::IsTank(lead), anchor);
     float const minRing = ApproachStandMinRing(step);
     for (float ring = minRing; ring <= kApproachStandYd + 0.01f; ring += 5.0f)
         for (int i = 0; i < 12; ++i)
@@ -7419,6 +7424,8 @@ bool ApproachStandSearch(Player* lead, TortoiseBots::DungeonRun::Run const& run,
             float const angle = static_cast<float>(i) * 3.14159265f / 6.0f;
             float const px = step.x + ring * std::cos(angle);
             float const py = step.y + ring * std::sin(angle);
+            if (anchored && !ai::InsideAnchor(anchor, px, py))
+                continue;
             float const ground = map->GetHeight(px, py, step.z + 5.0f);
             if (ground <= INVALID_HEIGHT || std::fabs(ground - step.z) > 10.0f)
                 continue;
@@ -16653,13 +16660,27 @@ void SampleFightTimeline(uint32 groupId, Player* anchor)
 {
     using namespace TortoiseBots;
     CombatMonitorService& monitor = CombatMonitorService::Instance();
-    if (!monitor.TimelineEnabled() || !anchor)
+    if (!anchor)
         return;
     uint64_t const guid = monitor.BossGuid(groupId);
     if (!guid)
         return;
     Unit* boss = ObjectAccessor::GetUnit(*anchor, ::ObjectGuid(guid));
     if (!boss)
+        return;
+    // The boss's state for the fight's outcome, with or without the timeline: a fight that ends with him alive and
+    // running home, or home again at full health, is an evade (CombatMonitor::FightEndedInEvade).
+    Creature* const creature = boss->ToCreature();
+    bool atHome = false;
+    if (creature)
+    {
+        float homeX = 0.0f, homeY = 0.0f, homeZ = 0.0f;
+        creature->GetRespawnCoord(homeX, homeY, homeZ);
+        atHome = boss->GetDistance2d(homeX, homeY) <= CombatMonitor::kBossHomeYd;
+    }
+    monitor.NoteBossState(groupId, boss->IsAlive(), boss->IsInCombat(), creature && creature->IsInEvadeMode(),
+        boss->IsAlive() && boss->GetHealth() >= boss->GetMaxHealth(), atHome);
+    if (!monitor.TimelineEnabled())
         return;
     Unit* victim = boss->GetVictim();
     monitor.SampleTimeline(groupId, boss->IsAlive() ? boss->GetHealth() : 0, boss->GetMaxHealth(),

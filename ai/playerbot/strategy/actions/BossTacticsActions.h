@@ -542,6 +542,23 @@ namespace ai
     // The ground-hazard readers skip it while the row is live, so the raid stands in the poison on purpose.
     bool IsSoughtCloudFor(PlayerbotAI* ai, Player* bot, DynamicObject* dyn);
 
+    // The anchor this bot is held in right now (kind `anchor`, BossAnchorPolicy.h): a row of a boss that is in the bot's
+    // fight (among its side's attackers, alive, in combat, not evading), with the bot's own radius (tanks may have a
+    // tighter one). False on a map without anchor rows, without "boss tactics", or when no anchored boss fights.
+    bool LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out);
+    // The same read, handing back the live anchor row itself (so a caller can take another role's circle of it).
+    const BossTacticRow* LiveBossAnchorRow(PlayerbotAI* ai, Player* bot);
+    // Every boss/raid mover's destination goes through here before its MoveTo: unchanged without a live anchor or
+    // inside it; outside, moved onto the circle toward the destination with the floor read there. False: the clamped
+    // point has no floor on the centre's level, so the caller skips the move this tick.
+    bool ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z);
+    // Whether a live anchor keeps the bot from chasing this unit: the unit stands outside the bot's radius. The bot may
+    // still taunt or shoot it from where it stands.
+    bool BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit);
+    // A boss's anchor row from the table alone (no fight read): the run leader's stand search for a boss step reads
+    // it before the pull. False when the boss has no anchor row.
+    bool BossAnchorOfBoss(std::uint32_t map, std::uint32_t bossEntry, bool tank, BossAnchorCircle& out);
+
     // The spacing the ranged raid must keep right now: a live spread row's `param` (never below `fallback`), else
     // `fallback`. BossSpreadLive says whether any live spread row widened it (the stay exemption drops then).
     float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
@@ -564,6 +581,7 @@ namespace ai
         bool take = false;
         bool pull = false;
         bool rangedPull = false; // the fallback's one shot, instead of the tank's walk-in and swing
+        bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

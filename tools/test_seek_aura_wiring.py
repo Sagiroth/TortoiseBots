@@ -273,7 +273,9 @@ class SeekRolesWiring(unittest.TestCase):
         tank = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(")
         pull = tank[tank.index("if (task.pull)"):tank.index("if (task.walkToSpot)")]
         self.assertIn("SeekTankPullStep(task.source->IsInCombat(), task.source->GetVictim() == bot, yd)", pull)
-        self.assertLess(pull.index("SeekPullStep::Walk"), pull.index("MoveTo(bot->GetMapId(), x, y, z"))
+        # The Walk step's own MoveTo (the anchored ranged shot's walk to its stand comes before it in the branch).
+        walk = pull.index("if (step == SeekPullStep::Walk)")
+        self.assertGreater(pull.find("MoveTo(bot->GetMapId(), x, y, z", walk), walk)
         self.assertIn("MoveTo(bot->GetMapId(), x, y, z, false, false, false, true)", pull)
         self.assertIn("return Attack(bot, task.source);", pull)  # the Hit step
         self.assertIn("LogSeekPull(ai, bot, task.source, yd, step)", pull)

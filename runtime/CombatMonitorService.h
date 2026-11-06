@@ -38,6 +38,8 @@ public:
     void NoteBossGuid(uint32_t groupId, uint64_t guid);
     // world thread: the fight's boss unit guid (0: none picked yet)
     uint64_t BossGuid(uint32_t groupId) const;
+    // world thread, 1 Hz after NoteBoss/NoteBossGuid, timeline or not: the boss unit's state for the evade outcome
+    void NoteBossState(uint32_t groupId, bool alive, bool inCombat, bool evading, bool fullHp, bool atHome);
     // AiPlayerbot.CombatTimeline: the aura watch rows (world table ai_combat_aura_watch) and the timeline gate
     void SetTimelineWatch(std::vector<uint32_t> spellIds);
     void LoadTimelineWatch();                               // startup: one pass over the watch table

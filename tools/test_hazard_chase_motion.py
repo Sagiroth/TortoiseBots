@@ -12,7 +12,8 @@ class HazardChaseMotionTest(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[1]
         source = (root / "ai/playerbot/strategy/actions/MovementActions.cpp").read_text()
         start = source.index("bool MovementAction::ChaseTo(")
-        start = source.index("if (GeneratePathAvoidingHazards(path))", start)
+        start = source.index("bool const hazardPath = GeneratePathAvoidingHazards(path);", start)
+        start = source.index("if (hazardPath)\n", start)
         start = source.index("{", start) + 1
         end = source.index("return true;", start) + len("return true;")
         branch = source[start:end]
