@@ -263,42 +263,35 @@ void TradeStatusAction::ConjureAndPlace(uint32 itemId, uint32 count)
     }
     if (!item)
     {
-        bool haveSlot = false;
-        uint8 freeBag = INVENTORY_SLOT_BAG_0;
-        uint8 freeSlot = NULL_SLOT;
-        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        ItemPosCountVec dest;
+        bool stored = false;
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && !stored; ++slot)
         {
-            if (!bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            {
-                freeBag = INVENTORY_SLOT_BAG_0;
-                freeSlot = slot;
-                haveSlot = true;
-                break;
-            }
+            if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                continue;
+            dest.clear();
+            if (bot->CanStoreNewItem(INVENTORY_SLOT_BAG_0, slot, dest, itemId, count) != EQUIP_ERR_OK)
+                continue;
+            item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+            stored = item != nullptr;
         }
-        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !haveSlot; ++bag)
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !stored; ++bag)
         {
             if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
             {
-                for (uint32 slot = 0; slot < pack->GetBagSize(); ++slot)
+                for (uint32 slot = 0; slot < pack->GetBagSize() && !stored; ++slot)
                 {
-                    if (!pack->GetItemByPos(slot))
-                    {
-                        freeBag = bag;
-                        freeSlot = static_cast<uint8>(slot);
-                        haveSlot = true;
-                        break;
-                    }
+                    if (pack->GetItemByPos(slot))
+                        continue;
+                    dest.clear();
+                    if (bot->CanStoreNewItem(bag, static_cast<uint8>(slot), dest, itemId, count) != EQUIP_ERR_OK)
+                        continue;
+                    item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+                    stored = item != nullptr;
                 }
             }
         }
-        if (!haveSlot)
-            return;
-        ItemPosCountVec dest;
-        if (bot->CanStoreNewItem(freeBag, freeSlot, dest, itemId, count) != EQUIP_ERR_OK)
-            return;
-        item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
-        if (!item)
+        if (!stored)
             return;
     }
     TradeData* trade = bot->GetTradeData();
