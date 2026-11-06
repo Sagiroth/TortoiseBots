@@ -5272,6 +5272,33 @@ class DungeonPlanSql(unittest.TestCase):
                 self.assertLessEqual(len(r["entries"].split(",")), 12)
                 self.assertLessEqual(float(r["radius"]), 35)
         self.assertIn("'turtle-agent 1b9a5c6 dungeons/timbermaw_hold.json'", text)
+    def test_plan_unit_lists_fit_the_loader_cap(self):
+        # kPlanMaxEntries = 16 (ai/playerbot/DungeonPlanPolicy.h:197): ParsePlanEntries refuses a longer cc_priority, cc_always,
+        # kill_first or cc_never and DungeonPlanMgr::SetUnits then keeps NONE of the four lists, so the plan runs with no crowd
+        # control and no kill-first targets (zul_gurub 20261106030100 first shipped 19: no ZG raid had kill_first or CC from
+        # t1105c on). Every plan row's lists, in the newest migration that inserts or updates the plan, are held to the cap.
+        newest = {}
+        for name, text in migrations():
+            for insert in re.findall(r"^(INSERT INTO `ai_dungeon_plan` \(([^)]*)\) VALUES\n(.*?);\n)", text, re.S | re.M):
+                columns = re.findall(r"`(\w+)`", insert[1])
+                for row in re.findall(r"^\('([a-z0-9_]+)', (\d+), (.*)\)[,;]?$", insert[2], re.M):
+                    values = re.findall(r"'(?:[^']|'')*'|[^,\s][^,]*", row[2])
+                    newest[row[0]] = (name, dict(zip(columns[2:], (v.strip("'") for v in values))))
+            for update in re.findall(r"^UPDATE `ai_dungeon_plan` SET (.*?) WHERE `plan` = '([a-z0-9_]+)';\n", text, re.S | re.M):
+                if update[1] not in newest:
+                    continue
+                row = dict(newest[update[1]][1])
+                for column, value in re.findall(r"`(\w+)`\s*=\s*'((?:[^']|'')*)'", update[0]):
+                    row[column] = value
+                newest[update[1]] = (name, row)
+        self.assertGreaterEqual(len(newest), 40, "no plan rows parsed")
+        for plan, (name, row) in sorted(newest.items()):
+            for column in ("cc_priority", "cc_always", "kill_first", "cc_never"):
+                value = row.get(column, "")
+                if value:
+                    self.assertLessEqual(len(value.split(",")), 16,
+                                         "%s: %s %s has more than 16 entries (DungeonPlanPolicy.h:197)" % (name, plan, column))
+
     def test_zul_gurub_is_the_raid_prep(self):
         # Before walk 31: 20261101093000 (turtle-agent f3a7c87 fix/zg-leg2-marli-stands, 2026-11-01): leg 1 after walk 21 and leg 2
         # after walk 25. Walk 25 (TortoiseBots-audit research/zg-w25/MARLI-PULL.md): the Mar'li leg's `to` stood on the
@@ -5325,7 +5352,20 @@ class DungeonPlanSql(unittest.TestCase):
         # carries the walk-29 unit lists: the mages Polymorph the Venombroods (14532, beasts and not immune) and the
         # kill_first order names the Thekal zealots and the four Razzashi Cobras. 9 legs, 754 steps, 149 pulls, the
         # eight bosses in the guide's order; leg 2 is the r2 Mar'li route (below).
-        # 20261106010000 (turtle-agent d0562bdc, plan/zg-t1105c, 2026-11-06): the newest zul_gurub migration, build t1105c. The
+        # 20261106030100 (turtle-agent f200b00b, plan/zg-hakkar-anchor, 2026-11-06): the newest zul_gurub migration, the t1105e
+        # Hakkar fix (TortoiseBots-audit research/zg-bosses/HAKKAR-RESETS.md, spec hakkar-anchor-t1105e Part B). He evades below
+        # z 45.8 (boss_hakkar.cpp:140-145) and the plan stood the raid 34-50 yd south-west of him on the slope that crosses that
+        # line: 100 of walk 41's 130 Hakkar ends and 15 of walk 42's 16 were his own reset. The boss approach is the ramp's top
+        # lip -11807.651 -1691.3049 52.111286 (the path row the 20261106010000 cut put there, now a plan point) and the stand
+        # -11790 -1662 53.11, 12.7 yd south of his spawn -11787.4 -1649.34 54.1: plan-probe reads the mesh floor under it as
+        # 53.11 (dz 0.00, snap 0.00) and path-check --ray from it to his z+2 is clear over 13.0 yd. Leg 8 loses the path row the
+        # lip replaces: 81 -> 80 rows, 695 -> 694 steps, pulls unchanged at 148.
+        # The plan row's cc_priority is cut to 16 entries (was 19): TortoiseBots caps every plan list at kPlanMaxEntries = 16
+        # (ai/playerbot/DungeonPlanPolicy.h:197) and ParsePlanEntries refuses the longer list, after which DungeonPlanMgr::SetUnits
+        # keeps NONE of the four lists. Every ZG raid since t1105c ran without kill_first and without CC, so the ward-first fix
+        # never ran (TortoiseBots-audit research/zg-bosses/JINDO-W42.md section 0). The three dropped units are the tail of the
+        # order: Razzashi Broodwidow 11370, Zulian Panther 11365 and Zulian Tiger 11361. kill_first and cc_never are unchanged.
+        # 20261106010000 (turtle-agent d0562bdc, plan/zg-t1105c, 2026-11-06): the previous zul_gurub migration, build t1105c. The
         # combined plan of 20261105230000 plus (a) the walk-41 Jeklik fix: leg 0's last boss approach moves from
         # -12241.56 -1399.14 to the walked floor point -12269.3 -1389.4 131.5 (step 47, 51 yd from the hover point before);
         # (b) turtle-agent #416's trash lists: cc_priority is the 19-entry list (Blood Drinker 11353 in, out of kill_first)
@@ -5353,21 +5393,30 @@ class DungeonPlanSql(unittest.TestCase):
         # carries kill_first 15112,14987 (Brain Wash Totem, Powerful Healing Ward) ahead of the old order; 9 legs, 750 steps,
         # 148 pulls. Only leg 6 (jindo_the_hexxer) differs from 20261104160000: 90 -> 87 steps, 19 -> 18 pulls.
         name, text = newest_plan_text("zul_gurub")
-        self.assertEqual(name, "20261106010000_world.sql")
-        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043,11370,11365,11361', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent d0562bdc42a797d1c6cace7f7f4741f5ec9a71b1 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        self.assertEqual(name, "20261106030100_world.sql")
+        self.assertIn("('zul_gurub', 309, '14532,14882,14825,11353,11338,11357,11356,11350,14821,11351,11831,11340,11339,11359,15111,15043', '', '14987,15112,14750,15146,11830,14883', 'turtle-agent f200b00b54c8c7bf3eeea864aad1b455fa41d464 dungeons/z', 'plan v1, mapped (live-walked in ZG walks 31-34: Jeklik, Venoxis, Mar''li, Thekal and Mandokir killed; Arlokk via the gong step; Hakkar pending)');", text)
+        zg_cc = re.search(r"\('zul_gurub', 309, '([^']*)'", text)
+        self.assertIsNotNone(zg_cc, "the zul_gurub plan row is missing")
+        self.assertEqual(len(zg_cc.group(1).split(",")), 16,
+                         "the zul_gurub plan row's cc_priority is over the 16-entry cap (DungeonPlanPolicy.h:197)")
         self.assertEqual([v[0] for v in leg_rows(text, "zul_gurub").values()],
                          ["high_priestess_jeklik", "high_priest_venoxis", "high_priestess_marli",
                           "high_priest_thekal", "high_priestess_arlokk", "bloodlord_mandokir",
                           "jindo_the_hexxer", "hakkar_outer", "hakkar"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "zul_gurub"]
-        self.assertEqual(len(rows), 695)
+        self.assertEqual(len(rows), 694)
         self.assertEqual([len(leg_steps(rows, leg)) for leg in range(9)],
-                         [49, 124, 28, 54, 95, 79, 89, 96, 81])
+                         [49, 124, 28, 54, 95, 79, 89, 96, 80])
         self.assertEqual([len([r for r in leg_steps(rows, leg) if r["kind"] == "pull"]) for leg in range(9)],
                          [16, 23, 6, 8, 26, 20, 18, 23, 8])
         # t1105c: the Jin'do ward leads kill_first (14987 before 15112) and Jeklik's boss approach is the walked floor point.
         self.assertIn("'14987,15112,14750,15146,11830,14883'", text)
         self.assertIn("('zul_gurub', 0, 47, 'move', 0, -12269.3, -1389.4, 131.5, 0, 0, 0, 0, 0, '', 'boss approach')", text)
+        # t1105e: Hakkar's approach is two plan points on his platform, the ramp's lip and the stand, and his boss row is the
+        # last of the plan (79, not 80) because the lip replaces the path row the 20261106010000 cut added there.
+        self.assertIn("('zul_gurub', 8, 77, 'move', 0, -11807.651, -1691.3049, 52.111286, 0, 0, 0, 0, 0, '', 'boss approach')", text)
+        self.assertIn("('zul_gurub', 8, 78, 'move', 0, -11790, -1662, 53.11, 0, 0, 0, 0, 0, '', 'boss approach')", text)
+        self.assertIn("('zul_gurub', 8, 79, 'boss', 14834, -11787.4, -1649.34, 54.1, 0, 0, 0, 0, 0, '', 'boss');", text)
         # Leg 1 (high_priest_venoxis), walk 20: the Mad Servant packs (15111) are pulled from stands out of the
         # others' aggro, in the order E, C, then D+A as one row (walk 18 moved D in from leg 7 group 37; walk 20
         # merged it with A). Each is a stand pull (flag 8192) run from the move row right before it (its stand):
@@ -5571,7 +5620,7 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual([r["entry"] for r in rows if r["kind"] == "boss"],
                          ["14517", "14507", "14510", "14599", "14515", "11382", "11380", "14834"])
         self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss", "open"})
-        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 186)  # item 8's approach points (walk 38: 172 -> 186, the split patrol camps and the hall's rows)
+        self.assertEqual(len([r for r in rows if r["comment"].endswith("approach")]), 187)  # item 8's approach points (walk 38: 172 -> 186, the split patrol camps and the hall's rows; t1105e: 187, Hakkar's two-point approach)
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertEqual(len(pulls), 148)
         # Every stand pull of the plan runs from the move row right before it, inside the run leader's 60 yd see
