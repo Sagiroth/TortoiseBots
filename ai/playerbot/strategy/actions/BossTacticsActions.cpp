@@ -2854,9 +2854,57 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
     return scan;
 }
 
+namespace
+{
+Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode);
+}
+
 Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
-    if (fight.rows.empty() || !IsFreeDps(ai, bot))
+    if (fight.rows.empty())
+        return nullptr;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    // A free DPS takes every open row; one under an explicit order (the run's focus) only the carrier override.
+    const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot),
+        !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty(), HasCarrierKillFirstRow(fight.rows));
+    return PickBossKillFirst(ai, bot, fight, mode);
+}
+
+bool ai::TankIgnoresTarget(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!ai || !bot || !target || !target->IsCreature())
+        return false;
+    const std::vector<std::uint32_t>& bosses = GetBossTactics().TankIgnoreBosses(bot->GetMapId(), target->GetEntry());
+    if (bosses.empty() || !PlayerbotAI::IsTank(bot))
+        return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    auto const engaged = [&](std::uint32_t boss)
+    {
+        const std::vector<KillFirstGridUnit> grid =
+            AI_VALUE2(std::vector<KillFirstGridUnit>, "kill first grid units", static_cast<int32>(boss));
+        for (const KillFirstGridUnit& hit : grid)
+            if (KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt, false))
+                return true;
+        return false;
+    };
+    return TankIgnoresUnit(true, bosses, engaged);
+}
+
+Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot || !IsBattleDps(bot))
+        return nullptr;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    if (!HasCarrierKillFirstRow(fight.rows))
+        return nullptr;
+    return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier);
+}
+
+namespace
+{
+Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode)
+{
+    if (fight.rows.empty() || mode == KillFirstPickMode::None)
         return nullptr;
 
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -2937,8 +2985,11 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
             }
         }
     }
-    const int picked = PickKillFirst(fight.rows, candidates);
+    const int picked = mode == KillFirstPickMode::Carrier
+        ? PickCarrierOverride(fight.rows, candidates, CarrierReachYd(ai->IsRanged(bot)))
+        : PickKillFirst(fight.rows, candidates);
     return picked < 0 ? nullptr : units[picked];
+}
 }
 
 Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -3541,6 +3592,12 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
     Unit* current = AI_VALUE(Unit*, "current target");
     if (current == pick)
         return false;
+    // Under an explicit order the pick can only be the carrier override (t1105h J1): the order is dropped, so the bot
+    // is a free DPS on its Shade and nothing re-picks the ordered unit while the curse lasts. Once the curse ends the
+    // gated row closes and the bot's normal targeting (the skull, the run's next focus) takes over.
+    ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
+    if (!ordered.IsEmpty() && ordered != pick->GetObjectGuid())
+        context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
     return Attack(bot, pick);
 }
 
@@ -6480,6 +6537,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
             // A needs_aura subject is no taunt target without the row's aura: skip it before its episode opens, so a
             // Shade is never taken off a tank by a taunt that could not kill it anyway.
             if (TauntAuraGated(bot, unit))
+                continue;
+            // A tank_ignore subject (Jin'do's Sacrificed Trolls) is the damage dealers' while its boss fights.
+            if (TankIgnoresTarget(ai, bot, unit))
                 continue;
             Unit* const victim = unit->GetVictim();
             bool const victimIsPlayer = victim && victim->GetTypeId() == TYPEID_PLAYER;

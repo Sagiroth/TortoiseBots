@@ -25,6 +25,9 @@ namespace ai
         bool pet;
         bool incomingHeal;
         bool inLos = true;
+        // A Shade of Jin'do (a needs_aura unit) attacks it (t1105h J1): healed one urgency band earlier, with the
+        // tank's in-band lead. The Shade's victim is a healer half the time and dies in seconds.
+        bool hunted = false;
     };
 
     inline float PredictedHealHealth(HealingCandidate const& candidate)
@@ -48,8 +51,10 @@ namespace ai
     inline unsigned HealingUrgency(HealingCandidate const& candidate, HealingBands const& bands)
     {
         float const health = PredictedHealHealth(candidate);
-        unsigned const band = health < bands.critical ? 0 : health < bands.low ? 1
+        unsigned band = health < bands.critical ? 0 : health < bands.low ? 1
             : health < bands.medium ? 2 : 3;
+        if (candidate.hunted && band > 0)
+            --band;
         // Pets are a fallback, not competitors for an injured raid member's slot.
         return band + (candidate.pet ? 4 : 0);
     }
@@ -80,8 +85,8 @@ namespace ai
         // Small tank preference within a band; in emergencies the lowest health wins.
         if (leftBand != 0)
         {
-            leftHealth -= left.tank ? 10.0f : 0.0f;
-            rightHealth -= right.tank ? 10.0f : 0.0f;
+            leftHealth -= left.tank || left.hunted ? 10.0f : 0.0f;
+            rightHealth -= right.tank || right.hunted ? 10.0f : 0.0f;
         }
         if (leftHealth != rightHealth)
             return leftHealth < rightHealth;

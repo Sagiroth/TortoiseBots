@@ -27782,6 +27782,89 @@ static void TestGuardSkipsAuraGatedShade()
     }
 }
 
+// t1105h J1: a Delusions carrier with its Shade in reach is no focus target, whatever the focus is: the run's focus and
+// the 3 s ward refocus would pull it back off the only unit its damage counts on. Once the curse ends it joins again.
+static void TestFocusSkipsDelusionsCarrier()
+{
+    for (bool totemKey : {true, false})
+        for (bool totemTarget : {true, false})
+        {
+            CHECK(FocusSkipsBot(false, false, false, totemTarget, totemKey, true));
+            CHECK(!FocusSkipsBot(false, false, false, totemTarget, totemKey, false));
+        }
+    CHECK(!FocusSkipsBot(false, false, false, true, true));   // an uncursed DPS still joins the totem focus
+    CHECK(!FocusSkipsBot(false, false, true, false, false));  // and a tank_hold focus
+}
+
+// t1105h J2: the Sacrificed Trolls 14826 go to the damage dealers while Jin'do fights. The run's boss here is 10184, so
+// the test's troll names that entry as its tank_ignore boss: no off-tank and no main tank is sent at it, and the
+// healer guard's ranged dps still is.
+static void TestJindoTrollGoesToDpsNotTank()
+{
+    UnitFact troll = Hitter(45201, 14826, 20, false);
+    {
+        // Off-tanks: a troll on a DPS is no pick-up while the boss fights.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact ignored = troll;
+        ignored.tankIgnoreBoss = 10184;
+        f.partyAttackers = {ignored};
+        CHECK(TankIgnoredFact(f, f.partyAttackers[0]));
+        for (int k = 0; k < 40; ++k)
+            CHECK(Tick(r, f).empty());
+        CHECK(GuardPick(f, 0.0f, &r, &r) == nullptr);
+    }
+    {
+        // No row: an ordinary add, picked up as before.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.partyAttackers = {troll};
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // The row's boss is not in this fight: the troll is a normal mob again.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact other = troll;
+        other.tankIgnoreBoss = 11380;
+        f.partyAttackers = {other};
+        CHECK(!TankIgnoredFact(f, f.partyAttackers[0]));
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // A troll on a healer still gets the healer guard's ranged dps.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact onHealer = Hitter(45202, 14826, 18, true);
+        onHealer.tankIgnoreBoss = 10184;
+        f.partyAttackers = {onHealer};
+        CHECK(GuardTick(r, f) == "attack 45202 NearDps");
+    }
+    {
+        // The main tank's own engage on arrival leaves it too.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.leadHasAttacker = true;
+        f.leadAttacker = troll;
+        f.leadAttacker.victimLead = true;
+        f.leadAttacker.tankIgnoreBoss = 10184;
+        CHECK(EngageTarget(r, f) == nullptr);
+        f.leadAttacker.tankIgnoreBoss = 0;
+        CHECK(EngageTarget(r, f) != nullptr);
+    }
+}
+
 // The totem focus is issued before the guard: a totem kill-first unit takes the tick over a guard-worthy healer add.
 // With the key off the guard's order goes out first and the focus waits for the next tick, as today.
 static void TestTotemFocusBeatsGuard()
@@ -37106,6 +37189,8 @@ int main()
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
     TestTotemFocusSkipsTanksAndHealers();
     TestTotemFocusKeyOffJoinsAll();
+    TestFocusSkipsDelusionsCarrier();
+    TestJindoTrollGoesToDpsNotTank();
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
