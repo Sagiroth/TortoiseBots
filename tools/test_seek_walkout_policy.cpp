@@ -196,14 +196,16 @@ static void TestCastFailAbortUnspends()
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3, 60000);
     CHECK(!WalkoutMayStart(s, 3, 200));
-    // The shot cannot be cast at the stand with 59 s to the siphon: abort, and neither the Son nor the cycle counts
-    // as spent.
+    // The shot cannot be cast at the stand with 59 s to the siphon: abort, and the Son is free again for the next
+    // cycle; the cycle's one walk-out stays spent (max 1 per cycle).
     WalkoutAbortUnspent(s, 2000);
     CHECK(!WalkoutActive(s));
     CHECK(WalkoutReturning(s, 2000));
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStart(s, 3, 100));
-    // A cycle spent before the task stays spent (the unspend only undoes this task's own marks).
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutMayStart(s, 4, 100));
+    // A cycle spent before the task stays spent, and an abort frees only its own Son: the timed-out cycle 3's Son 100
+    // stays walked.
     SeekWalkoutState t;
     WalkoutStart(t, 7, 100, 1000, 3);
     WalkoutFinish(t, WalkoutEnd::Timeout, 2000);
@@ -211,9 +213,10 @@ static void TestCastFailAbortUnspends()
     WalkoutStart(t, 7, 300, 3000, 4, 60000);
     WalkoutAbortUnspent(t, 4000);
     WalkoutReturnDone(t);
-    CHECK(!WalkoutMayStart(t, 3, 300)); // cycle 3 was the timed-out task's
-    CHECK(WalkoutMayStart(t, 4, 300));
-    CHECK(!WalkoutMayStart(t, 4, 100)); // Son 100 was walked to by the timed-out task
+    CHECK(WalkoutMayStart(t, 3, 300)); // the aborted Son is free again for a cycle that is open
+    CHECK(!WalkoutMayStart(t, 4, 300)); // cycle 4's one walk-out is spent
+    CHECK(!WalkoutMayStart(t, 5, 100)); // Son 100 was walked to by the timed-out task
+    CHECK(WalkoutMayStart(t, 5, 300));
 }
 
 static void TestWalkBackAfterAnyEnd()
@@ -416,7 +419,7 @@ static void TestMoveFailsAbort()
 
 static void TestMoveFailAbortUnspendsAndExcludes()
 {
-    // Two refused moves abort, unspent like a cast fail: no pull happened, so the Son and the cycle stay free, and the
+    // Two refused moves abort: no pull happened, so the Son is free again for the next cycle (max 1 per cycle), and the
     // puller is left out of the picks for 60 s so another bot takes the next one.
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3, 60000);
@@ -426,7 +429,8 @@ static void TestMoveFailAbortUnspendsAndExcludes()
     WalkoutAbortUnspent(s, 2000);
     WalkoutExclude(s, 7, 2000);
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutMayStart(s, 4, 100));
     CHECK(WalkoutExcluded(s, 7, 2000));
     CHECK(WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs - 1));
     CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
@@ -453,18 +457,20 @@ static void TestSonsNearestFirstWithAStand()
 static void TestExcludedPullerNeverRestarts()
 {
     // Two quick move failures, an immediate return inside, and a start while the scan still names the same bot: the
-    // start check under the lock refuses the excluded bot; another bot may start.
+    // failed cycle stays spent and the next one's start check under the lock refuses the excluded bot; another bot
+    // may start.
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3, 89000); // due at 90000: the retry is still in time at 61500
+    WalkoutStart(s, 7, 100, 1000, 3, 89000); // due at 90000: plenty of time left in the cycle
     WalkoutNoteMove(s, false);
     WalkoutNoteMove(s, false);
     WalkoutAbortUnspent(s, 1500);
     WalkoutExclude(s, 7, 1500);
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStart(s, 3, 100));
     CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600, 0));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 1600, 0));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs, 0));
+    CHECK(!WalkoutMayStartFor(s, 4, 100, 7, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 8, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 7, 1500 + kSeekWalkoutExcludeMs, 0));
 }
 
 static void TestWalkoutReplansStandWhenSonMoves()
@@ -517,45 +523,48 @@ static void TestWalkoutWaitsForTheSiphon()
     CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 0));
 }
 
-static void TestWalkoutTimeoutLeavesCycleOpen()
+static void TestWalkoutWaitsOnlyForACastOnTheSon()
 {
-    // A timeout with 40 s left to the siphon: the cycle stays open for ONE more walk-out, to another Son (the timed-out
-    // one stays walked).
+    // At the stand the puller waits only for a cast aimed at the walk-out's Son (the pull shot itself). Its Auto Shot
+    // or a wand's Shoot still on the boss is not the pull: it is interrupted and the shot goes out now.
+    CHECK(WalkoutShotWaits(true, true));
+    CHECK(!WalkoutShotWaits(false, true));  // a cast or autorepeat on another target
+    CHECK(!WalkoutShotWaits(false, false)); // nothing running
+    CHECK(!WalkoutShotWaits(true, false));  // a stale flag alone never waits
+}
+
+static void TestOneWalkoutPerCycle()
+{
+    // kSeekWalkoutMaxPerCycle 1: a second start in the same cycle is refused however much of the window is left; the
+    // cycle's own walk-out is never retried, and the next cycle takes its own.
+    CHECK(kSeekWalkoutMaxPerCycle == 1);
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3, 65000); // the siphon is due at 66000
-    CHECK(WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
+    WalkoutStart(s, 7, 100, 1000, 3, 89000); // the siphon is due at 90000
+    CHECK(!WalkoutCycleOpen(s, 3));
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 2000, 88000));
+    // A timeout with 60 s left reopens nothing, and the retry's time rule is not what refuses it.
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
     WalkoutReturnDone(s);
-    CHECK(WalkoutCycleOpen(s, 3));
-    CHECK(WalkoutMayStart(s, 3, 200));
-    CHECK(!WalkoutMayStart(s, 3, 100));
-    // The second one times out too, with plenty left: no third walk-out in this cycle, ever.
-    SeekWalkoutState t;
-    WalkoutStart(t, 7, 100, 1000, 3, 89000);
-    CHECK(WalkoutFinish(t, WalkoutEnd::Timeout, 26000));
-    WalkoutReturnDone(t);
-    WalkoutStart(t, 8, 200, 27000, 3, 63000);
-    CHECK(!WalkoutFinish(t, WalkoutEnd::Timeout, 28000));
-    WalkoutReturnDone(t);
-    CHECK(!WalkoutCycleOpen(t, 3));
-    CHECK(!WalkoutMayStart(t, 3, 300));
+    CHECK(WalkoutRetryStartInTime(s, 3, 26000));
+    CHECK(!WalkoutRetryAllowed(s, 26000));
+    CHECK(!WalkoutCycleOpen(s, 3));
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 27000, 63000));
     // The next cycle starts its own count.
-    CHECK(WalkoutCycleOpen(t, 4));
-    CHECK(WalkoutMayStart(t, 4, 300));
+    CHECK(WalkoutCycleOpen(s, 4));
+    CHECK(WalkoutMayStart(s, 4, 200));
 }
 
 static void TestWalkoutTimeoutLateSpendsCycle()
 {
-    // A timeout with 20 s left: a second Son could not be brought and burned before the siphon, so the cycle is spent.
+    // A timeout spends the cycle at any time left (max one walk-out): an abort (puller dead, the boss's victim) or a
+    // Back end neither reopens it.
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3, 45000); // due at 46000
+    WalkoutStart(s, 7, 100, 1000, 3, 45000); // due at 46000: 20 s left
     CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
     WalkoutReturnDone(s);
     CHECK(!WalkoutMayStart(s, 3, 200));
-    // Exactly 25 s left is not more than 25 s.
-    SeekWalkoutState e;
-    WalkoutStart(e, 7, 100, 1000, 3, 50000); // due at 51000
-    CHECK(!WalkoutFinish(e, WalkoutEnd::Timeout, 26000));
-    // A Back end is the cycle's Son: never reopened. An abort (puller dead, the boss's victim) neither.
     SeekWalkoutState b;
     WalkoutStart(b, 7, 100, 1000, 3, 89000);
     WalkoutNoteShot(b);
@@ -568,10 +577,9 @@ static void TestWalkoutTimeoutLateSpendsCycle()
     CHECK(!WalkoutMayStart(a, 3, 200));
 }
 
-static void TestWalkoutUnspentRetryNeedsTimeAndCap()
+static void TestWalkoutUnspentNeverRetries()
 {
-    // A failed cast or "no stand" frees the Son; the cycle reopens only with more than 25 s left and fewer than two
-    // walk-outs started in it.
+    // A failed cast or "no stand" frees the Son but not the cycle: one walk-out per cycle, however much time is left.
     SeekWalkoutState late;
     WalkoutStart(late, 7, 100, 1000, 3, 21000); // due at 22000
     WalkoutAbortUnspent(late, 2000);
@@ -580,19 +588,18 @@ static void TestWalkoutUnspentRetryNeedsTimeAndCap()
     CHECK(WalkoutMayStart(late, 4, 100)); // the Son itself is free again
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3, 89000);
-    CHECK(WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
-    WalkoutReturnDone(s);
-    WalkoutStart(s, 8, 200, 27000, 3, 63000);
-    WalkoutAbortUnspent(s, 28000); // 62 s left, but the second walk-out of the cycle: a third never starts
+    WalkoutAbortUnspent(s, 2000); // 87 s left: still no second walk-out
     WalkoutReturnDone(s);
     CHECK(!WalkoutMayStart(s, 3, 200));
-    CHECK(kSeekWalkoutMaxPerCycle == 2);
+    CHECK(WalkoutMayStart(s, 4, 200));
+    CHECK(kSeekWalkoutMaxPerCycle == 1);
     CHECK(kSeekWalkoutRetryMinMs == 25000);
 }
 
 static void TestWalkoutForgetsDeadSons()
 {
-    // A walked Son that died is forgotten: once it respawns (49033/49034 come back after 60 s) it is the retry's Son.
+    // A walked Son that died is forgotten: once it respawns (49033/49034 come back after 60 s) it is the next cycle's
+    // Son.
     // A Son still alive stays walked; the running task's own Son is never forgotten.
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 1, 70000);
@@ -608,50 +615,49 @@ static void TestWalkoutForgetsDeadSons()
     CHECK(!WalkoutMayStart(s, 3, 200));
 }
 
-static void TestWalkoutRetryTimeCheckedAtStart()
+static void TestWalkoutRetryNeverStarts()
 {
-    // The retry's 25 s minimum is checked when the replacement starts, against the stored siphon deadline: a timeout
-    // with 40 s left reopens the cycle, but a walk back that ends with 20 s left leaves no time for a second Son.
+    // The retry's own checks are still there but cannot pass the cap: a walk-out that timed out with 40 s left is the
+    // cycle's only one. The first start of the next cycle keeps the plain siphon lead.
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3, 65000); // the siphon is due at 66000
-    CHECK(WalkoutFinish(s, WalkoutEnd::Timeout, 26000)); // 40 s left
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000)); // 40 s left
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStartFor(s, 3, 200, 8, 26000, 40000));
-    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 46000, 20000)); // the walk back ended with 20 s left
-    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 41000, 25000)); // exactly 25 s is not more
-    CHECK(WalkoutMayStartFor(s, 3, 200, 8, 40999, 25001));
-    // The check is the retry's only: the next cycle's first walk-out keeps the plain lead.
+    CHECK(WalkoutRetryStartInTime(s, 3, 26000));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 26000, 40000));
     CHECK(WalkoutMayStartFor(s, 4, 200, 8, 70000, 20000));
-    // An unspent abort's retry is held to the same deadline.
+    // An unspent abort's cycle is just as spent.
     SeekWalkoutState u;
     WalkoutStart(u, 7, 100, 1000, 3, 65000);
     WalkoutAbortUnspent(u, 2000);
     WalkoutReturnDone(u);
-    CHECK(WalkoutMayStartFor(u, 3, 100, 8, 2000, 64000));
-    CHECK(!WalkoutMayStartFor(u, 3, 100, 8, 46000, 20000));
+    CHECK(!WalkoutMayStartFor(u, 3, 100, 8, 2000, 64000));
+    CHECK(WalkoutMayStartFor(u, 4, 100, 8, 2000, 64000));
 }
 
 static void TestCastFailExcludesPuller()
 {
-    // A cast that fails at the stand frees the Son and (with time left) the cycle, and the puller sits out the picks
-    // for 60 s like a move fail: the retry goes to another bot instead of the same puller, Son and stand.
+    // A cast that fails at the stand frees the Son, and the puller sits out the picks for 60 s like a move fail: the
+    // next cycle's walk-out goes to another bot instead of the same puller, Son and stand.
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 3, 65000);
     WalkoutCastFailed(s, 7, 2000);
     WalkoutReturnDone(s);
     CHECK(WalkoutExcluded(s, 7, 2000));
-    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 2500, 63500));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 2500, 63500));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 8, 2500, 63500));
+    CHECK(!WalkoutMayStartFor(s, 4, 100, 7, 2500, 63500));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 8, 2500, 63500));
     CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
 }
 
 int main()
 {
-    TestWalkoutRetryTimeCheckedAtStart();
+    TestWalkoutRetryNeverStarts();
     TestCastFailExcludesPuller();
-    TestWalkoutTimeoutLeavesCycleOpen();
+    TestOneWalkoutPerCycle();
+    TestWalkoutWaitsOnlyForACastOnTheSon();
     TestWalkoutTimeoutLateSpendsCycle();
-    TestWalkoutUnspentRetryNeedsTimeAndCap();
+    TestWalkoutUnspentNeverRetries();
     TestWalkoutForgetsDeadSons();
     TestRoleOrder();
     TestExclusions();

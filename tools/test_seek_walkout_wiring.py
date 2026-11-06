@@ -20,6 +20,11 @@ def body(text, signature):
     return text[start:end]
 
 
+def walkout_branch():
+    fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+    return fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
+
+
 class SeekWalkoutWiring(unittest.TestCase):
     def test_the_puller_alone_is_exempt_from_the_anchor(self):
         # The exemption lives in the one live-anchor read, so every clamp and the ChaseTo refusal drop for the puller
@@ -246,9 +251,10 @@ class SeekWalkoutT1105j(unittest.TestCase):
 
     def test_a_timeout_logs_the_shot_and_the_distance(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened);",
-                      update)
-        self.assertIn('"seek pull: walk-out timeout shot=%d dist=%.1f retry=%d"', ACTIONS)
+        self.assertIn("LogSeekWalkoutTimeout(ai, state.shot,", update)
+        self.assertIn("spellId, los, z, standYd);", update)
+        for field in ("shot=%d", "dist=%.1f", "retry=%d", "spell=%u", "los=%d", "z=%.1f", "stand=%.1f"):
+            self.assertIn(field, ACTIONS)
 
     def test_the_retry_time_is_read_at_the_start(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -259,6 +265,44 @@ class SeekWalkoutT1105j(unittest.TestCase):
         self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());",
                       abort)
         self.assertIn("it->second.scanned = false;", abort)
+
+
+class SeekWalkoutT1106b(unittest.TestCase):
+    def test_a_cast_on_the_boss_is_interrupted_and_the_son_shot(self):
+        walk = walkout_branch()
+        # Only a cast aimed at the Son is waited for: a hunter's Auto Shot still on Hakkar (or a wand's Shoot) is
+        # not the pull, so it is interrupted and the shot goes out now.
+        self.assertIn("Spell* const cast = WalkoutCurrentCast(bot, task.source, castOnSon);", walk)
+        wait = walk.index("if (WalkoutShotWaits(castOnSon, cast != nullptr))")
+        interrupt = walk.index("bot->InterruptNonMeleeSpells(false);")
+        self.assertLess(wait, interrupt)
+        # The interrupt comes before the cast check: a generic cast on the boss would refuse the new one otherwise.
+        self.assertLess(interrupt, walk.index("ai->CanCastSpell(spell, task.source)"))
+        self.assertLess(interrupt, walk.index("ai->CastSpell(spell, task.source)"))
+        self.assertNotIn("IsNonMeleeSpellCasted(false, false, false)", walk)
+        # One walk-out per cycle: the retry paths stay, but a retry is never allowed.
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn("constexpr int kSeekWalkoutMaxPerCycle = 1;", policy)
+        for fn in ("inline bool WalkoutRetryAllowed(", "inline bool WalkoutRetryStartInTime("):
+            self.assertIn(fn, policy)
+
+    def test_the_current_cast_spans_the_three_slots(self):
+        current = body(ACTIONS, "Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)")
+        self.assertIn("CURRENT_GENERIC_SPELL", current)
+        self.assertIn("CURRENT_CHANNELED_SPELL", current)
+        self.assertIn("CURRENT_AUTOREPEAT_SPELL", current)
+        self.assertIn("m_targets.getUnitTarget() == son", current)
+
+    def test_the_timeout_logs_the_cast_the_los_and_the_stand(self):
+        log = body(ACTIONS, "void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry,")
+        for field in ("spell=%u", "los=%d", "z=%.1f", "stand=%.1f"):
+            self.assertIn(field, log)
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        timeout = update[update.index("if (end == WalkoutEnd::Timeout)"):]
+        self.assertIn("WalkoutCurrentCast(puller, son, castOnSon)", timeout)
+        self.assertIn("IsWithinLOSInMap(son)", timeout)
+        self.assertIn("GetPositionZ()", timeout)
+        self.assertIn("GetDistance2d(state.standX, state.standY)", timeout)
 
 
 if __name__ == "__main__":

@@ -1501,13 +1501,33 @@ void LogSeekWalkoutEnd(PlayerbotAI* ai, WalkoutEnd end)
     LogSeekWalkout(ai, info1);
 }
 
-// A timeout's row: whether the shot landed (the Son joined the fight), the puller's distance to its Son (-1: unknown),
-// and whether the cycle stays open for one more walk-out.
-void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry)
+// The bot's current cast in the slots that hold a puller at the stand: the generic one, else the channel, else the
+// auto-repeat (a hunter's Auto Shot, a wand's Shoot). `onSon`: one of them is aimed at `son`.
+Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)
 {
-    char info1[128];
-    snprintf(info1, sizeof(info1), "seek pull: walk-out timeout shot=%d dist=%.1f retry=%d", shot ? 1 : 0, sonYd,
-             retry ? 1 : 0);
+    Spell* current = nullptr;
+    onSon = false;
+    for (CurrentSpellTypes type : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
+    {
+        Spell* const spell = bot->GetCurrentSpell(type);
+        if (spell && !current)
+            current = spell;
+        if (son && spell && spell->m_targets.getUnitTarget() == son)
+            onSon = true;
+    }
+    return current;
+}
+
+// A timeout's row: whether the shot landed (the Son joined the fight), the puller's distance to its Son (-1: unknown),
+// whether the cycle stays open for one more walk-out, the cast that was running (0: none), its target being the Son,
+// and the puller's height and distance to the stand it was given.
+void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry, std::uint32_t spellId, bool los,
+                           float z, float standYd)
+{
+    char info1[192];
+    snprintf(info1, sizeof(info1),
+             "seek pull: walk-out timeout shot=%d dist=%.1f retry=%d spell=%u los=%d z=%.1f stand=%.1f",
+             shot ? 1 : 0, sonYd, retry ? 1 : 0, static_cast<unsigned>(spellId), los ? 1 : 0, z, standYd);
     LogSeekWalkout(ai, info1);
 }
 
@@ -1835,7 +1855,15 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         if (end == WalkoutEnd::Timeout)
         {
-            LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened);
+            bool castOnSon = false;
+            Spell* const cast = puller ? WalkoutCurrentCast(puller, son, castOnSon) : nullptr;
+            std::uint32_t const spellId = cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0;
+            bool const los = puller && son && puller->IsWithinLOSInMap(son);
+            float const z = puller ? puller->GetPositionZ() : -1.0f;
+            float const standYd = puller && state.standMs ?
+                puller->GetDistance2d(state.standX, state.standY) : -1.0f;
+            LogSeekWalkoutTimeout(ai, state.shot, puller && son ? puller->GetDistance(son) : -1.0f, reopened,
+                                  spellId, los, z, standYd);
             return;
         }
         if (end != WalkoutEnd::None)
@@ -6267,9 +6295,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;
-                // A cast or the auto shot already under way: let it land.
-                if (bot->IsNonMeleeSpellCasted(false, false, false))
+                // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
+                // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
+                // now.
+                bool castOnSon = false;
+                Spell* const cast = WalkoutCurrentCast(bot, task.source, castOnSon);
+                if (WalkoutShotWaits(castOnSon, cast != nullptr))
                     return true;
+                bot->InterruptNonMeleeSpells(false);
                 if (!bot->IsStopped())
                     ai->StopMoving();
                 // The exact cast, cast directly: the generic attack would send the pet in. A shot that cannot be cast
