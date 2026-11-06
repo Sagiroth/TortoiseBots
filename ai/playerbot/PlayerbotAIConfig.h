@@ -773,6 +773,9 @@ public:
     // Masterless pool bots also greet real players (off: greetings are for a
     // bot's own player).
     bool randomBotGreet;
+    // Passing buffs from pool bots to real players they meet: a friendly
+    // player running past gets a buff cast on them. On by default.
+    bool passingBuffs;
     bool randomBotShowHelmet;
     bool randomBotShowCloak;
     bool gearscorecheck;

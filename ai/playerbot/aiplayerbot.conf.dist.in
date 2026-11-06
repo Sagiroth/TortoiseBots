@@ -1581,6 +1581,14 @@ AiPlayerbot.GreetCooldown = 600
 # of greetings answers every visitor, so it is opt-in.
 AiPlayerbot.RandomBotGreet = 0
 
+# Pool bots buff (and sometimes heal) real players they pass in the world.
+# A passing priest casts Power Word: Fortitude, a druid Mark of the Wild, a
+# mage Arcane Intellect (mana users only), a paladin one Blessing fitting the
+# player's class; a passing priest/druid lands Renew/Rejuvenation on a player
+# below 35% health. Only instant casts on the move, the bot never stops or
+# leaves its travel. 0 disables the sweeps entirely.
+AiPlayerbot.PassingBuffs = 1
+
 # Chance (0-1) that a bot in combat plays an attack emote
 #AiPlayerbot.AttackEmoteChance = 0.0
 
