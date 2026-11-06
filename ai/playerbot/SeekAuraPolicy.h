@@ -320,6 +320,27 @@ namespace ai
         return !isBossVictim;
     }
 
+    // Who pulls an unengaged Son this read: exactly one actor. The third off-tank while three tanks live and it is not
+    // the boss's victim (SeekTankTakeAllowed stands its whole task down then); otherwise the ranged fallback (two tanks,
+    // the third off-tank the victim, or the anchored shot that leaves the tanks no Son to walk to).
+    struct SeekPullActors
+    {
+        bool thirdTank = false;
+        bool fallback = false;
+    };
+
+    inline SeekPullActors SeekPullActorsFor(std::size_t tankCount, bool thirdTankIsBossVictim, bool anchorShot)
+    {
+        SeekPullActors out;
+        if (tankCount >= 3 && !thirdTankIsBossVictim && !anchorShot)
+        {
+            out.thirdTank = true;
+            return out;
+        }
+        out.fallback = tankCount >= 2;
+        return out;
+    }
+
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive
     // the off-tank (tanks[1]) takes the Son over instead, and the raid's nearest hunter pulls it with one ranged shot;
     // without a hunter the nearest ranged damage dealer does. Nobody pulls when there is no off-tank to take it over.

@@ -63,5 +63,17 @@ class SeekSonHoldReview(unittest.TestCase):
             self.assertNotIn(stale, ACTIONS)
 
 
+class SeekSonHoldLastRound(unittest.TestCase):
+    def test_the_fallback_pulls_while_the_third_tank_is_the_victim(self):
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("SeekPullActorsFor(roles.tanks.size(), thirdTankIsBossVictim, anchorShot)", read)
+        self.assertIn("thirdTankIsBossVictim = roles.tanks.size() >= 3 && boss->GetVictim() == roles.tanks[2]", read)
+        self.assertIn("FindSeekFallbackPuller(ai, bot, roles, boss, *row, actors.fallback)", read)
+        self.assertIn("out.fallbackOpen = actors.fallback;", read)
+        tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row, state.fallbackOpen)", tank)
+        self.assertIn("(roles.tanks.size() >= 3 && !state.fallbackOpen)", tank)
+
+
 if __name__ == "__main__":
     unittest.main()

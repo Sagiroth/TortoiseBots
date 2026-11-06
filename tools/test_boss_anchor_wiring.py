@@ -151,7 +151,7 @@ class BossAnchorFixRound1(unittest.TestCase):
         stand = body(ACTIONS, "bool AnchorShotStandFor(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
         self.assertIn("isInLineOfSight(", stand)
         self.assertIn("AnchorFloorOk(", stand)
-        self.assertIn("FindSeekFallbackPuller(ai, bot, roles, boss, *row, anchorShot)", read)
+        self.assertIn("FindSeekFallbackPuller(ai, bot, roles, boss, *row, actors.fallback)", read)
         tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         self.assertIn("state.anchorShot", tank)
         self.assertIn("LogSeekPullRangedFromAnchor(ai, bot)", ACTIONS)

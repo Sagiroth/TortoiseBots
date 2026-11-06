@@ -171,6 +171,22 @@ int main()
     CHECK(SeekTankTakeAllowed(false));
     CHECK(!SeekTankTakeAllowed(true));
 
+    // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
+    // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.
+    {
+        const SeekPullActors normal = SeekPullActorsFor(3, false, false);
+        CHECK(normal.thirdTank && !normal.fallback);
+        const SeekPullActors victim = SeekPullActorsFor(3, true, false);
+        CHECK(!victim.thirdTank && victim.fallback);
+        const SeekPullActors two = SeekPullActorsFor(2, false, false);
+        CHECK(!two.thirdTank && two.fallback);
+        // The anchored shot opens the fallback beside an idle third off-tank (the tanks have no Son to walk to).
+        const SeekPullActors anchored = SeekPullActorsFor(3, false, true);
+        CHECK(!anchored.thirdTank && anchored.fallback);
+        const SeekPullActors none = SeekPullActorsFor(1, false, false);
+        CHECK(!none.thirdTank && !none.fallback);
+    }
+
     // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
     // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),
     // the hold is today's.

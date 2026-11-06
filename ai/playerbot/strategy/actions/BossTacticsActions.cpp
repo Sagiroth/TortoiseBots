@@ -771,6 +771,9 @@ struct SeekFight
     Unit* pullTarget = nullptr;
     // A live boss anchor and this bot is the ranged puller: the shot is fired from (shotX, shotY, shotZ) inside it.
     bool anchorShot = false;
+    // The ranged fallback pulls this read (SeekPullActorsFor: two tanks, the third off-tank the boss's victim, or the
+    // anchored shot).
+    bool fallbackOpen = false;
     float shotX = 0.0f, shotY = 0.0f, shotZ = 0.0f;
     // This bot runs the fight's walk-out task (SeekWalkoutPolicy.h): out to shoot pullTarget, or back once shot.
     bool walkout = false;
@@ -2235,9 +2238,14 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
                                         candidate->GetPositionZ()));
             anchorShot = !tankSon;
         }
-        const bool fallback = !thirdTank && (SeekFallbackPullBranch(roles.tanks.size()) || anchorShot) &&
-            FindSeekFallbackPuller(ai, bot, roles, boss, *row, anchorShot) == bot;
-        out.puller = thirdTank || fallback;
+        // The third off-tank stands its whole task down while it is the boss's victim (FindBossSeekTank); the ranged
+        // fallback takes the unengaged pull that cycle, so the poison window still gets its Son.
+        const bool thirdTankIsBossVictim = roles.tanks.size() >= 3 && boss->GetVictim() == roles.tanks[2];
+        const SeekPullActors actors = SeekPullActorsFor(roles.tanks.size(), thirdTankIsBossVictim, anchorShot);
+        out.fallbackOpen = actors.fallback;
+        const bool fallback = !thirdTank && actors.fallback &&
+            FindSeekFallbackPuller(ai, bot, roles, boss, *row, actors.fallback) == bot;
+        out.puller = (thirdTank && !thirdTankIsBossVictim) || fallback;
         out.anchorShot = fallback && anchored;
         if (out.puller)
         {
@@ -5961,8 +5969,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         // to (the state's anchorShot, read below).
         if (roles.tanks.size() < 2)
             return task;
-        if (roles.tanks.size() >= 3 && !GetBossTactics().HasAnchorMap(bot->GetMapId()))
-            return task;
+        // (With three tanks the fallback also pulls while the third off-tank is the boss's victim: the state says so.)
         if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
             return task;
     }
@@ -6000,7 +6007,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         return task;
     }
     if (!thirdTank && !pickupTank && !healerTaker &&
-        (roles.tanks.size() >= 3 || FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot))
+        ((roles.tanks.size() >= 3 && !state.fallbackOpen) ||
+            FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row, state.fallbackOpen) != bot))
         return task;
     // An off-tank that is the boss's victim takes no Son, drags none and walks no pull: it would bring the boss onto
     // the gather (after Cause Insanity the threat successor can hand Hakkar to it). The other off-tank takes the Son.

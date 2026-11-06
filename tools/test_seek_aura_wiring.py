@@ -354,7 +354,7 @@ class SeekRolesWiring(unittest.TestCase):
         # the pick.
         read = body(ACTIONS, "bool ReadSeekFight(")
         self.assertIn("const RaidTankRoles roles = GetRaidTankRoles(ai);", read)
-        self.assertIn("out.puller = thirdTank || fallback;", read)
+        self.assertIn("out.puller = (thirdTank && !thirdTankIsBossVictim) || fallback;", read)
         # The pick is the running pull's latch while it holds (the Son patrols past the pickup radius), else the
         # tick's due pickup.
         self.assertIn("SeekPullLatchKeeps(true, latchedPull->GetDistance2dToCenter(row->spotX, row->spotY),", read)
