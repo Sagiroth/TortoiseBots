@@ -2374,6 +2374,18 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (sPlayerbotAIConfig.avoidCreatureAuras && HoldChaseOutsideKeepout(obj, distance))
         return true;
 
+    // A live boss anchor (BossAnchorPolicy.h, Hakkar's platform): no chase to a hostile beyond its radius plus the melee
+    // reach, and every chase destination stays on the circle. Without a live anchor row none of this runs.
+    BossAnchorCircle anchor;
+    const bool anchored = LiveBossAnchor(ai, bot, anchor);
+    Unit* const chased = dynamic_cast<Unit*>(obj);
+    if (anchored && chased && bot->IsHostileTo(chased) &&
+        !AnchorAllowsChase(anchor, obj->GetPositionX(), obj->GetPositionY(), kBossAnchorChaseReachYd))
+    {
+        sLog.outDetail("[BOT CHASE] %s -> %s: outside the boss anchor, held", bot->GetName(), obj->GetName());
+        return false;
+    }
+
 
     if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
         angle = GetFollowAngle() / 3 + obj->getOrientation() + M_PI;
@@ -2399,12 +2411,28 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     // and a bot on the hill above it that point is the hill - the bot walks there,
     // still sees nothing and repeats, or falls back to a chase that does not move.
     if (distanceToTarget > sPlayerbotAIConfig.sightDistance || !bot->IsWithinLOSInMap(obj, true))
-        return MoveTo(targetPosition.GetMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
+    {
+        float farX = targetPosition.getX();
+        float farY = targetPosition.getY();
+        float farZ = targetPosition.getZ();
+        if (anchored && !ClampMoveToBossAnchor(ai, bot, farX, farY, farZ))
+            return false;
+        return MoveTo(targetPosition.GetMapId(), farX, farY, farZ);
+    }
 
     const Vector3 directionToTarget = (targetPoint - botPoint).directionOrZero();
-    const Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
+    Vector3 endPoint = botPoint + (directionToTarget * std::min(distance, distanceToTarget));
     WorldPosition endPosition(obj->GetMapId(), endPoint.x, endPoint.y, endPoint.z);
     endPosition.setZ(endPosition.GetHeight());
+    {
+        float endX = endPosition.getX();
+        float endY = endPosition.getY();
+        float endZ = endPosition.getZ();
+        if (anchored && !ClampMoveToBossAnchor(ai, bot, endX, endY, endZ))
+            return false;
+        endPosition = WorldPosition(obj->GetMapId(), endX, endY, endZ);
+        endPoint = Vector3(endX, endY, endZ);
+    }
 
     // Check if the end position is inside a hazard
     HazardPosition hazardPosition;
@@ -2495,6 +2523,10 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 
     if (!endPosition.isValid()) return false;
     if (angle > 20) angle = 0;
+
+    // The core chase follows its target wherever it goes: never toward one outside a live boss anchor.
+    if (anchored && !InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY()))
+        return false;
 
     bot->SetTargetGuid(obj->getObjectGuid()); //Needed to keep chase going in combat.
     bot->Attack((Unit*)obj, false); //Needed to keep chase going in combat.

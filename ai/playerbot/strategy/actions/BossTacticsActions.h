@@ -546,6 +546,8 @@ namespace ai
     // fight (among its side's attackers, alive, in combat, not evading), with the bot's own radius (tanks may have a
     // tighter one). False on a map without anchor rows, without "boss tactics", or when no anchored boss fights.
     bool LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out);
+    // The same read, handing back the live anchor row itself (so a caller can take another role's circle of it).
+    const BossTacticRow* LiveBossAnchorRow(PlayerbotAI* ai, Player* bot);
     // Every boss/raid mover's destination goes through here before its MoveTo: unchanged without a live anchor or
     // inside it; outside, moved onto the circle toward the destination with the floor read there. False: the clamped
     // point has no floor on the centre's level, so the caller skips the move this tick.
@@ -579,6 +581,7 @@ namespace ai
         bool take = false;
         bool pull = false;
         bool rangedPull = false; // the fallback's one shot, instead of the tank's walk-in and swing
+        bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

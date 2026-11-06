@@ -9,6 +9,8 @@ namespace ai
     // The stay walk is due now (runtime/StayArrivalPolicy.h StayWalkDue): its action's
     // isUseful and its trigger both ask this.
     bool StayWalkDueNow(PlayerbotAI* ai, Player* bot, PositionEntry const& stayPosition);
+    // The point the stay walk goes to (the stay, or its point on a live boss anchor's circle); false: no floor there.
+    bool StayWalkPoint(PlayerbotAI* ai, Player* bot, PositionEntry& stay);
 
     class PositionAction : public ChatCommandAction
     {

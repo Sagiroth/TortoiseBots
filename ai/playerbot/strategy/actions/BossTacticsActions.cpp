@@ -766,6 +766,9 @@ struct SeekFight
     // The hold exemption compares against this pick, so another Son stays held even under the puller's own hit.
     bool puller = false;
     Unit* pullTarget = nullptr;
+    // A live boss anchor and this bot is the ranged puller: the shot is fired from (shotX, shotY, shotZ) inside it.
+    bool anchorShot = false;
+    float shotX = 0.0f, shotY = 0.0f, shotZ = 0.0f;
     // A Son that fights a non-tank while the third off-tank cannot take it: the first off-tank's own take, once the
     // fight record says the non-tank has had it for a while (SeekTakeFightingSonOnHealer).
     Unit* healerSon = nullptr;
@@ -1088,7 +1091,7 @@ bool IsSeekExemptTank(const RaidTankRoles& roles, Player* member)
 // are no puller: the victim cannot shoot and a charmed bot is hostile. Null when no off-tank is alive to take the Son
 // over or nobody in the raid can shoot it.
 Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss,
-                               const BossTacticRow& row)
+                               const BossTacticRow& row, bool anchorShot = false)
 {
     Player* hunter = nullptr;
     float hunterYd = 0.0f;
@@ -1128,7 +1131,10 @@ Player* FindSeekFallbackPuller(PlayerbotAI* ai, Player* bot, const RaidTankRoles
     }
     else
         judge(bot);
-    switch (SeekPullRoleOf(false, SeekFallbackPullBranch(roles.tanks.size()), hunter != nullptr, ranged != nullptr))
+    // A live boss anchor that leaves the tanks no Son to walk to opens the ranged shot whatever the tank count: the
+    // third off-tank takes the Son over once it fights.
+    switch (SeekPullRoleOf(false, SeekFallbackPullBranch(roles.tanks.size()) || anchorShot, hunter != nullptr,
+                           ranged != nullptr))
     {
         case SeekPullRole::Hunter: return hunter;
         case SeekPullRole::Ranged: return ranged;
@@ -1326,6 +1332,38 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
         last = nowMs;
     }
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: skip anchor", "");
+}
+
+// The ranged puller's shot from inside a live boss anchor at a Son outside it: the pull rows' throttle, as the skip.
+void LogSeekPullRangedFromAnchor(PlayerbotAI* ai, Player* bot)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        std::uint32_t& last = g_seekPullLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kSeekLogGapMs)
+            return;
+        last = nowMs;
+    }
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: ranged from anchor", "");
+}
+
+// Where a ranged puller inside a live boss anchor shoots `son` from (AnchorRangedShotStand): the stand's floor on the
+// anchor's level and a sight line from it to the Son. False when the stand is out of range, off the floor or blind.
+bool AnchorShotStandFor(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd, float& x, float& y, float& z)
+{
+    if (!AnchorRangedShotStand(c, son->GetPositionX(), son->GetPositionY(), rangeYd, x, y))
+        return false;
+    Map* map = bot->GetMap();
+    if (!map)
+        return false;
+    float const floor = map->GetHeight(x, y, c.z + 5.0f);
+    if (!AnchorFloorOk(c, floor > INVALID_HEIGHT, floor))
+        return false;
+    z = floor;
+    return map->isInLineOfSight(x, y, z + 2.0f, son->GetPositionX(), son->GetPositionY(), son->GetPositionZ() + 2.0f, true);
 }
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
@@ -1544,26 +1582,43 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     if (out.windowOpen && out.seekers >= kSeekPullMinMissing)
     {
         const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
-        const bool fallback = !thirdTank && SeekFallbackPullBranch(roles.tanks.size()) &&
-            FindSeekFallbackPuller(ai, bot, roles, boss, *row) == bot;
+        // A live boss anchor: the third off-tank walks only to a Son inside the tanks' reach (radius + hit reach, on
+        // the centre's level). When none stands there, the ranged fallback shoots one from inside the anchor, whatever
+        // the tank count, and the Son walks up to the raid.
+        const BossTacticRow* anchorRow = LiveBossAnchorRow(ai, bot);
+        const bool anchored = anchorRow != nullptr;
+        BossAnchorCircle tankAnchor;
+        BossAnchorCircle shotAnchor;
+        if (anchored)
+        {
+            tankAnchor = AnchorCircleOf(*anchorRow, true);
+            shotAnchor = AnchorCircleOf(*anchorRow, PlayerbotAI::IsTank(bot));
+        }
+        const std::vector<Creature*> pickup =
+            SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ, kSeekPickupYd);
+        bool anchorShot = false;
+        if (anchored && !thirdTank && roles.tanks.size() >= 3)
+        {
+            bool tankSon = false;
+            for (Creature* candidate : pickup)
+                tankSon = tankSon || (!candidate->IsInCombat() &&
+                    SeekPullSonInAnchor(tankAnchor, candidate->GetPositionX(), candidate->GetPositionY(),
+                                        candidate->GetPositionZ()));
+            anchorShot = !tankSon;
+        }
+        const bool fallback = !thirdTank && (SeekFallbackPullBranch(roles.tanks.size()) || anchorShot) &&
+            FindSeekFallbackPuller(ai, bot, roles, boss, *row, anchorShot) == bot;
         out.puller = thirdTank || fallback;
+        out.anchorShot = fallback && anchored;
         if (out.puller)
         {
-            // A live boss anchor: only a Son inside it (the puller's radius plus the hit reach, on the centre's level)
-            // may be pulled, latched or new; the puller never walks off the platform for one.
-            BossAnchorCircle pullAnchor;
-            const bool anchored = LiveBossAnchor(ai, bot, pullAnchor);
-            auto const inAnchor = [&](Unit* son)
-            {
-                return !anchored ||
-                    SeekPullSonInAnchor(pullAnchor, son->GetPositionX(), son->GetPositionY(), son->GetPositionZ());
-            };
+            const float shotRange = ai->GetRange("spell");
             Creature* latchedPull = thirdTank && pullGuid ? bot->GetMap()->GetCreature(ObjectGuid(pullGuid)) : nullptr;
             const bool latchKept = latchedPull && latchedPull->GetEntry() == row->targetEntry &&
                 sServerFacade.IsAlive(latchedPull) &&
                 SeekPullLatchKeeps(true, latchedPull->GetDistance2dToCenter(row->spotX, row->spotY),
                                    nowMs - pullStartMs) &&
-                (!anchored || SeekPullSonInAnchor(pullAnchor, latchedPull->GetPositionX(), latchedPull->GetPositionY(),
+                (!anchored || SeekPullSonInAnchor(tankAnchor, latchedPull->GetPositionX(), latchedPull->GetPositionY(),
                                                   latchedPull->GetPositionZ()));
             if (latchKept)
                 out.pullTarget = latchedPull;
@@ -1571,29 +1626,53 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             {
                 Unit* nearest = nullptr;
                 float nearestYd = std::numeric_limits<float>::max();
+                float nearestShotX = 0.0f, nearestShotY = 0.0f, nearestShotZ = 0.0f;
                 bool anyInCombat = false;
                 bool skippedForAnchor = false;
-                for (Creature* candidate : SeekSourcesNear(bot, row->targetEntry, row->spotX, row->spotY, row->spotZ,
-                        kSeekPickupYd))
+                for (Creature* candidate : pickup)
                 {
                     const float toSpot = candidate->GetDistance2dToCenter(row->spotX, row->spotY);
                     if (candidate->IsInCombat())
                         anyInCombat = true;
-                    if (!inAnchor(candidate))
+                    float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+                    if (anchored)
                     {
-                        skippedForAnchor = true;
-                        continue;
+                        const bool inRange = !thirdTank &&
+                            AnchorRangedShotStand(shotAnchor, candidate->GetPositionX(), candidate->GetPositionY(),
+                                                  shotRange, sx, sy);
+                        const bool sees = inRange && AnchorShotStandFor(bot, shotAnchor, candidate, shotRange, sx, sy,
+                                                                        sz);
+                        const AnchorPull kind = AnchorSeekPull(tankAnchor, candidate->GetPositionX(),
+                            candidate->GetPositionY(), candidate->GetPositionZ(), inRange, sees);
+                        const bool usable = thirdTank ? kind == AnchorPull::TankWalk
+                                                      : kind != AnchorPull::Skip && inRange && sees;
+                        if (!usable)
+                        {
+                            skippedForAnchor = true;
+                            continue;
+                        }
                     }
                     if (toSpot < nearestYd)
                     {
                         nearest = candidate;
                         nearestYd = toSpot;
+                        nearestShotX = sx;
+                        nearestShotY = sy;
+                        nearestShotZ = sz;
                     }
                 }
-                const bool pullDue = thirdTank
+                // The anchored shot reaches the whole pickup radius (its Son walks up to the raid); the unanchored
+                // fallback keeps its own shorter reach.
+                const bool pullDue = thirdTank || anchored
                     ? SeekTankPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd)
                     : SeekFallbackPullDue(out.windowOpen, anyInCombat, out.seekers, nearestYd);
                 out.pullTarget = pullDue ? nearest : nullptr;
+                if (out.pullTarget && out.anchorShot)
+                {
+                    out.shotX = nearestShotX;
+                    out.shotY = nearestShotY;
+                    out.shotZ = nearestShotZ;
+                }
                 if (!nearest && skippedForAnchor && !anyInCombat)
                     LogSeekPullSkipAnchor(ai, bot);
             }
@@ -2011,11 +2090,18 @@ SeekTask ai::FindBossSeek(PlayerbotAI* ai, Player* bot)
     AiObjectContext* context = ai->GetAiObjectContext();
     DynamicObject* cloud = nullptr;
     float cloudDist = 0.0f;
+    // A live boss anchor: a cloud wholly outside it would hold the seeker at the circle's edge, chasing it; the gather
+    // goes on instead.
+    BossAnchorCircle cloudAnchor;
+    const bool cloudAnchored = LiveBossAnchor(ai, bot, cloudAnchor);
     for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "nearest dynamic objects no los"))
     {
         Map* map = bot->GetMap();
         DynamicObject* dyn = map ? map->GetDynamicObject(guid) : nullptr;
         if (!dyn || !IsSoughtCloudFor(ai, bot, dyn))
+            continue;
+        if (cloudAnchored &&
+            !AnchorReachesCloud(cloudAnchor, dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetRadius()))
             continue;
         const float dist = bot->GetDistance3dToCenter(dyn);
         if (dist > kSeekCloudSearchYd)
@@ -4969,10 +5055,19 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
 
 bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)
 {
+    const BossTacticRow* row = LiveBossAnchorRow(ai, bot);
+    if (!row)
+        return false;
+    out = AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
+    return true;
+}
+
+const BossTacticRow* ai::LiveBossAnchorRow(PlayerbotAI* ai, Player* bot)
+{
     if (!ai || !bot || !bot->IsInWorld() || !GetBossTactics().HasAnchorMap(bot->GetMapId()))
-        return false;
+        return nullptr;
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
-        return false;
+        return nullptr;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     for (const BossTacticRow* row : fight.rows)
     {
@@ -4987,11 +5082,10 @@ bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)
             Creature* creature = unit->ToCreature();
             if (creature && creature->IsInEvadeMode())
                 continue;
-            out = AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
-            return true;
+            return row;
         }
     }
-    return false;
+    return nullptr;
 }
 
 bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z)
@@ -5113,7 +5207,11 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     const bool healerTaker = roles.tanks.size() >= 3 && roles.tanks[1] == bot;
     if (!thirdTank && !pickupTank && !healerTaker)
     {
-        if (roles.tanks.size() < 2 || roles.tanks.size() >= 3)
+        // Three tanks or more leave the shot to the third off-tank, unless a live boss anchor left it no Son to walk
+        // to (the state's anchorShot, read below).
+        if (roles.tanks.size() < 2)
+            return task;
+        if (roles.tanks.size() >= 3 && !GetBossTactics().HasAnchorMap(bot->GetMapId()))
             return task;
         if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
             return task;
@@ -5121,7 +5219,25 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
-    if (!thirdTank && !pickupTank && !healerTaker && FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot)
+    if (!thirdTank && !pickupTank && !healerTaker && state.anchorShot)
+    {
+        // The ranged shot from inside the live boss anchor: the state picked the Son and the stand.
+        if (!state.puller || !state.pullTarget || state.pullTarget->IsInCombat())
+            return task;
+        task.row = state.row;
+        task.valid = true;
+        task.source = state.pullTarget;
+        task.pull = true;
+        task.rangedPull = true;
+        task.fromAnchor = true;
+        task.x = state.shotX;
+        task.y = state.shotY;
+        task.z = state.shotZ;
+        LogSeekPullRangedFromAnchor(ai, bot);
+        return task;
+    }
+    if (!thirdTank && !pickupTank && !healerTaker &&
+        (roles.tanks.size() >= 3 || FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row) != bot))
         return task;
     task.row = state.row;
     task.x = state.row->spotX;
@@ -5217,14 +5333,6 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     if (SeekFallbackPullDue(state.windowOpen, anyInCombat, state.seekers,
                             nearest ? nearestToSpot : std::numeric_limits<float>::max()))
     {
-        // A live boss anchor: the shot goes only to a Son inside it, the same rule as the third off-tank's pick.
-        BossAnchorCircle shotAnchor;
-        if (LiveBossAnchor(ai, bot, shotAnchor) &&
-            !SeekPullSonInAnchor(shotAnchor, nearest->GetPositionX(), nearest->GetPositionY(), nearest->GetPositionZ()))
-        {
-            LogSeekPullSkipAnchor(ai, bot);
-            return task;
-        }
         task.valid = true;
         task.source = nearest;
         task.pull = true;
@@ -5331,6 +5439,12 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
         // it stands, and the Son comes in to it.
         const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source);
+        if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
+        {
+            // Already after it: drop the target so the reach-melee follow stops, and stand.
+            SET_AI_VALUE(Unit*, "current target", nullptr);
+            ai->StopMoving();
+        }
         if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
             if (Attack(bot, task.source) && (!taunt || !ai->CanCastSpell(taunt, task.source)))
@@ -5342,6 +5456,44 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     }
     if (task.pull)
     {
+        if (task.rangedPull && task.fromAnchor)
+        {
+            if (task.source->IsInCombat() || task.source->GetVictim() == bot)
+            {
+                hasLast = false;
+                return false;
+            }
+            // From where the bot stands when it is inside the anchor, within spell range and in sight of the Son; else
+            // it walks to the stand inside the anchor first. Never a chase: the attack order carries no reach.
+            BossAnchorCircle circle;
+            const bool inside = !LiveBossAnchor(ai, bot, circle) ||
+                InsideAnchor(circle, bot->GetPositionX(), bot->GetPositionY());
+            if (!inside || sServerFacade.GetDistance2d(bot, task.source) > ai->GetRange("spell") ||
+                !bot->IsWithinLOSInMap(task.source))
+            {
+                float x = task.x;
+                float y = task.y;
+                float z = task.z;
+                if (!ClampMoveToBossAnchor(ai, bot, x, y, z))
+                {
+                    hasLast = false;
+                    return false;
+                }
+                if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - x) < 1.0f &&
+                    std::fabs(lastY - y) < 1.0f)
+                    return true;
+                if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))
+                    return false;
+                lastX = x;
+                lastY = y;
+                hasLast = true;
+                return true;
+            }
+            hasLast = false;
+            if (AI_VALUE(Unit*, "current target") != task.source)
+                return Attack(bot, task.source);
+            return ai->DoSpecificAction("shoot", event, true);
+        }
         if (task.rangedPull)
         {
             hasLast = false;

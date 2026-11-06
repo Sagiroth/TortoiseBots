@@ -122,6 +122,66 @@ static void TestSeekPullSonSelection()
     CHECK(!SeekPullSonInAnchor(c, c.x + 5.0f, c.y + 5.0f, 58.3f));
 }
 
+static void TestSeekPullEdgeHasNoSlack()
+{
+    // The pick reach is exactly the puller's radius plus the hit reach: a Son a hair past it is not picked, so the clamped
+    // walk (ending on the circle) always ends within the hit reach of a picked Son.
+    const BossAnchorCircle c = Hakkar(true);
+    CHECK(SeekPullSonInAnchor(c, c.x, c.y + 29.99f, 54.0f));
+    CHECK(!SeekPullSonInAnchor(c, c.x, c.y + 30.02f, 54.0f));
+}
+
+static void TestRangedShotFromAnchor()
+{
+    // A Son 50 yd out and 13 yd lower: no tank walks to it, but a shooter at the circle's point toward it (30 yd out,
+    // 20 yd from the Son) reaches it with a 26 yd spell range, and the z rule does not apply to the shot.
+    const BossAnchorCircle tank = Hakkar(true);
+    const BossAnchorCircle shooter = Hakkar(false);
+    const float sx = shooter.x - 50.0f;
+    const float sy = shooter.y;
+    const float sz = shooter.z - 13.0f;
+    CHECK(!SeekPullSonInAnchor(tank, sx, sy, sz));
+    float standX = 0.0f, standY = 0.0f;
+    CHECK(AnchorRangedShotStand(shooter, sx, sy, 26.0f, standX, standY));
+    CHECK(Near(standX, shooter.x - 30.0f) && Near(standY, shooter.y));
+    CHECK(AnchorSeekPull(tank, sx, sy, sz, true, true) == AnchorPull::RangedFromAnchor);
+    // Without sight from the stand, or out of the shooter's range, the cycle is skipped.
+    CHECK(AnchorSeekPull(tank, sx, sy, sz, true, false) == AnchorPull::Skip);
+    CHECK(!AnchorRangedShotStand(shooter, shooter.x - 60.0f, shooter.y, 26.0f, standX, standY));
+    CHECK(AnchorSeekPull(tank, sx, sy, sz, false, true) == AnchorPull::Skip);
+    // A Son the tank may walk to stays the tank's walk.
+    CHECK(AnchorSeekPull(tank, tank.x + 10.0f, tank.y, 54.0f, true, true) == AnchorPull::TankWalk);
+    // A Son already inside the shooter's circle is shot from where it stands (the stand is the Son's own point).
+    CHECK(AnchorRangedShotStand(shooter, shooter.x + 28.0f, shooter.y, 26.0f, standX, standY));
+    CHECK(Near(standX, shooter.x + 28.0f));
+}
+
+static void TestCloudOutsideAnchorIgnored()
+{
+    const BossAnchorCircle c = Hakkar(false);
+    // An 8 yd cloud whose edge reaches the circle is still taken.
+    CHECK(AnchorReachesCloud(c, c.x + 37.0f, c.y, 8.0f));
+    CHECK(AnchorReachesCloud(c, c.x + 10.0f, c.y, 8.0f));
+    // One whose nearest edge lies outside the circle is ignored: the seeker would stick at the edge.
+    CHECK(!AnchorReachesCloud(c, c.x + 38.5f, c.y, 8.0f));
+}
+
+static void TestChaseRefusedOutsideReach()
+{
+    // A chase may go to a hostile within the radius plus the melee reach of the centre; one farther out is refused (the
+    // bot holds and its rotation or the target logic answers).
+    const BossAnchorCircle c = Hakkar(false);
+    CHECK(AnchorAllowsChase(c, c.x + 10.0f, c.y, kBossAnchorChaseReachYd));
+    CHECK(AnchorAllowsChase(c, c.x + 34.9f, c.y, kBossAnchorChaseReachYd));
+    CHECK(!AnchorAllowsChase(c, c.x + 35.1f, c.y, kBossAnchorChaseReachYd));
+    // The walk 42 Son 49034, 78 yd NW.
+    CHECK(!AnchorAllowsChase(c, -11842.9f, -1594.18f, kBossAnchorChaseReachYd));
+    // Tanks hold the tighter circle: 25 + 5.
+    const BossAnchorCircle tank = Hakkar(true);
+    CHECK(!AnchorAllowsChase(tank, tank.x + 31.0f, tank.y, kBossAnchorChaseReachYd));
+    CHECK(AnchorAllowsChase(tank, tank.x + 29.0f, tank.y, kBossAnchorChaseReachYd));
+}
+
 static BossTacticRow AnchorRow()
 {
     BossTacticRow row;
@@ -235,6 +295,10 @@ int main()
     TestTankRadius25();
     TestFloor();
     TestSeekPullSonSelection();
+    TestSeekPullEdgeHasNoSlack();
+    TestRangedShotFromAnchor();
+    TestCloudOutsideAnchorIgnored();
+    TestChaseRefusedOutsideReach();
     TestAnchorKindParsesAndLoads();
     TestAnchorRowShapeRefused();
     std::cout << "boss anchor policy: all checks passed\n";

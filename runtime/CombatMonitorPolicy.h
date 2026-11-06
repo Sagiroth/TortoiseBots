@@ -25,6 +25,14 @@ constexpr float kBossHomeYd = 5.0f;           // the boss stands this near his s
 // A fight that ends with members alive (not a wipe) and the boss not dead is an evade when the boss's last sample shows
 // him alive and out of the fight: running home in evade mode, or out of combat and back at full health or at home.
 // A boss still in combat, wounded and away, or never sampled, leaves the plain end.
+// An evade needs survivors: at least max(3, 20 % of the members at the fight's start) alive at its end. Fewer is the
+// raid's loss, a wipe, whatever the boss does afterwards.
+inline bool EvadeHasSurvivors(uint32_t membersAtStart, uint32_t aliveAtEnd)
+{
+    uint32_t const fifth = (membersAtStart + 4) / 5;
+    return aliveAtEnd >= (fifth > 3 ? fifth : 3);
+}
+
 inline bool FightEndedInEvade(bool sampled, bool alive, bool inCombat, bool evading, bool fullHp, bool atHome)
 {
     if (!sampled || !alive)
@@ -1490,7 +1498,12 @@ private:
             o = Outcome::Unfinished;
         else if (FightEndedInEvade(bossState_.sampled, bossState_.alive, bossState_.inCombat, bossState_.evading,
                                    bossState_.fullHp, bossState_.atHome))
-            o = Outcome::Evade;
+        {
+            // The members at the start are the book's members; a member who died in the fight is in dead_.
+            uint32_t const members = static_cast<uint32_t>(order_.size());
+            uint32_t const dead = static_cast<uint32_t>(dead_.size());
+            o = EvadeHasSurvivors(members, members > dead ? members - dead : 0) ? Outcome::Evade : Outcome::Wipe;
+        }
         uint32_t const dur = endMs >= startMs_ ? endMs - startMs_ : 0;
         lastDurMs_ = dur;
         LiveEvent ev;

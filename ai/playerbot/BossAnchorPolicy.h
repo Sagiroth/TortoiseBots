@@ -9,6 +9,7 @@
 // the floor, and every mover calls it. Tested in tools/test_boss_anchor_policy.cpp.
 
 #include <cmath>
+#include <cstdint>
 
 namespace ai
 {
@@ -24,6 +25,8 @@ namespace ai
     // A seek-pull Son may stand this far past the puller's radius: the clamped walk then ends within the pull's hit
     // reach of it (SeekAuraPolicy.h kSeekPullHitYd).
     constexpr float kBossAnchorSeekPullMarginYd = 5.0f;
+    // A chase may go this far past the circle: a melee bot on the circle still reaches a target standing here.
+    constexpr float kBossAnchorChaseReachYd = 5.0f;
     // Rounding slack, so a point clamped onto the circle reads as inside it.
     constexpr float kBossAnchorEpsYd = 0.05f;
 
@@ -67,9 +70,58 @@ namespace ai
 
     // Whether the seek pull may go for this Son: within the puller's radius plus the hit reach, and on the centre's
     // level. A Son below the platform or farther out is left for a later cycle; the puller never walks out for it.
+    // No rounding slack: the pick reach plus the walk's clamp must leave the Son within the hit reach, or the puller
+    // would stand on the circle walking to it forever.
     inline bool SeekPullSonInAnchor(const BossAnchorCircle& c, float x, float y, float z)
     {
-        return BossAnchorDistance2d(c, x, y) <= c.radius + kBossAnchorSeekPullMarginYd + kBossAnchorEpsYd &&
+        return BossAnchorDistance2d(c, x, y) <= c.radius + kBossAnchorSeekPullMarginYd &&
             std::fabs(z - c.z) <= kBossAnchorFloorYd;
+    }
+
+    // Where a ranged puller stands to shoot a Son: the Son's own point when it is inside the shooter's circle, else
+    // the circle's point toward it. True when the Son is within `rangeYd` of that stand. The height rule is the tank
+    // walk's only: a shot from the platform reaches a Son on the slope below, which then walks up to the raid.
+    inline bool AnchorRangedShotStand(const BossAnchorCircle& c, float sonX, float sonY, float rangeYd, float& standX,
+                                      float& standY)
+    {
+        standX = sonX;
+        standY = sonY;
+        ClampToAnchor(c, standX, standY);
+        float const dx = sonX - standX;
+        float const dy = sonY - standY;
+        return std::sqrt(dx * dx + dy * dy) <= rangeYd;
+    }
+
+    // The anchored seek pull of one Son: a tank walks to it when it stands inside the tank's reach, else a ranged
+    // puller shoots it from the anchor when the stand reaches it and sees it, else the cycle is skipped.
+    enum class AnchorPull : std::uint8_t
+    {
+        TankWalk = 0,
+        RangedFromAnchor = 1,
+        Skip = 2,
+    };
+
+    inline AnchorPull AnchorSeekPull(const BossAnchorCircle& tank, float sonX, float sonY, float sonZ, bool shotInRange,
+                                     bool standSeesSon)
+    {
+        if (SeekPullSonInAnchor(tank, sonX, sonY, sonZ))
+            return AnchorPull::TankWalk;
+        if (shotInRange && standSeesSon)
+            return AnchorPull::RangedFromAnchor;
+        return AnchorPull::Skip;
+    }
+
+    // Whether a bot may chase a hostile standing at (x, y): within the radius plus `reachYd` of the centre. A target
+    // farther out is not chased (the bot holds; its ranged abilities or the target logic answer it).
+    inline bool AnchorAllowsChase(const BossAnchorCircle& c, float x, float y, float reachYd)
+    {
+        return BossAnchorDistance2d(c, x, y) <= c.radius + reachYd;
+    }
+
+    // Whether a seeker may take a cloud: some part of it lies inside the circle (centre within radius + the cloud's
+    // radius). A cloud wholly outside would hold the seeker at the circle's edge, chasing it.
+    inline bool AnchorReachesCloud(const BossAnchorCircle& c, float cloudX, float cloudY, float cloudRadius)
+    {
+        return BossAnchorDistance2d(c, cloudX, cloudY) <= c.radius + cloudRadius;
     }
 }

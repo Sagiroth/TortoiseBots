@@ -18,6 +18,8 @@ MOVEMENT = (ROOT / "ai/playerbot/strategy/actions/MovementActions.cpp").read_tex
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 MGR = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
+POSITION = (ROOT / "ai/playerbot/strategy/actions/PositionAction.cpp").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
 
 CLAMP = "ClampMoveToBossAnchor(ai, bot, "
 
@@ -47,13 +49,15 @@ class BossAnchorWiring(unittest.TestCase):
         self.assertIn("LiveBossAnchor(ai, bot, circle)", glue)
         self.assertIn("ClampToAnchor(circle, cx, cy)", glue)
         self.assertIn("AnchorFloorOk(", glue)
-        live = body(ACTIONS, "bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)")
+        self.assertIn("LiveBossAnchorRow(ai, bot)",
+                      body(ACTIONS, "bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)"))
+        live = body(ACTIONS, "const BossTacticRow* ai::LiveBossAnchorRow(PlayerbotAI* ai, Player* bot)")
         # Data-gated: a map without an anchor row costs one lookup and clamps nothing.
         self.assertIn("HasAnchorMap(bot->GetMapId())", live)
         self.assertIn("BossTacticKind::Anchor", live)
         self.assertIn("ScanBossTactics(ai, bot)", live)
         self.assertIn("IsInEvadeMode()", live)
-        self.assertIn("AnchorCircleOf(", live)
+        self.assertIn("return row;", live)
 
     def test_seek_gather_and_hold_is_clamped(self):
         assert_clamped_before_moves(self, ACTIONS, "bool BossTacticsSeekAction::Execute(Event& event)")
@@ -80,8 +84,10 @@ class BossAnchorWiring(unittest.TestCase):
 
     def test_seek_pull_picks_only_a_son_inside_the_anchor(self):
         fn = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
-        self.assertIn("LiveBossAnchor(ai, bot, pullAnchor)", fn)
-        self.assertGreaterEqual(fn.count("SeekPullSonInAnchor(pullAnchor, "), 2, "both the latch and the new pick")
+        self.assertIn("LiveBossAnchorRow(ai, bot)", fn)
+        # The latch keeps only a Son inside the tanks' reach; the new pick judges each Son by AnchorSeekPull.
+        self.assertIn("SeekPullSonInAnchor(tankAnchor, latchedPull->", fn)
+        self.assertIn("thirdTank ? kind == AnchorPull::TankWalk", fn)
         self.assertIn("LogSeekPullSkipAnchor(ai, bot)", fn)
         self.assertIn('"seek pull: skip anchor"', ACTIONS)
 
@@ -98,6 +104,78 @@ class BossAnchorWiring(unittest.TestCase):
         self.assertLess(fn.index("monitor.NoteBossState("), fn.index("monitor.TimelineEnabled()"))
         for guard in ("IsInEvadeMode()", "GetRespawnCoord(", "GetMaxHealth()"):
             self.assertIn(guard, fn)
+
+
+class BossAnchorFixRound1(unittest.TestCase):
+    def test_return_to_stay_walk_goes_to_the_clamped_point(self):
+        # The main tank's stay (the lead's authored approach, or a landed pullback's anchor) is walked to through the
+        # clamp; the trigger, the action's isUseful and its dispatch all judge the same point, so the back-off
+        # (StayWalkDispatched) handles a point the clamp refuses.
+        point = body(POSITION, "bool ai::StayWalkPoint(PlayerbotAI* ai, Player* bot, PositionEntry& stay)")
+        self.assertIn(CLAMP + "x, y, z)", point)
+        due = body(POSITION, "bool ai::StayWalkDueNow(PlayerbotAI* ai, Player* bot, PositionEntry const& stayPosition)")
+        self.assertIn("StayWalkPoint(ai, bot, point)", due)
+        fn = body(POSITION, "bool ReturnToStayPositionAction::Execute(Event& event)")
+        self.assertIn("StayWalkPoint(ai, bot, point)", fn)
+        self.assertNotIn("MoveToPositionAction::Execute(event)", fn)
+        self.assertLess(fn.index("StayWalkPoint(ai, bot, point)"), fn.index("MoveTo(bot->GetMapId(), point.x, point.y, point.z"))
+        self.assertIn("StayWalkDispatched(backoff, moved", fn)
+        self.assertIn("StayWalkDueNow(ai, bot, stayPosition)", TRIGGERS)
+
+    def test_ranged_fallback_shoots_from_the_anchor(self):
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("AnchorSeekPull(", read)
+        self.assertIn("AnchorRangedShotStand(", read)
+        self.assertIn("AnchorShotStandFor(bot, shotAnchor, candidate, shotRange, sx, sy,", read)
+        stand = body(ACTIONS, "bool AnchorShotStandFor(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("isInLineOfSight(", stand)
+        self.assertIn("AnchorFloorOk(", stand)
+        self.assertIn("FindSeekFallbackPuller(ai, bot, roles, boss, *row, anchorShot)", read)
+        tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("state.anchorShot", tank)
+        self.assertIn("LogSeekPullRangedFromAnchor(ai, bot)", ACTIONS)
+        self.assertIn('"seek pull: ranged from anchor"', ACTIONS)
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        self.assertIn("task.fromAnchor", fn)
+
+    def test_cloud_outside_the_anchor_is_ignored(self):
+        fn = body(ACTIONS, "SeekTask ai::FindBossSeek(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("AnchorReachesCloud(cloudAnchor, dyn->GetPositionX(), dyn->GetPositionY(), dyn->GetRadius())", fn)
+        self.assertLess(fn.index("AnchorReachesCloud("), fn.index("cloud = dyn;"))
+
+    def test_spread_rests_when_the_anchor_rejects_every_heading(self):
+        fn = body(DUNGEON, "bool RaidSpreadAction::Execute(Event& event)")
+        self.assertIn("anchorRejected = true;", fn)
+        tail = fn[fn.rindex("anchorRejected"):]
+        self.assertIn("lastMove.lastSpreadStepMs = WorldTimer::getMSTime();", fn[fn.index("if (anchorRejected)"):])
+
+    def test_take_of_a_son_outside_drops_the_chase(self):
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = fn[fn.index("chaseRefused"):fn.index("if (task.pull)")]
+        self.assertIn('SET_AI_VALUE(Unit*, "current target", nullptr);', take)
+        self.assertIn("ai->StopMoving();", take)
+
+
+class BossAnchorChase(unittest.TestCase):
+    def test_chase_to_enforces_a_live_anchor(self):
+        fn = body(MOVEMENT, "bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)")
+        self.assertIn("const bool anchored = LiveBossAnchor(ai, bot, anchor);", fn)
+        # Refused before any chase branch: a hostile beyond the radius plus the melee reach.
+        refuse = fn.index("AnchorAllowsChase(anchor, obj->GetPositionX(), obj->GetPositionY(), kBossAnchorChaseReachYd)")
+        self.assertLess(refuse, fn.index("if (distanceToTarget > sPlayerbotAIConfig.sightDistance"))
+        # The far walk's destination and the chase end point are clamped, and MoveChase never starts toward a target
+        # outside the circle.
+        self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, farX, farY, farZ))", fn)
+        self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, endX, endY, endZ))", fn)
+        self.assertLess(fn.index("ClampMoveToBossAnchor(ai, bot, endX, endY, endZ)"), fn.index("IsHazardNearPosition(endPosition"))
+        self.assertIn("if (anchored && !InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY()))", fn)
+        self.assertLess(fn.index("!InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY())"),
+                        fn.index("mm.MoveChase((Unit*)obj, distance, angle);"))
+        # Gated: every anchor branch asks `anchored` first, so without a live anchor row nothing changes.
+        self.assertIn("if (anchored && chased && bot->IsHostileTo(chased) &&\n        !AnchorAllowsChase(", fn)
+        for line in fn.splitlines():
+            if "ClampMoveToBossAnchor(" in line or "InsideAnchor(" in line:
+                self.assertIn("anchored", line, line)
 
 
 if __name__ == "__main__":
