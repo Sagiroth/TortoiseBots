@@ -773,6 +773,11 @@ constexpr std::uint32_t kFocusRefusedIgnoreMs = 8000;
 // the pick stays the same, so the bots that drifted off after that volley never come back to it (Jin'do's Brain Wash
 // Totem 15112 stood at 11 % for 39 s with no bot on it). The focus is sent again this often while its unit lives.
 constexpr std::uint32_t kTotemRefocusMs = 3000;
+// The held totem focus is re-sent while fewer than this many damage dealers attack the totem (or fewer than all the
+// living ones, when the party has fewer): one hunter on a Brain Wash Totem held the re-send off for its whole life
+// (ZG t1106a: totem life 12 s median in losses, 5 s in kills; 94 % of totem-up frames with no bot on it). A bot
+// carrying an aura-gated row's aura (a Delusions carrier) is no volley on a totem and is not counted (Facts::dpsAlive).
+constexpr std::uint32_t kTotemFocusDpsWanted = 3;
 // The healer's stand for a pull (the run leader's commander context): this far
 // behind the lead bot's spot, on the line from the pull target through that spot
 // (Uldaman run 4: the priest stood level with or ahead of the tank and died of
@@ -920,9 +925,10 @@ struct UnitFact
     // is in no combat itself.
     bool auraOnEngaged = false;
     bool victimHealer = false; // its victim is a healer (Facts::partyAttackers, and a hold's units)
-    // Facts::killFirst only: a damage-dealing bot of the party attacks it now (not a tank, not a healer). The held totem
-    // focus is sent again only while nobody does (FocusResendDue).
-    bool dpsOnIt = false;
+    // Facts::killFirst only: how many damage-dealing bots of the party attack it now (not a tank, not a healer, not a
+    // carrier of an aura-gated row). The held totem focus is sent again while fewer than TotemFocusDpsWanted do
+    // (FocusResendDue).
+    std::uint32_t dpsOnItCount = 0;
     // Its entry carries a needs_aura row (BossTacticsPolicy.h): only a carrier of the row's aura may touch it. The
     // guard leaves it alone while Facts::auraGatedTargets is on.
     bool auraGated = false;
@@ -2011,6 +2017,10 @@ struct Facts
     // (UnitFact::auraGated).
     bool totemFocus = false;
     bool auraGatedTargets = false;
+    // The living damage dealers the totem focus may send (not a tank, not a healer, not a carrier of an aura-gated
+    // row), read with Facts::killFirst: the totem re-send wants TotemFocusDpsWanted(dpsAlive) on the totem. 0: none
+    // (no order goes out; the glue reads it whenever it reads the fight's kill_first units).
+    std::uint32_t dpsAlive = 0;
     // The run's own held units that are still in combat, read from its holds, automatic or the plan's (one object
     // lookup each, no scan): a fight kept open only by them (RunCcBreakTick), and a row no cleared one while a hold
     // lasts (the own-fight step end). ccHeldRead false: not read (no hold, or the party is out of combat).
@@ -10418,13 +10428,16 @@ inline bool FocusGone(const Run& r, const Facts& f)
 // `carrier` (t1105h J1): the bot carries an aura-gated kill_first row's aura with that row's unit in its reach (a
 // Delusions carrier and its Shade of Jin'do, ai::FindBossCarrierPick): no focus takes it off the one unit its damage
 // counts on, whatever the target. It joins the next focus once the curse is gone.
+// `gatedCarrier` (t1106b): the bot carries an aura-gated kill_first row's aura at all (ai::CarriesAuraGatedKillFirst).
+// A totem is never sent to it: its volley on the totem is wasted, the row's unit is the one it can hurt, and a Shade
+// left alive is a raid death. Unlike `carrier` it does not depend on the Shade being in reach right now.
 inline bool FocusSkipsBot(bool isTank, bool isHealer, bool tankHoldTarget, bool totemTarget, bool totemKeyOn,
-    bool carrier = false)
+    bool carrier = false, bool gatedCarrier = false)
 {
     if (carrier)
         return true;
     if (totemKeyOn && totemTarget)
-        return isTank || isHealer;
+        return isTank || isHealer || gatedCarrier;
     return tankHoldTarget && isTank;
 }
 
@@ -10531,13 +10544,21 @@ inline std::string IssueKillFirstFocus(Run& r, const UnitFact& k, bool movesSkul
     return "focus " + std::to_string(k.guid);
 }
 
-// Whether the held TOTEM focus is due to be sent again (kTotemRefocusMs): the focused unit `k` lives (PickKillFirst
-// picked it), its order is old enough, and no damage dealer attacks it now. Only the totem focus site asks: a focus
-// order cancels the commander's tasks and takes every bot off stay, so a general kill_first focus is never repeated.
-inline bool FocusResendDue(const Run& r, const UnitFact& k)
+// How many damage dealers the held totem focus wants on the totem: kTotemFocusDpsWanted, or every one the run may
+// send when it has fewer (Facts::dpsAlive leaves the carriers out). No damage dealer at all: 0, and nothing is due.
+inline std::uint32_t TotemFocusDpsWanted(std::uint32_t dpsAlive)
 {
-    return r.focusGuid != 0 && k.guid == r.focusGuid && !k.dpsOnIt && r.runMs >= r.focusSentMs &&
-           r.runMs - r.focusSentMs >= kTotemRefocusMs;
+    return std::min(kTotemFocusDpsWanted, dpsAlive);
+}
+
+// Whether the held TOTEM focus is due to be sent again (kTotemRefocusMs): the focused unit `k` lives (PickKillFirst
+// picked it), its order is old enough, and fewer damage dealers than TotemFocusDpsWanted attack it now. Only the totem
+// focus site asks: a focus order cancels the commander's tasks and takes every bot off stay, so a general kill_first
+// focus is never repeated.
+inline bool FocusResendDue(const Run& r, const UnitFact& k, std::uint32_t dpsAlive = kTotemFocusDpsWanted)
+{
+    return r.focusGuid != 0 && k.guid == r.focusGuid && k.dpsOnItCount < TotemFocusDpsWanted(dpsAlive) &&
+           r.runMs >= r.focusSentMs && r.runMs - r.focusSentMs >= kTotemRefocusMs;
 }
 
 // Whether a kill_first focus moves the skull. Under AiPlayerbot.DungeonRunTotemFocus a totem is the DPS' alone and the
@@ -22009,9 +22030,10 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
             {
                 if (totem->guid != r.focusGuid)
                     return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true));
-                // The held totem with no damage dealer on it: the order goes out again, but at the end of this branch
-                // (resendTotem), so the tick's other work (the ceilings, the guard) still runs.
-                if (FocusResendDue(r, *totem))
+                // The held totem with fewer than TotemFocusDpsWanted damage dealers on it: the order goes out again
+                // after the ceilings and the retreat (resendTotem), but ahead of the crowd control, the auto-CC and
+                // the guard, which used to spend the tick first and starve the second volley (ZG t1106a).
+                if (FocusResendDue(r, *totem, f.dpsAlive))
                     resendTotem = totem->guid;
             }
         }
@@ -22197,6 +22219,17 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         }
         ReleaseHoldStands(r, f);
         CheckReach(r, f);
+        // The due totem re-send (resendTotem, read at the top of the branch) goes out ahead of every other order of the
+        // tick: the crowd control, the auto-CC, the wedged summon and the guard wait one tick.
+        if (resendTotem != 0)
+        {
+            if (const UnitFact* k = PickKillFirst(r, f))
+                if (k->guid == resendTotem)
+                {
+                    order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, true));
+                    return order;
+                }
+        }
         if (CheckCc(r, f, dt, order))
             return order;
         // Automatic crowd control in the fight: a broken hold first, then a joiner (Facts::autoCc).
@@ -22215,14 +22248,14 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         // The plan's kill_first unit of the fight (a healer, its healing ward)
         // is focused: skull on it, every bot attacks it. Only when the best one
         // changes (it died, or a ward came up); the one exception is the held
-        // totem with no damage dealer on it, sent again every kTotemRefocusMs
-        // (resendTotem), when the tick has no other order.
+        // totem, sent again every kTotemRefocusMs ahead of the crowd control
+        // and the guard (resendTotem, above).
         // None left and the focused unit is gone (FocusGone: dead or
         // crowd-controlled): the focus is over, and with it the guard's reason
         // to keep watching (GuardTarget). One still alive (evading, say) keeps it.
         if (const UnitFact* k = PickKillFirst(r, f))
         {
-            if (k->guid != r.focusGuid || (resendTotem == k->guid && order.empty()))
+            if (k->guid != r.focusGuid)
                 order = IssueKillFirstFocus(r, *k, FocusMovesSkull(f.totemFocus, k->creatureType == kCreatureTotem));
         }
         else if (r.focusGuid != 0 && FocusGone(r, f))
