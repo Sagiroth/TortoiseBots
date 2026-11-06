@@ -85,6 +85,7 @@ class SeekWalkoutRound1(unittest.TestCase):
         self.assertLess(walk.index("HoldWalkoutPet(ai, bot);"), walk.index("ai->CastSpell(spell, task.source)"))
         hold = body(ACTIONS, "void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)")
         for call in ("SetReactState(REACT_PASSIVE)", "WalkoutSavePetStance(g_petHolds,", "GetCommandState()",
+                     "pet->GetObjectGuid().GetRawValue()",
                      "AttackStop()", "MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE)"):
             self.assertIn(call, hold)
 
@@ -96,6 +97,11 @@ class SeekWalkoutRound1(unittest.TestCase):
                      "SetCommandState(static_cast<CommandStates>(stance.command))"):
             self.assertIn(call, release)
         self.assertIn("void ReleaseWalkoutPet(Player* bot);", ACTIONS_H)
+        # Only the pet the stance was taken from gets it back; stale entries (a puller that logged out or was dismissed
+        # mid-hold) age out on any bot's release, once a second at most.
+        self.assertIn("WalkoutPetStanceApplies(stance, pet ? pet->GetObjectGuid().GetRawValue() : 0)", release)
+        self.assertIn("WalkoutSweepPetHolds(g_petHolds, nowMs)", release)
+        self.assertLess(release.index("WalkoutSweepPetHolds("), release.index("g_petHolds.find(self)"))
         ai_cpp = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
         update = ai_cpp[ai_cpp.index("void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)"):]
         self.assertLess(update.index("ai::ReleaseWalkoutPet(bot);"), update.index("++aiUpdateTick;"))

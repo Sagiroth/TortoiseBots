@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -27,6 +28,7 @@ namespace ai
     constexpr float kSeekWalkoutBackSlackYd = 2.0f;        // ... and counts as arrived this far short of that point
     constexpr std::uint32_t kSeekWalkoutReturnMs = 15000;  // a timed-out or aborted puller walks back this long, exempt
     constexpr std::uint32_t kSeekWalkoutStaleMs = 120000;  // a fight's record nobody touched this long is dropped
+    constexpr std::uint32_t kSeekWalkoutPetHoldMs = 120000; // a held pet's stance older than this is dropped
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -292,20 +294,51 @@ namespace ai
     // or combat exit, a stale sweep, a re-pull) never takes the stance with it.
     struct WalkoutPetStance
     {
+        std::uint64_t petGuid = 0; // the pet it was taken from: no other pet gets it
         std::uint8_t react = 0;
         std::uint8_t command = 0;
+        std::uint32_t savedMs = 0;
     };
 
     // Saved once: a second hold of the same puller keeps the first stance (the pet is passive by then).
     inline void WalkoutSavePetStance(std::unordered_map<std::uint64_t, WalkoutPetStance>& held, std::uint64_t bot,
-                                     std::uint8_t react, std::uint8_t command)
+                                     std::uint64_t petGuid, std::uint8_t react, std::uint8_t command,
+                                     std::uint32_t nowMs)
     {
         if (held.find(bot) != held.end())
             return;
         WalkoutPetStance stance;
+        stance.petGuid = petGuid;
         stance.react = react;
         stance.command = command;
+        stance.savedMs = nowMs;
         held.emplace(bot, stance);
+    }
+
+    // Whether the stance goes back onto the bot's current pet: only the pet it was taken from (a dismissed and
+    // resummoned pet, or a relog's new one, has another guid).
+    inline bool WalkoutPetStanceApplies(const WalkoutPetStance& stance, std::uint64_t currentPetGuid)
+    {
+        return currentPetGuid != 0 && stance.petGuid == currentPetGuid;
+    }
+
+    // Drops every stance older than kSeekWalkoutPetHoldMs (a puller that logged out or was dismissed mid-hold never
+    // releases its own); the number dropped.
+    inline std::size_t WalkoutSweepPetHolds(std::unordered_map<std::uint64_t, WalkoutPetStance>& held,
+                                            std::uint32_t nowMs)
+    {
+        std::size_t dropped = 0;
+        for (auto it = held.begin(); it != held.end();)
+        {
+            if (nowMs - it->second.savedMs >= kSeekWalkoutPetHoldMs)
+            {
+                it = held.erase(it);
+                ++dropped;
+            }
+            else
+                ++it;
+        }
+        return dropped;
     }
 
     inline bool WalkoutTakePetStance(std::unordered_map<std::uint64_t, WalkoutPetStance>& held, std::uint64_t bot,

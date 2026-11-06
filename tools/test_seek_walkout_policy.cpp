@@ -257,14 +257,42 @@ static void TestPetStanceSavedOnce()
 {
     // The stance is the pet's react state AND its command (stay/follow), saved once per puller, handed back once.
     std::unordered_map<std::uint64_t, WalkoutPetStance> held;
-    WalkoutSavePetStance(held, 7, 1, 0);   // defensive, stay
-    WalkoutSavePetStance(held, 7, 0, 1);   // already held passive/follow: the first stance is kept
+    WalkoutSavePetStance(held, 7, 70, 1, 0, 1000);   // pet 70: defensive, stay
+    WalkoutSavePetStance(held, 7, 70, 0, 1, 2000);   // already held passive/follow: the first stance is kept
     CHECK(held.size() == 1);
     WalkoutPetStance stance;
     CHECK(WalkoutTakePetStance(held, 7, stance));
-    CHECK(stance.react == 1 && stance.command == 0);
+    CHECK(stance.react == 1 && stance.command == 0 && stance.petGuid == 70 && stance.savedMs == 1000);
     CHECK(!WalkoutTakePetStance(held, 7, stance));
     CHECK(held.empty());
+}
+
+static void TestPetStanceOnlyForTheHeldPet()
+{
+    // The stance is applied only to the pet it was taken from: a pet dismissed and summoned again, or a relog's new
+    // pet, has another guid and the entry is dropped unapplied.
+    WalkoutPetStance stance;
+    stance.petGuid = 70;
+    CHECK(WalkoutPetStanceApplies(stance, 70));
+    CHECK(!WalkoutPetStanceApplies(stance, 71));
+    CHECK(!WalkoutPetStanceApplies(stance, 0));
+}
+
+static void TestPetHoldsAgeOut()
+{
+    // A puller that logs out or is dismissed mid-hold never runs its own release: any bot's next release drops every
+    // entry older than kSeekWalkoutPetHoldMs, so the hold count goes back to 0.
+    std::unordered_map<std::uint64_t, WalkoutPetStance> held;
+    WalkoutSavePetStance(held, 7, 70, 1, 0, 1000);
+    WalkoutSavePetStance(held, 8, 80, 1, 1, 50000);
+    CHECK(WalkoutSweepPetHolds(held, 1000 + kSeekWalkoutPetHoldMs - 1) == 0);
+    CHECK(held.size() == 2);
+    CHECK(WalkoutSweepPetHolds(held, 1000 + kSeekWalkoutPetHoldMs) == 1);
+    CHECK(held.size() == 1 && held.count(8) == 1);
+    CHECK(WalkoutSweepPetHolds(held, 50000 + kSeekWalkoutPetHoldMs) == 1);
+    CHECK(held.empty());
+    // A hold lasts at most the task and its walk back, well inside the age-out.
+    CHECK(kSeekWalkoutTimeoutMs + kSeekWalkoutReturnMs < kSeekWalkoutPetHoldMs);
 }
 
 static void TestPetReleasedOnEveryEnd()
@@ -302,6 +330,8 @@ int main()
     TestWalkBackAfterAnyEnd();
     TestPetStanceSavedOnce();
     TestPetReleasedOnEveryEnd();
+    TestPetStanceOnlyForTheHeldPet();
+    TestPetHoldsAgeOut();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

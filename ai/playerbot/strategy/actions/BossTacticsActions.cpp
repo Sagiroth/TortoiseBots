@@ -1470,9 +1470,9 @@ void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)
         if (it == g_walkouts.end())
             return;
         CharmInfo* const charm = pet->GetCharmInfo();
-        WalkoutSavePetStance(g_petHolds, bot->GetObjectGuid().GetRawValue(),
+        WalkoutSavePetStance(g_petHolds, bot->GetObjectGuid().GetRawValue(), pet->GetObjectGuid().GetRawValue(),
             static_cast<std::uint8_t>(pet->GetReactState()),
-            static_cast<std::uint8_t>(charm ? charm->GetCommandState() : COMMAND_FOLLOW));
+            static_cast<std::uint8_t>(charm ? charm->GetCommandState() : COMMAND_FOLLOW), WorldTimer::getMSTime());
         g_petHoldCount.store(static_cast<int>(g_petHolds.size()), std::memory_order_relaxed);
     }
     pet->SetReactState(REACT_PASSIVE);
@@ -5475,9 +5475,19 @@ void ai::ReleaseWalkoutPet(Player* bot)
     if (!bot || g_petHoldCount.load(std::memory_order_relaxed) == 0)
         return;
     std::uint64_t const self = bot->GetObjectGuid().GetRawValue();
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
     WalkoutPetStance stance;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        // Stale stances (a puller that logged out or was dismissed mid-hold) age out on any bot's release, once a
+        // second at most, so the count drops back to 0 and the fast path above holds again.
+        static std::uint32_t lastSweepMs = 0;
+        if (nowMs - lastSweepMs >= 1000)
+        {
+            lastSweepMs = nowMs;
+            if (WalkoutSweepPetHolds(g_petHolds, nowMs))
+                g_petHoldCount.store(static_cast<int>(g_petHolds.size()), std::memory_order_relaxed);
+        }
         if (g_petHolds.find(self) == g_petHolds.end())
             return;
         auto const record = g_walkouts.find(bot->GetInstanceId());
@@ -5486,9 +5496,10 @@ void ai::ReleaseWalkoutPet(Player* bot)
         WalkoutTakePetStance(g_petHolds, self, stance);
         g_petHoldCount.store(static_cast<int>(g_petHolds.size()), std::memory_order_relaxed);
     }
-    // A pet that is gone (dismissed, dead) leaves nothing to restore: the stance is simply dropped.
+    // A pet that is gone (dismissed, dead) or another pet than the one held leaves nothing to restore: the stance is
+    // simply dropped.
     Pet* const pet = bot->GetPet();
-    if (!pet)
+    if (!WalkoutPetStanceApplies(stance, pet ? pet->GetObjectGuid().GetRawValue() : 0))
         return;
     pet->SetReactState(static_cast<ReactStates>(stance.react));
     if (CharmInfo* const charm = pet->GetCharmInfo())
