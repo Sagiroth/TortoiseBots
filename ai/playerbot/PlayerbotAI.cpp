@@ -3518,16 +3518,15 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         bool const followStrategy = HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
             !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
             !HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT);
-        bool const poolBot = sRandomBotFacade.IsFreeBot(bot);
         if (!master || !master->IsInWorld() || !group || group != master->GetGroup() ||
             !HasActivePlayerMaster() || !bot->IsAlive() || bot->IsInCombat() ||
-            !followStrategy || poolBot || atMaster || !masterGone ||
+            !followStrategy || atMaster || !masterGone ||
             ai::PortalFollowWindowExpired(elapsed))
         {
             if (ai::PortalFollowWindowExpired(elapsed) && masterGone && bot->IsAlive() &&
                 !bot->IsInCombat() && master && master->IsInWorld() && !master->IsBeingTeleported() &&
                 group && group == master->GetGroup() && HasActivePlayerMaster() &&
-                followStrategy && !poolBot)
+                followStrategy)
             {
                 if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
                     sLog.outString("TortoiseBots: bringing bot %s to master %s after missing the mage portal",
@@ -3562,7 +3561,9 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
                 PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
                 if (!memberAi || memberAi->IsRealPlayer() || member->IsInCombat() || !member->IsAlive())
                     continue;
-                if (member->GetMapId() == master->GetMapId())
+                bool const memberCrossMap = member->GetMapId() != master->GetMapId();
+                if (ai::PortalFollowAtMaster(memberCrossMap,
+                        memberCrossMap ? 0.0f : sServerFacade.getDistance2d(member, master)))
                     continue;
                 othersPending = true;
                 break;
@@ -3599,8 +3600,7 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         !bot->IsAlive() || bot->IsInCombat() ||
         !HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
         HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) ||
-        HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
-        sRandomBotFacade.IsFreeBot(bot))
+        HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
         return;
     bool const crossMap = bot->GetMapId() != master->GetMapId();
     float const masterDistance = crossMap ? 0.0f : sServerFacade.getDistance2d(bot, master);
