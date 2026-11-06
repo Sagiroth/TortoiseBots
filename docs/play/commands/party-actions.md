@@ -227,6 +227,7 @@ Resumes follow formation behind you on scoped bots (selected bot if targeted, el
 - If `AiPlayerbot.DungeonFollowHoldBeforePacks` is on, a trailing bot in a dungeon or raid holds outside unpulled packs and whispers you a warning.
 - It resumes when the pack dies or you return.
 - The hold opens past 30 yards and closes inside 25 yards.
+- When you step through a party mage's city portal, bots that follow you walk to it and step through too, the mage last. A bot that misses the portal before it closes is brought to you.
 
 ### `.bot action focus skull`
 
