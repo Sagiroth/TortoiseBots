@@ -2,6 +2,7 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_dungeon_run_policy.cpp -o /tmp/test_dungeon_run_policy && /tmp/test_dungeon_run_policy
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
+#include "../ai/playerbot/BossTacticsPolicy.h"
 
 #include <cstdlib>
 #include <memory>
@@ -27341,6 +27342,54 @@ static void TestRaidBossCappedAddIsReArmed()
     CHECK(orders == 2 * static_cast<int>(kGuardOrdersPerUnit));
 }
 
+// ZG t1106b integration: one Delusions carrier (aura 24306) and the Shade of Jin'do, read as the fight read hands the
+// bot to the pick. The three fixes must hold together, not only one at a time: the carrier is not combat-gated off a
+// fresh Shade at 0 threat, it takes a Shade 35 yd out over the boss and the ordered ward, and no totem focus order is
+// ever sent to it. The gate is what makes the Shade pickable at all (a Shade copies Jin'do's threat list empty, so no
+// bot is "in combat" with it before its first hit); the reach is what the 40 yd pick needs; the carrier skip is what
+// keeps the totem focus from spending the carrier's volley elsewhere.
+static void TestDelusionsCarrierComposesGateReachAndTotemSkip()
+{
+    using namespace ai;
+    CHECK(!CombatGateApplies(true, 24306, true));   // a carrier: no combat ticket needed for its Shade
+    CHECK(CombatGateApplies(true, 24306, false));   // an uncursed bot: still gated (0 threat, not attackable)
+    CHECK(!AuraGateRefuses(true, 24306, true));
+
+    std::vector<TacticCandidate> fight(4);
+    fight[0].entry = 14986; fight[0].distance = 35.0f; // the fresh Shade, in the fight and in the carrier's reach
+    fight[1].entry = 11380; fight[1].distance = 3.0f;  // Jin'do himself
+    fight[2].entry = 14987; fight[2].distance = 2.0f;  // the ward the run's order names
+    fight[3].entry = 15112; fight[3].distance = 1.0f;  // the Brain Wash Totem
+    fight[1].pickable = fight[2].pickable = fight[3].pickable = true;
+    fight[0].pickable = !AuraGateRefuses(true, 24306, true) && !CombatGateApplies(true, 24306, true);
+    CHECK(fight[0].pickable);
+
+    BossTacticRow shade;
+    shade.map = 309;
+    shade.bossEntry = 11380;
+    shade.kind = BossTacticKind::KillFirst;
+    shade.targetEntry = 14986;
+    shade.botAura = 24306;
+    BossTacticRow ward = shade;
+    ward.targetEntry = 14987;
+    ward.botAura = 0;
+    ward.priority = 1;
+    BossTacticRow totem = ward;
+    totem.targetEntry = 15112;
+    totem.priority = 2;
+    std::vector<BossTacticRow> rows = {shade, ward, totem};
+    ActiveBossRows active;
+    for (const BossTacticRow& row : rows)
+        active.push_back(&row);
+
+    CHECK(std::fabs(kCarrierHoldReachYd - 40.0f) < 0.01f);
+    CHECK(PickCarrierOverride(active, fight, kCarrierHoldReachYd) == 0); // the 35 yd Shade, not the nearer boss/ward
+    CHECK(PickKillFirst(active, fight) == 0);
+
+    CHECK(FocusSkipsBot(false, false, false, true, true, false, true));   // never a totem order for the carrier
+    CHECK(!FocusSkipsBot(false, false, false, true, true, false, false)); // the uncursed DPS beside it still joins
+}
+
 // Jin'do: the totem focus leaves the tanks and the healers out (the totem dies in 1-2 s and holds no healer), a
 // tank_hold target keeps its own rule, and the guard skips a totem and an aura-gated unit only with their keys on.
 static void TestTotemFocusSkipsTanksAndHealers()
@@ -37378,6 +37427,7 @@ int main()
     TestRaidHealerGuardCapsAndRearmsOneAdd();
     TestRaidHealerGuardPrunesMarksWithTheAddAndTheBot();
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
+    TestDelusionsCarrierComposesGateReachAndTotemSkip();
     TestTotemFocusSkipsTanksAndHealers();
     TestTotemFocusKeyOffJoinsAll();
     TestFocusSkipsDelusionsCarrier();
