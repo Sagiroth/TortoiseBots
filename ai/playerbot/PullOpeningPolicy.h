@@ -120,14 +120,17 @@ namespace ai
         }
     }
 
-    // The words of a pull order after the verb: the join delay (digits, 0-60)
-    // and the word `ranged`, each at most once, in either order. A sign or any
+    // The words of a pull order after the verb: the join delay (digits, 0-60),
+    // the word `ranged` and the word `body`, each at most once, in any order.
+    // `body` walks in whatever the mob does (and wins over the automatic
+    // far/unreachable rule); it and `ranged` exclude each other. A sign or any
     // other word is refused. Returns false for anything else.
     struct PullOrderOption
     {
         bool hasSeconds = false;
         unsigned seconds = 0;
         bool ranged = false;
+        bool body = false;
     };
 
     inline bool ParsePullOrderOption(std::string const& text, PullOrderOption& out)
@@ -139,7 +142,7 @@ namespace ai
             while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t'))
                 ++pos;
             if (pos >= text.size())
-                return true;
+                return !(out.ranged && out.body);
             size_t const start = pos;
             while (pos < text.size() && text[pos] != ' ' && text[pos] != '\t')
                 ++pos;
@@ -153,6 +156,12 @@ namespace ai
                 if (out.ranged)
                     return false;
                 out.ranged = true;
+            }
+            else if (word == "body")
+            {
+                if (out.body)
+                    return false;
+                out.body = true;
             }
             else if (word.find_first_not_of("0123456789") == std::string::npos)
             {

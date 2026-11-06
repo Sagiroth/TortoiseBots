@@ -24,6 +24,7 @@ struct Unit {
     unsigned GetMapId() const { return map; }
     unsigned GetEntry() const { return entry; }
     Unit* GetVictim() const { return victim; }
+    bool IsInWorld() const { return true; }
     Guid getObjectGuid() const { return guid; }
 };
 struct Creature : Unit {
@@ -74,6 +75,8 @@ struct ThreatValue {
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
+// The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
+void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
 namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
 using namespace ai;
 """

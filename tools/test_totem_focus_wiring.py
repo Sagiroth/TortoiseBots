@@ -72,16 +72,24 @@ class TotemFocusWiringTest(unittest.TestCase):
         self.assertIn("accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());", fn)
         helper = body(COMMANDER, "static bool TotemFocusBot(PlayerbotAI* ai")
         self.assertNotIn("InterruptNonMeleeSpells", helper)
-        self.assertLess(helper.index("TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL)"),
+        self.assertLess(helper.index("TotemFocusCutSlot(bot, CURRENT_GENERIC_SPELL, targetGuid)"),
             helper.index('ExecuteQuietAction(ai, "attack my target"'))
-        self.assertIn("TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL)", helper)
+        self.assertIn("TotemFocusCutSlot(bot, CURRENT_CHANNELED_SPELL, targetGuid)", helper)
         self.assertIn('"fire blast", "shadowburn", "death coil", "arcane shot"', COMMANDER)
         self.assertIn("kTotemFocusOpeners", helper)
         cut = body(COMMANDER, "static void TotemFocusCutSlot(Player* bot")
+        # A cast already aimed at the focused totem is not cut: compared by guid, never by the raw unit pointer.
+        self.assertIn("!castGuid.IsEmpty() && castGuid == focusGuid", cut)
+        self.assertIn("ObjectGuid focusGuid", COMMANDER)
         self.assertIn("TortoiseBots::DungeonRun::TotemFocusMayInterrupt(kind", cut)
         # Only a cast that is positively offense: the spell not beneficial, its target hostile.
         self.assertIn("spell->m_spellInfo->IsPositiveSpell()", cut)
+        self.assertIn("TotemFocusTargetHostile(!castGuid.IsEmpty(), target != nullptr,", cut)
         self.assertIn("target && bot->IsHostileTo(target)", cut)
+        # The cast's target is looked up by guid: the core's raw m_unitTarget pointer can be freed on the World thread.
+        self.assertIn("spell->m_targets.getUnitTargetGuid()", cut)
+        self.assertIn("map->GetUnit(castGuid)", cut)
+        self.assertNotIn("getUnitTarget()", cut)
         self.assertIn("bot->InterruptSpell(slot, slot == CURRENT_CHANNELED_SPELL)", cut)
 
     def test_the_totem_focus_yields_to_the_retreat(self):

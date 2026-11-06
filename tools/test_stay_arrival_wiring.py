@@ -47,9 +47,11 @@ class StayArrivalWiringTest(unittest.TestCase):
         self.assertIn("bool StayWalkDueNow(PlayerbotAI* ai, Player* bot, PositionEntry const& stayPosition);", POSITION_H)
         fn = body(POSITION, "bool ai::StayWalkDueNow(PlayerbotAI* ai, Player* bot, PositionEntry const& stayPosition)")
         self.assertIn('->GetValue<LastMovement&>("last movement")->Get().stayWalk;', fn)
-        self.assertIn("TortoiseBots::StayWalkTrack(backoff, stayPosition.x, stayPosition.y, stayPosition.z, stayPosition.mapId);", fn)
+        # The walk's point: the stay, or its clamp under a live boss anchor (StayWalkPoint, test_boss_anchor_wiring.py).
+        self.assertIn("PositionEntry point = stayPosition;\n    StayWalkPoint(ai, bot, point);", fn)
+        self.assertIn("TortoiseBots::StayWalkTrack(backoff, point.x, point.y, point.z, point.mapId);", fn)
         for axis in "XYZ":
-            self.assertIn(f"float const d{axis.lower()} = bot->GetPosition{axis}() - stayPosition.{axis.lower()};", fn)
+            self.assertIn(f"float const d{axis.lower()} = bot->GetPosition{axis}() - point.{axis.lower()};", fn)
         self.assertIn("bool const moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();", fn)
         self.assertIn('return TortoiseBots::StayWalkDue(backoff, TortoiseBots::StayPointReached(dx, dy, dz, ai->GetRange("follow")),\n'
                       "        TortoiseBots::StayPointDistance(dx, dy, dz), moving, bot->IsInCombat(), bot->GetTransport() != nullptr, WorldTimer::getMSTime());", fn)
@@ -67,12 +69,16 @@ class StayArrivalWiringTest(unittest.TestCase):
 
     def test_stay_walk_feeds_its_dispatch(self):
         fn = body(POSITION, "bool ReturnToStayPositionAction::Execute(Event& event)")
-        self.assertIn("bool const moved = MoveToPositionAction::Execute(event);", fn)
-        self.assertIn("TortoiseBots::StayWalkTrack(backoff, stayPosition.x, stayPosition.y, stayPosition.z, stayPosition.mapId);", fn)
-        self.assertIn("TortoiseBots::StayWalkDispatched(backoff, moved, TortoiseBots::StayPointDistance(bot->GetPositionX() - stayPosition.x,\n"
-                      "        bot->GetPositionY() - stayPosition.y, bot->GetPositionZ() - stayPosition.z), bot->IsInCombat(),\n"
+        # The walk goes to the trigger's point (the stay, or its clamp under a live boss anchor); a refused point is
+        # a refused walk, which the back-off rests.
+        self.assertIn("bool const moved = pointOk && MoveTo(bot->GetMapId(), point.x, point.y, point.z, idle);", fn)
+        self.assertIn("TortoiseBots::StayWalkTrack(backoff, point.x, point.y, point.z, point.mapId);", fn)
+        self.assertIn("TortoiseBots::StayWalkDispatched(backoff, moved, TortoiseBots::StayPointDistance(bot->GetPositionX() - point.x,\n"
+                      "        bot->GetPositionY() - point.y, bot->GetPositionZ() - point.z), bot->IsInCombat(),\n"
                       "        bot->GetTransport() != nullptr, WorldTimer::getMSTime());", fn)
-        self.assertLess(fn.index("MoveToPositionAction::Execute(event)"), fn.index("StayWalkDispatched("))
+        self.assertLess(fn.index("MoveTo(bot->GetMapId(), point.x"), fn.index("StayWalkDispatched("))
+        # The anchor-less walk keeps the base action's fail note for the run leader (MoveFailNotePolicy.h).
+        self.assertIn('positionMoveFailMs = moved ? 0 : (WorldTimer::getMSTime() | 1u);', fn)
         self.assertIn("return moved;", fn)
         self.assertNotIn("StayWalkSucceeded", fn)  # a dispatch is not a success
 

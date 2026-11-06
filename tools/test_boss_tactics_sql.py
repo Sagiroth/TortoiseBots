@@ -18,10 +18,11 @@ import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor"}
@@ -32,6 +33,7 @@ MODE_WORDS = {
     "dps_hold_after": {"engage", "blink", "until_tank"},
     "taunt_after_cast": {"engage", "blink", "until_tank"},
     "use_object": {"tank_anchor"},
+    "avoid_cast": {"all"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -248,7 +250,7 @@ def new_kind_problem(row):
     """BossTacticTable::Add's refusals of a seek_aura, pull_gate or spread row, or None for a usable one."""
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
-    if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor") and (
+    if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
     if kind == "burn_mana":
@@ -296,6 +298,22 @@ def new_kind_problem(row):
             return "threat_successor with a target"
         if row["tactic_mode"]:
             return "a mode word on threat_successor"
+        return None
+    if kind == "anchor":
+        # The boss itself (target_entry 0, no spell): spot_x/y/z the centre, param the radius for everyone (10-60 yd),
+        # priority the tanks' radius (0 = param, never wider), no mode word and no cycle columns.
+        if row["target_entry"] or row["spell_id"]:
+            return "anchor with a target or a spell"
+        if not has_spot:
+            return "anchor without its centre"
+        if not 10.0 <= row["param"] <= 60.0:
+            return "anchor radius outside [10, 60]"
+        if row["priority"] > row["param"]:
+            return "anchor tank radius wider than the radius"
+        if row["tactic_mode"]:
+            return "a mode word on anchor"
+        if row["cycle_spell"] or row["cycle_s"]:
+            return "cycle columns on another kind"
         return None
     if kind == "needs_aura":
         # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
@@ -487,15 +505,19 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
 
         # Every row written before the new columns takes their defaults, so adding the columns changes no existing
-        # row's behaviour. Rows from 20261103010000 onward carry their own mode and gate by design.
+        # row's behaviour. Rows from 20261103010000 onward carry their own mode and gate by design. The F4-A
+        # migration (20261107100000) sets mode `all` and the early-zone priority on the pre-existing Bat Rider
+        # row, so that key is exempt.
         for key, row in live.items():
-            if key[2] != "linked_death" and row[0] < "20261103010000_world.sql":
+            if key[2] != "linked_death" and row[0] < "20261103010000_world.sql" and \
+                    key != (309, 14750, "avoid_cast", 0, 24024):
                 self.assertEqual((0, 100, 0, "", 7.0), (row[9], row[10], row[11], row[12], row[13]),
                                  "%s carries a gate, mode or window unexpectedly" % (key,))
 
     def test_zg_aura_rows(self):
-        # Zul'Gurub's aura rows (20261103020000_world.sql). The core ids are pinned in BossTacticsCoreData below; here
-        # the live table shape is, so a delete that is too wide or a priority that drifted fails.
+        # Zul'Gurub's aura rows (20261103020000_world.sql; Jin'do's kill_first priorities are the ones
+        # 20261105234000_world.sql leaves: the ward before the totem). The core ids are pinned in BossTacticsCoreData
+        # below; here the live table shape is, so a delete that is too wide or a priority that drifted fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         expected = {
             (309, 14834, "dispel_priority", 0, 24321): (0, 0.0, 0, "never"),
@@ -507,8 +529,8 @@ class BossTacticsSql(unittest.TestCase):
             (309, 11380, "dispel_priority", 0, 17172): (0, 0.0, 0, "now"),
             (309, 11380, "dispel_priority", 0, 24306): (0, 0.0, 0, "never"),
             (309, 11380, "kill_first", 14986, 0): (0, 0.0, 24306, ""),
-            (309, 11380, "kill_first", 15112, 0): (1, 0.0, 0, ""),
-            (309, 11380, "kill_first", 14987, 0): (2, 0.0, 0, ""),
+            (309, 11380, "kill_first", 15112, 0): (2, 0.0, 0, ""),
+            (309, 11380, "kill_first", 14987, 0): (1, 0.0, 0, ""),
             (309, 14510, "kill_first", 15041, 0): (1, 0.0, 0, ""),
             (309, 14510, "dispel_priority", 0, 24111): (1, 0.0, 0, "now"),
             (309, 14510, "dispel_priority", 0, 24099): (2, 0.0, 0, "now"),
@@ -532,11 +554,14 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn((309, 14510, "interrupt", 0, 24300), live)
         self.assertIn((309, 14515, "behind", 0, 26350), live)
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
-        # The two spell-less dps_hold_after rows (Hakkar 14834, Mandokir 11382) are gone: a spell-less hold fires only
-        # its engage edge, once per fight, so "until_tank" never recurred. Their triggers are auras on players (or an
-        # instant cast, Cause Insanity 24327, castingTimeIndex 1), which the hold's cast/aura edge cannot see on the
-        # boss. Re-add only with a trigger that recurs (follow-up in docs/play/boss-tactics.md, Known limits).
-        self.assertNotIn((309, 14834, "dps_hold_after", 0, 0), live)
+        # The spell-less until_tank hold of Mandokir 11382 is gone: a spell-less hold fires only its engage edge, once
+        # per fight, so "until_tank" never recurred. Hakkar's opening hold is back in mode `engage`, where that single
+        # edge is the whole rule (the 5 s opening threat hold of 20261107120000); Mandokir's would still need a trigger
+        # that recurs. Their triggers are auras on players (or an instant cast, Cause Insanity 24327,
+        # castingTimeIndex 1), which the hold's cast/aura edge cannot see on the boss.
+        hold = live.get((309, 14834, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
+        self.assertEqual("engage", hold["tactic_mode"], "the Hakkar opening hold is not an engage-edge hold")
         self.assertNotIn((309, 11382, "dps_hold_after", 0, 0), live)
 
     def test_kurinnaxx_mortal_wound_swap_row_is_live(self):
@@ -589,12 +614,14 @@ class BossTacticsSql(unittest.TestCase):
                                  "%s carries a cycle or spot unexpectedly" % (row[0],))
 
     def test_hakkar_rows(self):
-        # The four rows of 20261104020000_world.sql. The core ids are pinned in BossTacticsCoreData below; here the
-        # live table shape is, so a wrong number or a delete that reaches too far fails.
+        # The four rows of 20261104020000_world.sql plus the opening hold of 20261107120000_world.sql. The core ids
+        # are pinned in BossTacticsCoreData below; here the live table shape is, so a wrong number or a delete that
+        # reaches too far fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         seek = live.get((309, 14834, "seek_aura", 11357, 24321))
         self.assertIsNotNone(seek, "the Hakkar seek_aura row is missing")
-        self.assertEqual((30, 4.0, 80.0, 24324, 90.0, -11802.0, -1683.0, 52.9),
+        # 20261106030000 moved the spot onto his platform, 15 yd S of his spawn; every other column is the old row's.
+        self.assertEqual((30, 4.0, 80.0, 24324, 90.0, -11787.4, -1664.3, 54.0),
                          (seek["priority"], seek["param"], seek["window_s"], seek["cycle_spell"],
                           seek["cycle_s"], seek["spot_x"], seek["spot_y"], seek["spot_z"]),
                          "the Hakkar seek_aura row drifted")
@@ -609,11 +636,126 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIsNotNone(taunt, "the Hakkar taunt_after_cast row is missing")
         self.assertEqual((1, 10.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
                          "the Hakkar taunt_after_cast row drifted")
-        for row in (seek, gate, spread, taunt):
+        # The opening hold: 5 s from the first engagement, no spell, mode engage. A spell-less row fires only that
+        # edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
+        # threat_successor cap keeps damage dealers under the off-tank, so this hold answers the pull only.
+        hold = live.get((309, 14834, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
+        self.assertEqual((0, 5.0, 0, "engage"),
+                         (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
+                         "the Hakkar opening dps_hold_after row drifted")
+        self.assertEqual("20261107120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
+                         "the Hakkar D1 migration owns the opening hold")
+        for row in (seek, gate, spread, taunt, hold):
             self.assertIsNone(new_kind_problem(row))
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
+
+    def test_hakkar_anchor_rows(self):
+        # 20261106030000_world.sql: the fight stays on his platform. The anchor centre is his spawn (tw_world creature
+        # guid 49678, z 54.10), 30 yd for everyone and 25 yd for the tanks (priority); the script evades him below
+        # z 45.8, which runs 45-50 yd SW of the spawn. The seek spot moves from 37 yd SW to 15 yd S of the spawn.
+        name = "20261106030000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Hakkar anchor migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        anchor = live.get((309, 14834, "anchor", 0, 0))
+        self.assertIsNotNone(anchor, "the Hakkar anchor row is missing")
+        self.assertEqual(name, anchor["file"], "the anchor migration owns the row")
+        self.assertEqual((25, 30.0, "", 0, 100, 0, 0, 0.0, -11787.4, -1649.34, 54.1),
+                         (anchor["priority"], anchor["param"], anchor["tactic_mode"], anchor["hp_min"],
+                          anchor["hp_max"], anchor["bot_aura"], anchor["cycle_spell"], anchor["cycle_s"],
+                          anchor["spot_x"], anchor["spot_y"], anchor["spot_z"]),
+                         "the Hakkar anchor row drifted")
+        self.assertIsNone(new_kind_problem(anchor))
+        anchors = [key for key in live if key[2] == "anchor"]
+        self.assertEqual([(309, 14834, "anchor", 0, 0)], anchors, "only Hakkar is anchored")
+        seek = live[(309, 14834, "seek_aura", 11357, 24321)]
+        self.assertEqual(name, seek["file"], "the anchor migration re-inserts the seek_aura row")
+        self.assertEqual((-11787.4, -1664.3, 54.0), (seek["spot_x"], seek["spot_y"], seek["spot_z"]))
+        # The moved spot sits inside the anchor, 15 yd from the centre.
+        dist = ((seek["spot_x"] - anchor["spot_x"]) ** 2 + (seek["spot_y"] - anchor["spot_y"]) ** 2) ** 0.5
+        self.assertLess(dist, 16.0)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for kind, target, spell in (("anchor", 0, 0), ("seek_aura", 11357, 24321)):
+            self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                          "AND `kind` = '%s' AND `target_entry` = %d AND `spell_id` = %d "
+                          "AND `hp_min` = 0 AND `hp_max` = 100;" % (kind, target, spell), text)
+        self.assertEqual(2, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertNotIn("ALTER TABLE", text, "the anchor kind needs no new column")
+        # The other Hakkar rows stay.
+        for key in ((309, 14834, "pull_gate", 0, 24692), (309, 14834, "spread", 0, 24328),
+                    (309, 14834, "taunt_after_cast", 0, 0), (309, 14834, "threat_successor", 0, 0),
+                    (309, 14834, "dps_hold_after", 0, 0)):
+            self.assertIn(key, live)
+
+    def test_anchor_row_shape_refused(self):
+        anchor = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="anchor", priority=25, param=30.0,
+                      spot_x=-11787.4, spot_y=-1649.34, spot_z=54.1)
+        self.assertIsNone(new_kind_problem(anchor))
+        for broken in (dict(anchor, spot_x=0.0, spot_y=0.0, spot_z=0.0), dict(anchor, param=5.0),
+                       dict(anchor, param=80.0), dict(anchor, priority=40), dict(anchor, target_entry=11357),
+                       dict(anchor, spell_id=24321), dict(anchor, hp_min=20), dict(anchor, tactic_mode="all"),
+                       dict(anchor, cycle_spell=24324)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
+
+    def test_hakkar_opening_hold_migration(self):
+        # 20261107120000_world.sql: D1 the 5 s opening threat hold. Its DELETE names that one key's full key, because
+        # the row is new: no earlier migration owns it and the other Hakkar rows stay untouched.
+        name = "20261107120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Hakkar opening hold migration is missing")
+        self.assertGreater(name, "20261105170000_world.sql")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertNotIn("taunt_after_cast", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
+
+    def test_arlokk_rows(self):
+        # 20261105190000_world.sql: the boss-first grid entries (Arlokk herself, then the Zulian Prowler while she is
+        # vanished), the until_tank cover after an Ambush or a Gouge, and the 2 s hold on her panther transform. The
+        # core ids are pinned in BossTacticsCoreData below; here the live table shape is, so a wrong number or a
+        # delete that reaches too far fails.
+        name = "20261105190000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Arlokk rows migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        boss = live.get((309, 14515, "kill_first", 14515, 0))
+        self.assertIsNotNone(boss, "the Arlokk kill_first boss row is missing")
+        self.assertEqual((1, 0.0, ""), (boss["priority"], boss["param"], boss["tactic_mode"]),
+                         "the Arlokk kill_first boss row drifted")
+        prowler = live.get((309, 14515, "kill_first", 15101, 0))
+        self.assertIsNotNone(prowler, "the Arlokk kill_first prowler row is missing")
+        self.assertEqual((2, 0.0, ""), (prowler["priority"], prowler["param"], prowler["tactic_mode"]),
+                         "the Arlokk kill_first prowler row drifted")
+        taunt = live.get((309, 14515, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Arlokk taunt_after_cast row is missing")
+        self.assertEqual((1, 3.0, "until_tank"), (taunt["priority"], taunt["param"], taunt["tactic_mode"]),
+                         "the Arlokk taunt_after_cast row drifted")
+        hold = live.get((309, 14515, "dps_hold_after", 0, 24190))
+        self.assertIsNotNone(hold, "the Arlokk dps_hold_after row is missing")
+        self.assertEqual((0, 2.0, "until_tank"), (hold["priority"], hold["param"], hold["tactic_mode"]),
+                         "the Arlokk dps_hold_after row drifted")
+        for row in (boss, prowler, taunt, hold):
+            self.assertIsNone(new_kind_problem(row))
+        for key in ((309, 14515, "behind", 0, 26350), (309, 14515, "flee_on_aura", 0, 24210),
+                    (309, 14515, "dispel_priority", 0, 24212)):
+            self.assertIn(key, live, "the Arlokk rows of 20261028110000 and 20261103020000 must stay: %s" % (key,))
+        if CORE and os.path.isfile(CORE_SPELLS):
+            templates = {row["entry"] for row in
+                         _core_rows("tw_world_creature_template.sql", "creature_template", ("entry",))}
+            spells = {row["entry"] for row in _core_rows("tw_world_spell_template.sql", "spell_template", ("entry",))}
+            for entry in (14515, 15101):
+                self.assertIn(entry, templates, "Arlokk row entry %s has no creature_template row" % entry)
+            for spell in (24190, 12540):
+                self.assertIn(spell, spells, "Arlokk row spell %s has no spell_template row" % spell)
 
     def test_seek_aura_row_without_cycle_spell_refused(self):
         seek = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="seek_aura", target_entry=11357,
@@ -692,6 +834,89 @@ class BossTacticsSql(unittest.TestCase):
             for spell in (24306, 17172):
                 self.assertIn(spell, spells, "Jin'do row spell %s has no spell_template row" % spell)
 
+    def test_berserker_taunt_after_cast_row(self):
+        # 20261107100200_world.sql: the Gurubashi Berserker (11352) resets its threat
+        # every 10 s (Knock Away 11130) and every 25-30 s (Intimidating Roar 16508),
+        # both through DoResetThreat (zulgurub_trash.cpp GurubashiBerserkerAI), so the
+        # first off-tank takes it back within 5 s. Spell-less on purpose: the resets are
+        # events, not a cast slot the boss side could key on; mode until_tank only.
+        name = "20261107100200_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Berserker taunt_after_cast migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        taunt = live.get((309, 11352, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(taunt, "the Berserker taunt_after_cast row is missing")
+        self.assertEqual((1, 5.0, "until_tank", 0, 100),
+                         (taunt["priority"], taunt["param"], taunt["tactic_mode"], taunt["hp_min"], taunt["hp_max"]),
+                         "the Berserker taunt_after_cast row drifted")
+        self.assertIsNone(new_kind_problem(taunt))
+    def test_berserker_row_is_documented(self):
+        # docs/play/boss-tactics.md lists every live ZG taunt row with its
+        # toggles; the Berserker row needs DungeonRunAuraTactics and
+        # DungeonRunCharmYield. A spell-less until_tank row recurs on every
+        # threat reset, so Known limits no longer demands a cast trigger.
+        with open(DOC, encoding="utf-8") as handle:
+            doc = handle.read()
+        rows = [line for line in doc.splitlines() if "Gurubashi Berserker" in line]
+        self.assertTrue(rows, "the Berserker row is missing from the ZG table")
+        self.assertTrue(any("11352" in line for line in rows), "the Berserker row names no entry")
+        self.assertTrue(any("DungeonRunCharmYield" in line for line in rows),
+                        "the Berserker row names no charm-yield toggle")
+        self.assertIn("spell-less `taunt_after_cast` mode `until_tank` covers a scripted threat reset", doc)
+
+    def test_jindo_ward_before_totem_migration(self):
+        # 20261105234000_world.sql: the Powerful Healing Ward 14987 heals Jin'do about as much as the raid deals, so it
+        # outranks the Brain Wash Totem 15112. The migration deletes exactly those two rows by their key and inserts
+        # them swapped; a delete that is too wide or a priority that drifted fails here.
+        name = "20261105234000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Jin'do ward-first migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        for entry in (15112, 14987):
+            self.assertIn(
+                "DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 11380 AND `kind` = 'kill_first' "
+                "AND `target_entry` = %d AND `spell_id` = 0;" % entry, text)
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        ward = live.get((309, 11380, "kill_first", 14987, 0))
+        totem = live.get((309, 11380, "kill_first", 15112, 0))
+        self.assertIsNotNone(ward, "the Jin'do ward kill_first row is missing")
+        self.assertIsNotNone(totem, "the Jin'do totem kill_first row is missing")
+        self.assertEqual(1, ward["priority"], "the Powerful Healing Ward is not the first kill_first row")
+        self.assertEqual(2, totem["priority"], "the Brain Wash Totem is not the second kill_first row")
+        for row in (ward, totem):
+            self.assertEqual(name, row["file"], "the ward-first migration no longer owns its row")
+            self.assertIsNone(new_kind_problem(row))
+        # The Shade's gated row (rank 0) still stands, and no other Jin'do row was touched.
+        self.assertEqual(0, live[(309, 11380, "kill_first", 14986, 0)]["priority"])
+        for key in ((309, 11380, "needs_aura", 14986, 24306), (309, 11380, "dispel_priority", 0, 24306),
+                    (309, 11380, "dispel_priority", 0, 17172), (309, 11380, "taunt_after_cast", 0, 0)):
+            self.assertIn(key, live, "the Jin'do rows of 20261103020000 / 20261105100000 must stay: %s" % (key,))
+
+    def test_jindo_banish_taunt_row(self):
+        # 20261105233000_world.sql: the first off-tank takes Jin'do back from a tank Banish 24466 teleported onto the pit
+        # trolls. The row is keyed to the spell (the glue reads the tank's landing at the spell's destination and a
+        # jump of its position), sits beside the spell-less Hex/charm row of 20261105100000 and does not replace it.
+        name = "20261105233000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Jin'do Banish migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        banish = live.get((309, 11380, "taunt_after_cast", 0, 24466))
+        self.assertIsNotNone(banish, "the Jin'do Banish taunt_after_cast row is missing")
+        self.assertEqual((1, 10.0, "until_tank", 0, 100, 0),
+                         (banish["priority"], banish["param"], banish["tactic_mode"], banish["hp_min"],
+                          banish["hp_max"], banish["bot_aura"]),
+                         "the Jin'do Banish taunt_after_cast row drifted")
+        self.assertIsNone(new_kind_problem(banish))
+        spell_less = live.get((309, 11380, "taunt_after_cast", 0, 0))
+        self.assertIsNotNone(spell_less, "the spell-less Jin'do taunt row of 20261105100000 must stay")
+        self.assertEqual(1, spell_less["priority"])
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"), "one INSERT: the Banish row")
+        self.assertIn("`spell_id` = 24466", text, "the DELETE must name the spell key")
+        self.assertGreater(name, "20261105100000_world.sql")
+
     def test_the_stale_until_tank_rows_are_deleted_by_a_later_migration(self):
         # An earlier build of 20261103020000 shipped the two spell-less dps_hold_after until_tank rows (Hakkar's Cause
         # Insanity, Mandokir's Gaze). The AutoUpdater applies by file name, so a server that ran that build never sees
@@ -745,10 +970,18 @@ class BossTacticsSql(unittest.TestCase):
         # every enemy within 10 yd (radius index 13). A kick cannot stop it (preventionType 0,
         # interruptFlags 9) and the template is stun-immune, so the row is avoid_cast and its
         # radius is the blast's 10 yd plus 3.
-        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): float(row[7]) for row in effective_rows()}
-        self.assertIn((309, 14750, "avoid_cast", 0, 24024), live)
-        self.assertGreaterEqual(live[(309, 14750, "avoid_cast", 0, 24024)], 13.0)
-        self.assertNotIn((309, 14750, "interrupt", 0, 24024), live)
+        live = {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])): row for row in effective_rows()}
+        key = (309, 14750, "avoid_cast", 0, 24024)
+        self.assertIn(key, live)
+        row = live[key]
+        self.assertGreaterEqual(float(row[7]), 13.0)
+        # F4-A: mode `all` clears the tanks too while the spell is cast; F4-B data: `priority` 50 is the
+        # caster's own health % at or below which the zone is already live. The pinned values stop a
+        # new migration from silently dropping either half.
+        self.assertEqual("all", row[12], "the Bat Rider row lost mode `all`")
+        self.assertEqual(50, int(row[6]), "the Bat Rider row lost the early-zone health (F4-B priority 50)")
+        self.assertNotIn((309, 14750, "interrupt", 0, 24024),
+                         {(int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5])) for row in effective_rows()})
 
     def test_venoxis_mad_servant_and_voidwalker_rows(self):
         # Zul'Gurub (309), the High Priest Venoxis leg's Mad Servant / Mad Voidwalker wall. A dying Mad

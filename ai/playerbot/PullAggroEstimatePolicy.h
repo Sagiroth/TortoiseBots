@@ -125,6 +125,7 @@ namespace ai
         bool seen = true;                      // line of sight between it and the pulled creature (stands in for the
                                                // caller's sight of it, which assist needs)
         bool patroller = false;                // a waypoint mover
+        bool normalRank = false;               // CREATURE_ELITE_NORMAL: no body of the elite count
     };
 
     // A directed creature_linking edge: when `from` is aggroed, `to` is too.
@@ -260,6 +261,7 @@ namespace ai
     struct AggroEstimate
     {
         std::uint32_t bodies = 0;            // all creatures that come, the target included
+        std::uint32_t bodiesElite = 0;       // ... the ones not CREATURE_ELITE_NORMAL (the automatic cc's bodies)
         std::uint32_t joiners = 0;           // bodies - 1
         std::uint32_t bodiesIfPatrolsPass = 0; // the same with the lone patrollers left out
         bool patrolIsTheCause = false;       // a patrol alone makes the difference (see JoinersOverCeiling)
@@ -322,7 +324,7 @@ namespace ai
         }
 
         inline std::uint32_t Count(std::vector<AggroMob> const& mobs, std::size_t target,
-            AggroEstimateParams const& p, bool leavePatrolsOut)
+            AggroEstimateParams const& p, bool leavePatrolsOut, std::uint32_t* elite = nullptr)
         {
             std::size_t const n = mobs.size();
             if (target >= n)
@@ -377,7 +379,11 @@ namespace ai
             std::uint32_t count = 0;
             for (std::size_t i = 0; i < n; ++i)
                 if (in[i])
+                {
                     ++count;
+                    if (elite && !mobs[i].normalRank)
+                        ++*elite;
+                }
             return count;
         }
     }
@@ -389,7 +395,7 @@ namespace ai
         AggroEstimateParams const& params)
     {
         AggroEstimate e;
-        e.bodies = detail::Count(mobs, target, params, false);
+        e.bodies = detail::Count(mobs, target, params, false, &e.bodiesElite);
         e.joiners = e.bodies > 0 ? e.bodies - 1 : 0;
         e.bodiesIfPatrolsPass = detail::Count(mobs, target, params, true);
         return e;
@@ -475,7 +481,7 @@ namespace ai
 
         inline std::uint32_t RingCount(std::vector<AggroMob> const& mobs, std::size_t target,
             AggroGeometry const& g, AggroEstimateParams const& p, SightBudget& budget,
-            std::vector<AggroMember>* members)
+            std::vector<AggroMember>* members, std::uint32_t* elite = nullptr)
         {
             std::size_t const n = mobs.size();
             if (target >= n)
@@ -593,7 +599,11 @@ namespace ai
             std::uint32_t count = 0;
             for (std::size_t i = 0; i < n; ++i)
                 if (in[i])
+                {
                     ++count;
+                    if (elite && !mobs[i].normalRank)
+                        ++*elite;
+                }
             return count;
         }
     }
@@ -606,7 +616,7 @@ namespace ai
     {
         AggroEstimate e;
         detail::SightBudget budget;
-        e.bodies = detail::RingCount(mobs, target, geometry, params, budget, &e.members);
+        e.bodies = detail::RingCount(mobs, target, geometry, params, budget, &e.members, &e.bodiesElite);
         e.joiners = e.bodies > 0 ? e.bodies - 1 : 0;
         // No second pass with the patrols left out: the ring path never waits a patrol out (a
         // patroller counts at its position), so its body count and the sight budget it spent are

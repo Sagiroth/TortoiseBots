@@ -196,7 +196,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             bot->GetSession()->HandleCancelTradeOpcode(cancel);
             if (order.state == OrderState::Enchanting || order.state == OrderState::Coming)
             {
-                SetState(bot->GetGUIDLow(), order.state == OrderState::Enchanting ?
+                TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), order.state == OrderState::Enchanting ?
                     OrderState::Ready : order.state, OrderReason::None);
                 ClearMeet(bot->GetGUIDLow());
             }
@@ -223,7 +223,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
         if (done && EnchantDoneVerified(done->GetEnchantmentId(PERM_ENCHANTMENT_SLOT), want) &&
             !HasAllEnchantReagents(bot, order.itemId))
         {
-            SetState(bot->GetGUIDLow(), OrderState::Done, OrderReason::None);
+            TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Done, OrderReason::None);
             {
                 std::vector<std::pair<uint32_t, uint32_t>> used;
                 for (ai::GuildOrderEnchantMaterial const& reagent : ai::GuildOrderEnchantReagents(order.itemId))
@@ -249,7 +249,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     TortoiseBots::EnchantCapital::WaitReason(bot) ==
                         TortoiseBots::EnchantCapital::TeleportWait::Ok)
                     TortoiseBots::EnchantCapital::TeleportToCapitalInn(bot);
-                SetState(bot->GetGUIDLow(), OrderState::Coming, OrderReason::None);
+                TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Coming, OrderReason::None);
                 return true;
             default:
                 return false;
@@ -263,7 +263,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             case EnchantLifecycleStep::MeetExpired:
             {
                 bool need = order.reason == OrderReason::NeedItems;
-                SetState(bot->GetGUIDLow(), need ? OrderState::Waiting : OrderState::Ready,
+                TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), need ? OrderState::Waiting : OrderState::Ready,
                     need ? OrderReason::NeedItems : OrderReason::None);
                 ClearMeetFailed(bot->GetGUIDLow());
                 return true;
@@ -281,7 +281,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     {
                         ai->TellPlayerNoFacing(giver, kTradeGiveUpText,
                             PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-                        SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
+                        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
                         ClearMeetFailed(bot->GetGUIDLow());
                         return true;
                     }
@@ -291,7 +291,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
                     bot->GetSession()->HandleInitiateTradeOpcode(packet);
                     if (bot->GetTrader() == giver)
                     {
-                        SetState(bot->GetGUIDLow(), OrderState::Enchanting, OrderReason::None);
+                        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Enchanting, OrderReason::None);
                         return true;
                     }
                 }
@@ -353,7 +353,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
             bot->GetSession()->HandleCancelTradeOpcode(cancel);
             if (next == TradeTryAction::GiveUp)
             {
-                SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
+                TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Ready, OrderReason::None);
                 ClearMeetFailed(bot->GetGUIDLow());
             }
             return true;
@@ -365,7 +365,7 @@ bool GuildEnchantOrderAction::Execute(Event& event)
     // the trade-status path counts real windows only.
     if (order.state == OrderState::Enchanting && !bot->GetTrader())
     {
-        SetState(bot->GetGUIDLow(), OrderState::Coming, OrderReason::None);
+        TortoiseBots::GuildOrders::SetState(bot->GetGUIDLow(), OrderState::Coming, OrderReason::None);
         return true;
     }
 

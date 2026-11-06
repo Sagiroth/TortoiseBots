@@ -23,6 +23,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot status`](#bot-status) | `<Name>` | Displays detailed lifecycle and movement state for a bot. |
 | [`.bot stats`](#bot-stats) | None | Summarizes online counts for your controllable bots. |
 | [`.bot trace`](#bot-trace) | `start <run_id> [party\|bot <Name>] [driver=...]` / `stop [<run_id>]` / `status` | Opt-in run recorder (`AiPlayerbot.RunTrace.Enabled`). |
+| [`.bot why`](#bot-why) | `<Name> [seconds]` | GM: one bot's AI decisions for a short window, as `TBWHY\|` server-log lines. |
 | [`.bot lease`](#bot-lease) | `[status]` | Reports autonomous activity leases and active timers. |
 | [`.bot version`](#bot-version) | None | Displays module version, protocol string, and author credits. |
 | [`.bot features`](#bot-features) | `[all <text>]` | Lists the server's player-facing switches and their values. |
@@ -80,6 +81,45 @@ Opt-in recorder for tests and tuning: it writes what a party's bots did during o
 | `.bot trace start <run_id> [party\|bot <Name>] [driver=<model>:<effort>:<run>]` | Starts a run. `party` (default) records the bots of your party (a bound [remote commander](commander.md) records the group it commands); `bot <Name>` records one bot you control. The run id (1-64 letters, digits, `.`, `_`, `-`) is stamped on every record, and names the files; an id that already has a trace is refused (`refused`). With `AiPlayerbot.RunTrace.GmOnly = 1` (the default) only a GameMaster may start a run (`forbidden`); with `0` a GameMaster may trace any party and everyone else only a party whose bots they control or command (`forbidden`). `driver=<model>:<effort>:<run>` (anywhere after the run id, once) says what drove the run, for example `driver=sonnet:medium:zf-ab-1-s2`; it goes into the summary as `driver`, self-reported and never verified (1-96 letters, digits and `. _ - : +`; otherwise `invalid`). Left out, the summary says `human` for a run nobody commands and `unknown` for a commanded or run-leader run. One run at a time. ACK: `TBM:ACTION_ACK|trace start|party\|bot:<Name>|<bots>|<run_id>`. |
 | `.bot trace stop [<run_id>]` | Ends the run (with a run id, only that run's trace: another run's id answers `other-run` and nothing is stopped); the end record and the summary are written a moment later (a `start` in that moment is refused: `finishing`). Only a GameMaster or the player who started it (`forbidden`); `not-running` without one. ACK: `TBM:ACTION_ACK|trace stop|stopped|1|<run_id>`. |
 | `.bot trace status` | Prints the running run's id, scope, elapsed time, record counts, bytes written and lines dropped; the id and scope only to a GameMaster and the player who started it (anyone else sees that a run is going, with an empty run id). ACK: `TBM:ACTION_ACK|trace status|running\|finishing\|idle|<0\|1>|<run_id>`. |
+
+### `.bot why`
+
+GameMaster diagnosis of a single bot: for the next few seconds it writes every AI tick to the server log, with the chosen action, the actions that fired but lost and why, the current target and (when it has one) that target's victim. Use it when a bot does the wrong thing and the code looks right, for example a main tank that never taunts. One trace runs at a time; nothing is recorded until the command is used.
+
+```text
+.bot why <Name> [seconds]
+```
+
+`seconds` defaults to 30 and is capped at 120. The bot must be online with an AI controller. Only a GameMaster may run it (`forbidden` otherwise), also through the commander chat. A second `.bot why` while a trace runs is refused (`refused`, naming the running trace and its time left); the message says why in the trace-ended summary.
+
+The reply says the trace started and the summary arrives here when it ends; the log carries the detail. Every line starts with `TBWHY|`:
+
+| Line | Fields |
+| :--- | :--- |
+| `tick` | `t` seconds into the trace, `n` tick number, `st` the engine that ticked (`combat`, `non-combat`, `dead`, `reaction`), `chosen` the action that ran and its relevance (`-` when none), `tgt` the AI's current target as `0xGUID:name`, `victim` who that target is hitting, and `lost` up to five actions that were already queued when the tick's action loop started and were not chosen, each `name(relevance,reason)`; work the tick itself queues (a chosen action's continuers) is not a loser and is left out. |
+| `strategies` | One per engine, at trace start and whenever that engine's strategy set changes: `st` and the attached strategy names. |
+| `order` | A chat order the bot received (`from`, `text`). |
+| `call` | An action run because somebody ordered it (`from`, `act`, `src`): the commander and run-leader order helpers land here. |
+| `start` / `end` | The trace's bounds: seconds and requester, then the stop reason, tick count, lines dropped by the budget and the tallies. |
+
+Reasons in `lost`:
+
+| Reason | Meaning |
+| :--- | :--- |
+| `lower-relevance` | Something more relevant ran first; the action stayed queued. |
+| `not-possible` | `isPossible()` said no, with nothing more specific known. |
+| `not-useful` | `isUseful()` said no. |
+| `cooldown` | Its spell's own cooldown was still running. |
+| `gcd` | The global cooldown, or another cast still in flight. |
+| `out-of-range` | The cast check refused on distance. |
+| `no-target` | No unit to act on. |
+| `strategy-inactive` | No attached strategy defines the action any more. |
+| `vetoed` | A multiplier zeroed its relevance. |
+| `backoff` | The failure backoff dropped it. |
+| `prereq` | Its prerequisites were queued first. |
+| `failed` | It ran and `Execute()` returned false. |
+
+The trace is bounded: at most 20 `TBWHY|` lines per second (extra ticks and orders are counted, not written), one bot, one trace per server, at most two minutes. It ends by itself on the timeout, when the bot leaves the world or the server shuts down, and always writes an `end` line and sends the summary to the GameMaster who started it.
 
 ### `.bot lootlog`
 

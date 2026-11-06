@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/TargetValue.h"
 #include "playerbot/strategy/values/CcMarkHoldPolicy.h"
 #include "playerbot/WarriorWwStancePolicy.h"
+#include "WarriorGapCloser.h"
 #include "playerbot/policy/combat/RaidSnarePolicy.h"
 
 namespace ai
@@ -262,6 +263,93 @@ namespace ai
             return CastSpellOnEnemyHealerAction::isUseful() &&
                 !(sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), GetTarget()));
         }
+    };
+
+    // Charge / Intercept as a gap closer (DecideWarriorGapCloser): the target
+    // and the spell come from the decision, the stance is the node's
+    // prerequisite ("battle stance for charge" / "berserker stance for
+    // intercept"). The decision measures the core's edge-to-edge distance, so
+    // the cast check keeps the core's own range test instead of the bot-side
+    // one, whose melee size factor reads short of it near the 8 yd minimum.
+    // A reach action, so the boss-fight multipliers that hold reach moves
+    // (Golemagg splash, Geddon inferno, ...) hold it too.
+    class CastWarriorGapCloserAction : public CastReachTargetSpellAction
+    {
+    public:
+        CastWarriorGapCloserAction(PlayerbotAI* ai, std::string spell, WarriorGapCloser kind) :
+            CastReachTargetSpellAction(ai, spell, WARRIOR_GAP_CLOSER_MIN_RANGE), kind(kind) {}
+
+        Unit* GetTarget() override
+        {
+            Unit* target = nullptr;
+            return DecideWarriorGapCloser(ai, &target) == kind ? target : nullptr;
+        }
+
+        bool isUseful() override
+        {
+            Unit* target = nullptr;
+            if (DecideWarriorGapCloser(ai, &target) != kind || !target)
+                return false;
+            if (sPlayerbotAIConfig.avoidCreatureAuras && PossibleTriggersValue::GapCloserIntoKeepout(ai, GetSpellName(), target))
+                return false;
+            return CastSpellAction::isUseful();
+        }
+
+        bool isPossible() override
+        {
+            Unit* target = GetTarget();
+            return target && ai->CanCastSpell(GetSpellName(), target, 0, nullptr, false);
+        }
+
+    private:
+        WarriorGapCloser kind;
+    };
+
+    class CastGapCloserChargeAction : public CastWarriorGapCloserAction
+    {
+    public:
+        CastGapCloserChargeAction(PlayerbotAI* ai) : CastWarriorGapCloserAction(ai, "charge", WarriorGapCloser::Charge) {}
+
+    protected:
+        virtual std::string getName() override { return "gap closer charge"; }
+    };
+
+    class CastGapCloserInterceptAction : public CastWarriorGapCloserAction
+    {
+    public:
+        CastGapCloserInterceptAction(PlayerbotAI* ai) : CastWarriorGapCloserAction(ai, "intercept", WarriorGapCloser::Intercept) {}
+
+    protected:
+        virtual std::string getName() override { return "gap closer intercept"; }
+    };
+
+    // The stance swaps for the gap closers: only when the decision stands, so
+    // a Charge on cooldown or an unaffordable Intercept never truncates the
+    // bar or leaves Defensive Stance. The plain stance actions refuse tanks.
+    class CastBattleStanceForChargeAction : public CastBuffSpellAction
+    {
+    public:
+        CastBattleStanceForChargeAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "battle stance") {}
+        bool isUseful() override
+        {
+            return CastBuffSpellAction::isUseful() && DecideWarriorGapCloser(ai) == WarriorGapCloser::Charge;
+        }
+
+    protected:
+        virtual std::string getName() override { return "battle stance for charge"; }
+    };
+
+    class CastBerserkerStanceForInterceptAction : public CastBuffSpellAction
+    {
+    public:
+        CastBerserkerStanceForInterceptAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "berserker stance") {}
+        bool isUseful() override
+        {
+            return CastBuffSpellAction::isUseful() && DecideWarriorGapCloser(ai) == WarriorGapCloser::Intercept;
+        }
+
+    protected:
+        virtual std::string getName() override { return "berserker stance for intercept"; }
     };
 
     class CastInterceptOnSnareTargetAction : public CastSnareSpellAction

@@ -28,6 +28,7 @@
 #include "../../runtime/AltBotPolicy.h"
 #include "../../runtime/AltBotService.h"
 #include "../../runtime/RunTrace.h"
+#include "../../runtime/WhyTrace.h"
 #include "../../runtime/BotActivityLease.h"
 #include "../../runtime/HireLifecycle.h"
 #include "../../runtime/GuildOrderStore.h"
@@ -342,6 +343,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
     // thread and the same tick, after the maps may have despawned an add of the cached scan.
     ai::BossTacticsScanScope bossTacticsScan;
+    ai::ReleaseWalkoutPet(bot);
     ++aiUpdateTick;
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
@@ -352,6 +354,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     }
 
     SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
+
+    // Before every engine and before any early return: a pet that reacted to the charmed member on its own, or kept
+    // an attack from before the charm, is stood down even while this bot's AI is throttled or yielding.
+    UpdateCharmedAllyPetHold();
 
     // Action log scope (AiPlayerbot.ActionLogScope = commanded): re-read at most
     // every 15 s per bot, here because the group, binding and hire lookups are
@@ -2831,6 +2837,10 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     if (type == CHAT_MSG_SYSTEM)
         return;
 
+    // `.bot why`: an order this bot received (whisper/party/raid chat,
+    // run-leader or commander included), recorded for the trace.
+    TortoiseBots::WhyTraceService::Instance().NoteOrder(this, &fromPlayer, filtered);
+
     if (filtered.find(sPlayerbotAIConfig.commandSeparator) != std::string::npos)
     {
         std::vector<std::string> commands;
@@ -3134,6 +3144,9 @@ void PlayerbotAI::ChangeEngine(BotState type)
 void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
 {
     SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
+    // `.bot why`: closes the tick line on every return path, and does nothing
+    // unless this bot is the one being traced.
+    TortoiseBots::WhyTraceService::TickScope whyScope(this);
     const bool previousActivityOverride = explicitActivityOverride;
     explicitActivityOverride = previousActivityOverride || forceActivity;
 
@@ -3760,6 +3773,10 @@ bool PlayerbotAI::CanDoSpecificAction(const std::string& name, bool isUseful, bo
 bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool silent)
 {
     Player* requester = event.getOwner();
+    // `.bot why`: an action somebody ordered (chat, commander or run leader)
+    // is an order the trace shows. Internal callers pass the bot as owner.
+    if (requester && bot && requester->GetObjectGuid() != bot->GetObjectGuid())
+        TortoiseBots::WhyTraceService::Instance().NoteOrderAction(this, requester, name, event.getSource());
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         Engine* engine = engines[i];
@@ -4917,6 +4934,105 @@ void PlayerbotAI::RestorePullHoldPet()
     if (pet->GetReactState() != REACT_PASSIVE)
         return;
     pet->SetReactState(stance);
+}
+
+void PlayerbotAI::UpdateCharmedAllyPetHold()
+{
+    if (!bot)
+        return;
+
+    bool charmedAllyUp = false;
+    if (sPlayerbotAIConfig.dungeonRunCharmYield)
+    {
+        // The bot itself counts: when a creature charms this bot, its own pet and guardians must stand down too.
+        ObjectGuid const ownCharmer = bot->GetCharmerGuid();
+        charmedAllyUp = MemberHoldsPetHold(bot->IsAlive(), bot->IsInWorld(), true, !ownCharmer.IsEmpty(),
+                                           ownCharmer.IsPlayer());
+        if (!charmedAllyUp && bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(bot->GetGroup()))
+            {
+                if (!member)
+                    continue;
+                ObjectGuid const charmer = member->GetCharmerGuid();
+                if (MemberHoldsPetHold(member->IsAlive(), member->IsInWorld(), member->GetMap() == bot->GetMap(),
+                                       !charmer.IsEmpty(), charmer.IsPlayer()))
+                {
+                    charmedAllyUp = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!CharmedAllyParksPet(sPlayerbotAIConfig.dungeonRunCharmYield, charmedAllyUp))
+    {
+        if (!charmHoldActive_)
+            return;
+        charmHoldActive_ = false;
+
+        // Undo only our own park: a stance the pull hold or the player set meanwhile is not the charm's to touch.
+        if (charmHoldPetStance_ != kNoSavedStance)
+        {
+            Pet* pet = bot->GetPet();
+            if (pet && pet->getObjectGuid() == charmHoldPetGuid_ && pet->GetReactState() == REACT_PASSIVE &&
+                pullHoldPetStance_ == kNoSavedStance)
+                pet->SetReactState(static_cast<ReactStates>(charmHoldPetStance_));
+            charmHoldPetStance_ = kNoSavedStance;
+            charmHoldPetGuid_.Clear();
+        }
+
+        struct RestoreGuardian
+        {
+            std::map<ObjectGuid, int> const& saved;
+            void operator()(Unit* unit) const
+            {
+                Creature* creature = dynamic_cast<Creature*>(unit);
+                if (!creature || creature->IsTotem())
+                    return;
+                auto it = saved.find(creature->getObjectGuid());
+                if (it == saved.end() || creature->GetReactState() != REACT_PASSIVE)
+                    return;
+                creature->SetReactState(static_cast<ReactStates>(it->second));
+            }
+        };
+        bot->CallForAllControlledUnits(RestoreGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
+        charmHoldGuardianStances_.clear();
+        return;
+    }
+
+    charmHoldActive_ = true;
+
+    if (Pet* pet = bot->GetPet())
+    {
+        ObjectGuid const guid = pet->getObjectGuid();
+        if (pet->GetReactState() != REACT_PASSIVE && (charmHoldPetStance_ == kNoSavedStance || charmHoldPetGuid_ != guid))
+        {
+            charmHoldPetStance_ = static_cast<int>(pet->GetReactState());
+            charmHoldPetGuid_ = guid;
+        }
+        pet->SetReactState(REACT_PASSIVE);
+        // The stance keeps the core's PetAI from re-acquiring the member after this update; the stop takes the
+        // attack already under way now. Both are needed: AttackStop does not reset the strike timer.
+        pet->AttackStop();
+    }
+
+    struct ParkGuardian
+    {
+        std::map<ObjectGuid, int>& saved;
+        void operator()(Unit* unit) const
+        {
+            Creature* creature = dynamic_cast<Creature*>(unit);
+            if (!creature || creature->IsTotem())
+                return;
+            ObjectGuid const guid = creature->getObjectGuid();
+            if (creature->GetReactState() != REACT_PASSIVE && saved.find(guid) == saved.end())
+                saved[guid] = static_cast<int>(creature->GetReactState());
+            creature->SetReactState(REACT_PASSIVE);
+            creature->AttackStop();
+        }
+    };
+    bot->CallForAllControlledUnits(ParkGuardian{charmHoldGuardianStances_}, CONTROLLED_GUARDIANS);
 }
 
 size_t PlayerbotAI::DropQueuedMovementOrders()

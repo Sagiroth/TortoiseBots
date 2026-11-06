@@ -44,6 +44,22 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;", raid)
 
 
+    def test_respawn_nest_key_default_on_and_fed_to_the_facts(self):
+        # AiPlayerbot.DungeonRunRespawnNest: the respawn-nest rules (DungeonRun::NestLeavable, GatherAnchorInNest) are
+        # live by default; the glue feeds Facts::respawnNest and reads whether an engaged unit hits the party.
+        keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
+        self.assertIn(
+            'dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", false);', keys)
+        self.assertIn("bool dungeonRunRespawnNest = false;", HEADER)
+        self.assertIn("AiPlayerbot.DungeonRunRespawnNest = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunRespawnNest`", SETTINGS)
+        self.assertIn("[`AiPlayerbot.DungeonRunRespawnNest`](#aiplayerbotdungeonrunrespawnnest) | `0`", SETTINGS)
+        code = strip_comments(COMMANDER)
+        self.assertIn("f.respawnNest = sPlayerbotAIConfig.dungeonRunRespawnNest;", code)
+        self.assertIn("if (f.respawnNest && slot.run.regroup", code)
+        # Whether an engaged unit hits a party bot or pet now: a nest unit that does is a real fight.
+        self.assertIn("fact.hitsParty = victim && ep->party.count(victim->GetObjectGuid().GetRawValue()) != 0;", code)
+
     def test_healer_guard_key_default_off_and_fed_to_the_raid_facts(self):
         # AiPlayerbot.DungeonRunRaidHealerGuard: in a raid boss fight whose main tank holds the boss, and in a raid
         # trash fight whose main tank holds its current target, an add on a healer goes to the nearest ranged dps first

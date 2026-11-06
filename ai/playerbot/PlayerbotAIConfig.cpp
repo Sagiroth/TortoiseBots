@@ -32,6 +32,7 @@
 #include "../../runtime/AltBotService.h"
 // logEvent forwards the activity whitelist to the telemetry daemon.
 #include "../../runtime/ObservabilityEmitter.h"
+#include "../../runtime/CombatMonitorService.h"
 // Faction-ratio / start-zone-weight parsing lives in the core-free
 // StartZoneBalance.h so the standalone unit test can exercise it.
 #include "../../runtime/StartZoneBalance.h"
@@ -138,6 +139,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunAuraTactics = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraTactics", false);
     dungeonRunAuraGatedTargets = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraGatedTargets", false);
+    dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", false);
     dungeonRunKillFirstGrid = config.GetBoolDefault("AiPlayerbot.DungeonRunKillFirstGrid", false);
     dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
@@ -145,6 +147,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
+    dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
     dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);
     dungeonRunRangedOnly = config.GetBoolDefault("AiPlayerbot.DungeonRunRangedOnly", false);
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
@@ -922,6 +925,7 @@ bool PlayerbotAIConfig::Initialize()
     rndBotCheatMask = uint32(CheatAction::GetCheatMask(config.GetStringDefault("AiPlayerbot.RndBotCheats", "repair,breath,item")));
 
     combatMonitor = config.GetBoolDefault("AiPlayerbot.CombatMonitor", false);
+    combatTimeline = config.GetBoolDefault("AiPlayerbot.CombatTimeline", false);
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));
@@ -1048,6 +1052,8 @@ bool PlayerbotAIConfig::Initialize()
     warlockPetBySpec = config.GetBoolDefault("AiPlayerbot.WarlockPetBySpec", true);
     warlockRaidRotation = config.GetBoolDefault("AiPlayerbot.WarlockRaidRotation", false);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
+    sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", false);
+    warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", false);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
@@ -1173,6 +1179,8 @@ bool PlayerbotAIConfig::Initialize()
     sRandomBotFacade.LoadNamedLocationCache();
     sLog.outString("Loading boss tactics.");
     ai::LoadBossTactics();
+    sLog.outString("Loading combat timeline aura watch.");
+    TortoiseBots::CombatMonitorService::Instance().LoadTimelineWatch();
     sLog.outString("Loading boss stand sets.");
     ai::LoadBossStands();
     sLog.outString("Loading dungeon plans.");

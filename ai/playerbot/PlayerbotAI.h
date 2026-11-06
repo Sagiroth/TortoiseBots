@@ -1188,6 +1188,13 @@ protected:
     // non-passive stance, so a re-hold while passive keeps the original.
     static constexpr int kNoSavedStance = -1;
     int pullHoldPetStance_ = kNoSavedStance;
+    // Pet and guardian stances a creature-charmed group member parked passive (UpdateCharmedAllyPetHold): the core's
+    // PetAI would otherwise retaliate or keep swinging on the member for the ten seconds of the charm. Guid-keyed,
+    // so a pet summoned during the hold is not handed another pet's stance, and only a non-passive stance is saved.
+    bool charmHoldActive_ = false;
+    ObjectGuid charmHoldPetGuid_;
+    int charmHoldPetStance_ = kNoSavedStance;
+    std::map<ObjectGuid, int> charmHoldGuardianStances_;
     // After a change to "wait for attack" in the engines of `type` by anyone
     // but the window itself: those copies are no longer the pull's, and the
     // hold is over once the combat engine has none left.
@@ -1199,6 +1206,12 @@ public:
     // the window) restore the pet even when the tank's loop can't reach it.
     void ParkPetForPullHold();
     void RestorePullHoldPet();
+    // Stand every pet and guardian of this bot down while a creature is charming a member of its group, and clear
+    // the combat it may already have against that member; restore the stances once no such member is up. Runs every
+    // update, before the engines: the core's PetAI target pick is not ours to refuse (see CharmedAllyParksPet).
+    void UpdateCharmedAllyPetHold();
+    // Whether that hold is up now: while it is, the hold owns the stance, so nothing flips a parked pet back.
+    bool IsCharmPetHoldActive() const { return charmHoldActive_; }
 protected:
 
     // Evade probe (diagnostics only): samples the health and evade state of the creature

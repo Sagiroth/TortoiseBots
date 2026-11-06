@@ -6,6 +6,7 @@
 #include "playerbot/policy/combat/InterruptTargetPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "AttackersValue.h"
 
 using namespace ai;
 
@@ -82,7 +83,10 @@ Unit* InterruptTargetValue::Calculate()
 
         bool const claimed = bot->GetGroup() &&
             BuffClaimRegistry::IsClaimedByOther(bot->GetObjectGuid(), unit->GetObjectGuid(), InterruptClaimKey());
-        int const tier = InterruptTargetTier(priority, claimed);
+        // AiPlayerbot.DungeonRunCharmYield: a charmed group member's cast is never interrupted (Counterspell, Shield
+        // Bash, Pummel on the ally are what killed four damage dealers in 109 s).
+        bool const offLimits = AttackersValue::CharmedAllyOffLimits(unit, bot);
+        int const tier = InterruptTargetTier(priority, claimed, offLimits);
         if (tier == kInterruptTargetRejected)
             continue;
         if (!best || tier < bestTier)

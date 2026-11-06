@@ -7,10 +7,8 @@ on one side only fails the other side's test.
 
 import argparse
 import csv
-import glob
 import io
 import json
-import os
 import re
 import sys
 import tempfile
@@ -130,32 +128,14 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(got, expected)
 
     def _tactics_from_the_sql_test(self):
-        """Effective rows from the existing test's parser, with its own DELETE matcher."""
-        from test_boss_tactics_sql import migration_rows
+        """Effective rows from the tactics SQL test's own replay (INSERTs, DELETEs and UPDATEs)."""
+        from test_boss_tactics_sql import effective_rows
 
-        files = sorted(glob.glob(os.path.join(ROOT, "data/sql/world/*_world.sql")))
-        raw = {}
-        for row in migration_rows():
-            name, map_id, boss, kind, target, spell, priority, param = row[:8]
-            raw.setdefault(name, []).append(
-                (int(map_id), int(boss), kind, int(target), int(spell),
-                 int(priority), float(param))
-            )
-        effective = {}
-        for path in files:
-            name = os.path.basename(path)
-            text = Path(path).read_text(encoding="utf-8")
-            for line in text.splitlines():
-                if not line.startswith("DELETE FROM `ai_boss_tactic`"):
-                    continue
-                effective = {
-                    key: value
-                    for key, value in effective.items()
-                    if not _deleted_by(line, key)
-                }
-            for row in raw.get(name, []):
-                effective[row[:5]] = row
-        return set(effective.values())
+        return {
+            (int(row[1]), int(row[2]), row[3], int(row[4]), int(row[5]),
+             int(row[6]), float(row[7]))
+            for row in effective_rows()
+        }
 
     def test_stand_replay_applies_delete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -446,30 +426,6 @@ class CoverageTest(unittest.TestCase):
             if match.group(0) not in allowed
         ]
         self.assertEqual(found, [], "boss entry or spell id written in code")
-
-
-def _deleted_by(statement, key):
-    """The DELETE condition of the existing SQL test's statement, evaluated on a key."""
-    columns = {"map": 0, "boss_entry": 1, "kind": 2, "target_entry": 3, "spell_id": 4}
-    condition = statement.split(" WHERE ", 1)[1].rstrip(";")
-    for part in re.split(r"\s+AND\s+", condition):
-        match = re.fullmatch(r"`(\w+)` = ('[^']*'|\d+)", part)
-        if match:
-            column, raw = match.groups()
-            if column in ("hp_min", "hp_max"):
-                continue  # the health band is not part of this test's five-column key
-            value = raw[1:-1] if raw.startswith("'") else int(raw)
-            if key[columns[column]] != value:
-                return False
-            continue
-        match = re.fullmatch(r"`(\w+)` IN \(([^)]*)\)", part)
-        if not match:
-            raise AssertionError("unparsed WHERE %r" % part)
-        column, raw_values = match.groups()
-        values = [int(item.strip()) for item in raw_values.split(",")]
-        if key[columns[column]] not in values:
-            return False
-    return True
 
 
 def text_table():

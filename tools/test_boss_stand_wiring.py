@@ -199,10 +199,10 @@ class BossStandWiring(unittest.TestCase):
 
     def test_stand_action_snaps_the_seat_to_the_ground_before_the_move(self):
         fn = body(ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")
-        probe = fn.index("const float probeZ = StandProbeZ(stand.z, bot->GetPositionZ());")
-        snap = fn.index("bot->UpdateGroundPositionZ(stand.x, stand.y, z);")
-        keep = fn.index("z = StandSnappedZ(stand.z, probeZ, z);")
-        move = fn.index("MoveTo(bot->GetMapId(), stand.x, stand.y, z, false, false, false, true)")
+        probe = fn.index("const float probeZ = StandProbeZ(seatZ, bot->GetPositionZ());")
+        snap = fn.index("bot->UpdateGroundPositionZ(seatX, seatY, z);")
+        keep = fn.index("z = StandSnappedZ(seatZ, probeZ, z);")
+        move = fn.index("MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true)")
         self.assertLess(probe, snap)
         self.assertLess(snap, keep)
         self.assertLess(keep, move)
@@ -216,8 +216,11 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("bot->CastStop();", fn)
         self.assertLess(fn.index("bot->CastStop();"), fn.index("MoveTo("))
         # A bot within 6 yd of its seat keeps the cast it is in.
-        self.assertIn("if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y))\n        bot->CastStop();", fn)
-        self.assertIn("StandArrived(bot->GetPositionX(), bot->GetPositionY(), stand.x, stand.y)", fn)
+        self.assertIn("if (StandShouldStopCast(bot->GetPositionX(), bot->GetPositionY(), seatX, seatY))\n        bot->CastStop();", fn)
+        self.assertIn("StandArrived(bot->GetPositionX(), bot->GetPositionY(), seatX, seatY)", fn)
+        # The seat the bot walks to is the row's, through a live boss anchor's clamp (test_boss_anchor_wiring.py).
+        self.assertIn("float seatX = stand.x;", fn)
+        self.assertLess(fn.index("ClampMoveToBossAnchor(ai, bot, seatX, seatY, seatZ)"), fn.index("StandArrived("))
         # A bot already walking to this seat is not re-pathed.
         self.assertIn("!bot->IsStopped() && !bot->movespline->Finalized()", fn)
         possible = body(ACTIONS, "bool BossTacticsStandAction::isPossible()")

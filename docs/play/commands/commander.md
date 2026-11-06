@@ -147,24 +147,26 @@ Orders bots in the commanded party to attack the target GUID.
 Directs the group tank to pull the target GUID, while other bots wait at the lead bot's coordinates.
 
 ```text
-.bot cmd pull <guid> [seconds] [ranged]
+.bot cmd pull <guid> [seconds] [ranged|body]
 ```
 
 - Delay defaults to 10 seconds, range 0-60.
 - Non-tanks hold, then engage after the delay.
-- The `seconds` and `ranged` words are accepted in either order.
+- The `seconds`, `ranged` and `body` words are accepted in one order, once each; `ranged` and `body` exclude each other.
+- `body` walks the tank in and pulls in melee whatever the mob is.
 
 ### `.bot cmd pullback`
 
 Directs the tank to pull the target from range and immediately retreat to the lead bot's position.
 
 ```text
-.bot cmd pullback <guid> [seconds] [ranged]
+.bot cmd pullback <guid> [seconds] [ranged|body]
 ```
 
 - Delay defaults to 5 seconds.
 - The tank returns to the lead anchor. Non-tanks engage after the return plus the delay.
-- The `seconds` and `ranged` words are accepted in either order.
+- The `seconds`, `ranged` and `body` words are accepted in one order, once each; `ranged` and `body` exclude each other.
+- `body` walks the tank in and pulls in melee whatever the mob is; the tank still returns to the lead anchor.
 
 ### `.bot cmd cc`
 
