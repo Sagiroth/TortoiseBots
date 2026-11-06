@@ -109,6 +109,16 @@ uint32_t NoBankerSearches(::PlayerbotAI* ai)
     return count > 0 ? uint32_t(count) : 0;
 }
 
+// Set on the delivery travel request when the guild has no bank tabs: the
+// bot walks to a mailbox, so the drain mails without waiting for banker
+// searches that never ran.
+bool NoGuildBank(::PlayerbotAI* ai)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return false;
+    return ai->GetAiObjectContext()->GetValue<bool>("manual bool", "guild order no bank")->Get();
+}
+
 // Client numbering the bank message expects: backpack 0 with slots from 1,
 // other bags 1-4 with slots from 1. Returns false for anything worn.
 bool ClientBagSlot(Item* item, uint8_t& bag, uint8_t& slot)
@@ -604,7 +614,7 @@ private:
             }
         }
         Unit* banker = FindNearbyGuildBanker(bot, ai);
-        bool mailLeg = !banker && DeliveryMailsAfterNoBanker(NoBankerSearches(ai));
+        bool mailLeg = !banker && (NoGuildBank(ai) || DeliveryMailsAfterNoBanker(NoBankerSearches(ai)));
         if (!banker && !mailLeg)
         {
             // Left the banker (or the banker despawned): the map action
