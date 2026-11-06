@@ -117,6 +117,18 @@ static void TestCarrierNoSwitchReasonAndDirectOnly()
     CHECK(!AuraGatedDirectOnlyDamage(true, 0));
 }
 
+// t1106b round 2: "current target" can already name the pick while the live victim is another unit (or none), and the
+// old current-target-only test left the trigger off for the rest of the fight. The trigger must fire and the action
+// must re-attack the pick, not only log.
+static void TestKillFirstReattacksAStalePick()
+{
+    CHECK(!KillFirstNeedsAttack(false, false, false)); // no pick: nothing to attack
+    CHECK(KillFirstNeedsAttack(true, false, false));   // another current target
+    CHECK(KillFirstNeedsAttack(true, false, true));    // another current target, already swinging at the pick
+    CHECK(KillFirstNeedsAttack(true, true, false));    // bookkeeping says pick, live victim another unit or none
+    CHECK(!KillFirstNeedsAttack(true, true, true));    // already on it
+}
+
 static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable = true)
 {
     TacticCandidate c;
@@ -219,6 +231,7 @@ int main()
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
+    TestKillFirstReattacksAStalePick();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
