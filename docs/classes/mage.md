@@ -74,6 +74,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 - **Polymorph CC:** Casts *Polymorph* on targets assigned via `.bot action cc <mark>`. Stands still during casting and prevents AoE spells near sheeped mobs.
 - **Interrupts:** Casts *Counterspell* immediately upon detecting dangerous enemy spell casts, locking the school.
 - **Food & Drink Conjuration:** Conjures food and water out of combat, sharing stacks with party members in need.
+- **Portal Follow:** After you step through a portal this mage cast, the party bots that follow you step through it too, this mage last.
 - **Mana Gems & Runes:** Consumes the strongest mana gem held (Ruby down to Agate) below 40% mana in combat, re-conjuring gems between pulls. Uses *Dark Rune* below 40% mana when no ready gem is held (requires level 50).
 - **Party Buffs:** Maintains *Arcane Intellect* (and *Arcane Brilliance*), refreshing expiring buffs (under 15 seconds) and coordinating buff claims with other mages.
 - **Defensive Wards:** Casts *Mana Shield* at low health (also requires mana above medium) and *Ice Block* at critical health.
