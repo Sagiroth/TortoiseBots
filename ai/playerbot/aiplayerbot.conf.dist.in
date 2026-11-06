@@ -1800,8 +1800,11 @@ AiPlayerbot.PetAutoTrainAlts = 0
 # Default: 1 (enabled)
 # AiPlayerbot.AutoDoQuests = 1
 
-# Companion Mage/Warlock bots auto-place conjured food/water/healthstones into
-# the trade window when a player opens trade with them.
+# Mage/Warlock bots conjure a fresh stack of food/water/healthstones into
+# the trade window on every trade, whoever opened it. Mages give food to
+# everyone and water to mana users at the best rank both know for the
+# trader's level; warlocks give one healthstone unless the trader carries
+# one. Free and unlimited: no reagent, no mana, no cast.
 # Default: 1 (enabled)
 AiPlayerbot.AutoShareConjuredOnTrade = 1
 
