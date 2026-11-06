@@ -63,6 +63,7 @@
     // master pulls away, instead of finishing the meal.
 #include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
+#include "playerbot/PortalFollowPolicy.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -3416,6 +3417,8 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
                     bot->GetName(), master->GetName());
         }
 
+        UpdatePortalFollow(master, group);
+
         if (!group && sRandomBotFacade.IsFreeBot(bot) && !IsRealPlayer())
         {
             if (TortoiseBots::BotManager::Instance().IsBot(bot->GetObjectGuid()) &&
@@ -3434,6 +3437,175 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
     }
 
     explicitActivityOverride = previousActivityOverride;
+}
+
+// Mage-portal follow: the master stepped through a party mage's city portal
+// (often to another continent) and the bot is still behind. Walk to that
+// portal and step through it; the caster goes last; a bot that misses the
+// portal before the window runs out is summoned like the dungeon catch-up.
+namespace
+{
+bool IsPortalTeleportSpell(uint32 spellId)
+{
+    SpellEntry const* info = sServerFacade.LookupSpellInfo(spellId);
+    if (!info)
+        return false;
+    if (info->EffectTriggerSpell[0])
+        info = sServerFacade.LookupSpellInfo(info->EffectTriggerSpell[0]);
+    if (!info)
+        return false;
+    return info->Effect[0] == SPELL_EFFECT_TELEPORT_UNITS ||
+        info->Effect[1] == SPELL_EFFECT_TELEPORT_UNITS ||
+        info->Effect[2] == SPELL_EFFECT_TELEPORT_UNITS;
+}
+
+class PartyPortalCheck
+{
+public:
+    explicit PartyPortalCheck(WorldObject const* origin, float range) : i_origin(origin), i_range(range) {}
+    bool operator()(GameObject* go)
+    {
+        if (!go || !i_origin->IsWithinDistInMap(go, i_range) || !sServerFacade.isSpawned(go))
+            return false;
+        GameObjectInfo const* goInfo = go->GetGOInfo();
+        if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_SPELLCASTER || !goInfo->spellcaster.partyOnly)
+            return false;
+        if (!IsPortalTeleportSpell(goInfo->spellcaster.spellId))
+            return false;
+        if (go->GetGoState() != GO_STATE_READY || go->getLootState() == GO_ACTIVATED)
+            return false;
+        if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+            return false;
+        return true;
+    }
+
+private:
+    WorldObject const* i_origin;
+    float i_range;
+};
+}
+
+void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
+{
+    uint32 const nowMs = WorldTimer::getMSTime();
+    if (!m_portalFollowGuid.IsEmpty())
+    {
+        uint32 const elapsed = nowMs - m_portalFollowStartMs;
+        bool const crossMap = master && master->IsInWorld() && !master->IsBeingTeleported() &&
+            bot->GetMapId() != master->GetMapId();
+        bool const followStrategy = HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
+            !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+            !HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT);
+        bool const poolBot = sRandomBotFacade.IsFreeBot(bot);
+        if (!master || !master->IsInWorld() || !group || group != master->GetGroup() ||
+            !HasActivePlayerMaster() || !bot->IsAlive() || bot->IsInCombat() ||
+            !followStrategy || poolBot || !crossMap ||
+            ai::PortalFollowWindowExpired(elapsed))
+        {
+            if (ai::PortalFollowWindowExpired(elapsed) && crossMap && bot->IsAlive() &&
+                !bot->IsInCombat() && master && master->IsInWorld() && !master->IsBeingTeleported() &&
+                group && group == master->GetGroup() && HasActivePlayerMaster() &&
+                followStrategy && !poolBot)
+            {
+                if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+                    sLog.outString("TortoiseBots: bringing bot %s to master %s after missing the mage portal",
+                        bot->GetName(), master->GetName());
+            }
+            m_portalFollowGuid.Clear();
+            return;
+        }
+
+        Map* map = bot->GetMap();
+        GameObject* portal = map ? map->GetGameObject(m_portalFollowGuid) : nullptr;
+        if (!portal || !portal->IsInWorld() || portal->GetMapId() != m_portalFollowMap ||
+            !sServerFacade.isSpawned(portal) || portal->GetGoState() != GO_STATE_READY ||
+            portal->getLootState() == GO_ACTIVATED ||
+            portal->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+        {
+            if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+                sLog.outString("TortoiseBots: bringing bot %s to master %s after the mage portal closed",
+                    bot->GetName(), master->GetName());
+            m_portalFollowGuid.Clear();
+            return;
+        }
+
+        if (bot->GetClass() == CLASS_MAGE && portal->GetOwnerGuid() == bot->getObjectGuid())
+        {
+            bool othersPending = false;
+            for (Player* member : LiveGroupMembers(group))
+            {
+                if (!member || member == bot || member == master)
+                    continue;
+                PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+                if (!memberAi || memberAi->IsRealPlayer() || member->IsInCombat() || !member->IsAlive())
+                    continue;
+                if (member->GetMapId() == master->GetMapId())
+                    continue;
+                othersPending = true;
+                break;
+            }
+            if (ai::PortalFollowMageWaits(othersPending, elapsed))
+                return;
+        }
+
+        float const distance = bot->GetDistance(portal);
+        if (ai::PortalFollowReached(distance))
+        {
+            if (!bot->GetGameObjectIfCanInteractWith(portal->getObjectGuid(), MAX_GAMEOBJECT_TYPE))
+                return;
+            if (m_portalFollowUsedMs && nowMs - m_portalFollowUsedMs < 2000)
+                return;
+            m_portalFollowUsedMs = nowMs;
+            std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
+            *packet << portal->getObjectGuid();
+            bot->GetSession()->QueuePacket(packet.release());
+            return;
+        }
+
+        if (!CanMove())
+            return;
+        bot->GetMotionMaster()->MovePoint(m_portalFollowMap,
+            portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(),
+            MOVE_RUN_MODE | MOVE_PATHFINDING);
+        return;
+    }
+
+    if (!master || !master->IsInWorld() || master->IsBeingTeleported() ||
+        bot->GetMapId() == master->GetMapId() || !group || group != master->GetGroup() ||
+        !HasActivePlayerMaster() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+        !bot->IsAlive() || bot->IsInCombat() ||
+        !HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+        HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) ||
+        HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
+        sRandomBotFacade.IsFreeBot(bot))
+        return;
+
+    std::list<GameObject*> targets;
+    PartyPortalCheck check(bot, sPlayerbotAIConfig.sightDistance);
+    MaNGOS::GameObjectListSearcher<PartyPortalCheck> searcher(targets, check);
+    Cell::VisitAllObjects((const WorldObject*)bot, searcher, sPlayerbotAIConfig.sightDistance);
+    GameObject* portal = nullptr;
+    float best = sPlayerbotAIConfig.sightDistance * sPlayerbotAIConfig.sightDistance;
+    for (GameObject* candidate : targets)
+    {
+        if (!candidate)
+            continue;
+        float const dx = candidate->GetPositionX() - bot->GetPositionX();
+        float const dy = candidate->GetPositionY() - bot->GetPositionY();
+        float const distSq = dx * dx + dy * dy;
+        if (distSq < best)
+        {
+            best = distSq;
+            portal = candidate;
+        }
+    }
+    if (!portal)
+        return;
+
+    m_portalFollowGuid = portal->getObjectGuid();
+    m_portalFollowMap = portal->GetMapId();
+    m_portalFollowStartMs = nowMs;
+    m_portalFollowUsedMs = 0;
 }
 
 void PlayerbotAI::ReInitCurrentEngine()
