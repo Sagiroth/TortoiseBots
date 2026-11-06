@@ -556,6 +556,7 @@ static BotCommandEntry const botCommands[] = {
     {"formation", HandleFormation, "formation [botName] <formation>", {}, AlwaysVisible},
     {"cc", HandleCc, "cc <mark> [bot] | cc clear [bot]", {}, AlwaysVisible},
     {"list", HandleList, "list", {}, AlwaysVisible},
+    {"alts", HandleAlts, "alts", {}, AlwaysVisible},
     {"stats", HandleStats, "stats", {}, AlwaysVisible},
     {"status", HandleStatus, "status <online bot name>", {}, AlwaysVisible},
     {"lease", HandleLease, "lease [status]", {}, AlwaysVisible},

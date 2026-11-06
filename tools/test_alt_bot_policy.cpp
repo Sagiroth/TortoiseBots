@@ -145,6 +145,43 @@ static void TestSummary()
     assert(FormatAltBotMoney(100) == "+1s 0c");
 }
 
+static void TestAwaySummary()
+{
+    AltBotAwayPoint from;
+    from.level = 23;
+    from.money = 10000;
+    AltBotAwayPoint to = from;
+    to.level = 26;
+    to.money = 10000 + 12 * 10000 + 300;
+    to.quests = 8;
+    to.deaths = 2;
+    AltBotAwayDiff diff = DiffAltBotAway(from, to);
+    assert(diff.fromLevel == 23 && diff.toLevel == 26);
+    assert(diff.money == 12 * 10000 + 300);
+    assert(diff.quests == 8 && diff.deaths == 2);
+    std::string line = FormatAltBotAwayLine("Bob", diff, {"[Sword]", "[Helm]"}, "Stranglethorn Vale", "questing");
+    assert(line ==
+        "Bob: level 23 -> 26, +12g 3s 0c, 8 quests, died twice, equipped [Sword] [Helm], now in Stranglethorn Vale, questing.");
+    AltBotAwayDiff flat = DiffAltBotAway(from, from);
+    assert(FormatAltBotAwayLine("Bob", flat, {}, "Elwynn Forest", "grinding") ==
+        "Bob: no change, now in Elwynn Forest, grinding.");
+    assert(FormatAltBotAwayLine("Bob", flat, {}, "", "") == "Bob: no change.");
+    AltBotAwayPoint lower = from;
+    lower.money = 5000;
+    AltBotAwayDiff spent = DiffAltBotAway(from, lower);
+    assert(spent.money == -5000 && spent.quests == 0 && spent.deaths == 0);
+    assert(FormatAltBotAwayLine("Bob", spent, {}, "Durotar", "fighting") ==
+        "Bob: -50s 0c, now in Durotar, fighting.");
+    assert(std::string(AltBotAwayActivityWord(true, true, true, true, true, true)) == "dead");
+    assert(std::string(AltBotAwayActivityWord(false, true, true, true, true, true)) == "fighting");
+    assert(std::string(AltBotAwayActivityWord(false, false, true, true, true, true)) == "questing");
+    assert(std::string(AltBotAwayActivityWord(false, false, false, true, true, false)) == "travelling");
+    assert(std::string(AltBotAwayActivityWord(false, false, false, false, true, false)) == "in town");
+    assert(std::string(AltBotAwayActivityWord(false, false, false, false, false, true)) == "resting");
+    assert(std::string(AltBotAwayActivityWord(false, false, false, false, false, false)) == "grinding");
+}
+
+
 static void TestProtections()
 {
     // B9: autonomous economy is off; companions keep today's behaviour.
@@ -270,6 +307,7 @@ int main()
     TestDisplace();
     TestTarget();
     TestSummary();
+    TestAwaySummary();
     TestStartExit();
     TestSweepDue();
     TestLeaveInstance();

@@ -61,6 +61,14 @@ public:
     void OnReclaimed(Player* player);
     // AltBotsLogoutWithOwner: the owner's alts log out with them.
     void OnOwnerLogout(Player* owner);
+    // Window for the login summary: the owner's logout snapshots each alt;
+    // an alt whose session starts later snapshots at session start. On the
+    // owner's next login each autonomous alt answers one line over that
+    // window, then the baseline stays until the next owner logout.
+    void OnOwnerLogin(Player* owner);
+    // One away-summary line per autonomous alt of this account, over the
+    // window above, for `.bot alts` and the owner-login message.
+    std::vector<std::pair<std::string, std::string>> AwayLines(uint32_t ownerAccountId);
 
     // In-memory summary counters.
     void OnQuestCompleted(Player* bot);
@@ -77,6 +85,8 @@ private:
         uint32_t ownerAccountId = 0;
         ObjectGuid ownerGuid;
         AltBotSessionCounters counters;
+        AltBotAwayPoint awayBaseline;
+        bool awayBaselineSet = false;
         uint32_t displacedPoolGuidLow = 0;
         uint32_t displacedPoolAccountId = 0;
         std::vector<uint32_t> takenQuests;
