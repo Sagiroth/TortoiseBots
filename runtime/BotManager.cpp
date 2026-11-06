@@ -987,6 +987,7 @@ void BotManager::OnPlayerLogin(::Player* player)
         if (it != m_bots.end())
             ReleaseToClient(player);
         RebindOwnedBots(player);
+        AltBotService::Instance().OnOwnerLogin(player);
         return;
     }
 

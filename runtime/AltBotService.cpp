@@ -11,7 +11,9 @@
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/PlayerbotAIConfig.h"
 #include "../ai/playerbot/strategy/Event.h"
-
+#include "../ai/playerbot/ChatHelper.h"
+#include "../ai/playerbot/TravelMgr.h"
+#include "../ai/playerbot/strategy/values/TravelValues.h"
 #include "Bag.h"
 #include "Chat.h"
 #include "Database/DBCStructure.h"
@@ -29,11 +31,10 @@
 
 namespace TortoiseBots
 {
-
 namespace
 {
-constexpr char const* kPrefix = "|cff00ff00[TortoiseBots]|r ";
 
+constexpr char const* kPrefix = "|cff00ff00[TortoiseBots]|r ";
 void Tell(Player* player, std::string const& text)
 {
     if (player && player->GetSession())
@@ -61,6 +62,89 @@ uint32_t FreeBagSlots(Player* bot)
             free += pBag->GetFreeSlots();
     }
     return free;
+}
+// Away-summary snapshot: level, money, quest/death totals, equipped item
+// entries per slot. Alts never survive a restart, so this stays in memory.
+AltBotAwayPoint SnapshotAway(Player* bot, AltBotSessionCounters const& counters)
+{
+    AltBotAwayPoint point;
+    if (!bot)
+        return point;
+    point.level = bot->GetLevel();
+    point.money = bot->GetMoney();
+    point.quests = counters.quests;
+    point.deaths = counters.deaths;
+    point.equipped.assign(kAltBotAwayEquipSlots, 0);
+    for (uint32_t slot = 0; slot < kAltBotAwayEquipSlots; ++slot)
+        if (Item const* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, static_cast<uint8>(slot)))
+            point.equipped[slot] = item->GetEntry();
+    return point;
+}
+
+// Newly equipped green-or-better items as chat links: slots whose entry
+// differs from the baseline and whose live piece is uncommon or better.
+std::vector<std::string> AwayEquippedLinks(Player* bot, AltBotAwayPoint const& from, AltBotAwayPoint const& to)
+{
+    std::vector<std::string> links;
+    if (!bot || from.equipped.size() != to.equipped.size())
+        return links;
+    for (size_t slot = 0; slot < to.equipped.size(); ++slot)
+    {
+        if (!to.equipped[slot] || to.equipped[slot] == from.equipped[slot])
+            continue;
+        Item const* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, static_cast<uint8>(slot));
+        if (!item || !item->GetProto() || item->GetProto()->Quality < ITEM_QUALITY_UNCOMMON)
+            continue;
+        links.push_back(ai::ChatHelper::formatItem(const_cast<Item*>(item)));
+    }
+    return links;
+}
+
+// Current zone name the same way `.bot status` answers it.
+std::string AwayZoneName(Player* bot)
+{
+    if (!bot)
+        return {};
+    uint32_t zoneId = bot->GetZoneId();
+    uint32_t areaId = bot->GetAreaId();
+    uint32_t display = areaId ? areaId : zoneId;
+    if (display)
+        if (AreaTableEntry const* entry = GetAreaEntryByAreaID(display))
+            if (entry->Name && *entry->Name)
+                return std::string(entry->Name);
+    return {};
+}
+
+// One activity word: dead, fighting, questing (on a quest errand),
+// travelling, in town, resting, else grinding.
+std::string AwayActivity(Player* bot)
+{
+    if (!bot)
+        return {};
+    if (!bot->IsAlive())
+        return AltBotAwayActivityWord(true, false, false, false, false, false);
+    bool const fighting = bot->IsInCombat();
+    bool const resting = bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) || bot->IsTaxiFlying();
+    PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
+    bool questTravel = false;
+    bool anyTravel = false;
+    bool inTown = false;
+    if (ai && ai->GetAiObjectContext())
+    {
+        ai::TravelTarget* target =
+            ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
+        if (target && target->IsActive() && target->GetDestination())
+        {
+            anyTravel = true;
+            uint32_t const purpose = static_cast<uint32_t>(target->GetDestination()->GetPurpose());
+            uint32_t const questBits = static_cast<uint32_t>(ai::TravelDestinationPurpose::QuestGiver) |
+                static_cast<uint32_t>(ai::TravelDestinationPurpose::QuestAllObjective) |
+                static_cast<uint32_t>(ai::TravelDestinationPurpose::QuestTaker);
+            questTravel = (purpose & questBits) != 0;
+        }
+        inTown = ai->IsInCapitalCity();
+    }
+    return AltBotAwayActivityWord(false, fighting, questTravel, anyTravel, inTown, resting);
 }
 
 char const* RefusalText(AltBotStartRefusal refusal)
@@ -285,6 +369,8 @@ void AltBotService::TryStart(ObjectGuid guid)
     session.ownerGuid = owner->GetObjectGuid();
     session.counters.startLevel = bot->GetLevel();
     session.counters.startMoney = bot->GetMoney();
+    session.awayBaseline = SnapshotAway(bot, session.counters);
+    session.awayBaselineSet = true;
     DisplacePoolBot(session, bot);
     {
         std::lock_guard<std::mutex> lock(m_sessionsMutex);
@@ -447,20 +533,80 @@ void AltBotService::OnReclaimed(Player* player)
 
 void AltBotService::OnOwnerLogout(Player* owner)
 {
-    if (!sPlayerbotAIConfig.altBotsLogoutWithOwner || !owner || !owner->GetSession() ||
-        !owner->GetSession()->HasNetworkTransport())
+    if (!owner || !owner->GetSession() || !owner->GetSession()->HasNetworkTransport())
         return;
     uint32_t const accountId = owner->GetSession()->GetAccountId();
-    std::vector<uint32_t> leaving;
+    std::vector<std::pair<uint32_t, AltBotAwayPoint>> snapshots;
     {
         std::lock_guard<std::mutex> lock(m_sessionsMutex);
-        for (auto const& kv : m_sessions)
-            if (kv.second.ownerAccountId == accountId)
-                leaving.push_back(kv.first);
+        for (auto& kv : m_sessions)
+        {
+            if (kv.second.ownerAccountId != accountId)
+                continue;
+            if (Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, kv.first)))
+            {
+                kv.second.awayBaseline = SnapshotAway(bot, kv.second.counters);
+                kv.second.awayBaselineSet = true;
+                snapshots.emplace_back(kv.first, kv.second.awayBaseline);
+            }
+        }
     }
+    if (!sPlayerbotAIConfig.altBotsLogoutWithOwner)
+        return;
+    std::vector<uint32_t> leaving;
+    for (auto const& snapshot : snapshots)
+        leaving.push_back(snapshot.first);
     for (uint32_t guidLow : leaving)
         BotManager::Instance().RemoveBot(ObjectGuid(HIGHGUID_PLAYER, guidLow), true);
 }
+
+void AltBotService::OnOwnerLogin(Player* owner)
+{
+    if (!owner || !owner->GetSession() || !owner->GetSession()->HasNetworkTransport())
+        return;
+    for (auto const& named : AwayLines(owner->GetSession()->GetAccountId()))
+        Tell(owner, named.second);
+}
+std::vector<std::pair<std::string, std::string>> AltBotService::AwayLines(uint32_t ownerAccountId)
+{
+    if (!ownerAccountId)
+        return {};
+    struct AwayRow
+    {
+        uint32_t guidLow = 0;
+        AltBotAwayPoint from;
+        AltBotAwayPoint to;
+    };
+    std::vector<AwayRow> rows;
+    {
+        std::lock_guard<std::mutex> lock(m_sessionsMutex);
+        for (auto const& kv : m_sessions)
+        {
+            if (kv.second.ownerAccountId != ownerAccountId || !kv.second.awayBaselineSet)
+                continue;
+            Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, kv.first));
+            if (!bot)
+                continue;
+            AwayRow row;
+            row.guidLow = kv.first;
+            row.from = kv.second.awayBaseline;
+            row.to = SnapshotAway(bot, kv.second.counters);
+            rows.push_back(row);
+        }
+    }
+    std::vector<std::pair<std::string, std::string>> out;
+    for (AwayRow const& row : rows)
+    {
+        Player* bot = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, row.guidLow));
+        if (!bot)
+            continue;
+        std::string name = bot->GetName();
+        out.emplace_back(name, FormatAltBotAwayLine(name, DiffAltBotAway(row.from, row.to),
+            AwayEquippedLinks(bot, row.from, row.to), AwayZoneName(bot), AwayActivity(bot)));
+    }
+    return out;
+}
+
 
 void AltBotService::OnQuestCompleted(Player* bot)
 {

@@ -57,6 +57,7 @@ bool HandleInterrupt(ChatHandler* handler, char const* args);
 bool HandleFormation(ChatHandler* handler, char const* args);
 bool HandleCc(ChatHandler* handler, char const* args);
 bool HandleList(ChatHandler* handler, char const* args);
+bool HandleAlts(ChatHandler* handler, char const* args);
 bool HandleStats(ChatHandler* handler, char const* args);
 bool HandleStatus(ChatHandler* handler, char const* args);
 bool HandleLease(ChatHandler* handler, char const* args);

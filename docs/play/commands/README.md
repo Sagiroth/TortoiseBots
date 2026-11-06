@@ -133,6 +133,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot scout`](commander.md#bot-scout-gm-test-tooling) | Remote Commander | GM test tooling: the run leader's own path check, a probe walk and the GM's position. |
 | [`.bot roster`](roster-and-hiring.md#bot-roster) | Roster & Hiring | Emits snapshot of owned alts and CC assignments. |
 | [`.bot add`](roster-and-hiring.md#bot-add) | Roster & Hiring | Logs in an owned alt character as a bot. |
+| [`.bot alts`](roster-and-hiring.md#bot-alts) | Roster & Hiring | Shows what each autonomous alt did since your last logout. |
 | [`.bot remove`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot or dismisses a hired companion. |
 | [`.bot logout`](roster-and-hiring.md#bot-remove) | Roster & Hiring | Logs out an owned bot, keeping its ownership (hire ends and its character is deleted). |
 | [`.bot hire`](roster-and-hiring.md#bot-hire) | Roster & Hiring | Recruits a mercenary companion at recruiters. |
