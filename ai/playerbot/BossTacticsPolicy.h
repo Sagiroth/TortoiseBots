@@ -2600,17 +2600,6 @@ namespace ai
         return false;
     }
 
-    // How far a carrier turns on its subject from under an explicit attack order (t1105h J1): a melee bot only a Shade
-    // within 15 yd (the Shade is summoned on the carrier and then walks off to a healer, so a melee carrier may chase it a
-    // short way), a ranged one within its spell range. Distances are GetDistance's, bounding radii already off.
-    constexpr float kCarrierMeleeReachYd = 15.0f;
-    constexpr float kCarrierSpellReachYd = 30.0f;
-
-    inline float CarrierReachYd(bool ranged)
-    {
-        return ranged ? kCarrierSpellReachYd : kCarrierMeleeReachYd;
-    }
-
     // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
     // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
     // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
@@ -2645,10 +2634,42 @@ namespace ai
         return runIssued && accepted ? explicitTarget : currentMark;
     }
 
-    // How far the carrier hold reaches (t1105h review): once on its Shade the carrier is a free DPS whose kill_first pick
-    // chases to kBossTacticsEngageRange, so the run's focus skips it out to the same range; CarrierReachYd is only the
-    // first override of an automated order.
+    // How far the carrier turns on its subject, under an explicit attack order or free (t1106b): the hold reach for
+    // every bot, melee or ranged. A Delusions carrier can hurt only the Shade its curse names, and the Shades are
+    // summoned on one carrier and walk off to a healer: a 15/30 yd first override left half of the cursed DPS on Jin'do
+    // with a Shade beside them, and only one carrier on a Shade takes ~17 s while a new one comes every 7-8 s.
+    // Distances are GetDistance's, bounding radii already off.
     constexpr float kCarrierHoldReachYd = kBossTacticsEngageRange;
+
+    // Why a carrier did not turn on its Shade (BossTacticsKillFirstAction's row). `carrierRowOpen`: the fight read
+    // shows an open aura-gated kill_first row, so this bot carries the curse and a Shade is a subject of it.
+    // `shadeInFight`: a living unit of the row's entry is among the fight's units; `pickable`/`distanceYd`: what the
+    // pick made of the nearest of them. None: no carrier row, or a Shade in reach that was pickable (the action takes
+    // it, no row).
+    enum class CarrierNoSwitch : std::uint8_t { None, NoShade, NotAttackable, BeyondReach };
+
+    inline CarrierNoSwitch CarrierNoSwitchReason(bool carrierRowOpen, bool shadeInFight, bool pickable,
+        float distanceYd, float reachYd)
+    {
+        if (!carrierRowOpen)
+            return CarrierNoSwitch::None;
+        if (!shadeInFight)
+            return CarrierNoSwitch::NoShade;
+        if (!pickable)
+            return CarrierNoSwitch::NotAttackable;
+        if (distanceYd > reachYd)
+            return CarrierNoSwitch::BeyondReach;
+        return CarrierNoSwitch::None;
+    }
+
+    // A needs_aura entry (the Shade of Jin'do 14986) takes damage only from a carrier's direct hit: the core zeroes
+    // every hit whose source lacks the aura, a DoT tick lands only while the caster still carries it, and a pet's hit
+    // is credited to the pet and never counts. So a DoT cast at one and the pet sent at one only spend the caster's
+    // time, which on a 7-8 s summon cadence the Shade does not have.
+    inline bool AuraGatedDirectOnlyDamage(bool gateKeyOn, std::uint32_t requiredAura)
+    {
+        return gateKeyOn && requiredAura != 0;
+    }
 
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
     inline int PickCarrierOverride(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates,

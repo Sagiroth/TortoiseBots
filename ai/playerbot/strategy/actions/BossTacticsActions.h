@@ -126,6 +126,19 @@ namespace ai
     // (DungeonRun::CarrierFocusSkip, FocusSkipsBot), so its refocus does not pull it back off its Shade.
     Unit* FindBossCarrierPick(PlayerbotAI* ai, Player* bot);
 
+    // Whether this bot carries the aura of an open aura-gated kill_first row right now (a Delusions carrier), whatever
+    // its target: such a bot can hurt only the row's unit, so the totem focus never sends it at a totem and counts no
+    // volley of it (t1106b). False on a map without rows and for a bot that lacks the aura (the fight scan drops a
+    // gated row then).
+    bool CarriesAuraGatedKillFirst(PlayerbotAI* ai, Player* bot);
+
+    // The carrier no-switch row (t1106b): a Delusions carrier with a Shade of the fight and no switch to it, with the
+    // reason and what the bot was striking instead. At most one row per bot per 5 s; a no-op without bot_events.csv,
+    // for a bot that is no battle DPS, and for a bot that carries no gated row. `keptReason` overrides the read
+    // (BossTacticsKillFirstAction's stale current target); nullptr derives it from the fight read.
+    void LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick, Unit* current,
+        const char* keptReason = nullptr);
+
     // tank_ignore (t1105h J2): whether this bot, a tank, leaves the target alone because a boss whose tank_ignore row
     // names the target's entry fights within kBossTacticsEngageRange of it (alive, not evading, engaged with our group).
     // The attack pickers (PossibleAttackTargetsValue::IsValid: the tank target, the attacker-of-non-tank taunt, the

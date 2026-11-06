@@ -188,6 +188,12 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
     if (!bot || !bot->IsValidAttackTarget(target))
         return false;
 
+    // A needs_aura entry (a Shade of Jin'do) takes damage only from a carrier's own direct hit: a pet's damage is
+    // credited to the pet and the core zeroes it, so the order would only park the pet off the boss.
+    if (AuraGatedDirectOnlyDamage(sPlayerbotAIConfig.dungeonRunAuraGatedTargets,
+            GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry())))
+        return false;
+
     // AiPlayerbot.DungeonRunCharmYield: the pet never takes the raid's charmed member either; the owner's own attack
     // is refused on the same rule.
     if (AttackersValue::CharmedAllyOffLimits(target, bot))

@@ -3006,7 +3006,7 @@ Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
         OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()),
         HasCarrierKillFirstRow(fight.rows));
-    return PickBossKillFirst(ai, bot, fight, mode, CarrierReachYd(ai->IsRanged(bot)));
+    return PickBossKillFirst(ai, bot, fight, mode, kCarrierHoldReachYd);
 }
 
 bool ai::TankIgnoresTarget(PlayerbotAI* ai, Player* bot, Unit* target)
@@ -3038,6 +3038,14 @@ Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
         return nullptr;
     // The hold reach (kCarrierHoldReachYd): as far as the carrier's free pick chases, so the refocus never pulls it back.
     return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
+}
+
+bool ai::CarriesAuraGatedKillFirst(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+    // The fight scan drops a gated row for a bot without the aura, so an open carrier row means the bot carries it.
+    return HasCarrierKillFirstRow(ScanBossTactics(ai, bot).rows);
 }
 
 namespace
@@ -3723,16 +3731,117 @@ bool BossTacticsDispelSweepAction::Execute(Event& event)
     return SweepBossDispelCures(ai, bot, true);
 }
 
+// The kill-first action's no-switch row: a Delusions carrier whose Shade it did not turn on this action tick, with the
+// reason and what the bot was striking instead. The Shades are the one subject only a carrier can hurt, so a carrier
+// left on Jin'do is a Shade nobody kills (ZG t1106a: 82 % of Shade frames had no carrier on the Shade, 49 % of cursed
+// ranged DPS stayed on Jin'do with a Shade within 5 yd). At most one row per bot per kCarrierNoSwitchLogGapMs: the
+// action runs every 2 s under the kill-first trigger, and a bot can stand off its Shade for a whole fight.
+//   info1 = "reason=<not_read|not_attackable|beyond_reach|kept_target|player_order>"
+//   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,pick=<entry>:<guid low>|none,current=<entry>:<guid low>|none"
+constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;
+std::mutex g_carrierNoSwitchLogMutex;
+std::unordered_map<uint64, uint32> g_carrierNoSwitchLog;
+
+static bool CarrierNoSwitchLogDue(Player* bot)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_carrierNoSwitchLogMutex);
+    uint32& last = g_carrierNoSwitchLog[bot->GetObjectGuid().GetRawValue()];
+    if (last != 0 && nowMs - last < kCarrierNoSwitchLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick,
+    Unit* current, const char* keptReason)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    // A tank or a healer keeps its job by rule (no carrier pick at all): its rows would only bury the DPS'.
+    if (!IsBattleDps(bot))
+        return;
+    std::uint32_t entry = 0;
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row))
+        {
+            entry = TacticSubjectEntry(*row);
+            break;
+        }
+    if (!entry)
+        return; // the bot carries no gated row: no Shade is its subject
+    Unit* shade = nullptr;
+    float shadeYd = -1.0f;
+    for (Unit* unit : fight.units)
+    {
+        if (!unit || unit->GetEntry() != entry || !sServerFacade.IsAlive(unit))
+            continue;
+        float const yd = bot->GetDistance(unit);
+        if (!shade || yd < shadeYd)
+        {
+            shade = unit;
+            shadeYd = yd;
+        }
+    }
+    const char* reason = keptReason;
+    if (!reason)
+    {
+        bool const pickable = shade && PossibleAttackTargetsValue::IsValid(shade, bot);
+        switch (CarrierNoSwitchReason(true, shade != nullptr, pickable, shadeYd, kCarrierHoldReachYd))
+        {
+            case CarrierNoSwitch::NoShade:       reason = "not_read"; break;
+            case CarrierNoSwitch::NotAttackable: reason = "not_attackable"; break;
+            case CarrierNoSwitch::BeyondReach:   reason = "beyond_reach"; break;
+            case CarrierNoSwitch::None:
+                // A Shade in reach that is pickable and still no pick: the bot's explicit order is not the run's, and a
+                // player's order is never overridden (KillFirstPickModeFor).
+                reason = "player_order";
+                break;
+        }
+    }
+    if (!CarrierNoSwitchLogDue(bot))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "reason=%s", reason);
+    char shadeText[48];
+    if (shade)
+        snprintf(shadeText, sizeof(shadeText), "%u:%u", shade->GetEntry(), shade->GetGUIDLow());
+    else
+        snprintf(shadeText, sizeof(shadeText), "none");
+    char pickText[48];
+    if (pick)
+        snprintf(pickText, sizeof(pickText), "%u:%u", pick->GetEntry(), pick->GetGUIDLow());
+    else
+        snprintf(pickText, sizeof(pickText), "none");
+    char currentText[48];
+    if (current)
+        snprintf(currentText, sizeof(currentText), "%u:%u", current->GetEntry(), current->GetGUIDLow());
+    else
+        snprintf(currentText, sizeof(currentText), "none");
+    char info2[192];
+    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s", shadeText, shadeYd, pickText, currentText);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);
+}
+
 bool BossTacticsKillFirstAction::Execute(Event& event)
 {
     (void)event;
-    Unit* pick = FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot));
-    if (!pick)
-        return false;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    Unit* pick = FindBossKillFirst(ai, bot, fight);
     AiObjectContext* context = ai->GetAiObjectContext();
     Unit* current = AI_VALUE(Unit*, "current target");
-    if (current == pick)
+    // The no-pick row is the trigger's (BossTacticsKillFirstTrigger): it is the only caller that sees a carrier with
+    // no pick at all, the action runs only once there is one.
+    if (!pick)
         return false;
+    if (current == pick)
+    {
+        // The bookkeeping already names the pick while the bot strikes another unit: the trigger sees no reason to run
+        // again, so this is the one no-switch the action can still report.
+        if (bot->GetVictim() != pick)
+            LogCarrierNoSwitch(ai, bot, fight, pick, current, "kept_target");
+        return false;
+    }
     // Under an explicit order the pick can only be the carrier override (t1105h J1), and only for the run's own order
     // (FindBossKillFirst: a player's order gets no pick at all): that order is dropped, so the bot is a free DPS on its
     // Shade and nothing re-picks the ordered unit while the curse lasts. Once the curse ends the gated row closes and the

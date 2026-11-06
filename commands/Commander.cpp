@@ -3087,6 +3087,10 @@ static void TotemFocusCutSlot(Player* bot, CurrentSpellTypes slot, ObjectGuid fo
 
 static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, ObjectGuid targetGuid)
 {
+    // The bot's target before the order, read before the order changes it (BossTacticsTotemFocus row below).
+    Unit* const before = bot->GetVictim();
+    std::uint32_t const prevEntry = before ? before->GetEntry() : 0;
+    bool const prevOnTotem = before && before->GetObjectGuid() == targetGuid;
     ai->ChangeStrategy("-wait for attack", BotState::BOT_STATE_ALL);
     // An Auto Shot or a wand's shot is an autorepeat spell and keeps firing; a run crowd-control spell, a resurrect
     // and the hearthstone are never cut (TotemFocusMayInterrupt).
@@ -3099,6 +3103,18 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
             if (ExecuteQuietAction(ai, opener, ai::Event("focus totem", "", selectionOwner)))
                 break;
     ExecuteQuietNextAction(ai, false);
+    // One row per bot the totem focus reached and the bot took (ZG t1106a: the walk could not tell which bots took the
+    // order, how far they stood, or what they left for it): the totem, the bot's distance and its previous target.
+    if (attacked && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+    {
+        Unit* const totem = bot->GetMap() ? bot->GetMap()->GetUnit(targetGuid) : nullptr;
+        char info1[64];
+        snprintf(info1, sizeof(info1), "totem=%u", totem ? totem->GetEntry() : 0u);
+        char info2[128];
+        snprintf(info2, sizeof(info2), "dist=%.1f prev=%u prev_on_totem=%d", totem ? bot->GetDistance(totem) : -1.0f,
+            prevEntry, prevOnTotem ? 1 : 0);
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsTotemFocus", info1, info2);
+    }
     return attacked;
 }
 
@@ -3321,8 +3337,11 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         // focus, and the 3 s ward refocus that repeats it, would pull it back. A player's focus arms it like any bot.
         bool const carrier = TortoiseBots::DungeonRun::CarrierFocusSkip(automatedKillFirst,
             automatedKillFirst && ai::FindBossCarrierPick(ai, bot) != nullptr);
+        // A totem is never sent to a carrier at all (t1106b): its volley there does nothing for the Shade its curse
+        // names, and a Shade that lives kills the raid.
+        bool const gatedCarrier = totemTarget && ai::CarriesAuraGatedKillFirst(ai, bot);
         if (TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,
-                totemTarget, totemFocus, carrier))
+                totemTarget, totemFocus, carrier, gatedCarrier))
             continue;
         bool accepted;
         if (totemFocus)
@@ -9180,6 +9199,20 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
     std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // The aura a needs_aura kill_first row requires (Delusions 24306 on Jin'do's Shade, from the table the plan's
+    // kill_first entries name): a bot that carries one hurts only the row's unit, so it is neither a volley on a totem
+    // nor a body the totem re-send may count (t1106b).
+    std::vector<std::uint32_t> carrierAuras;
+    for (std::uint32_t const entry : plan.killFirst)
+        if (std::uint32_t const aura = ai::GetBossTactics().RequiredAura(lead->GetMapId(), entry))
+            carrierAuras.push_back(aura);
+    auto const isCarrier = [&carrierAuras](Player* p)
+    {
+        for (std::uint32_t const aura : carrierAuras)
+            if (p->HasAura(aura))
+                return true;
+        return false;
+    };
     // A plan boss (a boss step's entry, or the entry the spawn row first had when a script changed it).
     auto const planBoss = [&plan](Creature* c)
     {
@@ -9193,6 +9226,12 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
                 return true;
         return false;
     };
+    // The living damage dealers (not a tank, not a healer, not a carrier of an aura-gated row): how many the totem
+    // re-send wants on a totem when the party has fewer than kTotemFocusDpsWanted (DungeonRun::TotemFocusDpsWanted).
+    f.dpsAlive = 0;
+    for (Player* bot : bots)
+        if (bot && bot->IsAlive() && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot) && !isCarrier(bot))
+            ++f.dpsAlive;
     auto add = [&](Unit* unit, bool auraOnEngaged)
     {
         if (!unit || !unit->IsAlive() || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
@@ -9229,17 +9268,12 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
             fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
                 EngagedWithParty(summoner, party);
         }
-        // A damage dealer (not a tank, not a healer) of the party attacking it now: the held totem focus is not sent
-        // again while one does (DungeonRun::FocusResendDue).
+        // The damage dealers (not a tank, not a healer, not a carrier of an aura-gated row) of the party attacking it
+        // now: the held totem focus is sent again while fewer than TotemFocusDpsWanted do (DungeonRun::FocusResendDue).
         for (Player* bot : bots)
-        {
-            if (bot && bot->IsAlive() && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot) &&
+            if (bot && bot->IsAlive() && !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot) && !isCarrier(bot) &&
                 bot->GetVictim() == unit)
-            {
-                fact.dpsOnIt = true;
-                break;
-            }
-        }
+                ++fact.dpsOnItCount;
         f.killFirst.push_back(fact);
     };
     std::list<ObjectGuid> guids;
