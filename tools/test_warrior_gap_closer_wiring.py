@@ -98,8 +98,17 @@ class WarriorGapCloserWiringTest(unittest.TestCase):
             self.assertIn('creators["%s"]' % name, text)
 
     def test_config_default_matches_template(self):
-        self.assertIn('config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", true)', CONFIG_CPP.read_text())
-        self.assertRegex(CONF_DIST.read_text(), r"(?m)^AiPlayerbot\.WarriorGapCloser = 1$")
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", false)', CONFIG_CPP.read_text())
+        self.assertRegex(CONF_DIST.read_text(), r"(?m)^AiPlayerbot\.WarriorGapCloser = 0$")
+
+    def test_boss_facts_come_from_the_boss_tactics_queries(self):
+        text = (WARRIOR / "WarriorGapCloser.cpp").read_text()
+        # The dps hold is the boss tactics' own query, not a copy of its rule.
+        self.assertIn("f.dpsHeld = IsDpsHeld(ai, bot, unit);", text)
+        self.assertIn("f.bossPullbackOrStand = BossPullbackOrStand(ai, bot, unit);", text)
+        self.assertIn("f.tankHoldsBoss = tankHoldsBoss;", text)
+        self.assertIn("FindBossStand(ai, bot).valid", text)
+        self.assertIn("GetVictim() == bot && IsBossUnit(attacker)", text)
 
 
 if __name__ == "__main__":

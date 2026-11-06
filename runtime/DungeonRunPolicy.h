@@ -10461,11 +10461,14 @@ inline bool RunCcSpellId(std::uint32_t spellId)
 // wand's shot keeps firing), and only a cast that is positively offense: a spell that is not beneficial and a current
 // target that is hostile. A heal, shield, buff or defensive cast is never cut, whatever the role casting it (a hybrid
 // healing the tank keeps the heal). Nor a spell the fight depends on: the run's crowd control, a resurrect (Rebirth,
-// or any spell with a resurrect effect) and the hearthstone.
+// or any spell with a resurrect effect) and the hearthstone. A cast already aimed at the focused unit (`castAtFocus`: the
+// cast's unit guid is the focus guid) is never cut: it lands on the totem the focus wants dead.
 inline bool TotemFocusMayInterrupt(TotemFocusSpell slot, std::uint32_t spellId, bool resurrectEffect,
-    bool positiveSpell, bool hostileTarget)
+    bool positiveSpell, bool hostileTarget, bool castAtFocus = false)
 {
     if (slot != TotemFocusSpell::Generic && slot != TotemFocusSpell::Channeled)
+        return false;
+    if (castAtFocus)
         return false;
     if (positiveSpell || !hostileTarget)
         return false;

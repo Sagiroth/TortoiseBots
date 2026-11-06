@@ -2730,6 +2730,23 @@ int main()
             CHECK(TauntAfterTankPick(usable, canTaunt, noneCanHold, 2) == 2); // only then the row's tank as before
         }
 
+        // A second Banish sends the main tank to the pit, so it is Jin'do's current victim: it must not be handed the
+        // window's fallback while the off-tank can hold. As the only tank it stays the pick.
+        {
+            CHECK(!TauntAfterTankCanHold(true, false, true, true, true));  // its own victim
+            CHECK(TauntAfterTankCanHold(true, false, true, true, false));
+            CHECK(TauntAfterTankCanHold(true, false, true, true));         // default: not the victim
+            std::vector<bool> const usable = {true, true};
+            std::vector<bool> const canTaunt = {false, false};
+            std::vector<bool> const canHold = {
+                TauntAfterTankCanHold(true, false, true, true, true),   // slot 0: the victim
+                TauntAfterTankCanHold(true, false, true, true, false)}; // slot 1: another tank, can hold
+            CHECK(TauntAfterTankPick(usable, canTaunt, canHold, 0) == 1);
+            std::vector<bool> const soleUsable = {true};
+            std::vector<bool> const soleHold = {TauntAfterTankCanHold(true, false, true, true, true)};
+            CHECK(TauntAfterTankPick(soleUsable, {false}, soleHold, 0) == 0); // the only tank stays pickable
+        }
+
         // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
         // cooldown cannot take the subject back now: it is skipped for a tank that can.
         CHECK(TauntAfterTankCanTaunt(true, false, true, true, true, false, true));

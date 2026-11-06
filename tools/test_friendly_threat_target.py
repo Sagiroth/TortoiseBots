@@ -24,6 +24,7 @@ struct Unit {
     unsigned GetMapId() const { return map; }
     unsigned GetEntry() const { return entry; }
     Unit* GetVictim() const { return victim; }
+    bool IsInWorld() const { return true; }
     Guid getObjectGuid() const { return guid; }
 };
 struct Creature : Unit {

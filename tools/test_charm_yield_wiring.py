@@ -252,7 +252,7 @@ class CharmYieldWiring(unittest.TestCase):
         # window; readiness is read only for the pick, while the holder is kept on availability (no cooldown), so
         # its own cast never hands the window to a second tank.
         self.assertIn("TauntAfterTankCanTaunt(inControl, silenced, taunt != nullptr, ready,", scan)
-        self.assertIn("canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready);", scan)
+        self.assertIn("canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready, victim == tank);", scan)
         self.assertIn("available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);", scan)
         self.assertIn("tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)", scan)
         self.assertIn("!tank->IsPolymorphed()", scan)

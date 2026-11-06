@@ -2138,9 +2138,13 @@ namespace ai
     // Readiness is only read when PICKING a window's tank, never to keep the one that has it. The target and range
     // checks are separate: a window's first choice must also be on the subject and in melee
     // (TauntAfterTankCanTaunt), while the pick's fallback only has to be able to cast it.
-    inline bool TauntAfterTankCanHold(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady)
+    // `isVictim`: the tank is the subject's current victim (Jin'do's Banish sent it to the pit, the boss follows it): it
+    // never takes the window's fallback while another tank can, since the taunt would go to the tank the boss is
+    // already on. The pick's last tier still returns it when it is the only usable tank.
+    inline bool TauntAfterTankCanHold(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
+        bool isVictim = false)
     {
-        return TauntAfterTankAvailable(inControl, silencedOrPacified, hasTaunt) && tauntReady;
+        return TauntAfterTankAvailable(inControl, silencedOrPacified, hasTaunt) && tauntReady && !isVictim;
     }
 
     // Whether a tank can take a taunt back right now: it can cast it (TauntAfterTankCanHold), it is in melee of the

@@ -138,7 +138,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunLinkedDeath = config.GetBoolDefault("AiPlayerbot.DungeonRunLinkedDeath", false);
     dungeonRunAuraTactics = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraTactics", false);
     dungeonRunAuraGatedTargets = config.GetBoolDefault("AiPlayerbot.DungeonRunAuraGatedTargets", false);
-    dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", true);
+    dungeonRunRespawnNest = config.GetBoolDefault("AiPlayerbot.DungeonRunRespawnNest", false);
     dungeonRunKillFirstGrid = config.GetBoolDefault("AiPlayerbot.DungeonRunKillFirstGrid", false);
     dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
@@ -1050,8 +1050,8 @@ bool PlayerbotAIConfig::Initialize()
     warlockPetBySpec = config.GetBoolDefault("AiPlayerbot.WarlockPetBySpec", true);
     warlockRaidRotation = config.GetBoolDefault("AiPlayerbot.WarlockRaidRotation", false);
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
-    sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", true);
-    warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", true);
+    sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", false);
+    warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", false);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);

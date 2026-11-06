@@ -634,7 +634,7 @@ public:
     // The run leader's respawn-nest rules (DungeonRun::NestLeavable, GatherAnchorInNest): a unit that respawns within a
     // minute and stands at its spawn, and hits nobody in the party, does not hold a fight open, and a regroup never
     // gathers on one (default on).
-    bool dungeonRunRespawnNest = true;
+    bool dungeonRunRespawnNest = false;
     // The boss-tactic kill_first candidates come from a grid search too, not only from the bot's own attackers list:
     // off, the candidates are the fight's units as today (its own key; default off).
     bool dungeonRunKillFirstGrid = false;
