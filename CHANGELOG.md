@@ -22,6 +22,23 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.19.0 (2026-11-06)
+
+### Groups & Dungeons
+- Bot raids can now kill Hakkar and Jin'do in Zul'Gurub, with fewer crashes and better class abilities. [#1534](https://github.com/Sagiroth/TortoiseBots/pull/1534)
+
+### Bots & Services
+- Mage and warlock bots now give their goods and services for free. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- You can now ask a mage bot for a portal. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- Bots following you now come through a party mage's portal instead of staying behind. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1533](https://github.com/Sagiroth/TortoiseBots/pull/1533)
+- Bots out in the world now buff players they pass, and priests or druids quickly heal nearby players who are low on health. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1532](https://github.com/Sagiroth/TortoiseBots/pull/1532)
+- Bots now visit a guild banker or mailbox for orders, so finished orders no longer stay stuck as delivering. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535)
+
+### Dashboard
+- After time away, you now get a summary of what your alt-bots did. [#1535](https://github.com/Sagiroth/TortoiseBots/pull/1535), [#1531](https://github.com/Sagiroth/TortoiseBots/pull/1531)
+
+---
+
 ## v1.18.0 (2026-11-06)
 
 ### Classes & Combat
