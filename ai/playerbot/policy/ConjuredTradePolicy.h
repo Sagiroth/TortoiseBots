@@ -110,4 +110,16 @@ namespace ai
                 return true;
         return false;
     }
+
+    // The goods the trade service hands out: free, never priced or refused as "not for sale".
+    inline bool IsConjuredServiceItem(uint32_t itemId)
+    {
+        for (ConjuredRankRow const& row : kConjureFoodRanks)
+            if (row.itemId == itemId)
+                return true;
+        for (ConjuredRankRow const& row : kConjureWaterRanks)
+            if (row.itemId == itemId)
+                return true;
+        return IsHealthstoneItem(itemId);
+    }
 }

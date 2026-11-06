@@ -360,6 +360,15 @@ void TradeStatusAction::AutoShareConjured(Player* trader)
     }
 }
 
+namespace
+{
+bool IsFreeServiceItem(Item const* item)
+{
+    return sPlayerbotAIConfig.autoShareConjuredOnTrade && item && item->GetProto() &&
+        ai::IsConjuredServiceItem(item->GetProto()->ItemId);
+}
+}
+
 bool TradeStatusAction::CheckTrade()
 {
     Player* trader = bot->GetTrader();
@@ -455,7 +464,7 @@ bool TradeStatusAction::CheckTrade()
     for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
     {
         Item* item = bot->GetTradeData()->GetItem((TradeSlots)slot);
-        if (item && !ItemUsageValue::GetBotSellPrice(item->GetProto(), bot))
+        if (item && !IsFreeServiceItem(item) && !ItemUsageValue::GetBotSellPrice(item->GetProto(), bot))
         {
             std::ostringstream out;
             out << chat->formatItem(item) << " - This is not for sale";
@@ -576,6 +585,8 @@ int32 TradeStatusAction::CalculateCost(Player* player, bool sell)
 
         if (sell)
         {
+            if (player == bot && IsFreeServiceItem(item))
+                continue;
             sum += item->GetCount() * ItemUsageValue::GetBotSellPrice(proto, bot);
         }
         else

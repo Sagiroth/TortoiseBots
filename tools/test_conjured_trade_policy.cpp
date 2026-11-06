@@ -20,6 +20,7 @@
 } while (0)
 
 using ai::IsHealthstoneItem;
+using ai::IsConjuredServiceItem;
 using ai::PickConjuredRank;
 using ai::PickHealthstoneItem;
 using ai::kConjureFoodRanks;
@@ -47,6 +48,8 @@ int main()
     food = PickConjuredRank(kConjureFoodRanks, kFoodCount, knows, 60);
     water = PickConjuredRank(kConjureWaterRanks, kWaterCount, knows, 60);
     CHECK(food && food->itemId == 22895);
+    CHECK(IsConjuredServiceItem(22895) && IsConjuredServiceItem(8079) && IsConjuredServiceItem(19013));
+    CHECK(!IsConjuredServiceItem(2996) && !IsConjuredServiceItem(0));
     CHECK(water && water->itemId == 8079);
     std::cout << "  [PASS] trader-60 gets the top rank\n";
 
