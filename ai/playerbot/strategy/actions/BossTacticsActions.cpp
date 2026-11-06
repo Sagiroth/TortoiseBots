@@ -1589,7 +1589,9 @@ void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
         LogSeekWalkoutAbort(ai, "reset", -1.0f, state);
 }
 
-// The shot cannot be cast at the stand: the task aborts at once, its Son and cycle stay free, and the walk back starts.
+// The shot cannot be cast at the stand: the task aborts at once, its Son is free again, and the walk back starts. The
+// cycle stays spent (one walk-out per cycle) and the puller sits out the picks for 60 s, so the next cycle's walk-out
+// goes to another bot.
 void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
 {
     SeekWalkoutState state;
@@ -1630,8 +1632,8 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
         state = it->second.state;
         if (abort)
         {
-            // No pull happened: like a cast fail the Son and the cycle stay free, and this puller sits out the next
-            // picks so another bot takes the Son.
+            // No pull happened: like a cast fail the Son is free again and the cycle stays spent (one walk-out per
+            // cycle), and this puller sits out its 60 s exclusion, so another bot takes the Son next cycle.
             std::uint32_t const nowMs = WorldTimer::getMSTime();
             bool const before = WalkoutBusy(it->second.state);
             WalkoutAbortUnspent(it->second.state, nowMs);
@@ -6306,7 +6308,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (!bot->IsStopped())
                     ai->StopMoving();
                 // The exact cast, cast directly: the generic attack would send the pet in. A shot that cannot be cast
-                // here aborts at once, and the Son and the cycle stay free.
+                // here aborts at once: the Son is free again and the spent cycle is not reopened, its puller sitting
+                // out the next picks.
                 const char* const spell = WalkoutShotSpell(bot->GetClass());
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
