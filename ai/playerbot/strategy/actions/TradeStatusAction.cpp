@@ -13,6 +13,7 @@
 #include "playerbot/strategy/values/CraftValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "SetCraftAction.h"
+#include "playerbot/policy/ConjuredTradePolicy.h"
 #include "playerbot/policy/guild/EnchantTradePolicy.h"
 #include <mutex>
 #include <unordered_map>
@@ -191,12 +192,17 @@ bool TradeStatusAction::Execute(Event& event)
             return true;
         }
     }
-    else if (status == TRADE_STATUS_BEGIN_TRADE)
+    else if (status == TRADE_STATUS_BEGIN_TRADE || status == TRADE_STATUS_OPEN_WINDOW)
     {
-        if (!sServerFacade.isInFront(bot, trader, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
-            sServerFacade.SetFacingTo(bot, trader);
+        if (status == TRADE_STATUS_BEGIN_TRADE)
+        {
+            if (!sServerFacade.isInFront(bot, trader, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
+                sServerFacade.SetFacingTo(bot, trader);
 
-        BeginTrade();
+            BeginTrade();
+        }
+        else
+            AutoShareConjured(trader);
 
         return true;
     }
@@ -232,65 +238,126 @@ void TradeStatusAction::BeginTrade()
     AutoShareConjured(trader);
 }
 
+void TradeStatusAction::ConjureAndPlace(uint32 itemId, uint32 count)
+{
+    if (!itemId || !count || !bot->GetTradeData() || !bot->GetTrader())
+        return;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    if (!proto)
+        return;
+    uint32 stack = proto->GetMaxStackSize();
+    if (!stack)
+        stack = 1;
+    if (count > stack)
+        count = stack;
+    Item* item = nullptr;
+    FindItemByIdVisitor visitor(itemId);
+    ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    for (Item* candidate : visitor.GetResult())
+    {
+        if (candidate && !candidate->IsInTrade() && candidate->GetCount() == count)
+        {
+            item = candidate;
+            break;
+        }
+    }
+    if (!item)
+    {
+        ItemPosCountVec dest;
+        bool stored = false;
+        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END && !stored; ++slot)
+        {
+            if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                continue;
+            dest.clear();
+            if (bot->CanStoreNewItem(INVENTORY_SLOT_BAG_0, slot, dest, itemId, count) != EQUIP_ERR_OK)
+                continue;
+            item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+            stored = item != nullptr;
+        }
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END && !stored; ++bag)
+        {
+            if (Bag* pack = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            {
+                for (uint32 slot = 0; slot < pack->GetBagSize() && !stored; ++slot)
+                {
+                    if (pack->GetItemByPos(slot))
+                        continue;
+                    dest.clear();
+                    if (bot->CanStoreNewItem(bag, static_cast<uint8>(slot), dest, itemId, count) != EQUIP_ERR_OK)
+                        continue;
+                    item = bot->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+                    stored = item != nullptr;
+                }
+            }
+        }
+        if (!stored)
+            return;
+    }
+    TradeData* trade = bot->GetTradeData();
+    for (uint8 i = 0; i < TRADE_SLOT_TRADED_COUNT; ++i)
+    {
+        if (trade->GetItem(TradeSlots(i)) != NULL)
+            continue;
+        WorldPacket packet(CMSG_SET_TRADE_ITEM, 3);
+        packet << static_cast<uint8>(i) << static_cast<uint8>(item->GetBagSlot()) << static_cast<uint8>(item->GetSlot());
+        bot->GetSession()->HandleSetTradeItemOpcode(packet);
+        return;
+    }
+}
+
 void TradeStatusAction::AutoShareConjured(Player* trader)
 {
     if (!sPlayerbotAIConfig.autoShareConjuredOnTrade || !trader || !bot->GetTradeData())
         return;
-    if (bot->GetClass() != CLASS_MAGE && bot->GetClass() != CLASS_WARLOCK)
+    if (PlayerbotAIStorage::Instance().GetAI(trader))
         return;
-
-    auto placeInTrade = [&](Item* item) -> bool
-    {
-        if (!item || item->IsInTrade() || !bot->GetTrader())
-            return false;
-        TradeData* trade = bot->GetTradeData();
-        int8 tradeSlot = -1;
-        for (uint8 i = 0; i < TRADE_SLOT_TRADED_COUNT && tradeSlot == -1; ++i)
-            if (trade->GetItem(TradeSlots(i)) == NULL)
-                tradeSlot = static_cast<int8>(i);
-        if (tradeSlot == -1)
-            return false;
-        WorldPacket packet(CMSG_SET_TRADE_ITEM, 3);
-        packet << static_cast<uint8>(tradeSlot) << static_cast<uint8>(item->GetBagSlot()) << static_cast<uint8>(item->GetSlot());
-        bot->GetSession()->HandleSetTradeItemOpcode(packet);
-        return true;
-    };
-
-    auto firstConjured = [&](uint32 spellCategory) -> Item*
-    {
-        FindFoodVisitor visitor(bot, spellCategory, true);
-        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        std::list<Item*>& found = visitor.GetResult();
-        return found.empty() ? nullptr : found.front();
-    };
-
-    bool placed = false;
+    if (!bot->GetTrader() || bot->GetTrader() != trader)
+        return;
+    TradeData* trade = bot->GetTradeData();
+    for (uint8 i = 0; i < TRADE_SLOT_TRADED_COUNT; ++i)
+        if (trade->GetItem(TradeSlots(i)) != NULL)
+            return;
     if (bot->GetClass() == CLASS_MAGE)
     {
-        if (Item* food = firstConjured(11))
-            placed = placeInTrade(food) || placed;
+        uint32 traderLevel = trader->GetLevel();
+        auto hasSpell = [&](uint32 spellId) { return bot->HasSpell(spellId); };
+        if (ConjuredRankRow const* food = PickConjuredRank(kConjureFoodRanks, 7, hasSpell, traderLevel))
+        {
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(food->itemId);
+            ConjureAndPlace(food->itemId, proto ? proto->GetMaxStackSize() : 20);
+        }
         if (trader->GetPowerType() == POWER_MANA)
-            if (Item* water = firstConjured(59))
-                placed = placeInTrade(water) || placed;
+        {
+            if (ConjuredRankRow const* water = PickConjuredRank(kConjureWaterRanks, 7, hasSpell, traderLevel))
+            {
+                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(water->itemId);
+                ConjureAndPlace(water->itemId, proto ? proto->GetMaxStackSize() : 20);
+            }
+        }
     }
     else if (bot->GetClass() == CLASS_WARLOCK)
     {
-        uint32 stoneId = 0;
-        uint32 level = trader->GetLevel();
-        if (level < 12) stoneId = 5512;
-        else if (level < 24) stoneId = 5511;
-        else if (level < 36) stoneId = 5509;
-        else if (level < 48) stoneId = 5510;
-        else stoneId = 9421;
-        if (trader->HasItemCount(stoneId, 1))
-            return;
-        FindItemByIdVisitor visitor(stoneId);
-        ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        std::list<Item*>& found = visitor.GetResult();
-        if (!found.empty())
-            placed = placeInTrade(found.front()) || placed;
+        for (uint32 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            if (Item* carried = trader->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                if (carried->GetProto() && IsHealthstoneItem(carried->GetEntry()))
+                    return;
+        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
+        {
+            if (Bag* pack = (Bag*)trader->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
+            {
+                for (uint32 slot = 0; slot < pack->GetBagSize(); ++slot)
+                    if (Item* carried = pack->GetItemByPos(slot))
+                        if (carried->GetProto() && IsHealthstoneItem(carried->GetEntry()))
+                            return;
+            }
+        }
+        bool improved1 = bot->HasAura(18692);
+        bool improved2 = bot->HasAura(18693);
+        auto hasSpell = [&](uint32 spellId) { return bot->HasSpell(spellId); };
+        if (uint32 stone = PickHealthstoneItem(hasSpell, trader->GetLevel(), improved1, improved2))
+            ConjureAndPlace(stone, 1);
     }
-    (void)placed;
 }
 
 bool TradeStatusAction::CheckTrade()

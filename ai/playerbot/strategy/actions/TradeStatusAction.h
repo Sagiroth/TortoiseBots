@@ -28,6 +28,7 @@ namespace ai
         // and the trader is a stranger under the configured PoolBotTradeMode.
         bool PoolBotMayTradeWith(Player* trader);
         void BeginTrade();
+        void ConjureAndPlace(uint32 itemId, uint32 count);
         void AutoShareConjured(Player* trader);
         bool CheckTrade();
         // Guild enchant order (Coming/Enchanting row): per-update window

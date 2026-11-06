@@ -194,7 +194,7 @@ Commands the bot to initiate a direct trade session with you.
 .bot item <CharacterName> trade
 ```
 
-Place items or gold into the trade window and click accept; the companion bot accepts the trade automatically on its own. Responds with `TBM:ACTION_ACK|item trade|bot:<Name>|1|open`.
+Place items or gold into the trade window and click accept; the companion bot accepts the trade automatically on its own. Mage and warlock bots conjure their trade goods (food, water, healthstone) fresh into the window. Responds with `TBM:ACTION_ACK|item trade|bot:<Name>|1|open`.
 
 ### `.bot item <Name> equip` <a id="bot-item-equip"></a>
 
