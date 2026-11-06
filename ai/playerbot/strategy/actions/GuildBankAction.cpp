@@ -2,6 +2,7 @@
 #include "GuildBankAction.h"
 
 #include "MailAction.h"
+#include "playerbot/GuildOrderCraft.h"
 #include "playerbot/strategy/values/GuildValues.h"
 #include "runtime/GuildOrderDeliveryPolicy.h"
 #include "runtime/GuildOrderDeliveryQueue.h"
@@ -73,6 +74,18 @@ namespace
         }
         return false;
     }
+
+    // A cancelled or timed-out enchant row still owes the guild its reagents:
+    // any of the spell's reagents in the bags earns the delivery trip.
+    bool EnchantDepositHeld(Player* bot, uint32_t spellId)
+    {
+        if (!bot || !spellId)
+            return false;
+        for (uint32_t reagentId : ai::EnchantReagentsFor(spellId))
+            if (reagentId && bot->GetItemCount(reagentId))
+                return true;
+        return false;
+    }
 }
 
 bool GuildBankAction::isUseful()
@@ -91,6 +104,11 @@ bool GuildBankAction::isUseful()
     std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     if (!stored || stored->guildId != bot->GetGuildId())
         return false;
+    // A cancelled or timed-out enchant row walks its reagents to the bank
+    // through the delivery leg: the drain ends the row once nothing is due.
+    if (stored->type == OrderType::Enchant && stored->state == OrderState::Delivering &&
+        FindNearbyGuildBanker() != nullptr)
+        return EnchantDepositHeld(bot, stored->itemId);
     // A cancelled stub with unspent guild gold still uses the banker: the
     // travel leg sees no order, so the action itself must stay useful.
     if (stored->cancelled)
@@ -159,10 +177,14 @@ bool GuildBankAction::Execute(Event& event)
         return TortoiseBots::GuildOrders::SupplyQueue::Instance().Enqueue(bot->GetGUIDLow());
     if (stored->state != OrderState::Delivering)
         return false;
-    if (!stored->itemId || bot->GetItemCount(stored->itemId) == 0)
-        return false;
-    if (!FindNearbyGuildBanker() &&
-        !(MailLegActive() && !MailProcessor::FindMailbox(ai).IsEmpty()))
+    // A cancelled or timed-out enchant row queues its reagent deposit while
+    // anything is due; the drain re-checks bot, guild and banker per pass.
+    if (stored->type == OrderType::Enchant)
+    {
+        if (!EnchantDepositHeld(bot, stored->itemId))
+            return false;
+    }
+    else if (!stored->itemId || bot->GetItemCount(stored->itemId) == 0)
         return false;
     // One request per bot pending; the drain runs one bank pass per world
     // tick and re-checks bot, guild and banker before each pass.

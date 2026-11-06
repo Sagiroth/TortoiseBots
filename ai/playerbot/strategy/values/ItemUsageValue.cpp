@@ -8,6 +8,7 @@
 #include "runtime/policy/provision/AmmoCheatPolicy.h"
 #include "BudgetValues.h"
 #include "runtime/GuildOrderStore.h"
+#include "../../../../runtime/GuildOrderDisenchantPolicy.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/quest/QuestLogPolicy.h"
@@ -126,6 +127,11 @@ ItemUsage ItemUsageValue::Calculate()
     {
         TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
         if (TortoiseBots::GuildOrders::IsOrderProtectedItem(bot, itemId))
+            return ItemUsage::ITEM_USAGE_GUILD_TASK;
+        // Disenchant service results wait for the mailbox: same shield as
+        // order stock, so nothing sells or uses them meanwhile.
+        if (TortoiseBots::GuildOrders::DisenchantRowsHoldItem(
+                TortoiseBots::GuildOrders::DisenchantQueued(bot->GetGUIDLow()), itemId))
             return ItemUsage::ITEM_USAGE_GUILD_TASK;
     }
 

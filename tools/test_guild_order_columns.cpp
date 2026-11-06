@@ -68,6 +68,8 @@ static char const* const kExpectedOrder[] = {
     "created_at",
     "updated_at",
     "carried",
+    "bring",
+    "given",
 };
 
 static constexpr size_t kExpectedCount = sizeof(kExpectedOrder) / sizeof(kExpectedOrder[0]);
@@ -122,6 +124,8 @@ static FieldColumn const kFields[] = {
     { ColCreatedAt, "created_at" },
     { ColUpdatedAt, "updated_at" },
     { ColCarried, "carried" },
+    { ColBring, "bring" },
+    { ColGiven, "given" },
 };
 
 static constexpr size_t kFieldCount = sizeof(kFields) / sizeof(kFields[0]);
@@ -154,10 +158,12 @@ int main()
     for (size_t i = 0; i < kCount; ++i)
         CHECK(used[i]);
 
-    // The carry column is read once, last, so the columns added before it
-    // keep the indices they always had.
-    CHECK(std::strcmp(kSelect[kCount - 1], "carried") == 0);
-    CHECK(ColCarried == kCount - 1);
+    // The bring and given columns are read once, last, so the columns added
+    // before them keep the indices they always had.
+    CHECK(std::strcmp(kSelect[kCount - 2], "bring") == 0);
+    CHECK(std::strcmp(kSelect[kCount - 1], "given") == 0);
+    CHECK(ColBring == kCount - 2);
+    CHECK(ColGiven == kCount - 1);
     CHECK(std::strcmp(kSelect[ColReported], "reported") == 0);
     CHECK(std::strcmp(kSelect[ColFarmRest], "farm_rest") == 0);
     CHECK(std::strcmp(kSelect[ColGuildGoldWithdrawn], "guild_gold_withdrawn") == 0);

@@ -13,9 +13,12 @@ namespace GuildOrders
 // Guild orders given with `.bot order`. The tokens below are the addon
 // contract: TBM parses them, so a rename changes the addon as well.
 
-enum class OrderType : uint8_t { Farm, Buy, Craft };
+enum class OrderType : uint8_t { Farm, Buy, Craft, Enchant };
 
-enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked };
+// Ready, Coming and Enchanting belong to enchant orders only: materials are
+// reserved and the bot waits for Meet, walks to the giver, or has the enchant
+// trade open.
+enum class OrderState : uint8_t { Working, Waiting, Delivering, Done, Mailed, NoSkill, Cant, Stocked, Ready, Coming, Enchanting };
 
 enum class SupplyStep : uint8_t { None, Bags, Bank, AuctionHouse, Farm, Craft, Sub, Need, Deliver };
 
@@ -90,6 +93,54 @@ inline std::string NeedItemsToken(std::vector<NeedItem> const& items)
     return out.empty() ? "-" : out;
 }
 
+// The giver's remaining share of the order's base materials ("id:count", `;`
+// between, `-` when empty). The row's live attribution: the giver's stock is
+// spent first, so what is still on the row at the end is what the bot's own
+// stock did not cover, capped by what the bags still hold.
+inline std::string GivenItemsToken(std::vector<NeedItem> const& given)
+{
+    std::string out;
+    for (NeedItem const& item : given)
+    {
+        if (!item.itemId || !item.count)
+            continue;
+        if (!out.empty())
+            out += ';';
+        out += std::to_string(item.itemId) + ':' + std::to_string(item.count);
+    }
+    return out.empty() ? "-" : out;
+}
+
+inline std::vector<NeedItem> ParseGivenItems(std::string const& token)
+{
+    std::vector<NeedItem> out;
+    size_t start = 0;
+    while (start < token.size())
+    {
+        size_t end = token.find(';', start);
+        std::string entry = token.substr(start,
+            end == std::string::npos ? std::string::npos : end - start);
+        size_t colon = entry.find(':');
+        if (colon != std::string::npos)
+        {
+            try
+            {
+                unsigned long itemId = std::stoul(entry.substr(0, colon));
+                unsigned long count = std::stoul(entry.substr(colon + 1));
+                if (itemId && count && itemId <= UINT32_MAX && count <= UINT32_MAX)
+                    out.push_back(NeedItem{ static_cast<uint32_t>(itemId), static_cast<uint32_t>(count) });
+            }
+            catch (...)
+            {
+            }
+        }
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return out;
+}
+
 inline char const* TypeToken(OrderType type)
 {
     switch (type)
@@ -97,6 +148,7 @@ inline char const* TypeToken(OrderType type)
         case OrderType::Farm:  return "farm";
         case OrderType::Buy:   return "buy";
         case OrderType::Craft: return "craft";
+        case OrderType::Enchant: return "enchant";
     }
     return "farm";
 }
@@ -106,6 +158,7 @@ inline bool ParseType(std::string const& token, OrderType& out)
     if (token == "farm")  { out = OrderType::Farm;  return true; }
     if (token == "buy")   { out = OrderType::Buy;   return true; }
     if (token == "craft") { out = OrderType::Craft; return true; }
+    if (token == "enchant") { out = OrderType::Enchant; return true; }
     return false;
 }
 
@@ -121,13 +174,16 @@ inline char const* StateToken(OrderState state)
         case OrderState::NoSkill:    return "noskill";
         case OrderState::Cant:       return "cant";
         case OrderState::Stocked:    return "stocked";
+        case OrderState::Ready:      return "ready";
+        case OrderState::Coming:     return "coming";
+        case OrderState::Enchanting: return "enchanting";
     }
     return "working";
 }
 
 inline bool ParseState(std::string const& token, OrderState& out)
 {
-    for (uint8_t i = 0; i <= uint8_t(OrderState::Stocked); ++i)
+    for (uint8_t i = 0; i <= uint8_t(OrderState::Enchanting); ++i)
         if (token == StateToken(OrderState(i))) { out = OrderState(i); return true; }
     return false;
 }
@@ -270,6 +326,8 @@ struct OrderRecord
     bool keep = false;         // keep the stock target filled: new rounds while the bank holds less
     uint32_t goldCap = 0;      // maximum guild copper this order may withdraw
     bool hasGoldCap = false;
+    std::vector<uint32_t> bringItems; // base reagents the giver brings (bring=): never sourced, counted from bags+mail only
+    std::vector<NeedItem> given; // giver-supplied stock still attributed to the giver (itemId:count); giver share spent first
     uint32_t guildGoldWithdrawn = 0;
     uint32_t guildGoldHeld = 0;
     bool cancelled = false; // cancel kept the row: unspent guild gold is still owed to the bank
@@ -304,12 +362,27 @@ struct OrderRecord
     uint32_t committedAuctionZoneId = 0; // the city the bot committed to for the AH leg (0 = pick one)
     uint32_t arrivedAuctionVisits = 0; // arrived trips with no auctioneer in reach on the AH leg
     bool handedOver = false; // memory-only: the parent already went to fetch this delivered sub-order
+    bool readyWhispered = false; // memory-only: the enchant ready whisper went out (a relapse never repeats it)
     uint32_t workedTotalSec = 0; // worked time over the whole order, ends it at hours
     uint32_t workedNoGainSec = 0; // worked time since the bot last gained an order item (the progress watchdog)
     uint32_t reportedHave = 0;   // last reported delivered count; reported have never drops below this
     uint32_t reportedCarry = 0;  // last reported bags-plus-mailbox count; the list reply uses it for a terminal row and while the bot is offline
     uint64_t createdAt = 0;
     uint64_t updatedAt = 0;
+};
+
+// One queued disenchant service item: which member it goes back to, which
+// disenchanted item it came from, and (once the cast's loot lands) the
+// results the next mailbox visit mails back, one item per mail.
+struct DisenchantQueueEntry
+{
+    uint32_t botGuidLow = 0;
+    uint32_t senderGuidLow = 0;
+    uint32_t itemGuidLow = 0; // live bag guid the intake moved; 0 once the cast consumed it
+    uint32_t itemId = 0;
+    std::string itemName;
+    bool pendingResults = false;
+    std::string results; // itemId:count pairs, `;` between
 };
 
 // Protected item ids for the running order: the order item, the current

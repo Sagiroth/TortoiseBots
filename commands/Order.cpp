@@ -2,6 +2,11 @@
 #include "CommandShared.h"
 
 #include "../runtime/BotManager.h"
+#include "../runtime/GuildOrderBringPolicy.h"
+#include "../runtime/GuildOrderReagentTree.h"
+#include "../ai/playerbot/GuildOrderCraft.h"
+#include "../ai/playerbot/GuildOrderEnchants.h"
+#include "../ai/playerbot/ServerFacade.h"
 #include "../runtime/ClaimLifecycle.h"
 #include "../runtime/GuildOrderAccess.h"
 #include "../runtime/GuildOrderCategoryPolicy.h"
@@ -9,11 +14,20 @@
 #include "../runtime/GuildOrderCraftPolicy.h"
 #include "../runtime/GuildOrderPlayerBuyPolicy.h"
 #include "../runtime/GuildOrderStore.h"
+#include "../runtime/GuildOrderWhoSearchPolicy.h"
+#include "../runtime/GuildOrderMeetPolicy.h"
+#include "../runtime/EnchantCapital.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "playerbot/PlayerbotAIConfig.h"
 #include "../runtime/RandomBotAccountRegistry.h"
 #include "../ai/playerbot/GuildOrderSources.h"
 
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Group/Group.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Maps/Map.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Chat.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -22,6 +36,8 @@
 #include "ObjectAccessor.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "ObjectMgr.h"
+// pi-lens-ignore: clang:pp_file_not_found
+#include "Spells/SpellMgr.h"
 // pi-lens-ignore: clang:pp_file_not_found
 #include "Player.h"
 
@@ -160,14 +176,315 @@ bool ParseHours(std::string const& token, uint32_t& hours)
     return hours >= GuildOrders::kMinOrderHours && hours <= GuildOrders::kMaxOrderHours;
 }
 
+// (BotBusyForMeet lives in runtime/EnchantCapital.h, shared with the
+// lifecycle action.)
+
+// True when the giver ranks as guild master or may remove guild members
+// (an officer): replacing another giver's running enchant order.
+bool GiverMayOverrideEnchant(Guild* guild, Player* requester)
+{
+    if (!guild || !requester)
+        return false;
+    if (guild->GetLeaderGuid() == requester->getObjectGuid())
+        return true;
+    return guild->HasRankRight(requester->GetRank(), GR_RIGHT_REMOVE);
+}
+
+bool HandleOrderMeet(ChatHandler* handler, Player* requester, std::string const& botName)
+{
+    // order <bot> meet: the giver records a Meet press; the lead comes once
+    // ready. Every refusal names its code: noorder, notcapital, later (kept)
+    // or gathering (kept).
+    Player* bot = nullptr;
+    ObjectGuid guid;
+    if (!ResolveOrderBot(botName, bot, guid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!IsOrderBot(bot, guid))
+    {
+        OrderError(handler, "no-bot", "That character is not a bot.");
+        return true;
+    }
+    if (!CheckGiver(handler, requester, GuildOf(bot, guid)))
+        return true;
+    std::optional<OrderRecord> row = GuildOrders::Find(guid.GetCounter());
+    bool liveEnchant = row && !row->cancelled && row->type == OrderType::Enchant &&
+        !GuildOrders::IsFinished(row->state) &&
+        row->giverGuidLow == requester->GetGUIDLow();
+    if (!liveEnchant)
+    {
+        OrderError(handler, "noorder", "That bot has no enchant order from you.");
+        return true;
+    }
+    bool giverInCapital = GuildOrders::GiverInBotCapital(requester->GetZoneId(), !bot || bot->GetTeam() == ALLIANCE);
+    bool botTiedUp = TortoiseBots::EnchantCapital::BotBusyForMeet(bot);
+    bool online = bot && bot->IsInWorld();
+    bool gathering;
+    if (!online)
+        gathering = true;
+    else if (row->state == OrderState::Working)
+        gathering = true;
+    else if (row->state == OrderState::Waiting)
+        gathering = row->reason != OrderReason::NeedItems;
+    else
+        gathering = false;
+    GuildOrders::MeetFacts facts;
+    facts.liveEnchantOrder = liveEnchant;
+    facts.giverInCapital = giverInCapital;
+    facts.botTiedUp = botTiedUp;
+    facts.gathering = gathering;
+    if (row->state == OrderState::Waiting && row->reason == OrderReason::NeedItems)
+    {
+        facts.nothingToBring = true;
+        for (GuildOrders::NeedItem const& need : row->needItems)
+            if (need.itemId && requester->GetItemCount(need.itemId) > 0)
+                facts.nothingToBring = false;
+    }
+    facts.cooldownLeftMs = GuildOrders::MeetCooldownLeftMs(WorldTimer::getMSTime(),
+        GuildOrders::MeetFailedMs(guid.GetCounter()));
+    switch (GuildOrders::DecideMeet(facts))
+    {
+        case GuildOrders::MeetVerdict::Cooldown:
+        {
+            uint32_t const minutes = (facts.cooldownLeftMs + 59999) / 60000;
+            std::string text = "I just came for nothing. Try again in " + std::to_string(minutes) + " min.";
+            OrderError(handler, "cooldown", text.c_str());
+            return true;
+        }
+        case GuildOrders::MeetVerdict::NothingToBring:
+            OrderError(handler, "nothingtobring",
+                "I still need materials you do not carry. Bring them, or mail them to me.");
+            return true;
+        case GuildOrders::MeetVerdict::NoOrder:
+            OrderError(handler, "noorder", "That bot has no enchant order from you.");
+            return true;
+        case GuildOrders::MeetVerdict::NotCapital:
+        {
+            std::string text = (bot && bot->GetTeam() != ALLIANCE) ?
+                "Meet me in Orgrimmar." : "Meet me in Stormwind.";
+            OrderError(handler, "notcapital", text.c_str());
+            return true;
+        }
+        case GuildOrders::MeetVerdict::Later:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("I'll come when I'm out.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet later");
+            return true;
+        case GuildOrders::MeetVerdict::Gathering:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("Still gathering, I'll tell you.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet gathering");
+            return true;
+        case GuildOrders::MeetVerdict::Coming:
+            GuildOrders::RequestMeet(guid.GetCounter(), requester->GetGUIDLow());
+            handler->PSendSysMessage("On my way.");
+            SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "meet coming");
+            return true;
+    }
+    return true;
+}
+
+// `.bot order <bot> enchant <spellId or spell link> [hours|inf] [gold=<copper>] [bring=<item>,<item>]`:
+// one cast of a permanent enchant the bot knows. The record holds the spell
+// id (type tells it apart from items), amount 1, state Working; the
+// gathering lifecycle owns everything after. Runs on the world thread.
+bool HandleOrderEnchantGive(ChatHandler* handler, Player* requester, std::string const& botName,
+    std::string const& rest)
+{
+    std::istringstream in(rest);
+    std::string spellToken;
+    if (!(in >> spellToken))
+    {
+        OrderError(handler, "invalid", "Usage: order <bot> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>].");
+        return true;
+    }
+    uint32_t spellId = 0;
+    if (!GuildOrders::ParseEnchantSpellToken(spellToken, spellId))
+    {
+        OrderError(handler, "invalid", "Unknown enchant: shift-click a spell link or pass its id.");
+        return true;
+    }
+    std::string token, hoursToken, goldToken, bringToken, keepToken;
+    while (in >> token)
+    {
+        std::string lower = token;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower == "inf" || GuildOrders::IsEnchantHoursToken(lower))
+        {
+            if (!hoursToken.empty())
+            {
+                OrderError(handler, "invalid", "Usage: order <bot> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>].");
+                return true;
+            }
+            hoursToken = token;
+            continue;
+        }
+        if (lower.rfind("gold=", 0) == 0)
+        {
+            if (!goldToken.empty())
+            {
+                OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+                return true;
+            }
+            goldToken = token;
+            continue;
+        }
+        if (lower.rfind("bring=", 0) == 0)
+        {
+            if (!bringToken.empty())
+            {
+                OrderError(handler, "invalid", "Bring list must be item ids joined by commas: bring=<item>,<item>.");
+                return true;
+            }
+            bringToken = token;
+            continue;
+        }
+        if (lower == "keep")
+        {
+            keepToken = token;
+            continue;
+        }
+        OrderError(handler, "invalid", "Usage: order <bot> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>].");
+        return true;
+    }
+    uint32_t hours = GuildOrders::kDefaultOrderHours;
+    if (!hoursToken.empty() && !GuildOrders::ParseEnchantHours(hoursToken, hours))
+    {
+        OrderError(handler, "invalid", "Hours must be 1-24 or inf.");
+        return true;
+    }
+    bool hasGoldCap = false;
+    uint32_t goldCap = 0;
+    if (!goldToken.empty() && !GuildOrders::ParseEnchantGoldCap(goldToken.substr(5), goldCap))
+    {
+        OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+        return true;
+    }
+    else if (!goldToken.empty())
+        hasGoldCap = true;
+    std::vector<uint32_t> bring;
+    if (!bringToken.empty() && !GuildOrders::ParseBringList(bringToken.substr(6), bring))
+    {
+        OrderError(handler, "invalid", "Bring list must be item ids joined by commas: bring=<item>,<item>.");
+        return true;
+    }
+    Player* bot = nullptr;
+    ObjectGuid guid;
+    if (!ResolveOrderBot(botName, bot, guid))
+    {
+        OrderError(handler, "no-bot", "No such bot.");
+        return true;
+    }
+    if (!IsOrderBot(bot, guid))
+    {
+        OrderError(handler, "no-bot", "That character is not a bot.");
+        return true;
+    }
+    uint32_t guildId = GuildOf(bot, guid);
+    if (!guildId)
+    {
+        OrderError(handler, "not-guild", "The bot is not in a guild.");
+        return true;
+    }
+    if (!requester || requester->GetGuildId() != guildId)
+    {
+        OrderError(handler, "not-guild", "The bot is not in your guild.");
+        return true;
+    }
+    if (!CheckGiver(handler, requester, guildId))
+        return true;
+    if (std::optional<OrderRecord> existing = GuildOrders::Find(guid.GetCounter()))
+    {
+        if (!existing->cancelled && existing->type == OrderType::Enchant &&
+            !GuildOrders::IsFinished(existing->state))
+        {
+            Guild* guild = sGuildMgr.GetGuildById(guildId);
+            bool sameGiver = existing->giverGuidLow == requester->GetGUIDLow();
+            bool mayOverride = GiverMayOverrideEnchant(guild, requester);
+            if (GuildOrders::DecideEnchantReplace(true, sameGiver, mayOverride) ==
+                GuildOrders::EnchantReplaceVerdict::Busy)
+            {
+                std::string giverName = "?";
+                sObjectMgr.GetPlayerNameByGUID(
+                    ObjectGuid(HIGHGUID_PLAYER, existing->giverGuidLow), giverName);
+                OrderError(handler, "busy", ((bot ? bot->GetName() : botName) +
+                    std::string(" is busy with an enchant order for ") + giverName + ".").c_str());
+                return true;
+            }
+        }
+    }
+    TortoiseBots::GuildOrders::EnchantEntry catalogue;
+    for (TortoiseBots::GuildOrders::EnchantEntry const& candidate : ai::GuildOrderEnchants())
+        if (candidate.spellId == spellId)
+        {
+            catalogue = candidate;
+            break;
+        }
+    GuildOrders::EnchantGiveArgs args;
+    args.inCatalogue = catalogue.spellId != 0;
+    args.knownByBot = bot && bot->HasSpell(spellId);
+    SpellEntry const* spell = sSpellMgr.GetSpellEntry(spellId);
+    uint32_t reqSkill = catalogue.spellId ? catalogue.reqSkill : 0;
+    if (spell && (!catalogue.spellId || !reqSkill))
+    {
+        uint32_t recipeItem = ai::GuildOrderRecipeItemFor(spellId);
+        ItemPrototype const* recipeProto = recipeItem ? sObjectMgr.GetItemPrototype(recipeItem) : nullptr;
+        reqSkill = GuildOrders::EnchantReqSkillCombine(false, 0, recipeProto != nullptr,
+            recipeProto ? recipeProto->RequiredSkillRank : 0);
+    }
+    args.skillEnough = !bot || bot->GetSkillValue(333) >= reqSkill;
+    args.keep = !keepToken.empty();
+    if (GuildOrders::OrderReason verdict = GuildOrders::EnchantGiveVerdict(args);
+        verdict != GuildOrders::OrderReason::None)
+    {
+        OrderError(handler, ReasonToken(verdict), GuildOrders::EnchantGiveRefusal(verdict));
+        return true;
+    }
+    if (!bring.empty())
+    {
+        std::vector<uint32_t> baseIds;
+        if (spell)
+            for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                if (spell->ReagentCount[i] && spell->Reagent[i] > 0)
+                    baseIds.push_back(uint32_t(spell->Reagent[i]));
+        bring = GuildOrders::FilterBringToBaseReagents(bring, baseIds.data(), baseIds.size());
+    }
+    OrderRecord record;
+    record.botGuidLow = guid.GetCounter();
+    record.guildId = guildId;
+    record.giverGuidLow = requester->GetGUIDLow();
+    record.rootGiverGuidLow = requester->GetGUIDLow();
+    record.type = OrderType::Enchant;
+    record.itemId = spellId;
+    record.amount = 1;
+    record.hours = hours;
+    record.keep = false;
+    record.stockTarget = 0;
+    record.goldCap = goldCap;
+    record.hasGoldCap = hasGoldCap;
+    record.bringItems = bring;
+    record.state = OrderState::Working;
+    // A new order starts without the previous order's Meet.
+    GuildOrders::ClearMeet(record.botGuidLow);
+    if (!GuildOrders::Give(record))
+    {
+        OrderError(handler, "invalid", "The order could not be stored.");
+        return true;
+    }
+    SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "enchant");
+    return true;
+}
+
 bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const& rest)
 {
-    // order <bot> <farm|buy|craft> <itemId or item link> <amount> [hours|inf] [keep] [gold=<copper>]
+    // order <bot> <farm|buy|craft|enchant> <itemId or item link> <amount> [hours|inf] [keep] [gold=<copper>]
     std::istringstream in(rest);
     std::string botName, typeToken;
     if (!(in >> botName >> typeToken))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|enchant> <item> <amount> [hours|inf] [keep] [gold=<copper>].");
         return true;
     }
     OrderType type;
@@ -175,7 +492,12 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
     if (!GuildOrders::ParseType(lowerType, type))
     {
-        OrderError(handler, "invalid", "Unknown order type: use farm, buy or craft.");
+        OrderError(handler, "invalid", "Unknown order type: use farm, buy, craft or enchant.");
+        return true;
+    }
+    if (type == OrderType::Enchant)
+    {
+        OrderError(handler, "invalid", "Usage: order <bot> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>].");
         return true;
     }
     typeToken = lowerType;
@@ -195,21 +517,39 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
             itemPart += " ";
         itemPart += token;
     }
+    // Trailing options pop in either order: gold=<copper> caps the guild
+    // gold the order may take, bring=<item>,<item> names base reagents the
+    // giver delivers themselves (craft only).
     bool hasGoldCap = false;
     uint32_t goldCap = 0;
-    size_t goldSpace = itemPart.rfind(' ');
-    std::string maybeGold = goldSpace == std::string::npos ? itemPart : itemPart.substr(goldSpace + 1);
-    std::string lowerGold = maybeGold;
-    std::transform(lowerGold.begin(), lowerGold.end(), lowerGold.begin(), ::tolower);
-    if (lowerGold.rfind("gold=", 0) == 0)
+    std::vector<uint32_t> bring;
+    for (int pass = 0; pass < 2; ++pass)
     {
-        if (!ParseUintToken(maybeGold.substr(5), goldCap))
+        size_t optionSpace = itemPart.rfind(' ');
+        std::string maybeOption = optionSpace == std::string::npos ? itemPart : itemPart.substr(optionSpace + 1);
+        std::string lowerOption = maybeOption;
+        std::transform(lowerOption.begin(), lowerOption.end(), lowerOption.begin(), ::tolower);
+        if (lowerOption.rfind("gold=", 0) == 0)
         {
-            OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
-            return true;
+            if (hasGoldCap || !ParseUintToken(maybeOption.substr(5), goldCap))
+            {
+                OrderError(handler, "invalid", "Guild gold cap must be copper from 0 to 4294967295.");
+                return true;
+            }
+            hasGoldCap = true;
+            itemPart = optionSpace == std::string::npos ? std::string() : itemPart.substr(0, optionSpace);
         }
-        hasGoldCap = true;
-        itemPart = goldSpace == std::string::npos ? std::string() : itemPart.substr(0, goldSpace);
+        else if (lowerOption.rfind("bring=", 0) == 0)
+        {
+            if (!bring.empty() || !GuildOrders::ParseBringList(maybeOption.substr(6), bring))
+            {
+                OrderError(handler, "invalid", "Bring list must be item ids joined by commas: bring=<item>,<item>.");
+                return true;
+            }
+            itemPart = optionSpace == std::string::npos ? std::string() : itemPart.substr(0, optionSpace);
+        }
+        else
+            break;
     }
     // A trailing `keep` word marks a keep-in-stock order; hours still sit
     // between the amount and keep.
@@ -316,6 +656,29 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     }
     if (!CheckGiver(handler, requester, guildId))
         return true;
+    // An unfinished enchant order of another giver blocks every new order:
+    // only the giver or the guild master (or a rank that may remove
+    // members) replaces it. Other order types keep today's rule.
+    if (std::optional<OrderRecord> existing = GuildOrders::Find(guid.GetCounter()))
+    {
+        if (!existing->cancelled && existing->type == OrderType::Enchant &&
+            !GuildOrders::IsFinished(existing->state))
+        {
+            Guild* guild = sGuildMgr.GetGuildById(guildId);
+            bool sameGiver = existing->giverGuidLow == requester->GetGUIDLow();
+            bool mayOverride = GiverMayOverrideEnchant(guild, requester);
+            if (GuildOrders::DecideEnchantReplace(true, sameGiver, mayOverride) ==
+                GuildOrders::EnchantReplaceVerdict::Busy)
+            {
+                std::string giverName = "?";
+                sObjectMgr.GetPlayerNameByGUID(
+                    ObjectGuid(HIGHGUID_PLAYER, existing->giverGuidLow), giverName);
+                OrderError(handler, "busy", ((bot ? bot->GetName() : botName) +
+                    std::string(" is busy with an enchant order for ") + giverName + ".").c_str());
+                return true;
+            }
+        }
+    }
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)
@@ -326,6 +689,12 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     if (!GuildOrders::IsOrderableItem(proto))
     {
         OrderError(handler, "bound", "That item is bound when picked up (or a quest or timed item), so the bot cannot hand it over.");
+        return true;
+    }
+
+    if (!bring.empty() && type != OrderType::Craft)
+    {
+        OrderError(handler, "invalid", "bring= needs a craft order.");
         return true;
     }
 
@@ -342,6 +711,7 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
     record.stockTarget = keep ? amount : 0;
     record.goldCap = goldCap;
     record.hasGoldCap = hasGoldCap;
+    record.bringItems = bring;
 
     if (type == OrderType::Craft && !bot)
     {
@@ -370,8 +740,52 @@ bool HandleOrderGive(ChatHandler* handler, Player* requester, std::string const&
         }
         if (type == OrderType::Buy && record.farmZoneId == 0)
             record.farmZoneId = bot->GetTeam() == ALLIANCE ? kStormwindZone : kOrgrimmarZone;
+        if (type == OrderType::Craft && !record.bringItems.empty())
+        {
+            // Only base reagents of this craft survive: anything else was
+            // never the bot's to source. The bot is online here (craft
+            // needs its spellbook), so the tree walk sees its recipes.
+            auto recipeFor = [bot](uint32_t recipeItemId, GuildOrders::Recipe& out) -> bool
+            {
+                uint32_t spellId = ai::FindCraftSpellFor(bot, recipeItemId);
+                if (!spellId)
+                    return false;
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+                if (!spell)
+                    return false;
+                uint32_t effect = ai::FindCraftEffectFor(spellId, recipeItemId);
+                out.yieldPerCast = TortoiseBots::CraftOrderPolicy::MinYieldPerCast(
+                    spell->EffectBasePoints[effect], spell->EffectBaseDice[effect],
+                    spell->EffectDieSides[effect]);
+                for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                {
+                    if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+                        continue;
+                    out.reagents.push_back({ uint32_t(spell->Reagent[i]), uint32_t(spell->ReagentCount[i]) });
+                }
+                return true;
+            };
+            auto held = [](uint32_t heldId) -> uint32_t
+            {
+                // The full base set, not the current shortfall: stock in the
+                // bags still counts at the ladder, but must not shrink which
+                // ids the set names.
+                (void)heldId;
+                return 0;
+            };
+            std::vector<GuildOrders::ReagentNeed> base =
+                GuildOrders::CollectBaseReagents(itemId, amount, recipeFor, held);
+            std::vector<uint32_t> baseIds;
+            baseIds.reserve(base.size());
+            for (GuildOrders::ReagentNeed const& need : base)
+                baseIds.push_back(need.itemId);
+            record.bringItems = GuildOrders::FilterBringToBaseReagents(record.bringItems,
+                baseIds.data(), baseIds.size());
+        }
     }
 
+    // A new order starts without the previous order's Meet.
+    GuildOrders::ClearMeet(record.botGuidLow);
     if (!GuildOrders::Give(record))
     {
         OrderError(handler, "invalid", "The order could not be stored.");
@@ -473,6 +887,15 @@ bool HandleOrderCancel(ChatHandler* handler, Player* requester, std::string cons
     {
         OrderError(handler, "invalid", "That bot has no order.");
         return true;
+    }
+    // Cancel in any state closes the trade window first: the materials the
+    // order gained still walk to the guild bank through the cancel path.
+    if (bot && bot->IsInWorld() && bot->GetTrader())
+    {
+        WorldPacket cancel;
+        uint32 cancelStatus = 0;
+        cancel << cancelStatus;
+        bot->GetSession()->HandleCancelTradeOpcode(cancel);
     }
     GuildOrders::Cancel(guid.GetCounter());
     SendActionAck(handler, "order", "bot:" + (bot ? bot->GetName() : botName), 1, "cancel");
@@ -623,7 +1046,7 @@ bool HandleOrder(ChatHandler* handler, char const* args)
     std::string rest = Trim(args ? args : "");
     if (rest.empty())
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ... | order list | order search ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|meet|steps|preview> ... | order list | order search ....");
         return true;
     }
 
@@ -650,7 +1073,9 @@ bool HandleOrder(ChatHandler* handler, char const* args)
 
     if (lower == "search")
     {
-        // order search <bot> <farm|buy|craft> [cat=<kind>] <text>
+        // order search <craft|enchant> <text> (no bot: guild-wide who-search)
+        // or order search <bot> <farm|buy|craft> [cat=<kind>] <text>. A first
+        // argument that is one of farm|buy|craft|enchant means "no bot".
         std::string botName, typeToken;
         if (!(in >> botName >> typeToken))
         {
@@ -660,6 +1085,18 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         std::string text;
         std::getline(in, text);
         text = Trim(text);
+        // A first argument that is one of farm|buy|craft|enchant means "no
+        // bot": the giver's guild is searched instead. A bot literally named
+        // like a type keyword is not resolved here.
+        std::string lowerFirst = botName;
+        std::transform(lowerFirst.begin(), lowerFirst.end(), lowerFirst.begin(), ::tolower);
+        if (GuildOrders::IsNoBotFirstArg(lowerFirst))
+        {
+            std::string combined = typeToken;
+            if (!text.empty())
+                combined += " " + text;
+            return HandleOrderWhoSearch(handler, requester, lowerFirst, combined);
+        }
         // The search command answers the usage errors; this only skips the
         // bot lookups for text that is certainly too short. A cat= word
         // anywhere may still leave browsable text behind.
@@ -699,7 +1136,8 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         return HandleOrderSearch(handler, requester, bot, typeToken, text);
     }
 
-    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    // order reassign <subOrderBot> <newBot> | order <bot> cancel | order <bot> meet |
+    // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
     if (lower == "reassign")
     {
         std::string subBotName, newBotName;
@@ -710,16 +1148,25 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         }
         return HandleOrderReassign(handler, requester, subBotName, newBotName);
     }
-    // order <bot> cancel | order <bot> steps | order <bot> preview <farm|craft> <item> <amount> |
+    // order <bot> cancel | order <bot> meet | order <bot> steps | order <bot> preview <farm|craft> <item> <amount> |
     // order <bot> <type> <item> <amount> [hours] [keep] [gold=<copper>]
+    // order <bot> enchant <spell> [hours|inf] [gold=<copper>] [bring=<item>,<item>]
     std::string second;
     if (!(in >> second))
     {
-        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|cancel|steps|preview> ....");
+        OrderError(handler, "invalid", "Usage: order <bot> <farm|buy|craft|enchant|cancel|meet|steps|preview> ....");
         return true;
     }
     std::string lowerSecond = second;
     std::transform(lowerSecond.begin(), lowerSecond.end(), lowerSecond.begin(), ::tolower);
+    if (lowerSecond == "enchant")
+    {
+        std::string giveRest;
+        std::getline(in, giveRest);
+        return HandleOrderEnchantGive(handler, requester, first, giveRest);
+    }
+    if (lowerSecond == "meet")
+        return HandleOrderMeet(handler, requester, first);
     if (lowerSecond == "cancel")
         return HandleOrderCancel(handler, requester, first);
     if (lowerSecond == "steps")
@@ -729,10 +1176,26 @@ bool HandleOrder(ChatHandler* handler, char const* args)
         std::string typeToken, itemToken, amountToken;
         if (!(in >> typeToken >> itemToken >> amountToken))
         {
-            OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount>.");
+            OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft|enchant> <item> <amount> [bring=<item>,<item>].");
             return true;
         }
-        return HandleOrderPreview(handler, requester, first, typeToken, itemToken, amountToken);
+        std::string lowerPreview = typeToken;
+        std::transform(lowerPreview.begin(), lowerPreview.end(), lowerPreview.begin(), ::tolower);
+        if (lowerPreview == "enchant")
+        {
+            OrderError(handler, "invalid", "Enchant preview is not available: search shows the reagents instead.");
+            return true;
+        }
+        std::string bringToken, extra;
+        if (in >> bringToken)
+        {
+            if (in >> extra)
+            {
+                OrderError(handler, "invalid", "Usage: order <bot> preview <farm|craft> <item> <amount> [bring=<item>,<item>].");
+                return true;
+            }
+        }
+        return HandleOrderPreview(handler, requester, first, typeToken, itemToken, amountToken, bringToken);
     }
 
 

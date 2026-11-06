@@ -98,6 +98,16 @@ namespace ai
         virtual Unit* Calculate() override;
     };
 
+    class TankToRemoveRoots : public PartyMemberValue
+    {
+    public:
+        TankToRemoveRoots(PlayerbotAI* ai, std::string name = "tank to remove roots") :
+            PartyMemberValue(ai, name) {}
+
+    protected:
+        virtual Unit* Calculate() override;
+    };
+
     class PartyMemberToRemoveRoots : public PartyMemberValue
     {
     public:

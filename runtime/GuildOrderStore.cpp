@@ -2,8 +2,10 @@
 #include "GuildOrderStoreColumns.h"
 
 #include "GuildOrderAuctionPolicy.h"
+#include "GuildOrderBringPolicy.h"
 #include "GuildOrderCancelDepositPolicy.h"
 #include "GuildOrderDelivery.h"
+#include "GuildOrderDeliveryPolicy.h"
 #include "GuildOrderGiveUpPolicy.h"
 #include "GuildOrderKeepPolicy.h"
 #include "GuildOrderNeedPolicy.h"
@@ -139,6 +141,133 @@ public:
     }
 
 
+    void SetMeet(uint32_t botGuidLow, uint32_t giverGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meet[botGuidLow] = MeetRequest{ giverGuidLow, WorldTimer::getMSTime() };
+        // A new Meet gets the full try budget again.
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.enchantTradeTries = 0;
+    }
+
+    EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        EnchantTradeSession out;
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return out;
+        out.openedMs = it->second.enchantTradeOpenedMs;
+        out.tries = it->second.enchantTradeTries;
+        out.replaceAskedMs = it->second.enchantReplaceAskedMs;
+        out.replaceConfirmed = it->second.enchantReplaceConfirmed;
+        out.parkedItemGuidLow = it->second.enchantParkedItemLow;
+        return out;
+    }
+
+    void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it != m_orders.end())
+            it->second.enchantParkedItemLow = itemGuidLow;
+    }
+
+    void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantTradeOpenedMs = nowMs;
+        ++it->second.enchantTradeTries;
+        it->second.enchantReplaceAskedMs = 0;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantTradeClosed(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantTradeOpenedMs = 0;
+        it->second.enchantReplaceAskedMs = 0;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantReplaceAskedMs = nowMs;
+        it->second.enchantReplaceConfirmed = false;
+    }
+
+    void NoteEnchantReplaceConfirmed(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.enchantReplaceConfirmed = true;
+    }
+
+    std::optional<MeetRequest> GetMeet(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_meet.find(botGuidLow);
+        if (it == m_meet.end())
+            return std::nullopt;
+        return it->second;
+    }
+
+    void DropMeet(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meet.erase(botGuidLow);
+    }
+    // A pending drop-off window per bot: the whisper opens it for one
+    // member, the trade intake closes it after taking the offer.
+    void SetDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!botGuidLow || !memberGuidLow)
+            return;
+        m_dropOff[botGuidLow] = DisenchantDropOffWindow{ memberGuidLow, nowMs };
+    }
+
+    std::optional<DisenchantDropOffWindow> GetDropOff(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_dropOff.find(botGuidLow);
+        if (it == m_dropOff.end())
+            return std::nullopt;
+        return it->second;
+    }
+
+    void DropDropOff(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_dropOff.erase(botGuidLow);
+    }
+
+    void NoteMeetFailed(uint32_t botGuidLow, uint32_t nowMs)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_meetFailedMs[botGuidLow] = nowMs;
+    }
+
+    uint32_t MeetFailedMs(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_meetFailedMs.find(botGuidLow);
+        return it == m_meetFailedMs.end() ? 0 : it->second;
+    }
+
     // Row write outside the store mutex (the caller snapshotted it out of
     // Tick): a failed write re-marks the row dirty for the next pass.
     void WriteAndRescue(OrderRecord const& record)
@@ -208,11 +337,23 @@ public:
                 record.createdAt = fields[StoreColumns::ColCreatedAt].GetUInt64();
                 record.updatedAt = fields[StoreColumns::ColUpdatedAt].GetUInt64();
                 record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();
+                record.bringItems = ParseBringItemsToken(fields[StoreColumns::ColBring].GetCppString());
+                record.given = ParseGivenItems(fields[StoreColumns::ColGiven].GetCppString());
                 if (record.hours != kUnlimitedOrderHours &&
                     (record.hours < kMinOrderHours || record.hours > kMaxOrderHours))
                     record.hours = kDefaultOrderHours;
                 if (!record.rootGiverGuidLow && !record.parentBotGuidLow)
                     record.rootGiverGuidLow = record.giverGuidLow;
+                // A restart drops the meet request (no meet survives), so a
+                // row caught mid-visit loads back as Ready (or Waiting
+                // needitems): the giver presses Meet again.
+                if (record.type == OrderType::Enchant &&
+                    (record.state == OrderState::Coming || record.state == OrderState::Enchanting))
+                {
+                    bool need = record.reason == OrderReason::NeedItems || !record.needItems.empty();
+                    record.state = need ? OrderState::Waiting : OrderState::Ready;
+                    record.reason = need ? OrderReason::NeedItems : OrderReason::None;
+                }
                 if (record.botGuidLow && record.itemId && record.amount)
                     m_orders[record.botGuidLow] = Stored{record};
             } while (result->NextRow());
@@ -255,10 +396,40 @@ public:
             } while (relists->NextRow());
         }
 
+        // Disenchant queue rows ride with the order store: an item taken for
+        // disenchanting survives a restart and is re-queued instead of being
+        // eaten by the maintenance disenchant.
+        m_disenchant.clear();
+        std::unique_ptr<QueryResult> queued(CharacterDatabase.Query(
+            "SELECT `bot_guid`, `sender_guid`, `item_guid`, `item_entry`, `item_name`, "
+            "`pending`, `results`, `created_at` FROM `tortoise_bots_guild_disenchant`"));
+        size_t queuedCount = 0;
+        if (queued)
+        {
+            do
+            {
+                Field* fields = queued->Fetch();
+                DisenchantQueueEntry entry;
+                entry.botGuidLow = fields[0].GetUInt32();
+                entry.senderGuidLow = fields[1].GetUInt32();
+                entry.itemGuidLow = fields[2].GetUInt32();
+                entry.itemId = fields[3].GetUInt32();
+                entry.itemName = fields[4].GetCppString();
+                entry.pendingResults = fields[5].GetUInt32() != 0;
+                entry.results = fields[6].GetCppString();
+                if (!entry.botGuidLow || !entry.senderGuidLow || !entry.itemId)
+                    continue;
+                m_disenchant[entry.botGuidLow].push_back(entry);
+                ++queuedCount;
+            } while (queued->NextRow());
+        }
+
         m_initialized = true;
         TB_LOG_BASIC("TortoiseBots: loaded %zu guild order(s) from database.", m_orders.size());
         if (relistCount)
             TB_LOG_BASIC("TortoiseBots: loaded %zu guild relist ledger row(s).", relistCount);
+        if (queuedCount)
+            TB_LOG_BASIC("TortoiseBots: loaded %zu disenchant queue row(s).", queuedCount);
     }
 
     // The pool reads the store before the startup sequence may have loaded
@@ -289,7 +460,8 @@ public:
     // a stale one until the map thread recomputes it: over-protecting for a
     // tick is harmless, a gap would let the world-thread AH list a reagent.
     // A set lookup under the lock, safe on any thread; cancelled or finished
-    // rows protect nothing.
+    // rows protect nothing, except a cancelled enchant row still walking its
+    // reagents to the bank.
     bool IsProtectedItem(Player* bot, uint32_t itemId)
     {
         if (!bot || !itemId || !bot->GetGuildId())
@@ -300,7 +472,10 @@ public:
             return false;
         Stored& stored = it->second;
         OrderRecord const& record = stored.record;
-        if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+        // A cancelled enchant row on its deposit delivery still owns its
+        // reagents until the drain reports back.
+        bool depositing = record.type == OrderType::Enchant && record.state == OrderState::Delivering;
+        if ((record.cancelled && !depositing) || record.guildId != bot->GetGuildId() || IsFinished(record.state))
             return false;
         if (itemId == record.itemId || itemId == record.supplyItemId)
             return true;
@@ -314,7 +489,8 @@ public:
     // is safe to read there). Snapshots the keys under the lock, walks the
     // tree outside it, then swaps in the finished set under the lock with
     // a key re-check. No-op when the keys already match; clears the set
-    // for cancelled, finished or absent rows.
+    // for cancelled, finished or absent rows, except a cancelled enchant
+    // row still walking its reagents to the bank.
     void RefreshProtectedSet(Player* bot)
     {
         if (!bot || !bot->GetGuildId())
@@ -329,18 +505,19 @@ public:
             if (it == m_orders.end())
                 return;
             OrderRecord const& record = it->second.record;
-            if (record.cancelled || record.guildId != bot->GetGuildId() || IsFinished(record.state))
+            bool depositing = record.type == OrderType::Enchant && record.state == OrderState::Delivering;
+            if ((record.cancelled && !depositing) || record.guildId != bot->GetGuildId() || IsFinished(record.state))
             {
                 it->second.kept = OrderProtectedSet{};
                 return;
             }
             if (it->second.kept.valid && it->second.kept.orderItemId == record.itemId &&
                 it->second.kept.supplyItemId == record.supplyItemId &&
-                it->second.kept.orderIsCraft == (record.type == OrderType::Craft))
+                it->second.kept.orderIsCraft == (record.type == OrderType::Craft || record.type == OrderType::Enchant))
                 return;
             orderItemId = record.itemId;
             supplyItemId = record.supplyItemId;
-            orderIsCraft = record.type == OrderType::Craft;
+            orderIsCraft = record.type == OrderType::Craft || record.type == OrderType::Enchant;
         }
         if (!orderItemId)
             return;
@@ -360,7 +537,7 @@ public:
                 return;
             }
             if (record.itemId != orderItemId || record.supplyItemId != supplyItemId ||
-                (record.type == OrderType::Craft) != orderIsCraft)
+                (record.type == OrderType::Craft || record.type == OrderType::Enchant) != orderIsCraft)
                 return;
             it->second.kept.items = std::move(kept);
             it->second.kept.orderItemId = orderItemId;
@@ -418,10 +595,10 @@ public:
                 "`worked_sec`, `worked_total`, `worked_nogain`, `reported`, `farm_rest`, `keep`, `gold_cap`, `gold_cap_set`, "
                 "`guild_gold_withdrawn`, `guild_gold_held`, `cancelled`, `supply_step`, `supply_return_step`, `supply_item`, `supply_count`, `supply_gold_count`, "
                 "`need_items`, `need_whispered`, `last_need_whisper`, `need_bank_denied`, `stock_target`, `last_bank_check`, "
-                "`created_at`, `updated_at`, `carried`) "
+                "`created_at`, `updated_at`, `carried`, `bring`, `given`) "
                 "VALUES ('%u', '%u', '%u', '%u', '%u', '%s', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%u', '%u', "
                 "'%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%s', '%s', '%u', '%u', '%u', '%s', '%u', '%s', '%u', '%u', '%u', "
-                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u')",
+                "FROM_UNIXTIME('%u'), FROM_UNIXTIME('%u'), '%u', '%s', '%s')",
                 record.botGuidLow, record.guildId, record.giverGuidLow, record.parentBotGuidLow,
                 record.rootGiverGuidLow, TypeToken(record.type),
                 record.itemId, record.amount, record.hours, record.delivered, StateToken(record.state),
@@ -437,7 +614,7 @@ public:
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
                 static_cast<uint32_t>(record.createdAt), static_cast<uint32_t>(record.updatedAt),
-                record.reportedCarry))
+                record.reportedCarry, BringItemsToken(record.bringItems).c_str(), GivenItemsToken(record.given).c_str()))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -460,7 +637,11 @@ public:
             {
                 // The refund drain paid the last copper: the parked row goes, in
                 // memory and in the table. A still-owed row survives restarts.
-                if (it->second.record.cancelled && it->second.record.guildGoldHeld == 0)
+                // A cancelled enchant row still hands its reagents back; the
+                // deposit finish erases it.
+                if (it->second.record.cancelled && it->second.record.guildGoldHeld == 0 &&
+                    !(it->second.record.type == OrderType::Enchant &&
+                        it->second.record.state == OrderState::Delivering))
                 {
                     deletes.push_back(it->first);
                     it = m_orders.erase(it);
@@ -487,6 +668,11 @@ public:
     }
     bool Cancel(uint32_t botGuidLow)
     {
+        {
+            // A Meet belongs to the order it was pressed for.
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_meet.erase(botGuidLow);
+        }
         if (!botGuidLow)
             return false;
         uint32_t bagCount = 0;
@@ -516,9 +702,37 @@ public:
                 ClearQueuedSubOrdersLocked(botGuidLow);
                 detachedDeposit = true;
             }
+            else if (it->second.record.type == OrderType::Enchant && it->second.record.cancelled &&
+                it->second.record.state == OrderState::Delivering)
+            {
+                // A deposit delivery already runs: keep it, the drain erases
+                // the row once nothing is due.
+                parked = true;
+            }
+            else if (it->second.record.type == OrderType::Enchant && !it->second.record.cancelled)
+            {
+                // In any state: the reagents walk to the guild bank through
+                // the delivery leg instead of stranding in the bags. The
+                // drain erases the row once nothing is due; the reagents
+                // stay protected until then.
+                it->second.record.cancelled = true;
+                it->second.record.state = OrderState::Delivering;
+                it->second.record.reason = OrderReason::None;
+                it->second.record.supplyStep = SupplyStep::Deliver;
+                it->second.record.supplyItemId = it->second.record.itemId;
+                it->second.record.supplyCount = 0;
+                it->second.record.supplyGoldCount = 0;
+                it->second.record.supplyReturnStep = SupplyStep::None;
+                it->second.record.needItems.clear();
+                it->second.record.needWhispered = false;
+                it->second.record.needBankDenied = false;
+                it->second.record.reportedHave = 0;
+                MarkDirtyLocked(it->second);
+                parked = true;
+                ClearQueuedSubOrdersLocked(botGuidLow);
+            }
             else if (it->second.record.guildGoldHeld > 0)
             {
-                it->second.record.cancelled = true;
                 it->second.record.state = OrderState::Working;
                 it->second.record.reason = OrderReason::None;
                 it->second.record.supplyStep = SupplyStep::None;
@@ -545,6 +759,48 @@ public:
         CharacterDatabase.DirectPExecute(
             "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
         return true;
+    }
+
+    // A finished enchant deposit delivery: drop the row in memory and in the
+    // table, like Cancel's erase path. Only the drain calls this, once no
+    // reagent is due.
+    void EraseRow(uint32_t botGuidLow)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_orders.find(botGuidLow);
+            if (it == m_orders.end())
+                return;
+            m_orders.erase(it);
+            ClearQueuedSubOrdersLocked(botGuidLow);
+        }
+        CharacterDatabase.DirectPExecute(
+            "DELETE FROM `tortoise_bots_guild_order` WHERE `bot_guid` = '%u'", botGuidLow);
+    }
+
+    // A deposit delivery that banked the reagents but still owes guild gold:
+    // park the row as a refund stub (same shape as Cancel's), so the refund
+    // drain collects it at the next banker visit.
+    void ParkRefundStub(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        it->second.record.cancelled = true;
+        it->second.record.state = OrderState::Working;
+        it->second.record.reason = OrderReason::None;
+        it->second.record.supplyStep = SupplyStep::None;
+        it->second.record.supplyItemId = 0;
+        it->second.record.supplyCount = 0;
+        it->second.record.supplyGoldCount = 0;
+        it->second.record.supplyReturnStep = SupplyStep::None;
+        it->second.record.needItems.clear();
+        it->second.record.needWhispered = false;
+        it->second.record.needBankDenied = false;
+        it->second.record.reportedHave = 0;
+        MarkDirtyLocked(it->second);
+        ClearQueuedSubOrdersLocked(botGuidLow);
     }
 
     // Map-thread requests keyed by parent and item: one parent can hold
@@ -1007,6 +1263,89 @@ public:
             }
     }
 
+    void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId || !count)
+            return;
+        for (NeedItem& given : it->second.record.given)
+            if (given.itemId == itemId)
+            {
+                given.count = count > UINT32_MAX - given.count ? UINT32_MAX : given.count + count;
+                MarkDirtyLocked(it->second);
+                return;
+            }
+        it->second.record.given.push_back(NeedItem{ itemId, count });
+        MarkDirtyLocked(it->second);
+    }
+
+    void ConsumeBaseMaterial(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end() || !itemId || !count)
+            return;
+        uint32_t giverLeft = 0;
+        for (NeedItem const& given : it->second.record.given)
+            if (given.itemId == itemId)
+            {
+                giverLeft = given.count;
+                break;
+            }
+        uint32_t gainLeft = 0;
+        for (NeedItem const& gain : it->second.record.supplyGains)
+            if (gain.itemId == itemId)
+            {
+                gainLeft = gain.count;
+                break;
+            }
+        GiverSpendShare share = SplitGiverSpend(count, giverLeft, gainLeft);
+        if (share.giverSpent)
+            for (NeedItem& given : it->second.record.given)
+                if (given.itemId == itemId)
+                {
+                    given.count = share.giverSpent >= given.count ? 0 : given.count - share.giverSpent;
+                    break;
+                }
+        if (share.gainSpent)
+            for (NeedItem& gain : it->second.record.supplyGains)
+                if (gain.itemId == itemId)
+                {
+                    gain.count = share.gainSpent >= gain.count ? 0 : gain.count - share.gainSpent;
+                    break;
+                }
+        MarkDirtyLocked(it->second);
+    }
+
+    void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+    {
+        ConsumeBaseMaterial(botGuidLow, itemId, count);
+    }
+
+    void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!senderLow || !itemId || !count)
+            return;
+        m_takenMail.push_back(TakenMailSender{ senderLow, itemId, count });
+    }
+
+    std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<TakenMailSender> out;
+        for (auto it = m_takenMail.begin(); it != m_takenMail.end();)
+            if (it->itemId == itemId)
+            {
+                out.push_back(*it);
+                it = m_takenMail.erase(it);
+            }
+            else
+                ++it;
+        return out;
+    }
+
     void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1102,6 +1441,16 @@ public:
         it->second.record.workedNoGainSec = 0;
         it->second.record.workedSinceNewItemSec = 0;
         MarkDirtyLocked(it->second);
+    }
+
+    void NoteEnchantReadyWhispered(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_orders.find(botGuidLow);
+        if (it == m_orders.end())
+            return;
+        // Memory-only: no row write, the flag need not survive a restart.
+        it->second.record.readyWhispered = true;
     }
 
     bool ShouldCheckNeedBank(uint32_t botGuidLow, uint32_t nowMs)
@@ -1614,7 +1963,7 @@ public:
     }
 
     // The received rows the bank trip has to pay out, oldest first. Any
-    // thread: the bank action checks what it can pay, the drain pays it.
+    // thread: the bank action checks what it can pay now, the drain pays it.
     std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -1626,6 +1975,92 @@ public:
             if (RelistNeedsDeposit(entry))
                 out.push_back(entry);
         return out;
+    }
+
+    // One queued disenchant row: the table write lands before memory
+    // changes, so a restart never loses an item the table holds. Map thread
+    // only (the intake and the service action).
+    void NoteDisenchantQueued(DisenchantQueueEntry const& entry)
+    {
+        if (!entry.botGuidLow || !entry.senderGuidLow || !entry.itemId)
+            return;
+        DisenchantQueueEntry row = entry;
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_disenchant` (`bot_guid`, `sender_guid`, `item_guid`, "
+                "`item_entry`, `item_name`, `pending`, `results`, `created_at`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s', FROM_UNIXTIME('%u'))",
+                row.botGuidLow, row.senderGuidLow, row.itemGuidLow, row.itemId, row.itemName.c_str(),
+                row.pendingResults ? 1u : 0u, row.results.c_str(),
+                static_cast<uint32_t>(std::time(nullptr))))
+            return;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
+        for (DisenchantQueueEntry& existing : rows)
+        {
+            if (existing.itemGuidLow == row.itemGuidLow)
+            {
+                existing = row;
+                return;
+            }
+        }
+        rows.push_back(row);
+    }
+
+    std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_disenchant.find(botGuidLow);
+        if (it == m_disenchant.end())
+            return {};
+        return it->second;
+    }
+
+    bool SaveDisenchant(DisenchantQueueEntry const& row)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "REPLACE INTO `tortoise_bots_guild_disenchant` (`bot_guid`, `sender_guid`, `item_guid`, "
+                "`item_entry`, `item_name`, `pending`, `results`, `created_at`) "
+                "VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s', FROM_UNIXTIME('%u'))",
+                row.botGuidLow, row.senderGuidLow, row.itemGuidLow, row.itemId, row.itemName.c_str(),
+                row.pendingResults ? 1u : 0u, row.results.c_str(),
+                static_cast<uint32_t>(std::time(nullptr))))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<DisenchantQueueEntry>& rows = m_disenchant[row.botGuidLow];
+        for (DisenchantQueueEntry& existing : rows)
+        {
+            if (existing.itemGuidLow == row.itemGuidLow)
+            {
+                existing = row;
+                return true;
+            }
+        }
+        rows.push_back(row);
+        return true;
+    }
+
+    bool DeleteDisenchant(uint32_t botGuidLow, uint32_t itemGuidLow)
+    {
+        if (!CharacterDatabase.DirectPExecute(
+                "DELETE FROM `tortoise_bots_guild_disenchant` WHERE `bot_guid` = '%u' AND `item_guid` = '%u'",
+                botGuidLow, itemGuidLow))
+            return false;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_disenchant.find(botGuidLow);
+        if (it == m_disenchant.end())
+            return true;
+        std::vector<DisenchantQueueEntry>& rows = it->second;
+        for (auto row = rows.begin(); row != rows.end(); ++row)
+        {
+            if (row->itemGuidLow == itemGuidLow)
+            {
+                rows.erase(row);
+                break;
+            }
+        }
+        if (rows.empty())
+            m_disenchant.erase(it);
+        return true;
     }
 
     // One stale sweep a minute, not one per world tick.
@@ -2017,6 +2452,7 @@ public:
         bool scanned = false;      // bag/mailbox walks ran this pass
         uint32_t bagCount = 0;       // order item in bags (delivery gate, reporting)
         uint32_t mailboxCount = 0;   // order item in the mailbox
+        bool enchantDepositDue = false; // an enchant row holds reagents a timeout must walk to the bank
         uint32_t farmItemId = 0;     // item actually farmed (0 = the order item)
         uint32_t farmBagCount = 0;   // farm-leg item in bags (no-progress clock)
         uint32_t bankCount = 0;      // guild bank stock, valid when bankChecked
@@ -2191,9 +2627,16 @@ public:
         // its own (the ladder's WaitOnSubOrders return is step None) and a
         // child row is still unfinished: the clock stays paused then. A parent
         // working its own leg keeps every clock, so a stalled leg still ends
-        // the round and hands the order back to the ladder.
+        // the round and hands the order back to the ladder. An enchant row
+        // waiting on the giver (Ready, Coming, Enchanting, or parked
+        // needitems) pauses the same way: the wait is the player's, not the
+        // bot's.
+        bool enchantMeetWait = record.type == OrderType::Enchant &&
+            (record.state == OrderState::Ready || record.state == OrderState::Coming ||
+                record.state == OrderState::Enchanting ||
+                (record.state == OrderState::Waiting && record.reason == OrderReason::NeedItems));
         if (!wasFinished && in.botOnline && in.botAlive && !in.grouped &&
-            record.state == OrderState::Working &&
+            record.state == OrderState::Working && !enchantMeetWait &&
             !PauseOrderClocks(record.supplyStep, static_cast<int>(in.unfinishedSubOrders)))
         {
             stored.workedCarryMs += in.workedMs;
@@ -2219,10 +2662,13 @@ public:
                 {
                     // The farm time ran out: what the bot holds still goes to
                     // the guild (bags now, mailbox via the mail leg), and the
-                    // order ends once the delivery drain reports back. With
+                    // order ends once the delivery drain reports back. An
+                    // enchant row holds no output item, but its reagents walk
+                    // the same delivery leg instead of stranding. With
                     // nothing held at all it ends right away, and a keep round
                     // ends the keep with it.
-                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0 ||
+                        (record.type == OrderType::Enchant && in.enchantDepositDue))
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::Timeout;
@@ -2259,8 +2705,10 @@ public:
                 else if (IsOrderNoProgress(record.workedNoGainSec))
                 {
                     // Same deliver-first end as the timeout: the bot brings
-                    // what it holds, then the order ends cant/noprogress.
-                    if (record.delivered + in.bagCount + in.mailboxCount > 0)
+                    // what it holds, then the order ends cant/noprogress. An
+                    // enchant row's reagents ride along the same way.
+                    if (record.delivered + in.bagCount + in.mailboxCount > 0 ||
+                        (record.type == OrderType::Enchant && in.enchantDepositDue))
                     {
                         record.state = OrderState::Delivering;
                         record.reason = OrderReason::NoProgress;
@@ -2501,6 +2949,14 @@ private:
         uint32_t relistItemId = 0; // bought surplus waiting for its relist (memory only)
         uint32_t relistCount = 0;
         uint32_t relistUnitPrice = 0;
+        // Enchant-order trade window (memory only, a restart drops it with
+        // the meet request): the current window's open time, the try count
+        // for this Enchanting leg, and the replace question state.
+        uint32_t enchantTradeOpenedMs = 0;
+        uint32_t enchantTradeTries = 0;
+        uint32_t enchantParkedItemLow = 0;
+        uint32_t enchantReplaceAskedMs = 0;
+        bool enchantReplaceConfirmed = false;
     };
 
     // Memory only, like the cycle itself: no row write for a bookkeeping
@@ -2585,7 +3041,7 @@ private:
                 "`farm_rest` = '%u', `keep` = '%u', `gold_cap` = '%u', `gold_cap_set` = '%u', "
                 "`guild_gold_withdrawn` = '%u', `guild_gold_held` = '%u', `cancelled` = '%u', `supply_step` = '%s', "
                 "`supply_return_step` = '%s', `supply_item` = '%u', `supply_count` = '%u', `supply_gold_count` = '%u', "
-                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u' "
+                "`need_items` = '%s', `need_whispered` = '%u', `last_need_whisper` = '%s', `need_bank_denied` = '%u', `stock_target` = '%u', `last_bank_check` = '%u', `updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u', `given` = '%s' "
                 "WHERE `bot_guid` = '%u'",
                 record.giverGuidLow, record.parentBotGuidLow, record.rootGiverGuidLow,
                 record.amount, record.hours, record.delivered, StateToken(record.state), ReasonToken(record.reason),
@@ -2598,7 +3054,7 @@ private:
                 NeedItemsToken(record.needItems).c_str(), record.needWhispered ? 1u : 0u,
                 record.lastNeedWhisper.c_str(), record.needBankDenied ? 1u : 0u,
                 record.stockTarget, record.lastBankCheckMs,
-                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, record.botGuidLow))
+                static_cast<uint32_t>(record.updatedAt), record.reportedCarry, GivenItemsToken(record.given).c_str(), record.botGuidLow))
         {
             sLog.outError("TortoiseBots: failed to persist guild order for bot %u", record.botGuidLow);
             return false;
@@ -2619,12 +3075,27 @@ private:
     // Relisted auction surplus per bot, oldest first: the guild-funded value
     // that is still on the auction house, in the mail or in the bot's hands.
     std::unordered_map<uint32_t, std::vector<RelistLedgerEntry>> m_relist;
+    // Disenchant service queue per bot, oldest first: items a member mailed
+    // for disenchanting, with the landed results once the cast made them.
+    std::unordered_map<uint32_t, std::vector<DisenchantQueueEntry>> m_disenchant;
     uint64_t m_lastRelistExpireSec = 0;
+    // A pending Meet press per bot (giver guid, request time in server
+    // uptime ms), memory only: the lead consumes it, and a restart drops
+    // it so the giver presses Meet again.
+    std::unordered_map<uint32_t, MeetRequest> m_meet;
+    std::unordered_map<uint32_t, uint32_t> m_meetFailedMs; // last meeting that ended without the enchant
+    // A pending disenchant drop-off window per bot, memory only like the
+    // meet map above: a restart drops it, the member whispers again.
+    std::unordered_map<uint32_t, DisenchantDropOffWindow> m_dropOff;
     std::unordered_map<QueuedSubOrderKey, QueuedSubOrder, QueuedSubOrderKeyHash> m_queued;
     // Last request the drain gave planner time to: the next drain starts
     // after it, so one request cannot spend every tick's evaluation budget.
     uint32_t m_drainedParentBotGuidLow = 0;
     uint32_t m_drainedItemId = 0;
+    // Stashed per-mail sender counts from the take-mail action, drained by
+    // the next giver check. Memory only (a restart drops the stash with the
+    // mail still in the mailbox).
+    std::vector<TakenMailSender> m_takenMail;
     bool m_initialized = false;
 };
 
@@ -3037,7 +3508,11 @@ void SendNeedWhisper(OrderRecord const& order)
         return;
 
     ItemPrototype const* output = sObjectMgr.GetItemPrototype(order.itemId);
-    std::string message = "To make " + (output ? output->Name1 : std::to_string(order.itemId)) + " I still need ";
+    std::string outputName = output ? output->Name1 : std::to_string(order.itemId);
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            outputName = enchant->SpellName[0].c_str();
+    std::string message = "To make " + outputName + " I still need ";
     for (NeedItem const& need : order.needItems)
     {
         if (message.back() != ' ')
@@ -3136,6 +3611,91 @@ std::vector<OrderRecord> All()
 bool IsOrderProtectedItem(Player* bot, uint32_t itemId)
 {
     return OrderStore::Instance().IsProtectedItem(bot, itemId);
+}
+
+void RequestMeet(uint32_t botGuidLow, uint32_t giverGuidLow)
+{
+    if (!botGuidLow || !giverGuidLow)
+        return;
+    OrderStore::Instance().SetMeet(botGuidLow, giverGuidLow);
+}
+
+std::optional<MeetRequest> PendingMeet(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return std::nullopt;
+    return OrderStore::Instance().GetMeet(botGuidLow);
+}
+
+void ClearMeet(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropMeet(botGuidLow);
+}
+
+void NoteDisenchantDropOff(uint32_t botGuidLow, uint32_t memberGuidLow, uint32_t nowMs)
+{
+    if (!botGuidLow || !memberGuidLow)
+        return;
+    OrderStore::Instance().SetDropOff(botGuidLow, memberGuidLow, nowMs);
+}
+
+void ClearDisenchantDropOff(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropDropOff(botGuidLow);
+}
+
+std::optional<DisenchantDropOffWindow> PendingDisenchantDropOff(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return std::nullopt;
+    return OrderStore::Instance().GetDropOff(botGuidLow);
+}
+
+void ClearMeetFailed(uint32_t botGuidLow)
+{
+    if (!botGuidLow)
+        return;
+    OrderStore::Instance().DropMeet(botGuidLow);
+    OrderStore::Instance().NoteMeetFailed(botGuidLow, WorldTimer::getMSTime());
+}
+
+uint32_t MeetFailedMs(uint32_t botGuidLow)
+{
+    return botGuidLow ? OrderStore::Instance().MeetFailedMs(botGuidLow) : 0;
+}
+
+EnchantTradeSession GetEnchantTrade(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().GetEnchantTrade(botGuidLow);
+}
+
+void NoteEnchantParked(uint32_t botGuidLow, uint32_t itemGuidLow)
+{
+    OrderStore::Instance().NoteEnchantParked(botGuidLow, itemGuidLow);
+}
+
+void NoteEnchantTradeOpened(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteEnchantTradeOpened(botGuidLow, nowMs);
+}
+
+void NoteEnchantTradeClosed(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantTradeClosed(botGuidLow);
+}
+
+void NoteEnchantReplaceAsked(uint32_t botGuidLow, uint32_t nowMs)
+{
+    OrderStore::Instance().NoteEnchantReplaceAsked(botGuidLow, nowMs);
+}
+
+void NoteEnchantReplaceConfirmed(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantReplaceConfirmed(botGuidLow);
 }
 
 void RefreshOrderProtectedSet(Player* bot)
@@ -3355,9 +3915,56 @@ void NoteSupplySpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
     OrderStore::Instance().NoteSupplySpent(botGuidLow, itemId, count);
 }
 
+void NoteGiven(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteGiven(botGuidLow, itemId, count);
+}
+
+void NoteGivenSpent(uint32_t botGuidLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteGivenSpent(botGuidLow, itemId, count);
+}
+
+void NoteTakenMailSender(uint32_t senderLow, uint32_t itemId, uint32_t count)
+{
+    OrderStore::Instance().NoteTakenMailSender(senderLow, itemId, count);
+}
+
+std::vector<TakenMailSender> TakeTakenMailSenders(uint32_t itemId)
+{
+    return OrderStore::Instance().TakeTakenMailSenders(itemId);
+}
+
 void NoteSupplyProgress(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteSupplyProgress(botGuidLow);
+}
+
+void NoteEnchantReadyWhispered(uint32_t botGuidLow)
+{
+    OrderStore::Instance().NoteEnchantReadyWhispered(botGuidLow);
+}
+
+void FinishEnchantDeposit(uint32_t botGuidLow)
+{
+    // A cancelled row disappears with the reagents banked; a timed-out one
+    // ends cant with its reason. Unspent guild gold still owed turns the
+    // row into a refund stub instead of erasing it, so the refund drain
+    // collects it at the next banker visit.
+    std::optional<OrderRecord> row = Find(botGuidLow);
+    if (!row || row->type != OrderType::Enchant || row->state != OrderState::Delivering)
+        return;
+    if (!row->cancelled)
+    {
+        SetState(botGuidLow, OrderState::Cant, row->reason);
+        return;
+    }
+    if (row->guildGoldHeld > 0)
+    {
+        OrderStore::Instance().ParkRefundStub(botGuidLow);
+        return;
+    }
+    OrderStore::Instance().EraseRow(botGuidLow);
 }
 
 void NoteBankEmpty(uint32_t botGuidLow, uint32_t itemId)
@@ -3513,6 +4120,26 @@ std::vector<RelistLedgerEntry> RelistDeposits(uint32_t botGuidLow)
     return OrderStore::Instance().RelistDeposits(botGuidLow);
 }
 
+void NoteDisenchantQueued(DisenchantQueueEntry const& entry)
+{
+    OrderStore::Instance().NoteDisenchantQueued(entry);
+}
+
+std::vector<DisenchantQueueEntry> DisenchantQueued(uint32_t botGuidLow)
+{
+    return OrderStore::Instance().DisenchantQueued(botGuidLow);
+}
+
+bool SaveDisenchantRow(DisenchantQueueEntry const& entry)
+{
+    return OrderStore::Instance().SaveDisenchant(entry);
+}
+
+bool DeleteDisenchantRow(uint32_t botGuidLow, uint32_t itemGuidLow)
+{
+    return OrderStore::Instance().DeleteDisenchant(botGuidLow, itemGuidLow);
+}
+
 void NoteBagsFull(uint32_t botGuidLow)
 {
     OrderStore::Instance().NoteBagsFull(botGuidLow);
@@ -3539,6 +4166,10 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
     (void)guildId;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(order.itemId);
     std::string itemName = proto ? proto->Name1 : "?";
+    // An enchant row carries the spell id: the addon shows the enchant name.
+    if (order.type == OrderType::Enchant)
+        if (SpellEntry const* enchant = sServerFacade.LookupSpellInfo(order.itemId))
+            itemName = enchant->SpellName[0].c_str();
     std::string zone = ZoneName(order.farmZoneId);
     if (order.type == OrderType::Buy && zone == "-")
         zone = "Auction House";
@@ -3558,7 +4189,7 @@ std::string FormatOrderLine(uint32_t guildId, OrderRecord const& order, uint32_t
            BotCommands::ProtocolSafe(order.parentBotGuidLow ? BotName(order.parentBotGuidLow) : "-") + "|" +
            (order.hasGoldCap ? std::to_string(order.goldCap) : "-") + "|" +
            SupplyStepToken(order.supplyStep) + "|" + NeedItemsToken(order.needItems) + "|" +
-           std::to_string(carry);
+           std::to_string(carry) + "|" + BringItemsToken(order.bringItems);
 }
 
 void Initialize()
@@ -3644,6 +4275,16 @@ void Update(uint32_t diff)
         in.farmItemId = (snapshot.type == OrderType::Craft && snapshot.farmItemId) ? snapshot.farmItemId : 0;
         in.farmBagCount = scanDue && online && in.farmItemId ? bot->GetItemCount(in.farmItemId) :
             (in.farmItemId ? 0 : in.bagCount);
+        // A timed-out enchant row banks its reagents instead of ending bare:
+        // any reagent held counts, capped at one cast further down the line.
+        in.enchantDepositDue = false;
+        if (scanDue && online && snapshot.type == OrderType::Enchant && snapshot.itemId)
+            for (uint32_t reagentId : ::ai::EnchantReagentsFor(snapshot.itemId))
+                if (reagentId && bot->GetItemCount(reagentId))
+                {
+                    in.enchantDepositDue = true;
+                    break;
+                }
         in.workedMs = diff;
         in.nowMs = now;
         // Direct children still in progress (a running row, or a queued
@@ -3694,6 +4335,9 @@ void Update(uint32_t diff)
                 for (NeedItem const& need : snapshot.needItems)
                 {
                     if (!need.itemId || !need.count)
+                        continue;
+                    // The giver brings a ticked material: no shop or auction resume for it.
+                    if (BringTickedBlocksLeg(snapshot.bringItems, need.itemId))
                         continue;
                     if (NeedVendorAffordable(bot, online, need))
                     {

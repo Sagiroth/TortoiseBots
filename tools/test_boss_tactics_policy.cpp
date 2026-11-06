@@ -2309,21 +2309,33 @@ int main()
         // The episode's state machine: the rising edge opens it, the deadline turns a non-tank into one miss, a tank
         // has it back as regained, and a spent charm does not reopen before a tank does.
         {
-            TauntEpisodeRead edge = TauntEpisodeTick(true, false, false, false, 0, 10000, false);
+            TauntEpisodeRead edge = TauntEpisodeTick(true, true, false, false, false, 0, 10000, false);
             CHECK(edge.starts && edge.open && !edge.spent && edge.step == TauntEpisodeStep::Due);
-            TauntEpisodeRead due = TauntEpisodeTick(true, false, true, false, 5000, 10000, false);
+            TauntEpisodeRead due = TauntEpisodeTick(true, true, false, true, false, 5000, 10000, false);
             CHECK(!due.starts && due.open && due.step == TauntEpisodeStep::Due);
             // The assigned tank has it back: the episode ends, the next charm starts clean.
-            TauntEpisodeRead assigned = TauntEpisodeTick(false, true, true, false, 5000, 10000, true);
+            TauntEpisodeRead assigned = TauntEpisodeTick(true, false, true, true, false, 5000, 10000, true);
             CHECK(!assigned.open && !assigned.spent && assigned.step == TauntEpisodeStep::Regained);
-            TauntEpisodeRead miss = TauntEpisodeTick(true, false, true, false, 10000, 10000, false);
+            TauntEpisodeRead miss = TauntEpisodeTick(true, true, false, true, false, 10000, 10000, false);
             CHECK(!miss.open && miss.spent && miss.step == TauntEpisodeStep::Miss);
-            TauntEpisodeRead spent = TauntEpisodeTick(true, false, false, true, 0, 10000, false);
+            TauntEpisodeRead spent = TauntEpisodeTick(true, true, false, false, true, 0, 10000, false);
             CHECK(!spent.starts && !spent.open && spent.spent && spent.step == TauntEpisodeStep::None);
-            TauntEpisodeRead regained = TauntEpisodeTick(false, true, true, false, 4000, 10000, false);
+            TauntEpisodeRead regained = TauntEpisodeTick(true, false, true, true, false, 4000, 10000, false);
             CHECK(regained.step == TauntEpisodeStep::Regained && !regained.open && !regained.spent);
-            TauntEpisodeRead between = TauntEpisodeTick(false, false, true, false, 4000, 10000, false);
+            TauntEpisodeRead between = TauntEpisodeTick(true, false, false, true, false, 4000, 10000, false);
             CHECK(between.open && between.step == TauntEpisodeStep::None); // a pet or a transition: the clock runs
+        }
+
+        // TauntAfterImmuneSubjectIsIgnored: a subject the core makes immune to taunts (Hakkar: creature_template 14834
+        // immunity_flags 6 keeps CREATURE_IMMUNITY_TAUNT) can never be taken back, so the row opens no episode there
+        // and the tank spends no attack or GCD on it (walk 40: 108 TauntAfter rows, taunted=0).
+        {
+            TauntEpisodeRead immune = TauntEpisodeTick(false, true, false, false, false, 0, 10000, false);
+            CHECK(!immune.starts && !immune.open && immune.step == TauntEpisodeStep::None);
+            TauntEpisodeRead immuneOpen = TauntEpisodeTick(false, true, false, true, false, 1000, 10000, false);
+            CHECK(!immuneOpen.starts && !immuneOpen.open && immuneOpen.step == TauntEpisodeStep::None);
+            CHECK(TauntEpisodeTick(false, false, true, true, false, 1000, 10000, true).step ==
+                  TauntEpisodeStep::None);
         }
 
         // The widest live spread row wins, never narrower than the fallback.
@@ -2391,6 +2403,124 @@ int main()
     CHECK(!KillFirstGridEligible(true, false, false, false, false)); // KillFirstGridSkipsForeignFight
     CHECK(!KillFirstGridEligible(false, false, true, false, false)); // dead
     CHECK(!KillFirstGridEligible(true, true, true, true, true));    // KillFirstGridSkipsEvading
+
+    // T2 burn_mana: the loader's shape. target_entry 0 (the boss itself), param the start % (exclusive 0 and 100),
+    // priority the most burners (0-10), spell_id unused and the kind takes no mode word.
+    CHECK(ParseBossTacticKind("burn_mana") == BossTacticKind::BurnMana); // ParseBurnManaKind
+    CHECK(static_cast<int>(BossTacticKind::BurnMana) == 20);
+    {
+        BossTacticRow burn = Row(509, 15340, BossTacticKind::BurnMana, 0, 0, 4, 10.0f);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(burn));                       // BurnManaRowAccepted
+        }
+        {
+            BossTacticRow noTarget = burn;
+            noTarget.targetEntry = 15527;
+            BossTacticTable table;
+            CHECK(!table.Add(noTarget));                  // BurnManaRowRefusedWithTarget
+        }
+        {
+            BossTacticRow zeroStart = burn;
+            zeroStart.param = 0.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(zeroStart));                 // BurnManaRowRefusedAtZeroStart
+        }
+        {
+            BossTacticRow fullStart = burn;
+            fullStart.param = 100.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(fullStart));                 // BurnManaRowRefusedAtFullStart
+        }
+        {
+            BossTacticRow tooMany = burn;
+            tooMany.priority = 11;
+            BossTacticTable table;
+            CHECK(!table.Add(tooMany));                   // BurnManaRowRefusedAboveTenBurners
+        }
+    }
+
+    // T3 ranged_only: target_entry 0 (the boss) or an entry, param the vertical gap in [3, 40] yd, no mode word.
+    CHECK(ParseBossTacticKind("ranged_only") == BossTacticKind::RangedOnly); // ParseRangedOnlyKind
+    CHECK(static_cast<int>(BossTacticKind::RangedOnly) == 21);
+    {
+        BossTacticRow hold = Row(509, 15369, BossTacticKind::RangedOnly, 0, 0, 0, 8.0f);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(hold));                       // RangedOnlyRowAccepted
+        }
+        {
+            BossTacticRow entryTarget = hold;
+            entryTarget.targetEntry = 15934;
+            BossTacticTable table;
+            CHECK(table.Add(entryTarget));                // RangedOnlyRowAcceptsAnEntry
+        }
+        {
+            BossTacticRow tooLow = hold;
+            tooLow.param = 2.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(tooLow));                    // RangedOnlyRowRefusedBelowThreeYards
+        }
+        {
+            BossTacticRow tooHigh = hold;
+            tooHigh.param = 41.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(tooHigh));                   // RangedOnlyRowRefusedAboveFortyYards
+        }
+        // The hold is looked up by the held entry: the row's boss for target_entry 0, or its own target for an entry
+        // row. The entry index is what the target pickers read on the hot path.
+        {
+            BossTacticTable table;
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 0.0f)); // not sealed yet
+            CHECK(table.Add(hold));
+            CHECK(table.Add(Row(509, 15369, BossTacticKind::RangedOnly, 15934, 0, 0, 12.0f)));
+            table.Seal();
+            CHECK(Near(table.RangedOnlyGap(509, 15369), 8.0f));   // RangedOnlyGapFromTheBossRow
+            CHECK(Near(table.RangedOnlyGap(509, 15934), 12.0f));  // RangedOnlyGapFromAnEntryRow
+            CHECK(Near(table.RangedOnlyGap(531, 15369), 0.0f));
+        }
+    }
+
+    // T4 threat_successor: the boss itself (target_entry 0), no mode word and no gate. The row turns the damage
+    // dealers' threat cap into the assigned off-tanks' highest (ThreatCapPolicy.h) and is read straight from the table
+    // by ThreatValue::GetTankThreat, so a gate could never be answered.
+    CHECK(ParseBossTacticKind("threat_successor") == BossTacticKind::ThreatSuccessor); // ParseThreatSuccessorKind
+    CHECK(static_cast<int>(BossTacticKind::ThreatSuccessor) == 22);
+    {
+        BossTacticRow cap = Row(309, 14834, BossTacticKind::ThreatSuccessor);
+        {
+            BossTacticTable table;
+            CHECK(table.Add(cap));                        // ThreatSuccessorRowAccepted
+        }
+        {
+            BossTacticRow entryTarget = cap;
+            entryTarget.targetEntry = 11357;
+            BossTacticTable table;
+            CHECK(!table.Add(entryTarget));               // ThreatSuccessorRowRefusedWithTarget
+        }
+        {
+            BossTacticRow withMode = cap;
+            withMode.mode = TacticMode::UntilTank;
+            BossTacticTable table;
+            CHECK(!table.Add(withMode));                  // ThreatSuccessorRowRefusedWithMode
+        }
+        {
+            BossTacticRow withBand = cap;
+            withBand.hpMin = 50;
+            BossTacticTable table;
+            CHECK(!table.Add(withBand));                  // ThreatSuccessorRowRefusedWithGate
+        }
+        // The reference reads the row by the target's own map and entry, never by the row's boss.
+        {
+            BossTacticTable table;
+            CHECK(!table.HasThreatSuccessor(309, 14834)); // not sealed yet
+            CHECK(table.Add(cap));
+            table.Seal();
+            CHECK(table.HasThreatSuccessor(309, 14834));  // ThreatSuccessorByEntry
+            CHECK(!table.HasThreatSuccessor(309, 11357));
+            CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
+        }
+    }
 
     std::cout << "All boss tactics policy tests passed.\n";
     return 0;

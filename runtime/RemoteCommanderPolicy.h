@@ -904,10 +904,13 @@ inline std::string AttackAckDetail(std::string const& stayingTank, std::vector<s
 // The threat back-off holds a damage bot off a mob the tank has no threat on
 // (ThreatValue reads 100 then). In a commanded party a mob that is hitting a
 // party member who is not a tank is already off the tank: backing off it only
-// leaves it on the healer or a damage bot, so the back-off yields there.
-inline bool CommandedBackoffYields(bool inCommandedGroup, bool targetHitsPartyMember, bool victimIsTank)
+// leaves it on the healer or a damage bot, so the back-off yields there -
+// except on a taunt-immune subject, where no tank can take it back and
+// stopping the damage is the only way the tanks' threat can pass the member.
+inline bool CommandedBackoffYields(bool inCommandedGroup, bool targetHitsPartyMember, bool victimIsTank,
+                                   bool targetTauntImmune)
 {
-    return inCommandedGroup && targetHitsPartyMember && !victimIsTank;
+    return inCommandedGroup && targetHitsPartyMember && !victimIsTank && !targetTauntImmune;
 }
 
 // The bots a binding gave the "threat" strategy to (they did not have it).

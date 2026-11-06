@@ -76,10 +76,17 @@ bool HandleOrder(ChatHandler* handler, char const* args);
 // then hands over the order type token and the search text.
 bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std::string const& type,
                        std::string const& text);
+
+// `.bot order search <craft|enchant> <text>`: guild-wide, no bot. The order
+// command hands over the kind word and the search text; this answers the
+// ORDER_WHO stream. Craft now; enchant reuses the same rows later.
+bool HandleOrderWhoSearch(ChatHandler* handler, Player* requester, std::string const& kind,
+                          std::string const& text);
 // `.bot order <bot> preview`: read-only, needs the bot online; the order
 // command resolves the bot and the tokens, then hands them over.
 bool HandleOrderPreview(ChatHandler* handler, Player* requester, std::string const& botName,
-    std::string const& type, std::string const& item, std::string const& amount);
+    std::string const& type, std::string const& item, std::string const& amount,
+    std::string const& bring);
 bool HandleLootLog(ChatHandler* handler, char const* args);
 bool HandleRepair(ChatHandler* handler, char const* args);
 bool HandleSell(ChatHandler* handler, char const* args);

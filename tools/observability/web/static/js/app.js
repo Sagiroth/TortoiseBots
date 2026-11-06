@@ -824,7 +824,7 @@
     server: { hash: 'server', title: 'Server' }
   };
   const HASH_TO_TAB = Object.fromEntries(Object.entries(TABS).map(([k, v]) => [v.hash, k]));
-  const PROFILE_TABS = ['overview', 'gear', 'talents', 'spells', 'professions', 'skills', 'bags', 'progress'];
+  const PROFILE_TABS = ['overview', 'gear', 'talents', 'spells', 'professions', 'skills', 'pet', 'bags', 'progress'];
 
   function openNavDrawer() {
     if (!el.sidebar) return;
@@ -1965,6 +1965,7 @@
     'AiPlayerbot.AhMarketBuyer': 'Bots buy fairly priced auctions (also yours), so items listed on the AH actually sell.',
     'AiPlayerbot.AutoLearnTrainerSpells': 'Bots learn all trainer spells for free on level-up. Off = they must visit a trainer and pay, like players.',
     'AiPlayerbot.AutoLearnQuestSpells': 'Bots learn class-quest spells (stances, forms, totems, pet skills) on level-up without doing the quest.',
+    'AiPlayerbot.AutoLearnQuestSpellsAlts': 'Your own alts also learn class-quest spells on level-up without doing the quest. Trainer spells stay paid.',
     'AiPlayerbot.LevelUpMounts': 'Bots get their mount when they reach level 40, and the epic mount at 60.',
     'AiPlayerbot.TurtleMountAtLevel': 'Level at which bots get the Swift Riding Turtle, as if they did the quest. 0 = never.',
     'AiPlayerbot.RandomBotGroupNearby': 'Pool bots invite nearby bots into groups. Off by default: bot-only groups slow the pool down.',
@@ -2040,6 +2041,7 @@
           ['AH market enabled', flagBadge(bots.ah_market), cfg('AhMarketEnabled')],
           ['Auto-learn trainer spells', flagBadge(bots.auto_learn_trainer_spells), cfg('AutoLearnTrainerSpells')],
           ['Auto-learn quest spells', flagBadge(bots.auto_learn_quest_spells), cfg('AutoLearnQuestSpells')],
+          ['Auto-learn quest spells (alts)', flagBadge(bots.auto_learn_quest_spells_alts), cfg('AutoLearnQuestSpellsAlts')],
           ['Level-up mounts', flagBadge(bots.level_up_mounts), cfg('LevelUpMounts')],
           ['Turtle mount at level', num(bots.turtle_mount_at_level), cfg('TurtleMountAtLevel')]
         ])}
@@ -2102,7 +2104,7 @@
       `- module: ${info.module_version || '?'} / core: ${info.core_revision || '?'} (${info.core_date || '?'}) / max level: ${info.max_level || '?'}`,
       `- rates: xp_kill=${rates.xp_kill ?? '?'} xp_elite=${rates.xp_kill_elite ?? '?'} xp_quest=${rates.xp_quest ?? '?'} xp_explore=${rates.xp_explore ?? '?'} drop_money=${rates.drop_money ?? '?'} honor=${rates.honor ?? '?'} rep=${rates.rep_gain ?? '?'} talent=${rates.talent ?? '?'} bot_xp_mult=${rates.bot_xp_mult ?? '?'}`,
       `- bots: min/max=${bots.min_random ?? '?'}/${bots.max_random ?? '?'} update=${bots.update_interval ?? '?'} maxlvl=${bots.max_level ?? '?'} group=${on(bots.group_nearby)} raid=${on(bots.raid_nearby)} invite=${on(bots.invite_player)} timed_logout=${on(bots.timed_logout)} ladder=${on(bots.level_ladder)} quests=${on(bots.auto_do_quests)} no_activity=${on(bots.disable_activity)} alone=${bots.active_alone ?? '?'} pool=${bots.pool_budget_us ?? '?'}us/${bots.pool_budget_gate_ms ?? '?'}ms ah=${on(bots.ah_buyer)} lft=${on(bots.lft)} bg=${on(bots.bg)}`,
-      `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
+      `- tuning: xp_rate=${rates.bot_xp_mult ?? '?'} loot_uncommon=${bots.bot_loot_uncommon ?? '?'} loot_rare=${bots.bot_loot_rare ?? '?'} ah_market=${on(bots.ah_market)} autolearn_trainer=${on(bots.auto_learn_trainer_spells)} autolearn_quest=${on(bots.auto_learn_quest_spells)} autolearn_quest_alts=${on(bots.auto_learn_quest_spells_alts)} levelup_mounts=${on(bots.level_up_mounts)} turtle_mount_lvl=${bots.turtle_mount_at_level ?? '?'}`,
       `- diag: perfmon=${on(diag.perf_mon)} bot_events=${on(diag.bot_events)} unreachable=${on(diag.unreachable)} deaths=${on(diag.deaths)}`,
       `- pool: tracked=${g.bots_tracked || 0} gaining=${g.bots_gaining_xp || 0} (${Math.round(g.pct_gaining_xp || 0)}%) median_xp/h=${Math.round(g.median_xp_hour || 0)} total_xp/h=${Math.round(g.total_xp_hour || 0)} deaths/min=${(g.deaths_per_min || 0).toFixed(1)} died5m=${Math.round(g.pct_died_5min || 0)}% states=${['combat', 'moving', 'busy', 'stalled', 'resting', 'idle', 'dead'].map(k => `${k}=${((g.state_counts || {})[k]) || 0}`).join(' ')}`,
       `- levels: ${(Array.isArray(g.level_bands) ? g.level_bands : []).map(b => `${b.lo === b.hi ? `L${b.lo}` : `${b.lo}-${b.hi}`}=${b.count || 0}${b.gear_bots ? `/ilvl${b.avg_item_level.toFixed(1)}` : ''}`).join(' ')}`,
@@ -4213,6 +4215,7 @@
     else if (tab === 'spells') renderArmorySpells(p);
     else if (tab === 'professions') renderArmoryProfessions(p);
     else if (tab === 'skills') renderArmorySkills(p);
+    else if (tab === 'pet') renderArmoryPet(p);
     else if (tab === 'progress') renderArmoryProgress(p);
   }
 
@@ -4942,6 +4945,50 @@
     }
     host.innerHTML = html;
     bindSpellTooltips(host);
+  }
+
+  // Hunter pet families (CreatureFamily DBC) and warlock demons by entry.
+  const PET_FAMILY_NAMES = {
+    1: 'Wolf', 2: 'Cat', 3: 'Spider', 4: 'Bear', 5: 'Boar', 6: 'Crocolisk', 7: 'Carrion Bird', 8: 'Crab',
+    9: 'Gorilla', 11: 'Raptor', 12: 'Tallstrider', 20: 'Scorpid', 21: 'Turtle', 24: 'Bat', 25: 'Hyena',
+    26: 'Owl', 27: 'Wind Serpent', 35: 'Serpent', 36: 'Fox', 37: 'Plagued', 38: 'Horse', 39: 'Moth'
+  };
+  const DEMON_NAMES = { 416: 'Imp', 417: 'Felhunter', 1860: 'Voidwalker', 1863: 'Succubus' };
+  const PET_LOYALTY_NAMES = ['', 'Rebellious', 'Unruly', 'Submissive', 'Dependable', 'Faithful', 'Best Friend'];
+
+  // Current pet as last saved: hunters see family, loyalty and training
+  // points; demons only their abilities.
+  function renderArmoryPet(p) {
+    const host = document.getElementById('armory-content-pet');
+    if (!host) return;
+    const pet = p.pet;
+    if (!pet) {
+      host.innerHTML = '<div class="empty-hint">No pet.</div>';
+      return;
+    }
+    const kind = pet.hunter ? (PET_FAMILY_NAMES[pet.family] || `Family ${pet.family}`) : (DEMON_NAMES[pet.entry] || 'Demon');
+    const facts = [
+      ['Name', esc(pet.name || '—')],
+      ['Type', esc(kind)],
+      ['Level', pet.level],
+      ['Health', pet.health],
+    ];
+    if (pet.hunter) {
+      facts.push(['Loyalty', esc(PET_LOYALTY_NAMES[pet.loyalty] || String(pet.loyalty))]);
+      facts.push(['Training points left', pet.train_points]);
+      facts.push(['Happiness', pet.happiness]);
+    }
+    const spells = pet.spells || [];
+    const actives = spells.filter(s => !s.passive && s.name !== 'Avoidance');
+    const passives = spells.filter(s => s.passive || s.name === 'Avoidance');
+    const row = s => `<tr><td>${esc(s.name || ('Spell ' + s.spell))}</td><td>${esc(s.subtext || '')}</td><td>${s.passive ? '' : (s.autocast ? 'on' : 'off')}</td></tr>`;
+    const table = (title, list) => list.length
+      ? `<div class="section-label" style="margin: 14px 0 8px;">${title}</div><div style="overflow-x: auto;"><table class="data-table"><thead><tr><th>Ability</th><th>Rank</th><th>Autocast</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>`
+      : '';
+    host.innerHTML = `<div style="overflow-x: auto;"><table class="data-table"><tbody>${facts.map(f => `<tr><td>${f[0]}</td><td>${f[1]}</td></tr>`).join('')}</tbody></table></div>`
+      + table(`Abilities (${actives.length})`, actives)
+      + table('Passives', passives)
+      + '<div class="empty-hint" style="margin-top: 10px;">Values as last saved by the server.</div>';
   }
 
   function renderArmorySkills(p) {

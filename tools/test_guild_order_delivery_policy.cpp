@@ -101,6 +101,35 @@ int main()
     CHECK(DeliveryMailCount(1) == 1);
     CHECK(DeliveryMailCount(7) == 7);
 
+    // The giver-surplus split: the giver's remaining share still in the bags
+    // mails home, the rest keeps the bank path. The giver's share was spent
+    // first, so the row only names what the bot did not already use.
+    {
+        GiverSurplusSplit none = SplitGiverSurplus(500, 8, 0);
+        CHECK(none.giverReturn == 0 && none.bankRemainder == 8);
+        GiverSurplusSplit full = SplitGiverSurplus(500, 8, 20);
+        CHECK(full.giverReturn == 8 && full.bankRemainder == 0);
+        GiverSurplusSplit part = SplitGiverSurplus(500, 8, 5);
+        CHECK(part.giverReturn == 5 && part.bankRemainder == 3);
+        GiverSurplusSplit empty = SplitGiverSurplus(500, 0, 5);
+        CHECK(empty.giverReturn == 0 && empty.bankRemainder == 0);
+        CHECK(empty.itemId == 500);
+    }
+    // Spending consumes the giver's share first: the row only names what the
+    // bot did not already use at the end, so consumption narrows both legs.
+    {
+        GiverSpendShare all = SplitGiverSpend(6, 10, 10);
+        CHECK(all.giverSpent == 6 && all.gainSpent == 0);
+        GiverSpendShare over = SplitGiverSpend(12, 10, 10);
+        CHECK(over.giverSpent == 10 && over.gainSpent == 2);
+        GiverSpendShare gainOnly = SplitGiverSpend(4, 0, 10);
+        CHECK(gainOnly.giverSpent == 0 && gainOnly.gainSpent == 4);
+        GiverSpendShare capped = SplitGiverSpend(12, 3, 4);
+        CHECK(capped.giverSpent == 3 && capped.gainSpent == 4);
+        GiverSpendShare none = SplitGiverSpend(0, 3, 4);
+        CHECK(none.giverSpent == 0 && none.gainSpent == 0);
+    }
+
     // Three banker searches in a row that offer nothing flip the delivery
     // to the mail leg; anything offered resets the count.
     CHECK(kDeliveryNoBankerMails == 3);

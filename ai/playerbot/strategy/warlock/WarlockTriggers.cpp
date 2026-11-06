@@ -4,14 +4,46 @@
 #include "WarlockActions.h"
 #include "WarlockPetTaunt.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "WarlockSpreadTargeting.h"
+#include "playerbot/DungeonPlanMgr.h"
 #include "../../../runtime/policy/pet/VoidwalkerPolicy.h"
 #include "../../../runtime/policy/pet/HealthFunnelPolicy.h"
 #include "../../../runtime/policy/pet/WarlockPetPolicy.h"
 #include "../../../runtime/policy/class/WarlockTapPolicy.h"
+#include "../../../runtime/policy/class/WarlockRaidRotationPolicy.h"
 #include "../../../runtime/policy/class/WarlockStonePolicy.h"
 #include "../../../../runtime/policy/class/WarlockSoulstonePolicy.h"
 
 using namespace ai;
+
+namespace
+{
+// AiPlayerbot.WarlockRaidRotation (runtime/WarlockRaidRotationPolicy.h).
+// Off: every helper passes, so the rows behave exactly as before the key.
+
+// A DoT or curse on the current target only while that target is worth it.
+// Bosses and the raid-utility curses are never gated: their value does not
+// end when the target's health does.
+bool WarlockDotTargetAllowed(PlayerbotAI* ai, Unit* target, bool spread = false, bool raidUtility = false)
+{
+    if (!target || !sPlayerbotAIConfig.warlockRaidRotation)
+        return true;
+    return TortoiseBots::WarlockDotAllowed(true, (uint8)target->GetHealthPercent(), spread,
+                                           warlock::WarlockBossTarget(ai, target), raidUtility);
+}
+
+// Cost of one Shadow Bolt at the learned rank, without the probe spellmods
+// (as PlayerbotAISpells.cpp prices a cast). 0 when it is not known.
+uint32 WarlockShadowBoltCost(PlayerbotAI* ai)
+{
+    uint32 const spellId = ai->GetAiObjectContext()->GetValue<uint32>("spell id", "shadow bolt")->Get();
+    SpellEntry const* spellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!spellInfo || spellInfo->powerType != POWER_MANA)
+        return 0;
+    return Spell::CalculatePowerCost(spellInfo, ai->GetBot(), nullptr, nullptr);
+}
+
+}
 
 bool DemonArmorTrigger::IsActive()
 {
@@ -89,12 +121,16 @@ bool CorruptionTrigger::IsActive()
     if (AI_VALUE2(uint8, "health", "current target") <= 20)
         return false;
     Unit* target = GetTarget();
+    if (!WarlockDotTargetAllowed(ai, target))
+        return false;
     return target && !ai->HasAura("corruption", target, false, true) && !HasMaxDebuffs();
 }
 
 bool SiphonLifeTrigger::IsActive()
 {
     if (AI_VALUE2(uint8, "health", "current target") <= 20)
+        return false;
+    if (!WarlockDotTargetAllowed(ai, GetTarget()))
         return false;
     return DebuffTrigger::IsActive();
 }
@@ -106,9 +142,46 @@ bool CurseOfAgonyTrigger::IsActive()
     return DebuffTrigger::IsActive();
 }
 
-bool CorruptionOnAttackerTrigger::IsActive()
+// The spread rows resolve the policy-gated target value, so the scan skips a
+// low-health or capped-out attacker instead of stopping at it. The action
+// names the same value, so trigger and cast always agree on the target.
+Value<Unit*>* CorruptionOnAttackerTrigger::GetTargetValue()
 {
-    return DebuffOnAttackerTrigger::IsActive();
+    return context->GetValue<Unit*>("warlock spread attacker my aura", spell);
+}
+
+Value<Unit*>* SiphonLifeOnAttackerTrigger::GetTargetValue()
+{
+    return context->GetValue<Unit*>("warlock spread attacker my aura", spell);
+}
+
+bool ImmolateTrigger::IsActive()
+{
+    if (!WarlockDotTargetAllowed(ai, GetTarget()))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+Value<Unit*>* ImmolateOnAttackerTrigger::GetTargetValue()
+{
+    return context->GetValue<Unit*>("warlock spread attacker my aura", spell);
+}
+
+bool CurseOfTheElementsTrigger::IsActive()
+{
+    // The manual "curse elements" strategy is a player order, so the life
+    // gate never silences it.
+    if (!ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT) &&
+        !WarlockDotTargetAllowed(ai, GetTarget(), false, true))
+        return false;
+    return DebuffTrigger::IsActive();
+}
+
+Value<Unit*>* CurseOfTheElementsOnAttackerTrigger::GetTargetValue()
+{
+    // The manual order lifts the health line only; the raid cap still holds.
+    bool const manual = ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT);
+    return context->GetValue<Unit*>(manual ? "warlock spread attacker manual" : "warlock spread attacker", spell);
 }
 
 // Out-of-combat tap discipline (review pr-593): the OOC rows beat food/drink
@@ -141,7 +214,20 @@ bool LifeTapTrigger::IsActive()
     // WarlockStrategy puts it above the dot upkeep it feeds.
     TortoiseBots::WarlockTapInputs inputs;
     FillWarlockTapInputs(ai, inputs);
-    return TortoiseBots::DecideWarlockTap(inputs, ai->GetBot()->IsInCombat()) == TortoiseBots::WarlockTapDecision::TapUrgent;
+    bool const inCombat = ai->GetBot()->IsInCombat();
+    bool const urgentBand = TortoiseBots::DecideWarlockTap(inputs, inCombat) == TortoiseBots::WarlockTapDecision::TapUrgent;
+    // Raid rotation: in combat the two-filler test replaces the mana line, so
+    // a warlock that cannot fund two Shadow Bolts taps even above 40%. The
+    // health floor and the learned spell still gate it; every other tap is a
+    // GCD and healing the raid does not get back.
+    if (!inCombat || !sPlayerbotAIConfig.warlockRaidRotation)
+        return urgentBand;
+    if (!inputs.knowsLifeTap || inputs.healthPct <= inputs.lowHealth)
+        return false;
+    uint32 const cost = WarlockShadowBoltCost(ai);
+    if (!cost)
+        return urgentBand;
+    return TortoiseBots::WarlockCombatTapAllowed(true, bot->GetPower(POWER_MANA), cost);
 }
 
 bool LifeTapTopUpTrigger::IsActive()
@@ -161,19 +247,15 @@ bool DrainSoulTrigger::IsActive()
 	// grants the shard when the drained target dies while yielding XP/honor,
 	// so finishing below 20% health mirrors the donor execute without
 	// wasting casts on full-health targets.
-	if (!bot->HasItemCount(6265, 5))
-	{
-		if (AI_VALUE(uint8, "bag space") > 0)
-		{
-			const uint32 targetHealth = AI_VALUE2(uint8, "health", "current target");
-			if (targetHealth <= 20)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
+	// Raid rotation: trash only, and only below two shards (the row also
+	// moves below Shadowburn), so a boss execute is left to nukes.
+	bool const raidRotation = sPlayerbotAIConfig.warlockRaidRotation;
+	return TortoiseBots::WarlockDrainSoulAllowed(
+		raidRotation,
+		raidRotation && warlock::WarlockBossTarget(ai, AI_VALUE(Unit*, "current target")),
+		bot->GetItemCount(6265),
+		AI_VALUE2(uint8, "health", "current target"),
+		AI_VALUE(uint8, "bag space") > 0);
 }
 
 bool NoCurseTrigger::IsActive()
@@ -191,6 +273,8 @@ bool NoCurseTrigger::IsActive()
 	Unit* target = GetTarget();
 	if (target)
 	{
+		if (!WarlockDotTargetAllowed(ai, target))
+			return false;
 		return !ai->HasAura("curse of agony", target, false, true) &&
 			   !ai->HasAura("curse of doom", target, false, true) &&
 			   !ai->HasAura("curse of recklessness", target, false, true) &&
@@ -226,11 +310,17 @@ bool HasMyCurse(PlayerbotAI* ai, Unit* target)
 
 bool CurseOfRecklessnessRaidTrigger::IsActive()
 {
+    // Raid utility: worth the curse slot at any target health.
+    if (!WarlockDotTargetAllowed(ai, GetTarget(), false, true))
+        return false;
     return DebuffTrigger::IsActive() && !HasMyCurse(ai, GetTarget());
 }
 
 bool CurseOfShadowRaidTrigger::IsActive()
 {
+    // Raid utility: worth the curse slot at any target health.
+    if (!WarlockDotTargetAllowed(ai, GetTarget(), false, true))
+        return false;
     return DebuffTrigger::IsActive() && !HasMyCurse(ai, GetTarget());
 }
 
@@ -246,12 +336,20 @@ bool NoCurseOnAttackerTrigger::IsActive()
 		!ai->HasSpell("curse of exhaustion"))
 		return false;
 
+    // The Agony spread is a spread row too: a raid keeps at most two extra
+    // attackers cursed besides the current target.
+    Group* group = ai->GetBot()->GetGroup();
+    if (sPlayerbotAIConfig.warlockRaidRotation &&
+        TortoiseBots::WarlockSpreadCapApplies(true, group && group->isRaidGroup()) &&
+        !TortoiseBots::WarlockSpreadAllowed(true, true, warlock::WarlockExtraDottedTargets(ai, "curse of agony", true)))
+        return false;
+
     std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
     Unit* currentTarget = AI_VALUE(Unit*, "current target");
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* attacker = ai->GetUnit(*i);
-        if (attacker && attacker != currentTarget)
+        if (attacker && attacker != currentTarget && WarlockDotTargetAllowed(ai, attacker, true))
         {
 			if (!ai->HasAura("curse of agony", attacker, false, true) &&
 				!ai->HasAura("curse of doom", attacker, false, true) &&

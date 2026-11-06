@@ -247,6 +247,7 @@ namespace ai
             creators["craft random item"] = [](PlayerbotAI* ai) { return new CraftRandomItemAction(ai); };
             creators["smart destroy item"] = [](PlayerbotAI* ai) { return new SmartDestroyItemAction(ai); };
             creators["disenchant random item"] = [](PlayerbotAI* ai) { return new DisenchantRandomItemAction(ai); };
+            creators["guild disenchant service"] = [](PlayerbotAI* ai) { return new GuildDisenchantServiceAction(ai); };
             creators["enchant random item"] = [](PlayerbotAI* ai) { return new EnchantRandomItemAction(ai); };
             creators["reset instances"] = [](PlayerbotAI* ai) { return new ResetInstancesAction(ai); };
             creators["reset raids"] = [](PlayerbotAI* ai) { return new ResetRaidsAction(ai); };
@@ -378,10 +379,14 @@ namespace ai
             creators["boss tactics use object"] = [](PlayerbotAI* ai) { return new BossTacticsUseObjectAction(ai); };
             creators["boss tactics tank swap"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapAction(ai); };
             creators["boss tactics tank swap hold"] = [](PlayerbotAI* ai) { return new BossTacticsTankSwapHoldAction(ai); };
+            creators["boss tactics burn mana"] = [](PlayerbotAI* ai) { return new BossTacticsBurnManaAction(ai); };
+            creators["boss tactics ranged only"] = [](PlayerbotAI* ai) { return new BossTacticsRangedOnlyAction(ai); };
             creators["boss tactics object anchor"] = [](PlayerbotAI* ai) { return new BossTacticsObjectAnchorAction(ai); };
             creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekAction(ai); };
             creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankAction(ai); };
             creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillAction(ai); };
+            creators["boss tactics seek pet"] = [](PlayerbotAI* ai) { return new BossTacticsSeekPetAction(ai); };
+            creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemAction(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };

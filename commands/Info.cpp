@@ -7,6 +7,8 @@
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
+#include "../runtime/policy/hire/ClaimedProfsPolicy.h"
+#include "../runtime/policy/provision/ProfessionSnapshotPolicy.h"
 #include "../runtime/AltBotPolicy.h"
 #include "../runtime/AltBotService.h"
 #include "../runtime/HireProvisionService.h"
@@ -491,11 +493,26 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
         }
 
         std::string state = RosterState(player, record);
-        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u",
+        std::string profs = "-";
+        if (player)
+        {
+            std::vector<ClaimedProfsPolicy::ProfessionSkill> skills;
+            for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
+            {
+                SkillLineEntry const* skill = sSkillLineStore.LookupEntry(i);
+                if (!skill || !ProfessionSnapshotPolicy::IsProfessionSkill(uint32_t(skill->categoryId), skill->id))
+                    continue;
+                if (!player->HasSkill(skill->id))
+                    continue;
+                skills.push_back({ skill->id, player->GetSkillValue(skill->id) });
+            }
+            profs = ClaimedProfsPolicy::FormatProfs(skills);
+        }
+        handler->PSendSysMessage("TBM:CLAIMED|%u|%s|%u|%u|%s|%u|%s|%u|%s",
             botGuidLow, ProtocolSafe(name).c_str(), classId, level,
             ProtocolSafe(state).c_str(), grouped,
             ProtocolSafe(RosterLocation(mapId, zoneId, areaId)).c_str(),
-            gearLocked);
+            gearLocked, profs.c_str());
     }
     handler->PSendSysMessage("TBM:CLAIMED_END");
     // Live behaviour snapshot for the controllable party bots (owned alts

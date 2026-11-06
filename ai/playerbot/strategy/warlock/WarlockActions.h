@@ -247,7 +247,7 @@ namespace ai
 	    CastCorruptionOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "corruption") {}
 
     protected:
-        std::string GetTargetName() override { return "attacker without my aura"; }
+        std::string GetTargetName() override { return "warlock spread attacker my aura"; }
 	};
 
     class CastCurseOfAgonyAction : public CastCurseSlotAction
@@ -285,6 +285,14 @@ namespace ai
     {
     public:
         CastCurseOfTheElementsOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "curse of the elements") {}
+
+    protected:
+        std::string GetTargetName() override
+        {
+            // Match the trigger: a manual order lifts the health line only.
+            return ai->HasStrategy("curse elements", BotState::BOT_STATE_COMBAT)
+                ? "warlock spread attacker manual" : "warlock spread attacker";
+        }
     };
 
     class CastCurseOfRecklessnessAction : public CastCurseSlotAction
@@ -787,7 +795,7 @@ namespace ai
         CastImmolateOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "immolate") {}
 
     protected:
-        std::string GetTargetName() override { return "attacker without my aura"; }
+        std::string GetTargetName() override { return "warlock spread attacker my aura"; }
     };
 
     class CastConflagrateAction : public CastSpellAction
@@ -866,7 +874,7 @@ namespace ai
         CastSiphonLifeOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "siphon life") {}
 
     protected:
-        std::string GetTargetName() override { return "attacker without my aura"; }
+        std::string GetTargetName() override { return "warlock spread attacker my aura"; }
     };
 
     class CastHowlOfTerrorAction : public CastMeleeAoeSpellAction

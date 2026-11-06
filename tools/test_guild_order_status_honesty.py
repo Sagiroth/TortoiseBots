@@ -39,12 +39,11 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
     def test_have_keeps_its_never_drop_floor(self):
         self.assertIn("record.reportedHave", tick_body())
 
-    def test_line_appends_carry_last(self):
+    def test_line_appends_bring_last(self):
         formatter = STORE[STORE.index("std::string FormatOrderLine("):]
         formatter = formatter[:formatter.index("\n}\n")]
         self.assertIn('NeedItemsToken(order.needItems) + "|" +', formatter)
-        self.assertTrue(re.search(r'std::to_string\(carry\);\s*$', formatter))
-        self.assertNotIn('std::to_string(carry) + "|"', formatter)
+        self.assertIn('std::to_string(carry) + "|" + BringItemsToken(order.bringItems);', formatter)
 
     def test_live_line_sends_the_carry(self):
         self.assertIn("SendOrderLine(out.record, out.reportedHave, out.reportedCarry)", STORE)
@@ -90,11 +89,9 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
         self.assertIn("botOnline && !terminal ?\n        bot->GetItemCount(order.itemId)", carry)
 
     def test_carry_is_persisted_with_the_row(self):
-        self.assertIn("`updated_at`, `carried`", STORE)
         self.assertIn("record.reportedCarry = fields[StoreColumns::ColCarried].GetUInt32();", STORE)
-        self.assertIn("`updated_at` = FROM_UNIXTIME('%u'), `carried` = '%u'", STORE)
-        self.assertIn("record.updatedAt),\n                record.reportedCarry))", STORE)
-        self.assertIn("record.updatedAt), record.reportedCarry, record.botGuidLow", STORE)
+        self.assertIn("record.bringItems = ParseBringItemsToken(fields[StoreColumns::ColBring].GetCppString());", STORE)
+        self.assertIn("`created_at`, `updated_at`, `carried`, `bring`", STORE)
 
     def test_the_stored_carry_is_its_own_column(self):
         migration = ROOT / "data/sql/character/20261102150000_char.sql"
@@ -104,7 +101,7 @@ class GuildOrderStatusHonestyTest(unittest.TestCase):
         self.assertIn("COLUMN_NAME = 'carried'", sql)
 
     def test_addon_documents_carry(self):
-        self.assertIn("|<step>\\|<need>\\|<carry>`", ADDON)
+        self.assertIn("|<step>\\|<need>\\|<carry>\\|<bring>`", ADDON)
         self.assertIn("not delivered yet", ADDON)
 
 

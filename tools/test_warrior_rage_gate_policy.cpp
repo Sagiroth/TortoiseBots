@@ -88,6 +88,17 @@ int main()
     CHECK(!ShouldMockingBlow(true, true, false, true, true, RageAfterStanceSwap(false, 30, 0)));
     CHECK(ShouldMockingBlow(true, true, false, true, true, RageAfterStanceSwap(false, 30, 2)));
     std::cout << "  [PASS] mocking blow gates on post-swap rage (Tactical Mastery)\n";
+    // Thunder Clap: grouped PvE Arms DPS leaves it to the tank; solo, tank
+    // and PvP/BG Arms keep it. An online master is not a group: ungrouped
+    // Arms with a master online still casts.
+    CHECK(!ShouldSkipThunderClapForArms(false, true, false, false)); // ungrouped Arms, master online: allowed
+    CHECK(!ShouldSkipThunderClapForArms(false, false, false, false)); // ungrouped non-Arms: allowed
+    CHECK(ShouldSkipThunderClapForArms(false, true, true, false)); // grouped PvE Arms DPS: refused
+    CHECK(!ShouldSkipThunderClapForArms(false, false, true, false)); // grouped Fury: keeps the row
+    CHECK(!ShouldSkipThunderClapForArms(true, true, true, false)); // tank: allowed
+    CHECK(!ShouldSkipThunderClapForArms(false, true, true, true)); // PvP/BG: allowed
+    CHECK(!ShouldSkipThunderClapForArms(false, true, false, true)); // solo PvP: allowed
+    std::cout << "  [PASS] thunder clap skips grouped pve arms only\n";
 
     // Vanilla cost constants are pinned so a tuning change cannot silently
     // desync the trigger gates from the spell data.

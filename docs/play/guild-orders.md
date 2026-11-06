@@ -98,15 +98,16 @@ For the auction house step the bot picks one auction house and walks there.
   - The recipe has a long cooldown (transmutes, Mooncloth).
 - The Professions view marks each recipe `ok` or with the reason; the search shows the same verdict.
 - **Hours:** optional whole hours 1-24. No hours given (or `inf`) means no time limit. When the time runs out, the bot still brings what it has to the guild bank (or mails it to the guild master). The order ends as `cant` with reason `timeout`.
-- **Keep:** add `keep` before an optional `gold=<copper>`. The order does not end after delivery: it watches the guild bank. When the bank holds fewer than ordered, the bot brings the missing amount again. Each new round gets the full hours again. Keep needs a working bank: a round that ends mailed, `cant` or `noskill` ends the keep.
 - **Guild gold cap:** add `gold=<copper>` after the other options. The bot spends its own gold first. Omit it for no cap; `gold=0` prevents guild gold use.
+- **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
-  - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables.
+  - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables. Enchant: permanent enchants the bot knows.
   - Never shown: recipes, conjured items, random-drop gear. At most 30 matches.
-  - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that).
-  - Every query word must match somewhere in the name, in any order.
-  - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text.
-  - The search needs the bot online; giving the order does not. A craft order on an offline bot is refused (`norecipe`).
+  - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that). Enchant matches show the slot, the required Enchanting skill and the reagents instead.
+  - Every query word must match somewhere in the name, in any order. Enchant search also matches the slot word (`bracer`, `chest`, `boots`, `cloak`, `gloves`, `shield`, `weapon`, `2hweapon`) and its aliases (`wrist`, `feet`, `back`, `hands`, `2h`).
+  - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text. `.bot order search <BotName> enchant <text>` lists only enchants this bot knows, one row each with verdict `ok` or `noskill` and the reagents it holds (bags plus mail).
+  - `.bot order search craft <text>` asks the whole guild instead of one bot: each match lists every online guild bot that knows an orderable recipe for it, with its profession skill, how many distinct reagents it already holds in full, and whether it already runs an order. At most 30 matches, same order as the per-bot craft search.
+  - `.bot order search enchant <text>` asks the whole guild instead of one bot: each match lists every online guild bot that knows the enchant, with its Enchanting skill, how many distinct reagents it already holds in full, and whether it already runs an order. At most 30 matches, sorted by required skill, then name.
 - **One order per bot.** A new order replaces the old one. `cancel` removes it (and its whole sub-order branch) and the bot goes back to normal life.
 
 <details>
@@ -137,6 +138,14 @@ If the bot and other guild bots cannot get one of the materials, that item goes 
 - Bring items by trade, mail, or the guild bank. A guild bot takes member mail straight into its bags (a recipe in the bags gets learned) and returns mail from anyone else.
 - The order resumes when enough appears in its bags or mailbox, or in an accessible guild bank. The bank is re-checked about every 10 seconds. A shop or auction house re-check runs about every 10 minutes (a full ladder pass every third check). This wait counts toward neither the time nor the no-progress limit.
 
+## Disenchant by mail
+
+Mail items to a guild bot that has Enchanting with the subject `disenchant` and it breaks them down for you, no meeting needed.
+- The bot disenchants what its skill allows, loots the results itself, and mails exactly what that cast made back (`Disenchanted: <item>`); the rest comes back with a reason (`lowskill` when the item needs more skill, `cannot disenchant` for anything with no disenchant loot, `noskill` from a bot without Enchanting).
+- Mail from a guild member without that subject is taken into the bags as usual, never disenchanted.
+- Queued items and landed results are never sold, auctioned, equipped or used for anything else while they wait; the bot casts when it can (not in combat, moving or mounted), collects at a mailbox, and mails every item back with no gold taken and nothing of its own added. A restart re-queues instead of losing the item.
+- **Disenchant by trade:** whisper the bot `disenchant`, then trade it within 2 minutes and put the items in the normal trade slots. The offer must be items only (no gold, nothing of the bot's own) and fit its free room ("I only have room for N items" otherwise); each item is queued exactly like mailed ones and the materials come back by mail. A bot without Enchanting answers "I can't disenchant." instead. A running enchant order's trade with its giver still comes first: the drop-off only applies outside that window.
+
 ## Delivery
 
 When the amount is reached, the bot walks to a guild banker in a capital city and deposits into the guild bank.
@@ -145,14 +154,19 @@ When the amount is reached, the bot walks to a guild banker in a capital city an
 - Unspent guild gold comes back to the guild bank: when the order ends (or is cancelled), the bot deposits what it still holds at its next guild banker visit.
 - A cancelled order disappears from the list at once; the repayment still happens behind the scenes.
 - The addon status shows the current step (`bags`, `bank`, `ah`, `farm`, `craft`, `sub`, `need` or `deliver`), the optional guild gold cap, and any missing item list.
-- Extra materials left after crafting go to the guild bank with the finished item, but only what the order itself gained; the bot's own materials stay in its bags.
+- Extra materials left after crafting go to the guild bank with the finished item, but only what the order itself gained; the bot's own materials stay in its bags. Materials you handed over yourself come back to you by mail instead (`Your leftover materials`).
+
+## Enchant orders
+
+An enchanter bot puts one enchant on your own item, from real materials, meeting you in its capital (Stormwind for the Alliance, Orgrimmar for the Horde).
+- **Reserved:** while the order runs, its reagents are protected: the bot never sells, auctions, disenchants, mails away or uses them.
+- **States:** `working` (gathering, step `bags`, `bank` or `ah`), `waiting` with reason `needitems`, `ready` (materials reserved, waiting for Meet). Cancelling, or running out of time, mails your leftover materials back to you (`Your leftover materials`) and walks the rest to the guild bank through a delivery trip, mailing what the bank cannot take; the row ends once nothing is due.
 
 ## Guild bank access
 
 Every bot in a guild with at least one real player in it shares the guild's **bot rank** (by default the highest rank below the guild master).
 - A bot that joins gets the bot rank at once; bots already in the guild are moved there once when the server starts.
 - The founding guild-master rank is never rewritten. A guild of only a master with no other ranked members keeps its ranks.
-- Guilds made up of only bots keep their own ranks (including a bot guild master, which is never moved).
 - Your own characters are never touched: only bot characters get the bot rank. Bots in such guilds no longer promote, demote, kick or invite anyone.
 
 ```text
@@ -174,16 +188,33 @@ You must be a real player in the bot's guild, and your guild rank must be allowe
 ```text
 .bot order <BotName> farm <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
 .bot order <BotName> buy <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
-.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>]
+.bot order <BotName> craft <item link or id> <amount> [hours|inf] [keep] [gold=<copper>] [bring=<item>,<item>]
+.bot order <BotName> enchant <spell link or id> [hours|inf] [gold=<copper>] [bring=<item>,<item>]
 .bot order <BotName> cancel
-.bot order <BotName> preview <farm|craft> <item link or id> <amount>
+.bot order <BotName> meet
+.bot order <BotName> preview <farm|craft> <item link or id> <amount> [bring=<item>,<item>]
 .bot order <BotName> steps
 .bot order list
-.bot order search <BotName> <farm|buy|craft> [cat=<kind>] <text>
+.bot order search <BotName> <farm|buy|craft|enchant> [cat=<kind>] <text>
+.bot order search craft <text>
+.bot order search enchant <text>
 .bot order reassign <SubOrderBot> <NewBot>
 ```
-
 `.bot order <BotName> steps` lists the order's last 16 steps with their age (the same steps the status shows), read-only and memory only, so it starts empty after a restart, a new order or a reassign.
+
+## Meet (enchant orders)
+
+Press Meet (addon button or `.bot order <BotName> meet`) once your enchant order is ready and you stand in the bot's main capital (Stormwind for the Alliance, Orgrimmar for the Horde). Only the giver who placed the order may press it.
+- Outside the capital the bot answers "Meet me in Stormwind." (or Orgrimmar) and stays where it is.
+- While the bot is in a dungeon, raid or battleground, or grouped with a real player, it answers "I'll come when I'm out." The request is kept: it comes once it is free.
+- While the bot is still gathering (or offline), it answers "Still gathering, I'll tell you." The request is kept: it comes once the materials are together.
+- Otherwise it answers "On my way." and walks to you from the capital inn.
+- An unfinished enchant order blocks other givers: a new order on that bot is refused `busy` ("<Bot> is busy with an enchant order for <Giver>."). The giver may always replace their own order, and the guild master (or a rank that may remove members) may replace anyone's. Other order types keep the old rule: a new order replaces the old one.
+- The request is not stored across a restart: press Meet again after the server restarts.
+
+## How an enchant order runs
+
+Once your enchant order is ready, the bot waits in the capital until you press Meet standing in Stormwind (Alliance) or Orgrimmar (Horde). It teleports back to the capital inn if it left, walks to you, and opens the trade itself; a trade you open first works the same. When materials are still missing it takes them first in a materials trade (anything else is refused), then opens the enchant trade: it casts the enchant on your item in the "Will not be traded" slot and you accept to finish. A trade left alone for about 2 minutes is retried, up to 3 tries, then the bot waits for Meet again. If the item already carries an enchant it asks whether to replace it: whisper "yes" to go on, anything else cancels and keeps the materials. Cancelling in any state closes the trade first and banks the gathered materials; a restart sends a bot caught mid-meeting back to ready. Waiting for you counts toward neither the order's hours nor its no-progress limit.
 
 ## Known limitations
 

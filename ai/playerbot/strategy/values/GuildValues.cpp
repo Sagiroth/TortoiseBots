@@ -8,7 +8,10 @@
 #include "playerbot/strategy/actions/GuildOrderBuyAction.h"
 #include "playerbot/GuildOrderSources.h"
 #include "playerbot/GuildOrderCraft.h"
+#include "playerbot/policy/guild/EnchantGatherPolicy.h"
+#include "runtime/EnchantCapital.h"
 #include "runtime/GuildOrderStore.h"
+#include "runtime/GuildOrderBringPolicy.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderReagentTree.h"
@@ -190,9 +193,27 @@ struct SnapshotRecipes
 {
     Player* bot;
     SupplySnapshot* snap;
+    OrderRecord const* order = nullptr;
 
     bool operator()(uint32_t itemId, TortoiseBots::GuildOrders::Recipe& out) const
     {
+        // An enchant order's key is the enchant spell itself: its reagents
+        // feed the ladder as a one-level recipe, so bags, bank, auction
+        // house, the need list and bring= all work unchanged.
+        if (order && order->type == OrderType::Enchant && itemId == order->itemId)
+        {
+            SpellEntry const* enchant = sServerFacade.LookupSpellInfo(itemId);
+            if (!enchant || enchant->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+                return false;
+            out.yieldPerCast = 1;
+            for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+            {
+                if (!enchant->ReagentCount[i] || enchant->Reagent[i] <= 0)
+                    continue;
+                out.reagents.push_back({ uint32_t(enchant->Reagent[i]), uint32_t(enchant->ReagentCount[i]) });
+            }
+            return true;
+        }
         uint32_t spellId = SnapshotCraftSpell(bot, *snap, itemId);
         if (!spellId || IsUnlimitedVendorItem(itemId))
             return false;
@@ -219,9 +240,9 @@ struct SnapshotRecipes
 // Whole-tree totals behind one snapshot: base reagents summed over every
 // branch, each id once, with bags and mail spent once across the walk.
 std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
-    uint32_t itemId, uint32_t count)
+    uint32_t itemId, uint32_t count, OrderRecord const* order = nullptr)
 {
-    SnapshotRecipes recipes{ bot, &snap };
+    SnapshotRecipes recipes{ bot, &snap, order };
     auto held = [ai, bot, &snap](uint32_t heldId)
     {
         return SnapshotBags(ai, snap, heldId) + SnapshotMail(bot, snap, heldId);
@@ -240,7 +261,7 @@ std::vector<NeedItem> MissingReagentsFromTree(PlayerbotAI* ai, Player* bot, Supp
 std::vector<ReagentTotals> ReagentTotalsFromTree(PlayerbotAI* ai, Player* bot, SupplySnapshot& snap,
     uint32_t itemId, uint32_t count, OrderRecord const* order)
 {
-    SnapshotRecipes recipes{ bot, &snap };
+    SnapshotRecipes recipes{ bot, &snap, order };
     auto bags = [ai, &snap](uint32_t bagsId)
     {
         return SnapshotBags(ai, snap, bagsId);
@@ -285,7 +306,7 @@ uint32_t TreeTotalFor(std::unordered_map<uint32_t, ReagentTotals> const& totals,
 // entry per reagent: the need list and its whisper name them all at once
 // instead of asking the player again after each delivery.
 void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t count,
-    std::vector<NeedItem>& out, SupplySnapshot* snapshot = nullptr)
+    std::vector<NeedItem>& out, SupplySnapshot* snapshot = nullptr, OrderRecord const* order = nullptr)
 {
     if (!ai || !bot || !itemId || !count)
         return;
@@ -293,10 +314,14 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     SupplySnapshot& snap = snapshot ? *snapshot : local;
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
-    uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
+    // An enchant order's key is its spell: the reagents below are the whole
+    // need, never a farm-or-buy stock check on the spell id.
+    bool const enchantRoot = order && order->type == OrderType::Enchant && itemId == order->itemId;
+    uint32_t spellId = enchantRoot ? itemId : SnapshotCraftSpell(bot, snap, itemId);
     // A farm or buy order's item has no recipe: bags and mailbox are the
     // whole stock, as before.
-    if (!spellId || IsUnlimitedVendorItem(itemId))
+    // An enchant's key is a spell id that may also name a vendor item.
+    if (!spellId || (!enchantRoot && IsUnlimitedVendorItem(itemId)))
     {
         uint32_t owned = SnapshotBags(ai, snap, itemId) + SnapshotMail(bot, snap, itemId);
         if (owned < count)
@@ -306,7 +331,7 @@ void CollectMissingReagents(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint3
     // The whole tree, not one level of siblings: a base reagent shared by
     // two intermediates, or sitting three recipes down, is one row with the
     // summed need, and an intermediate in the bags shrinks its subtree.
-    for (NeedItem const& need : MissingReagentsFromTree(ai, bot, snap, itemId, count))
+    for (NeedItem const& need : MissingReagentsFromTree(ai, bot, snap, itemId, count, order))
         out.push_back(need);
 }
 
@@ -337,21 +362,40 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         return true;
     }
 
-    uint32_t spellId = SnapshotCraftSpell(bot, snap, itemId);
-    if (!spellId || IsUnlimitedVendorItem(itemId))
+    // An enchant order's key is its spell: expand its reagents like a
+    // recipe's, one cast per ordered enchant. Anything else resolves through
+    // the craft spellbook as before.
+    bool const enchantRoot = order && order->type == OrderType::Enchant && itemId == order->itemId;
+    uint32_t spellId = 0;
+    SpellEntry const* spell = nullptr;
+    if (enchantRoot)
     {
-        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
-        return true;
+        spell = sServerFacade.LookupSpellInfo(itemId);
+        if (!spell || spell->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+        {
+            out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+            return true;
+        }
+        spellId = itemId;
     }
-    SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
-    if (!spell)
+    else
     {
-        out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
-        return true;
+        spellId = SnapshotCraftSpell(bot, snap, itemId);
+        if (!spellId || IsUnlimitedVendorItem(itemId))
+        {
+            out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+            return true;
+        }
+        spell = sServerFacade.LookupSpellInfo(spellId);
+        if (!spell)
+        {
+            out = { itemId, TreeTotalFor(*totals, depth, itemId, count, ReagentAggregate::ExtShort), false };
+            return true;
+        }
     }
 
     path.push_back(itemId);
-    uint32_t casts = ai::CraftCastsForRemaining(spellId, itemId, count);
+    uint32_t casts = enchantRoot ? count : ai::CraftCastsForRemaining(spellId, itemId, count);
     std::vector<MaterialOutcome> outcomes;
     std::vector<SupplyCandidate> results;
     // Recipe tools are minted at the craft (CraftToolsAlways); with it off a
@@ -405,7 +449,8 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
         // An item the player already owes for this order is a dead end for
         // the ladder: it cannot be sourced again, and the walk must move on.
         if (nested.blocked ||
-            (!nested.craft && order && order->type == OrderType::Craft && NeedListHas(order->needItems, nested.itemId)))
+            (!nested.craft && order && (order->type == OrderType::Craft || order->type == OrderType::Enchant) &&
+                NeedListHas(order->needItems, nested.itemId)))
             outcomes.push_back(MaterialOutcome::Blocked);
         else if (!nested.craft)
             outcomes.push_back(MaterialOutcome::Missing);
@@ -447,6 +492,14 @@ public:
         if (planned_)
             return canFarm_;
         planned_ = true;
+        // Enchant reagents are never farmed: the vendor leg below still buys
+        // a vendor-unlimited one, everything else runs bank, auction, need.
+        if (order_.type == OrderType::Enchant)
+        {
+            canFarm_ = IsUnlimitedVendorItem(candidate_.itemId) &&
+                order_.reason != OrderReason::NoSource;
+            return canFarm_;
+        }
         if (IsUnlimitedVendorItem(candidate_.itemId))
             canFarm_ = order_.reason != OrderReason::NoSource;
         // The farm leg gave up on this item (no zone of the plan yielded a
@@ -474,6 +527,16 @@ private:
 SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot, FarmableVerdict* farmable)
 {
+    // A ticked material is the giver's to bring: the bot never sources it
+    // itself, so the ladder names it for the need list straight away. The
+    // bank leg stays open for it: the giver delivers by trade, mail or the
+    // guild bank, and a banked delivery is collected like any other need
+    // item's. Bags and mailbox still count through the normal need path
+    // below (the whole-tree shortfall nets them).
+    if ((order.type == OrderType::Craft || order.type == OrderType::Enchant) &&
+        TortoiseBots::GuildOrders::BringTickedBlocksLeg(order.bringItems, candidate.itemId) &&
+        !(order.supplyItemId == candidate.itemId && order.supplyStep == SupplyStep::Bank))
+        return SupplyStep::Need;
     if (candidate.craft)
         return SupplyStep::Craft;
     SupplySnapshot local;
@@ -543,7 +606,9 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
             (!auctionReentry && current != SupplyStep::AuctionHouse);
         options.selfCanCraft = candidate.craft;
         options.selfCanFarm = verdict.CanFarm();
-        options.subAttempted = current == SupplyStep::Need;
+        // Enchant reagents are never delegated: the auction leg hands off to
+        // the need list instead of a sub-order.
+        options.subAttempted = current == SupplyStep::Need || order.type == OrderType::Enchant;
         return TortoiseBots::GuildOrders::NextSupplyStep(options);
     }
     SupplyOptions options;
@@ -553,7 +618,7 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
         !TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId);
     options.selfCanCraft = candidate.craft;
     options.selfCanFarm = verdict.CanFarm();
-    options.subAttempted = false;
+    options.subAttempted = order.type == OrderType::Enchant;
     return TortoiseBots::GuildOrders::NextSupplyStep(options);
 }
 
@@ -583,12 +648,12 @@ void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Su
     // order amount less delivered (which double-counts what is already held).
     SupplySnapshot local;
     SupplySnapshot& snap = snapshot ? *snapshot : local;
-    uint32_t outputHave = order.delivered + SnapshotBags(ai, snap, order.itemId) +
-        SnapshotMail(bot, snap, order.itemId);
+    uint32_t outputHave = order.type == OrderType::Enchant ? 0 : order.delivered +
+        SnapshotBags(ai, snap, order.itemId) + SnapshotMail(bot, snap, order.itemId);
     uint32_t outputMissing = outputHave >= order.amount ? 0 : order.amount - outputHave;
     uint32_t count = candidate.count;
     std::vector<NeedItem> missing;
-    CollectMissingReagents(ai, bot, order.itemId, outputMissing, missing, &snap);
+    CollectMissingReagents(ai, bot, order.itemId, outputMissing, missing, &snap, &order);
     for (NeedItem const& need : missing)
         if (need.itemId == candidate.itemId && need.count > count)
             count = need.count;
@@ -599,6 +664,17 @@ void AddCraftNeedItem(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Su
 void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplyStep step, SupplyStep returnStep = SupplyStep::None, SupplySnapshot* snapshot = nullptr)
 {
+    // A ticked material never spawns a sub-order: it joins the need list
+    // even when the ladder otherwise delegates. Belt and braces next to the
+    // ChooseSourceStep routing above.
+    if (step == SupplyStep::Sub && order.type == OrderType::Craft &&
+        TortoiseBots::GuildOrders::BringTickedBlocksLeg(order.bringItems, candidate.itemId))
+        step = SupplyStep::Need;
+    // Enchant reagents are never delegated or crafted: a leg that still
+    // names one joins the need list instead. The farm step stays: a
+    // vendor-unlimited reagent is bought there, never farmed, as for craft.
+    if (order.type == OrderType::Enchant && (step == SupplyStep::Sub || step == SupplyStep::Craft))
+        step = SupplyStep::Need;
     if (step == SupplyStep::Sub)
     {
         if (TortoiseBots::GuildOrders::RequestSupply(order.botGuidLow, candidate.itemId, candidate.count))
@@ -610,13 +686,13 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
         // A craft order has more components to try: the item the sub-order
         // could not cover joins the need list and the ladder moves on
         // instead of parking the whole order.
-        if (order.type == OrderType::Craft)
+        if (order.type == OrderType::Craft || order.type == OrderType::Enchant)
         {
             AddCraftNeedItem(ai, bot, order, candidate, snapshot);
             return;
         }
         std::vector<NeedItem> missing;
-        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot, &order);
         if (missing.empty())
             missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
@@ -625,13 +701,13 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
     }
     if (step == SupplyStep::Need)
     {
-        if (order.type == OrderType::Craft)
+        if (order.type == OrderType::Craft || order.type == OrderType::Enchant)
         {
             AddCraftNeedItem(ai, bot, order, candidate, snapshot);
             return;
         }
         std::vector<NeedItem> missing;
-        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot);
+        CollectMissingReagents(ai, bot, order.itemId, order.amount > order.delivered ? order.amount - order.delivered : 0, missing, snapshot, &order);
         if (missing.empty())
             missing.push_back(NeedItem{ candidate.itemId, candidate.count });
         TortoiseBots::GuildOrders::SetNeedItems(order.botGuidLow,
@@ -644,15 +720,83 @@ void SetSupplyStage(PlayerbotAI* ai, Player* bot, OrderRecord const& order, Supp
     TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, step, candidate.itemId,
         candidate.count, returnStep, order.reason);
 }
+// Enchant ready edge: every reagent for one cast sits in the bags. Moves a
+// working row to ready (with the one whisper), moves a ready row that lost
+// a reagent back to working, and parks an unknown spell as norecipe. True
+// when it moved the row and the caller has nothing left to do.
+bool RefreshEnchantOrderGathering(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
+{
+    using TortoiseBots::GuildOrders::OrderState;
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(order.itemId);
+    if (!spell || spell->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+    {
+        if (order.state == OrderState::Working)
+            TortoiseBots::GuildOrders::SetState(order.botGuidLow, OrderState::Cant, OrderReason::NoRecipe);
+        return true;
+    }
+    std::vector<TortoiseBots::GuildOrders::EnchantMaterialState> materials;
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        uint32_t reagentId = uint32_t(spell->Reagent[i]);
+        materials.push_back(TortoiseBots::GuildOrders::EnchantMaterialState{ reagentId,
+            uint32_t(spell->ReagentCount[i]), ai->GetInventoryItemsCountWithId(reagentId),
+            TortoiseBots::GuildOrders::BringTickedBlocksLeg(order.bringItems, reagentId) });
+    }
+    bool complete = TortoiseBots::GuildOrders::EnchantMaterialsComplete(materials.data(), materials.size());
+    if (complete && order.state == OrderState::Working)
+    {
+        TortoiseBots::GuildOrders::SetState(order.botGuidLow, OrderState::Ready, OrderReason::None);
+        TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
+        // Once per order: a relapse to working and back never repeats it.
+        if (!order.readyWhispered)
+        {
+            Player* giver = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, order.giverGuidLow));
+            if (giver && giver->IsInWorld())
+            {
+                std::string capital = bot->GetTeam() == ALLIANCE ? "Stormwind" : "Orgrimmar";
+                std::string enchant = spell->SpellName[0].c_str();
+                ai->TellPlayerNoFacing(giver, "I have the materials for " + enchant + ". Come to " + capital +
+                    " and press Meet.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+                TortoiseBots::GuildOrders::NoteEnchantReadyWhispered(order.botGuidLow);
+            }
+        }
+        return true;
+    }
+    if (!complete && order.state == OrderState::Ready)
+    {
+        TortoiseBots::GuildOrders::SetState(order.botGuidLow, OrderState::Working, OrderReason::None);
+        TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
+        return true;
+    }
+    return false;
+}
+
 
 void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& order)
 {
-    if (!ai || !bot || order.state != TortoiseBots::GuildOrders::OrderState::Working)
+    if (!ai || !bot ||
+        (order.state != TortoiseBots::GuildOrders::OrderState::Working &&
+            !(order.type == OrderType::Enchant && order.state == TortoiseBots::GuildOrders::OrderState::Ready)))
         return;
     // The set turns over with the order or supply item, on this map thread
     // (the spell map is safe to read here). Runs at most once per tick: the
     // store no-ops when the keys already match.
     TortoiseBots::GuildOrders::RefreshOrderProtectedSet(bot);
+    // Enchant gathering lives here, not in the craft branch below: the spell
+    // id is not an item, so the output math there never applies. A complete
+    // set of reagents turns the row ready (with its whisper); a Ready row
+    // that lost a reagent goes back to working; anything else waits for the
+    // capital before the ladder names bank or auction legs.
+    if (order.type == OrderType::Enchant)
+    {
+        if (RefreshEnchantOrderGathering(ai, bot, order))
+            return;
+        if (order.state != TortoiseBots::GuildOrders::OrderState::Working ||
+            !TortoiseBots::EnchantCapital::BotInCapital(bot))
+            return;
+    }
     uint32_t nowMs = WorldTimer::getMSTime();
     // A leg that cannot reach an auctioneer hands off after two minutes in
     // the city, or after twenty minutes of walking. The reach clock starts on
@@ -684,8 +828,11 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::None, 0, 0);
         return;
     }
-    uint32_t carried = SnapshotBags(ai, snapshot, order.itemId);
-    uint32_t mailed = SnapshotMail(bot, snapshot, order.itemId);
+    // An enchant has no output item: its key is a spell id, which may also
+    // be some item's id in the bags.
+    bool const enchantRow = order.type == OrderType::Enchant;
+    uint32_t carried = enchantRow ? 0 : SnapshotBags(ai, snapshot, order.itemId);
+    uint32_t mailed = enchantRow ? 0 : SnapshotMail(bot, snapshot, order.itemId);
     // The bought oversized stack is in the bags: the auction leg runs again,
     // this time only to relist the surplus. Buying more waits until it is
     // posted (or the relist gives up and the delivery leftover path takes it).
@@ -713,56 +860,61 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     }
     if (order.type != OrderType::Craft)
     {
-        uint32_t have = order.delivered + carried + mailed;
-        uint32_t missing = have >= order.amount ? 0 : order.amount - have;
-        if (mailed && order.delivered + carried < order.amount &&
-            !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+        // Enchant rows skip the farm/buy stock path: their key is the spell
+        // id, and the craft ladder below sources its reagents instead.
+        if (order.type != OrderType::Enchant)
         {
-            SupplyCandidate candidate{ order.itemId, missing, false, true };
-            FarmableVerdict mailVerdict(bot, order, candidate);
-            SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
-            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
-                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
-                    order.itemId, missing, afterMail, order.reason);
-            return;
-        }
-        if (!missing)
-        {
-            if (carried + order.delivered >= order.amount)
-                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
-                    order.itemId, 0, SupplyStep::None, order.reason);
-            return;
-        }
-        SupplyCandidate candidate{ order.itemId, missing, false };
-        if (mailed && !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
-        {
-            FarmableVerdict mailVerdict(bot, order, candidate);
-            SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
-            if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
-                TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
-                    order.itemId, missing, afterMail, order.reason);
-            return;
-        }
-        // Farm and buy orders never take their own order item from the bank:
-        // the bank holds reagents, and withdrawing the finished item would
-        // just deposit it back on delivery. Craft reagents below still use
-        // the bank first.
-        FarmableVerdict farmable(bot, order, candidate);
-        SupplyStep step = ChooseSourceStep(bot, order, candidate, &snapshot, &farmable);
-        // A farm or buy order never walks its own item to the bank; that
-        // leg is the auction one. A counter that was already searched for
-        // this item falls through to the rest of the ladder instead.
-        if (step == SupplyStep::Bank)
-            step = TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId) ?
-                SupplyStep::AuctionHouse :
-                TortoiseBots::GuildOrders::NextSupplyStep(
+            uint32_t have = order.delivered + carried + mailed;
+            uint32_t missing = have >= order.amount ? 0 : order.amount - have;
+            if (mailed && order.delivered + carried < order.amount &&
+                !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+            {
+                SupplyCandidate candidate{ order.itemId, missing, false, true };
+                FarmableVerdict mailVerdict(bot, order, candidate);
+                SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
+                if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                    TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                        order.itemId, missing, afterMail, order.reason);
+                return;
+            }
+            if (!missing)
+            {
+                if (carried + order.delivered >= order.amount)
+                    TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Deliver,
+                        order.itemId, 0, SupplyStep::None, order.reason);
+                return;
+            }
+            SupplyCandidate candidate{ order.itemId, missing, false };
+            if (mailed && !MailLegSkipped(order.itemId, order.mailEmptyItemId, nowMs, order.mailEmptyMs))
+            {
+                FarmableVerdict mailVerdict(bot, order, candidate);
+                SupplyStep afterMail = MailReturnStep(bot, order, candidate, &snapshot, &mailVerdict);
+                if (order.supplyStep != SupplyStep::Bags || order.supplyItemId != order.itemId)
+                    TortoiseBots::GuildOrders::SetSupply(order.botGuidLow, SupplyStep::Bags,
+                        order.itemId, missing, afterMail, order.reason);
+                return;
+            }
+            // Farm and buy orders never take their own order item from the bank:
+            // the bank holds reagents, and withdrawing the finished item would
+            // just deposit it back on delivery. Craft reagents below still use
+            // the bank first.
+            FarmableVerdict farmable(bot, order, candidate);
+            SupplyStep step = ChooseSourceStep(bot, order, candidate, &snapshot, &farmable);
+            // A farm or buy order never walks its own item to the bank; that
+            // leg is the auction one. A counter that was already searched for
+            // this item falls through to the rest of the ladder instead.
+            if (step == SupplyStep::Bank)
+                step = TortoiseBots::GuildOrders::AuctionReentryAllowed(order.botGuidLow, candidate.itemId) ?
+                    SupplyStep::AuctionHouse :
+                    TortoiseBots::GuildOrders::NextSupplyStep(
+                        SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
+            SupplyStep fallback = SupplyStep::None;
+            if (step == SupplyStep::AuctionHouse)
+                fallback = TortoiseBots::GuildOrders::NextSupplyStep(
                     SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
-        SupplyStep fallback = SupplyStep::None;
-        if (step == SupplyStep::AuctionHouse)
-            fallback = TortoiseBots::GuildOrders::NextSupplyStep(
-                SupplyOptions{ false, true, true, false, farmable.CanFarm(), false });
-        SetSupplyStage(ai, bot, order, candidate, step, fallback, &snapshot);
-        return;
+            SetSupplyStage(ai, bot, order, candidate, step, fallback, &snapshot);
+            return;
+        }
     }
 
     uint32_t outputHave = order.delivered + carried + mailed;
@@ -798,7 +950,7 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
     if (!current.needItems.empty())
     {
         std::vector<NeedItem> stillMissing;
-        CollectMissingReagents(ai, bot, order.itemId, outputMissing, stillMissing, &snapshot);
+        CollectMissingReagents(ai, bot, order.itemId, outputMissing, stillMissing, &snapshot, &current);
         std::vector<NeedItem> pruned = current.needItems;
         PruneNeedItems(pruned, stillMissing);
         if (!NeedItemsEqual(pruned, current.needItems))
@@ -854,7 +1006,7 @@ void RefreshGuildOrderSupply(PlayerbotAI* ai, Player* bot, OrderRecord const& or
         if (!collectable.empty() || !covered.empty() || !current.needItems.empty())
         {
             std::vector<NeedItem> missingNow;
-            CollectMissingReagents(ai, bot, order.itemId, outputMissing, missingNow, &snapshot);
+            CollectMissingReagents(ai, bot, order.itemId, outputMissing, missingNow, &snapshot, &current);
             if (!missingNow.empty())
             {
                 std::vector<uint32_t> missingIds;
@@ -961,8 +1113,11 @@ GuildOrder GuildOrderValue::Calculate()
         case TortoiseBots::GuildOrders::OrderType::Craft:
             order.type = GuildOrderType::Craft;
             break;
+        // Enchant rows travel and source through the store record, not the
+        // AI struct: no farm item, no craft cast, so the type stays None.
+        case TortoiseBots::GuildOrders::OrderType::Enchant:
+            break;
     }
-    order.itemId = stored->itemId;
     order.amount = stored->amount;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
     order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
@@ -1044,12 +1199,22 @@ bool HasGuildTravelOrderValue::Calculate()
     // never re-reads the farm-item value (and its second ladder refresh).
     // The targeted take fits only the order item, so a full bag never parks
     // this leg at the vendor: nothing sellable still lifts the order item.
-    if (order.IsCraftOrder())
+    // A craft order short on a farmable reagent travels like a farm order.
+    // Enchant reagents travel their bank, auction and mail legs the same
+    // way; a vendor-unlimited one rides the vendor trip instead. Outside
+    // the capital no bank or auction leg starts: the lifecycle teleports
+    // the bot first.
+    if (order.IsCraftOrder() || current->type == OrderType::Enchant)
+    {
+        if (current->type == OrderType::Enchant &&
+            (current->supplyStep == SupplyStep::Bank || current->supplyStep == SupplyStep::AuctionHouse) &&
+            !TortoiseBots::EnchantCapital::BotInCapital(bot))
+            return false;
         return SupplyFarmItemFor(current->supplyStep, current->supplyItemId, current->type, current->reason,
             current->supplyItemId != 0 && IsUnlimitedVendorItem(current->supplyItemId)) != 0;
+    }
     if (!order.IsTravelOrder())
         return false;
-
     // No order work while delivering or done with the amount (delivered
     // plus bags plus mailbox). Mail waiting never blocks the leg: the
     // travel code walks to a mailbox and collects it before farming, buying
@@ -1069,13 +1234,16 @@ bool HasGuildTravelOrderValue::Calculate()
 uint32 GuildOrderVendorReagentValue::Calculate()
 {
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> vendorRecord =
+        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
     // Craft reagents and farm-order items alike: anything a vendor sells
-    // without limit is bought, never farmed.
-    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm)
+    // without limit is bought, never farmed. Enchant reagents share the
+    // craft leg through the store record.
+    if (!order.IsCraftOrder() && order.type != GuildOrderType::Farm &&
+        (!vendorRecord || vendorRecord->type != OrderType::Enchant))
         return 0;
 
-    std::optional<TortoiseBots::GuildOrders::OrderRecord> record =
-        TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+    std::optional<TortoiseBots::GuildOrders::OrderRecord> record = vendorRecord;
     if (record && record->state != TortoiseBots::GuildOrders::OrderState::Working)
         return 0;
     if (!record)
@@ -1250,6 +1418,27 @@ uint32 GuildOrderFarmItemValue::Calculate()
         record->supplyItemId != 0 && IsUnlimitedVendorItem(record->supplyItemId));
 }
 
+bool ai::EnchantOrderMaterialsReady(Player* bot, TortoiseBots::GuildOrders::OrderRecord const& order)
+{
+    using TortoiseBots::GuildOrders::OrderType;
+    if (!bot || order.type != OrderType::Enchant || !order.itemId)
+        return false;
+    SpellEntry const* spell = sServerFacade.LookupSpellInfo(order.itemId);
+    if (!spell || spell->Effect[0] != SPELL_EFFECT_ENCHANT_ITEM)
+        return false;
+    // Bags only, one cast: the lifecycle calls this after the teleport, and
+    // the ladder's ready edge counts the same way.
+    for (uint8_t i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (!spell->ReagentCount[i] || spell->Reagent[i] <= 0)
+            continue;
+        if (bot->GetItemCount(uint32_t(spell->Reagent[i])) < uint32_t(spell->ReagentCount[i]))
+            return false;
+    }
+    return true;
+}
+
+
 bool ai::OrderNeedsDelivery(Player* bot)
 {
     if (!bot || !bot->GetGuildId())
@@ -1260,9 +1449,17 @@ bool ai::OrderNeedsDelivery(Player* bot)
         return false;
     if (stored->state != TortoiseBots::GuildOrders::OrderState::Delivering || !stored->itemId)
         return false;
+    // A cancelled or timed-out enchant row walks its reagents to the banker
+    // while any of the spell's reagents sits in the bags.
+    if (stored->type == TortoiseBots::GuildOrders::OrderType::Enchant)
+    {
+        for (uint32_t reagentId : ai::EnchantReagentsFor(stored->itemId))
+            if (reagentId && bot->GetItemCount(reagentId))
+                return true;
+        return false;
+    }
     return bot->GetItemCount(stored->itemId) > 0;
 }
-
 bool HasGuildOrderDeliveryValue::Calculate()
 {
     if (!OrderBotMayTravel(ai, bot))
