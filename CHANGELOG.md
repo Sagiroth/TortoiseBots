@@ -1,5 +1,6 @@
 # Changelog
 
+- Hakkar in Zul'Gurub: when no Son of Hakkar is in reach of the platform, one ranged damage dealer walks out, shoots the nearest Son and leads it back to the raid, so the raid gets its Poisonous Blood before each Blood Siphon.
 - Fixed: a plan list over 16 entries no longer drops the plan's other crowd-control and kill-first lists.
 - Hakkar in Zul'Gurub: the raid now fights him on his platform (every boss and raid move stays within 30 yd of his spawn, the Son pull skips Sons off the platform), so he no longer resets; a fight that ends in a boss reset is now recorded as `evade` instead of a plain end.
 - Fixed: a world-server crash when a Brain Wash Totem died while the run moved its focus.

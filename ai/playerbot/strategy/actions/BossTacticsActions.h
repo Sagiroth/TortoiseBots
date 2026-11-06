@@ -582,6 +582,8 @@ namespace ai
         bool pull = false;
         bool rangedPull = false; // the fallback's one shot, instead of the tank's walk-in and swing
         bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
+        bool walkout = false;     // the walk-out task (SeekWalkoutPolicy.h): out to shoot `source` once, then back
+        bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;
