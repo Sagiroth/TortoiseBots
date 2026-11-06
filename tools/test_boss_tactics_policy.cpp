@@ -2985,6 +2985,10 @@ int main()
     CHECK(!AuraGateRefuses(true, 24306, true));   // NeedsAuraAllowsCarrier
     CHECK(!AuraGateRefuses(false, 24306, false)); // NeedsAuraKeyOffAllowsAll
     CHECK(!AuraGateRefuses(true, 0, false));      // NeedsAuraNoRowAllowsAll
+    CHECK(!CombatGateApplies(true, 24306, true));  // TestCarrierSkipsCombatGate
+    CHECK(CombatGateApplies(true, 24306, false));  // TestUncursedKeepsCombatGate
+    CHECK(CombatGateApplies(false, 24306, true));  // TestKeyOffKeepsCombatGate
+    CHECK(CombatGateApplies(true, 0, true));       // TestNoRowKeepsCombatGate
     {
         BossTacticRow shade = Row(309, 11380, BossTacticKind::NeedsAura, 14986, 24306);
         {
@@ -3235,6 +3239,27 @@ int main()
         // An ungated kill_first row never makes a carrier pick (the ward stays the order's).
         std::vector<TacticCandidate> wardOnly(1, c[0]);
         CHECK(PickCarrierOverride(Active(jindo), wardOnly, CarrierReachYd(true)) == -1);
+        // TestZeroThreatShadePickedOverTotem: a fresh Shade sits at 0 threat for everyone, so a carrier that has not
+        // hit it yet has no combat-gate ticket (inCombat false) and skips the gate; anyone else keeps it.
+        for (bool const cursed : {true, false})
+        {
+            std::vector<TacticCandidate> zeroThreat(3);
+            zeroThreat[0].entry = 14986; zeroThreat[0].distance = 6.0f;
+            zeroThreat[0].pickable = !AuraGateRefuses(true, 24306, cursed) &&
+                (false /*inCombat*/ || !CombatGateApplies(true, 24306, cursed));
+            zeroThreat[1].entry = 14987; zeroThreat[1].distance = 3.0f; zeroThreat[1].pickable = true;
+            zeroThreat[2].entry = 15112; zeroThreat[2].distance = 2.0f; zeroThreat[2].pickable = true;
+            if (cursed)
+            {
+                CHECK(PickKillFirst(Active(jindo), zeroThreat) == 0);
+                CHECK(PickCarrierOverride(Active(jindo), zeroThreat, kCarrierHoldReachYd) == 0);
+            }
+            else
+            {
+                CHECK(PickKillFirst(Active(uncursed), zeroThreat) == 1);
+                CHECK(PickCarrierOverride(Active(uncursed), zeroThreat, kCarrierHoldReachYd) == -1);
+            }
+        }
     }
 
     // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.

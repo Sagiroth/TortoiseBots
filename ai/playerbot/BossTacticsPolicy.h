@@ -258,6 +258,15 @@ namespace ai
     {
         return keyOn && requiredAura != 0 && !botHasAura;
     }
+    // Whether the per-bot combat gate (AttackersValue::InCombat) applies to a target. A carrier of a needs_aura unit's aura
+    // skips it: the Shade of Jin'do copies the boss's threat list at 0 threat (Creature::AddThreatsOf), so no carrier is "in
+    // combat" with it before its first hit, and the kill_first pick, the run's carrier skip and the held target all refused
+    // it. Everything else (friendly, evade, visibility, range, ignore lists) still applies.
+    inline bool CombatGateApplies(bool keyOn, std::uint32_t requiredAura, bool botHasAura)
+    {
+        return !(keyOn && requiredAura != 0 && botHasAura);
+    }
+
 
     // One living unit of a boss entry the fight sees: its max health, current health % and guid.
     struct BossGateUnit
