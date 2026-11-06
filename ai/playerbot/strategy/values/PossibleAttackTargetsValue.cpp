@@ -332,9 +332,14 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
         return false;
 
     // Check for the valid attackers value
-    if (checkAttackerValid && !AttackersValue::IsValid(target, player))
+    if (checkAttackerValid)
     {
-        return false;
+        std::uint32_t const requiredAura = sPlayerbotAIConfig.dungeonRunAuraGatedTargets
+            ? GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;
+        if (!AttackersValue::IsValid(target, player, nullptr,
+                CombatGateApplies(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
+                    requiredAura != 0 && player->HasAura(requiredAura))))
+            return false;
     }
 
     if (!IsPossibleTarget(target, player, range, ignoreCC))

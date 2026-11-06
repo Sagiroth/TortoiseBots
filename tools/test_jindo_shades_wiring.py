@@ -66,6 +66,13 @@ class JindoShadesWiring(unittest.TestCase):
     def test_healers_weight_the_hunted(self):
         self.assertIn("candidate.hunted = huntOn && HuntedByGatedUnit(target);", HEAL)
         self.assertIn("bool const huntOn = sPlayerbotAIConfig.dungeonRunAuraGatedTargets &&", HEAL)
+    def test_carrier_skips_the_combat_gate(self):
+        self.assertIn("AttackersValue::IsValid(target, player, nullptr,", TARGETS)
+        self.assertIn("CombatGateApplies(sPlayerbotAIConfig.dungeonRunAuraGatedTargets", TARGETS)
+        self.assertLess(TARGETS.index("AuraGateRefuses(true, requiredAura"),
+                        TARGETS.index("CombatGateApplies(sPlayerbotAIConfig.dungeonRunAuraGatedTargets"))
+        # The pick reads PossibleAttackTargetsValue with the defaults, so it inherits the gate.
+        self.assertGreaterEqual(ACTIONS.count("c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);"), 2)
 
 
 if __name__ == "__main__":
