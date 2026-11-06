@@ -263,9 +263,9 @@ namespace ai
         // The marks the running task undoes when its cast fails (WalkoutAbortUnspent).
         bool prevCycleSpent = false;
         std::uint32_t prevLastCycle = 0;
-        // The walk-outs started in cycle `startsCycle`, and when the running task's siphon is due (its start plus the
+        // The walk-outs started in cycle `countedCycle`, and when the running task's siphon is due (its start plus the
         // due time then; equal to the start when unknown, which never reopens the cycle).
-        std::uint32_t startsCycle = 0xFFFFFFFFu;
+        std::uint32_t countedCycle = 0xFFFFFFFFu;
         int cycleStarts = 0;
         std::uint32_t siphonDueMs = 0;
         // The walk back after a timeout or an abort: that puller, exempt until it is inside or kSeekWalkoutReturnMs.
@@ -295,7 +295,7 @@ namespace ai
     {
         if (s.cycleSpent && s.lastCycle == cycleNo)
             return false;
-        return s.startsCycle != cycleNo || s.cycleStarts < kSeekWalkoutMaxPerCycle;
+        return s.countedCycle != cycleNo || s.cycleStarts < kSeekWalkoutMaxPerCycle;
     }
 
     // A new task: none running, the cycle open (WalkoutCycleOpen), and never twice for one living Son (a walked Son
@@ -315,9 +315,9 @@ namespace ai
     {
         s.prevCycleSpent = s.cycleSpent;
         s.prevLastCycle = s.lastCycle;
-        if (s.startsCycle != cycleNo)
+        if (s.countedCycle != cycleNo)
         {
-            s.startsCycle = cycleNo;
+            s.countedCycle = cycleNo;
             s.cycleStarts = 0;
         }
         ++s.cycleStarts;
