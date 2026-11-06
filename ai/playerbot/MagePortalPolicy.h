@@ -126,7 +126,7 @@ enum class PortalRefusal
     None = 0,
     Dead,
     InCombat,
-    CastingOrMoving,
+    Casting,
     NotMage,
     UnknownCity,
     NotLearned,
@@ -138,7 +138,7 @@ struct PortalCastFacts
 {
     bool alive = true;
     bool inCombat = false;
-    bool castingOrMoving = false;
+    bool casting = false;
     bool isMage = true;
     bool hasRune = true;
 };
@@ -149,8 +149,8 @@ inline PortalRefusal CheckPortalCast(PortalCastFacts const& facts, uint32_t spel
         return PortalRefusal::Dead;
     if (facts.inCombat)
         return PortalRefusal::InCombat;
-    if (facts.castingOrMoving)
-        return PortalRefusal::CastingOrMoving;
+    if (facts.casting)
+        return PortalRefusal::Casting;
     if (!facts.isMage)
         return PortalRefusal::NotMage;
     if (!spellId)
@@ -167,7 +167,7 @@ inline char const* PortalRefusalCode(PortalRefusal refusal)
         case PortalRefusal::None: return "";
         case PortalRefusal::Dead: return "dead";
         case PortalRefusal::InCombat: return "combat";
-        case PortalRefusal::CastingOrMoving: return "busy";
+        case PortalRefusal::Casting: return "busy";
         case PortalRefusal::NotMage: return "unknown";
         case PortalRefusal::UnknownCity: return "unknown";
         case PortalRefusal::NotLearned: return "unknown";
@@ -182,7 +182,7 @@ inline char const* PortalRefusalText(PortalRefusal refusal)
         case PortalRefusal::None: return "";
         case PortalRefusal::Dead: return "The bot is dead.";
         case PortalRefusal::InCombat: return "The bot is in combat.";
-        case PortalRefusal::CastingOrMoving: return "The bot is busy casting or moving.";
+        case PortalRefusal::Casting: return "The bot is busy casting.";
         case PortalRefusal::NotMage: return "That bot is not a mage.";
         case PortalRefusal::UnknownCity: return "Unknown portal city.";
         case PortalRefusal::NotLearned: return "The bot has not learned that portal.";
@@ -239,6 +239,29 @@ inline std::string FormatPortalCityList(std::vector<std::string> const& cities)
         out += cities[i];
     }
     return out;
+}
+
+// Shared cast outcome: the single decision both surfaces run. The caller
+// probes its live bot into facts, decides, and only then touches the world
+// (rune grant, stop, engine cast). Moving never refuses: the caller stops
+// the bot first (ai->StopMoving clears the motion master and parks it) and
+// casts. Refuse only while a cast is already running.
+struct PortalCastDecision
+{
+    PortalRefusal refusal = PortalRefusal::None;
+    bool needsRune = false;
+    bool needsStop = false;
+};
+inline PortalCastDecision DecidePortalCast(PortalCastFacts const& facts, uint32_t spellId, bool knowsSpell,
+    bool hasRune, bool moving)
+{
+    PortalCastDecision decision;
+    decision.refusal = CheckPortalCast(facts, spellId, knowsSpell);
+    if (decision.refusal != PortalRefusal::None)
+        return decision;
+    decision.needsRune = !hasRune;
+    decision.needsStop = moving;
+    return decision;
 }
 
 } // namespace ai

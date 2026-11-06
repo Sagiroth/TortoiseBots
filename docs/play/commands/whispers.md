@@ -227,7 +227,7 @@ Bare `portal` whispers back the cities the mage knows (`Portals: Ironforge, Stor
 /w <BotName> portal iron
 ```
 
-City matching is case-insensitive; a unique prefix (`iron` for Ironforge) works. Out of combat only; the rune is free (the bot gets one if missing, so the cast never fails for lack of a rune). Refusals name the reason: in combat, not a mage, portal not learned or unknown city, dead, or busy casting or moving.
+City matching is case-insensitive; a unique prefix (`iron` for Ironforge) works. Out of combat only; a moving bot stops first, then casts. The rune is free (the bot gets one if missing, so the cast never fails for lack of a rune). Refusals name the reason: in combat, not a mage, portal not learned or unknown city, dead, or busy casting.
 
 <a id="w--trainer"></a>
 ### `/w <BotName> trainer`

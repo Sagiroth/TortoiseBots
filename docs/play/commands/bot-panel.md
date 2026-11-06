@@ -276,7 +276,7 @@ Reports what services a bot can offer (food, water, healthstone, portals) and or
 
 - The query answers one line: `TBM:SERVICE|<bot>|<food>|<water>|<healthstone>|<portals>`. Food/water/healthstone are 1 when the bot knows any rank of *Conjure Food* / *Conjure Water* / *Create Healthstone*, else 0. Portals lists `spellId:City Name` pairs the mage knows, or `-` when none.
 - `.bot service <Name> portal <spellId>` casts that portal where the bot stands. Success answers `TBM:ACTION_ACK|service portal|bot:<Name>|1|<Name>`; refusals answer `TBM:ACTION_ERR|service portal|<code>|<message>` (combat, unknown, dead, busy, no-bot).
-- Same cast rules as the `portal` whisper: out of combat only, mage only, learned portal only, rune is free.
+- Same cast rules as the `portal` whisper: out of combat only, mage only, learned portal only, rune is free; a moving bot stops first, then casts.
 
 ### `.bot totem`
 

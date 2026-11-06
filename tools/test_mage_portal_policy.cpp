@@ -41,7 +41,8 @@ int main()
     CHECK(ai::MatchPortalCity("   ") == 0);
     CHECK(ai::MatchPortalCity("s") == 0);
 
-    // Refusal order: dead > combat > busy > not-mage > unknown > not-learned.
+    // Refusal order: dead > combat > casting > not-mage > unknown > not-learned.
+    // Moving never refuses: the caller stops the bot first.
     ai::PortalCastFacts ok;
     CHECK(ai::CheckPortalCast(ok, 11416, true) == ai::PortalRefusal::None);
     ai::PortalCastFacts dead = ok;
@@ -50,21 +51,31 @@ int main()
     CHECK(ai::CheckPortalCast(dead, 11416, true) == ai::PortalRefusal::Dead);
     ai::PortalCastFacts combat = ok;
     combat.inCombat = true;
-    combat.castingOrMoving = true;
+    combat.casting = true;
     CHECK(ai::CheckPortalCast(combat, 11416, true) == ai::PortalRefusal::InCombat);
-    ai::PortalCastFacts busy = ok;
-    busy.castingOrMoving = true;
-    CHECK(ai::CheckPortalCast(busy, 11416, true) == ai::PortalRefusal::CastingOrMoving);
+    ai::PortalCastFacts casting = ok;
+    casting.casting = true;
+    CHECK(ai::CheckPortalCast(casting, 11416, true) == ai::PortalRefusal::Casting);
     ai::PortalCastFacts nonMage = ok;
     nonMage.isMage = false;
     CHECK(ai::CheckPortalCast(nonMage, 11416, true) == ai::PortalRefusal::NotMage);
     CHECK(ai::CheckPortalCast(ok, 0, false) == ai::PortalRefusal::UnknownCity);
     CHECK(ai::CheckPortalCast(ok, 11416, false) == ai::PortalRefusal::NotLearned);
 
+    // Shared decision: clean cast grants rune and stops when moving; a
+    // running cast refuses with code busy; refusals grant nothing.
+    ai::PortalCastDecision go = ai::DecidePortalCast(ok, 11416, true, false, true);
+    CHECK(go.refusal == ai::PortalRefusal::None && go.needsRune && go.needsStop);
+    ai::PortalCastDecision settled = ai::DecidePortalCast(ok, 11416, true, true, false);
+    CHECK(settled.refusal == ai::PortalRefusal::None && !settled.needsRune && !settled.needsStop);
+    ai::PortalCastDecision refused = ai::DecidePortalCast(casting, 11416, true, false, true);
+    CHECK(refused.refusal == ai::PortalRefusal::Casting && !refused.needsRune && !refused.needsStop);
+
     // Refusal codes match the .bot service contract (combat, unknown, dead, busy, no-bot).
     CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::InCombat)) == "combat");
     CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::Dead)) == "dead");
-    CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::CastingOrMoving)) == "busy");
+    CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::Casting)) == "busy");
+    CHECK(std::string(ai::PortalRefusalText(ai::PortalRefusal::Casting)) == "The bot is busy casting.");
     CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::NotLearned)) == "unknown");
     CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::UnknownCity)) == "unknown");
 

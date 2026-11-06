@@ -102,18 +102,22 @@ static bool HandleServicePortal(ChatHandler* handler, Player* requester, Player*
     ai::PortalCastFacts facts;
     facts.alive = bot->IsAlive();
     facts.inCombat = bot->IsInCombat();
-    facts.castingOrMoving = bot->IsNonMeleeSpellCasted(false) || bot->IsMoving();
+    facts.casting = bot->IsNonMeleeSpellCasted(false);
     facts.isMage = bot->GetClass() == CLASS_MAGE;
-    ai::PortalRefusal refusal = !listed
-        ? ai::PortalRefusal::UnknownCity
-        : ai::CheckPortalCast(facts, spellId, bot->HasSpell(spellId));
-    if (refusal != ai::PortalRefusal::None)
+    ai::PortalCastDecision decision = !listed
+        ? ai::PortalCastDecision{ai::PortalRefusal::UnknownCity, false, false}
+        : ai::DecidePortalCast(facts, spellId, bot->HasSpell(spellId),
+            bot->HasItemCount(ai::PortalRuneItemId(), 1), bot->IsMoving());
+    if (decision.refusal != ai::PortalRefusal::None)
     {
-        SendActionError(handler, intent, ai::PortalRefusalCode(refusal), ai::PortalRefusalText(refusal));
+        SendActionError(handler, intent, ai::PortalRefusalCode(decision.refusal),
+            ai::PortalRefusalText(decision.refusal));
         return true;
     }
-    if (!bot->HasItemCount(ai::PortalRuneItemId(), 1))
+    if (decision.needsRune)
         bot->StoreNewItemInInventorySlot(ai::PortalRuneItemId(), 1);
+    if (decision.needsStop)
+        ai->StopMoving();
     std::ostringstream cast;
     cast << spellId;
     if (!ai->DoSpecificAction("cast", ai::Event("service portal", cast.str(), requester), true))

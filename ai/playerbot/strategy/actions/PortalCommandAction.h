@@ -55,25 +55,28 @@ namespace ai
 
         virtual bool isUsefulWhenStunned() override { return true; }
 
-        // Shared cast body: the policy refusal order first, then the cast
-        // through the engine ("cast <spellId>" reaches CastCustomSpellAction,
-        // which handles facing, GCD and reagent checks). Returns false only
-        // when the engine refused the cast itself.
+        // Single shared cast path (DecidePortalCast): refusal order, free
+        // rune, stop when moving, then the cast through the engine
+        // ("cast <spellId>" reaches CastCustomSpellAction). Returns false
+        // only when the engine refused the cast itself.
         bool CastPortal(Player* requester, uint32_t spellId)
         {
             ai::PortalCastFacts facts;
             facts.alive = bot->IsAlive();
             facts.inCombat = bot->IsInCombat();
-            facts.castingOrMoving = bot->IsNonMeleeSpellCasted(false) || bot->IsMoving();
+            facts.casting = bot->IsNonMeleeSpellCasted(false);
             facts.isMage = bot->GetClass() == CLASS_MAGE;
-            ai::PortalRefusal refusal = ai::CheckPortalCast(facts, spellId, bot->HasSpell(spellId));
-            if (refusal != ai::PortalRefusal::None)
+            ai::PortalCastDecision decision = ai::DecidePortalCast(facts, spellId, bot->HasSpell(spellId),
+                bot->HasItemCount(ai::PortalRuneItemId(), 1), bot->IsMoving());
+            if (decision.refusal != ai::PortalRefusal::None)
             {
-                ai->TellPlayer(requester, std::string(ai::PortalRefusalText(refusal)));
+                ai->TellPlayer(requester, std::string(ai::PortalRefusalText(decision.refusal)));
                 return true;
             }
-            if (!bot->HasItemCount(ai::PortalRuneItemId(), 1))
+            if (decision.needsRune)
                 bot->StoreNewItemInInventorySlot(ai::PortalRuneItemId(), 1);
+            if (decision.needsStop)
+                ai->StopMoving();
             if (!ai->DoSpecificAction("cast", ai::Event("portal", std::to_string(spellId), requester), true))
             {
                 ai->TellPlayer(requester, "The portal fizzled; try again.");
