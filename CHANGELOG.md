@@ -2,6 +2,46 @@
 
 - Fixed: hires no longer fail with "No mercenary of that kind" when several raids hire at once.
 
+## v1.18.0 (2026-11-06)
+
+### Classes & Combat
+- Raid bots now focus enemy totems and use a better warlock spell rotation. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Raid bots now cast their class spells more reliably. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Raid groups now fill healer seats more reliably. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Restoration shamans now keep their shields up better in raids. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+- Raids now counter Hakkar's Blood Siphon, so he heals far less. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+- Raids now keep Hakkar's melee off non-tanks by managing threat even when he cannot be taunted. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+- Raids now handle Hakkar's first Blood Siphon better, so fewer raiders are caught early. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+
+### Groups & Dungeons
+- Raid bots now recover when a run has nothing to do and end stalled runs cleanly. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- Ruins of Ahn'Qiraj raid tactics are improved. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+- The third tank now actually pulls Hakkar's Son instead of standing still. [#1526](https://github.com/Sagiroth/TortoiseBots/pull/1526)
+- Several raid hires can now run at the same time. [#1524](https://github.com/Sagiroth/TortoiseBots/pull/1524)
+
+### Quests & Levelling
+- A new opt-in setting, AiPlayerbot.AutoLearnQuestSpellsAlts, lets your alts learn class-quest spells on bot login, level-up and talent changes. [#1520](https://github.com/Sagiroth/TortoiseBots/pull/1520)
+- Hunter pets now train themselves on level-up and stay within the four-ability and training-point limits. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Pets no longer lose all their skills when they log in. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Hired companion pets and alt pets now learn new ranks, and alt warlock demons learn new Grimoire ranks. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+- Pets now fill gaps in their training as they level. [#1522](https://github.com/Sagiroth/TortoiseBots/pull/1522)
+
+### World & Economy
+- Bots now ride the lifts in Thunder Bluff, Freewind Post, Undercity and the Great Lift instead of walking long routes or teleporting. [#1523](https://github.com/Sagiroth/TortoiseBots/pull/1523)
+- Guild orders can now search every online guild bot for who can make a recipe or enchant, with skill and materials. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Enchant choices in that search are sorted from weakest to strongest. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- When ordering a craft you can tick the materials you bring, so the bot does not buy or farm them. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Guild enchanters now take enchant orders, teleport to the capital inn and gather materials from bags, guild bank and auction house. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+- Guild enchanters now also take disenchant orders. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+
+### Dashboard
+- The Guild tab now shows each bot's professions. [#1528](https://github.com/Sagiroth/TortoiseBots/pull/1528)
+
+### Behind the scenes
+- Test timing checks can now be relaxed on busy build machines, while normal checks stay strict. [#1519](https://github.com/Sagiroth/TortoiseBots/pull/1519)
+
+---
+
 ## v1.17.0 (2026-11-04)
 
 ### Groups & Dungeons
