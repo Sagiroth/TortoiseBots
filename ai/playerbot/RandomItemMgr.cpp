@@ -2670,10 +2670,127 @@ void RandomItemMgr::BuildSourceTierIndex()
             pvpItemSets.insert(setProto->ItemSet);
     }
 
+    BuildKnownSourceIndex();
+
     sLog.outDetail("RandomItemMgr: source-tier index holds %zu creature spawns, %zu gameobject spawns, %zu loot items (%zu direct base), %zu recipe tiers (%zu rep-gated), %zu pvp sets",
         creatureSpawnTier.size(), gameObjectSpawnTier.size(), itemLootTier.size(), itemDirectBaseLoot.size(), recipeTier.size(), repRecipeItems.size(), pvpItemSets.size());
 }
 
+
+void RandomItemMgr::BuildKnownSourceIndex()
+{
+    knownSourceItems.clear();
+
+    // A craft spell, or a trainer spell that teaches one: every item it creates.
+    auto markCreated = [&](uint32 spellId)
+    {
+        SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+        if (!spell)
+            return;
+        for (uint8 e = 0; e < MAX_EFFECT_INDEX; ++e)
+        {
+            if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[e])
+                knownSourceItems.insert(spell->EffectItemType[e]);
+            if (spell->Effect[e] != SPELL_EFFECT_LEARN_SPELL)
+                continue;
+            if (SpellEntry const* taught = sServerFacade.LookupSpellInfo(spell->EffectTriggerSpell[e]))
+                for (uint8 t = 0; t < MAX_EFFECT_INDEX; ++t)
+                    if (taught->Effect[t] == SPELL_EFFECT_CREATE_ITEM && taught->EffectItemType[t])
+                        knownSourceItems.insert(taught->EffectItemType[t]);
+        }
+    };
+    auto markVendor = [&](VendorItemData const* items)
+    {
+        if (!items)
+            return;
+        for (uint8 i = 0; i < items->GetItemCount(); ++i)
+            if (VendorItem const* vendorItem = items->GetItem(i))
+                knownSourceItems.insert(vendorItem->item);
+    };
+    std::set<TrainerSpellData const*> trainerLists;
+    auto markTrainer = [&](TrainerSpellData const* spells)
+    {
+        if (!spells || !trainerLists.insert(spells).second)
+            return;
+        for (auto const& entry : spells->spellList)
+            markCreated(entry.second.spell);
+    };
+
+    LootType const creatureLootTypes[3] = { LOOT_CORPSE, LOOT_PICKPOCKETING, LOOT_SKINNING };
+    for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+    {
+        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(entry);
+        if (!cInfo)
+            continue;
+        ObjectGuid guid(HIGHGUID_UNIT, entry, uint32(1));
+        for (LootType lootType : creatureLootTypes)
+            MarkLootItems(DropMapValue::GetLootTemplate(guid, lootType), knownSourceItems);
+        markVendor(sObjectMgr.GetNpcVendorItemList(entry));
+        if (cInfo->vendor_id)
+            markVendor(sObjectMgr.GetNpcVendorTemplateItemList(cInfo->vendor_id));
+        markTrainer(sObjectMgr.GetNpcTrainerSpells(entry));
+        if (cInfo->trainer_id)
+            markTrainer(sObjectMgr.GetNpcTrainerTemplateSpells(cInfo->trainer_id));
+    }
+
+    for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); ++entry)
+    {
+        GameObjectInfo const* goInfo = sObjectMgr.GetGameObjectInfo(entry);
+        if (!goInfo)
+            continue;
+        ObjectGuid guid(HIGHGUID_GAMEOBJECT, entry, uint32(1));
+        MarkLootItems(DropMapValue::GetLootTemplate(guid, LOOT_CORPSE), knownSourceItems);
+        if (goInfo->type == GAMEOBJECT_TYPE_FISHINGHOLE)
+            MarkLootItems(DropMapValue::GetLootTemplate(guid, LOOT_FISHINGHOLE), knownSourceItems);
+    }
+
+    // Containers (lockboxes, event gift boxes) and open-water fishing.
+    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        if (LootTemplates_Item.HaveLootFor(itemId))
+            MarkLootItems(reinterpret_cast<LootTemplateAccess const*>(LootTemplates_Item.GetLootFor(itemId)), knownSourceItems);
+    uint32 const maxFishingLootId = 100000;
+    for (uint32 zoneId = 0; zoneId <= maxFishingLootId; ++zoneId)
+        if (LootTemplates_Fishing.HaveLootFor(zoneId))
+            MarkLootItems(reinterpret_cast<LootTemplateAccess const*>(LootTemplates_Fishing.GetLootFor(zoneId)), knownSourceItems);
+
+    for (auto const& entry : recipeTier)
+        knownSourceItems.insert(entry.first);
+
+    for (auto const& entry : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* quest = entry.second.get();
+        for (uint32 i = 0; i < quest->GetRewItemsCount(); ++i)
+            if (quest->RewItemId[i])
+                knownSourceItems.insert(quest->RewItemId[i]);
+        for (uint32 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
+            if (quest->RewChoiceItemId[i])
+                knownSourceItems.insert(quest->RewChoiceItemId[i]);
+    }
+
+    knownSourceItems.erase(0);
+    sLog.outDetail("RandomItemMgr: %zu items have a known source", knownSourceItems.size());
+}
+
+bool RandomItemMgr::IsForbiddenBotGear(uint32 itemId)
+{
+    TortoiseBots::BotGearFacts facts;
+    facts.blacklisted = TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, itemId);
+    if (facts.blacklisted)
+        return true;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    if (!proto)
+        return true;
+    std::list<uint32> const& whitelist = sPlayerbotAIConfig.randomGearWhitelist;
+    facts.whitelisted = std::find(whitelist.begin(), whitelist.end(), itemId) != whitelist.end();
+    // The index is built with the item info cache at startup; until then the
+    // source rule stays open rather than starving every slot.
+    facts.knownSource = !sourceTierIndexed || knownSourceItems.count(itemId) != 0;
+    facts.retired = (proto->Flags & ITEM_FLAG_DEPRECATED) || TortoiseBots::GearNameLooksRetired(proto->Name1);
+    facts.cosmeticSlot = proto->InventoryType == INVTYPE_BODY || proto->InventoryType == INVTYPE_TABARD;
+    facts.itemLevel = proto->ItemLevel;
+    facts.quality = proto->Quality;
+    return TortoiseBots::BotGearForbidden(facts);
+}
 
 // O(1) recipe-source lookup on the inverted index. Fail-open base when the
 // recipe has no loot row (quest reward, deprecated).
@@ -3153,7 +3270,7 @@ uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, u
         if (info->weights[specId] == 0)
             continue;
 
-        if (TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, info->itemId))
+        if (IsForbiddenBotGear(info->itemId))
             continue;
 
         // skip higher lvl
@@ -3275,7 +3392,7 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
         if (info->weights[specId] == 0)
             continue;
 
-        if (TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, info->itemId))
+        if (IsForbiddenBotGear(info->itemId))
             continue;
 
         // skip higher lvl

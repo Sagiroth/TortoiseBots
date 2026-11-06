@@ -1003,7 +1003,7 @@ Comma-separated list of item IDs that pool bots are explicitly allowed to equip.
 <details>
 <summary>How it works in detail</summary>
 
-Whitelisted items skip stat-weight scoring and are always considered. Level, item level, source, and equip rules still apply. An ID that is also on the blacklist stays blocked: the blacklist wins.
+Whitelisted items skip stat-weight scoring and are always considered. Level, item level, source tier, and equip rules still apply. A whitelisted ID also skips the rules for items players cannot really have (see `AiPlayerbot.RandomGearBlacklist`). An ID that is also on the blacklist stays blocked: the blacklist wins.
 
 </details>
 
@@ -1032,6 +1032,15 @@ Defines a blacklist of item IDs that no auto-gear path hands out. The default bl
 - A pool or hired bot already wearing a blocked item gets it replaced or removed on its next gear pass.
 - Real players and owned bots never have their own gear taken off.
 - Items a bot finds itself (loot, quest rewards, auction house) are unaffected. Use IDs from database.turtle-wow.org, for example `12345,23456`.
+
+Besides the list, the same auto-gear paths (all of the above except the gear progression system and the curated hire kits) never hand out items players cannot really have. These rules are always on and have no key:
+
+- No known source: the item is not dropped by any creature or object, sold by any vendor, crafted, fished, found in a container or given by a quest. This covers GM, developer and unreleased items.
+- Deprecated or test data: the item's deprecated flag, or a name marked deprecated, unused, placeholder, `[PH]`, `(OLD)`, `zzz` or with the word "test", in any letter case.
+- Item level 0 outside the shirt and tabard slots.
+- Legendary quality or better.
+
+A pool or hired bot already wearing such an item gets it replaced or removed on its next gear pass. A whitelisted ID skips these rules; the blacklist always applies.
 
 </details>
 

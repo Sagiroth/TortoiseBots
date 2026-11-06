@@ -1,6 +1,7 @@
 # Changelog
 
 - Bots no longer get Gamemaster's Broom of Doom, Lucky Top Hat or Lucky Fishing Hat from any auto-gear path (`AiPlayerbot.RandomGearBlacklist` now ships with these three items), and the gear progression system also respects the blacklist.
+- Bots no longer get items players cannot really have from auto-gear: GM and developer gear, unreleased items with no way to obtain them, deprecated or test items, item level 0 gear and legendaries. Pool and hired bots already wearing one get it replaced on their next gear pass.
 - Hakkar in Zul'Gurub: when no Son of Hakkar is in reach of the platform, one ranged damage dealer walks out, shoots the nearest Son and leads it back to the raid, so the raid gets its Poisonous Blood before each Blood Siphon.
 - Fixed: a plan list over 16 entries no longer drops the plan's other crowd-control and kill-first lists.
 - Hakkar in Zul'Gurub: the raid now fights him on his platform (every boss and raid move stays within 30 yd of his spawn, the Son pull skips Sons off the platform), so he no longer resets; a fight that ends in a boss reset is now recorded as `evade` instead of a plain end.

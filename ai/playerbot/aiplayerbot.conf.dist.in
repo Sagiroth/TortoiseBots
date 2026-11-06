@@ -806,10 +806,17 @@ AiPlayerbot.RandomGearTabardsReplaceGuild = 0
 # or removed on its next gear pass; real players and owned bots keep whatever
 # they wear, and items a bot finds itself (loot, quest rewards, auction
 # house) are unaffected.
+# Besides this list, auto-gear (except the gear progression system and the
+# curated hire kits) never hands out items players cannot really have: no
+# known source (not dropped, sold, crafted, fished, found in a container or
+# given by a quest), deprecated or test items, item level 0 outside shirt and
+# tabard, and legendary or better. These rules are always on; a pool or hired
+# bot wearing such an item gets it replaced the same way.
 AiPlayerbot.RandomGearBlacklist = 10,163,19972
 
 # Item ids always seeded on random gear regardless of the scoring rules below,
-# unless the id is also on the blacklist above.
+# unless the id is also on the blacklist above. A whitelisted id also skips
+# the "items players cannot really have" rules above.
 #AiPlayerbot.RandomGearWhitelist =
 
 # Roll need on items if slot is empty or broken, even if not appropriate for bot's spec
