@@ -2987,6 +2987,7 @@ struct HeldAttack
     uint64 commanderRaw = 0;
     uint64 targetRaw = 0;
     uint32 heldMs = 0;
+    bool automated = false; // the run issued it (s_runIssuing when held): marked as the run's when it fires
 };
 
 std::unordered_map<uint64, HeldAttack>& HeldAttacks()
@@ -3108,11 +3109,11 @@ static bool TotemFocusBot(PlayerbotAI* ai, Player* bot, Player* selectionOwner, 
 // clears the mark (AttackAction's CommitExplicitAttackTarget), so the player's target or focus wins.
 static void NoteRunOrder(PlayerbotAI* ai, bool automated)
 {
-    if (!automated)
-        return;
     ai::AiObjectContext* const context = ai->GetAiObjectContext();
-    context->GetValue<ObjectGuid>("automated attack target")->Set(
-        context->GetValue<ObjectGuid>("explicit attack target")->Get());
+    auto* const mark = context->GetValue<ObjectGuid>("automated attack target");
+    uint64 const next = ai::RunOrderMark(automated, true,
+        context->GetValue<ObjectGuid>("explicit attack target")->Get().GetRawValue(), mark->Get().GetRawValue());
+    mark->Set(ObjectGuid(next));
 }
 
 // Same per-bot steps as `.bot action attack`, with the lead bot's selection
@@ -3170,6 +3171,7 @@ static bool CommanderAttack(ChatHandler* handler, CommanderOrder const& order, U
             held.commanderRaw = commanderRaw;
             held.targetRaw = targetGuid.GetRawValue();
             held.heldMs = 0;
+            held.automated = s_runIssuing;
             heldBots.push_back(bot->GetName());
             ++succeeded;
             continue;
@@ -3220,6 +3222,7 @@ static void UpdateHeldAttacks(uint32 diff)
     {
         uint64 botRaw;
         uint64 targetRaw;
+        bool automated; // the run issued the held order (HeldAttack::automated)
     };
     std::vector<Due> due;
     for (auto it = held.begin(); it != held.end();)
@@ -3240,7 +3243,7 @@ static void UpdateHeldAttacks(uint32 diff)
                 ++it;
                 break;
             case RemoteCommander::HeldAttackStep::Run:
-                due.push_back({it->first, it->second.targetRaw});
+                due.push_back({it->first, it->second.targetRaw, it->second.automated});
                 it = held.erase(it);
                 break;
             case RemoteCommander::HeldAttackStep::Drop:
@@ -3253,8 +3256,10 @@ static void UpdateHeldAttacks(uint32 diff)
     {
         Player* bot = FindCharacter(order.botRaw);
         PlayerbotAI* ai = bot ? PlayerbotAIStorage::Instance().GetAI(bot) : nullptr;
+        // The commit cleared the mark; a held run order is the run's again (NoteRunOrder), a player's stays unmarked.
         if (ai)
-            RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw));
+            if (RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw)))
+                NoteRunOrder(ai, order.automated);
     }
 }
 

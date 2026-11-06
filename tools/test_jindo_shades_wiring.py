@@ -48,6 +48,10 @@ class JindoShadesWiring(unittest.TestCase):
         self.assertIn("context->GetValue<ObjectGuid>(\"automated attack target\")->Set(ObjectGuid());", commit)
         self.assertIn("NoteRunOrder(ai, automatedKillFirst);", COMMANDS)
         self.assertIn("NoteRunOrder(ai, s_runIssuing);", COMMANDS)
+        # A run attack held for a bot out of control keeps its source and is marked when it fires (Codex HIGH).
+        self.assertIn("held.automated = s_runIssuing;", COMMANDS)
+        self.assertIn("if (RunBotAttackOrder(ai, bot, bot, ObjectGuid(order.targetRaw)))\n"
+                      "                NoteRunOrder(ai, order.automated);", COMMANDS)
         self.assertIn('creators["automated attack target"]', read("ai/playerbot/strategy/values/ValueContext.h"))
         self.assertIn("CapHuntedBoost(candidates, bands);", HEAL)
 

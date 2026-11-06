@@ -3185,6 +3185,24 @@ int main()
         CHECK(!OrderIsAutomated(0x500, 0x501));   // a player's order to another unit since
         CHECK(!OrderIsAutomated(0x500, 0));       // a player's order (the mark is cleared by every command commit)
         CHECK(!OrderIsAutomated(0, 0));           // no order at all
+        // Codex HIGH (f621c7d96): a run attack held for a bot out of control and fired later is still the run's. The run
+        // flag is recorded when the order is held (not read when it fires, outside the run's issuing), and the commit's
+        // cleared mark is set again from it.
+        {
+            std::uint64_t const target = 0x700;
+            // The deferred run attack: the commit cleared the mark, the held record says the run issued it.
+            std::uint64_t const deferredMark = RunOrderMark(true, true, target, 0);
+            CHECK(deferredMark == target);
+            CHECK(KillFirstPickModeFor(true, true, OrderIsAutomated(target, deferredMark), true) ==
+                KillFirstPickMode::Carrier);  // + curse: the carrier switches to its Shade
+            // A player's order (immediate or held): the mark stays cleared, the player's target wins.
+            std::uint64_t const playerMark = RunOrderMark(false, true, target, 0);
+            CHECK(playerMark == 0);
+            CHECK(KillFirstPickModeFor(true, true, OrderIsAutomated(target, playerMark), true) ==
+                KillFirstPickMode::None);
+            // An order the bot did not take leaves the mark as it was.
+            CHECK(RunOrderMark(true, false, target, 0x123) == 0x123);
+        }
         // The carrier pick: the nearest live Shade within reach, never the ward the order names.
         std::vector<TacticCandidate> c(4);
         c[0].entry = 14987; c[0].distance = 2.0f; c[0].pickable = true;  // the ordered ward, nearest of all

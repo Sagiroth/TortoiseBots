@@ -2635,6 +2635,16 @@ namespace ai
         return explicitTarget != 0 && explicitTarget == automatedTarget;
     }
 
+    // The bot's "automated attack target" mark after an order: `runIssued` is whether the run issued it (for a held
+    // attack, recorded when it was held, since it fires outside the run's issuing), `accepted` whether the bot took it,
+    // `explicitTarget` the explicit target the order committed (the commit already cleared the mark: `currentMark`).
+    // Only a taken run order marks its target; anything else leaves the mark as it is.
+    inline std::uint64_t RunOrderMark(bool runIssued, bool accepted, std::uint64_t explicitTarget,
+                                      std::uint64_t currentMark)
+    {
+        return runIssued && accepted ? explicitTarget : currentMark;
+    }
+
     // How far the carrier hold reaches (t1105h review): once on its Shade the carrier is a free DPS whose kill_first pick
     // chases to kBossTacticsEngageRange, so the run's focus skips it out to the same range; CarrierReachYd is only the
     // first override of an automated order.
