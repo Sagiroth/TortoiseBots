@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace ai
@@ -29,6 +30,10 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutReturnMs = 15000;  // a timed-out or aborted puller walks back this long, exempt
     constexpr std::uint32_t kSeekWalkoutStaleMs = 120000;  // a fight's record nobody touched this long is dropped
     constexpr std::uint32_t kSeekWalkoutPetHoldMs = 120000; // a held pet's stance older than this is dropped
+    constexpr float kSeekWalkoutMinStandZ = 46.5f;  // the stand's floor: above Hakkar's 45.8 evade line, with margin
+    constexpr float kSeekWalkoutStandStepYd = 2.0f; // the stand search's step, out from the anchor's edge
+    constexpr float kSeekWalkoutThreatShare = 0.9f; // a puller at this share of the main tank's threat stops
+    constexpr int kSeekWalkoutMoveFails = 2;        // this many refused moves in a row abort the task
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -47,8 +52,8 @@ namespace ai
         }
     }
 
-    // The puller's rank: a hunter (the longest shot, a pet to tank the Son's first hits), then a mage, warlock or
-    // shadow priest, then any other ranged damage dealer. None: no puller.
+    // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
+    // damage dealer. None: no puller. The pet stays held at the puller's heels the whole task (it never takes the Son).
     enum class WalkoutRole : std::uint8_t
     {
         Hunter = 0,
@@ -76,7 +81,9 @@ namespace ai
         bool tank = false;
         bool healer = false;
         bool bossVictim = false; // the boss's current victim
-        bool topThreat = false;  // one of the two highest on the boss's threat list
+        bool highThreat = false; // its threat on the boss is at kSeekWalkoutThreatShare of the main tank's or more
+        bool inside = true;      // it stands inside the anchor (a bot left out on a ledge is never sent)
+        bool pathOk = true;      // it has a navmesh path to the stand
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
         bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
@@ -85,60 +92,94 @@ namespace ai
 
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
-        return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.topThreat &&
-            !c.charmed && !c.insane && c.canShoot;
+        return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
+            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk;
     }
 
-    // Whether the running task's puller can go on: alive, not charmed or under Cause Insanity, and neither the boss's
-    // victim nor one of his two highest threats (either turns him toward it, off the platform).
-    inline bool WalkoutPullerUsable(bool alive, bool charmed, bool insane, bool bossVictim, bool topThreat)
+    // Whether a bot's threat on the boss is close enough to the main tank's to turn him: kSeekWalkoutThreatShare of it or
+    // more. Without a main-tank reference (dead, charmed) only the victim rule speaks. Being in the top two is not
+    // enough: the off-tanks hold little threat on Hakkar, so a damage dealer is nearly always second.
+    inline bool WalkoutThreatTooHigh(float botThreat, float mainTankThreat)
     {
-        return alive && !charmed && !insane && !bossVictim && !topThreat;
+        return mainTankThreat > 0.0f && botThreat >= kSeekWalkoutThreatShare * mainTankThreat;
     }
 
-    // The puller: the best role among the eligible, then the nearest, then the lowest guid (every bot's read picks the
-    // same one). -1: nobody.
+    // Why the running task's puller cannot go on (the abort's logged reason), or null: dead, charmed, under Cause
+    // Insanity, the boss's victim, or at his main tank's threat.
+    inline const char* WalkoutPullerProblem(bool alive, bool charmed, bool insane, bool bossVictim, bool highThreat)
+    {
+        if (!alive)
+            return "dead";
+        if (charmed)
+            return "charmed";
+        if (insane)
+            return "insanity";
+        if (bossVictim)
+            return "victim";
+        if (highThreat)
+            return "threat";
+        return nullptr;
+    }
+
+    inline bool WalkoutPullerUsable(bool alive, bool charmed, bool insane, bool bossVictim, bool highThreat)
+    {
+        return WalkoutPullerProblem(alive, charmed, insane, bossVictim, highThreat) == nullptr;
+    }
+
+    // The eligible candidates, best first: the role, then the nearest, then the lowest guid (every reader ranks them
+    // alike). The glue asks the costly path question in this order and takes the first that passes.
+    inline std::vector<int> RankWalkoutPullers(const std::vector<WalkoutCandidate>& candidates)
+    {
+        std::vector<int> order;
+        for (int i = 0; i < static_cast<int>(candidates.size()); ++i)
+            if (WalkoutEligible(candidates[i]))
+                order.push_back(i);
+        std::sort(order.begin(), order.end(), [&candidates](int a, int b)
+        {
+            const WalkoutCandidate& x = candidates[a];
+            const WalkoutCandidate& y = candidates[b];
+            if (x.role != y.role)
+                return x.role < y.role;
+            if (x.yd != y.yd)
+                return x.yd < y.yd;
+            return x.guid < y.guid;
+        });
+        return order;
+    }
+
+    // The puller: the first of the ranking. -1: nobody.
     inline int PickWalkoutPuller(const std::vector<WalkoutCandidate>& candidates)
     {
-        int pick = -1;
-        for (int i = 0; i < static_cast<int>(candidates.size()); ++i)
-        {
-            const WalkoutCandidate& c = candidates[i];
-            if (!WalkoutEligible(c))
-                continue;
-            if (pick < 0)
-            {
-                pick = i;
-                continue;
-            }
-            const WalkoutCandidate& best = candidates[pick];
-            if (c.role != best.role ? c.role < best.role : (c.yd != best.yd ? c.yd < best.yd : c.guid < best.guid))
-                pick = i;
-        }
-        return pick;
+        const std::vector<int> order = RankWalkoutPullers(candidates);
+        return order.empty() ? -1 : order.front();
+    }
+
+    // The stand search's candidates: from the anchor's edge toward the Son, kSeekWalkoutStandStepYd apart, up to (not
+    // onto) the Son. Empty when the Son stands inside the circle (the anchored shot pulls it).
+    inline std::vector<std::pair<float, float>> WalkoutStandCandidates(const BossAnchorCircle& c, float sonX, float sonY)
+    {
+        std::vector<std::pair<float, float>> out;
+        float const dx = sonX - c.x;
+        float const dy = sonY - c.y;
+        float const d = std::sqrt(dx * dx + dy * dy);
+        if (d <= c.radius)
+            return out;
+        for (float r = c.radius; r < d; r += kSeekWalkoutStandStepYd)
+            out.emplace_back(c.x + dx / d * r, c.y + dy / d * r);
+        return out;
+    }
+
+    // Whether a candidate is the stand: a floor read there at or above kSeekWalkoutMinStandZ (the pullers that walked
+    // down the slope to the Son's height died there), within the shot's range of the Son, and in sight of it.
+    inline bool WalkoutStandOk(bool floorFound, float floorZ, float toSonYd, float rangeYd, bool sight)
+    {
+        return floorFound && floorZ >= kSeekWalkoutMinStandZ && toSonYd <= rangeYd && sight;
     }
 
     // The shot's reach: a hunter's 35 yd, a wand's or a spell's 30 yd, less the margin.
     inline float WalkoutShotRangeYd(bool hunter)
     {
         return (hunter ? 35.0f : 30.0f) - kSeekWalkoutShotMarginYd;
-    }
-
-    // The stand the puller shoots from: where it stands when the Son is within `rangeYd`, else the point `rangeYd`
-    // from the Son on the line toward the bot (the nearest point in reach).
-    inline void WalkoutShotPoint(float sonX, float sonY, float botX, float botY, float rangeYd, float& x, float& y)
-    {
-        float const dx = botX - sonX;
-        float const dy = botY - sonY;
-        float const d = std::sqrt(dx * dx + dy * dy);
-        if (d <= rangeYd || d < 0.01f)
-        {
-            x = botX;
-            y = botY;
-            return;
-        }
-        x = sonX + dx / d * rangeYd;
-        y = sonY + dy / d * rangeYd;
     }
 
     // The walk back: straight toward the centre, to the tanks' radius less the inset, so the Son that follows comes
@@ -178,6 +219,10 @@ namespace ai
         bool cycleSpent = false;
         std::uint32_t lastCycle = 0;
         std::vector<std::uint64_t> walkedSons;
+        // The stand the task walks to (the platform search), and its refused moves in a row.
+        float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
+        int moveFails = 0;
+        bool lastMoveOk = false;
         // The marks the running task undoes when its cast fails (WalkoutAbortUnspent).
         bool prevCycleSpent = false;
         std::uint32_t prevLastCycle = 0;
@@ -221,9 +266,19 @@ namespace ai
         s.son = son;
         s.startMs = nowMs;
         s.shot = false;
+        s.moveFails = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
+    }
+
+    // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,
+    // the task aborts ("move failed").
+    inline bool WalkoutNoteMove(SeekWalkoutState& s, bool moved)
+    {
+        s.lastMoveOk = moved;
+        s.moveFails = moved ? 0 : s.moveFails + 1;
+        return s.moveFails >= kSeekWalkoutMoveFails;
     }
 
     inline void WalkoutNoteShot(SeekWalkoutState& s)

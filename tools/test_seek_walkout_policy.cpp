@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #define CHECK(x) do { \
@@ -64,7 +65,7 @@ static void TestExclusions()
     c.bossVictim = true;
     CHECK(!WalkoutEligible(c));
     c = ok;
-    c.topThreat = true;
+    c.highThreat = true;
     CHECK(!WalkoutEligible(c));
     c = ok;
     c.charmed = true;
@@ -80,7 +81,7 @@ static void TestExclusions()
     CHECK(!WalkoutEligible(c));
     // The excluded hunter gives way to the eligible mage.
     WalkoutCandidate threatHunter = ok;
-    threatHunter.topThreat = true;
+    threatHunter.highThreat = true;
     std::vector<WalkoutCandidate> raid = {threatHunter, Cand(2, WalkoutRole::Caster, 30.0f)};
     CHECK(PickWalkoutPuller(raid) == 1);
     raid[1].insane = true;
@@ -143,13 +144,7 @@ static void TestShotAndBackPoints()
 {
     CHECK(Near(WalkoutShotRangeYd(true), 33.0f));
     CHECK(Near(WalkoutShotRangeYd(false), 28.0f));
-    // A Son 78 yd west of the bot: the stand is 28 yd from the Son, on the line toward the bot.
     float x = 0.0f, y = 0.0f;
-    WalkoutShotPoint(-78.0f, 0.0f, 0.0f, 0.0f, 28.0f, x, y);
-    CHECK(Near(x, -50.0f) && Near(y, 0.0f));
-    // Already within range: the bot shoots from where it stands.
-    WalkoutShotPoint(-20.0f, 0.0f, 0.0f, 0.0f, 28.0f, x, y);
-    CHECK(Near(x, 0.0f) && Near(y, 0.0f));
     // The walk back goes toward the centre to the tanks' radius minus the inset (25 - 5 = 20 yd), so the Son that
     // follows comes inside the tanks' circle.
     BossAnchorCircle tank;
@@ -317,6 +312,80 @@ static void TestPetReleasedOnEveryEnd()
     CHECK(WalkoutPetRelease(&s, 7));
 }
 
+static void TestStandSearchStaysOnThePlatform()
+{
+    // Candidates run from the anchor's edge toward the Son in 2 yd steps.
+    BossAnchorCircle c;
+    c.x = 0.0f;
+    c.y = 0.0f;
+    c.z = 54.0f;
+    c.radius = 30.0f;
+    const std::vector<std::pair<float, float>> pts = WalkoutStandCandidates(c, -78.0f, 0.0f);
+    CHECK(!pts.empty());
+    CHECK(Near(pts.front().first, -30.0f) && Near(pts.front().second, 0.0f));
+    CHECK(Near(pts[1].first, -32.0f));
+    CHECK(pts.back().first > -78.0f);
+    // A stand must have a floor at or above 46.5 (the evade line 45.8 plus margin), be within range and see the Son.
+    CHECK(Near(kSeekWalkoutMinStandZ, 46.5f));
+    CHECK(WalkoutStandOk(true, 47.0f, 27.0f, 28.0f, true));
+    CHECK(!WalkoutStandOk(true, 37.0f, 10.0f, 28.0f, true));   // down on the slope: the walk-out pullers died there
+    CHECK(!WalkoutStandOk(true, 46.4f, 10.0f, 28.0f, true));
+    CHECK(!WalkoutStandOk(false, 50.0f, 10.0f, 28.0f, true));
+    CHECK(!WalkoutStandOk(true, 50.0f, 29.0f, 28.0f, true));
+    CHECK(!WalkoutStandOk(true, 50.0f, 10.0f, 28.0f, false));
+    // The first candidate that passes is the stand; none passing is no start.
+    int index = -1;
+    const std::vector<float> floors = {54.0f, 52.0f, 49.0f, 47.0f, 44.0f};
+    auto const ok = [&](std::size_t i) { return i < floors.size() && WalkoutStandOk(true, floors[i], 40.0f - 4.0f * i, 28.0f, true); };
+    for (std::size_t i = 0; i < floors.size(); ++i)
+        if (ok(i)) { index = static_cast<int>(i); break; }
+    CHECK(index == 3);  // 40 - 12 = 28 yd at z 47
+    // A Son already within the circle has no candidates: the anchored shot is its pull.
+    CHECK(WalkoutStandCandidates(c, 10.0f, 0.0f).empty());
+}
+
+static void TestThreatRule()
+{
+    // Only the victim, or a threat at 90 % of the main tank's or more: a damage dealer is nearly always in the top two
+    // when the off-tanks hold little threat.
+    CHECK(!WalkoutThreatTooHigh(800.0f, 1000.0f));
+    CHECK(WalkoutThreatTooHigh(900.0f, 1000.0f));
+    CHECK(WalkoutThreatTooHigh(1200.0f, 1000.0f));
+    CHECK(!WalkoutThreatTooHigh(500.0f, 0.0f));   // no main-tank reference: the victim rule alone
+    CHECK(WalkoutPullerProblem(true, false, false, false, false) == nullptr);
+    CHECK(std::string(WalkoutPullerProblem(false, false, false, false, false)) == "dead");
+    CHECK(std::string(WalkoutPullerProblem(true, true, false, false, false)) == "charmed");
+    CHECK(std::string(WalkoutPullerProblem(true, false, true, false, false)) == "insanity");
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, true, false)) == "victim");
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, false, true)) == "threat");
+}
+
+static void TestPullerInsideWithAPath()
+{
+    // Only a bot inside the anchor with a navmesh path to the stand (the hunter on the 51 yd ledge never moved).
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    c.inside = false;
+    CHECK(!WalkoutEligible(c));
+    c.inside = true;
+    c.pathOk = false;
+    CHECK(!WalkoutEligible(c));
+    // The ranking hands the eligible in order, so the path is asked of the best first and the next one takes over.
+    std::vector<WalkoutCandidate> raid = {Cand(1, WalkoutRole::Ranged, 2.0f), Cand(2, WalkoutRole::Hunter, 9.0f),
+                                          Cand(3, WalkoutRole::Caster, 4.0f)};
+    const std::vector<int> order = RankWalkoutPullers(raid);
+    CHECK(order.size() == 3 && order[0] == 1 && order[1] == 2 && order[2] == 0);
+}
+
+static void TestMoveFailsAbort()
+{
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 0);
+    CHECK(!WalkoutNoteMove(s, false));
+    CHECK(!WalkoutNoteMove(s, true));   // a good move resets the count
+    CHECK(!WalkoutNoteMove(s, false));
+    CHECK(WalkoutNoteMove(s, false));   // two failed moves in a row: abort ("move failed")
+}
+
 int main()
 {
     TestRoleOrder();
@@ -332,6 +401,10 @@ int main()
     TestPetReleasedOnEveryEnd();
     TestPetStanceOnlyForTheHeldPet();
     TestPetHoldsAgeOut();
+    TestStandSearchStaysOnThePlatform();
+    TestThreatRule();
+    TestPullerInsideWithAPath();
+    TestMoveFailsAbort();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }
