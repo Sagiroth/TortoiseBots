@@ -421,6 +421,23 @@ static void TestSonsNearestFirstWithAStand()
     CHECK(PickWalkoutSon({}, [](int) { return true; }) == -1);
 }
 
+static void TestExcludedPullerNeverRestarts()
+{
+    // Two quick move failures, an immediate return inside, and a start while the scan still names the same bot: the
+    // start check under the lock refuses the excluded bot; another bot may start.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutNoteMove(s, false);
+    WalkoutNoteMove(s, false);
+    WalkoutAbortUnspent(s, 1500);
+    WalkoutExclude(s, 7, 1500);
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600));
+    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 1600));
+    CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs));
+}
+
 int main()
 {
     TestRoleOrder();
@@ -442,6 +459,7 @@ int main()
     TestMoveFailsAbort();
     TestMoveFailAbortUnspendsAndExcludes();
     TestSonsNearestFirstWithAStand();
+    TestExcludedPullerNeverRestarts();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

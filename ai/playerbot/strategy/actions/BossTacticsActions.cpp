@@ -1553,6 +1553,8 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved)
             bool const before = WalkoutBusy(it->second.state);
             WalkoutAbortUnspent(it->second.state, nowMs);
             WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
+            // The cached scan may name this bot: the next read scans afresh.
+            it->second.scanned = false;
             NoteWalkoutBusy(before, it->second.state);
         }
     }
@@ -1894,7 +1896,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         WalkoutRecord& record = g_walkouts[instanceId];
         record.bossGuid = boss->GetObjectGuid().GetRawValue();
         record.touchedMs = nowMs;
-        if (!WalkoutMayStart(record.state, cycleNo, sonGuid))
+        if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs))
             return;
         bool const before = WalkoutBusy(record.state);
         WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo);

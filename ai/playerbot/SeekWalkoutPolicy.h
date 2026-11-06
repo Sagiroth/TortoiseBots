@@ -307,6 +307,14 @@ namespace ai
         return false;
     }
 
+    // A new task for this puller: WalkoutMayStart, and the bot not sitting out its exclusion (a scan cached before
+    // the exclusion may still name it).
+    inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
+                                   std::uint64_t bot, std::uint32_t nowMs)
+    {
+        return WalkoutMayStart(s, cycleNo, son) && !WalkoutExcluded(s, bot, nowMs);
+    }
+
     // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in
     // that order, so a Son without one never blocks the rest). -1: none has one.
     template <typename HasStand>

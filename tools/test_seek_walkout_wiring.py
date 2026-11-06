@@ -43,7 +43,7 @@ class SeekWalkoutWiring(unittest.TestCase):
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
         self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, walkoutWanted, out)", read)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        for call in ("WalkoutCheck(", "WalkoutMayStart(", "WalkoutStart(", "WalkoutNoteShot(", "WalkoutFinish(",
+        for call in ("WalkoutCheck(", "WalkoutMayStartFor(", "WalkoutStart(", "WalkoutNoteShot(", "WalkoutFinish(",
                      "scan.puller != self"):
             self.assertIn(call, update)
         # Its one shot is the pull: exempt from the seek hold like the other pullers' until the shot lands, then held.
@@ -203,6 +203,16 @@ class SeekWalkoutRound3(unittest.TestCase):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("PickWalkoutSon(sonYd,", update)
         self.assertIn("FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)],", update)
+
+
+class SeekWalkoutRound4(unittest.TestCase):
+    def test_an_excluded_puller_is_not_restarted_from_a_fresh_scan(self):
+        note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved)")
+        self.assertIn("it->second.scanned = false;", note)
+        self.assertLess(note.index("WalkoutExclude("), note.index("it->second.scanned = false;"))
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs))", update)
+        self.assertLess(update.index("WalkoutMayStartFor("), update.index("WalkoutStart(record.state"))
 
 
 if __name__ == "__main__":
