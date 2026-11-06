@@ -3462,7 +3462,8 @@ bool IsPortalTeleportSpell(uint32 spellId)
 class PartyPortalCheck
 {
 public:
-    explicit PartyPortalCheck(WorldObject const* origin, float range) : i_origin(origin), i_range(range) {}
+    explicit PartyPortalCheck(WorldObject const* origin, float range, Group const* group, ObjectGuid botGuid)
+        : i_origin(origin), i_range(range), i_group(group), i_botGuid(botGuid) {}
     bool operator()(GameObject* go)
     {
         if (!go || !i_origin->IsWithinDistInMap(go, i_range) || !sServerFacade.isSpawned(go))
@@ -3476,12 +3477,28 @@ public:
             return false;
         if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
             return false;
-        return true;
+        return PortalOwnerInGroup(go);
     }
+
+    static bool PortalOwnerInGroup(GameObject* go, Group const* group, ObjectGuid botGuid)
+    {
+        if (!go)
+            return false;
+        ObjectGuid const owner = go->GetOwnerGuid();
+        if (owner.IsEmpty())
+            return false;
+        if (owner == botGuid)
+            return true;
+        return group && group->IsMember(owner);
+    }
+
+    bool PortalOwnerInGroup(GameObject* go) const { return PortalOwnerInGroup(go, i_group, i_botGuid); }
 
 private:
     WorldObject const* i_origin;
     float i_range;
+    Group const* i_group;
+    ObjectGuid i_botGuid;
 };
 }
 
@@ -3493,16 +3510,21 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         uint32 const elapsed = nowMs - m_portalFollowStartMs;
         bool const crossMap = master && master->IsInWorld() && !master->IsBeingTeleported() &&
             bot->GetMapId() != master->GetMapId();
+        float const masterDistance = master && !crossMap ? sServerFacade.getDistance2d(bot, master) : 0.0f;
+        bool const masterGone = master && master->IsInWorld() && !master->IsBeingTeleported() &&
+            ai::PortalFollowMasterGone(crossMap, masterDistance);
+        bool const atMaster = master && master->IsInWorld() &&
+            ai::PortalFollowAtMaster(crossMap, masterDistance);
         bool const followStrategy = HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
             !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
             !HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT);
         bool const poolBot = sRandomBotFacade.IsFreeBot(bot);
         if (!master || !master->IsInWorld() || !group || group != master->GetGroup() ||
             !HasActivePlayerMaster() || !bot->IsAlive() || bot->IsInCombat() ||
-            !followStrategy || poolBot || !crossMap ||
+            !followStrategy || poolBot || atMaster || !masterGone ||
             ai::PortalFollowWindowExpired(elapsed))
         {
-            if (ai::PortalFollowWindowExpired(elapsed) && crossMap && bot->IsAlive() &&
+            if (ai::PortalFollowWindowExpired(elapsed) && masterGone && bot->IsAlive() &&
                 !bot->IsInCombat() && master && master->IsInWorld() && !master->IsBeingTeleported() &&
                 group && group == master->GetGroup() && HasActivePlayerMaster() &&
                 followStrategy && !poolBot)
@@ -3520,7 +3542,8 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         if (!portal || !portal->IsInWorld() || portal->GetMapId() != m_portalFollowMap ||
             !sServerFacade.isSpawned(portal) || portal->GetGoState() != GO_STATE_READY ||
             portal->getLootState() == GO_ACTIVATED ||
-            portal->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT))
+            portal->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT) ||
+            !PartyPortalCheck::PortalOwnerInGroup(portal, group, bot->getObjectGuid()))
         {
             if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
                 sLog.outString("TortoiseBots: bringing bot %s to master %s after the mage portal closed",
@@ -3571,7 +3594,7 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
     }
 
     if (!master || !master->IsInWorld() || master->IsBeingTeleported() ||
-        bot->GetMapId() == master->GetMapId() || !group || group != master->GetGroup() ||
+        !group || group != master->GetGroup() ||
         !HasActivePlayerMaster() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
         !bot->IsAlive() || bot->IsInCombat() ||
         !HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
@@ -3579,9 +3602,16 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
         sRandomBotFacade.IsFreeBot(bot))
         return;
+    bool const crossMap = bot->GetMapId() != master->GetMapId();
+    float const masterDistance = crossMap ? 0.0f : sServerFacade.getDistance2d(bot, master);
+    if (!ai::PortalFollowMasterGone(crossMap, masterDistance))
+        return;
+    if (m_portalFollowScanMs && nowMs - m_portalFollowScanMs < ai::kPortalFollowScanIntervalMs)
+        return;
+    m_portalFollowScanMs = nowMs;
 
     std::list<GameObject*> targets;
-    PartyPortalCheck check(bot, sPlayerbotAIConfig.sightDistance);
+    PartyPortalCheck check(bot, sPlayerbotAIConfig.sightDistance, group, bot->getObjectGuid());
     MaNGOS::GameObjectListSearcher<PartyPortalCheck> searcher(targets, check);
     Cell::VisitAllObjects((const WorldObject*)bot, searcher, sPlayerbotAIConfig.sightDistance);
     GameObject* portal = nullptr;

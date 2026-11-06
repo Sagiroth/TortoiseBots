@@ -24,16 +24,29 @@ int failures = 0;
 
 int main()
 {
-    // Eligible: real-player master on another map, alive, out of combat,
-    // follow strategy, owned party bot.
+    // Eligible: real-player master gone (another map or far same-map),
+    // alive, out of combat, follow strategy, owned party bot.
     CHECK(ai::PortalFollowEligible(true, true, true, false, true, false));
-    // Master a bot, same map, dead, fighting, stay/guard, or pool: no.
+    // Master a bot, near, dead, fighting, stay/guard, or pool: no.
     CHECK(!ai::PortalFollowEligible(false, true, true, false, true, false));
     CHECK(!ai::PortalFollowEligible(true, false, true, false, true, false));
     CHECK(!ai::PortalFollowEligible(true, true, false, false, true, false));
     CHECK(!ai::PortalFollowEligible(true, true, true, true, true, false));
     CHECK(!ai::PortalFollowEligible(true, true, true, false, false, false));
     CHECK(!ai::PortalFollowEligible(true, true, true, false, true, true));
+
+    // Gone on another map at any distance, or past 400 yd on the same map.
+    CHECK(ai::PortalFollowMasterGone(true, 10.0f));
+    CHECK(ai::PortalFollowMasterGone(true, 100000.0f));
+    CHECK(ai::PortalFollowMasterGone(false, ai::kPortalFollowFarMasterYd + 1.0f));
+    CHECK(!ai::PortalFollowMasterGone(false, ai::kPortalFollowFarMasterYd));
+    CHECK(!ai::PortalFollowMasterGone(false, 10.0f));
+
+    // Back with the master ends the episode: same map and within 30 yd.
+    CHECK(ai::PortalFollowAtMaster(false, 10.0f));
+    CHECK(ai::PortalFollowAtMaster(false, ai::kPortalFollowAtMasterYd));
+    CHECK(!ai::PortalFollowAtMaster(false, ai::kPortalFollowAtMasterYd + 1.0f));
+    CHECK(!ai::PortalFollowAtMaster(true, 10.0f));
 
     // The caster waits while others still have to go, and for the short
     // delay after they went.
