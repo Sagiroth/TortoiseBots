@@ -84,13 +84,23 @@ class SeekWalkoutRound1(unittest.TestCase):
         self.assertIn("HoldWalkoutPet(ai, bot);", walk)
         self.assertLess(walk.index("HoldWalkoutPet(ai, bot);"), walk.index("ai->CastSpell(spell, task.source)"))
         hold = body(ACTIONS, "void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)")
-        for call in ("SetReactState(REACT_PASSIVE)", "WalkoutSavePetReact(", "AttackStop()", "MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE)"):
+        for call in ("SetReactState(REACT_PASSIVE)", "WalkoutSavePetStance(g_petHolds,", "GetCommandState()",
+                     "AttackStop()", "MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE)"):
             self.assertIn(call, hold)
-        restore = body(ACTIONS, "void RestoreWalkoutPet(Player* puller, SeekWalkoutState& state)")
-        self.assertIn("WalkoutTakePetReact(state, react)", restore)
-        self.assertIn("SetReactState(static_cast<ReactStates>(react))", restore)
-        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertGreaterEqual(update.count("RestoreWalkoutPet("), 2, "on a Back end and when the walk back ends")
+
+    def test_the_pet_is_released_on_its_bots_next_update_after_any_end(self):
+        # Every end (Back, the walk back done, a re-pull, the boss's death or combat exit, a stale sweep) leaves the
+        # stance in g_petHolds; the bot's own next update hands back the react state and the command.
+        release = body(ACTIONS, "void ai::ReleaseWalkoutPet(Player* bot)")
+        for call in ("WalkoutPetRelease(", "WalkoutTakePetStance(g_petHolds,", "SetReactState(static_cast<ReactStates>(stance.react))",
+                     "SetCommandState(static_cast<CommandStates>(stance.command))"):
+            self.assertIn(call, release)
+        self.assertIn("void ReleaseWalkoutPet(Player* bot);", ACTIONS_H)
+        ai_cpp = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
+        update = ai_cpp[ai_cpp.index("void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)"):]
+        self.assertLess(update.index("ai::ReleaseWalkoutPet(bot);"), update.index("++aiUpdateTick;"))
+        # No record path restores on its own (another map thread may own the puller).
+        self.assertNotIn("RestoreWalkoutPet(", ACTIONS)
 
     def test_only_a_bot_that_can_fire_is_picked(self):
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son)")

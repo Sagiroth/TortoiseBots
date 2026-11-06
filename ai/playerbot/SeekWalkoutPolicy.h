@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace ai
@@ -181,9 +182,6 @@ namespace ai
         // The walk back after a timeout or an abort: that puller, exempt until it is inside or kSeekWalkoutReturnMs.
         std::uint64_t returner = 0;
         std::uint32_t returnStartMs = 0;
-        // The puller's pet stance while the task holds the pet passive.
-        bool petHeld = false;
-        std::uint8_t petReact = 0;
     };
 
     inline bool WalkoutActive(const SeekWalkoutState& s)
@@ -289,22 +287,45 @@ namespace ai
         s.returnStartMs = 0;
     }
 
-    // The pet's stance: saved once when the task first holds it, handed back once at the end.
-    inline void WalkoutSavePetReact(SeekWalkoutState& s, std::uint8_t react)
+    // The puller's pet stance while a task holds it passive at the puller's heels: its react state and its command
+    // (stay or follow). Kept per puller, outside the fight's record, so a record dropped on any path (the boss's death
+    // or combat exit, a stale sweep, a re-pull) never takes the stance with it.
+    struct WalkoutPetStance
     {
-        if (s.petHeld)
+        std::uint8_t react = 0;
+        std::uint8_t command = 0;
+    };
+
+    // Saved once: a second hold of the same puller keeps the first stance (the pet is passive by then).
+    inline void WalkoutSavePetStance(std::unordered_map<std::uint64_t, WalkoutPetStance>& held, std::uint64_t bot,
+                                     std::uint8_t react, std::uint8_t command)
+    {
+        if (held.find(bot) != held.end())
             return;
-        s.petHeld = true;
-        s.petReact = react;
+        WalkoutPetStance stance;
+        stance.react = react;
+        stance.command = command;
+        held.emplace(bot, stance);
     }
 
-    inline bool WalkoutTakePetReact(SeekWalkoutState& s, std::uint8_t& react)
+    inline bool WalkoutTakePetStance(std::unordered_map<std::uint64_t, WalkoutPetStance>& held, std::uint64_t bot,
+                                     WalkoutPetStance& out)
     {
-        if (!s.petHeld)
+        auto const it = held.find(bot);
+        if (it == held.end())
             return false;
-        react = s.petReact;
-        s.petHeld = false;
+        out = it->second;
+        held.erase(it);
         return true;
+    }
+
+    // Whether the bot's held pet goes back to its stance: its instance has no record (dropped), or the record's task or
+    // walk back is no longer this bot's.
+    inline bool WalkoutPetRelease(const SeekWalkoutState* record, std::uint64_t bot)
+    {
+        if (!record)
+            return true;
+        return !(WalkoutActive(*record) && record->puller == bot) && record->returner != bot;
     }
 
     inline const char* WalkoutEndName(WalkoutEnd end)

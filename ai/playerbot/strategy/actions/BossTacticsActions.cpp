@@ -1011,6 +1011,9 @@ struct WalkoutRecord
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
 std::atomic<int> g_walkoutsActive{0}; // records whose task or walk back runs (WalkoutBusy)
+// The held pets' stances by puller guid; the bot's own next update hands each back (ReleaseWalkoutPet).
+std::unordered_map<std::uint64_t, WalkoutPetStance> g_petHolds;
+std::atomic<int> g_petHoldCount{0};
 
 // Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
 // per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
@@ -1453,16 +1456,6 @@ void LogSeekWalkoutEnd(PlayerbotAI* ai, WalkoutEnd end)
     LogSeekWalkout(ai, info1);
 }
 
-// The puller's pet goes back to the stance it had before the task held it passive. Called with g_walkoutMutex held.
-void RestoreWalkoutPet(Player* puller, SeekWalkoutState& state)
-{
-    std::uint8_t react = 0;
-    if (!WalkoutTakePetReact(state, react) || !puller)
-        return;
-    if (Pet* pet = puller->GetPet())
-        pet->SetReactState(static_cast<ReactStates>(react));
-}
-
 // While its task or walk back runs the puller's pet stays out of it: passive, off any target, at the puller's heels.
 // The generic attack would send it in, and a pet holding the Son keeps the Son outside the anchor.
 void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)
@@ -1476,7 +1469,11 @@ void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)
         auto const it = g_walkouts.find(bot->GetInstanceId());
         if (it == g_walkouts.end())
             return;
-        WalkoutSavePetReact(it->second.state, static_cast<std::uint8_t>(pet->GetReactState()));
+        CharmInfo* const charm = pet->GetCharmInfo();
+        WalkoutSavePetStance(g_petHolds, bot->GetObjectGuid().GetRawValue(),
+            static_cast<std::uint8_t>(pet->GetReactState()),
+            static_cast<std::uint8_t>(charm ? charm->GetCommandState() : COMMAND_FOLLOW));
+        g_petHoldCount.store(static_cast<int>(g_petHolds.size()), std::memory_order_relaxed);
     }
     pet->SetReactState(REACT_PASSIVE);
     if (pet->GetVictim())
@@ -1497,10 +1494,6 @@ void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
         if (it == g_walkouts.end())
             return;
         wasActive = WalkoutActive(it->second.state);
-        Map* const map = ai && ai->GetBot() ? ai->GetBot()->GetMap() : nullptr;
-        std::uint64_t const owner = it->second.state.puller ? it->second.state.puller : it->second.state.returner;
-        if (map && owner)
-            RestoreWalkoutPet(map->GetPlayer(ObjectGuid(owner)), it->second.state);
         DropWalkoutRecord(it);
     }
     if (wasActive)
@@ -1662,8 +1655,6 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             if (end != WalkoutEnd::None)
             {
                 bool const before = WalkoutBusy(it->second.state);
-                if (end == WalkoutEnd::Back)
-                    RestoreWalkoutPet(puller, it->second.state);
                 WalkoutFinish(it->second.state, end, nowMs);
                 NoteWalkoutBusy(before, it->second.state);
             }
@@ -1695,7 +1686,6 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             if (it != g_walkouts.end() && it->second.state.returner == state.returner)
             {
                 bool const before = WalkoutBusy(it->second.state);
-                RestoreWalkoutPet(returner, it->second.state);
                 WalkoutReturnDone(it->second.state);
                 NoteWalkoutBusy(before, it->second.state);
             }
@@ -5478,6 +5468,36 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
         if (row->kind == BossTacticKind::Spread)
             params.push_back(row->param);
     return WidestSpreadYd(params, fallback);
+}
+
+void ai::ReleaseWalkoutPet(Player* bot)
+{
+    if (!bot || g_petHoldCount.load(std::memory_order_relaxed) == 0)
+        return;
+    std::uint64_t const self = bot->GetObjectGuid().GetRawValue();
+    WalkoutPetStance stance;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        if (g_petHolds.find(self) == g_petHolds.end())
+            return;
+        auto const record = g_walkouts.find(bot->GetInstanceId());
+        if (!WalkoutPetRelease(record == g_walkouts.end() ? nullptr : &record->second.state, self))
+            return;
+        WalkoutTakePetStance(g_petHolds, self, stance);
+        g_petHoldCount.store(static_cast<int>(g_petHolds.size()), std::memory_order_relaxed);
+    }
+    // A pet that is gone (dismissed, dead) leaves nothing to restore: the stance is simply dropped.
+    Pet* const pet = bot->GetPet();
+    if (!pet)
+        return;
+    pet->SetReactState(static_cast<ReactStates>(stance.react));
+    if (CharmInfo* const charm = pet->GetCharmInfo())
+        charm->SetCommandState(static_cast<CommandStates>(stance.command));
+    if (stance.command == COMMAND_STAY)
+    {
+        pet->StopMoving();
+        pet->GetMotionMaster()->MoveIdle();
+    }
 }
 
 bool ai::LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out)

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #define CHECK(x) do { \
@@ -254,15 +255,38 @@ static void TestWalkBackAfterAnyEnd()
 
 static void TestPetStanceSavedOnce()
 {
+    // The stance is the pet's react state AND its command (stay/follow), saved once per puller, handed back once.
+    std::unordered_map<std::uint64_t, WalkoutPetStance> held;
+    WalkoutSavePetStance(held, 7, 1, 0);   // defensive, stay
+    WalkoutSavePetStance(held, 7, 0, 1);   // already held passive/follow: the first stance is kept
+    CHECK(held.size() == 1);
+    WalkoutPetStance stance;
+    CHECK(WalkoutTakePetStance(held, 7, stance));
+    CHECK(stance.react == 1 && stance.command == 0);
+    CHECK(!WalkoutTakePetStance(held, 7, stance));
+    CHECK(held.empty());
+}
+
+static void TestPetReleasedOnEveryEnd()
+{
+    // The pet is held while its bot runs the task or its walk back, and released on the bot's next update after any
+    // end: a Back end, the walk back done, or the record dropped (the boss died or left the fight, a stale sweep).
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000, 0);
-    std::uint8_t react = 0;
-    CHECK(!WalkoutTakePetReact(s, react));
-    WalkoutSavePetReact(s, 1);   // defensive
-    WalkoutSavePetReact(s, 0);   // already held passive: the first stance is kept
-    CHECK(WalkoutTakePetReact(s, react));
-    CHECK(react == 1);
-    CHECK(!WalkoutTakePetReact(s, react));
+    CHECK(!WalkoutPetRelease(&s, 7));
+    CHECK(WalkoutPetRelease(&s, 8));
+    // Boss death mid-task: the record is dropped, nothing holds the pet any more.
+    CHECK(WalkoutPetRelease(nullptr, 7));
+    // A timeout: held through the walk back, released once it is done.
+    WalkoutFinish(s, WalkoutEnd::Timeout, 26000);
+    CHECK(!WalkoutPetRelease(&s, 7));
+    WalkoutReturnDone(s);
+    CHECK(WalkoutPetRelease(&s, 7));
+    // A Back end: released at once.
+    WalkoutStart(s, 7, 200, 30000, 1);
+    WalkoutNoteShot(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 35000);
+    CHECK(WalkoutPetRelease(&s, 7));
 }
 
 int main()
@@ -277,6 +301,7 @@ int main()
     TestCastFailAbortUnspends();
     TestWalkBackAfterAnyEnd();
     TestPetStanceSavedOnce();
+    TestPetReleasedOnEveryEnd();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

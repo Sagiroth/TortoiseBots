@@ -545,6 +545,9 @@ namespace ai
     // The anchor this bot is held in right now (kind `anchor`, BossAnchorPolicy.h): a row of a boss that is in the bot's
     // fight (among its side's attackers, alive, in combat, not evading), with the bot's own radius (tanks may have a
     // tighter one). False on a map without anchor rows, without "boss tactics", or when no anchored boss fights.
+    // Every AI update: a walk-out puller's pet, held passive at its heels while the task or its walk back ran, gets its
+    // react state and its stay/follow command back once nothing holds it any more (any end, on any path).
+    void ReleaseWalkoutPet(Player* bot);
     bool LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out);
     // The same read, handing back the live anchor row itself (so a caller can take another role's circle of it).
     const BossTacticRow* LiveBossAnchorRow(PlayerbotAI* ai, Player* bot);
