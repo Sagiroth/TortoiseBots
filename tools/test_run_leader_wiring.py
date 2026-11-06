@@ -337,8 +337,10 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("CONTROLLED_TOTEMS | CONTROLLED_GUARDIANS", kill)
         self.assertIn("EngagedWithParty(summoner, party);", kill)
         loader = (ROOT / "ai/playerbot/DungeonPlanMgr.cpp").read_text()
-        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first` FROM `ai_dungeon_plan`", loader)
-        self.assertIn("table.SetUnits(plan, fields[2].GetCppString(), fields[3].GetCppString(), fields[4].GetCppString())", loader)
+        self.assertIn("SELECT `plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `cc_never` FROM `ai_dungeon_plan`", loader)
+        self.assertRegex(loader,
+                         r"table\.SetUnits\(plan,\s*fields\[2\]\.GetCppString\(\),\s*fields\[3\]\.GetCppString\(\),\s*"
+                         r"fields\[4\]\.GetCppString\(\),\s*fields\[5\]\.GetCppString\(\),\s*\w+\)")
 
     def test_auto_cc_is_wired(self):
         policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
@@ -946,12 +948,13 @@ class RunLeaderWiringTest(unittest.TestCase):
         pull = body(policy, "inline void PullUnit(", "\n}\n")
         gate = pull.index("HoldForShot(r, f, u, dt, order, hop))\n            return;")
         # The authored half is the clearance key's, and never a hop or walk-back pull's (H1).
-        self.assertIn("bool const authored = f.standClearance && !hop && AuthoredStandStep(r);", pull)
-        self.assertLess(pull.index("if ((f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)\n"), gate)
-        self.assertLess(gate, pull.index('order = "pullback " + std::to_string(u.guid);'))
+        self.assertIn("bool const authored = !body && f.standClearance && !hop && AuthoredStandStep(r);", pull)
+        self.assertLess(pull.index("if (!body && (f.pullStand || authored || discipline) && r.standPullShotGuid != u.guid)\n"), gate)
+        self.assertLess(gate, pull.index('order = body ? "pull " + std::to_string(u.guid) + " body" : "pullback " + std::to_string(u.guid);'))
         self.assertLess(gate, pull.index("++tries;"))
-        self.assertIn('order = "pullback " + std::to_string(u.guid);\n    if (f.pullStand || authored || discipline)', pull)
-        self.assertIn("bool const discipline = f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;", pull)
+        self.assertIn('order = body ? "pull " + std::to_string(u.guid) + " body" : "pullback " + std::to_string(u.guid);', pull)
+        self.assertIn('if (!body && (f.pullStand || authored || discipline))', pull)
+        self.assertIn("bool const discipline = !body && f.standDiscipline && !hop && AuthoredApproach(r) != nullptr;", pull)
         on = body(policy, "inline bool PullStandOn(", "\n}\n")
         self.assertIn("return f.pullStand && f.leadShotYd > kShotMarginYd && !InEvent(r);", on)
         rule = body(policy, "inline bool PullStandRuleOn(", "\n}\n")
@@ -979,7 +982,7 @@ class RunLeaderWiringTest(unittest.TestCase):
         self.assertIn("hop = hop || walkBack;", pull)
         nohop = pull.index("if (hop && PullStandRuleOn(r, f, hop) && !ShootableFromLead(f, u))")
         self.assertLess(gate, nohop)
-        self.assertLess(nohop, pull.index('order = "pullback " + std::to_string(u.guid);'))
+        self.assertLess(nohop, pull.index('order = body ? "pull " + std::to_string(u.guid) + " body" : "pullback " + std::to_string(u.guid);'))
         self.assertIn("r.pullHop = hop;", pull)
         reset = body(policy, "inline void ResetStep(", "\n}\n")
         self.assertIn("r.passed.clear();", reset)
@@ -2151,6 +2154,19 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertLess(players.index("RunFactSkipsMember(attacker->IsPlayer(), InLeadGroup(lead, attacker))"),
                         players.index("TortoiseBots::DungeonRun::UnitFact fact;"))
         self.assertIn("if (f.auraGatedTargets)\n                fact.auraGated =", players)
+
+
+    def test_the_automatic_cc_counts_only_elite_estimated_bodies(self):
+        # ReadPullJoiners records each creature's rank into the estimate and carries the elite body count on the
+        # unit and in the row's cache (both estimator paths) for RunAutoCcBodies: the automatic cc's threshold
+        # never counts normal-rank trash an estimate brings.
+        self.assertIn("m.normalRank = RunNormalRank(c);", COMMANDS)
+        self.assertIn("unit.estBodiesElite = estimate.bodiesElite;", COMMANDS)
+        self.assertIn("unit.estBodiesElite = done->eliteBodies;", COMMANDS)
+        self.assertIn("store.eliteBodies = unit.estBodiesElite;", COMMANDS)
+        policy = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
+        bodies_fn = body(policy, "inline std::uint32_t RunAutoCcBodies(", "\n}\n")
+        self.assertIn("return pick.estBodiesElite;", bodies_fn)
 
 
 if __name__ == "__main__":

@@ -535,6 +535,29 @@ static void TestReloadSeesNeedPick()
     CHECK(!SamePlan(*a->Find("bfd"), *c->Find("bfd")));
 }
 
+// The plan's cc_never list is a reload change too: a reload whose only edit is that column must be reported as a
+// changed plan.
+static void TestReloadSeesCcNever()
+{
+    auto a = std::make_shared<DungeonPlanTable>();
+    auto b = std::make_shared<DungeonPlanTable>();
+    for (auto table : {a, b})
+    {
+        CHECK(table->AddPlan("bfd", 48));
+        CHECK(table->AddStep("bfd", Move(1, 1, 10)) == PlanStepRefusal::None);
+        CHECK(table->SetUnits("bfd", "", "", "", ""));
+        table->Seal();
+    }
+    CHECK(SamePlan(*a->Find("bfd"), *b->Find("bfd")));
+    auto c = std::make_shared<DungeonPlanTable>();
+    CHECK(c->AddPlan("bfd", 48));
+    CHECK(c->AddStep("bfd", Move(1, 1, 10)) == PlanStepRefusal::None);
+    CHECK(c->SetUnits("bfd", "", "", "", "4887")); // only the list changed
+    c->Seal();
+    CHECK(c->Find("bfd")->CcNever(4887));
+    CHECK(!SamePlan(*a->Find("bfd"), *c->Find("bfd")));
+}
+
 // The reload's handoff runs before the install and receives the new tactic table: the seek_aura records reconcile
 // against the rows that replace the ones they were keyed from.
 static void TestBeforeInstallSeesTheNewTactics()
@@ -558,6 +581,7 @@ int main()
     TestReloadSeesOpenProof();
     TestTacticTargetChangeMarksThePlanChanged();
     TestReloadSeesNeedPick();
+    TestReloadSeesCcNever();
     TestBeforeInstallSeesTheNewTactics();
     TestGoodReloadSwaps();
     TestUnchangedReloadListsNothing();

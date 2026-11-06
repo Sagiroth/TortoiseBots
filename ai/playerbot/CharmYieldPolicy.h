@@ -25,6 +25,36 @@ namespace ai
         return keyOn && hasCharmer && !charmerIsPlayer;
     }
 
+    // Whether a group member a creature is charming is off limits to this bot: never a target pick, an attack, a
+    // harmful cast (damage, interrupt, stun, silence, CC) or a pet order. The core turns the member hostile for the
+    // ten seconds of the charm, so the ordinary friendly and attacker checks let the raid kill it (Hakkar's Cause
+    // Insanity 24327: five charmed DPS were killed by their own raid 3-7 s after the charm). Only a creature's charm
+    // counts: a player's mind control is a PvP case outside the dungeon rows. Healing such a member stays allowed,
+    // and a member of another group is an ordinary enemy.
+    inline bool CharmedAllyIsOffLimits(bool keyOn, bool sameGroup, bool hasCharmer, bool charmerIsPlayer)
+    {
+        return keyOn && sameGroup && hasCharmer && !charmerIsPlayer;
+    }
+
+    // Whether a pet stands down: while a creature is charming a group member, the pet cannot be trusted to stay off
+    // that member. The core's PetAI attacks back on its own when the charmed member hits the pet or its owner, and it
+    // keeps an attack it already started; refusing the PlayerbotAI's pet order is not enough, and the swing timer is
+    // not reset by AttackStop, so a per-tick stop alone would still let a swing through on every re-acquire. The pet
+    // (and the guardians) are therefore parked passive and their combat cleared for as long as such a member is up.
+    inline bool CharmedAllyParksPet(bool keyOn, bool charmedAllyUp)
+    {
+        return keyOn && charmedAllyUp;
+    }
+
+    // Whether one group member (the bot itself included) holds the pet hold up: it is alive, in the world, on the
+    // bot's map and a creature (not a player) charms it. The bot's own charm counts: its pet and guardians are
+    // controlled units of their own that keep an attack under way or assist the charmed owner against the group, so
+    // they stand down for the bot's own charm exactly as for a charmed neighbour's.
+    inline bool MemberHoldsPetHold(bool alive, bool inWorld, bool sameMap, bool hasCharmer, bool charmerIsPlayer)
+    {
+        return alive && inWorld && sameMap && hasCharmer && !charmerIsPlayer;
+    }
+
     // Whether an area action stands down for the charmed member: its effect point (or the bot itself, for a
     // self-centred blast) lies within kCharmedAllyAreaYd of the member. `allyToPointYd` is only read for a
     // point-centred action and `allyToBotYd` only for a self-centred one.

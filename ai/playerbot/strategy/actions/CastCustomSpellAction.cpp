@@ -5,6 +5,7 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/values/AttackersValue.h"
 #include "CheckMountStateAction.h"
 #include "MailAction.h"
 #include "Mail/Mail.h"
@@ -239,6 +240,15 @@ bool CastCustomSpellAction::Execute(Event& event)
     }
 
     SpellCastResult checkResult;
+    // AiPlayerbot.DungeonRunCharmYield: an explicit cast order does not outrank the rule either; a harmful spell on a
+    // creature-charmed group member is refused (a heal or a buff is not harm).
+    if (target && target != bot && !pSpellInfo->IsPositiveSpell() &&
+        AttackersValue::CharmedAllyOffLimits(target, bot))
+    {
+        ai->TellPlayerNoFacing(requester, BOT_TEXT2("cast_spell_command_error_failed", replyArgs));
+        return false;
+    }
+
     // An item in bags authorizes its own spell (potions, bandages, poisons are
     // never in the spellbook). The engine CheckCast still validates level,
     // cooldown, health and everything else.

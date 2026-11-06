@@ -100,6 +100,8 @@ std::vector<KillFirstGridUnit> KillFirstGridUnitsValue::Calculate()
         unit.alive = true;
         unit.evading = creature->IsInEvadeMode();
         unit.victimOurs = IsGroupUnit(creature->GetVictim(), bot, group);
+        Player* const victim = dynamic_cast<Player*>(creature->GetVictim());
+        unit.victimHealer = unit.victimOurs && victim && PlayerbotAI::IsHeal(victim);
         for (Unit* attacker : creature->GetAttackers())
         {
             if (IsGroupUnit(attacker, bot, group))

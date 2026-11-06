@@ -360,7 +360,10 @@ void UpdateObservedRaids(uint32_t diff)
         CombatMonitorService::Instance().Refresh(groupId, CombatMonitorMembersOf(members), anyInCombat, allDead, ctx,
             {}, now);
         if (CombatMonitorService::Instance().InFight(groupId) && !members.empty())
+        {
             NoteFightBoss(groupId, members.front());
+            SampleFightTimeline(groupId, members.front());
+        }
     }
 
     uint64_t const us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(

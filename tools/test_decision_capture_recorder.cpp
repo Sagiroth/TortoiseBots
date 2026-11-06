@@ -202,8 +202,8 @@ static void TestStubThenKeyframe()
     Limits limits;
     // A delta record that does not fit becomes a stub; the next tick is a
     // keyframe again and fits once the run is smaller. The budget sits above
-    // the empty keyframe (~16 kB) and below the 30-unit delta (~22 kB).
-    limits.recordBytes = 18000;
+    // the empty keyframe (~18 kB) and below the 30-unit delta (~26 kB).
+    limits.recordBytes = 20000;
     Recorder recorder(Header(), limits, sink);
     Run run;
     ai::DungeonPlan plan;

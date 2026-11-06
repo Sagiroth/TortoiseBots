@@ -64,6 +64,24 @@ static Facts Party(float x = 0)
     return f;
 }
 
+// The refused ranged pullback's one body-pull retry (PullbackRefusedUnreachable): the next
+// tick sends `pull <guid>`; a pull that starts no fight for kPullNoFightMs spends it, and the
+// unit is picked again as a `pullback` in that same tick. Returns that order.
+static std::string BodyPullRunsOut(Run& r, Facts& f)
+{
+    std::string order;
+    for (std::uint32_t ms = 0; ms <= kPullNoFightMs && order.empty(); ms += kTickMs)
+        order = Tick(r, f, kTickMs);
+    return order;
+}
+
+static std::string SpendBodyRetry(Run& r, Facts& f)
+{
+    CHECK(Tick(r, f).compare(0, 5, "pull ") == 0);
+    return BodyPullRunsOut(r, f);
+}
+
+
 // A living member `yd` from the lead bot, standing on the x axis at that
 // distance (the stand-still watch reads its position).
 static MemberFact Mem(const std::string& name, float yd, float dz = 0.0f)
@@ -3490,6 +3508,213 @@ static void TestRegroupFightsFirst()
     f.anyInCombat = false;
     Tick(w, f);
     CHECK(w.regroup && w.autoRegroups == 1);
+}
+
+// A bot left in combat with a respawn nest that hits nobody in the party (its kills come back in seconds at the same
+// spot) does not hold the run: the wipe's regroup starts at once instead of "13 dead: fighting on, a regroup follows",
+// and after the revive the gather's move goes out while the bot still swings at the nest. ZG Jin'do's pit: a bot left
+// on the trolls after a Banish held the regroup. The plan names other units than the trolls.
+static void TestRegroupIgnoresRespawnNestCombat()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.total = 20;
+    f.alive = 7;
+    f.dead = 13;
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    f.engagedUnits = {nest};
+    for (int i = 0; i < 3; ++i)
+    {
+        MemberFact m = Mem("Bot" + std::to_string(i), static_cast<float>(i));
+        m.inCombat = true;
+        m.engagedRead = true;
+        m.engaged = {nest};
+        f.members.push_back(m);
+    }
+    f.maxMemberYd = 3.0f;
+    CHECK(Tick(r, f).empty());
+    CHECK(r.regroup);
+    CHECK(r.note.find("fighting on") == std::string::npos);
+    CHECK(r.note.find("regrouping by itself") != std::string::npos);
+    // The dead are up; the three are still in combat with the nest alone and one is 30 yd off: the gather goes out.
+    f.dead = 0;
+    f.alive = 20;
+    f.maxMemberYd = 30.0f;
+    f.members[2].yd = 30.0f;
+    std::string order;
+    for (int i = 0; i < 4 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "move 0.0 0.0 0.0");
+    CHECK(r.regroupGatherSent);
+    // A member in the same position fighting a normal mob still holds the run: the fight is the party's.
+    Run q = Start(&plan);
+    Facts g = f;
+    g.dead = 13;
+    g.alive = 7;
+    g.engagedRead = true;
+    g.engagedUnits[0].respawnSec = 0; // an ordinary mob
+    g.engagedUnits[0].homeYd = 0.0f;
+    for (MemberFact& m : g.members)
+        m.engaged = g.engagedUnits;
+    CHECK(Tick(q, g).empty());
+    CHECK(!q.regroup && q.note.find("fighting on") != std::string::npos);
+}
+
+// Review of t1105c (Codex HIGH + Opus): a nest unit that attacks a party member is a real fight. The trolls hitting the
+// banished bot keep the run in combat ("fighting on"): only an idle nest is no fight.
+static void TestRegroupKeepsFightWithNestUnitHittingParty()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Facts f = Party(0);
+    f.total = 20;
+    f.alive = 7;
+    f.dead = 13;
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    nest.hitsParty = true; // it hits the banished bot
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    Run r = Start(&plan);
+    CHECK(NestOnlyCombat(r, f) == false);
+    CHECK(Tick(r, f).empty());
+    CHECK(!r.regroup && r.note.find("fighting on") != std::string::npos);
+    // The same unit idle (hits nobody) is no fight.
+    Facts idle = f;
+    idle.engagedUnits[0].hitsParty = false;
+    idle.members[0].engaged = idle.engagedUnits;
+    CHECK(NestOnlyCombat(r, idle) == true);
+    // One hitting nest unit among idle ones keeps the whole combat real.
+    UnitFact other = idle.engagedUnits[0];
+    other.guid = 0x302;
+    other.hitsParty = true;
+    idle.members[0].engaged.push_back(other);
+    CHECK(NestOnlyCombat(r, idle) == false);
+}
+
+// A short-respawn unit the plan itself fights (a boss step's entry, a hold's event unit, a pull's pack) is never a
+// nest: Codex HIGH, the rule must not abandon a legitimate short-respawn encounter.
+static void TestNestRuleSparesPlanObjectives()
+{
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    DungeonPlan none;
+    none.steps = {PullStep(60, {7011})};
+    Run plain = Start(&none);
+    CHECK(NestOnlyCombat(plain, f));
+    DungeonPlan pull;
+    pull.steps = {PullStep(60, {14826})};
+    Run viaPull = Start(&pull);
+    CHECK(!NestOnlyCombat(viaPull, f));
+    DungeonPlan boss;
+    boss.steps = {Step(PlanStepKind::Boss, 60)};
+    boss.steps[0].entry = 14826;
+    Run viaBoss = Start(&boss);
+    CHECK(!NestOnlyCombat(viaBoss, f));
+    DungeonPlan hold;
+    hold.steps = {Step(PlanStepKind::Hold, 60)};
+    hold.steps[0].entries = {14826};
+    Run viaHold = Start(&hold);
+    CHECK(!NestOnlyCombat(viaHold, f));
+    // A bare Run with no plan (a policy test's Start(nullptr)) has no objective.
+    Run noPlan = Start(nullptr);
+    CHECK(NestOnlyCombat(noPlan, f));
+}
+
+// AiPlayerbot.DungeonRunRespawnNest = 0: the rules are off, the nest holds the fight as before the rule existed.
+static void TestNestRuleOffKeepsFight()
+{
+    UnitFact nest = Unit(0x301, 14826, 5);
+    nest.respawnSec = 10;
+    nest.homeYd = 5.0f;
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.engagedRead = true;
+    f.engagedUnits = {nest};
+    MemberFact m = Mem("Bot0", 0);
+    m.inCombat = true;
+    m.engagedRead = true;
+    m.engaged = {nest};
+    f.members = {m};
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Run r = Start(&plan);
+    CHECK(NestOnlyCombat(r, f));
+    f.respawnNest = false;
+    CHECK(!NestOnlyCombat(r, f));
+    // ... and the gather stays on the lead bot.
+    f.nestUnits = {nest};
+    f.nestUnitsRead = true;
+    CHECK(!GatherAnchorInNest(r, f, 0.0f, 0.0f, 0.0f));
+}
+
+// A regroup never gathers inside a respawn nest (kNestGatherYd): the dead tank's body at the rim of the pit was the
+// gather spot, and the party stood on the trolls' spawns. With a nest unit within 30 yd of the lead bot the gather
+// goes to the step point; a unit that left its nest is no reason to leave the spot.
+static void TestRegroupAnchorAvoidsRespawnNest()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(60, {7011})};
+    Facts f = Party(0);
+    f.members = {Mem("Tanky", 0), Mem("Magey", 25)};
+    f.maxMemberYd = 25.0f;
+    UnitFact troll = Unit(49078, 14826, 10);
+    troll.respawnSec = 10;
+    troll.homeYd = 2.0f; // in its nest, 10 yd from the lead bot
+    f.nestUnits = {troll};
+    f.nestUnitsRead = true;
+    Run r = Start(&plan);
+    BeginRegroup(r);
+    CHECK(Tick(r, f) == "move 60.0 0.0 0.0");
+    CHECK(r.note.find("off the respawn nest") != std::string::npos);
+    // No nest read (the glue reads it only on the gather's own tick): today's gather on the lead bot.
+    Run plain = Start(&plan);
+    Facts g = f;
+    g.nestUnits.clear();
+    g.nestUnitsRead = false;
+    BeginRegroup(plain);
+    CHECK(Tick(plain, g) == "move 0.0 0.0 0.0");
+    // A fast respawning unit that walked out of its nest is a normal mob: the gather stays on the lead bot.
+    Run moved = Start(&plan);
+    Facts h = f;
+    h.nestUnits[0].homeYd = 40.0f;
+    BeginRegroup(moved);
+    CHECK(Tick(moved, h) == "move 0.0 0.0 0.0");
+    // A nest unit farther than kNestGatherYd from the spot does not move the gather either.
+    Run far = Start(&plan);
+    Facts k = f;
+    k.nestUnits[0].x = kNestGatherYd + 1.0f;
+    BeginRegroup(far);
+    CHECK(Tick(far, k) == "move 0.0 0.0 0.0");
+    // A unit the plan's own pull step names is the run's objective, no nest to keep away from.
+    DungeonPlan objective;
+    objective.steps = {PullStep(60, {14826})};
+    Run own = Start(&objective);
+    BeginRegroup(own);
+    CHECK(Tick(own, f) == "move 0.0 0.0 0.0");
 }
 
 // Review of #1055: a living rezzer gets kPartyRezWaitMs to raise the dead
@@ -8389,6 +8614,42 @@ static void TestKillFirstKeepsItsUnitAgainstAnEqualRank()
     CHECK(focuses == 0 && r.focusGuid == 30);
     f.killFirst = {Engaged(Unit(31, 5650, 4))};
     CHECK(Tick(r, f) == "focus 31");
+}
+
+// Zul'Gurub's Jin'do the Hexxer: the Powerful Healing Ward 14987 heals him about as much as the raid deals, so the
+// plan ranks it before the Brain Wash Totem 15112. A focus held on the totem must not outlast the ward's arrival:
+// the ward stands at a better rank, and a better rank takes the focus. (The exported plan's kill_first order carries
+// that ranking; this is the policy's side of it.)
+static void TestKillFirstNewWardPreemptsHeldTotem()
+{
+    DungeonPlan plan;
+    PlanStep boss = Step(PlanStepKind::Boss);
+    boss.entry = 11380;
+    boss.entries = {11380};
+    plan.steps = {boss};
+    plan.killFirst = {14987, 15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    std::uint64_t const jindo = 500;
+    UnitFact totem = Unit(501, 15112, 4);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = jindo;
+    totem.ownerEngaged = true;
+    UnitFact ward = Unit(502, 14987, 6);
+    ward.owner = jindo;
+    ward.ownerEngaged = true;
+    f.killFirst = {totem};
+    r.focusGuid = 501; // held on the totem after one volley left it at 11 %
+    CHECK(PickKillFirst(r, f) == &f.killFirst[0]);
+    // The ward stands up: it is ranked first, so the focus moves to it although the totem still lives.
+    f.killFirst.push_back(ward);
+    CHECK(PickKillFirst(r, f) == &f.killFirst[1]);
+    CHECK(Tick(r, f) == "focus 502");
+    // The ward dies: back on the totem that is still up.
+    f.killFirst.pop_back();
+    CHECK(Tick(r, f) == "focus 501");
 }
 
 // r30 t 398.8 2c: the tank leaves a caster at its camp alone. Common start per the spec.
@@ -16245,6 +16506,7 @@ static void TestRePullWithoutAFreshRingReadKeepsNoEstimate()
     // A tick that reads the ring again says its bodies.
     f.units[0].joinersRead = true;
     f.units[0].estBodies = 15;
+    f.units[0].estBodiesElite = 15;
     CHECK(RunAutoCcBodies(r, f, f.units[0]) == 15);
     // The key off: the row's own pack is counted.
     f.aggroWalkRing = false;
@@ -19574,6 +19836,9 @@ static void TestStepUnitRefusalAfterResiduePullKeepsTheApproach()
     CHECK(Tick(r, f) == "pullback 49155");
     CHECK(r.residuePullGuid == 0);
     OrderRefused(r, "pullback 49155", kWalk5Refusal);
+    CHECK(!r.approachStandWanted && r.bodyPullGuid == 0xc003); // the body-pull retry first
+    CHECK(SpendBodyRetry(r, f) == "pullback 49155");
+    OrderRefused(r, "pullback 49155", kWalk5Refusal);
     CHECK(r.approachStandWanted && r.approachStandStep == 0);
 }
 
@@ -21072,6 +21337,449 @@ static void TestNoSummonTowardALeadInAnotherPart()
     Run d = stuckRun();
     CHECK(SummonRevived(d, f, order) && order == "summon Fyran");
 }
+
+// Jin'do: a lead bot off the floor is no summon point. Banish 24466 leaves a bot hovering at z 90 over the ZG pit
+// floor (77.68) and, with no client, nothing makes it fall; the run leader used to summon the party to it (ZG walk 38
+// Rhan at 117 s, the whole raid after the fight). LeadOffFloor is set and no summon goes toward the lead bot: its own
+// landing and rescue handle it.
+static void TestNoSummonOntoALeadOffTheFloor()
+{
+    // The floor is read the way the teleport landing reads it: the map's floor, and the feet probe only when that
+    // floor is more than kLandingYd under the feet, the higher of the two winning.
+    CHECK(!LeadOffFloor(77.68f, 77.68f, false, 77.68f, false)); // at its floor already: nothing below
+    CHECK(!LeadOffFloor(77.68f, 75.5f, true, 75.5f, false));   // 2.2 yd down: a step, not a hover
+    // A deck over a lower storey: the map answers with the terrain 30 yd down, the probe with the deck at the feet.
+    CHECK(!LeadOffFloor(90.0f, 60.0f, true, 90.0f, false));
+    // Banish's hover: the pit floor 12.3 yd down is outside the probe's box (it spans 4 yd under the feet), so the
+    // map's floor decides, and it is off the floor.
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false));
+    // The probe's own answer: 4 yd down is off the floor, 2.5 yd is not.
+    CHECK(LeadOffFloor(90.0f, 77.68f, true, 86.0f, false));
+    CHECK(!LeadOffFloor(90.0f, 77.68f, true, 87.5f, false));
+    // A swimmer: the probe excludes water polygons, so its own depth is no hover.
+    CHECK(!LeadOffFloor(90.0f, 60.0f, false, 60.0f, true));
+
+    // The walk of ZG walk 38: the lead bot hovers at z 90 over the pit floor, Rhan stands 68 yd away on that floor.
+    auto offFloorFacts = [](bool offFloor)
+    {
+        Facts f = Party(0);
+        f.total = 3;
+        f.alive = 3;
+        f.raid.on = true;
+        f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
+        f.leadOffFloor = offFloor;
+        f.members = {Mem("Tanky", 0.0f), Mem("Healer", 8.0f), Mem("Rhan", 68.0f, -11.3f)};
+        f.maxMemberYd = 68.0f;
+        return f;
+    };
+
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        Facts f = offFloorFacts(true);
+        r.still["Rhan"].ms = 420000; // still there the whole fight
+        std::string order;
+        CHECK(!WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.wedgedSummoned.empty() && r.wedgedSummons == 0); // not spent: it can go once the lead bot lands
+        // The same member, with the lead bot on the pit floor: the summon goes out as before.
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        r2.still["Rhan"].ms = 420000;
+        std::string order2;
+        CHECK(WedgedSummon(r2, on, kTickMs, order2) && order2 == "summon Rhan");
+    }
+    {
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = offFloorFacts(true);
+        r.still["Rhan"].ms = kStillMs;
+        std::string order;
+        CHECK(!SummonStraggler(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty());
+        // On the floor, the gather's own summon is unchanged.
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        r2.still["Rhan"].ms = kStillMs;
+        std::string order2;
+        CHECK(SummonStraggler(r2, on, order2) && order2 == "summon Rhan");
+    }
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        BeginRegroup(r);
+        r.regroupMs = kStuckSummonMs;
+        r.still["Rhan"].ms = kStuckSummonMs;
+        Facts f = offFloorFacts(true);
+        std::string order;
+        CHECK(!SummonStuckInRegroup(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty());
+        Facts on = offFloorFacts(false);
+        Run r2 = Start(&plan);
+        BeginRegroup(r2);
+        r2.regroupMs = kStuckSummonMs;
+        r2.still["Rhan"].ms = kStuckSummonMs;
+        std::string order2;
+        CHECK(SummonStuckInRegroup(r2, on, order2) && order2 == "summon Rhan");
+    }
+    {
+        // The teleport return's anchor: never the lead bot's own spot while it is off the floor; the nearest member
+        // out of combat is the anchor instead.
+        Facts f = offFloorFacts(true);
+        ai::ApproachPoint point;
+        std::string why;
+        std::vector<std::string> const due = {"Rhan"};
+        CHECK(FarReturnPoint(f, due, point, why));
+        CHECK(point.x == 8.0f); // Healer
+        Facts on = offFloorFacts(false);
+        CHECK(FarReturnPoint(on, due, point, why) && point.x == 0.0f); // the lead bot's own spot
+    }
+}
+
+// Jin'do: the lead bot left hovering over the ZG pit never lands, and the gather's ceiling cannot end while no summon
+// may go to it: it started the gather over every 30 s, forever. The time off the floor is the tick's own clock, and
+// 30 s of it pauses the run with both heights.
+static void TestLeadOffFloorPausesTheGather()
+{
+    DungeonPlan plan;
+    plan.steps = {PullStep(10, {1})};
+    auto offFloor = [](bool offFloor)
+    {
+        Facts f = Party(0);
+        f.leadAlive = true;
+        f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
+        f.leadOffFloor = offFloor;
+        f.members = {Mem("Tanky", 0.0f), Mem("Rhan", 68.0f)};
+        f.maxMemberYd = 68.0f;
+        f.units = {Unit(7, 1, 20)};
+        return f;
+    };
+    {
+        Run r = Start(&plan);
+        Facts f = offFloor(true);
+        std::uint32_t ticks = 0;
+        while (r.state == State::Running && ticks < 4 * kGatherCapMs / kTickMs)
+        {
+            Tick(r, f, kTickMs);
+            ++ticks;
+        }
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        CHECK(ticks <= kGatherCapMs / kTickMs + 2); // the first ceiling, not one gather restart after another
+    }
+    {
+        // The same gather with a lead bot that lands at 20 s: at the 30 s ceiling the clock is clear, so it waits.
+        Run r = Start(&plan);
+        Facts off = offFloor(true);
+        Facts on = offFloor(false);
+        for (std::uint32_t i = 0; i < 20; ++i)
+            Tick(r, off, kTickMs);
+        for (std::uint32_t i = 0; i < 15; ++i)
+            Tick(r, on, kTickMs);
+        CHECK(r.state == State::Running);
+        CHECK(r.phase == Phase::Gather);
+        CHECK(r.leadOffFloorMs == 0);
+    }
+}
+
+// A lead bot on a game-object platform or elevator reads as off the floor (the terrain floor and the mesh probe do not
+// know the deck), and every summon is refused. A transport under it, or a walkable surface the core's height read finds
+// within kSurfaceYd of the feet, is a floor; a surface further down is not (the Banish hover stays off the floor).
+static void TestLeadOnAGameObjectFloor()
+{
+    CHECK(LeadOnSurface(90.0f, true, false, 0.0f));          // riding a transport (an elevator)
+    CHECK(LeadOnSurface(90.0f, false, true, 89.2f));         // a deck 0.8 yd under the feet
+    CHECK(LeadOnSurface(90.0f, false, true, 88.0f));         // exactly kSurfaceYd down
+    CHECK(!LeadOnSurface(90.0f, false, true, 87.9f));        // 2.1 yd: a hover over something below
+    CHECK(!LeadOnSurface(90.0f, false, true, 77.68f));       // the Banish hover over the pit floor
+    CHECK(!LeadOnSurface(90.0f, false, false, 0.0f));        // nothing found
+    CHECK(!LeadOnSurface(90.0f, false, true, 93.0f));        // a ceiling over the feet is no floor
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false));                // the terrain alone: off the floor
+    CHECK(!LeadOffFloor(90.0f, 77.68f, false, 90.0f, false, true));         // ... on a platform: on it
+    CHECK(LeadOffFloor(90.0f, 77.68f, false, 90.0f, false, false));
+}
+
+// Every summon site pauses at the same 30 s: SummonLeadFloorOk marks the refusal and the tick's end pauses the run
+// once the lead bot has hung off the floor for kLeadOffFloorPauseMs, not only the gather ceiling's two summons.
+static void TestLeadOffFloorPausesAtEverySummonSite()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    Facts f = Party(0);
+    f.raid.on = true;
+    f.total = 5;
+    f.alive = 5;
+    f.leadAlive = true;
+    f.leadOffFloor = true;
+    f.leadZ = 90.0f;
+    f.leadFloorZ = 77.68f;
+    f.members = {Mem("Tanky", 0), Mem("Rhan", 150)};
+    {
+        // A site that is not the gather (RunawaySummon): refused, marked, and the cap pauses the run.
+        Run r = Start(&plan);
+        std::string order;
+        r.leadOffFloorMs = kLeadOffFloorPauseMs;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order) && order.empty());
+        CHECK(r.summonRefusedOffFloor);
+        CHECK(LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        CHECK(!r.summonRefusedOffFloor);
+    }
+    {
+        // One tick short of the cap: refused, but the run keeps waiting.
+        Run r = Start(&plan);
+        std::string order;
+        r.leadOffFloorMs = kLeadOffFloorPauseMs - kTickMs;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order));
+        CHECK(!LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Running);
+    }
+    {
+        // Long off the floor but no summon asked this tick: nothing pauses it.
+        Run r = Start(&plan);
+        r.leadOffFloorMs = kLeadOffFloorPauseMs;
+        CHECK(!LeadOffFloorPauseTick(r, f));
+        CHECK(r.state == State::Running);
+    }
+}
+
+// Every summon site that reads the lead bot's floor: with the lead bot off the floor no summon goes out and nothing is
+// spent, so the same summon goes out once it lands. The sites the Jin'do fix reached later: RunawaySummon, the gather
+// ceiling's own two summons, a revived bot's summon, the stranded lead bot's summons and the direct step's follower.
+static void TestNoSummonOntoAnOffFloorLeadAtEverySite()
+{
+    // A raid bot left far behind (RunawaySummon): waited out, not summoned; once the lead bot lands, summoned.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 2000)};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.raid.on = true;
+        f.total = 5;
+        f.alive = 5;
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 150)};
+        std::string order;
+        CHECK(!RunawaySummon(r, f, kRunawayMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.runawaySummons == 0 && r.summoned.empty()); // not spent: it can go once the lead bot lands
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(RunawaySummon(r, on, kTickMs, order) && order == "summon Rhan");
+    }
+    // The gather ceiling's own summon (the farthest bot that does not come closer): waits, no pause.
+    {
+        DungeonPlan plan;
+        plan.steps = {PullStep(0, {1})};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.leadZ = 90.0f;
+        f.leadFloorZ = 77.68f;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 68)};
+        f.maxMemberYd = 68;
+        r.still["Rhan"].ms = kStillMs;
+        std::string order;
+        GatherCeiling(r, f, order, "the party did not gather");
+        CHECK(order.empty() && r.state == State::Running && r.phase == Phase::Gather);
+        CHECK(r.note.find("no floor") != std::string::npos && r.summoned.empty());
+        // 30 s of it: every retry only starts the gather's clock over, so the run pauses instead and names the spot.
+        Run rLong = Start(&plan);
+        rLong.phase = Phase::Gather;
+        rLong.leadOffFloorMs = kLeadOffFloorPauseMs;
+        rLong.still["Rhan"].ms = kStillMs;
+        std::string orderLong;
+        GatherCeiling(rLong, f, orderLong, "the party did not gather");
+        CHECK(orderLong.empty() && rLong.state == State::Paused);
+        CHECK(rLong.note == "the lead bot is off the floor (90.0 vs floor 77.7)");
+        // One tick short of it still waits: a lead bot that lands inside the 30 s continues as before.
+        Run rShort = Start(&plan);
+        rShort.phase = Phase::Gather;
+        rShort.leadOffFloorMs = kLeadOffFloorPauseMs - kTickMs;
+        rShort.still["Rhan"].ms = kStillMs;
+        std::string orderShort;
+        GatherCeiling(rShort, f, orderShort, "the party did not gather");
+        CHECK(orderShort.empty() && rShort.state == State::Running && rShort.phase == Phase::Gather);
+        Facts on = f;
+        on.leadOffFloor = false;
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        r2.still["Rhan"].ms = kStillMs;
+        GatherCeiling(r2, on, order, "the party did not gather");
+        CHECK(order == "summon Rhan");
+    }
+    // The direct step's gather, the bot summoned already this step: summoned again only once the lead bot lands.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::MoveDirect, 5)};
+        Run r = Start(&plan);
+        r.phase = Phase::Gather;
+        MarkSummoned(r, "Jinkla");
+        r.summoned.insert("Jinkla");
+        r.runMs = 90000; // past kDirectResummonMs since the summon at runMs 0
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Jinkla", 68)};
+        f.maxMemberYd = 68;
+        std::string order;
+        GatherCeiling(r, f, order, "the party did not gather", true);
+        CHECK(order.empty() && r.state == State::Running && r.phase == Phase::Gather);
+        CHECK(r.note.find("no floor") != std::string::npos);
+        Facts on = f;
+        on.leadOffFloor = false;
+        Run r2 = Start(&plan);
+        r2.phase = Phase::Gather;
+        MarkSummoned(r2, "Jinkla");
+        r2.summoned.insert("Jinkla");
+        r2.runMs = 90000;
+        GatherCeiling(r2, on, order, "the party did not gather", true);
+        CHECK(order == "summon Jinkla");
+    }
+    // A bot alive again far from the lead bot (SummonRevived): held back, no try spent.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 200)};
+        Run r = Start(&plan);
+        r.waitFor.insert("Fyran");
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 100)};
+        std::string order;
+        CHECK(!SummonRevived(r, f, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.summoned.empty() && r.reviveSummons.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(SummonRevived(r, on, order) && order == "summon Fyran");
+    }
+    // A direct step's follower left behind (Run::summonDue, TickBody): the summon waits and is kept for later.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::MoveDirect, 200)};
+        Run r = Start(&plan, 1);
+        r.summonDue = "Fyran";
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 30)};
+        std::string const off = Tick(r, f);
+        CHECK(off.compare(0, 7, "summon ") != 0);
+        CHECK(r.summonDue == "Fyran" && r.summonWait.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(Tick(r, on) == "summon Fyran");
+    }
+}
+
+// H1: an off-floor lead bot never leaves the tick handled with no order and no clock. The stranded lead bot's summons
+// wait for the bot left behind, so the kStrandSummonWaitMs pause still comes; the held party's summon falls through to
+// the step machine, so the regroup's own timers (and the lead bot's rescue) run.
+static void TestOffFloorLeadNeverStallsTheTick()
+{
+    // The stranded lead bot: its teleport landed on a point where it hovers over the pit floor, Rhan is left behind.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200)};
+        Run r = Start(&plan, 1);
+        r.strandSummon = true;
+        r.strandIdx = 0;
+        r.strandX = 10.0f;
+        Facts f = Party(0);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Rhan", 68)};
+        std::string order;
+        CHECK(StrandedTeleportTick(r, f, kTickMs, order) && order.empty());
+        CHECK(r.strandSummonMs == kTickMs); // the clock runs while the floor holds the summon back
+        CHECK(r.note.find("no floor") != std::string::npos && r.note.find("Rhan") != std::string::npos);
+        CHECK(r.summoned.empty() && r.strandSummoned.empty());
+        for (std::uint32_t ms = kTickMs; ms < kStrandSummonWaitMs && r.state == State::Running; ms += kTickMs)
+        {
+            order.clear();
+            CHECK(StrandedTeleportTick(r, f, kTickMs, order) && order.empty());
+        }
+        CHECK(r.state == State::Paused);
+        CHECK(r.note == "the lead bot was teleported to the last reached point (step 1), but Rhan could not be summoned "
+            "(the lead bot has no floor under it), 68.0 yd from it at 68.0 0.0 0.0 for 120 s: bring it to the lead bot, "
+            "then .bot run resume");
+        CHECK(r.summoned.empty());
+    }
+    // The held party: the summon falls through to the step machine, so the regroup's gather and walk back run.
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Move, 10), Step(PlanStepKind::Move, 200), PullStep(220, {1})};
+        Run r = Start(&plan, 2);
+        BeginRegroup(r);
+        r.walkBackDue = true;
+        r.hold = {"Fyran"};
+        Facts f = Party(-90);
+        f.leadOffFloor = true;
+        f.members = {Mem("Tanky", 0), Mem("Fyran", 305)};
+        f.maxMemberYd = 305;
+        std::string order;
+        CHECK(!SummonHeldToLead(r, f, order) && order.empty());
+        CHECK(r.hold.size() == 1 && r.heldSummons.empty() && r.summoned.empty());
+        std::string seen;
+        for (std::uint32_t ms = 0; ms <= kStrandSummonWaitMs && seen.empty() && r.state == State::Running; ms += kTickMs)
+            seen = Tick(r, f);
+        CHECK(!seen.empty() || r.state == State::Paused); // the walk back starts or the run pauses: no infinite hold
+        CHECK(r.summoned.empty());
+    }
+}
+
+// L1: the wedged member's teleport return is no summon and does not land at the lead bot's feet, so a lead bot off the
+// floor does not hold it back; the summon it replaces still does.
+static void TestWedgedMemberIsStillTeleportedBackOffTheFloor()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 2000)};
+    auto wedged = [](float yd, float dz)
+    {
+        Facts f = Party(0);
+        f.raid.on = true;
+        f.leadOffFloor = true;
+        f.teleportReturnYd = 30.0f; // AiPlayerbot.RunTeleportReturnYd, a bot-only party
+        f.members = {Mem("Tanky", 0), Mem("Rhan", yd, dz)};
+        return f;
+    };
+    auto run = [&]()
+    {
+        Run r = Start(&plan);
+        r.fetchOn = true;
+        r.still["Rhan"].ms = kWedgedMs;
+        return r;
+    };
+    {
+        Run r = run();
+        Facts f = wedged(60.0f, -20.0f); // far enough for the teleport return
+        std::string order;
+        CHECK(WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.fetch.count("Rhan") && r.wedgedSummoned.count("Rhan") && r.wedgedSummons == 1);
+        CHECK(r.note.find("teleported back") != std::string::npos);
+        CHECK(r.summoned.empty());
+    }
+    {
+        Run r = run();
+        Facts f = wedged(25.0f, -20.0f); // within the teleport return's reach: a summon, held back
+        std::string order;
+        CHECK(!WedgedSummon(r, f, kTickMs, order) && order.empty());
+        CHECK(r.note.find("no floor") != std::string::npos);
+        CHECK(r.wedgedSummoned.empty() && r.wedgedSummons == 0 && r.fetch.empty());
+        Facts on = f;
+        on.leadOffFloor = false;
+        CHECK(WedgedSummon(r, on, kTickMs, order) && order == "summon Rhan");
+    }
+}
+
 
 // The island hop never starts for a lead bot in another part: the pause says why.
 static void TestNoIslandHopForALeadInAnotherPart()
@@ -26672,6 +27380,111 @@ static void TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick()
     CHECK(r.focusIconGuid == 0); // the skull stays where it is (T5)
 }
 
+// A totem one volley left at 11 % keeps the focus, but no new order went out while the pick stayed the same, so the
+// DPS that drifted off after the burst never came back (ZG walk 41: 0 bots on it for 75 s). The focus is sent again
+// every kTotemRefocusMs while the totem lives, and that is the only order it gets.
+static void TestTotemFocusRefiresWhileTotemLives()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    // The next 3 s of the same pick: one re-send, at the 3 s mark and never another order.
+    int resends = 0;
+    for (int tick = 0; tick < 3; ++tick)
+    {
+        std::string const order = Tick(r, f);
+        if (order.empty())
+            continue;
+        CHECK(order == "focus 501");
+        ++resends;
+    }
+    CHECK(resends == 1);
+    CHECK(r.focusGuid == 501);
+    CHECK(r.focusIconGuid == 0); // a re-send moves no mark either
+}
+
+// The re-send is for a totem nobody is hitting: while a damage dealer attacks the held totem no order goes out (every
+// focus order cancels the commander's tasks and takes the bots off stay), and the first tick after the last damage
+// dealer left it sends the focus. Failing case before the dpsOnIt gate: a re-send every 3 s whoever was on it.
+static void TestTotemFocusIsNotResentWhileADpsAttacksIt()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    totem.dpsOnIt = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    for (int tick = 0; tick < 12; ++tick)
+        CHECK(Tick(r, f).empty()); // a damage dealer is on it: nothing goes out, however long
+    f.killFirst[0].dpsOnIt = false;
+    CHECK(Tick(r, f) == "focus 501"); // the burst ended: the order is due at once
+    CHECK(Tick(r, f).empty());        // and not again before the next 3 s
+}
+
+// A kill_first unit that is no totem (a healer, a Shade) is focused when the pick changes and never re-sent, the
+// totem key on or off: its focus order is the heavy one (the tanks and healers go to the skull).
+static void TestGeneralKillFirstFocusIsNeverResent()
+{
+    for (bool const totemKey : {false, true})
+    {
+        DungeonPlan plan;
+        plan.steps = {Step(PlanStepKind::Boss)};
+        plan.killFirst = {5650};
+        Run r = Start(&plan);
+        Facts f = Party(0);
+        f.anyInCombat = true;
+        f.totemFocus = totemKey;
+        f.killFirst = {Engaged(Unit(30, 5650, 6))};
+        CHECK(Tick(r, f) == "focus 30");
+        for (int tick = 0; tick < 20; ++tick)
+            CHECK(Tick(r, f).empty());
+    }
+}
+
+// The totem re-send is sent at the end of the fight branch, so a tick that re-sends still ran everything before it: the
+// fight ceiling pauses the run on that tick instead of the order skipping it. Failing case with the early return: the
+// run was still Running on the re-send tick.
+static void TestTotemResendTickStillRunsTheFightBranch()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    UnitFact totem = Unit(501, 15112, 5);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    CHECK(Tick(r, f) == "focus 501");
+    for (int tick = 0; tick < 2; ++tick)
+        Tick(r, f);
+    // The next tick is the re-send tick (3 s after the order) and also the one the fight ceiling is crossed on.
+    r.fightMs = kBossFightCapMs + 1;
+    Tick(r, f);
+    CHECK(r.state == State::Paused);
+}
+
 // T2: the totem focus runs at the top of the fight branch, so the automatic crowd control (or the hp hold, the guard)
 // never spends the tick first. Key off: today's order, the auto-CC first.
 static void TestTotemFocusFiresBeforeTheAutoCcTick()
@@ -26764,6 +27577,20 @@ static void TestTotemFocusMayInterrupt()
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2006, true, false, true));    // any resurrect effect
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 75, false, false, true));       // Auto Shot
     CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Other, 5019, false, false, true));     // Shoot (a wand's shot)
+    // The cast's target looked up by guid: a guid whose unit is gone (a freed totem) counts as a target to cut at.
+    CHECK(TotemFocusTargetHostile(true, false, false));   // named unit gone
+    CHECK(TotemFocusTargetHostile(true, true, true));     // named unit alive and hostile
+    CHECK(!TotemFocusTargetHostile(true, true, false));   // named unit alive, friendly
+    CHECK(!TotemFocusTargetHostile(false, false, false)); // no unit guid and no selection
+    CHECK(TotemFocusTargetHostile(false, true, true));    // no unit guid, hostile selection
+    CHECK(!TotemFocusTargetHostile(false, true, false));  // no unit guid, friendly selection
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 686, false, false, TotemFocusTargetHostile(true, false, false)));
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 2050, false, true, TotemFocusTargetHostile(true, false, false)));
+    // A cast already aimed at the focused totem is not cut (a Fireball in flight at it); the same cast on another unit is.
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true, true));
+    CHECK(!TotemFocusMayInterrupt(TotemFocusSpell::Channeled, 689, false, false, true, true));
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true, false));
+    CHECK(TotemFocusMayInterrupt(TotemFocusSpell::Generic, 133, false, false, true));
 }
 
 // M1: while the retreat holds the fight, a kill_first totem that stands gets no focus order: the living walk back
@@ -28948,9 +29775,140 @@ static DungeonPlan FiringPlan(std::uint32_t flags = 0)
     return plan;
 }
 
+// Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik hovers 10 yd over her altar; the
+// pullback's reach picked an air point for its firing position and launched nothing, the
+// order was refused *unreachable* and the run paused in a stand search that was empty by
+// construction. A refused ranged pullback on a boss or pack row now retries once as a body
+// (melee) pull (`pull <guid>`): the tank walks in on the target's ground position (the
+// reach projects the target onto the floor under it). Only a refused body pull, or a
+// second refusal, takes the approach's way out (the stand search).
+static void TestRefusedBossPullbackRetriesBodyPull()
+{
+    DungeonPlan plan;
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    f.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    // The refused ranged pull counts no pull and no stand search yet: one body pull first.
+    CHECK(r.state == State::Running && r.step == 0 && !r.approachStandWanted);
+    CHECK(r.pullGuid == 0 && r.pulls == 0 && r.pullTries[7] == 0 && r.phase == Phase::Begin);
+    CHECK(r.bodyPullGuid == 7 && r.bodyPullStep == r.step);
+    CHECK(r.note == std::string(kFiringWhy) + ": retrying once as a body pull");
+    // The next tick sends it: a body pull, the tank walking in (no stand rule, no walk back).
+    CHECK(Tick(r, f) == "pull 7 body");
+    CHECK(r.bodyPullGuid == 0 && r.bodyPullOrder == "pull 7 body");
+    // The retry is no pull of the step (the pull cap and the fruitless count read real pulls), but it
+    // is a try on the unit.
+    CHECK(r.phase == Phase::AwaitPull && r.pullGuid == 7 && r.pulls == 0 && r.pullTries[7] == 1);
+    CHECK(r.bodyPullStep == r.step);
+    CHECK(Has(r.note, "body pull"));
+    // The body pull starts no fight: after kPullNoFightMs the ranged pull goes out again,
+    // and its refusal now takes the approach's way out (the retry is spent).
+    CHECK(BodyPullRunsOut(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == r.step);
+    CHECK(r.bodyPullGuid == 0 && r.bodyPullStep == r.step); // spent: no second retry
+    CHECK(r.note == std::string(kFiringWhy) + ": looking for a stand within 25.0 yd of it");
+    // The boss's own ring (15-25 yd) takes a stand 20 yd out.
+    CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
+    CHECK(r.approachStand == 2 && r.state == State::Running);
+
+    // A body pull refused for the firing position / path (unreachable) is no retry either:
+    // straight to the approach's way out.
+    Run q = Start(&plan);
+    q.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(q, g) == "pullback 7");
+    OrderRefused(q, "pullback 7", kFiringRefusal);
+    CHECK(Tick(q, g) == "pull 7 body");
+    OrderRefused(q, "pull 7 body", "unreachable: the tank has no path to the target");
+    CHECK(q.state == State::Running && q.approachStandWanted && q.bodyPullGuid == 0);
+    CHECK(q.note.find("cmd pull 7 body refused: unreachable: the tank has no path to the target") == 0);
+}
+
+// Codex review t1105c round 2 (high): the body-pull retry treated EVERY refusal as an
+// unreachable target. A refusal that is no navigation failure (a busy tank, no tank, a pull
+// policy failure) says nothing of the target or the firing position: it takes the generic
+// pause, rewrites no pull counter and starts no stand search or deferral.
+static void TestRefusedBodyPullNotUnreachableTakesThePause()
+{
+    DungeonPlan plan;
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    for (const char* answer : {"tank-busy: the tank is pulling", "no-tank: no tank in the party",
+                               "pull-policy: The mature pullback strategy is unavailable."})
+    {
+        Run q = Start(&plan);
+        q.restDue = false;
+        Facts g = Party(0);
+        g.units = {Unit(7, 14517, 40)};
+        CHECK(FirstOrder(q, g) == "pullback 7");
+        OrderRefused(q, "pullback 7", kFiringRefusal);
+        CHECK(Tick(q, g) == "pull 7 body");
+        CHECK(q.pullTries[7] == 1 && q.phase == Phase::AwaitPull && q.pullGuid == 7);
+        OrderRefused(q, "pull 7 body", answer);
+        // The generic pause: no stand search, no deferral, the pull counters untouched.
+        CHECK(q.state == State::Paused);
+        CHECK(!q.approachStandWanted && q.approachStand == 0 && q.deferredPulls.empty());
+        CHECK(q.pullTries[7] == 1);
+        CHECK(!PullbackRefusedUnreachable(q, "pull 7 body", answer));
+    }
+    // The same for the ranged order's non-unreachable refusal (the existing gate).
+    Run q = Start(&plan);
+    q.restDue = false;
+    Facts g = Party(0);
+    g.units = {Unit(7, 14517, 40)};
+    CHECK(FirstOrder(q, g) == "pullback 7");
+    OrderRefused(q, "pullback 7", "tank-busy: the tank is pulling");
+    CHECK(q.state == State::Paused && !q.approachStandWanted && q.bodyPullGuid == 0);
+}
+
+// Zul'Gurub walk 41 (2026-11-05): High Priestess Jeklik's boss row carries the default
+// radius 30, and the stand search's inner ring was radius + 5 = 35 yd against its 25 yd
+// outer bound: empty by construction, so every approach pause around her said "no safe
+// stand 35.0-25.0 yd from it" and the run could never stand anywhere near her. A boss
+// row's radius is its spawn-search reach, not a pull band: its ring is 15-25 yd like any
+// other stand, and a stand inside it is taken; a pull row keeps its pull band.
+static void TestBossRowApproachStandRingNotEmpty()
+{
+    PlanStep b = Step(PlanStepKind::Boss, 40);
+    b.entry = 14517;
+    ai::NormalizePlanStep(b);
+    CHECK(b.radius == 30.0f);                            // the default boss radius
+    CHECK(ApproachStandMinRing(b) == kApproachStandMinYd);
+    CHECK(ApproachStandMinRing(b) <= kApproachStandYd);  // the ring is not empty
+    PlanStep p = PullStep(40, {1});
+    CHECK(p.radius == 15.0f && ApproachStandMinRing(p) == 20.0f);
+    PlanStep wide = PullStep(40, {1});
+    wide.radius = 22.0f;
+    CHECK(ApproachStandMinRing(wide) == 27.0f);          // past the 25 yd bound: the search finds none, as before
+
+    // The search itself: a boss step whose approach found no way asks for a stand, and
+    // one 20 yd from it (inside the old empty ring) is taken.
+    DungeonPlan plan;
+    plan.steps = {InLeg(b, 0), InLeg(Step(PlanStepKind::Move, 400), 0)};
+    Run r = Start(&plan);
+    r.restDue = false;
+    Facts f = Party(0);
+    ApproachNoWay(r, f, b, "no walkable path toward the boss at 40.0 0.0 0.0");
+    CHECK(r.state == State::Running && r.approachStandWanted && r.approachStand == 1);
+    CHECK(ApproachStandFound(r, f, true, 20, 0, 0));
+    CHECK(r.approachStand == 2 && r.state == State::Running);
+}
+
 // Stormwrought Ruins r36 slot J step 553 / Windhorn Canyon r36 slot G step 1854: the step's
 // pull went out with the pack in sight but out of the tank's shot, its firing stands spent;
-// the refused pull counts no pull and gets the approach stand search, then (none found) the deferral.
+// the refused pull counts no pull, gets its one body-pull retry, then the approach stand
+// search, then (none found) the deferral.
 static void TestRefusedFiringPositionSearchesAStandThenDefers()
 {
     DungeonPlan plan = FiringPlan();
@@ -28961,8 +29919,14 @@ static void TestRefusedFiringPositionSearchesAStandThenDefers()
     CHECK(PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
-    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == 0);
+    CHECK(r.state == State::Running && !r.approachStandWanted && r.bodyPullGuid == 7);
     CHECK(r.pullGuid == 0 && r.pulls == 0 && r.pullTries[7] == 0 && r.phase == Phase::Begin);
+    CHECK(r.note == std::string(kFiringWhy) + ": retrying once as a body pull");
+    // The body pull that starts no fight is spent: the next refusal searches the stand.
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && r.approachStandWanted && r.refusedPullStandStep == 0);
+    CHECK(r.pullGuid == 0 && r.pullTries[7] == 1 && r.phase == Phase::Begin);
     CHECK(r.note == std::string(kFiringWhy) + ": looking for a stand within 25.0 yd of it");
     // The next tick (the pack still in sight) is the stand's: no second pullback before the glue's answer.
     CHECK(Tick(r, f).empty());
@@ -28985,13 +29949,15 @@ static void TestRefusedFiringPositionPullsFromTheStandThenDefers()
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty());
     CHECK(ApproachStandFound(r, f, true, 20, 0, 0));          // 20 yd from the pack
     CHECK(Tick(r, f) == "move 20.0 0.0 0.0");                 // the walk to the stand, no pullback
     f.leadX = 20;
     f.units[0].distLead = 20;
     CHECK(FirstOrder(r, f) == "pullback 7");                  // from the stand
-    CHECK(r.pullTries[7] == 1);                               // the refused one was not counted
+    CHECK(r.pullTries[7] == 2);                               // neither refused pull was counted
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.step == 1 && !r.approachStandWanted);
     CHECK(r.deferredPulls == std::vector<std::size_t>{0} && r.note.find("pack at 40.0 0.0 0.0 deferred") == 0);
@@ -29012,11 +29978,14 @@ static void TestRefusedFiringPositionAfterNoFiringStand()
     CHECK(Has(r.note, "no firing stand found"));
     CHECK(r.shotStandTries[7] == kShotStandTries);
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(r.state == State::Running && !r.approachStandWanted && r.bodyPullGuid == 7);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.approachStandWanted);
     CHECK(r.shotStandTries[7] == kShotStandTries);          // no firing-stand stage (1c)
 }
 
-// A boss is never deferred: the stand search, then the approach pause.
+// A boss is never deferred: the body-pull retry, the stand search, then the approach pause.
 static void TestRefusedFiringPositionOfABossPausesAfterTheStandSearch()
 {
     DungeonPlan plan;
@@ -29029,6 +29998,8 @@ static void TestRefusedFiringPositionOfABossPausesAfterTheStandSearch()
     Facts f = Party(0);
     f.units = {Unit(7, 4832, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.approachStandWanted);
     CHECK(Tick(r, f).empty());
@@ -29047,6 +30018,8 @@ static void TestRefusedFiringPositionOnARetryIsGivenUp()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(r.state == State::Running && r.step == 2 && !r.approachStandWanted);
     CHECK(r.notCleared.count(0) && r.deferGivenUp == std::vector<std::size_t>{0});
@@ -29196,12 +30169,12 @@ static void TestRefusedFiringPositionNeverLoops()
     };
     int first = 0;
     drive(first);
-    CHECK(first == 2 && r.state == State::Paused && r.note == kFiringWhy);
+    CHECK(first == 3 && r.state == State::Paused && r.note == kFiringWhy); // before the retry, after it, from the stand
     CHECK(r.approachPauseKnown && r.approachPauseX == 20.0f);
     CHECK(Resume(r));
     int second = 0;
     drive(second);
-    CHECK(second >= 1 && second <= 2 && r.state == State::Paused);
+    CHECK(second == 3 && r.state == State::Paused);
 }
 
 // scarlet_graveyard step 32: the step's fight left the tank on a 3 yd navmesh island at the foot of a
@@ -29217,6 +30190,8 @@ static void TestRefusedFiringPositionFromAnIslandHopsOffFirst()
     f.units = {Unit(7, 1, 40)};
     CHECK(!PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
@@ -29247,6 +30222,8 @@ static void TestIslandSuspectDroppedWhenTheLeadMoved()
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
     island.leadIsland = true;
@@ -29265,6 +30242,8 @@ static void TestIslandSuspectDroppedWhenTheLeadMoved()
     g.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(s, g) == "pullback 7");
     OrderRefused(s, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(s, g) == "pullback 7");
+    OrderRefused(s, "pullback 7", kFiringRefusal);
     CHECK(Tick(s, g).empty() && s.approachStandWanted);
     Facts stay = g;
     stay.leadIsland = true;
@@ -29282,6 +30261,8 @@ static void TestRefusedFiringPositionOfAPackNotOnAnIslandStillPauses()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts notIsland = f;
@@ -29303,6 +30284,8 @@ static void TestRefusedFiringPositionFromAnIslandPastTheCapsNamesIt()
     Facts f = Party(0);
     f.units = {Unit(7, 1, 40)};
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     r.islandEscapes = kIslandEscapes;   // the caps of two hops off it, spent and the lead bot still there
@@ -29327,6 +30310,8 @@ static void TestRefusedFiringPositionFromAnIslandPastTheCapsDefers()
     f.units = {Unit(7, 1, 40)};
     CHECK(PullMayBeDeferred(r));
     CHECK(FirstOrder(r, f) == "pullback 7");
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     r.islandEscapes = kIslandEscapes;
@@ -29353,7 +30338,7 @@ static void TestRefusedFiringPositionFromAnIslandNoSpotHopsDefer()
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     int noSpots = 0;
-    for (int i = 0; i < 40 && r.state == State::Running && r.deferredPulls.empty(); ++i)
+    for (int i = 0; i < 120 && r.state == State::Running && r.deferredPulls.empty(); ++i)
     {
         std::string const o = Tick(r, f);
         if (r.approachStandWanted)
@@ -29388,7 +30373,7 @@ static void TestRefusedFiringPositionFromAnIslandWaitRoundsAreBounded()
     CHECK(FirstOrder(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     int hops = 0;
-    for (int i = 0; i < 60 && r.state == State::Running; ++i)
+    for (int i = 0; i < 150 && r.state == State::Running; ++i)
     {
         std::string const o = Tick(r, f);
         if (r.approachStandWanted)
@@ -29423,6 +30408,8 @@ static void TestRefusedFiringPositionFromAnIslandResetsTheShotStand()
     f.shotStandGuid = 7;                   // the glue's read answers every request: none known
     CHECK(FirstOrder(r, f) == "pullback 7");
     CHECK(Has(r.note, "no firing stand found") && r.shotStandTries[7] == kShotStandTries);
+    OrderRefused(r, "pullback 7", kFiringRefusal);
+    CHECK(SpendBodyRetry(r, f) == "pullback 7");
     OrderRefused(r, "pullback 7", kFiringRefusal);
     CHECK(Tick(r, f).empty() && r.approachStandWanted);
     Facts island = f;
@@ -33010,6 +33997,369 @@ static void TestAutoCcSkipsDottedUnits()
     }
 }
 
+// A dungeon's trash is mostly non-elite. A NORMAL-rank unit (a Bloodseeker Bat, a Sacrificed Troll) is no body of
+// either pack count, so an all-normal or normal-plus-one-elite pack over the raw threshold opens no order at all.
+// Mutation: drop `!u.normalRank` from RunAutoCcBodies and the first two runs send a mark (the second is over the raw
+// threshold of six); drop the normalRank argument from RunAutoCcFightTick's countEngaged and the last two do.
+static void TestAutoCcPrePullBodyCountSkipsNormalRank()
+{
+    DungeonPlan plan = CcPlan({});
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        // Eight units over the raw threshold of six, seven of them non-elite: one body, no order.
+        for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        {
+            UnitFact u = AutoHumanoid(guid, 9.0f + static_cast<float>(guid));
+            u.normalRank = guid != 8;
+            f.units.push_back(u);
+        }
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+        CHECK(r.note.find("no free crowd control fits") == std::string::npos);
+    }
+    {
+        // All normal: no body at all.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        for (std::uint64_t guid = 1; guid <= 8; ++guid)
+        {
+            UnitFact u = AutoHumanoid(guid, 9.0f + static_cast<float>(guid));
+            u.normalRank = true;
+            f.units.push_back(u);
+        }
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+    }
+    {
+        // The control: seven elites over six mark the pack.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        for (std::uint64_t guid = 1; guid <= 7; ++guid)
+            f.units.push_back(AutoHumanoid(guid, 9.0f + static_cast<float>(guid)));
+        CHECK(Tick(r, f) == "cc moon 7 Magey polymorph");
+    }
+    {
+        // The fight's engaged count skips them too: seven non-elite attackers and one elite are no pack of six.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        for (std::uint64_t guid = 1; guid <= 7; ++guid)
+        {
+            UnitFact u = AutoHumanoid(guid, 12);
+            u.normalRank = true;
+            f.partyAttackers.push_back(u);
+        }
+        f.partyAttackers.push_back(AutoHumanoid(9, 20));
+        std::string order;
+        CHECK(!RunAutoCcFightTick(r, f, plan.steps[0], kTickMs, order) && order.empty());
+    }
+    {
+        // The lead bot's own non-elite attackers are no bodies of the count either: the tank holds them.
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        for (std::uint64_t guid = 200; guid <= 207; ++guid)
+            f.leadAttackers.push_back({guid, false, true});
+        f.partyAttackers = {AutoHumanoid(950, 20)}; // the elite joiner
+        std::string order;
+        CHECK(!RunAutoCcFightTick(r, f, plan.steps[0], kTickMs, order) && order.empty());
+    }
+}
+
+// The estimated counts are elite-only too (RunAutoCcBodies): ReadPullJoiners' ring estimate and its flat joiner
+// estimate both bring every living hostile, so the bodies the automatic crowd control counts must be the ones not
+// NORMAL-rank. Eight estimated bodies of which seven are non-elite are one body: no order, from either estimate.
+// Mutation: return pick.estBodies / pick.joiners + 1 from RunAutoCcBodies and both first runs send "cc moon 2 ...".
+static void TestAutoCcEstimatedBodyCountSkipsNormalRank()
+{
+    DungeonPlan plan = CcPlan({});
+    for (bool ring : {false, true})
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.aggroWalkRing = ring;
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact pick = AutoHumanoid(1, 10);
+        pick.joinersRead = true;
+        pick.estBodies = 8;
+        pick.estBodiesElite = 1;
+        pick.joiners = 7;
+        f.units = {pick, AutoHumanoid(2, 30)};
+        CHECK(RunAutoCcBodies(r, f, pick) == 1);
+        CHECK(Tick(r, f) == "pullback 1");
+        CHECK(r.ccSent.empty());
+    }
+    // The control: the same read with eight elite bodies marks the pack.
+    for (bool ring : {false, true})
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(6);
+        f.aggroWalkRing = ring;
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact pick = AutoHumanoid(1, 10);
+        pick.joinersRead = true;
+        pick.estBodies = 8;
+        pick.estBodiesElite = 8;
+        pick.joiners = 7;
+        f.units = {pick, AutoHumanoid(2, 30)};
+        CHECK(RunAutoCcBodies(r, f, pick) == 8);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph");
+    }
+}
+
+// In the fight (RunAutoCcFightTick) a non-elite attacker is no candidate: the two non-elite attackers are farther and
+// higher level than the elite, so RunAutoCcBetter would take guid 1 without the skip. No partyHits on them: that
+// filter would hide the one under test.
+// Mutation: drop the normal-rank half of RunCcSkipsUnit from the fight tick's candidate loop and the order names
+// guid 1.
+static void TestAutoCcFightCandidateSkipsNormalRank()
+{
+    DungeonPlan plan = CcPlan({});
+    Run r = Start(&plan);
+    Facts f = AutoParty(0);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    UnitFact normalA = AutoHumanoid(1, 30);
+    normalA.normalRank = true;
+    normalA.level = 60;
+    UnitFact normalB = AutoHumanoid(2, 28);
+    normalB.normalRank = true;
+    normalB.level = 60;
+    UnitFact elite = AutoHumanoid(3, 10);
+    f.partyAttackers = {normalA, normalB, elite};
+    std::string order;
+    CHECK(RunAutoCcFightTick(r, f, plan.steps[0], kTickMs, order));
+    CHECK(order == "cc moon 3 Magey polymorph");
+    CHECK(r.ccSent.count(1) == 0 && r.ccSent.count(2) == 0);
+}
+
+// Facts::autoCc's opening burst (RunAutoCcPrePullOpenTick): a hold on a unit that reads NORMAL-rank, or on a cc_never
+// entry, is not sent again; a plain elite hold is (the control).
+// Mutation: drop RunCcSkipsUnit from the opening tick and the two runs send "cc moon 6 ..."/"cc moon 7 ...".
+static void TestAutoCcOpeningResendSkipsNormalRankAndCcNever()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    auto open = [&](const UnitFact& u) {
+        Run r = Start(&plan);
+        r.ccOpenDue = true;
+        r.ccHolds[u.guid] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+        r.ccSent.insert(u.guid);
+        r.ccOpenPrepull.insert(u.guid);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.partyAttackers = {u};
+        std::string order;
+        return RunAutoCcPrePullOpenTick(r, f, kTickMs, order) ? order : std::string();
+    };
+    UnitFact elite = AutoHumanoid(5, 20);
+    UnitFact trivial = AutoHumanoid(6, 21);
+    trivial.normalRank = true;
+    UnitFact never = AutoHumanoid(7, 22);
+    never.entry = 200;
+    CHECK(open(elite) == "cc moon 5 Magey polymorph");
+    CHECK(open(trivial).empty());
+    CHECK(open(never).empty());
+}
+
+// A hold whose aura broke is not re-sent (RunCcReapplyTick) on a NORMAL-rank unit or a cc_never entry; an elite hold
+// is (the control).
+// Mutation: drop RunCcSkipsUnit from the reapply tick and the two runs return "cc moon 6 ..."/"cc moon 7 ...".
+static void TestAutoCcReapplySkipsNormalRankAndCcNever()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    auto reapply = [&](const UnitFact& u) {
+        Run r = Start(&plan);
+        r.ccHolds[u.guid] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+        r.ccSent.insert(u.guid);
+        r.ccLandedSeen.insert(u.guid);
+        Facts f = AutoParty(6);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.anyInCombat = true;
+        f.partyAttackers = {u};
+        std::string order;
+        return RunCcReapplyTick(r, f, kTickMs, order) ? order : std::string();
+    };
+    UnitFact elite = AutoHumanoid(5, 20);
+    UnitFact trivial = AutoHumanoid(6, 21);
+    trivial.normalRank = true;
+    UnitFact never = AutoHumanoid(7, 22);
+    never.entry = 200;
+    CHECK(reapply(elite) == "cc moon 5 Magey polymorph");
+    CHECK(reapply(trivial).empty());
+    CHECK(reapply(never).empty());
+}
+
+// RunAutoCcNoBotNote lists only the entries the automatic crowd control would mark (RunCcSkipsUnit), and is empty when
+// nothing it may mark is there: the empty "fits ()" note is never emitted, nor ccAutoNoBotNoted set for it.
+// Mutation: drop either half of RunCcSkipsUnit from the note and the first, empty check lists 101 (normal) or 200
+// (cc_never).
+static void TestAutoCcNoBotNoteListsOnlyMarkableEntries()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    UnitFact trivial = AutoHumanoid(1, 10);
+    trivial.normalRank = true;
+    UnitFact never = AutoHumanoid(2, 11);
+    never.entry = 200;
+    f.units = {trivial, never};
+    CHECK(RunAutoCcNoBotNote(r, f, 8, 6).empty());
+    f.units.push_back(AutoHumanoid(3, 12)); // an elite with no bot that fits is the only entry listed
+    CHECK(RunAutoCcNoBotNote(r, f, 8, 6) == "auto cc: 8 bodies over 6, no free crowd control fits (103)");
+    // Through the pull: seven cc_never bodies are over the threshold, but there is nothing to report, so the note is
+    // not emitted and the once-a-step flag stays clear.
+    Run q = Start(&plan);
+    Facts g = AutoParty(6);
+    for (std::uint64_t guid = 1; guid <= 7; ++guid)
+    {
+        UnitFact u = AutoHumanoid(guid, 10.0f + static_cast<float>(guid));
+        u.entry = 200;
+        g.units.push_back(u);
+    }
+    CHECK(Tick(q, g) == "pullback 1");
+    CHECK(!q.ccAutoNoBotNoted);
+    CHECK(q.note.find("no free crowd control fits") == std::string::npos);
+}
+
+// A cc_never unit still counts toward the fight's engaged total: it cannot be held, so it still makes the pack
+// dangerous. Seven cc_never attackers over a threshold of six start the mark on the eligible elite beside them.
+// Mutation: filter cc_never out of countEngaged (or the old comment's rule) and the fight is one body: no order.
+static void TestAutoCcCcNeverStillCountsEngaged()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    Run r = Start(&plan);
+    Facts f = AutoParty(6);
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    for (std::uint64_t guid = 1; guid <= 7; ++guid)
+    {
+        UnitFact u = AutoHumanoid(guid, 12);
+        u.entry = 200;
+        f.partyAttackers.push_back(u);
+    }
+    UnitFact elite = AutoHumanoid(9, 20);
+    elite.entry = 201;
+    f.partyAttackers.push_back(elite);
+    std::string order;
+    CHECK(RunAutoCcFightTick(r, f, plan.steps[0], kTickMs, order));
+    CHECK(order == "cc moon 9 Magey polymorph");
+    CHECK(r.note.find("engaged 8 over 6") != std::string::npos);
+    CHECK(r.ccSent.count(1) == 0);
+}
+
+// The plan author's intent wins over the rank: a NORMAL-rank entry the plan lists in cc_always or cc_priority is
+// still an automatic candidate (the normal-rank skip covers unlisted units only).
+// Mutation: make RunCcSkipsUnit skip every normal-rank unit and both first ticks pick guid 1 instead.
+static void TestAutoCcListedNormalRankIsACandidate()
+{
+    {
+        DungeonPlan plan = CcPlan({});
+        plan.ccAlways = {202};
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact listed = AutoHumanoid(3, 20);
+        listed.entry = 202;
+        listed.normalRank = true;
+        f.units = {AutoHumanoid(1, 10), listed};
+        CHECK(Tick(r, f) == "cc moon 3 Magey polymorph");
+    }
+    {
+        DungeonPlan plan = CcPlan({201});
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact listed = AutoHumanoid(3, 20);
+        listed.entry = 201;
+        listed.normalRank = true;
+        f.units = {AutoHumanoid(1, 10), listed};
+        CHECK(Tick(r, f) == "cc moon 3 Magey polymorph");
+    }
+}
+
+// The plan's cc_never list: an entry on it is never an automatic pick, before the pull or in the fight, and a hold
+// already registered on one is not re-applied. The plan's own picker with the key off is unchanged.
+static void TestAutoCcRespectsPlanCcNever()
+{
+    DungeonPlan plan = CcPlan({});
+    plan.ccNever = {200};
+    {
+        Run r = Start(&plan);
+        Facts f = AutoParty(0);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        UnitFact never = AutoHumanoid(2, 20); // farther: the pick would take it without the list
+        never.entry = 200;
+        UnitFact free = AutoHumanoid(3, 12);
+        free.entry = 201;
+        f.units = {free, never};
+        CHECK(Tick(r, f) == "cc moon 3 Magey polymorph");
+        CHECK(r.ccSent.count(2) == 0);
+        CHECK(Tick(r, f).compare(0, 9, "pullback ") == 0);
+        // The only unmarked unit is cc_never: nothing to report, so no empty-entries note and no flag.
+        CHECK(r.note.find("no free crowd control fits") == std::string::npos);
+        CHECK(!r.ccAutoNoBotNoted);
+        CHECK(r.ccSent.size() == 1 && r.ccSent.count(2) == 0);
+    }
+    {
+        // In the fight: the never entry is skipped as a candidate, another engager is marked instead.
+        Run r = Start(&plan);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph, 60), AutoCcMem("Magetwo", CcFamily::Polymorph, 60)};
+        f.units = {AutoHumanoid(1, 10), AutoHumanoid(2, 12)};
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // over the threshold of one
+        CHECK(Tick(r, f) == "pullback 1");
+        f.anyInCombat = true;
+        for (std::uint64_t guid = 100; guid <= 107; ++guid)
+        {
+            UnitFact hit = AutoHumanoid(guid, 15);
+            hit.partyHits = true;
+            f.partyAttackers.push_back(hit);
+        }
+        UnitFact never = AutoHumanoid(900, 25); // farther: the better pick without the list
+        never.entry = 200;
+        UnitFact free = AutoHumanoid(901, 20);
+        free.entry = 201;
+        f.partyAttackers.push_back(never);
+        f.partyAttackers.push_back(free);
+        CHECK(Tick(r, f) == "cc moon 2 Magey polymorph"); // the pre-pull mark's opening re-send
+        CHECK(Tick(r, f) == "cc square 901 Magetwo polymorph");
+        CHECK(r.ccSent.count(900) == 0);
+    }
+    {
+        // A hold already registered on a listed unit is not re-sent when its aura breaks.
+        Run r = Start(&plan);
+        r.ccHolds[200] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+        r.ccSent.insert(200);
+        r.ccLandedSeen.insert(200);
+        Facts f = AutoParty(1);
+        f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+        f.anyInCombat = true;
+        UnitFact broken = AutoHumanoid(200, 20);
+        broken.entry = 200;
+        f.partyAttackers = {broken};
+        std::string order;
+        CHECK(!RunCcReapplyTick(r, f, kTickMs, order) && order.empty());
+    }
+    {
+        // The key off: the plan's own picker still takes a listed unit (cc_never is the automatic pick's rule).
+        DungeonPlan listed = CcPlan({200});
+        listed.ccNever = {200};
+        Run r = Start(&listed);
+        Facts f = Party(0);
+        f.members = {CcMem("Magey", CcFamily::Polymorph)};
+        UnitFact u = AutoHumanoid(2, 20);
+        u.entry = 200;
+        f.units = {AutoHumanoid(1, 10), u};
+        CHECK(Tick(r, f) == "cc moon 2 Magey");
+    }
+}
+
 static void TestAutoCcNeverTheTankTargetOrKillFirstOrFocus()
 {
     DungeonPlan plan = CcPlan({});
@@ -33433,7 +34783,7 @@ static void TestAutoCcSkipsFastRespawnUnits()
         f.anyInCombat = true;
         for (std::uint64_t guid = 100; guid <= 104; ++guid)
             f.leadAttackers.push_back({guid, false});
-        f.leadAttackers.push_back({200, false, 10});
+        f.leadAttackers.push_back({200, false, false, 10});
         f.partyAttackers = {Typed(201, 14882, 20.0f, kCreatureUndead)};
         CHECK(Tick(r, f).empty());
         f.leadAttackers.back().respawnSec = 0;
@@ -34384,6 +35734,76 @@ static void TestHealerGuardSkipsCcHolders()
 }
 
 
+// Review of t1105c (Codex HIGH + Opus): the guards never leave a nest unit that attacks a party member. Ten Sacrificed
+// Trolls 14826 (respawnSec 10) around their spawns hit the Banished healer, and the guard still sends a ranged dps at
+// the one on a healer, wherever the troll stands in relation to its spawn.
+static void TestHealerGuardTakesNestUnitHittingHealer()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidHealerGuardFacts();
+    MemberFact tank = Mem("Tanky", 0);
+    MemberFact dps = Mem("NearDps", 24);
+    dps.ranged = true;
+    dps.rangedDps = true;
+    f.members = {tank, dps};
+    UnitFact troll = Hitter(49078, 14826, 47, true); // on a healer, 47 yd from the lead bot (the pit)
+    troll.respawnSec = 10;
+    troll.homeYd = 3.0f; // in its nest
+    troll.hitsParty = true;
+    f.partyAttackers = {troll};
+    std::string order;
+    for (int i = 0; i < 5 && order.empty(); ++i)
+        order = GuardTick(r, f);
+    CHECK(order == "attack 49078 NearDps");
+    CHECK(r.healerGuardAssigned.count(49078) == 1);
+}
+
+// The raid boss fight's off-tank guard (RaidGuardTick) takes a nest unit that hits the party as well.
+static void TestOffTankGuardTakesNestUnitHittingParty()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    UnitFact troll = Hitter(45001, 14826, 20, true);
+    troll.respawnSec = 10;
+    troll.homeYd = 2.0f;
+    troll.hitsParty = true;
+    f.partyAttackers = {troll};
+    std::string order;
+    for (int i = 0; i < 20 && order.empty(); ++i)
+        order = Tick(r, f);
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The engage on arrival (EngageTarget) takes a nest unit that hits the party too, the tank's own mob and a healer's
+// attacker alike.
+static void TestEngageOnArrivalTakesNestUnitHittingParty()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0)};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    f.anyInCombat = true;
+    f.leadIsTank = true;
+    f.leadStaying = true;
+    UnitFact troll = Hitter(49078, 14826, 6, true);
+    troll.respawnSec = 10;
+    troll.homeYd = 3.0f;
+    troll.hitsParty = true;
+    f.partyAttackers = {troll};
+    CHECK(EngageTarget(r, f) == &f.partyAttackers[0]);
+    Facts t = f;
+    t.partyAttackers.clear();
+    t.leadHasAttacker = true;
+    t.leadAttacker = Hitter(49079, 14826, 2);
+    t.leadAttacker.respawnSec = 10;
+    t.leadAttacker.homeYd = 4.0f;
+    t.leadAttacker.hitsParty = true;
+    CHECK(EngageTarget(r, t) == &t.leadAttacker);
+}
+
+
 // RunCcBotFor never picks a bot the run holds still (its return hold or the glue's revive hold), one a freeze_on_aura
 // row holds every action of, or one too far from the pack for its spell: the order could not land, and the mark would
 // stay on it for CheckCc to re-send and count.
@@ -34903,6 +36323,15 @@ int main()
     TestAutoCcBanishesADottedDemon();
     TestAutoCcNeverPicksFreezingTrap();
     TestAutoCcSkipsDottedUnits();
+    TestAutoCcPrePullBodyCountSkipsNormalRank();
+    TestAutoCcEstimatedBodyCountSkipsNormalRank();
+    TestAutoCcFightCandidateSkipsNormalRank();
+    TestAutoCcOpeningResendSkipsNormalRankAndCcNever();
+    TestAutoCcReapplySkipsNormalRankAndCcNever();
+    TestAutoCcNoBotNoteListsOnlyMarkableEntries();
+    TestAutoCcCcNeverStillCountsEngaged();
+    TestAutoCcListedNormalRankIsACandidate();
+    TestAutoCcRespectsPlanCcNever();
     TestAutoCcNeverTheTankTargetOrKillFirstOrFocus();
     TestAutoCcSevenMarks();
     TestAutoCcHealersKept();
@@ -34941,6 +36370,9 @@ int main()
     TestBossDownEndsTheRowThoughTrollsKeepFighting();
     TestAutoCcKeyOffIsToday();
     TestHealerGuardSkipsCcHolders();
+    TestHealerGuardTakesNestUnitHittingHealer();
+    TestOffTankGuardTakesNestUnitHittingParty();
+    TestEngageOnArrivalTakesNestUnitHittingParty();
     TestRunCcFamilyTableKeyOffOrder();
     TestRunGossipStepOfReadsTheCurrentStep();
     TestLinkedDeathNoteFollowsTheGroupHealth();
@@ -35062,6 +36494,7 @@ int main()
     TestApproachHopCapCountsHopsWithoutProgress();
     TestApproachCapTriesAStandNearThePackBeforeThePause();
     TestApproachStandIsASafeRingSpot();
+    TestBossRowApproachStandRingNotEmpty();
     TestApproachStandWalkIsAHopAndRewindsForgetIt();
     TestUnreachablePackIsDeferredThenPulledOnTheWay();
     TestDeferredPackNeverReachedIsSkippedAtTheLegEnd();
@@ -35078,6 +36511,8 @@ int main()
     TestStuckWalkDuringAWalkBackStaysAPlainPause();
     TestStuckWalkThatIsNotTheHopStillPauses();
     TestRefusedFiringPositionSearchesAStandThenDefers();
+    TestRefusedBossPullbackRetriesBodyPull();
+    TestRefusedBodyPullNotUnreachableTakesThePause();
     TestRefusedFiringPositionPullsFromTheStandThenDefers();
     TestRefusedFiringPositionAfterNoFiringStand();
     TestRefusedFiringPositionOfABossPausesAfterTheStandSearch();
@@ -35128,6 +36563,11 @@ int main()
     TestFewDeadReviveBeforePull();
     TestFewDeadRuleSkipsEvents();
     TestRegroupFightsFirst();
+    TestRegroupIgnoresRespawnNestCombat();
+    TestRegroupKeepsFightWithNestUnitHittingParty();
+    TestNestRuleSparesPlanObjectives();
+    TestNestRuleOffKeepsFight();
+    TestRegroupAnchorAvoidsRespawnNest();
     TestRegroupWaitsForPartyRez();
     TestRegroupRevivePauses();
     TestMealWaitBeforePull();
@@ -35219,6 +36659,7 @@ int main()
     TestANewFocusMovesTheSkullWithNoClear();
     TestACrowdControlledFocusTakesItsSkullOff();
     TestKillFirstKeepsItsUnitAgainstAnEqualRank();
+    TestKillFirstNewWardPreemptsHeldTotem();
     TestGuardLeavesACasterAtItsCamp();
     TestGuardTakesACasterWithNoCampByIt();
     TestGuardTakesACampCasterWithinAStep();
@@ -35318,6 +36759,13 @@ int main()
     TestOtherPartBusyResumesIntoTheRescue();
     TestIslandEscapeInOtherPartRescues();
     TestNoSummonTowardALeadInAnotherPart();
+    TestNoSummonOntoALeadOffTheFloor();
+    TestNoSummonOntoAnOffFloorLeadAtEverySite();
+    TestLeadOffFloorPausesTheGather();
+    TestLeadOnAGameObjectFloor();
+    TestLeadOffFloorPausesAtEverySummonSite();
+    TestOffFloorLeadNeverStallsTheTick();
+    TestWedgedMemberIsStillTeleportedBackOffTheFloor();
     TestNoIslandHopForALeadInAnotherPart();
     TestScarletLibraryR20Replay();
     TestRevivedBotSummonedBeforeWalking();
@@ -35661,6 +37109,10 @@ int main()
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
+    TestTotemFocusRefiresWhileTotemLives();
+    TestTotemFocusIsNotResentWhileADpsAttacksIt();
+    TestGeneralKillFirstFocusIsNeverResent();
+    TestTotemResendTickStillRunsTheFightBranch();
     TestTotemFocusFiresBeforeTheAutoCcTick();
     TestTotemFocusLeavesTheSkullOnTheBoss();
     TestTotemFocusMayInterrupt();

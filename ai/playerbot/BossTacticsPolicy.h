@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "BossAnchorPolicy.h"
 #include "policy/combat/RearFlankPolicy.h"
 #include "policy/heal/DispelTargetPolicy.h"
 
@@ -61,6 +62,7 @@ namespace ai
         BurnMana = 20,        // up to `priority` eligible bots drain the boss's mana while it is at or above `param` %
         RangedOnly = 21,      // melee bots leave the boss alone while it stands `param` yd or more above them
         ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
+        Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -78,6 +80,8 @@ namespace ai
         UntilTank = 8, // dps_hold_after, taunt_after_cast: until the subject is on a tank
         Invalid = 9,
         TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
+        Assigned = 11, // interrupt: a directed row the run leader may order (F3), inert until its key reads it
+        All = 12,      // avoid_cast: every bot leaves the blast while the spell is cast, tanks too (F4-A)
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -119,6 +123,10 @@ namespace ai
             case BossTacticKind::UseObject:
                 if (text == "tank_anchor")
                     return TacticMode::TankAnchor;
+                break;
+            case BossTacticKind::AvoidCast:
+                if (text == "all")
+                    return TacticMode::All;
                 break;
             default:
                 break;
@@ -172,6 +180,8 @@ namespace ai
             return BossTacticKind::RangedOnly;
         if (text == "threat_successor")
             return BossTacticKind::ThreatSuccessor;
+        if (text == "anchor")
+            return BossTacticKind::Anchor;
         return BossTacticKind::None;
     }
 
@@ -204,6 +214,18 @@ namespace ai
 
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
+
+    // An anchor row's circle for one bot: the row's spot, and the tanks' radius (`priority`, 0: the shared one) or the
+    // shared radius (`param`).
+    inline BossAnchorCircle AnchorCircleOf(const BossTacticRow& row, bool tank)
+    {
+        BossAnchorCircle c;
+        c.x = row.spotX;
+        c.y = row.spotY;
+        c.z = row.spotZ;
+        c.radius = BossAnchorRadius(row.param, static_cast<float>(row.priority), tank);
+        return c;
+    }
 
     // Whether the row carries a gate at all. Only the scan-read kinds may: hold_kill, tank_hold, one_at_a_time and
     // linked_death are read straight from the table, so they could never answer it.
@@ -264,6 +286,84 @@ namespace ai
                 pick = i;
         }
         return pick;
+    }
+
+    // A boss that vanishes mid-fight (ScriptedAI::EnterVanish: invisible, not selectable, attack stopped; High Priestess
+    // Arlokk) drops out of the bot's attackers list while it stays alive and in combat. The fight scan loads a boss
+    // entry's rows only from the attackers, so the rows that handle its adds (Arlokk's prowler kill_first) would end
+    // with the boss's visibility. This memory carries the entry across the gap: it is noted whenever the scan sees a boss
+    // entry that has rows, and handed back as "absent" while the bot still has attackers and the sighting is young.
+    constexpr std::uint32_t kBossVanishGraceMs = 90000;   // Arlokk's Vanish lasts 35-50 s; two vanishes are ~145 s apart
+    constexpr float kBossVanishRangeYd = 60.0f;           // the remembered unit must still be this near the bot
+
+    class BossPresenceMemory
+    {
+    public:
+        struct Seen
+        {
+            std::uint32_t entry = 0;
+            std::uint64_t guid = 0;
+            int hpPct = 0;
+            std::uint32_t seenMs = 0;
+        };
+
+        // The scan saw this boss entry's unit (the PickBossGateUnit pick) at nowMs.
+        void Note(std::uint32_t entry, std::uint64_t guid, int hpPct, std::uint32_t nowMs)
+        {
+            for (Seen& seen : seen_)
+            {
+                if (seen.entry == entry)
+                {
+                    seen.guid = guid;
+                    seen.hpPct = hpPct;
+                    seen.seenMs = nowMs;
+                    return;
+                }
+            }
+            Seen seen;
+            seen.entry = entry;
+            seen.guid = guid;
+            seen.hpPct = hpPct;
+            seen.seenMs = nowMs;
+            seen_.push_back(seen);
+        }
+
+        // The remembered entries not among `presentEntries` (this tick's attackers) whose sighting is within the grace
+        // window. A bot with no attackers is out of the fight, so everything is forgotten; an expired sighting is
+        // forgotten too.
+        std::vector<Seen> Absent(const std::vector<std::uint32_t>& presentEntries, std::uint32_t nowMs, bool hasAttackers)
+        {
+            std::vector<Seen> out;
+            if (!hasAttackers)
+            {
+                seen_.clear();
+                return out;
+            }
+            for (std::size_t i = 0; i < seen_.size();)
+            {
+                if (nowMs - seen_[i].seenMs > kBossVanishGraceMs)
+                {
+                    seen_.erase(seen_.begin() + static_cast<std::ptrdiff_t>(i));
+                    continue;
+                }
+                if (std::find(presentEntries.begin(), presentEntries.end(), seen_[i].entry) == presentEntries.end())
+                    out.push_back(seen_[i]);
+                ++i;
+            }
+            return out;
+        }
+
+        bool Empty() const { return seen_.empty(); }
+
+    private:
+        std::vector<Seen> seen_;
+    };
+
+    // Whether the remembered unit of a vanished boss still belongs to this bot's fight: it is still in the map, alive,
+    // not running home, in combat, and near the bot.
+    inline bool VanishedBossStillInFight(bool found, bool alive, bool evading, bool inCombat, float distanceYd)
+    {
+        return found && alive && !evading && inCombat && distanceYd <= kBossVanishRangeYd;
     }
 
     // The creature a row is about. A use_object row is about its boss: the target is a game object, not a creature.
@@ -406,15 +506,24 @@ namespace ai
             if (row.kind == BossTacticKind::ThreatSuccessor &&
                 (row.targetEntry != 0 || row.mode != TacticMode::Default))
                 return false;
-            // The cycle and spot columns are the seek_aura kind's.
-            if (row.kind != BossTacticKind::SeekAura &&
-                (row.cycleSpell != 0 || row.cycleSec != 0.0f || row.HasSpot()))
+            // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
+            // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
+            // It takes no mode word.
+            if (row.kind == BossTacticKind::Anchor &&
+                (row.targetEntry != 0 || row.spellId != 0 || !row.HasSpot() || !(row.param >= 10.0f) ||
+                    row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
+                    row.mode != TacticMode::Default))
+                return false;
+            // The cycle columns are the seek_aura kind's, the spot columns the seek_aura and anchor kinds'.
+            if (row.kind != BossTacticKind::SeekAura && (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+                return false;
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor && row.HasSpot())
                 return false;
             // A gate is a fight-scan question; these five answer it themselves or not at all (a pull gate already
             // decides the run).
             if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
                     row.kind == BossTacticKind::Spread || row.kind == BossTacticKind::BurnMana ||
-                    row.kind == BossTacticKind::RangedOnly))
+                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -452,6 +561,8 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::Anchor)
+                anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
             // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
@@ -560,6 +671,12 @@ namespace ai
         bool HasSpreadMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
+        }
+
+        // Whether the map has an anchor row (the movers' clamp looks for a live one only there). False before the seal.
+        bool HasAnchorMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && anchorMaps_.find(map) != anchorMaps_.end();
         }
 
         // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
@@ -699,6 +816,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
@@ -931,11 +1049,30 @@ namespace ai
     // healers shocked the raid when the tanks walked out too, but holding every tank in every blast walked tanks into
     // blasts that kill them (the Gurubashi Bat Rider's 10 yd explosion, where nothing is gained by staying); so the
     // second case is opt-in per caster and, within that, only the tank already on the caster (every other tank leaves
-    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds.
+    // like anyone else). A caster on nobody keeps nobody in, and a non-tank never holds. While a row in mode `all`
+    // lists the cast in progress no bot holds the caster, so every tank walks out of that blast too (F4-A).
     inline bool HoldsCaster(bool botIsTank, bool casterIsOnBot, bool casterIsOnNonTank, bool botTargetsCaster,
-                            bool casterTankHoldRow)
+                            bool casterTankHoldRow, bool allRowCasting = false)
     {
+        if (allRowCasting)
+            return false;
         return botIsTank && (casterIsOnBot || (casterTankHoldRow && casterIsOnNonTank && botTargetsCaster));
+    }
+
+    // Whether an avoid_cast row in mode `all` lists the caster's cast in progress: while that spell is cast no bot
+    // holds the caster, tanks included (the Rider instakills itself, so there is no threat to keep). The call sites
+    // pass the caster's own current generic and channelled spell ids; an empty slot (id 0) lists nothing.
+    inline bool AvoidCastAllRow(const ActiveBossRows& active, std::uint32_t casterEntry, std::uint32_t genericId,
+                                std::uint32_t channeledId)
+    {
+        for (const BossTacticRow* row : active)
+        {
+            if (row->kind == BossTacticKind::AvoidCast && row->mode == TacticMode::All &&
+                TacticSubjectEntry(*row) == casterEntry &&
+                (row->spellId == genericId || row->spellId == channeledId))
+                return true;
+        }
+        return false;
     }
 
     // Whether a tank takes the raid mark (rti). When the mark's own entry is listed by a tank_hold row it is the loose
@@ -1774,6 +1911,10 @@ namespace ai
     constexpr std::uint32_t kDpsHoldBlinkMs = 1500;
     // A hold state nobody read for 10 minutes is stale (the subject left the fight); the caller drops it.
     constexpr std::uint32_t kDpsHoldStaleMs = 600000;
+    // A read gap longer than this ends the fight the state held. The reads come from the bots' live attacker scan, so
+    // nothing reads the state while the boss is out of combat after an evade or wipe; a quick repull is therefore only
+    // seen as the first in-combat read after a silence (the seek clock's kSeekRepullGapMs uses the same 10 s).
+    constexpr std::uint32_t kDpsHoldRepullGapMs = 10000;
     // The cast/aura edge is kept per observing bot. An observer nobody heard from for 10 s is gone (it no longer
     // vouches that a signal was already seen), and one record holds at most 64 observers.
     constexpr std::uint32_t kDpsHoldObserverStaleMs = 10000;
@@ -1874,7 +2015,9 @@ namespace ai
 
     // Applies one read to the hold and answers whether it is on. A trigger restarts it; a hold lasts `param` seconds
     // from the latest trigger. With `untilTank`, a subject whose victim is not a tank keeps it on past that, up to
-    // 3 * param. `fired` (optional) names the trigger this read started.
+    // 3 * param. The caller resets the state when the boss leaves combat (evade or wipe, the fight it held is over),
+    // so the engage edge fires again on the re-pull; see DpsHoldResetOnBossReset. `fired` (optional) names the
+    // trigger this read started.
     inline bool DpsHoldTick(DpsHoldState& state, const DpsHoldInputs& in, std::uint32_t nowMs,
                             DpsHoldTrigger* fired = nullptr)
     {
@@ -1973,6 +2116,18 @@ namespace ai
         return in.untilTank && !in.victimIsTank && nowMs < state.capMs;
     }
 
+    // The fight the state held is over: the boss is out of combat (an evade or a wipe), or nobody read the state for
+    // longer than kDpsHoldRepullGapMs (the boss left the live attacker scan, so no read saw him out of combat and the
+    // next one finds the re-pull already running). The engage edge then fires again on the re-pull. Health plays no part:
+    // an in-combat boss that is back at 100 % (Blood Siphon heals him) is still the same fight and keeps its spent edge
+    // and running hold. Call before DpsHoldTick, which stamps the read time.
+    inline void DpsHoldResetOnBossReset(DpsHoldState& state, bool bossInCombat, std::uint32_t nowMs)
+    {
+        const bool silent = state.hasPos && nowMs - state.lastReadMs > kDpsHoldRepullGapMs;
+        if (!bossInCombat || silent)
+            state = DpsHoldState();
+    }
+
     // The held-subject veto over every live unit of one subject entry: `held[i]` is whether unit i is held after its
     // read, `distance[i]` its distance from the area's centre. Returns the first held unit within `maxDistance`, or -1.
     // The caller reads every unit, so any held unit in range vetoes, not only the last one read.
@@ -2004,13 +2159,143 @@ namespace ai
         return -1;
     }
 
-    // The taunt_after_cast deadline: `triggered` is an episode the rising edge opened, `sinceMs` how long ago it did
-    // and `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
+    // Whether a tank can still take the taunt back at all, ignoring its cooldown: in control (a stun, a fear, a
+    // confuse, a hex or a charm means no cast), not silenced or pacified, its taunt known. This is what a window's
+    // holder is kept by: the taunt it just cast being on cooldown must not hand the window to a second tank, which
+    // would burn its own taunt in the same window.
+    inline bool TauntAfterTankAvailable(bool inControl, bool silencedOrPacified, bool hasTaunt)
+    {
+        return inControl && !silencedOrPacified && hasTaunt;
+    }
+
+    // Whether a tank can cast its taunt right now: available (TauntAfterTankAvailable) and the taunt off cooldown.
+    // Readiness is only read when PICKING a window's tank, never to keep the one that has it. The target and range
+    // checks are separate: a window's first choice must also be on the subject and in melee
+    // (TauntAfterTankCanTaunt), while the pick's fallback only has to be able to cast it.
+    // `isVictim`: the tank is the subject's current victim (Jin'do's Banish sent it to the pit, the boss follows it): it
+    // never takes the window's fallback while another tank can, since the taunt would go to the tank the boss is
+    // already on. The pick's last tier still returns it when it is the only usable tank.
+    inline bool TauntAfterTankCanHold(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
+        bool isVictim = false)
+    {
+        return TauntAfterTankAvailable(inControl, silencedOrPacified, hasTaunt) && tauntReady && !isVictim;
+    }
+
+    // Whether a tank can take a taunt back right now: it can cast it (TauntAfterTankCanHold), it is in melee of the
+    // subject, with it as its target, and not its victim.
+    inline bool TauntAfterTankCanTaunt(bool inControl, bool silencedOrPacified, bool hasTaunt, bool tauntReady,
+        bool targetingSubject, bool isVictim, bool inMelee)
+    {
+        return TauntAfterTankCanHold(inControl, silencedOrPacified, hasTaunt, tauntReady) &&
+            targetingSubject && !isVictim && inMelee;
+    }
+
+    // The tank of one until_tank window: the first usable tank at or after `priority` that can taunt the subject right
+    // now (TauntAfterTankCanTaunt) counts before one that cannot; then a tank that can cast its taunt at all
+    // (canHold), which is walking in or on another target; only then the first usable tank, whatever its state. A
+    // hexed or silenced tank is never chosen while a healthy one stands. It is read once per window, when the window
+    // opens or its tank is no longer available, so one tank holds the window while its deadline runs; `priority` is
+    // one past the previous holder for a window whose taunt was cast and failed, so a resisted taunt hands the next
+    // one to another tank. -1 when no tank is usable.
+    inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt,
+        const std::vector<bool>& canHold, int wanted)
+    {
+        int const count = static_cast<int>(usable.size());
+        if (count == 0 || wanted < 0)
+            return -1;
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
+                return index;
+        }
+        for (int step = 0; step < count; ++step)
+        {
+            int const index = (wanted + step) % count;
+            if (usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
+                return index;
+        }
+        return TauntAfterTankIndex(usable, wanted);
+    }
+
+    // The tank a window's read assigns: its holder while the window runs and that tank is still available (in
+    // control, not silenced, its taunt known: TauntAfterTankAvailable, never its cooldown), else the pick at
+    // `wanted`. The glue's advance and the policy tests read this one expression, so a holder that loses control
+    // hands the window over at once while one whose taunt is cooling keeps it.
+    inline int TauntWindowAssign(bool opening, bool holderAvailable, int holderSlot, int wanted,
+        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold)
+    {
+        if (!opening && holderAvailable)
+            return holderSlot;
+        return TauntAfterTankPick(usable, canTaunt, canHold, wanted);
+    }
+
+    // The slot of `guid` in the raid order, -1 when it is no tank of it any more: a window's holder is kept by guid,
+    // since a slot stored from one bot's order can name a different tank after the order changed.
+    inline int TankSlotOf(const std::vector<std::uint64_t>& guids, std::uint64_t guid)
+    {
+        if (guid == 0)
+            return -1;
+        for (std::size_t i = 0; i < guids.size(); ++i)
+        {
+            if (guids[i] == guid)
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    // The one tank that advances a window's shared state: its holder while that tank is a usable tank of the order
+    // AND available (TauntAfterTankAvailable: in control, not silenced), else the first tank at or after `wanted` that
+    // is usable and available, else the first usable one (TauntAfterTankIndex). A stunned, hexed or silenced holder is
+    // therefore not the writer any more, so another tank hands the window over in the same tick instead of waiting for
+    // the silent-writer timeout. -1 when no tank is usable.
+    inline int TauntWindowOwner(const std::vector<bool>& usable, const std::vector<bool>& available, int holder,
+        int wanted)
+    {
+        auto const ready = [&](int index) {
+            return index >= 0 && index < static_cast<int>(usable.size()) && usable[index] &&
+                index < static_cast<int>(available.size()) && available[index];
+        };
+        if (ready(holder))
+            return holder;
+        int const count = static_cast<int>(usable.size());
+        if (count > 0 && wanted >= 0)
+        {
+            for (int step = 0; step < count; ++step)
+            {
+                int const index = (wanted + step) % count;
+                if (ready(index))
+                    return index;
+            }
+        }
+        return TauntAfterTankIndex(usable, wanted);
+    }
+
+    // Whether one tank's read is the window's single writer: the owner's own read, or any read once the owner has not
+    // advanced the state for `silentMs` (it stands out of the fight's scan, so its window would never end).
+    inline bool TauntWindowAdvance(int owner, int reader, std::uint32_t nowMs, std::uint32_t advancedMs,
+        std::uint32_t silentMs)
+    {
+        if (owner >= 0 && owner == reader)
+            return true;
+        return nowMs - advancedMs >= silentMs;
+    }
+
+    // The one boundary of a taunt_after_cast window: `sinceMs` how long ago it opened and `deadlineMs` the row's
+    // param. The deadline instant itself is still the window's (it can taunt), so the window is handed over only
+    // from the next millisecond.
+    inline bool TauntDeadlinePassed(std::uint32_t sinceMs, std::uint32_t deadlineMs)
+    {
+        return sinceMs > deadlineMs;
+    }
+
+    // The taunt_after_cast deadline: `triggered` is a window that is open, `sinceMs` how long ago it opened and
+    // `deadlineMs` the row's param. Nothing is taken back while the subject's victim is the assigned tank.
     inline bool TauntAfterDue(bool triggered, std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         if (!triggered || victimIsAssigned)
             return false;
-        return sinceMs < deadlineMs;
+        return !TauntDeadlinePassed(sinceMs, deadlineMs);
     }
 
     // Whether a tank in the raid order can still take the taunt: a creature-charmed tank yields its AI completely
@@ -2023,53 +2308,143 @@ namespace ai
     enum class TauntEpisodeStep
     {
         None = 0,
-        Due = 1,      // an open episode inside its deadline and the victim is not its tank
-        Miss = 2,     // the deadline ran out on a non-tank: log once, no second attempt this charm
-        Regained = 3, // a tank has the subject back: the episode ends
+        Due = 1,      // the open window allows the taunt and the victim is not its tank
+        Regained = 2, // a tank has the subject back: the episode ends
     };
 
     struct TauntEpisodeRead
     {
-        bool starts = false; // the rising edge: the caller opens the episode now
+        bool starts = false; // a window opens now: the caller resets its deadline clock
         bool open = false;
-        bool spent = false;
+        bool missed = false; // the window that just ran out on a non-tank is logged once
         TauntEpisodeStep step = TauntEpisodeStep::None;
     };
 
-    // One read of a taunt_after_cast episode (mode until_tank): `onNonTank` the subject's victim is a player that is
-    // not a tank, `victimIsTank` any tank has it. A spent episode does not reopen until a tank has the subject back,
-    // and one between victims (a pet, a transition) keeps its deadline. `tauntable` is false for a subject the core
-    // makes immune to taunts (Creature::HasImmunityFlag(CREATURE_IMMUNITY_TAUNT)): no taunt of the row's tank can
-    // land on it, so the row opens no episode and spends no attack or taunt there.
-    inline TauntEpisodeRead TauntEpisodeTick(bool tauntable, bool onNonTank, bool victimIsTank, bool open, bool spent,
+    // taunt_after_cast, a row with a spell id (Jin'do's Banish 24466): the spell is an instant teleport with no aura
+    // and no cast slot to read, and it leaves the tank as the subject's victim. The row's trigger is the tank's own
+    // teleport, seen as an edge and latched (TauntTeleportLatch), never a steady-state distance: a tank that is merely
+    // far (kiting, a knockback, pathing) opens nothing. The edge is the tank appearing within kTauntDestinationYd of
+    // the spell's destination (Spell target position, atSpellDestination) or any jump of its own position of more than
+    // kTauntTeleportYd between two reads (jumpYd, -1 when the glue has no recent read of the same victim). Banish drops
+    // a player in the ZG pit 47 yd west of Jin'do's stand and he follows it to the rim, about 21 yd from the landing:
+    // the latch keeps the window open against that, until another tank has the subject, the banished tank is back
+    // within kTauntBackYd of it, or kTauntLatchMaxMs pass. A bot walks about 2 yd/s in a fight, so a holding tank
+    // never jumps.
+    constexpr float kTauntTeleportYd = 20.0f;
+    constexpr float kTauntDestinationYd = 12.0f;
+    constexpr float kTauntBackYd = 10.0f;
+    constexpr std::uint32_t kTauntLatchMaxMs = 12000;
+
+    struct TauntTeleportLatch
+    {
+        bool open = false;
+        std::uint64_t tankGuid = 0;      // the tank the teleport moved
+        std::uint32_t startMs = 0;
+        bool wasAtDestination = false;   // the previous read had a tank at the spell's destination (the edge's memory)
+    };
+
+    // One read of the taunt_after_cast victim, as the episode inputs want it: `onNonTank` opens (and holds) the
+    // episode, `victimIsTank` closes it when a tank has the subject back. A player that is no tank (a charm, or Hex
+    // wiping the tank's threat and leaving him on a non-tank) is the spell-less rows' trigger; a spell-keyed row adds
+    // the tank its spell teleported (the latch above). `victimIsTankRole` is the raid order's answer for the player.
+    struct TauntAfterVictimRead
+    {
+        bool onNonTank = false;
+        bool victimIsTank = false;
+    };
+
+    struct TauntAfterVictimIn
+    {
+        bool victimIsPlayer = false;
+        bool victimIsTankRole = false;
+        bool spellKeyed = false;
+        std::uint64_t victimGuid = 0;
+        float ydFromSubject = 0.0f;
+        float jumpYd = -1.0f;              // the victim's own displacement since the last read (-1: none)
+        bool atSpellDestination = false;   // the victim stands within kTauntDestinationYd of the spell's destination
+        std::uint32_t nowMs = 0;
+    };
+
+    inline TauntAfterVictimRead TauntAfterVictim(const TauntAfterVictimIn& in, TauntTeleportLatch& latch)
+    {
+        TauntAfterVictimRead out;
+        out.victimIsTank = in.victimIsPlayer && in.victimIsTankRole;
+        out.onNonTank = in.victimIsPlayer && !in.victimIsTankRole;
+        if (!in.spellKeyed)
+        {
+            latch = TauntTeleportLatch();
+            return out;
+        }
+        if (!out.victimIsTank)
+        {
+            // A non-tank player or a pet: the plain read, the latch has nothing to hold.
+            latch.open = false;
+            return out;
+        }
+        bool const destinationEdge = in.atSpellDestination && !latch.wasAtDestination;
+        latch.wasAtDestination = in.atSpellDestination;
+        if (latch.open)
+        {
+            bool const sameTank = in.victimGuid == latch.tankGuid;
+            bool const aged = in.nowMs - latch.startMs > kTauntLatchMaxMs;
+            if (sameTank && !aged && in.ydFromSubject > kTauntBackYd)
+            {
+                out.victimIsTank = false;
+                out.onNonTank = true;
+                return out;
+            }
+            latch.open = false; // another tank has the subject, or the tank is back, or the window ran out
+            return out;
+        }
+        if ((destinationEdge || in.jumpYd > kTauntTeleportYd) && in.ydFromSubject > kTauntBackYd)
+        {
+            latch.open = true;
+            latch.tankGuid = in.victimGuid;
+            latch.startMs = in.nowMs;
+            out.victimIsTank = false;
+            out.onNonTank = true;
+        }
+        return out;
+    }
+
+    // One read of a taunt_after_cast window (mode until_tank): `onNonTank` the subject's victim is a player that is
+    // not a tank, `victimIsTank` any tank has it. While the subject stays on a non-tank a new window opens the moment
+    // the last one ran out (`param` seconds), so a taunt that missed or could not be cast is retried at that cadence
+    // instead of the row going dead until a tank happens to take the subject back. A tank having it back ends the
+    // episode, and a subject between victims (a pet, a transition) keeps the open window's clock running.
+    // `tauntable` is false for a subject the core makes immune to taunts (Creature::HasImmunityFlag(
+    // CREATURE_IMMUNITY_TAUNT)): no taunt of the row's tank can land on it, so the row opens no episode and spends no
+    // attack or taunt there.
+    inline TauntEpisodeRead TauntEpisodeTick(bool tauntable, bool onNonTank, bool victimIsTank, bool open,
         std::uint32_t sinceMs, std::uint32_t deadlineMs, bool victimIsAssigned)
     {
         TauntEpisodeRead out;
         if (!tauntable)
             return out;
         out.open = open;
-        out.spent = spent;
         if (onNonTank)
         {
-            if (!open && !spent)
+            if (TauntAfterDue(true, open ? sinceMs : 0, deadlineMs, victimIsAssigned))
             {
-                out.starts = true;
+                out.starts = !open;
                 out.open = true;
-                if (TauntAfterDue(true, 0, deadlineMs, victimIsAssigned))
-                    out.step = TauntEpisodeStep::Due;
+                out.step = TauntEpisodeStep::Due;
                 return out;
             }
-            if (out.open)
+            // The window ran out, or its own assigned tank is the victim (it cannot taunt itself, yet counts as a
+            // non-tank: banished, teleported or charmed out of the role, the pick falling back to it as the only tank
+            // left). The run-out is logged once and the next window opens at once; a window whose assigned tank is
+            // the victim opens once and then runs its deadline like any other, never restarting on every read.
+            bool const runOut = open && TauntDeadlinePassed(sinceMs, deadlineMs);
+            if (victimIsAssigned && open && !runOut)
             {
-                if (TauntAfterDue(true, sinceMs, deadlineMs, victimIsAssigned))
-                    out.step = TauntEpisodeStep::Due;
-                else
-                {
-                    out.step = TauntEpisodeStep::Miss;
-                    out.open = false;
-                    out.spent = true;
-                }
+                out.step = TauntEpisodeStep::None;
+                return out;
             }
+            out.missed = runOut;
+            out.starts = true;
+            out.open = true;
+            out.step = victimIsAssigned ? TauntEpisodeStep::None : TauntEpisodeStep::Due;
             return out;
         }
         if (victimIsTank)
@@ -2077,7 +2452,6 @@ namespace ai
             if (open)
                 out.step = TauntEpisodeStep::Regained;
             out.open = false;
-            out.spent = false;
         }
         return out;
     }
@@ -2103,6 +2477,7 @@ namespace ai
         bool alive = true;
         bool evading = false;
         bool victimOurs = false; // its victim is a member of the bot's group (or one of their pets)
+        bool victimHealer = false; // ... and that member is a healer (the Shades of Jin'do eat the healers first)
         bool weHoldIt = false;   // a member or their pet is on its threat list, or attacks it
         std::uint64_t owner = 0; // owner, else creator, else the temporary summon's summoner (0: none)
     };
@@ -2123,18 +2498,31 @@ namespace ai
         std::uint32_t entry = 0;
         float distance = 0.0f;
         bool pickable = false;  // alive, attackable, reachable by the caller's rules
+        bool victimHealer = false; // its victim is a healer of the bot's group (a Shade of Jin'do on a healer)
     };
+
+    // A candidate the attackers path and the grid read both found keeps one entry; a victim that is a healer on either
+    // read counts (the grid read sees the victim from the unit, the attackers path from the same unit: they agree
+    // unless one read missed it).
+    inline void MergeVictimHealer(TacticCandidate& existing, bool gridVictimHealer)
+    {
+        existing.victimHealer = existing.victimHealer || gridVictimHealer;
+    }
 
     // Nobody is sent after a creature further away than this.
     constexpr float kBossTacticsEngageRange = 40.0f;
 
     // Index of the candidate to kill first, or -1 when no kill_first row names
-    // a pickable candidate: lowest priority wins, the nearer one breaks a tie.
+    // a pickable candidate: lowest priority wins, then one whose victim is a
+    // healer of ours (the Shades of Jin'do copy the boss's threat list, on which
+    // the healers' heal threat is top, and eat them), the nearer one breaks the
+    // rest of the tie.
     inline int PickKillFirst(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates)
     {
         int best = -1;
         int bestPriority = 256;
         float bestDistance = 0.0f;
+        bool bestVictimHealer = false;
         for (std::size_t i = 0; i < candidates.size(); ++i)
         {
             const TacticCandidate& c = candidates[i];
@@ -2149,11 +2537,15 @@ namespace ai
             }
             if (priority == 256)
                 continue;
-            if (best < 0 || priority < bestPriority || (priority == bestPriority && c.distance < bestDistance))
+            if (best < 0 || priority < bestPriority ||
+                (priority == bestPriority &&
+                 (c.victimHealer > bestVictimHealer ||
+                  (c.victimHealer == bestVictimHealer && c.distance < bestDistance))))
             {
                 best = static_cast<int>(i);
                 bestPriority = priority;
                 bestDistance = c.distance;
+                bestVictimHealer = c.victimHealer;
             }
         }
         return best;

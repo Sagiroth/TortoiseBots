@@ -20,7 +20,7 @@
 // header needs game headers; both TUs compile with COMBAT_MONITOR_TEST_CONFIG
 // so the service TU uses the stub in tools/tsan_stubs, and this TU defines
 // the singleton the stub declares).
-struct PlayerbotAIConfig { bool combatMonitor = true; };
+struct PlayerbotAIConfig { bool combatMonitor = true; bool combatTimeline = true; };
 #define COMBAT_MONITOR_TEST_CONFIG 1
 #include "../runtime/CombatMonitorService.h"
 #undef COMBAT_MONITOR_TEST_CONFIG
@@ -65,6 +65,8 @@ static void HookLoop(CombatMonitorService& svc, std::atomic<bool> const& stop, u
         svc.OnDamage(0, 7, 300, "Magmadar", 11502, 777, "Magmadar");
         svc.OnHeal(9, 800, 200);
         svc.OnEnterCombat(7);
+        svc.OnTimelineAura(7, 24321, true, tick);
+        svc.OnTimelineAura(7, 24321, false, tick);
         if ((tick % 500) == 0)
             svc.OnDeath(7, 0, "Magmadar", 1.0f, 2.0f, 3.0f, 0, 0);
         if ((tick % 700) == 0)
@@ -77,6 +79,7 @@ int main()
     sPlayerbotAIConfig.combatMonitor = true;
     CombatMonitorService& svc = CombatMonitorService::Instance();
     svc.SyncConfig(true);
+    svc.SetTimelineWatch({24321});
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> errors{0};
     std::atomic<uint64_t> payloads{0};
@@ -99,6 +102,8 @@ int main()
             bool const inCombat = (tick % 10) < 6;
             svc.Refresh(55, Members(), inCombat, false, Ctx(), {"sunder"}, nowMs);
             svc.NoteBoss(55, 11502, "Magmadar");
+            svc.NoteBossGuid(55, 777);
+            svc.SampleTimeline(55, 5000, 10000, 7, "Tanky", nowMs);
             std::vector<TortoiseBots::CombatMonitor::EngagedUnit> const engaged = svc.EngagedNow(55);
             (void)engaged;
             svc.TakePayloads(out, 12, 77, nextSeq, 1791990020);

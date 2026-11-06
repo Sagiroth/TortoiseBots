@@ -299,6 +299,11 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if (target && target->IsCreature() && static_cast<Creature*>(target)->IsInEvadeMode())
         return false;
 
+    // AiPlayerbot.DungeonRunCharmYield: a group member a creature is charming is no target for any pick that bypasses
+    // the attackers list either (the explicit order, the raid mark, the tank's victim).
+    if (target && player && AttackersValue::CharmedAllyOffLimits(target, player))
+        return false;
+
     // A needs_aura entry (BossTacticsPolicy.h) is for the carriers of the row's aura alone: a Shade of Jin'do takes no
     // damage from anyone else, and a taunt would only move its damage onto another tank. No explicit-order exception:
     // such a hit does nothing. With the key off, or no row, the target is as valid as before.

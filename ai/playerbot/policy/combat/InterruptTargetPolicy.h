@@ -23,14 +23,17 @@ namespace ai
     // Lower wins. A cast that disables or heals someone (crowd control,
     // sleep, fear, a heal) outranks a plain damage cast. A cast another bot
     // already claimed is rejected outright - two interrupters on one cast
-    // bar waste the second cooldown. A claim is only written by a bot whose
-    // interrupt is ready right now and expires in seconds, so a dead
-    // claimant cannot wedge coverage for long.
+    // bar waste the second cooldown. A cast of a charmed group member is
+    // rejected too: the member is hostile for the ten seconds of a creature
+    // charm, but interrupting it is still damage to the raid
+    // (CharmedAllyIsOffLimits, AiPlayerbot.DungeonRunCharmYield). A claim is
+    // only written by a bot whose interrupt is ready right now and expires in
+    // seconds, so a dead claimant cannot wedge coverage for long.
     constexpr int kInterruptTargetRejected = -1;
 
-    inline int InterruptTargetTier(bool priorityCast, bool claimedByOther)
+    inline int InterruptTargetTier(bool priorityCast, bool claimedByOther, bool offLimits)
     {
-        if (claimedByOther)
+        if (offLimits || claimedByOther)
             return kInterruptTargetRejected;
         return priorityCast ? 0 : 1;
     }

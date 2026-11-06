@@ -15,6 +15,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from verify_config_defaults import (
     DELEGATED,
+    active_duplicates,
     extract_expr,
     parse_default,
     parse_template,
@@ -22,6 +23,7 @@ from verify_config_defaults import (
     check,
     ROOT,
 )
+
 
 TEXT = (
     'a = config.GetIntDefault("AiPlayerbot.GlobalCooldown", 1500);\n'
@@ -195,9 +197,31 @@ class ConstantsMatchTemplateTest(unittest.TestCase):
             'AiPlayerbot.HireRaidPresets')
 
 
+class ActiveDuplicateKeysTest(unittest.TestCase):
+    def test_same_file_active_duplicate_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conf = pathlib.Path(tmp) / 't.conf'
+            conf.write_text(
+                'AiPlayerbot.DupKey = 0\n'
+                '# AiPlayerbot.DupKey = 1\n'
+                'AiPlayerbot.DupKey = 0\n'
+                'AiPlayerbot.Once = 1\n')
+            dups = active_duplicates(conf)
+        self.assertEqual(list(dups), ['AiPlayerbot.DupKey'])
+        self.assertEqual(len(dups['AiPlayerbot.DupKey']), 2)
+
+    def test_shipped_templates_have_no_active_duplicates(self):
+        found = {}
+        for rel in ('ai/playerbot/aiplayerbot.conf.dist.in', 'conf/tortoise_bots.conf.dist'):
+            dups = active_duplicates(ROOT / rel)
+            if dups:
+                found[rel] = dups
+        self.assertEqual(found, {})
+
+
 class RepoCleanTest(unittest.TestCase):
-    def test_repository_currently_has_no_drift(self):
-        self.assertEqual(check(), [])
+     def test_repository_currently_has_no_drift(self):
+         self.assertEqual(check(), [])
 
 
 if __name__ == '__main__':

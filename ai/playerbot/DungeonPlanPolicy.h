@@ -333,6 +333,9 @@ namespace ai
         std::vector<std::uint32_t> ccPriority; // what the run leader's crowd control takes in a pack
         std::vector<std::uint32_t> ccAlways;   // ... taken first whenever one is in the pack (ahead of ccPriority)
         std::vector<std::uint32_t> killFirst;  // killed first in a fight (the run leader focuses them)
+        // Entries the automatic crowd control never marks, whatever else it would pick
+        // (AiPlayerbot.DungeonRunAutoCc; a trivial unit needs no list: its NORMAL rank excludes it).
+        std::vector<std::uint32_t> ccNever;
 
         // An entry's crowd-control rank (0 best), or -1 when it is not to be
         // crowd-controlled: cc_always entries first, in their order (one of
@@ -364,6 +367,12 @@ namespace ai
                 if (killFirst[i] == entry)
                     return static_cast<int>(i);
             return -1;
+        }
+
+        // Whether the automatic crowd control must leave the entry alone (cc_never).
+        bool CcNever(std::uint32_t entry) const
+        {
+            return std::find(ccNever.begin(), ccNever.end(), entry) != ccNever.end();
         }
         // The leg's name, or "" when it has no ai_dungeon_leg row.
         const std::string& LegName(std::uint8_t leg) const
@@ -412,6 +421,60 @@ namespace ai
             pos = comma + 1;
         }
         return true;
+    }
+    // One plan-wide unit list (cc_priority, cc_always, kill_first, cc_never):
+    // `text` into `out`, keeping it when it parses. A list longer than
+    // kPlanMaxEntries keeps its first entries (they are in priority order);
+    // anything else unparseable drops that list alone. Returns "" when the
+    // list was kept as written, else why it was cut or dropped, naming the plan and the list.
+    inline std::string ParsePlanUnitList(const std::string& plan, const char* list, const std::string& text,
+        std::vector<std::uint32_t>& out)
+    {
+        std::vector<std::uint32_t> parsed;
+        if (ParsePlanEntries(text, parsed))
+        {
+            out = std::move(parsed);
+            return std::string();
+        }
+        parsed.clear();
+        std::size_t pos = 0;
+        std::size_t count = 0;
+        while (pos <= text.size())
+        {
+            std::size_t comma = text.find(',', pos);
+            std::string token = text.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+            std::size_t first = token.find_first_not_of(" \t");
+            std::size_t last = token.find_last_not_of(" \t");
+            if (first == std::string::npos)
+                return "plan '" + plan + "': " + list + " is not a list of creature entries, dropped";
+            ++count;
+            token = token.substr(first, last - first + 1);
+            if (count <= kPlanMaxEntries)
+            {
+                if (token.size() > 9 || token.find_first_not_of("0123456789") != std::string::npos)
+                    return "plan '" + plan + "': " + list + " is not a list of creature entries, dropped";
+                std::uint32_t value = 0;
+                try
+                {
+                    value = static_cast<std::uint32_t>(std::stoul(token));
+                }
+                catch (...)
+                {
+                    return "plan '" + plan + "': " + list + " is not a list of creature entries, dropped";
+                }
+                if (value == 0)
+                    return "plan '" + plan + "': " + list + " is not a list of creature entries, dropped";
+                parsed.push_back(value);
+            }
+            if (comma == std::string::npos)
+                break;
+            pos = comma + 1;
+        }
+        if (count <= kPlanMaxEntries)
+            return "plan '" + plan + "': " + list + " is not a list of creature entries, dropped";
+        out = std::move(parsed);
+        return "plan '" + plan + "': " + list + " has " + std::to_string(count) + " entries, kept the first " +
+            std::to_string(kPlanMaxEntries);
     }
 
     // Why a step row was refused (the loader counts them).
@@ -630,24 +693,47 @@ namespace ai
         }
 
         // Loading only: the plan's unit lists (comma lists as in `entries`;
-        // empty is none). False after the seal, for an unknown plan, or when a
-        // list is not a valid entry list (the plan then keeps none of them).
+        // empty is none). False after the seal or for an unknown plan. Each
+        // list is parsed on its own: one that is longer than kPlanMaxEntries
+        // keeps its first entries, any other unparseable one is dropped by
+        // itself (empty), and the rest are kept. `error` names every cut or
+        // dropped list; the return is false after the seal, for an unknown
+        // plan, or when `error` is not empty.
         bool SetUnits(const std::string& planName, const std::string& ccPriority, const std::string& ccAlways,
-            const std::string& killFirst)
+            const std::string& killFirst, const std::string& ccNever)
+        {
+            std::string dropped;
+            return SetUnits(planName, ccPriority, ccAlways, killFirst, ccNever, dropped);
+        }
+
+        bool SetUnits(const std::string& planName, const std::string& ccPriority, const std::string& ccAlways,
+            const std::string& killFirst, const std::string& ccNever, std::string& error)
         {
             if (Sealed())
                 return false;
             auto it = plans_.find(planName);
             if (it == plans_.end())
                 return false;
-            std::vector<std::uint32_t> prio, always, kill;
-            if (!ParsePlanEntries(ccPriority, prio) || !ParsePlanEntries(ccAlways, always) ||
-                !ParsePlanEntries(killFirst, kill))
-                return false;
+            std::vector<std::uint32_t> prio, always, kill, never;
+            std::string failed;
+            std::string bad = ParsePlanUnitList(planName, "cc_priority", ccPriority, prio);
+            if (!bad.empty())
+                failed += (failed.empty() ? "" : "; ") + bad;
+            bad = ParsePlanUnitList(planName, "cc_always", ccAlways, always);
+            if (!bad.empty())
+                failed += (failed.empty() ? "" : "; ") + bad;
+            bad = ParsePlanUnitList(planName, "kill_first", killFirst, kill);
+            if (!bad.empty())
+                failed += (failed.empty() ? "" : "; ") + bad;
+            bad = ParsePlanUnitList(planName, "cc_never", ccNever, never);
+            if (!bad.empty())
+                failed += (failed.empty() ? "" : "; ") + bad;
             it->second.ccPriority = std::move(prio);
             it->second.ccAlways = std::move(always);
             it->second.killFirst = std::move(kill);
-            return true;
+            it->second.ccNever = std::move(never);
+            error = failed;
+            return failed.empty();
         }
 
         bool AddLeg(const std::string& planName, std::uint8_t leg, const std::string& name)

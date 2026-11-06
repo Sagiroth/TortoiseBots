@@ -4,6 +4,7 @@
 #include "InvalidTargetValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleAttackTargetsValue.h"
+#include "AttackersValue.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -20,6 +21,11 @@ bool InvalidTargetValue::Calculate()
 
     // Reject before explicit orders or the cached attacker fallback can retain it.
     if (IgnoreFankrissGauntlet(bot, target))
+        return true;
+
+    // AiPlayerbot.DungeonRunCharmYield: a group member a creature is charming is dropped from the current target
+    // before the explicit-order exceptions below keep it (select new target clears it, as for a held entry).
+    if (AttackersValue::CharmedAllyOffLimits(target, bot))
         return true;
 
     Unit* duelTarget = AI_VALUE(Unit*, "duel target");

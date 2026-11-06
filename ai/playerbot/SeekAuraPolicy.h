@@ -83,6 +83,16 @@ namespace ai
         return nowMs + kSeekForceMs >= dueMs;
     }
 
+    // A picked Son that only joins the fight with the siphon close is burnt at once, not at the forced burn's 15 s: walk
+    // 41 left three such Sons at 67-90 % a few seconds before the siphon (mh1 -27 s, th1 -23 s, th4 -11 s), so the
+    // cloud was never earned. A pick already overdue (dueInMs 0) is late by definition; no due time is not.
+    constexpr std::uint32_t kSeekLateEngageMs = 30000;
+
+    inline bool SeekLateEngagedBurn(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs)
+    {
+        return sourceInCombat && dueMs != 0 && dueInMs <= kSeekLateEngageMs;
+    }
+
     // Who seeks: every living bot that lacks the aura, except the boss's victim (the main tank) and the two tanks kept
     // off the poison (the cause-insanity backup), and never a charmed bot.
     inline bool SeekWanted(bool keyOn, bool windowOpen, bool hasAura, bool isBossVictim, bool isExemptTank, bool charmed,
@@ -248,14 +258,50 @@ namespace ai
             nearestSourceToSpotYd <= kSeekFallbackYd;
     }
 
-    // The pull branch's own step: a Son that stands out of the fight stays its target until the pulling tank's own
-    // swing puts it in combat. The branch used to set the target and give the tick back, so the tank never moved and
-    // the rotation returned to the boss (walk 40: 75 of 83 siphons had no Son in combat). The attack order carries the
-    // walk and the swing alike (its reach form), so only the branch's end is a decision: once the Son fights or follows
-    // the tank, the take/drag branches own it.
-    inline bool SeekTankPullNeeded(bool sonInCombat, bool sonOnTank)
+    // A latched pull keeps after its Son while the Son stands inside this reach of B and the latch is younger than the
+    // latch window. The Son patrols from 32 to 112 yd out, so the pickup radius alone dropped the tank from a Son it
+    // was already walking to the moment the Son stepped past 60 yd (walk 41: the tank targeted the Son in 1-5 frames a
+    // window and stood still in all of them).
+    constexpr float kSeekPullLatchYd = 90.0f;
+    constexpr std::uint32_t kSeekPullLatchMs = 20000;
+
+    inline bool SeekPullLatchKeeps(bool hasLatch, float sonToSpotYd, std::uint32_t elapsedMs)
     {
-        return !sonInCombat && !sonOnTank;
+        return hasLatch && sonToSpotYd <= kSeekPullLatchYd && elapsedMs <= kSeekPullLatchMs;
+    }
+
+    // The pull branch's own step. Walk: the Son is out of reach and not fighting, so the tank runs to it and takes the
+    // tick itself (the drag back to B moves with the same MoveTo). Hit: at melee reach, the attack lands and the Son
+    // joins the fight. Done: it already fights or already follows this tank, so the take/drag branches own it. The
+    // branch used to set the target and give the tick back, so the tank never moved and the rotation returned to the
+    // boss (walk 40: 75 of 83 siphons had no Son in combat; walk 41: the closest tank-to-Son was 27-54 yd in every
+    // undosed window).
+    constexpr float kSeekPullHitYd = 5.0f;
+
+    enum class SeekPullStep : std::uint8_t
+    {
+        Walk = 0,
+        Hit = 1,
+        Done = 2,
+    };
+
+    inline SeekPullStep SeekTankPullStep(bool sonInCombat, bool sonOnTank, float tankToSonYd)
+    {
+        if (sonInCombat || sonOnTank)
+            return SeekPullStep::Done;
+        if (tankToSonYd <= kSeekPullHitYd)
+            return SeekPullStep::Hit;
+        return SeekPullStep::Walk;
+    }
+
+    // A Son that has been fighting a non-tank (a healer, a damage dealer) is the first off-tank's own take once the
+    // third off-tank cannot take it — dead, or busy holding a Son of its own — and the non-tank has had it for a while.
+    // Walk 41: a Son sat on a healer at 100 % for 13 s and the siphon went undosed behind it.
+    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
+
+    inline bool SeekTakeFightingSonOnHealer(bool thirdTankTakes, std::uint32_t heldMs)
+    {
+        return !thirdTankTakes && heldMs >= kSeekHealerTakeMs;
     }
 
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive
@@ -282,14 +328,16 @@ namespace ai
         return SeekPullRole::None;
     }
 
-    // The puller's own hit on the Son it is fetching, while that Son has not joined the fight yet, is the pull and not
-    // damage on a held source: the hold answers true for every Son that is not the picked source, so without this the
-    // swing or the shot never lands and the Son never aggroes. Any other hit keeps the hold: another Son (a puller
-    // does not damage a Son it is not fetching), a Son that already fights, and every DoT, whose ticks would run
-    // through the hold (SeekDotVeto) even on the pick.
-    inline bool SeekPullHitExempt(bool puller, bool picked, bool sonInCombat)
+    // The puller's own hit on the Son its pull latched is the pull, not damage on a held source: the hold answers true
+    // for every Son that is not the picked source, so without this the swing (or the fallback's shot) never lands and
+    // the Son never aggroes. The latch names that Son — it rides the fight record from the pull's start, through the
+    // pickup radius and past the Son joining the fight — so the exemption follows the pull itself rather than one
+    // tick's search (walk 41: another Son in the fight left the pull target unset and the hold vetoed the puller's own
+    // full-health hits). Any other Son keeps the hold, and every DoT keeps it too (SeekDotVeto): its ticks would run
+    // through the hold on the pick.
+    inline bool SeekPullHitExemptOnLatch(bool puller, bool latchedTarget)
     {
-        return puller && picked && !sonInCombat;
+        return puller && latchedTarget;
     }
 
     // A damage-over-time on a Son of the seek fight: a pure DoT (Corruption, Serpent Sting) and a channelled periodic

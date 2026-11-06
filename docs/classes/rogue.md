@@ -28,7 +28,7 @@ Rogues deliver exceptional single-target physical melee DPS, pre-combat crowd co
 - Automatically enters *Stealth* out of combat when a nearby target is present and Stealth is ready.
 - Manoeuvres behind targets to open with *Ambush* (with main-hand daggers) or *Garrote* (bleed, no weapon requirement).
 - Uses *Cheap Shot* as a fallback opener or when lockdown stuns are required.
-- **Pre-pull Sap:** When assigned a crowd control mark on an unpulled humanoid, a rogue with a live-client master stealths forward and casts *Sap* before combat begins. Can be toggled with [`.bot action sap [on|off] [bot]`](../play/commands/party-actions.md#bot-action-sap).
+- **Pre-pull Sap:** When assigned a crowd control mark on an unpulled humanoid, a rogue with a live-client master stealths forward and casts *Sap* before combat begins. With the setting on (off by default), the approach keeps clear of the other mobs in the pack and is skipped when no safe route exists ([`AiPlayerbot.SapApproachAvoidPack`](../server/settings/class-behaviour.md#aiplayerbotsapapproachavoidpack)). Can be toggled with [`.bot action sap [on|off] [bot]`](../play/commands/party-actions.md#bot-action-sap).
 - A stealthed rogue still ends a pull's join window on time.
 
 ### Combo Points & Finisher Priority
@@ -97,3 +97,4 @@ Bots learn pre-set talent orders at 5-level checkpoints (levels 10–60):
 ## Class settings
 
 - [`AiPlayerbot.RogueDungeonThreatDrops`](../server/settings/class-behaviour.md#aiplayerbotroguedungeonthreatdrops): Enables Feint on medium threat and Vanish on high threat in 5-man dungeons.
+- [`AiPlayerbot.SapApproachAvoidPack`](../server/settings/class-behaviour.md#aiplayerbotsapapproachavoidpack): The pre-pull Sap approach goes round the pack, or the Sap is skipped when no safe route exists. Off by default.
