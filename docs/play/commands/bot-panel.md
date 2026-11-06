@@ -34,6 +34,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot item <Name> unequip`](#bot-item-unequip) | `<bag> <slot>` | Moves an equipped item into the bot's inventory bags. |
 | [`.bot item <Name> give`](#bot-item-give) | `<bag> <slot>` | Places an inventory item into an active trade window. |
 | [`.bot behavior`](#bot-behavior) | `<Name\|scope> <key> <on\|off>` | Sets persistent bot behaviors (loot, AoE, mimic...). |
+| [`.bot service`](#bot-service) | `<Name> [portal <spellId>]` | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](#bot-totem) | `<scope> <slot\|mode\|drop> [...]` | Configures and drops shaman totem loadouts. |
 
 ---
@@ -263,6 +264,19 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 - `mimic`: Mimics consumable usage out of combat (food, elixirs, flasks, scrolls, and more, but not plain water). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
 
 </details>
+
+### `.bot service` <a id="bot-service"></a>
+
+Reports what services a bot can offer (food, water, healthstone, portals) and orders a portal cast. Powers the addon bot panel.
+
+```text
+.bot service <Name>
+.bot service <Name> portal <spellId>
+```
+
+- The query answers one line: `TBM:SERVICE|<bot>|<food>|<water>|<healthstone>|<portals>`. Food/water/healthstone are 1 when the bot knows any rank of *Conjure Food* / *Conjure Water* / *Create Healthstone*, else 0. Portals lists `spellId:City Name` pairs the mage knows, or `-` when none.
+- `.bot service <Name> portal <spellId>` casts that portal where the bot stands. Success answers `TBM:ACTION_ACK|service portal|bot:<Name>|1|<Name>`; refusals answer `TBM:ACTION_ERR|service portal|<code>|<message>` (combat, unknown, dead, busy, no-bot).
+- Same cast rules as the `portal` whisper: out of combat only, mage only, learned portal only, rune is free; a moving bot stops first, then casts.
 
 ### `.bot totem`
 

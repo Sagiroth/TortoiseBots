@@ -101,6 +101,7 @@ bool HandleMatureCommand(ChatHandler* handler, char const* args);
 bool HandleInventory(ChatHandler* handler, char const* args);
 bool HandleProfessions(ChatHandler* handler, char const* args);
 bool HandleItem(ChatHandler* handler, char const* args);
+bool HandleService(ChatHandler* handler, char const* args);
 bool HandleBehavior(ChatHandler* handler, char const* args);
 bool HandleTotem(ChatHandler* handler, char const* args);
 bool HandleStrategy(ChatHandler* handler, char const* args);
