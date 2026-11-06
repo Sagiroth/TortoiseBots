@@ -2724,7 +2724,7 @@ PlayerbotAI::BotCommandAuthTier PlayerbotAI::AuthTierForCommand(std::string cons
         word == "release" || word == "revive" || word == "corpse" || word == "trainer" ||
         word == "skill" || word == "faction" || word == "outfit" ||
         word == "go" || word == "range" || word == "flag" || word == "speak" ||
-        word == "cast" || word == "castnc" || word == "spell" ||
+        word == "cast" || word == "castnc" || word == "spell" || word == "portal" ||
         word == "pet" || word == "buff" || word == "share" || word == "accept" || word == "talk" ||
         word == "roll" || word == "ll" || word == "ss" || word == "chat" || word == "home" ||
         word == "logout" || word == "r" || word == "reward" ||

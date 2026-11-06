@@ -585,6 +585,7 @@ static BotCommandEntry const botCommands[] = {
     {"inv", HandleInventory, "inv <online bot you control>", {"inventory"}, AlwaysVisible},
     {"professions", HandleProfessions, "professions <online bot you control>", {}, AlwaysVisible},
     {"item", HandleItem, "item <bot> <trade|equip|unequip|give ...>", {}, AlwaysVisible},
+    {"service", HandleService, "service <bot> [portal <spellId>]", {}, AlwaysVisible},
     {"behavior", HandleBehavior, "behavior <bot|party|raid> <behavior> <on|off>", {"behaviour"}, AlwaysVisible},
     {"totem", HandleTotem, "totem <bot|party|raid> ...", {}, AlwaysVisible},
     {"strategy", HandleStrategy, "strategy <+/-/~><strategy name> [role or botName] | strategy reset", {}, AlwaysVisible},

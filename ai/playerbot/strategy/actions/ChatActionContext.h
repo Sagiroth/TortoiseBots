@@ -40,6 +40,7 @@
 #include "GuildBankAction.h"
 #include "ChatShortcutActions.h"
 #include "GossipHelloAction.h"
+#include "PortalCommandAction.h"
 #include "CastCustomSpellAction.h"
 #include "InviteToGroupAction.h"
 #include "TellCastFailedAction.h"
@@ -163,6 +164,7 @@ namespace ai
             creators["grind chat shortcut"] = [](PlayerbotAI* ai) { return new GrindChatShortcutAction(ai); };
             creators["tank attack chat shortcut"] = [](PlayerbotAI* ai) { return new TankAttackChatShortcutAction(ai); };
             creators["gossip hello"] = [](PlayerbotAI* ai) { return new GossipHelloAction(ai); };
+            creators["portal"] = [](PlayerbotAI* ai) { return new PortalCommandAction(ai); };
             creators["cast"] = [](PlayerbotAI* ai) { return new CastCustomSpellAction(ai); };
             creators["cast custom nc spell"] = [](PlayerbotAI* ai) { return new CastCustomNcSpellAction(ai); };
             creators["invite"] = [](PlayerbotAI* ai) { return new InviteToGroupAction(ai); };

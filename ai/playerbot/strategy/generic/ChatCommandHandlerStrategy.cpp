@@ -105,6 +105,7 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("ah cancel");
     supported.push_back("keep");
     supported.push_back("bg free");
+    supported.push_back("portal");
     supported.push_back("cast");
     supported.push_back("move style");
     supported.push_back("jump");
@@ -332,4 +333,8 @@ void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &t
     triggers.push_back(new TriggerNode(
         "rebuff",
         NextAction::array(0, new NextAction("force rebuff", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "portal",
+        NextAction::array(0, new NextAction("portal", relevance), NULL)));
 }
