@@ -2462,6 +2462,19 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
             endPosition.y = possibleEndPoint.y;
             endPosition.z = possibleEndPoint.z;
         }
+        // A live boss anchor: the dodge replaced the clamped end point, so it is clamped again, on the platform floor
+        // and still clear of the hazard; a dodge that cannot be both is no move this tick.
+        float dodgeX = endPosition.getX();
+        float dodgeY = endPosition.getY();
+        float dodgeZ = endPosition.getZ();
+        if (anchored && !ClampMoveToBossAnchor(ai, bot, dodgeX, dodgeY, dodgeZ))
+            return false;
+        if (anchored && !AnchorHazardDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeX, dodgeY))
+            return false;
+        if (anchored)
+            endPosition = WorldPosition(obj->GetMapId(), dodgeX, dodgeY, dodgeZ);
+        if (anchored && (IsHazardNearPosition(endPosition) || !IsValidPosition(endPosition, botPosition)))
+            return false;
     }
 
     MotionMaster& mm = *bot->GetMotionMaster();
@@ -2470,7 +2483,20 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (IsValidPosition(endPosition, botPosition))
     {
         std::vector<WorldPosition> path = botPosition.GetPathTo(endPosition,bot);
-        if (GeneratePathAvoidingHazards(path))
+        bool const hazardPath = GeneratePathAvoidingHazards(path);
+        // The hazard-avoiding path inserts sideways points; under a live boss anchor every one must stay inside, or
+        // the chase is held this tick.
+        std::vector<std::pair<float, float>> pathXY;
+        if (anchored && hazardPath)
+            for (const WorldPosition& point : path)
+                pathXY.emplace_back(point.getX(), point.getY());
+        if (anchored && hazardPath && !AnchorPathInside(anchor, pathXY))
+        {
+            sLog.outDetail("[BOT CHASE] %s -> %s: hazard path leaves the boss anchor, held", bot->GetName(),
+                obj->GetName());
+            return false;
+        }
+        if (hazardPath)
         {
             float distance = botPosition.GetPathLength(path);
             mm.Clear(false, true);

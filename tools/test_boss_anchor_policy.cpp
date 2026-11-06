@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
+#include <vector>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -182,6 +184,43 @@ static void TestChaseRefusedOutsideReach()
     CHECK(AnchorAllowsChase(tank, tank.x + 29.0f, tank.y, kBossAnchorChaseReachYd));
 }
 
+static void TestHazardDodgeNeverLeavesTheAnchor()
+{
+    // A 5 yd hazard on the circle's edge (28 yd E of the centre) and a chase end point beside it: the perpendicular
+    // dodge (1.5 x its range sideways) lands outside the circle. Under the anchor it is clamped back inside when the
+    // clamped point is still clear of the hazard, else the move is refused; it never ends outside.
+    const BossAnchorCircle c = Hakkar(false);
+    {
+        float x = c.x + 33.0f, y = c.y + 7.5f;  // the dodge, 33.8 yd out
+        CHECK(!InsideAnchor(c, x, y));
+        CHECK(AnchorHazardDodge(c, c.x + 28.0f, c.y, 5.0f, x, y));
+        CHECK(InsideAnchor(c, x, y));
+        CHECK(std::sqrt((x - c.x - 28.0f) * (x - c.x - 28.0f) + (y - c.y) * (y - c.y)) > 5.0f);
+    }
+    {
+        // A dodge whose clamp falls back into the hazard: refused.
+        float x = c.x + 34.0f, y = c.y + 1.0f;
+        CHECK(!AnchorHazardDodge(c, c.x + 28.0f, c.y, 5.0f, x, y));
+    }
+    {
+        // A dodge inside the circle and clear of the hazard is kept as it is.
+        float x = c.x + 20.0f, y = c.y + 8.0f;
+        CHECK(AnchorHazardDodge(c, c.x + 28.0f, c.y, 5.0f, x, y));
+        CHECK(Near(x, c.x + 20.0f) && Near(y, c.y + 8.0f));
+    }
+}
+
+static void TestPathInsideAnchor()
+{
+    const BossAnchorCircle c = Hakkar(false);
+    std::vector<std::pair<float, float>> path = {{c.x, c.y}, {c.x + 10.0f, c.y}, {c.x + 25.0f, c.y + 5.0f}};
+    CHECK(AnchorPathInside(c, path));
+    // A hazard-avoiding point routed outside the circle: the path is refused.
+    path.insert(path.begin() + 2, {c.x + 31.0f, c.y + 2.0f});
+    CHECK(!AnchorPathInside(c, path));
+    CHECK(AnchorPathInside(c, {}));
+}
+
 static BossTacticRow AnchorRow()
 {
     BossTacticRow row;
@@ -299,6 +338,8 @@ int main()
     TestRangedShotFromAnchor();
     TestCloudOutsideAnchorIgnored();
     TestChaseRefusedOutsideReach();
+    TestHazardDodgeNeverLeavesTheAnchor();
+    TestPathInsideAnchor();
     TestAnchorKindParsesAndLoads();
     TestAnchorRowShapeRefused();
     std::cout << "boss anchor policy: all checks passed\n";

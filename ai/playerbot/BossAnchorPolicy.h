@@ -10,6 +10,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace ai
 {
@@ -116,6 +118,28 @@ namespace ai
     inline bool AnchorAllowsChase(const BossAnchorCircle& c, float x, float y, float reachYd)
     {
         return BossAnchorDistance2d(c, x, y) <= c.radius + reachYd;
+    }
+
+    // A hazard dodge under a live anchor: the dodge point (x, y) clamped onto the circle, kept only while the clamped
+    // point is still clear of the hazard it dodges (centre hazardX/Y, range hazardYd). False: the move is refused this
+    // tick, so the dodge never ends outside the circle.
+    inline bool AnchorHazardDodge(const BossAnchorCircle& c, float hazardX, float hazardY, float hazardYd, float& x,
+                                  float& y)
+    {
+        ClampToAnchor(c, x, y);
+        float const dx = x - hazardX;
+        float const dy = y - hazardY;
+        return std::sqrt(dx * dx + dy * dy) > hazardYd;
+    }
+
+    // Whether every point of a path (x, y pairs) stays inside the circle: the hazard-avoiding path inserts points
+    // sideways of each hazard it meets, and one of them can lie outside.
+    inline bool AnchorPathInside(const BossAnchorCircle& c, const std::vector<std::pair<float, float>>& path)
+    {
+        for (const std::pair<float, float>& point : path)
+            if (!InsideAnchor(c, point.first, point.second))
+                return false;
+        return true;
     }
 
     // Whether a seeker may take a cloud: some part of it lies inside the circle (centre within radius + the cloud's

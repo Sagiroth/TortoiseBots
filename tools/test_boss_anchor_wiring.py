@@ -171,6 +171,16 @@ class BossAnchorChase(unittest.TestCase):
         self.assertIn("if (anchored && !InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY()))", fn)
         self.assertLess(fn.index("!InsideAnchor(anchor, obj->GetPositionX(), obj->GetPositionY())"),
                         fn.index("mm.MoveChase((Unit*)obj, distance, angle);"))
+        # The hazard dodge that replaces the end point is clamped and re-checked, and the hazard-avoiding path's points
+        # must all stay inside; otherwise the move is refused this tick.
+        hazard = fn[fn.index("if (IsHazardNearPosition(endPosition, &hazardPosition))"):fn.index("MotionMaster& mm")]
+        self.assertIn("if (anchored && !ClampMoveToBossAnchor(ai, bot, dodgeX, dodgeY, dodgeZ))", hazard)
+        self.assertIn("if (anchored && !AnchorHazardDodge(anchor, hazardPoint.x, hazardPoint.y, hazardPosition.second, dodgeX, dodgeY))", hazard)
+        self.assertIn("if (anchored && (IsHazardNearPosition(endPosition) || !IsValidPosition(endPosition, botPosition)))", hazard)
+        spline = fn[fn.index("bool const hazardPath = GeneratePathAvoidingHazards(path);"):fn.index("init.Launch();")]
+        self.assertIn("if (anchored && hazardPath && !AnchorPathInside(anchor, pathXY))", spline)
+        self.assertLess(spline.index("AnchorPathInside("), spline.index("if (hazardPath)\n"))
+        self.assertLess(spline.index("AnchorPathInside("), spline.index("mm.Clear(false, true);"))
         # Gated: every anchor branch asks `anchored` first, so without a live anchor row nothing changes.
         self.assertIn("if (anchored && chased && bot->IsHostileTo(chased) &&\n        !AnchorAllowsChase(", fn)
         for line in fn.splitlines():
