@@ -3586,10 +3586,11 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
         }
 
         float const distance = bot->GetDistance(portal);
-        if (ai::PortalFollowReached(distance))
+        // The core's use range is measured differently from GetDistance: a bot that stopped at the edge
+        // keeps walking to the portal's centre until the core lets it use the portal.
+        if (ai::PortalFollowReached(distance) &&
+            bot->GetGameObjectIfCanInteractWith(portal->getObjectGuid(), MAX_GAMEOBJECT_TYPE))
         {
-            if (!bot->GetGameObjectIfCanInteractWith(portal->getObjectGuid(), MAX_GAMEOBJECT_TYPE))
-                return;
             if (m_portalFollowUsedMs && nowMs - m_portalFollowUsedMs < 2000)
                 return;
             m_portalFollowUsedMs = nowMs;
