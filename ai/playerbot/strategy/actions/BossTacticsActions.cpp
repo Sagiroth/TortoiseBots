@@ -778,6 +778,9 @@ struct SeekFight
     // A Son that fights a non-tank while the third off-tank cannot take it: the first off-tank's own take, once the
     // fight record says the non-tank has had it for a while (SeekTakeFightingSonOnHealer).
     Unit* healerSon = nullptr;
+    // The fight's Sons on a non-tank, and since when (the healer clock): the hold lets one go once it has sat there too
+    // long (SeekHoldDecision's non-tank time).
+    std::map<std::uint64_t, SeekHeldSon> nonTankSince;
 };
 
 struct SeekTickCache
@@ -1364,6 +1367,26 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: skip anchor", "");
 }
 
+// One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes and the Son's victim.
+void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        std::uint32_t& last = g_seekPullLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kSeekLogGapMs)
+            return;
+        last = nowMs;
+    }
+    Unit* const victim = son->GetVictim();
+    char info1[160];
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s", bot->GetName(), son->GetGUIDLow(),
+             victim ? victim->GetName() : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
 // The ranged puller's shot from inside a live boss anchor at a Son outside it: the pull rows' throttle, as the skip.
 void LogSeekPullRangedFromAnchor(PlayerbotAI* ai, Player* bot)
 {
@@ -1691,7 +1714,7 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
 }
 
 void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss, std::uint32_t cycleNo,
-                       std::uint32_t nowMs, bool wanted, SeekFight& out)
+                       std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, SeekFight& out)
 {
     const std::uint32_t instanceId = bot->GetInstanceId();
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
@@ -1947,7 +1970,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         WalkoutRecord& record = g_walkouts[instanceId];
         record.bossGuid = boss->GetObjectGuid().GetRawValue();
         record.touchedMs = nowMs;
-        if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs))
+        if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))
             return;
         bool const before = WalkoutBusy(record.state);
         WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo);
@@ -2307,7 +2330,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     // Fewer than two tanks leave nobody to take the Son it brings.
     const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
         LiveBossAnchorRow(ai, bot);
-    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, walkoutWanted, out);
+    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out);
     // A Son camped on a non-tank: the first off-tank's own take once the third off-tank cannot take it (dead, or
     // holding a Son of its own) and the non-tank has had it for a while. The fight record times it (the take must not
     // flip with every read, and the healer gets its 8 s first). The Sons it judges are the fight-wide set, never
@@ -2324,7 +2347,6 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     }
     std::vector<SeekSonSeen> seenSons;
     seenSons.reserve(fightSons.size());
-    bool thirdTankTakes = roles.tanks.size() >= 3;
     for (Unit* unit : fightSons)
     {
         SeekSonSeen seen;
@@ -2333,8 +2355,6 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         seen.inCombat = unit->IsInCombat();
         if (seen.alive && seen.inCombat)
         {
-            if (thirdTankTakes && unit->GetVictim() == roles.tanks[2])
-                thirdTankTakes = false;
             Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
             seen.victimTank = victim && PlayerbotAI::IsTank(victim);
             seen.victimNonTank = victim && !seen.victimTank;
@@ -2401,7 +2421,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once a read sees it dead, out
         // of combat or on a tank; a Son this read did not see stays (SeekHealerClockTick).
         SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
-        healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, thirdTankTakes, nowMs);
+        healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
+        out.nonTankSince = record.healerHeldSince;
     }
     if (healerTakeGuid)
     {
@@ -2459,7 +2480,8 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
     const float holdPct = static_cast<float>(state.row->priority);
     const float distFromSpotYd = unit->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
-                            unit->GetHealthPercent(), holdPct, distFromSpotYd, state.seekers);
+                            unit->GetHealthPercent(), holdPct, distFromSpotYd, state.seekers,
+                            SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
 }
 
 // The source a single-target damage action would hit: its own target. The read's source alone used to answer the area
@@ -5835,13 +5857,14 @@ bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y,
     return true;
 }
 
-bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit)
+bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)
 {
     if (!unit)
         return false;
-    BossAnchorCircle circle;
-    if (!LiveBossAnchor(ai, bot, circle))
+    const BossTacticRow* row = LiveBossAnchorRow(ai, bot);
+    if (!row)
         return false;
+    const BossAnchorCircle circle = raidCircle ? AnchorCircleOf(*row, false) : AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
     return !InsideAnchor(circle, unit->GetPositionX(), unit->GetPositionY());
 }
 
@@ -6260,7 +6283,9 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         }
         // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
         // it stands, and the Son comes in to it.
-        const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source);
+        // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
+        const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
+        LogSeekTake(ai, bot, task.source);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.

@@ -303,7 +303,7 @@ class SeekRolesWiring(unittest.TestCase):
         # One read never erases a Son it did not see: the clock is the pure SeekHealerClockTick.
         self.assertIn("SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);", read)
         self.assertNotIn("record.healerHeldSince.erase(", read)
-        self.assertIn("SeekHealerTakeGuid(record.healerHeldSince, thirdTankTakes, nowMs)", read)
+        self.assertIn("SeekHealerTakeGuid(record.healerHeldSince, nowMs)", read)
         # The Son is resolved from the map, not from this bot's attackers list.
         self.assertIn("GetCreature(ObjectGuid(healerTakeGuid))", read)
         self.assertIn("out.healerSon = son;", read)

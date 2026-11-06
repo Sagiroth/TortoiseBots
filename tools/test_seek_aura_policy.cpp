@@ -160,13 +160,25 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
-    // SeekTakeFightingSonOnHealer: a Son that sits on a healer (or any other non-tank) is the first off-tank's own
-    // take once the third off-tank cannot take it — dead, or holding a Son of its own — and the non-tank has had it
-    // for 8 s. While the third off-tank can take it, the first off-tank leaves the Son alone.
+    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 8 s is the first
+    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 8 s (walk 45: with three
+    // tanks alive the old gate never let the first off-tank take one, and 87 of 99 deaths from Sons were non-tanks).
     CHECK(kSeekHealerTakeMs == 8000);
-    CHECK(SeekTakeFightingSonOnHealer(false, 8000));
-    CHECK(!SeekTakeFightingSonOnHealer(false, 7999));
-    CHECK(!SeekTakeFightingSonOnHealer(true, 8000));
+    CHECK(SeekTakeFightingSonOnHealer(8000));
+    CHECK(!SeekTakeFightingSonOnHealer(7999));
+
+    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
+    // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),
+    // the hold is today's.
+    CHECK(kSeekNonTankBurnMs == kSeekHealerTakeMs + 4000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 11999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 12000));
+    // Not the pick, the window shut, far from the spot, the raid dosed: released all the same.
+    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 12000));
+    CHECK(SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 0));
+    // On a tank (no non-tank time): held exactly as before.
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0) ==
+          SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5));
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));

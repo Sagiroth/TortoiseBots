@@ -86,7 +86,7 @@ class BossAnchorWiring(unittest.TestCase):
     def test_seek_tank_walk_and_drag_are_clamped(self):
         fn = assert_clamped_before_moves(self, ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)", 2)
         # The healer take never chases a Son out of the anchor: it taunts from where it stands.
-        self.assertIn("BossAnchorRefusesChase(ai, bot, task.source)", fn)
+        self.assertIn("BossAnchorRefusesChase(ai, bot, task.source, true)", fn)
 
     def test_boss_stand_seat_is_clamped(self):
         assert_clamped_before_moves(self, ACTIONS, "bool BossTacticsStandAction::Execute(Event& event)")

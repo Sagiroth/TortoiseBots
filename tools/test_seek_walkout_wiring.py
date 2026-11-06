@@ -41,7 +41,7 @@ class SeekWalkoutWiring(unittest.TestCase):
 
     def test_the_seek_read_runs_the_task(self):
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
-        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, walkoutWanted, out)", read)
+        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out)", read)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         for call in ("WalkoutCheck(", "WalkoutMayStartFor(", "WalkoutStart(", "WalkoutNoteShot(", "WalkoutFinish(",
                      "scan.puller != self"):
@@ -212,7 +212,7 @@ class SeekWalkoutRound4(unittest.TestCase):
         self.assertIn("it->second.scanned = false;", note)
         self.assertLess(note.index("WalkoutExclude("), note.index("it->second.scanned = false;"))
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs))", update)
+        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))", update)
         self.assertLess(update.index("WalkoutMayStartFor("), update.index("WalkoutStart(record.state"))
 
 

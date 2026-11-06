@@ -461,9 +461,9 @@ static void TestExcludedPullerNeverRestarts()
     WalkoutExclude(s, 7, 1500);
     WalkoutReturnDone(s);
     CHECK(WalkoutMayStart(s, 3, 100));
-    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 1600));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs, 0));
 }
 
 static void TestWalkoutReplansStandWhenSonMoves()
@@ -504,6 +504,16 @@ static void TestWalkoutPickMarginBelowAbort()
     CHECK(WalkoutPullerUsable(true, false, false, false));
 }
 
+static void TestWalkoutWaitsForTheSiphon()
+{
+    // A walk-out starts only once the next Blood Siphon is due in 35 s or less, so the Son arrives near the siphon.
+    SeekWalkoutState s;
+    CHECK(Near(static_cast<float>(kSeekWalkoutSiphonLeadMs), 35000.0f));
+    CHECK(!WalkoutMayStartFor(s, 0, 100, 7, 1000, 35001));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 35000));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 0));
+}
+
 int main()
 {
     TestRoleOrder();
@@ -529,6 +539,7 @@ int main()
     TestExcludedPullerNeverRestarts();
     TestWalkoutReplansStandWhenSonMoves();
     TestWalkoutPickMarginBelowAbort();
+    TestWalkoutWaitsForTheSiphon();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

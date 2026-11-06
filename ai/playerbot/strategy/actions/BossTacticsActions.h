@@ -569,7 +569,9 @@ namespace ai
     bool ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z);
     // Whether a live anchor keeps the bot from chasing this unit: the unit stands outside the bot's radius. The bot may
     // still taunt or shoot it from where it stands.
-    bool BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit);
+    // `raidCircle`: judge against the everyone circle (the raid's 30 yd) instead of the bot's own (a tank's 25 yd): the
+    // off-tank's take of a Son on a non-tank, which stands where the raid stands.
+    bool BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle = false);
     // A boss's anchor row from the table alone (no fight read): the run leader's stand search for a boss step reads
     // it before the pull. False when the boss has no anchor row.
     bool BossAnchorOfBoss(std::uint32_t map, std::uint32_t bossEntry, bool tank, BossAnchorCircle& out);

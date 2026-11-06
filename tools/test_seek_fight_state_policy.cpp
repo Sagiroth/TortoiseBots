@@ -230,9 +230,11 @@ int main()
         // A bot that sees it again refreshes seenMs and keeps sinceMs, so the 8 s clock runs from the first read.
         SeekHealerClockTick(held, {onHealer}, 7000);
         CHECK(held[7].sinceMs == 1000 && held[7].seenMs == 7000);
-        CHECK(SeekHealerTakeGuid(held, false, 8999) == 0);
-        CHECK(SeekHealerTakeGuid(held, false, 9000) == 7);
-        CHECK(SeekHealerTakeGuid(held, true, 9000) == 0);   // the third off-tank can still take it
+        CHECK(SeekHealerTakeGuid(held, 8999) == 0);
+        CHECK(SeekHealerTakeGuid(held, 9000) == 7);
+        // The non-tank time the hold reads (0 for a Son not on a non-tank).
+        CHECK(SeekNonTankHeldMs(held, 7, 9000) == 8000);
+        CHECK(SeekNonTankHeldMs(held, 8, 9000) == 0);
         // Seen on a tank, dead or out of combat: gone.
         SeekHealerClockTick(held, {SeekSonSeen{7, true, true, true, false}}, 9500);
         CHECK(held.empty());
@@ -250,7 +252,7 @@ int main()
         CHECK(held.empty());
         // The lowest guid among the due entries is the take.
         SeekHealerClockTick(held, {SeekSonSeen{12, true, true, false, true}, SeekSonSeen{5, true, true, false, true}}, 40000);
-        CHECK(SeekHealerTakeGuid(held, false, 48000) == 5);
+        CHECK(SeekHealerTakeGuid(held, 48000) == 5);
     }
 
     std::cout << "seek fight state policy: all tests passed\n";

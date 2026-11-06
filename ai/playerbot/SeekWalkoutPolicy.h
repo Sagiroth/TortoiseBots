@@ -38,6 +38,7 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutReplanMs = 1000;  // the stand is re-planned from the Son's live spot this often
     constexpr std::uint32_t kSeekWalkoutNoStandMs = 5000; // this long straight without any stand aborts ("no stand")
     constexpr std::uint32_t kSeekWalkoutExcludeMs = 60000; // a puller whose moves failed is left out of the picks
+    constexpr std::uint32_t kSeekWalkoutSiphonLeadMs = 35000; // a walk-out starts only this close to the next siphon
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -339,12 +340,14 @@ namespace ai
         return false;
     }
 
-    // A new task for this puller: WalkoutMayStart, and the bot not sitting out its exclusion (a scan cached before
-    // the exclusion may still name it).
+    // A new task for this puller: WalkoutMayStart, the bot not sitting out its exclusion (a scan cached before the
+    // exclusion may still name it), and the next Blood Siphon due in kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once
+    // due), so the Son arrives near the siphon instead of 30-60 s early and sitting on the raid until it.
     inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
-                                   std::uint64_t bot, std::uint32_t nowMs)
+                                   std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs)
     {
-        return WalkoutMayStart(s, cycleNo, son) && !WalkoutExcluded(s, bot, nowMs);
+        return dueInMs <= kSeekWalkoutSiphonLeadMs && WalkoutMayStart(s, cycleNo, son) &&
+            !WalkoutExcluded(s, bot, nowMs);
     }
 
     // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in

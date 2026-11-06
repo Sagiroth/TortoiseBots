@@ -78,16 +78,24 @@ namespace ai
     }
 
     // The Son the first off-tank takes off a non-tank now: the first (lowest guid) of the clock's entries that has been
-    // held long enough, 0 when none. The third off-tank's availability is the caller's read of the whole fight.
-    inline std::uint64_t SeekHealerTakeGuid(const std::map<std::uint64_t, SeekHeldSon>& held, bool thirdTankTakes,
-                                            std::uint32_t nowMs)
+    // held long enough, 0 when none.
+    inline std::uint64_t SeekHealerTakeGuid(const std::map<std::uint64_t, SeekHeldSon>& held, std::uint32_t nowMs)
     {
         for (const auto& entry : held)
         {
-            if (SeekTakeFightingSonOnHealer(thirdTankTakes, nowMs - entry.second.sinceMs))
+            if (SeekTakeFightingSonOnHealer(nowMs - entry.second.sinceMs))
                 return entry.first;
         }
         return 0;
+    }
+
+    // How long the Son has fought a non-tank by the clock (0: no entry, it is on a tank or out of the fight). The hold
+    // reads it (SeekHoldDecision).
+    inline std::uint32_t SeekNonTankHeldMs(const std::map<std::uint64_t, SeekHeldSon>& held, std::uint64_t son,
+                                           std::uint32_t nowMs)
+    {
+        auto const it = held.find(son);
+        return it == held.end() ? 0 : nowMs - it->second.sinceMs;
     }
 
     struct SeekCycleRecord
