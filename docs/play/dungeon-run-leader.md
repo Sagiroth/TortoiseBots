@@ -45,6 +45,8 @@ Plans are read at startup into a cache, one pass per table, and nothing reads th
 | `source` | Where the rows came from, for the reader. |
 | `comment` | Free text. |
 
+Each of the four lists is read on its own: a list with more than 16 entries keeps its first 16, any other bad list is dropped by itself, and the rest are kept. The server log names every cut or dropped list.
+
 ### `ai_dungeon_leg`
 
 | Column | Meaning |
