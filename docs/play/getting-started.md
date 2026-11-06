@@ -46,7 +46,7 @@ TortoiseBots fills the realm with bots and lets you take some of them along: you
 
 ## When your alt leaves the group
 
-> On a default server an own alt that **leaves your group** (you kick it, it leaves, or the group breaks up) does not stop: it becomes an **alt-bot** and plays on its own like a pool bot. If it is level 10 or higher it is first teleported to a zone that fits its level (an alt left in an instance, a battleground or on a boat leaves through the instance entrance portal, or to its battleground entry or a graveyard, first).
+> On a default server an own alt that **leaves your group** (you kick it, it leaves, or the group breaks up) does not stop: it becomes an **alt-bot** and plays on its own like a pool bot. If it is level 10 or higher it is first teleported to a zone that fits its level, never a capital (an alt left in an instance, a battleground or on a boat leaves through the instance entrance portal, or to its battleground entry or a graveyard, first).
 
 | You want to... | Do this |
 | :--- | :--- |

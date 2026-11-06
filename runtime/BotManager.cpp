@@ -20,6 +20,7 @@
 #include "../ai/playerbot/BotActionLog.h"
 #include "../ai/playerbot/strategy/actions/MovementActions.h"
 #include "../ai/playerbot/RandomBotFacade.h"
+#include "../ai/playerbot/policy/rpg/ZoneMigratePolicy.h"
 #include "../ai/playerbot/PlayerbotFactory.h"
 #include "../host/BotSessionAdapter.h"
 #include "../commands/BotCommands.h"
@@ -166,10 +167,6 @@ ai::WorldPosition const* PickLevelFittingPoint(::Player* bot)
     //   that prevents both 60->Elwynn and 10->Winterspring mismatches without new config; enforced on
     //   bounded validated levels (TryGetValidatedAreaLevel: cached + DBC AreaLevel/parent), never via lazy GetAreaLevel/IsLocationLevelValid.
     int32 botLevel = (int32)bot->GetLevel();
-    int32 lower = botLevel - 5;
-    if (lower < 1) lower = 1;
-    int32 upper = botLevel + 5;
-    if (upper > 60) upper = 60;
     for (uint32 destinationAttempt = 0; destinationAttempt < destinationAttempts && !chosen; ++destinationAttempt)
     {
         ai::TravelDestination* destination = dests[urand(0, static_cast<uint32>(dests.size() - 1))];
@@ -203,7 +200,7 @@ ai::WorldPosition const* PickLevelFittingPoint(::Player* bot)
             int32 areaLevel;
             if (!travelMgr.TryGetValidatedAreaLevel(area->Id, areaLevel))
                 continue;
-            if (areaLevel < lower || areaLevel > upper)
+            if (!ai::LevelFittingTeleportAllowsZone(areaLevel, botLevel, point->HasAreaFlag(AREA_FLAG_CAPITAL)))
                 continue;
             if (IsUsableTeleportPoint(*point))
             {

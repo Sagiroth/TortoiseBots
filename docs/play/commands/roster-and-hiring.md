@@ -354,7 +354,7 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 | Take it back as your companion | `.bot add <Name>`, or invite it into your group again (only your own group's invite reclaims it). |
 | Play it yourself | Log into it from the character screen. |
 
-- **Where it goes:** if it was in an instance, a battleground or on a boat, it first leaves through the instance entrance portal, or to its battleground entry or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level (like a pool bot); below 10 it skips only the scatter and stays where it is.
+- **Where it goes:** if it was in an instance, a battleground or on a boat, it first leaves through the instance entrance portal, or to its battleground entry or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level, never a capital (like a pool bot); below 10 it skips only the scatter and stays where it is.
 - **What it tells you:** when it starts it whispers you how to stop it; when it stops it whispers a summary (levels, quests, deaths, gold). When you log in you get one line per alt for what it did since your last logout; [`.bot alts`](#bot-alts) repeats the same lines any time.
 - **How long it plays:** while you are logged out too, until you stop it or the server restarts. With [`AiPlayerbot.AltBotsLogoutWithOwner`](../../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` it logs out with you. A server crash can lose progress it had not saved yet.
 - **Pool size:** each alt-bot takes the place of one pool bot, which comes back when the alt-bot stops.
@@ -364,8 +364,8 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 
 | Does | Does not |
 | :--- | :--- |
-| Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank |
-| Sell grey items and white items it does not need (never soulbound, equipped or better-than-white) | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
+| Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank (so it never walks to a capital for the auction house) |
+| Sell grey items and white items it does not need (never soulbound, equipped or better-than-white); only those count when it decides to walk to a vendor | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
 | Equip upgrades it finds (the old piece goes to its bags) | Need on loot (it rolls Greed or Pass at most) |
 | Leave an instance when it is alone in it (and keeps 10 quest-log slots free) | Abandon quests it did not take itself |
 | | Buy mounts, bags or talent resets |
