@@ -1056,6 +1056,12 @@ AiPlayerbot.DungeonRunTankSwap = 0
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 
+# A seek_pull row gives the seek walk-out per-cycle rules: each of a fight's sources is walked out again in every
+# cycle, up to the row's walk-outs a cycle start with enough time left, a failed walk-out is retried, a shot that
+# stalls at the stand aborts, and an engaged source is burned from the row's kill lead before the siphon. Off keeps the
+# old one-walk-out-per-cycle rule (needs DungeonRunSeekAura and the rows).
+AiPlayerbot.DungeonRunSeekPullCycle = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

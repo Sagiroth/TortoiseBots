@@ -669,14 +669,16 @@ namespace ai
         s.walkedAt.swap(keptAt);
     }
 
-    // No pull happened (the cast or the moves failed, a stalled shot, or no stand): abort with the Son free again, and
-    // the cycle too when a retry is allowed (WalkoutRetryAllowed).
+    // No pull happened (the cast or the moves failed, a stalled shot, or no stand): abort with the Son free again
+    // (`freeSon`; a seek_pull row's "no stand" keeps it walked this cycle), and the cycle too when a retry is allowed
+    // (WalkoutRetryAllowed).
     inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs,
-                                    const WalkoutCycleRules& rules = WalkoutCycleRules())
+                                    const WalkoutCycleRules& rules = WalkoutCycleRules(), bool freeSon = true)
     {
         if (!WalkoutActive(s))
             return;
-        WalkoutEraseWalked(s, s.son);
+        if (freeSon)
+            WalkoutEraseWalked(s, s.son);
         if (WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;

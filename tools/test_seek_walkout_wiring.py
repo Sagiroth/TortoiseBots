@@ -125,7 +125,7 @@ class SeekWalkoutRound1(unittest.TestCase):
 
     def test_any_end_walks_back_without_attacking(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("WalkoutFinish(it->second.state, end, nowMs)", update)
+        self.assertIn("WalkoutFinish(it->second.state, end, nowMs, rules)", update)
         self.assertIn("WalkoutReturning(", update)
         self.assertIn("WalkoutReturnDone(", update)
         walk = self.walk()
@@ -199,7 +199,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
 class SeekWalkoutRound3(unittest.TestCase):
     def test_a_move_failed_abort_is_unspent_and_excludes_the_puller(self):
         note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved,")
-        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs)", note)
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, it->second.rules)", note)
         self.assertIn("WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs)", note)
         self.assertNotIn("WalkoutFinish(", note)
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
@@ -217,7 +217,7 @@ class SeekWalkoutRound4(unittest.TestCase):
         self.assertIn("it->second.scanned = false;", note)
         self.assertLess(note.index("WalkoutExclude("), note.index("it->second.scanned = false;"))
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))", update)
+        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs, rules))", update)
         self.assertLess(update.index("WalkoutMayStartFor("), update.index("WalkoutStart(record.state"))
 
 
@@ -242,9 +242,9 @@ class SeekWalkoutT1105h(unittest.TestCase):
 class SeekWalkoutT1105j(unittest.TestCase):
     def test_a_failed_walkout_may_retry_once_in_the_cycle(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo) ||", update)
+        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo, rules) ||", update)
         self.assertIn("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);", update)
-        self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs);", update)
+        self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs, rules);", update)
         # A walked Son that died is forgotten before the scan, so its respawn is the retry's Son.
         self.assertIn("WalkoutForgetGoneSons(it->second.state,", update)
         self.assertLess(update.index("WalkoutForgetGoneSons("), update.index("state = it->second.state;"))
@@ -258,12 +258,13 @@ class SeekWalkoutT1105j(unittest.TestCase):
 
     def test_the_retry_time_is_read_at_the_start(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs)", update)
+        self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs, rules)", update)
 
     def test_a_cast_fail_excludes_the_puller_and_rescans(self):
         abort = body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)")
-        self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());",
+        self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime(),",
                       abort)
+        self.assertIn("it->second.rules);", abort)
         self.assertIn("it->second.scanned = false;", abort)
 
 
@@ -345,7 +346,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
         self.assertIn("LiveTopTankThreat(", pick)
         self.assertIn("WalkoutPickThreatTooHigh(", pick)
-        self.assertNotIn("roles.tanks[0]", pick)
+        # The default rules keep the old main-tank reference; the seek_pull branch never reads it.
+        self.assertIn("rules.pickTopTankThreat\n                ? WalkoutPickThreatTooHigh(", pick)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("LiveTopTankThreat(", update)
         helper = body(ACTIONS, "float LiveTopTankThreat(Group* group, Unit* boss, Player* except)")
