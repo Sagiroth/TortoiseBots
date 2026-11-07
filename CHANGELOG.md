@@ -1,6 +1,7 @@
 # Changelog
 
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.
+- Changed: the Hakkar Son walk-out picks any ranged bot on the platform even mid-cast, waits for the first Cause Insanity, starts from 80 s, keeps facing the Son, and its rows say why no puller was found.
 - Fixed: priests that know Heal rank 2 or higher stop picking Lesser Heal on their own while they can pay for Heal; orders and low-mana fallbacks still use it.
 - New: Hakkar's Son holds, releases and deaths are logged (BossTacticsSonHold, BossTacticsSonDeath), with the hold time on HoldKill rows and Hakkar's HP at each siphon sighting.
 - New: behind AiPlayerbot.DungeonRunCarrierStrike (default 0), a Jin'do healer or off-tank cursed by Delusions turns on its own Shade while the raid can spare it, and stays on the raid otherwise.

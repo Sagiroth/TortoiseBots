@@ -168,7 +168,8 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
 
     def test_the_puller_is_inside_with_a_path(self):
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
-        self.assertIn("c.inside = InsideAnchor(", pick)
+        self.assertIn("rules.platformPick\n            ? WalkoutOnPlatform(", pick)
+        self.assertIn(": InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());", pick)
         self.assertIn("RankWalkoutPullers(candidates)", pick)
         self.assertIn("SeekWalkoutPathOk(member, standX, standY, standZ)", pick)
         path = body(ACTIONS, "bool SeekWalkoutPathOk(Player* member, float x, float y, float z)")
@@ -189,7 +190,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
         note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved,")
         self.assertIn("WalkoutNoteMove(", note)
         self.assertIn('"move failed"', note)
-        self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s"', ACTIONS)
+        self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s"', ACTIONS)
 
     def test_the_hunter_pet_comment_is_gone(self):
         policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
@@ -227,7 +228,7 @@ class SeekWalkoutT1105h(unittest.TestCase):
         replan = update[update.index("WalkoutReplanDue("):]
         self.assertIn("FindSeekWalkoutStand(bot, shooter, son, WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER)", replan)
         self.assertIn("SeekWalkoutPathOk(bot, standX, standY, standZ)", replan)
-        self.assertIn("WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs)", replan)
+        self.assertIn("WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs, inShot)", replan)
         self.assertIn('LogSeekWalkoutAbort(ai, "no stand"', replan)
 
     def test_the_cast_stops_before_an_outbound_move(self):
@@ -313,7 +314,7 @@ class SeekWalkoutSeekPull(unittest.TestCase):
         cfg = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
         self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekPullCycle", false)', cfg)
         policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
-        self.assertIn("inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec)", policy)
+        self.assertIn("inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec, float seekLeadSec = 0.0f)", policy)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("SeekPullRow(", update)
         self.assertIn("WalkoutRulesFromRow(", update)
@@ -331,7 +332,7 @@ class SeekWalkoutSeekPull(unittest.TestCase):
         self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules)", stall)
         self.assertIn("WalkoutExclude(it->second.state, state.puller, nowMs)", stall)
         self.assertIn('LogSeekWalkoutAbort(ai, "no shot"', stall)
-        self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s"',
+        self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s"',
                       ACTIONS)
 
     def test_the_action_notes_the_arrival_at_the_stand(self):
@@ -364,8 +365,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
     def test_the_no_son_row_is_throttled(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn('"seek pull: walk-out no son walked=%d"', update)
-        self.assertIn("noSonLogMs", update)
-        self.assertIn("noStandLogMs", update)
+        self.assertIn("nowMs - record.noSonLogMs >= 10000", update)
+        self.assertIn("nowMs - record.noStandLogMs >= 10000", update)
 
     def test_the_start_row_carries_the_scan(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -408,14 +409,20 @@ class SeekWalkoutRound2(unittest.TestCase):
         self.assertIn("bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort && !it->second.state.shot &&",
                       update)
         # The hunter-only pass reaches the pick, and a no-stand abort keeps the Son walked under the seek row.
-        self.assertIn("state, nowMs, hunterOnly, rules);", update)
+        self.assertIn("state, nowMs, hunterOnly, rules, &scan.tally);", update)
         self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules, !rules.perCycleWalked);", update)
 
     def test_the_no_puller_row_is_throttled(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f"', update)
-        self.assertIn("noPullerLogMs", update)
-        self.assertIn("scan.stand && scan.puller == 0", update)
+        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f n=%d dead=%d victim=%d charmed=%d '
+                      'insanity=%d outside=%d bench=%d cast=%d threat=%d path=%d top=%.0f low=%.0f"', update)
+        self.assertIn("char info1[256];", update)
+        self.assertIn("if (rules.perCycleWalked && !scan.blocked && scan.stand && scan.puller == 0 &&", update)
+        self.assertIn("nowMs - record.noPullerLogMs >= 10000", update)
+        self.assertIn("scan.tally.ranged", update)
+        self.assertIn("scan.tally.path", update)
+        self.assertIn("scan.tally.top", update)
+        self.assertIn("scan.tally.low", update)
 
     def test_a_late_start_returns_before_the_scan(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -424,9 +431,78 @@ class SeekWalkoutRound2(unittest.TestCase):
         self.assertIn(gate, update)
         late = update[update.index(gate):]
         self.assertIn('"seek pull: walk-out late due=%u"', late)
-        self.assertIn("lateLogMs", late)
+        self.assertIn("nowMs - record.lateLogMs >= 10000", late)
+        # Only a cycle that could still start logs the late row.
+        self.assertIn("if (!WalkoutCycleOpen(state, cycleNo, rules))\n            return;", late)
         # The late row and return come before the start scan's grid walk.
         self.assertLess(update.index(gate), update.index("The start check's scan"))
+
+
+class SeekWalkoutRound3(unittest.TestCase):
+    """Walk 52's fixes: the platform pick, a mid-cast puller, the first-charm gate, the seek lead, facing and rows."""
+
+    def test_the_pick_stands_on_the_platform_and_waits_for_a_cast(self):
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
+        self.assertIn("c.inside = rules.platformPick\n            ? WalkoutOnPlatform(BossAnchorDistance2d(circle, member->GetPositionX(), member->GetPositionY()),\n                                member->GetPositionZ())\n            : InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());", pick)
+        self.assertIn("if (rules.pickCastLater)", pick)
+        self.assertIn("CanCastSpell(spell, son, 0, nullptr, true, true, false, &r)", pick)
+        self.assertIn("WalkoutShotReadyLater(ok, r == SPELL_FAILED_SPELL_IN_PROGRESS,", pick)
+        self.assertIn("SPELL_FAILED_SPELL_IN_PROGRESS", pick)
+        self.assertIn("SPELL_FAILED_NOT_READY", pick)
+        # Without the rule the old plain check stays.
+        self.assertIn("c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);", pick)
+        self.assertIn("WalkoutTallyAdd(*tally, c);", pick)
+        self.assertIn("tally->top = topTankThreat;", pick)
+        self.assertIn("tally->low = memberThreat;", pick)
+        self.assertIn("tally->path += static_cast<int>(ranked.size());", pick)
+
+    def test_the_first_charm_gate(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("if (wanted && !WalkoutFightOldEnough(rules, out.fightMs))", update)
+        self.assertLess(update.index("!WalkoutFightOldEnough("), update.index("The start check's scan"))
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("fightMs = nowMs - record.engageMs;", read)
+        self.assertIn("out.fightMs = fightMs;", read)
+
+    def test_the_start_lead_is_the_seek_windows(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("WalkoutRulesFromRow(pull->priority, pull->windowSec, row.windowSec)", update)
+
+    def test_the_puller_faces_the_son_behind_the_seek_row(self):
+        walk = walkout_branch()
+        self.assertIn("if (SeekPullRulesOn(bot->GetMapId(), task.row) &&\n"
+                      "                    !sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
+                      "                                             CAST_ANGLE_IN_FRONT))\n"
+                      "                    sServerFacade.SetFacingTo(bot, task.source);", walk)
+        self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source)"),
+                        walk.index("WalkoutCurrentCast(bot, task.source"))
+        helper = body(ACTIONS, "bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekPullCycle", helper)
+        self.assertIn("GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry)", helper)
+        # The arrival note is gated by the same helper.
+        self.assertIn("if (SeekPullRulesOn(bot->GetMapId(), task.row) &&\n"
+                      "                (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||", walk)
+
+    def test_the_stall_clock_keeps_running_in_shot_position(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("bool const inShot = rules.shotStall && son &&", update)
+        self.assertIn("WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs, inShot)", update)
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn("bool keepClock = false", policy)
+        self.assertIn("if (moved && !keepClock)", policy)
+
+    def test_the_no_shot_row_says_what_the_puller_was_doing(self):
+        self.assertIn(" los=%d inrange=%d spell=%u onson=%d front=%d moving=%d dz=%.1f", ACTIONS)
+        self.assertIn('LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);',
+                      ACTIONS)
+        self.assertIn("char info1[320];", ACTIONS)
+
+    def test_the_start_row_carries_the_threat_ratio(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("tr=%.2f", update)
+        self.assertIn("LiveTopTankThreat(bot->GetGroup(), boss, nullptr)", update)
+        self.assertIn("float const tr = topThreat > 0.0f ? boss->GetThreatManager().getThreat(bot) / topThreat : -1.0f;",
+                      update)
 
 
 if __name__ == "__main__":

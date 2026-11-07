@@ -802,6 +802,178 @@ static void TestAnAbortAfterTheShotKeepsTheCycleClosed()
     CHECK(s.returner == 7);
 }
 
+static void TestPlatformPickAndCastLater()
+{
+    // Walk 52 cycle-4 shape: two hunters dead, three living casters 35-48 yd from the centre (outside the 30 yd
+    // anchor) mid-cast, one mage benched and one warlock under Cause Insanity. With the defaults nobody is picked.
+    BossAnchorCircle c;
+    c.x = 0.0f;
+    c.y = 0.0f;
+    c.z = 54.0f;
+    c.radius = 30.0f;
+    std::vector<WalkoutCandidate> raid = {
+        Cand(1, WalkoutRole::Hunter, 20.0f),
+        Cand(2, WalkoutRole::Hunter, 22.0f),
+        Cand(3, WalkoutRole::Caster, 35.0f),
+        Cand(4, WalkoutRole::Caster, 41.0f),
+        Cand(5, WalkoutRole::Caster, 48.0f),
+        Cand(6, WalkoutRole::Caster, 44.0f),
+        Cand(7, WalkoutRole::Caster, 46.0f),
+    };
+    raid[0].alive = false;
+    raid[1].alive = false;
+    for (std::size_t i = 2; i < raid.size(); ++i)
+    {
+        raid[i].inside = InsideAnchor(c, raid[i].yd, 0.0f);
+        raid[i].canShoot = false; // a cast in progress refuses the check
+    }
+    raid[5].excluded = true; // the benched mage
+    raid[6].insane = true;   // the warlock under Cause Insanity
+    CHECK(PickWalkoutPuller(raid) == -1);
+    for (std::size_t i = 2; i < raid.size(); ++i)
+    {
+        raid[i].inside = WalkoutOnPlatform(raid[i].yd, 52.9f);
+        raid[i].canShoot = WalkoutShotReadyLater(false, true, false);
+    }
+    CHECK(PickWalkoutPuller(raid) == 2); // the nearest living caster
+}
+
+static void TestWalkoutOnPlatform()
+{
+    CHECK(Near(kSeekWalkoutPlatformYd, 60.0f));
+    CHECK(WalkoutOnPlatform(59.9f, 52.9f));
+    CHECK(!WalkoutOnPlatform(60.1f, 52.9f));
+    CHECK(!WalkoutOnPlatform(40.0f, 46.4f));
+    CHECK(WalkoutOnPlatform(40.0f, 46.5f));
+}
+
+static void TestWalkoutShotReadyLater()
+{
+    CHECK(WalkoutShotReadyLater(true, false, false));
+    CHECK(WalkoutShotReadyLater(false, true, false));
+    CHECK(WalkoutShotReadyLater(false, false, true));
+    CHECK(!WalkoutShotReadyLater(false, false, false));
+}
+
+static void TestWalkoutFightOldEnough()
+{
+    CHECK(WalkoutFightOldEnough(WalkoutCycleRules(), 0));
+    const WalkoutCycleRules rules = WalkoutRulesFromRow(3, 60.0f);
+    CHECK(rules.firstFightStartMs == 19000u);
+    CHECK(!WalkoutFightOldEnough(rules, 18999));
+    CHECK(WalkoutFightOldEnough(rules, 19000));
+}
+
+static void TestWalkoutStartLead()
+{
+    const WalkoutCycleRules eighty = WalkoutRulesFromRow(3, 60.0f, 80.0f);
+    CHECK(eighty.startLeadMs == 80000u);
+    SeekWalkoutState s;
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 80000, eighty));
+    CHECK(!WalkoutMayStartFor(s, 0, 100, 7, 1000, 80001, eighty));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 60000, eighty));
+    CHECK(!WalkoutMayStartFor(s, 0, 100, 7, 1000, 59999, eighty));
+    // The old line without the seek window's own lead.
+    const WalkoutCycleRules old = WalkoutRulesFromRow(3, 60.0f);
+    CHECK(old.startLeadMs == kSeekWalkoutSiphonLeadMs);
+    CHECK(!WalkoutMayStartFor(s, 0, 100, 7, 1000, 75001, old));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 75000, old));
+    // The lead is clamped to the walk-out's own bounds.
+    CHECK(WalkoutRulesFromRow(3, 60.0f, 90.0f).startLeadMs == 85000u);
+    CHECK(WalkoutRulesFromRow(3, 60.0f, 50.0f).startLeadMs == 75000u);
+}
+
+static void TestStandMoveKeepsTheStallClockInShot()
+{
+    // In shot position the stand keeps moving with the patrolling Son: the clock keeps running instead of restarting
+    // with every re-plan.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteStand(s, true, 10.0f, 10.0f, 50.0f, 1000);
+    WalkoutNoteAtStand(s, 2000);
+    CHECK(s.atStandSinceMs == 2000);
+    WalkoutNoteStand(s, true, 18.0f, 10.0f, 50.0f, 8000, true);
+    CHECK(s.atStandSinceMs == 2000);
+    CHECK(WalkoutShotStalled(s, 8000));
+}
+
+static void TestWalkoutIneligibleWhy()
+{
+    const WalkoutCandidate ok = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(WalkoutIneligibleWhy(ok) == nullptr);
+    WalkoutCandidate c = ok;
+    c.alive = false;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "dead");
+    c = ok;
+    c.role = WalkoutRole::None;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
+    c = ok;
+    c.tank = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
+    c = ok;
+    c.healer = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
+    c = ok;
+    c.bossVictim = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "victim");
+    c = ok;
+    c.charmed = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "charmed");
+    c = ok;
+    c.insane = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "insanity");
+    c = ok;
+    c.inside = false;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "outside");
+    c = ok;
+    c.excluded = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "bench");
+    c = ok;
+    c.canShoot = false;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "cast");
+    c = ok;
+    c.highThreat = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "threat");
+    c = ok;
+    c.pathOk = false;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "path");
+    // Two at once: the earlier one in that order.
+    c = ok;
+    c.alive = false;
+    c.inside = false;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "dead");
+    c = ok;
+    c.inside = false;
+    c.highThreat = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "outside");
+    c = ok;
+    c.canShoot = false;
+    c.highThreat = true;
+    CHECK(std::string(WalkoutIneligibleWhy(c)) == "cast");
+}
+
+static void TestWalkoutTallyAdd()
+{
+    WalkoutPickTally t;
+    WalkoutCandidate healer = Cand(1, WalkoutRole::None, 5.0f);
+    healer.healer = true;
+    WalkoutTallyAdd(t, healer);
+    CHECK(t.ranged == 0 && t.dead == 0 && t.victim == 0);
+    WalkoutCandidate dead = Cand(2, WalkoutRole::Hunter, 6.0f);
+    dead.alive = false;
+    WalkoutCandidate outside = Cand(3, WalkoutRole::Caster, 7.0f);
+    outside.inside = false;
+    WalkoutCandidate eligible = Cand(4, WalkoutRole::Ranged, 8.0f);
+    WalkoutTallyAdd(t, dead);
+    WalkoutTallyAdd(t, outside);
+    WalkoutTallyAdd(t, eligible);
+    CHECK(t.ranged == 3);
+    CHECK(t.dead == 1);
+    CHECK(t.outside == 1);
+    CHECK(t.victim == 0 && t.charmed == 0 && t.insanity == 0 && t.bench == 0 && t.cast == 0 && t.threat == 0 &&
+          t.path == 0);
+}
+
 static void TestStandCandidatesFan()
 {
     BossAnchorCircle c;
@@ -845,6 +1017,14 @@ int main()
     TestShotStall();
     TestStandMoveRestartsTheStallClock();
     TestAnAbortAfterTheShotKeepsTheCycleClosed();
+    TestPlatformPickAndCastLater();
+    TestWalkoutOnPlatform();
+    TestWalkoutShotReadyLater();
+    TestWalkoutFightOldEnough();
+    TestWalkoutStartLead();
+    TestStandMoveKeepsTheStallClockInShot();
+    TestWalkoutIneligibleWhy();
+    TestWalkoutTallyAdd();
     TestStandCandidatesFan();
     TestWalkoutRetryNeverStarts();
     TestCastFailExcludesPuller();

@@ -44,6 +44,7 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutRetryMinMs = 25000; // a failed walk-out reopens the cycle only with more left
     constexpr std::uint32_t kSeekWalkoutShotStallMs = 6000; // at the stand this long without a shot aborts ("no shot")
     constexpr float kSeekWalkoutStandArriveYd = 3.0f;       // at the stand is this close to it
+    constexpr float kSeekWalkoutPlatformYd = 60.0f;         // the ranged platform: this close to the anchor's centre
 
     // A seek_pull row's rules (walk 51): every Son is walked once per cycle, up to `maxPerCycle` walk-outs start a
     // cycle, each with `firstStartMinMs` left at the least, a failed one reopens the cycle, a shot that stalls at the
@@ -54,28 +55,41 @@ namespace ai
         int maxPerCycle = kSeekWalkoutMaxPerCycle;
         std::uint32_t retryMinMs = kSeekWalkoutRetryMinMs;
         std::uint32_t firstStartMinMs = 0; // 0: no deadline (the old rule)
+        std::uint32_t startLeadMs = kSeekWalkoutSiphonLeadMs; // the earliest start: this much to the due time
+        std::uint32_t firstFightStartMs = 0; // 0: no gate (the old rule)
         bool perCycleWalked = false;
         bool reopenOnAbort = false;
         bool shotStall = false;
         bool pickTopTankThreat = false;
         bool standFan = false;
         bool hunterReachScan = false;
+        bool platformPick = false;
+        bool pickCastLater = false;
     };
 
-    // The rules a seek_pull row arms: `priority` walk-outs a cycle, `windowSec` the last start and the retry floor.
-    inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec)
+    // The rules a seek_pull row arms: `priority` walk-outs a cycle, `windowSec` the last start and the retry floor,
+    // `seekLeadSec` the seek_aura row's dose window (the earliest start, clamped to the walk-out's own bounds).
+    inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec, float seekLeadSec = 0.0f)
     {
         WalkoutCycleRules rules;
         rules.maxPerCycle = std::max(1, std::min(5, priority));
         std::uint32_t const windowMs = static_cast<std::uint32_t>(windowSec * 1000.0f);
         rules.retryMinMs = windowMs;
         rules.firstStartMinMs = windowMs;
+        rules.firstFightStartMs = 19000; // the first Cause Insanity lands at +17-18 s
         rules.perCycleWalked = true;
         rules.reopenOnAbort = true;
         rules.shotStall = true;
         rules.pickTopTankThreat = true;
         rules.standFan = true;
         rules.hunterReachScan = true;
+        rules.platformPick = true;
+        rules.pickCastLater = true;
+        if (seekLeadSec > 0.0f)
+        {
+            std::uint32_t const leadMs = static_cast<std::uint32_t>(seekLeadSec * 1000.0f);
+            rules.startLeadMs = std::clamp(leadMs, kSeekWalkoutSiphonLeadMs, 85000u);
+        }
         return rules;
     }
 
@@ -139,6 +153,90 @@ namespace ai
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
             !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
+    }
+
+    // Whether a bot stands on the ranged platform: within kSeekWalkoutPlatformYd of the anchor's centre and above
+    // Hakkar's evade line. The ranged raid stands 30-50 yd out, outside the tanks' anchor, and still pulls.
+    inline bool WalkoutOnPlatform(float distFromCentreYd, float z)
+    {
+        return distFromCentreYd <= kSeekWalkoutPlatformYd && z >= kSeekWalkoutMinStandZ;
+    }
+
+    // Whether a refused shot check still leaves the bot usable for the walk-out: a cast already in progress or a spell
+    // on cooldown is over by the time the puller walks to its stand, so a caster mid-cast is not refused.
+    inline bool WalkoutShotReadyLater(bool castOk, bool spellInProgress, bool notReady)
+    {
+        return castOk || spellInProgress || notReady;
+    }
+
+    // Whether the fight has run long enough for the walk-out's first start: Cause Insanity lands at +17-18 s and
+    // deletes the main tank's threat, which turned the cycle-1 picks into threat aborts.
+    inline bool WalkoutFightOldEnough(const WalkoutCycleRules& rules, std::uint32_t fightMs)
+    {
+        return rules.firstFightStartMs == 0 || fightMs >= rules.firstFightStartMs;
+    }
+
+    // The no-puller row's counts: every ranged candidate and the first test it failed.
+    struct WalkoutPickTally
+    {
+        int ranged = 0, dead = 0, victim = 0, charmed = 0, insanity = 0, outside = 0, bench = 0, cast = 0, threat = 0,
+            path = 0;
+        float top = -1.0f, low = -1.0f;
+    };
+
+    // Why the no-puller scan refused a candidate, in the pick's test order; null when it was eligible.
+    inline const char* WalkoutIneligibleWhy(const WalkoutCandidate& c)
+    {
+        if (!c.alive)
+            return "dead";
+        if (c.role == WalkoutRole::None || c.tank || c.healer)
+            return "role";
+        if (c.bossVictim)
+            return "victim";
+        if (c.charmed)
+            return "charmed";
+        if (c.insane)
+            return "insanity";
+        if (!c.inside)
+            return "outside";
+        if (c.excluded)
+            return "bench";
+        if (!c.canShoot)
+            return "cast";
+        if (c.highThreat)
+            return "threat";
+        if (!c.pathOk)
+            return "path";
+        return nullptr;
+    }
+
+    // Adds one candidate to the no-puller row's counts.
+    inline void WalkoutTallyAdd(WalkoutPickTally& t, const WalkoutCandidate& c)
+    {
+        if (c.role == WalkoutRole::None || c.tank || c.healer)
+            return;
+        ++t.ranged;
+        const char* const why = WalkoutIneligibleWhy(c);
+        if (!why)
+            return;
+        if (std::strcmp(why, "dead") == 0)
+            ++t.dead;
+        else if (std::strcmp(why, "victim") == 0)
+            ++t.victim;
+        else if (std::strcmp(why, "charmed") == 0)
+            ++t.charmed;
+        else if (std::strcmp(why, "insanity") == 0)
+            ++t.insanity;
+        else if (std::strcmp(why, "outside") == 0)
+            ++t.outside;
+        else if (std::strcmp(why, "bench") == 0)
+            ++t.bench;
+        else if (std::strcmp(why, "cast") == 0)
+            ++t.cast;
+        else if (std::strcmp(why, "threat") == 0)
+            ++t.threat;
+        else if (std::strcmp(why, "path") == 0)
+            ++t.path;
     }
 
     // Whether a bot's threat on the boss is too close to the main tank's to be sent: kSeekWalkoutThreatShare of it or
@@ -467,14 +565,14 @@ namespace ai
 
     // A new task for this puller: WalkoutMayStart, the bot not sitting out its exclusion (a scan cached before the
     // exclusion may still name it), a retry still in time (WalkoutRetryStartInTime), and the next Blood Siphon due in
-    // kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once due): the dose window's whole length, so the Son is back
+    // rules.startLeadMs or less (`dueInMs`, 0 once due): the dose window's whole length, so the Son is back
     // and burned before the siphon (the 12 s non-tank burn, SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the
     // healers meanwhile). A seek_pull row's `firstStartMinMs` also refuses any start with less time left.
     inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
                                    std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs,
                                    const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
-        return dueInMs <= kSeekWalkoutSiphonLeadMs &&
+        return dueInMs <= rules.startLeadMs &&
             (rules.firstStartMinMs == 0 || dueInMs >= rules.firstStartMinMs) &&
             WalkoutMayStart(s, cycleNo, son, rules) &&
             !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs, rules);
@@ -502,9 +600,11 @@ namespace ai
     }
 
     // One re-plan: a found stand replaces the old one and restarts the no-stand clock (a stand that moved more than
-    // kSeekWalkoutStandArriveYd also restarts the shot-stall clock: the puller stands at a new spot); none keeps the
-    // old stand and runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
-    inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs)
+    // kSeekWalkoutStandArriveYd also restarts the shot-stall clock, unless `keepClock`: the puller is already in shot
+    // position and a patrolling Son keeps moving the stand); none keeps the old stand and runs the clock. True:
+    // kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
+    inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs,
+                                 bool keepClock = false)
     {
         s.standMs = nowMs;
         if (found)
@@ -517,7 +617,7 @@ namespace ai
             s.standY = y;
             s.standZ = z;
             s.noStandSinceMs = 0;
-            if (moved)
+            if (moved && !keepClock)
                 s.atStandSinceMs = 0;
             return false;
         }

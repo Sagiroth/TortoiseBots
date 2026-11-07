@@ -759,6 +759,7 @@ struct SeekFight
     const BossTacticRow* row = nullptr;
     Unit* boss = nullptr;
     std::uint32_t nowMs = 0;
+    std::uint32_t fightMs = 0;   // since the fight's combat start (0: not seen in combat yet)
     std::uint32_t dueMs = 0;
     std::uint32_t dueInMs = 0;   // clamped at 0: only readers that need "due but not yet seen" take the signed one
     int dueSignedMs = std::numeric_limits<int>::max(); // negative once the due time passed
@@ -1557,14 +1558,16 @@ void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry, 
 }
 
 // An abort's row: why, the puller's distance to its Son (-1: unknown), the stand, the last move's result, and for the last
-// refused move the path type, the path's length to the stand and the mover's reason.
-void LogSeekWalkoutAbort(PlayerbotAI* ai, const char* reason, float sonYd, const SeekWalkoutState& s)
+// refused move the path type, the path's length to the stand and the mover's reason; `extra` appends a no-shot row's
+// own fields (each with its leading space) after the reason.
+void LogSeekWalkoutAbort(PlayerbotAI* ai, const char* reason, float sonYd, const SeekWalkoutState& s,
+                         const char* extra = nullptr)
 {
-    char info1[224];
+    char info1[320];
     snprintf(info1, sizeof(info1),
-             "seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s", reason,
+             "seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s", reason,
              sonYd, s.standX, s.standY, s.standZ, s.lastMoveOk ? 1 : 0, static_cast<unsigned>(s.failPathType),
-             s.failPathYd, MoveFailReasonName(s.failReason));
+             s.failPathYd, MoveFailReasonName(s.failReason), extra ? extra : "");
     LogSeekWalkout(ai, info1);
 }
 
@@ -1782,14 +1785,15 @@ float LiveTopTankThreat(Group* group, Unit* boss, Player* except)
 
 // The walk-out puller: one ranged damage dealer of the raid (SeekWalkoutPolicy.h WalkoutRoleOf, WalkoutEligible:
 // never a tank, a healer, the boss's victim, one at his main tank's threat, a charmed bot or one under Cause Insanity,
-// only one inside the anchor whose own shot (WalkoutShotSpell) it can cast at `son` now, range aside), the best by
-// role, then the nearest to the boss; the navmesh path to the stand is asked in that order and the first with one is it.
-// A seek_pull row's pick compares with the live top tank (rules.pickTopTankThreat) like the abort; a scan that only
-// found a stand at the hunter's reach passes hunterOnly, so no shorter shot is sent to it.
+// only one on the platform whose own shot (WalkoutShotSpell) it can cast at `son` now or once its cast ends, range
+// aside), the best by role, then the nearest to the boss; the navmesh path to the stand is asked in that order and the
+// first with one is it. A seek_pull row's pick compares with the live top tank (rules.pickTopTankThreat) like the
+// abort; a scan that only found a stand at the hunter's reach passes hunterOnly, so no shorter shot is sent to it. A
+// `tally` collects why each ranged candidate was refused (the no-puller row).
 Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son, const BossAnchorCircle& circle,
                               float standX, float standY, float standZ, const SeekWalkoutState& state,
                               std::uint32_t nowMs, bool hunterOnly = false,
-                              const WalkoutCycleRules& rules = WalkoutCycleRules())
+                              const WalkoutCycleRules& rules = WalkoutCycleRules(), WalkoutPickTally* tally = nullptr)
 {
     Group* group = bot->GetGroup();
     if (!group || !boss || !son)
@@ -1798,6 +1802,8 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
     Player* const mainTank = roles.tanks.empty() ? nullptr : roles.tanks[0];
     ThreatManager& threat = boss->GetThreatManager();
     float const topTankThreat = rules.pickTopTankThreat ? LiveTopTankThreat(group, boss, nullptr) : 0.0f;
+    if (tally)
+        tally->top = topTankThreat;
     std::vector<Player*> members;
     std::vector<WalkoutCandidate> candidates;
     for (Player* member : LiveGroupMembers(group))
@@ -1822,7 +1828,10 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         c.bossVictim = boss->GetVictim() == member;
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
-        c.inside = InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());
+        c.inside = rules.platformPick
+            ? WalkoutOnPlatform(BossAnchorDistance2d(circle, member->GetPositionX(), member->GetPositionY()),
+                                member->GetPositionZ())
+            : InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());
         c.excluded = WalkoutExcluded(state, c.guid, nowMs);
         c.yd = member->GetDistance2d(boss);
         // The costly questions last, only for a bot that passes every other: its threat against the tank reference and
@@ -1830,21 +1839,42 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         const char* const spell = WalkoutShotSpell(cls);
         c.canShoot = *spell != '\0';
         if (c.canShoot && WalkoutEligible(c))
+        {
+            float const memberThreat = threat.getThreat(member);
+            if (tally && (tally->low < 0.0f || memberThreat < tally->low))
+                tally->low = memberThreat;
             c.highThreat = rules.pickTopTankThreat
-                ? WalkoutPickThreatTooHigh(threat.getThreat(member), topTankThreat)
+                ? WalkoutPickThreatTooHigh(memberThreat, topTankThreat)
                 : (mainTank && mainTank != member &&
-                    WalkoutThreatTooHigh(threat.getThreat(member), threat.getThreat(mainTank)));
-        if (c.canShoot && WalkoutEligible(c))
-            c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);
+                    WalkoutThreatTooHigh(memberThreat, threat.getThreat(mainTank)));
+            if (WalkoutEligible(c))
+            {
+                if (rules.pickCastLater)
+                {
+                    SpellCastResult r = SPELL_CAST_OK;
+                    bool const ok = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true, false, &r);
+                    c.canShoot = WalkoutShotReadyLater(ok, r == SPELL_FAILED_SPELL_IN_PROGRESS,
+                                                       r == SPELL_FAILED_NOT_READY);
+                }
+                else
+                    c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);
+            }
+        }
+        if (tally)
+            WalkoutTallyAdd(*tally, c);
         members.push_back(member);
         candidates.push_back(c);
     }
-    for (int index : RankWalkoutPullers(candidates))
+    const std::vector<int> ranked = RankWalkoutPullers(candidates);
+    for (int index : ranked)
     {
         Player* const member = members[static_cast<std::size_t>(index)];
         if (SeekWalkoutPathOk(member, standX, standY, standZ))
             return member;
     }
+    // Every eligible candidate's path was refused: the last wall was the navmesh, not a pick test.
+    if (tally && !ranked.empty())
+        tally->path += static_cast<int>(ranked.size());
     return nullptr;
 }
 
@@ -1867,7 +1897,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         if (const BossTacticRow* const pull =
                 GetBossTactics().SeekPullRow(bot->GetMapId(), row.bossEntry, row.targetEntry))
-            rules = WalkoutRulesFromRow(pull->priority, pull->windowSec);
+            rules = WalkoutRulesFromRow(pull->priority, pull->windowSec, row.windowSec);
     }
     SeekWalkoutState state;
     bool scanFresh = false;
@@ -1937,7 +1967,28 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 it->second.scanned = false;
                 NoteWalkoutBusy(before, it->second.state);
             }
-            LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state);
+            char info2[160];
+            if (puller && son)
+            {
+                bool castOnSon = false;
+                Spell* const cast = WalkoutCurrentCast(puller, son, castOnSon);
+                std::uint32_t const spellId = cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0;
+                float const sonYd = puller->GetDistance(son);
+                bool const los = puller->IsWithinLOSInMap(son);
+                bool const inRange = sonYd <= WalkoutShotRangeYd(puller->GetClass() == CLASS_HUNTER);
+                bool const front = sServerFacade.isInFront(puller, son, sPlayerbotAIConfig.sightDistance,
+                                                           CAST_ANGLE_IN_FRONT);
+                bool const moving = sServerFacade.isMoving(puller);
+                float const dz = puller->GetPositionZ() - son->GetPositionZ();
+                snprintf(info2, sizeof(info2),
+                         " los=%d inrange=%d spell=%u onson=%d front=%d moving=%d dz=%.1f", los ? 1 : 0,
+                         inRange ? 1 : 0, static_cast<unsigned>(spellId), castOnSon ? 1 : 0, front ? 1 : 0,
+                         moving ? 1 : 0, dz);
+            }
+            else
+                snprintf(info2, sizeof(info2),
+                         " los=-1 inrange=-1 spell=-1 onson=-1 front=-1 moving=-1 dz=-1.0");
+            LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
             return;
         }
         bool const backInside = puller && WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
@@ -2000,6 +2051,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             bool const found = FindSeekWalkoutStand(bot, shooter, son, WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER),
                                                     standX, standY, standZ, rules) &&
                 SeekWalkoutPathOk(bot, standX, standY, standZ);
+            // In shot position (range, floor and sight line) a patrolling Son keeps moving the stand; the no-shot
+            // clock must keep running there, so a shot that never lands still aborts.
+            bool const inShot = rules.shotStall && son &&
+                bot->GetDistance(son) <= WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER) &&
+                bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(son);
             bool noStand = false;
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
@@ -2007,7 +2063,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 if (it == g_walkouts.end() || it->second.state.puller != self ||
                     it->second.state.startMs != state.startMs)
                     return;
-                noStand = WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs);
+                noStand = WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs, inShot);
                 if (noStand)
                 {
                     bool const before = WalkoutBusy(it->second.state);
@@ -2067,6 +2123,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     if (wanted && sPlayerbotAIConfig.dungeonRunSeekPullCycle && rules.firstStartMinMs != 0 &&
         dueInMs < rules.firstStartMinMs)
     {
+        // A cycle already spent (its walk-out done, or its starts used) does not log: the row is about a retry it
+        // refuses.
+        if (!WalkoutCycleOpen(state, cycleNo, rules))
+            return;
         bool lateLog = false;
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
@@ -2088,6 +2148,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
+    // The first Cause Insanity lands at +17-18 s and deletes the main tank's threat: a pick before it aborts on the
+    // top tank's threat seconds later (walk 52: 15 of 19 threat aborts).
+    if (wanted && !WalkoutFightOldEnough(rules, out.fightMs))
+        return;
     if (!wanted || !WalkoutCycleOpen(state, cycleNo, rules) ||
         !WalkoutRetryStartInTime(state, cycleNo, nowMs, rules))
         return;
@@ -2102,6 +2166,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         float x = 0.0f, y = 0.0f, z = 0.0f;
         float reachYd = 0.0f;
         float rayDeg = 0.0f;
+        WalkoutPickTally tally;
     } scan;
     if (scanFresh)
     {
@@ -2170,7 +2235,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             if (scan.stand)
             {
                 Player* const pick = FindSeekWalkoutPuller(ai, bot, boss, scan.son, shooter, scan.x, scan.y, scan.z,
-                                                           state, nowMs, hunterOnly, rules);
+                                                           state, nowMs, hunterOnly, rules, &scan.tally);
                 scan.puller = pick ? pick->GetObjectGuid().GetRawValue() : 0;
             }
         }
@@ -2215,9 +2280,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             LogSeekWalkout(ai, "seek pull: walk-out no stand");
         if (noPullerLog)
         {
-            char info1[96];
-            snprintf(info1, sizeof(info1), "seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f",
-                     scan.x, scan.y, scan.reachYd);
+            char info1[256];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f n=%d dead=%d victim=%d charmed=%d insanity=%d outside=%d bench=%d cast=%d threat=%d path=%d top=%.0f low=%.0f",
+                     scan.x, scan.y, scan.reachYd, scan.tally.ranged, scan.tally.dead, scan.tally.victim,
+                     scan.tally.charmed, scan.tally.insanity, scan.tally.outside, scan.tally.bench,
+                     scan.tally.cast, scan.tally.threat, scan.tally.path, scan.tally.top, scan.tally.low);
             LogSeekWalkout(ai, info1);
         }
         if (noSonLog)
@@ -2252,9 +2319,13 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     }
     char info1[192];
     if (rules.perCycleWalked)
+    {
+        float const topThreat = LiveTopTankThreat(bot->GetGroup(), boss, nullptr);
+        float const tr = topThreat > 0.0f ? boss->GetThreatManager().getThreat(bot) / topThreat : -1.0f;
         snprintf(info1, sizeof(info1),
-                 "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f", bot->GetName(),
-                 scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg);
+                 "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f", bot->GetName(),
+                 scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr);
+    }
     else
         snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), scan.son->GetGUIDLow());
     LogSeekWalkout(ai, info1);
@@ -2304,6 +2375,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     const SeekRecordKey key = SeekRecordKeyOf(bot->GetInstanceId(), boss->GetObjectGuid().GetRawValue(), *row);
     std::uint32_t dueMs = 0;
     std::uint32_t cycleNo = 0;
+    std::uint32_t fightMs = 0;
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
     std::uint32_t pendingSiphonElapsedMs = 0;
@@ -2348,6 +2420,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         // this. The victim is read too: a boss in combat with the group can be without one for a tick.
         if (record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim()))
             record.engageMs = nowMs;
+        if (record.engageMs != 0)
+            fightMs = nowMs - record.engageMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
         // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
         if (bot->HasAura(row->cycleSpell) && SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs))
@@ -2397,6 +2471,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.row = row;
     out.boss = boss;
     out.nowMs = nowMs;
+    out.fightMs = fightMs;
     out.dueMs = dueMs;
     out.dueInMs = dueMs > nowMs ? dueMs - nowMs : 0;
     out.dueSignedMs = dueMs
@@ -7059,6 +7134,14 @@ bool TauntAuraGated(Player* bot, Unit* subject)
     std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry());
     return AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura));
 }
+
+// Whether this fight runs a seek_pull row with the flag on: the walk-out's own clock (the arrival note, the facing)
+// reads the row's rules.
+bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)
+{
+    return sPlayerbotAIConfig.dungeonRunSeekPullCycle && seekRow &&
+        GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry) != nullptr;
+}
 }
 
 bool BossTacticsSeekTankAction::Execute(Event& event)
@@ -7088,7 +7171,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             // The stand's arrival starts the shot-stall clock: in shot range with the floor and the sight line, or at
             // the stand itself (a stand whose sight line is blocked still reads as arrived). Only a seek_pull row's
             // rules read that clock.
-            if (sPlayerbotAIConfig.dungeonRunSeekPullCycle &&
+            if (SeekPullRulesOn(bot->GetMapId(), task.row) &&
                 (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||
                  (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
                   bot->IsWithinLOSInMap(task.source))))
@@ -7096,6 +7179,11 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;
+                // The Son patrols: a running Auto Shot or Shoot keeps facing it, so the shot lands.
+                if (SeekPullRulesOn(bot->GetMapId(), task.row) &&
+                    !sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,
+                                             CAST_ANGLE_IN_FRONT))
+                    sServerFacade.SetFacingTo(bot, task.source);
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
                 // now.
