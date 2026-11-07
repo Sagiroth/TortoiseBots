@@ -188,6 +188,19 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     it->second.NoteBossGuid(guid);
 }
 
+// The run's plan boss for an open fight that has none (the pull at a move step, a boss step reached in a walk back):
+// the first pick of a fight wins, and the sampler's data pick never follows a plan boss (Book::AdoptBoss).
+void CombatMonitorService::AdoptBoss(uint32_t groupId, uint32_t entry, char const* name)
+{
+    if (!Enabled() || groupId == 0 || entry == 0 || !name)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    it->second.AdoptBoss(entry, name);
+}
+
 void CombatMonitorService::NoteBossGuid(uint32_t groupId, uint64_t guid)
 {
     if (!Enabled() || groupId == 0 || guid == 0)

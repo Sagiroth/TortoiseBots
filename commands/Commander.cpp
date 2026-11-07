@@ -16665,9 +16665,18 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
+    // A fight the run opened before its boss step (the pull at a move step, a boss step reached in a walk back): the
+    // open fight adopts the plan's boss, so its kill is read as that boss. A plan boss wins over the data pick below.
+    if (ctx.bossEntry)
+        CombatMonitorService::Instance().AdoptBoss(binding.groupId, ctx.bossEntry, ctx.bossName.c_str());
+    // No boss in the fight yet: the same data pick the bound sampler makes (world-boss rank, instance-bind, plan
+    // boss; most health first), once per fight.
+    if (CombatMonitorService::Instance().InFight(binding.groupId) &&
+        CombatMonitorService::Instance().BossEntry(binding.groupId) == 0)
+        NoteFightBoss(binding.groupId, lead);
     // The timeline's boss: the plan's boss step, found among the engaged facts (a script-changed entry still matches
     // through formOf); the first unit found is the fight's. A unit that reads another entry than the plan's is noted
-    // as the fight's phase here too, the same way the bound sampler does it (the run path never calls NoteFightBoss).
+    // as the fight's phase here too, the same way the bound sampler does it.
     if (ctx.bossEntry)
         for (DungeonRun::UnitFact const& u : facts.engagedUnits)
         {

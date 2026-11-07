@@ -196,6 +196,24 @@ class CombatMonitorWiringTest(unittest.TestCase):
         for path in sources:
             self.assertNotIn("RefreshNoRun", path.read_text(), path)
 
+    def test_run_path_names_the_fights_boss(self):
+        # Zul'Gurub walk 52: the Hakkar pull opens the fight on the move step before its boss step, and a boss step
+        # reached in a walk back (FactStep replays the move step) reads boss 0 too, so the fight never met a kill.
+        # The run path adopts the plan boss on the fight the feed opened and falls back to the sampler's data pick.
+        code = strip_comments(COMMANDER)
+        refresh = definition(code, "static void RefreshCombatMonitor(")
+        feed = refresh.index("FeedCombatMonitor(")
+        adopt = refresh.index("AdoptBoss(")
+        note = refresh.index("NoteFightBoss(")
+        self.assertLess(feed, adopt, "the plan boss lands on the fight the feed just opened")
+        self.assertLess(adopt, note, "a plan boss wins over the data pick")
+        self.assertIn("if (ctx.bossEntry)", refresh[:adopt])
+        self.assertIn("CombatMonitorService::Instance().InFight(binding.groupId)", refresh[adopt:note])
+        self.assertIn("CombatMonitorService::Instance().BossEntry(binding.groupId) == 0", refresh[adopt:note])
+        self.assertIn("it->second.AdoptBoss(entry, name);",
+                      definition(strip_comments(SERVICE), "void CombatMonitorService::AdoptBoss("))
+        self.assertIn("NoteBoss(entry, name);", definition(strip_comments(POLICY), "void AdoptBoss("))
+
     def test_forget_retires_instead_of_dropping(self):
         fn = body(strip_comments(SERVICE), "CombatMonitorService::Forget(", "\n}\n")
         self.assertIn("Close(", fn)

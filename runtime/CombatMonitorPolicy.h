@@ -210,6 +210,8 @@ struct BotTotals
 
 struct FightContext
 {
+    // The run step at the fight's start: a pull opens the fight on the move step before its boss step, so `kind` is
+    // often "move" and stays that way. The fight's own truth is boss (AdoptBoss/NoteBoss) and outcome.
     std::string plan, leg, kind;
     uint32_t step = 0;
     uint32_t bossEntry = 0;
@@ -814,6 +816,13 @@ public:
         ctx_.bossPhaseEntry = entry;
         if (enemyDeaths_.count(entry))
             bossDied_ = true;
+    }
+
+    // The run's plan boss for a fight opened before its boss step (the pull at a move step, a walk back over a boss
+    // step): the same pick as NoteBoss, so a plan boss wins over the sampler's data pick when both exist.
+    void AdoptBoss(uint32_t entry, std::string const& name)
+    {
+        NoteBoss(entry, name);
     }
 
     // The boss unit's raw guid, so the timeline sampler finds him after a script changes his entry: the first pick of
