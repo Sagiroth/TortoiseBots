@@ -1000,9 +1000,11 @@ class AuraGateAndKillFirstGridWiring(unittest.TestCase):
     def test_the_gate_is_free_with_the_key_off(self):
         # The key is read before the row lookup: a bot with the gate off pays one bool, not a map table lookup.
         fn = body(POSSIBLE_TARGETS, "bool PossibleAttackTargetsValue::IsValid(")
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)", fn)
+        self.assertIn("requiredAura = (sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player)", fn)
         self.assertLess(fn.index("sPlayerbotAIConfig.dungeonRunAuraGatedTargets && target && player"),
                         fn.index("GetBossTactics().RequiredAura("))
+        # The key-off path yields 0 (no row), so the ternary's else branch must directly follow the call.
+        self.assertIn("GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;", fn)
         self.assertIn("AuraGateRefuses(true, requiredAura, requiredAura != 0 && player->HasAura(requiredAura))", fn)
 
     def test_both_taunt_picks_leave_a_gated_subject_alone(self):
