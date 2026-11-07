@@ -2,7 +2,7 @@
 
 The rules are pure and tested in tools/test_threat_cap_policy.cpp (ThreatPctSaturated) and
 tools/test_seek_aura_policy.cpp (the 3 s take, the 5 s burn, the 20 s hold cap). These pins prove the live code feeds
-them: the high-threat trigger reads the named 80 % line on every target, no successor cap trigger or stop action
+them: the high-threat trigger reads the named 80 % line on every target, no leftover cap trigger or stop action
 survives in ai/, ThreatValue::Calculate still saturates, the hold read feeds the hold clock, and the docs state the
 shipped timings.
 Run: python3 -m unittest tools/test_threat_cap_wiring.py
@@ -14,14 +14,24 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 THREAT_POLICY = (ROOT / "ai/playerbot/ThreatCapPolicy.h").read_text()
 THREAT_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/ThreatStrategy.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
-ACTIONS = (ROOT / "ai/playerbot/strategy/actions/GenericActions.cpp").read_text()
-ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
-TRIGGER_CONTEXT = (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text()
 SEEK_POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 SEEK_FIGHT = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 BOSS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 DOC = (ROOT / "docs/play/boss-tactics.md").read_text()
-AI = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
+
+
+def ai_tree_text():
+    parts = []
+    for path in sorted((ROOT / "ai").rglob("*")):
+        if path.is_file():
+            try:
+                parts.append(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return "\n".join(parts)
+
+
+AI_TREE = ai_tree_text()
 
 
 def body(text, signature):
@@ -38,11 +48,13 @@ class HighLine(unittest.TestCase):
         trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
         self.assertIn("relativeThreat >= kThreatHighLinePct", trigger)
 
-    def test_no_successor_cap_trigger_survives(self):
-        self.assertNotIn("successor threat cap", TRIGGERS + TRIGGER_CONTEXT)
+    def test_no_cap_trigger_text_survives_in_ai(self):
+        # The removed trigger's creator name, built without spelling it: it must appear nowhere under ai/.
+        self.assertNotIn("successor" + " threat cap", AI_TREE)
 
-    def test_no_stop_action_survives(self):
-        self.assertNotIn("StopAutoAttackAction", ACTIONS + ACTION_CONTEXT + THREAT_POLICY + AI)
+    def test_no_stop_action_survives_in_ai(self):
+        # The removed action's class name, built without spelling it: it must appear nowhere under ai/.
+        self.assertNotIn("Stop" + "AutoAttack" + "Action", AI_TREE)
 
 
 class ThreatValueSaturation(unittest.TestCase):
