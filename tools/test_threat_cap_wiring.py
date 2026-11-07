@@ -42,7 +42,10 @@ class SuccessorHighLine(unittest.TestCase):
     def test_the_successor_cap_trigger_gates_on_the_row_and_the_group(self):
         trigger = body(TRIGGERS, "bool SuccessorThreatCapTrigger::IsActive()")
         self.assertIn('AI_VALUE(bool, "group")', trigger)
-        self.assertIn('AI_VALUE(bool, "neglect threat")', trigger)
+        # A boss fight that owns positioning sets "neglect threat": the cap stands down with every other threat gate.
+        # The inverted form (!...) turned the trigger into a no-op on the boss and let a running auto-attack continue.
+        self.assertIn('if (AI_VALUE(bool, "neglect threat")) return false;', trigger)
+        self.assertNotIn('!AI_VALUE(bool, "neglect threat")', trigger)
         # The data row decides before the percentage is read: a trash target never pays for the tank scan the threat
         # value costs, and the bot's latch is cleared so a later boss starts from the high line.
         self.assertIn("if (!ThreatSuccessorTarget(target))", trigger)
@@ -60,6 +63,15 @@ class SuccessorHighLine(unittest.TestCase):
 
 
 class AutoAttackVeto(unittest.TestCase):
+    def test_the_threat_value_returns_the_saturated_percentage(self):
+        # Every threat user reads this uint8: the value itself has to saturate before the cast, or 300 % wraps to 44 %
+        # and the cap lets the attack through where the margin matters most.
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        calc = body(values, "uint8 ThreatValue::Calculate(Unit* target)")
+        self.assertIn("return ThreatPctSaturated(botThreat, maxThreat);", calc)
+        self.assertNotIn("botThreat * 100 / maxThreat", values)
+        self.assertIn("inline std::uint8_t ThreatPctSaturated(float botThreat, float maxThreat)", THREAT_POLICY)
+
     def test_the_multiplier_no_longer_exempts_the_three_damage_actions(self):
         self.assertIn("dynamic_cast<MeleeAction*>(action)", THREAT_STRATEGY)
         self.assertIn("dynamic_cast<CastShootAction*>(action)", THREAT_STRATEGY)
@@ -100,7 +112,11 @@ class SonHoldTimings(unittest.TestCase):
         read = body(BOSS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
         self.assertIn("TickSeekHoldClock(out, fightSons, record, nowMs)", read)
         self.assertIn("SeekHoldClockTick(record.holdSince, holdSeen, nowMs)", BOSS)
-        self.assertIn("SeekHeldMs(out.holdSince, guid, nowMs) >= kSeekHoldMaxMs", BOSS)
+        # The held/capped composition is the policy's (SeekSonHeld), so the release can be tested without the action.
+        self.assertIn("SeekSonHeld(IsSeekSource(out, son), ticks,", BOSS)
+        self.assertNotIn("capped ||", BOSS)
+        self.assertIn("inline bool SeekSonHeld(bool seenAlive, bool ticks, std::uint32_t heldMs, bool holds)",
+                      SEEK_POLICY)
         self.assertIn("SeekHoldClockTick", SEEK_FIGHT)
         self.assertIn("SeekHeldMs", SEEK_FIGHT)
 

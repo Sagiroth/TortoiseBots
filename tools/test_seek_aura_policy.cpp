@@ -209,6 +209,18 @@ int main()
     CHECK(!SeekHoldDecision(false, true, true, false, 80.0f, 30.0f, 5.0f, 5, 0, 20000));
     CHECK(!SeekHoldDecision(true, false, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
 
+    // SeekSonHeld: what one read records in the hold clock. A Son already past the 20 s cap keeps its record while it
+    // is alive and seen, even when this read does not tick (a shutting window must not re-hold it). Every other Son is
+    // recorded only while it ticks and the hold rule holds it, so an idle spare never gets a record and the cap can
+    // never release it.
+    CHECK(!SeekSonHeld(true, false, 0, true));                 // idle spare, held by the rule: still no record
+    CHECK(SeekSonHeld(true, true, 0, true));                   // engaged and held: recorded
+    CHECK(!SeekSonHeld(true, true, 0, false));                 // engaged and released by the rule: not recorded
+    CHECK(!SeekSonHeld(false, true, 25000, true));             // dead or gone: dropped, capped or not
+    CHECK(SeekSonHeld(true, false, kSeekHoldMaxMs, true));     // capped, window shut: the release sticks
+    CHECK(SeekSonHeld(true, false, kSeekHoldMaxMs, false));    // capped: kept whatever the rule now says
+    CHECK(SeekSonHeld(true, true, kSeekHoldMaxMs - 1, true));  // one tick before the cap: an ordinary record
+
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
     CHECK(!SeekWanted(true, true, false, false, true, false, true));

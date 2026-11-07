@@ -809,7 +809,7 @@ bool SuccessorThreatCapTrigger::IsActive()
     Unit* const target = AI_VALUE(Unit*, "current target");
     if (FankrissBurnSpawn(ai, target)) return false;
     if (!AI_VALUE(bool, "group")) return false;
-    if (!AI_VALUE(bool, "neglect threat")) return false;
+    if (AI_VALUE(bool, "neglect threat")) return false;
     // The row decides before the percentage is read: a trash target never pays for the tank scan the threat value
     // costs, and the read clears the bot's latch so the next boss starts from the high line.
     if (!ThreatSuccessorTarget(target))

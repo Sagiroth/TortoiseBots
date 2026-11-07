@@ -113,10 +113,20 @@ namespace ai
     }
 
     // The hold clock after one bot's read: a Son seen held enters it (or keeps `sinceMs`), one seen not held leaves.
-    // `sinceMs` is the first read that saw it held; SeekHoldDecision releases it at kSeekHoldMaxMs. A capped Son's
-    // entry is kept (the read reports it held), so the release is not restarted by the next read; only a dead, gone or
-    // disengaged Son drops it. A bot's read only reaches the Sons around it, so a Son it did not see keeps its entry
-    // until the sweep drops what no read refreshed for kSeekHoldStaleMs.
+    // `sinceMs` is the first read that saw it held; SeekHoldDecision releases it at kSeekHoldMaxMs. The read reports a
+    // Son already past the cap as held (SeekSonHeld), so the release survives a closing window and is not restarted;
+    // a dead or gone Son is reported not held. A bot's read only reaches the Sons around it, so a Son it did not see
+    // keeps its entry until the sweep drops what no read refreshed for kSeekHoldStaleMs.
+    //
+    // Known limits of the shared record (documented, not handled):
+    // - The source a read selects is that read's own answer (the shared gather latch when it holds, else the search
+    //   around the spot), so a read can select another Son or none where another selected this one. A read that sees
+    //   that Son without ticking it reports it not held and drops a below-cap record: the engaged clock restarts (a
+    //   longer hold, never a shorter one).
+    // - `nowMs` is each bot's own WorldTimer sample and a read keeps its sample while waiting for the lock, so
+    //   samples can arrive out of order. An older sample makes `nowMs - sinceMs` and `nowMs - seenMs` unsigned-wrap:
+    //   for that read the Son can look capped (released) and an entry can be swept. The record keeps its `sinceMs`, so
+    //   the next current sample reads the true elapsed again; a swept entry restarts from the next sighting.
     inline void SeekHoldClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekHoldSeen>& seen,
                                   std::uint32_t nowMs)
     {
@@ -165,6 +175,7 @@ namespace ai
         // for a while. See SeekHealerClockTick for who may leave the map.
         std::map<std::uint64_t, SeekHeldSon> healerHeldSince;
         // When each Son of the fight entered the hold: the 20 s cap releases it to the damage dealers (SeekHeldMs).
+        // Only fighting time counts and a release sticks while the Son lives (SeekHoldClockTicks, SeekSonHeld).
         std::map<std::uint64_t, SeekHeldSon> holdSince;
         bool ready = false;
         std::uint32_t cycleNo = 0;

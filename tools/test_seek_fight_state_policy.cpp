@@ -295,11 +295,13 @@ int main()
         CHECK(SeekHoldClockTicks(false, true, true, true));     // ... and counts inside it
     }
     {
-        // An idle unselected Son read once a second for 25 s stays held: no read ever ticks its clock.
+        // An idle unselected Son read once a second for 25 s stays held: SeekSonHeld never records it, so the cap has
+        // nothing to release. Dropping the `ticks` term in the helper turns this red.
         std::map<std::uint64_t, SeekHeldSon> held;
         std::uint32_t nowMs = 1000;
         for (; nowMs <= 25000; nowMs += 1000)
-            SeekHoldClockTick(held, {SeekHoldSeen{9, SeekHoldClockTicks(false, false, false, true)}}, nowMs);
+            SeekHoldClockTick(held, {SeekHoldSeen{9, SeekSonHeld(true, SeekHoldClockTicks(false, false, false, true),
+                                                              SeekHeldMs(held, 9, nowMs), true)}}, nowMs);
         CHECK(held.empty());
         CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5,
                                SeekNonTankHeldMs({}, 9, nowMs), SeekHeldMs(held, 9, nowMs)));
@@ -311,13 +313,33 @@ int main()
         for (; nowMs <= 25000; nowMs += 1000)
         {
             const bool ticks = SeekHoldClockTicks(false, true, true, true);
-            const bool capped = ticks && SeekHeldMs(held, 9, nowMs) >= kSeekHoldMaxMs;
-            SeekHoldClockTick(held, {SeekHoldSeen{9, capped || ticks}}, nowMs);
+            const bool sonHeld = SeekSonHeld(true, ticks, SeekHeldMs(held, 9, nowMs), true);
+            SeekHoldClockTick(held, {SeekHoldSeen{9, sonHeld}}, nowMs);
             if (nowMs == 20000)
                 CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
             if (nowMs == 21000)
                 CHECK(!SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
         }
+    }
+    {
+        // Once capped, a Son on a tank stays released when the window shuts: alive and seen, its record is kept even
+        // though this read does not tick, so the close cannot start a fresh 20 s hold. Death clears it.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{9, SeekSonHeld(true, SeekHoldClockTicks(false, true, true, true), 0, true)}},
+                          1000);
+        for (std::uint32_t nowMs = 2000; nowMs <= 21000; nowMs += 1000)
+            SeekHoldClockTick(held, {SeekHoldSeen{9, SeekSonHeld(true, SeekHoldClockTicks(false, true, true, true),
+                                                              SeekHeldMs(held, 9, nowMs), true)}}, nowMs);
+        CHECK(SeekHeldMs(held, 9, 21000) == 20000);
+        // The window shuts: SeekHoldClockTicks is false now, the capped record survives and still releases.
+        SeekHoldClockTick(held, {SeekHoldSeen{9, SeekSonHeld(true, SeekHoldClockTicks(false, true, true, false),
+                                                          SeekHeldMs(held, 9, 22000), true)}}, 22000);
+        CHECK(held.count(9) == 1);
+        CHECK(SeekHeldMs(held, 9, 22000) == 21000);
+        CHECK(!SeekHoldDecision(false, false, false, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, 22000)));
+        // The Son dies (or leaves): the record goes.
+        SeekHoldClockTick(held, {SeekHoldSeen{9, SeekSonHeld(false, false, 0, true)}}, 23000);
+        CHECK(held.empty());
     }
 
     // SeekHoldClockDropsWhatNobodySees: an entry no read refreshed for the grace is dropped, so the map cannot grow

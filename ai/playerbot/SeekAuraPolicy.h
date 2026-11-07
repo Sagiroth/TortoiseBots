@@ -226,6 +226,21 @@ namespace ai
         return engaged && (selected || (victimTank && windowOpen));
     }
 
+    // What one read records in the hold clock. A Son already at or past the 20 s cap (`heldMs`) keeps its record while
+    // it is alive and seen, whatever this read's clock says: the release is final, so a window shutting or its victim
+    // changing must not start a fresh hold on a Son the raid may now kill. `seenAlive` is the Son this read saw alive
+    // on the row's entry, `ticks` whether this read counts (SeekHoldClockTicks) and `holds` the hold rule's answer.
+    // Every other Son is recorded only while it ticks and the rule holds it; an idle spare is never recorded, so the
+    // cap can never release the reservoir the area veto protects.
+    inline bool SeekSonHeld(bool seenAlive, bool ticks, std::uint32_t heldMs, bool holds)
+    {
+        if (!seenAlive)
+            return false;
+        if (heldMs >= kSeekHoldMaxMs)
+            return true;
+        return ticks && holds;
+    }
+
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
     // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick

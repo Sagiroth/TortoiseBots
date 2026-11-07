@@ -92,6 +92,11 @@ class SeekHoldClockEngagement(unittest.TestCase):
         # selected source and a Son on a tank inside the window.
         tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
         self.assertIn("SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen)", tick)
+        # The record/release composition is the policy's (SeekSonHeld), not a hand-rolled expression in the action.
+        self.assertIn("SeekSonHeld(IsSeekSource(out, son), ticks,", tick)
+        self.assertIn("SeekHeldMs(out.holdSince, guid, nowMs)", tick)
+        self.assertIn("SeekHoldsUnit(out, son))", tick)
+        self.assertNotIn("capped ||", tick)
         self.assertIn("sServerFacade.IsAlive(son)", tick)
         self.assertIn("son->IsInCombat()", tick)
         self.assertIn("son->GetVictim()", tick)
