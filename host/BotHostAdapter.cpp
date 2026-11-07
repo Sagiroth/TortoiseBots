@@ -124,7 +124,8 @@ void BotHostAdapter::OnStartup()
     BattlegroundQueueService::Instance().Initialize();
     ClaimLifecycle::Instance().Initialize();
     GuildOrders::Initialize();
-    GuildOrders::ApplyBotRanksAtStartup();
+    GuildOrders::LoadBotRankManagementAtStartup();
+    GuildOrders::OpenBotBankTabForNextStart();
     // Run trace: mark the summaries of runs the last server never finalised.
     RunTraceService::Instance().Initialize();
 
@@ -277,6 +278,8 @@ void BotHostAdapter::OnUpdate(uint32 diff)
 
 void BotHostAdapter::OnShutdown()
 {
+    // Before the core's final bank save, while the guild roster is loaded.
+    GuildOrders::OpenBotBankTabForNextStart();
     BotLfgService::Instance().Shutdown();
     RunTraceService::Instance().Shutdown();
     WhyTraceService::Instance().Shutdown();
