@@ -27,6 +27,17 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.20.3 (2026-11-07)
+
+### World & Bots
+- Bots no longer travel to Moonglade to level, so low-level bots stop piling up there with nothing to fight. [#1550](https://github.com/Sagiroth/TortoiseBots/pull/1550)
+- Bots that start playing on their own, or come back after dying, now head to proper levelling areas instead. [#1550](https://github.com/Sagiroth/TortoiseBots/pull/1550)
+
+### Characters & Settings
+- Alt characters you own keep their settings after you log out and back in. [#1552](https://github.com/Sagiroth/TortoiseBots/pull/1552)
+
+---
+
 ## v1.20.2 (2026-11-07)
 
 ### Dungeons & Groups
