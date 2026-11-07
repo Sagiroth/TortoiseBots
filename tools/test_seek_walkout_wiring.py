@@ -59,7 +59,7 @@ class SeekWalkoutWiring(unittest.TestCase):
         self.assertIn('"seek pull: ranged walk-out %s -> %u"', ACTIONS)
         self.assertIn('"seek pull: walk-out %s"', ACTIONS)
         # A re-pull or an evade ends any walk-out with the seek record.
-        self.assertGreaterEqual(read.count("ForgetSeekWalkout(ai, bot->GetInstanceId())"), 2)
+        self.assertGreaterEqual(read.count("ForgetSeekWalkout(ai, bot->GetInstanceId(),"), 2)
 
     def test_the_task_shoots_once_and_walks_back(self):
         self.assertIn("bool walkout = false;", ACTIONS_H)
@@ -158,7 +158,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
         for call in ("WalkoutStandCandidates(c, son->GetPositionX(), son->GetPositionY())", "GetHeight(", "WalkoutStandOk(",
                      "isInLineOfSight("):
             self.assertIn(call, stand)
-        self.assertIn('"seek pull: walk-out no stand"', ACTIONS)
+        self.assertIn('"seek pull: walk-out no stand sons=%d reach=%.0f hunter_pass=%d"', ACTIONS)
         fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
         walk = fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
         # The stand comes from the task (the platform search), never from the Son's height.
@@ -414,15 +414,14 @@ class SeekWalkoutRound2(unittest.TestCase):
 
     def test_the_no_puller_row_is_throttled(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f n=%d dead=%d victim=%d charmed=%d '
-                      'insanity=%d outside=%d bench=%d cast=%d threat=%d path=%d top=%.0f low=%.0f"', update)
-        self.assertIn("char info1[256];", update)
+        # The row's info1 keeps its old prefix; the scan's tally rides in info2 with the threat reference.
+        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f"', update)
+        self.assertIn("char info1[96];", update)
+        self.assertIn("WalkoutRejectText(scan.tally).c_str()", update)
         self.assertIn("if (rules.perCycleWalked && !scan.blocked && scan.stand && scan.puller == 0 &&", update)
         self.assertIn("nowMs - record.noPullerLogMs >= 10000", update)
-        self.assertIn("scan.tally.ranged", update)
-        self.assertIn("scan.tally.path", update)
-        self.assertIn("scan.tally.top", update)
-        self.assertIn("scan.tally.low", update)
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn('" top=%.0f low=%.0f"', policy)
 
     def test_a_late_start_returns_before_the_scan(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -430,7 +429,7 @@ class SeekWalkoutRound2(unittest.TestCase):
                 "        dueInMs < rules.firstStartMinMs)")
         self.assertIn(gate, update)
         late = update[update.index(gate):]
-        self.assertIn('"seek pull: walk-out late due=%u"', late)
+        self.assertIn('"seek pull: walk-out late due=%u need=%u"', late)
         self.assertIn("nowMs - record.lateLogMs >= 10000", late)
         # Only a cycle that could still start logs the late row.
         self.assertIn("if (!WalkoutCycleOpen(state, cycleNo, rules))\n            return;", late)
@@ -451,10 +450,8 @@ class SeekWalkoutWalk52(unittest.TestCase):
         self.assertIn("SPELL_FAILED_NOT_READY", pick)
         # Without the rule the old plain check stays.
         self.assertIn("c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);", pick)
-        self.assertIn("WalkoutTallyAdd(*tally, c);", pick)
         self.assertIn("tally->top = topTankThreat;", pick)
         self.assertIn("tally->low = memberThreat;", pick)
-        self.assertIn("tally->path += static_cast<int>(ranked.size());", pick)
 
     def test_the_first_charm_gate(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -503,6 +500,54 @@ class SeekWalkoutWalk52(unittest.TestCase):
         self.assertIn("LiveTopTankThreat(bot->GetGroup(), boss, nullptr)", update)
         self.assertIn("float const tr = topThreat > 0.0f ? boss->GetThreatManager().getThreat(bot) / topThreat : -1.0f;",
                       update)
+
+
+class SeekWalkoutRefusalReasons(unittest.TestCase):
+    """Every walk-out refusal row names why (diag-2): the pick's tally, the scan's counts, the reset's cause."""
+
+    def update(self):
+        return body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+
+    def test_the_no_puller_row_carries_the_picks_rejections(self):
+        update = self.update()
+        # The tally lives in the scan struct, next to the rest of the scan's result.
+        self.assertIn("WalkoutRejectTally tally;", update)
+        self.assertIn("state, nowMs, hunterOnly, rules, &scan.tally);", update)
+        # info1 is byte-identical to before the tally (analysis scripts match on its prefix).
+        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f"', update)
+        self.assertIn("LogSeekWalkout(ai, info1, WalkoutRejectText(scan.tally).c_str());", update)
+
+    def test_the_scan_rows_names_their_numbers(self):
+        update = self.update()
+        self.assertIn('"seek pull: walk-out no stand sons=%d reach=%.0f hunter_pass=%d"', update)
+        self.assertIn("static_cast<int>(sons.size())", update)
+        self.assertIn('"seek pull: walk-out late due=%u need=%u"', update)
+        self.assertIn("rules.firstStartMinMs / 1000", update)
+
+    def test_the_reset_row_names_its_cause(self):
+        forget = body(ACTIONS, "void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId, const char* cause)")
+        self.assertIn('" cause=%s"', forget)
+        self.assertIn('LogSeekWalkoutAbort(ai, "reset", -1.0f, state, suffix);', forget)
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn('ForgetSeekWalkout(ai, bot->GetInstanceId(), "repull");', read)
+        self.assertIn('ForgetSeekWalkout(ai, bot->GetInstanceId(), "evade");', read)
+        self.assertLess(read.index('"repull");'), read.index('"evade");'))
+
+    def test_the_pick_adds_no_game_state_read(self):
+        # The tally only reads fields the pick already computed: its two cast checks (the plain one and the cast-later
+        # one), the member/main-tank threats and the ranked path query, exactly as the walk-52 pick did.
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
+        self.assertEqual(pick.count("CanCastSpell("), 2)
+        self.assertEqual(pick.count("getThreat("), 2)
+        self.assertEqual(pick.count("SeekWalkoutPathOk("), 1)
+        self.assertIn("WalkoutRejectTally* tally = nullptr", pick)
+        # The members the loop never made a candidate (off-map, no AI, the hunter pass) and the post-loop pass.
+        self.assertIn("++tally->members;", pick)
+        self.assertIn("tally->Add(WalkoutReject::Away);", pick)
+        self.assertIn("tally->Add(WalkoutReject::NoAi);", pick)
+        self.assertIn("tally->Add(WalkoutReject::HunterOnly);", pick)
+        self.assertIn("if (!WalkoutEligible(c))\n                tally->Add(WalkoutRejectOf(c));", pick)
+        self.assertIn("tally->Add(WalkoutReject::NoPath);", pick)
 
 
 if __name__ == "__main__":

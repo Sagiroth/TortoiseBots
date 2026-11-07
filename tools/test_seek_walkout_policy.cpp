@@ -32,6 +32,107 @@ static WalkoutCandidate Cand(std::uint64_t guid, WalkoutRole role, float yd)
     return c;
 }
 
+static void TestWalkoutRejectCodes()
+{
+    const WalkoutCandidate ok = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(WalkoutEligible(ok));
+    // One candidate per code, in WalkoutEligible's order.
+    WalkoutCandidate c = ok;
+    c.alive = false;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Dead);
+    c = ok;
+    c.role = WalkoutRole::None;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoRole);
+    c = ok;
+    c.tank = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Tank);
+    c = ok;
+    c.healer = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Healer);
+    c = ok;
+    c.bossVictim = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Victim);
+    c = ok;
+    c.highThreat = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Threat);
+    c = ok;
+    c.charmed = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Cc);
+    c = ok;
+    c.insane = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Cc);
+    c = ok;
+    c.canShoot = false;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoShot);
+    c = ok;
+    c.inside = false;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Outside);
+    c = ok;
+    c.pathOk = false;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoPath);
+    c = ok;
+    c.excluded = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Bench);
+    // Precedence: the first failing test wins, as in WalkoutEligible.
+    c = ok;
+    c.alive = false;
+    c.tank = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Dead);
+    c = ok;
+    c.tank = true;
+    c.highThreat = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Tank);
+    c = ok;
+    c.healer = true;
+    c.bossVictim = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Healer);
+    c = ok;
+    c.bossVictim = true;
+    c.highThreat = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Victim);
+    c = ok;
+    c.highThreat = true;
+    c.charmed = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Threat);
+    c = ok;
+    c.insane = true;
+    c.canShoot = false;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::Cc);
+    c = ok;
+    c.pathOk = false;
+    c.excluded = true;
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoPath);
+    // The picker's own codes (off-map, no AI, the hunter pass) and the last one are words, not candidate fields.
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::Away), "away") == 0);
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::NoAi), "no_ai") == 0);
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::HunterOnly), "hunter_only") == 0);
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::NoPath), "no_path") == 0);
+}
+
+static void TestWalkoutRejectText()
+{
+    WalkoutRejectTally t;
+    t.members = 20;
+    t.Add(WalkoutReject::Dead);
+    t.Add(WalkoutReject::Dead);
+    t.Add(WalkoutReject::Threat);
+    t.Add(WalkoutReject::Threat);
+    t.Add(WalkoutReject::Threat);
+    t.Add(WalkoutReject::NoPath);
+    t.top = 4200.0f;
+    t.low = 3100.0f;
+    CHECK(WalkoutRejectText(t) == "reason=dead:2|threat:3|no_path:1,members=20 top=4200 low=3100");
+    // Enum order, not the order the counts were added in.
+    t = WalkoutRejectTally();
+    t.members = 3;
+    t.Add(WalkoutReject::NoPath);
+    t.Add(WalkoutReject::Away);
+    t.Add(WalkoutReject::Dead);
+    CHECK(WalkoutRejectText(t) == "reason=away:1|dead:1|no_path:1,members=3 top=-1 low=-1");
+    // Every member passed: no code, and the count says how many were looked at.
+    CHECK(WalkoutRejectText(WalkoutRejectTally()) == "reason=none,members=0 top=-1 low=-1");
+}
+
 static void TestRoleOrder()
 {
     CHECK(WalkoutRoleOf(true, false, true) == WalkoutRole::Hunter);
@@ -897,81 +998,30 @@ static void TestStandMoveKeepsTheStallClockInShot()
     CHECK(WalkoutShotStalled(s, 8000));
 }
 
-static void TestWalkoutIneligibleWhy()
+static void TestWalkoutRejectTankAndHealer()
 {
-    const WalkoutCandidate ok = Cand(1, WalkoutRole::Hunter, 5.0f);
-    CHECK(WalkoutIneligibleWhy(ok) == nullptr);
-    WalkoutCandidate c = ok;
-    c.alive = false;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "dead");
-    c = ok;
-    c.role = WalkoutRole::None;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
-    c = ok;
-    c.tank = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
-    c = ok;
-    c.healer = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "role");
-    c = ok;
-    c.bossVictim = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "victim");
-    c = ok;
-    c.charmed = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "charmed");
-    c = ok;
-    c.insane = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "insanity");
-    c = ok;
-    c.inside = false;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "outside");
-    c = ok;
-    c.excluded = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "bench");
-    c = ok;
-    c.canShoot = false;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "cast");
-    c = ok;
-    c.highThreat = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "threat");
-    c = ok;
-    c.pathOk = false;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "path");
-    // Two at once: the earlier one in that order.
-    c = ok;
-    c.alive = false;
-    c.inside = false;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "dead");
-    c = ok;
-    c.inside = false;
-    c.highThreat = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "outside");
-    c = ok;
-    c.canShoot = false;
-    c.highThreat = true;
-    CHECK(std::string(WalkoutIneligibleWhy(c)) == "cast");
-}
+    // The picker classifies with WalkoutRoleOf over `rangedDps && !healer`, so a melee tank and a ranged healer both
+    // read WalkoutRole::None and the role test alone would file them as `no_role`.
+    WalkoutCandidate tank = Cand(1, WalkoutRoleOf(false, false, false), 5.0f);
+    tank.tank = true;
+    CHECK(tank.role == WalkoutRole::None);
+    CHECK(!WalkoutEligible(tank));
+    CHECK(WalkoutRejectOf(tank) == WalkoutReject::Tank);
 
-static void TestWalkoutTallyAdd()
-{
-    WalkoutPickTally t;
-    WalkoutCandidate healer = Cand(1, WalkoutRole::None, 5.0f);
+    WalkoutCandidate healer = Cand(2, WalkoutRoleOf(false, false, false), 12.0f);
     healer.healer = true;
-    WalkoutTallyAdd(t, healer);
-    CHECK(t.ranged == 0 && t.dead == 0 && t.victim == 0);
-    WalkoutCandidate dead = Cand(2, WalkoutRole::Hunter, 6.0f);
-    dead.alive = false;
-    WalkoutCandidate outside = Cand(3, WalkoutRole::Caster, 7.0f);
-    outside.inside = false;
-    WalkoutCandidate eligible = Cand(4, WalkoutRole::Ranged, 8.0f);
-    WalkoutTallyAdd(t, dead);
-    WalkoutTallyAdd(t, outside);
-    WalkoutTallyAdd(t, eligible);
-    CHECK(t.ranged == 3);
-    CHECK(t.dead == 1);
-    CHECK(t.outside == 1);
-    CHECK(t.victim == 0 && t.charmed == 0 && t.insanity == 0 && t.bench == 0 && t.cast == 0 && t.threat == 0 &&
-          t.path == 0);
+    CHECK(healer.role == WalkoutRole::None);
+    CHECK(!WalkoutEligible(healer));
+    CHECK(WalkoutRejectOf(healer) == WalkoutReject::Healer);
+
+    // The post-loop pass's counts: tank and healer by name, not one `no_role`.
+    WalkoutRejectTally t;
+    t.members = 5;
+    if (!WalkoutEligible(tank))
+        t.Add(WalkoutRejectOf(tank));
+    if (!WalkoutEligible(healer))
+        t.Add(WalkoutRejectOf(healer));
+    CHECK(WalkoutRejectText(t) == "reason=tank:1|healer:1,members=5 top=-1 low=-1");
 }
 
 static void TestStandCandidatesFan()
@@ -1010,6 +1060,8 @@ static void TestStandCandidatesFan()
 
 int main()
 {
+    TestWalkoutRejectCodes();
+    TestWalkoutRejectText();
     TestPerCycleWalkedFreesSons();
     TestRetryRulesFromTheRow();
     TestWalkoutEndFreesSon();
@@ -1023,8 +1075,7 @@ int main()
     TestWalkoutFightOldEnough();
     TestWalkoutStartLead();
     TestStandMoveKeepsTheStallClockInShot();
-    TestWalkoutIneligibleWhy();
-    TestWalkoutTallyAdd();
+    TestWalkoutRejectTankAndHealer();
     TestStandCandidatesFan();
     TestWalkoutRetryNeverStarts();
     TestCastFailExcludesPuller();

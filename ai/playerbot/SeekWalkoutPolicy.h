@@ -13,10 +13,13 @@
 #include "BossAnchorPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -176,67 +179,115 @@ namespace ai
         return rules.firstFightStartMs == 0 || fightMs >= rules.firstFightStartMs;
     }
 
-    // The no-puller row's counts: every ranged candidate and the first test it failed.
-    struct WalkoutPickTally
+    // Why the pick rejected a member (the no-puller row's per-candidate counts). The words stay short and fixed so a
+    // script can count them; the order is WalkoutEligible's, so a dead tank reads `dead`, a tank at threat `tank`.
+    enum class WalkoutReject : std::uint8_t
     {
-        int ranged = 0, dead = 0, victim = 0, charmed = 0, insanity = 0, outside = 0, bench = 0, cast = 0, threat = 0,
-            path = 0;
-        float top = -1.0f, low = -1.0f;
+        Away = 0, // off the bot's map or not in the world
+        NoAi = 1,
+        HunterOnly = 2, // the hunter-reach pass skipped it
+        Dead = 3,
+        NoRole = 4, // no ranged damage role
+        Tank = 5,
+        Healer = 6,
+        Victim = 7, // the boss's current victim
+        Threat = 8,
+        Cc = 9, // charmed or under Cause Insanity
+        NoShot = 10,
+        Outside = 11, // outside the anchor
+        Bench = 12,   // left out of the picks (recent failed moves)
+        NoPath = 13,  // no navmesh path to the stand
     };
 
-    // Why the no-puller scan refused a candidate, in the pick's test order; null when it was eligible.
-    inline const char* WalkoutIneligibleWhy(const WalkoutCandidate& c)
+    inline const char* WalkoutRejectWord(WalkoutReject reject)
     {
-        if (!c.alive)
-            return "dead";
-        if (c.role == WalkoutRole::None || c.tank || c.healer)
-            return "role";
-        if (c.bossVictim)
-            return "victim";
-        if (c.charmed)
-            return "charmed";
-        if (c.insane)
-            return "insanity";
-        if (!c.inside)
-            return "outside";
-        if (c.excluded)
-            return "bench";
-        if (!c.canShoot)
-            return "cast";
-        if (c.highThreat)
-            return "threat";
-        if (!c.pathOk)
-            return "path";
-        return nullptr;
+        switch (reject)
+        {
+            case WalkoutReject::Away: return "away";
+            case WalkoutReject::NoAi: return "no_ai";
+            case WalkoutReject::HunterOnly: return "hunter_only";
+            case WalkoutReject::Dead: return "dead";
+            case WalkoutReject::NoRole: return "no_role";
+            case WalkoutReject::Tank: return "tank";
+            case WalkoutReject::Healer: return "healer";
+            case WalkoutReject::Victim: return "victim";
+            case WalkoutReject::Threat: return "threat";
+            case WalkoutReject::Cc: return "cc";
+            case WalkoutReject::NoShot: return "no_shot";
+            case WalkoutReject::Outside: return "outside";
+            case WalkoutReject::Bench: return "bench";
+            case WalkoutReject::NoPath: return "no_path";
+        }
+        return "away";
     }
 
-    // Adds one candidate to the no-puller row's counts.
-    inline void WalkoutTallyAdd(WalkoutPickTally& t, const WalkoutCandidate& c)
+    // The first test WalkoutEligible fails, with `tank` and `healer` ahead of the role: `role` comes from the ranged
+    // damage check alone, so a melee tank or healer would otherwise read `no_role`. Only called for an ineligible
+    // candidate.
+    inline WalkoutReject WalkoutRejectOf(const WalkoutCandidate& c)
     {
-        if (c.role == WalkoutRole::None || c.tank || c.healer)
-            return;
-        ++t.ranged;
-        const char* const why = WalkoutIneligibleWhy(c);
-        if (!why)
-            return;
-        if (std::strcmp(why, "dead") == 0)
-            ++t.dead;
-        else if (std::strcmp(why, "victim") == 0)
-            ++t.victim;
-        else if (std::strcmp(why, "charmed") == 0)
-            ++t.charmed;
-        else if (std::strcmp(why, "insanity") == 0)
-            ++t.insanity;
-        else if (std::strcmp(why, "outside") == 0)
-            ++t.outside;
-        else if (std::strcmp(why, "bench") == 0)
-            ++t.bench;
-        else if (std::strcmp(why, "cast") == 0)
-            ++t.cast;
-        else if (std::strcmp(why, "threat") == 0)
-            ++t.threat;
-        else if (std::strcmp(why, "path") == 0)
-            ++t.path;
+        if (!c.alive)
+            return WalkoutReject::Dead;
+        if (c.tank)
+            return WalkoutReject::Tank;
+        if (c.healer)
+            return WalkoutReject::Healer;
+        if (c.role == WalkoutRole::None)
+            return WalkoutReject::NoRole;
+        if (c.bossVictim)
+            return WalkoutReject::Victim;
+        if (c.highThreat)
+            return WalkoutReject::Threat;
+        if (c.charmed || c.insane)
+            return WalkoutReject::Cc;
+        if (!c.canShoot)
+            return WalkoutReject::NoShot;
+        if (!c.inside)
+            return WalkoutReject::Outside;
+        if (!c.pathOk)
+            return WalkoutReject::NoPath;
+        return WalkoutReject::Bench; // the only test left: excluded
+    }
+
+    // The no-puller row's info2: its counts in enum order, zero counts left out; `reason=none,members=<m>` when every
+    // member passed (a pick lost to something else, e.g. no group), then the threat reference and the lowest passing
+    // candidate's threat, so a threat refusal can be read against both.
+    struct WalkoutRejectTally
+    {
+        std::array<std::uint16_t, 14> n{};
+        std::uint16_t members = 0;
+        float top = -1.0f; // the live top tank's threat (-1: not measured)
+        float low = -1.0f; // the lowest candidate's threat (-1: no candidate reached the threat test)
+
+        void Add(WalkoutReject reject)
+        {
+            ++n[static_cast<std::size_t>(reject)];
+        }
+    };
+
+    inline std::string WalkoutRejectText(const WalkoutRejectTally& t)
+    {
+        std::string out = "reason=";
+        bool any = false;
+        for (std::size_t i = 0; i < t.n.size(); ++i)
+        {
+            if (t.n[i] == 0)
+                continue;
+            if (any)
+                out += '|';
+            out += WalkoutRejectWord(static_cast<WalkoutReject>(i));
+            out += ':';
+            out += std::to_string(t.n[i]);
+            any = true;
+        }
+        if (!any)
+            out += "none";
+        out += ",members=";
+        out += std::to_string(t.members);
+        char tail[48];
+        snprintf(tail, sizeof(tail), " top=%.0f low=%.0f", t.top, t.low);
+        out += tail;
+        return out;
     }
 
     // Whether a bot's threat on the boss is too close to the main tank's to be sent: kSeekWalkoutThreatShare of it or
