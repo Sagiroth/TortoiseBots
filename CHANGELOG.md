@@ -27,6 +27,18 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.20.1 (2026-11-07)
+
+### Groups & Dungeons
+- Bots in your dungeon group no longer turn it into a raid by mistake, so it stays a normal party. [#1546](https://github.com/Sagiroth/TortoiseBots/pull/1546)
+- Mage bots now only open portals for their own party or raid, and refuse requests from anyone else. [#1546](https://github.com/Sagiroth/TortoiseBots/pull/1546)
+
+### Quests & Levelling
+- Alt-bots playing alone now skip grey quests with no useful reward, so they no longer get stuck on city errands. [#1548](https://github.com/Sagiroth/TortoiseBots/pull/1548)
+- Quests already in an alt's log are never dropped, because that log belongs to your character. [#1548](https://github.com/Sagiroth/TortoiseBots/pull/1548)
+
+---
+
 ## v1.20.0 (2026-11-07)
 
 ### Raids & Dungeons
