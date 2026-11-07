@@ -191,6 +191,8 @@ ai::WorldPosition const* PickLevelFittingPoint(::Player* bot)
             if (!sPlayerbotAIConfig.allowIsolatedCustomStartingZones &&
                 (PlayerbotAIConfig::IsIsolatedCustomZone(zoneId) || PlayerbotAIConfig::IsIsolatedCustomZone(area->Id)))
                 continue;
+            if (ai::IsNoLevellingZone(zoneId))
+                continue;
             if (point->IsEnemyHomeZoneFor(info.GetTeam()))
                 continue;
             // Never land a bot among hostile town guards: the hostile-town

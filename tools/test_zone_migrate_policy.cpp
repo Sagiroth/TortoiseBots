@@ -123,6 +123,9 @@ int main()
     CHECK(!LevelFittingTeleportAllowsZone(0, 3, false));
     CHECK(LevelFittingTeleportAllowsZone(60, 58, false));
     CHECK(!LevelFittingTeleportAllowsZone(61, 58, false));
+    CHECK(ai::IsNoLevellingZone(493));  // Moonglade
+    CHECK(!ai::IsNoLevellingZone(12));  // Elwynn Forest
+    CHECK(!ai::IsNoLevellingZone(148)); // Darkshore
     std::cout << "  [PASS] level-fitting teleport window skips capitals\n";
 
     std::cout << "TortoiseBots zone migration policy tests passed.\n";
