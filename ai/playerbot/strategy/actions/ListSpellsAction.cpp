@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "ListSpellsAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
+#include "playerbot/policy/class/SpellListNamePolicy.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
@@ -134,7 +135,7 @@ std::list<std::pair<uint32, std::string> > ListSpellsAction::GetSpellList(std::s
             continue;
 
         std::string comp = pSpellInfo->SpellName[0];
-        if (!(ignoreList.find(comp) == std::string::npos && alreadySeenList.find(comp) == std::string::npos))
+        if (ai::SpellListHasName(ignoreList, comp) || ai::SpellListHasName(alreadySeenList, comp))
             continue;
 
         if (!filter.empty() && !strstri(pSpellInfo->SpellName[0], filter.c_str()))
