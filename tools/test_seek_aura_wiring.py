@@ -131,7 +131,7 @@ class SeekWalkWiring(unittest.TestCase):
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
-                     "SeekPullRoleOf(", "SeekPullHitExemptOnLatch(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
+                     "SeekPullRoleOf(", "SeekPullHitExemptOnLatch(", "SeekRolledDueMs(", "SeekLateEngagedBurnWithin(",
                      "SeekHealerClockTick(", "SeekHealerTakeGuid(", "SeekHoldClockTicks("):
             self.assertIn(rule, ACTIONS, rule)
         # SeekTakeFightingSonOnHealer is called by SeekHealerTakeGuid, the state policy's own rule.
@@ -289,9 +289,10 @@ class SeekRolesWiring(unittest.TestCase):
         # A picked Son that joins the fight with the siphon close is burnt at once: the read forces the burn from the
         # pick, and the gather's own logic then spends it (SeekLateEngagedBurn).
         read = body(ACTIONS, "bool ReadSeekFight(")
-        self.assertIn("SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs)", read)
+        self.assertIn("SeekLateEngagedBurnWithin(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs, lateLeadMs)", read)
         self.assertIn("out.forceBurn = true;", read)
         self.assertIn("inline bool SeekLateEngagedBurn(", POLICY)
+        self.assertIn("inline bool SeekLateEngagedBurnWithin(", POLICY)
 
     def test_the_healer_take_is_wired(self):
         # A Son camped on a non-tank is tanks[1]'s once the third off-tank cannot take it, timed in the fight record.

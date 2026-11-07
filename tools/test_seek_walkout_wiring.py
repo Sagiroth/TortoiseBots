@@ -377,6 +377,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
         self.assertIn("SeekLateEngagedBurnWithin(", read)
         self.assertIn("SeekPullRow(", read)
         self.assertIn("kSeekLateEngageMs", read)
+        # The row's own param is the lead, not a fixed 30 s the row is only looked up for.
+        self.assertIn("lateLeadMs = static_cast<std::uint32_t>(pull->param * 1000.0f);", read)
 
 
 if __name__ == "__main__":
