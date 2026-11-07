@@ -56,6 +56,12 @@ namespace ai
         bool held = false;
     };
 
+    // A hold entry no read refreshed for this long is dropped. A read only sees the Sons inside its reach (a grid walk
+    // around the bot), so one bot not seeing a Son says nothing; the sweep only removes Sons that left every bot's
+    // view or died out of it, and a Son respawning under the same guid then starts a clean hold instead of inheriting
+    // the old release. One cap long, so a genuinely held Son is never dropped between two reads.
+    constexpr std::uint32_t kSeekHoldStaleMs = 20000;
+
     // The Son-on-a-non-tank clock after one bot's read. Every bot of the fight feeds the one record, and a read only
     // sees the Sons inside ITS reach (a range-limited grid search), so a Son the read did not see says nothing: a Son
     // this read saw anywhere but on a non-tank (dead, out of combat, on a tank, with no victim or on a pet) leaves the
@@ -108,8 +114,9 @@ namespace ai
 
     // The hold clock after one bot's read: a Son seen held enters it (or keeps `sinceMs`), one seen not held leaves.
     // `sinceMs` is the first read that saw it held; SeekHoldDecision releases it at kSeekHoldMaxMs. A capped Son's
-    // entry is kept (the read reports it held), so the release is not restarted by the next read; only a dead or
-    // gone Son drops it. A bot's read only reaches the Sons around it, so a Son it did not see keeps its entry.
+    // entry is kept (the read reports it held), so the release is not restarted by the next read; only a dead, gone or
+    // disengaged Son drops it. A bot's read only reaches the Sons around it, so a Son it did not see keeps its entry
+    // until the sweep drops what no read refreshed for kSeekHoldStaleMs.
     inline void SeekHoldClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekHoldSeen>& seen,
                                   std::uint32_t nowMs)
     {
@@ -125,6 +132,8 @@ namespace ai
                 entry.sinceMs = nowMs;
             entry.seenMs = nowMs;
         }
+        for (auto it = held.begin(); it != held.end();)
+            it = nowMs - it->second.seenMs > kSeekHoldStaleMs ? held.erase(it) : std::next(it);
     }
 
     // How long the fight has held this Son (0: no entry, it is not held). The hold reads it (SeekHoldDecision).

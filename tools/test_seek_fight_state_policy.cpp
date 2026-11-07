@@ -282,6 +282,58 @@ int main()
         CHECK(SeekHeldMs(held, 7, 4000) == 0);
     }
 
+    // SeekHoldClockCountsEngagedTimeOnly: only a Son fighting a victim feeds the cap, so an idle spare standing at its
+    // spawn never enters the clock and the 20 s release cannot empty the reservoir the area veto protects. The cap
+    // reaches the selected source and a Son on a tank inside the window; a Son on a non-tank is the healer clock's.
+    {
+        CHECK(!SeekHoldClockTicks(false, false, false, true));  // a spare at its spawn: out of combat
+        CHECK(!SeekHoldClockTicks(false, false, true, true));   // no victim
+        CHECK(!SeekHoldClockTicks(false, true, false, true));   // engaged on a non-tank: never the hold's cap
+        CHECK(!SeekHoldClockTicks(true, false, false, false));  // the selected source still needs a victim
+        CHECK(SeekHoldClockTicks(true, true, false, false));    // the selected source off-window still counts
+        CHECK(!SeekHoldClockTicks(false, true, true, false));   // a Son on a tank waits out a shut window
+        CHECK(SeekHoldClockTicks(false, true, true, true));     // ... and counts inside it
+    }
+    {
+        // An idle unselected Son read once a second for 25 s stays held: no read ever ticks its clock.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::uint32_t nowMs = 1000;
+        for (; nowMs <= 25000; nowMs += 1000)
+            SeekHoldClockTick(held, {SeekHoldSeen{9, SeekHoldClockTicks(false, false, false, true)}}, nowMs);
+        CHECK(held.empty());
+        CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5,
+                               SeekNonTankHeldMs({}, 9, nowMs), SeekHeldMs(held, 9, nowMs)));
+    }
+    {
+        // An engaged Son on a tank inside the window is released at 20 s and the release sticks.
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::uint32_t nowMs = 1000;
+        for (; nowMs <= 25000; nowMs += 1000)
+        {
+            const bool ticks = SeekHoldClockTicks(false, true, true, true);
+            const bool capped = ticks && SeekHeldMs(held, 9, nowMs) >= kSeekHoldMaxMs;
+            SeekHoldClockTick(held, {SeekHoldSeen{9, capped || ticks}}, nowMs);
+            if (nowMs == 20000)
+                CHECK(SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
+            if (nowMs == 21000)
+                CHECK(!SeekHoldDecision(false, true, true, false, 90.0f, 30.0f, 5.0f, 5, 0, SeekHeldMs(held, 9, nowMs)));
+        }
+    }
+
+    // SeekHoldClockDropsWhatNobodySees: an entry no read refreshed for the grace is dropped, so the map cannot grow
+    // with Sons that left every bot's reach or died out of it, and a Son respawning under the same guid starts a clean
+    // hold instead of inheriting the old release.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{11, true}}, 1000);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldStaleMs);
+        CHECK(held.count(11) == 1);
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldStaleMs + 1);
+        CHECK(held.empty());
+        SeekHoldClockTick(held, {SeekHoldSeen{11, true}}, 30000);
+        CHECK(held.size() == 1 && held[11].sinceMs == 30000);
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

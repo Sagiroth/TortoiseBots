@@ -36,12 +36,16 @@ float ThreatMultiplier::GetValue(Action* action)
 
     // On a `threat_successor` boss the auto-attack, the wand's Shoot and Auto Shot stop at the successor line like any
     // other attack: they used to be exempt, so a damage dealer at 80-99 % of the off-tank kept adding white and wand
-    // threat inside Cause Insanity's charm and the boss turned to it. Tanks are never vetoed.
+    // threat inside Cause Insanity's charm and the boss turned to it. Tanks are never vetoed. The row decides before
+    // the percentage is read: on every other target the auto-attack keeps the plain rules below without paying for the
+    // tank scan (the bot's latch is cleared, so the next boss starts from the high line).
     if (AutoAttackAction(action))
     {
         Unit* const target = AI_VALUE(Unit*, "current target");
-        if (SuccessorCapStopsAutoAttack(ThreatSuccessorTarget(target), PlayerbotAI::IsTank(bot),
-                AI_VALUE2(uint8, "threat", "current target")))
+        if (!ThreatSuccessorTarget(target))
+            ai->SuccessorThreatCap().Update(false, false, 0);
+        else if (ai->SuccessorThreatCap().Update(true, PlayerbotAI::IsTank(bot),
+                     AI_VALUE2(uint8, "threat", "current target")))
             return 0.0f;
         if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
             return 1.0f;

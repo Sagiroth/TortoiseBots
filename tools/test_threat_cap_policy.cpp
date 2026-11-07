@@ -108,6 +108,49 @@ int main()
     CHECK(!SuccessorCapStopsAutoAttack(false, true, 90));
     CHECK(SuccessorCapStopsAutoAttack(true, false, 65));
 
+    // SuccessorCapHasHysteresis: the stop starts at the 65 % line but only resumes under 58 %, so a damage dealer whose
+    // threat wobbles around the line does not start and stop its auto-repeat every tick. In the band the latch decides.
+    CHECK(kThreatSuccessorResumePct == 58);
+    CHECK(!SuccessorCapStopsAutoAttack(true, false, 64, false)); // below the line, not latched: keeps attacking
+    CHECK(SuccessorCapStopsAutoAttack(true, false, 65, false));  // at the line: stops
+    CHECK(SuccessorCapStopsAutoAttack(true, false, 60, true));   // in the band, latched: stays stopped
+    CHECK(SuccessorCapStopsAutoAttack(true, false, 58, true));   // at the resume line: still stopped
+    CHECK(!SuccessorCapStopsAutoAttack(true, false, 57, true));  // under the resume line: resumes
+    CHECK(!SuccessorCapStopsAutoAttack(true, true, 90, true));   // a tank is never stopped, latched or not
+    CHECK(!SuccessorCapStopsAutoAttack(false, false, 90, true)); // another target: no cap
+
+    // SuccessorCapLatchIsPerBot: one latch per bot, advanced by every read. Trash or a tank clears it, so the boss is
+    // met from the high line again rather than from a latch an earlier fight left.
+    {
+        SuccessorCapHysteresis cap;
+        CHECK(!cap.Update(false, false, 0));  // trash clears the latch
+        CHECK(!cap.Update(true, false, 64));  // below the line: no stop
+        CHECK(cap.Update(true, false, 65));   // at the line: stop
+        CHECK(cap.Update(true, false, 60));   // in the band: stays stopped
+        CHECK(cap.Update(true, false, 58));
+        CHECK(!cap.Update(true, false, 57));  // under the resume line: resumes
+        CHECK(cap.Update(true, false, 65));   // and stops again at the line
+        CHECK(!cap.Update(false, false, 90)); // another target clears it
+        CHECK(cap.Update(true, false, 65));   // the boss starts from the high line again
+        CHECK(!cap.Update(true, true, 90));   // a tank is never stopped
+        CHECK(cap.Update(true, false, 65));
+        CHECK(cap.stopped);
+    }
+
+    // ThreatPctSaturated: the threat values carry a uint8 percentage of the reference tank's threat. botThreat * 100 /
+    // maxThreat above 255 used to wrap (300 % read as 44 %), and the successor cap then let the attack through exactly
+    // where the margin matters most. 255 stays 255 and every larger ratio saturates at it.
+    CHECK(ThreatPctSaturated(255.0f, 100.0f) == 255);
+    CHECK(ThreatPctSaturated(256.0f, 100.0f) == 255);
+    CHECK(ThreatPctSaturated(300.0f, 100.0f) == 255);
+    CHECK(ThreatPctSaturated(600.0f, 100.0f) == 255);
+    CHECK(ThreatPctSaturated(64.0f, 100.0f) == 64);
+    CHECK(ThreatPctSaturated(0.0f, 100.0f) == 0);
+    CHECK(ThreatPctSaturated(150.0f, 0.0f) == 0);  // no reference: the caller answers "no tank" before this
+    CHECK(ThreatPctSaturated(-10.0f, 100.0f) == 0);
+    // A saturated read still vetoes: the cap sees 255, not the wrapped 44.
+    CHECK(SuccessorCapStopsAutoAttack(true, false, ThreatPctSaturated(300.0f, 100.0f)));
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

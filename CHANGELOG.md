@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: Hakkar in Zul'Gurub no longer releases the idle Sons of Hakkar the raid keeps for later siphons (the 20 s hold counts only time a Son spends fighting), and the damage dealers' auto-attack resumes under 58 % of the off-tank's threat instead of flapping around the 65 % line.
+- Fixed: a bot's threat over 255 % of the reference tank's is now capped at 255 % instead of wrapping (300 % used to read as 44 %), so the threat cap never lets it attack exactly when it is far past the line.
 - Hakkar in Zul'Gurub: damage dealers stop their auto-attack, wand and Auto Shot at 65 % of the off-tank's threat (instead of 80 %), so Cause Insanity's charm no longer finds a damage dealer past the tank; a held Son of Hakkar is released to the damage dealers after 20 s, and the first off-tank takes one off a healer after 3 s.
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.

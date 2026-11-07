@@ -11,10 +11,19 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
+SEEK_POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
+STATE_POLICY = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 
 
 def body(text, signature):
     start = text.index(signature)
+    end = text.index("\n}\n", start)
+    return text[start:end]
+
+
+def guard_body(text, signature):
+    # The function's definition (the forward declaration comes first in the file).
+    start = text.index(signature, text.index(signature) + len(signature))
     end = text.index("\n}\n", start)
     return text[start:end]
 
@@ -73,6 +82,30 @@ class SeekSonHoldLastRound(unittest.TestCase):
         tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         self.assertIn("FindSeekFallbackPuller(ai, bot, roles, state.boss, *state.row, state.fallbackOpen)", tank)
         self.assertIn("(roles.tanks.size() >= 3 && !state.fallbackOpen)", tank)
+
+
+class SeekHoldClockEngagement(unittest.TestCase):
+    def test_the_hold_clock_counts_engaged_time_only(self):
+        # Every Son in the fight list used to feed the clock, and the hold rule holds any non-selected Son wherever it
+        # stands: after 20 s every idle spare around the spot was released for good and the area veto stopped
+        # protecting the reservoir. The clock now takes a Son only while it fights a victim, and the cap reaches the
+        # selected source and a Son on a tank inside the window.
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        self.assertIn("SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen)", tick)
+        self.assertIn("sServerFacade.IsAlive(son)", tick)
+        self.assertIn("son->IsInCombat()", tick)
+        self.assertIn("son->GetVictim()", tick)
+        self.assertLess(tick.index("SeekHoldClockTicks("), tick.index("SeekHoldsUnit(out, son)"))
+        self.assertIn("inline bool SeekHoldClockTicks(bool selected, bool engaged, bool victimTank, bool windowOpen)",
+                      SEEK_POLICY)
+        self.assertIn("return engaged && (selected || (victimTank && windowOpen));", SEEK_POLICY)
+
+    def test_the_hold_clock_drops_what_nobody_sees(self):
+        # A read only reaches the Sons around the bot, so an unseen Son keeps its entry; the sweep drops what no read
+        # refreshed for the grace, so the map cannot grow and a respawn under the same guid starts a clean hold.
+        self.assertIn("constexpr std::uint32_t kSeekHoldStaleMs = 20000;", STATE_POLICY)
+        clock = body(STATE_POLICY, "inline void SeekHoldClockTick(")
+        self.assertIn("nowMs - it->second.seenMs > kSeekHoldStaleMs ? held.erase(it) : std::next(it)", clock)
 
 
 if __name__ == "__main__":

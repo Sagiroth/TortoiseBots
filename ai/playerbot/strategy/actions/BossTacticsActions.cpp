@@ -2585,7 +2585,8 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 }
 
 // The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
-// from the previous read, then tick, so one bot's read sees one consistent hold time.
+// from the previous read, then tick, so one bot's read sees one consistent hold time. Only fighting time counts: an
+// idle Son is fed as not held, so it leaves the clock and the cap can never release a spare the area veto protects.
 void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
                        std::uint32_t nowMs)
 {
@@ -2595,9 +2596,15 @@ void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, Seek
     for (Unit* const son : fightSons)
     {
         const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+        Unit* const victim = son->GetVictim();
+        const bool engaged = sServerFacade.IsAlive(son) && son->IsInCombat() && victim;
+        Player* const victimPlayer = engaged ? dynamic_cast<Player*>(victim) : nullptr;
+        const bool victimTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+        const bool ticks = SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen);
         // A Son the 20 s cap already released stays released: keep its clock instead of starting a new hold.
-        const bool capped = IsSeekSource(out, son) && SeekHeldMs(out.holdSince, guid, nowMs) >= kSeekHoldMaxMs;
-        holdSeen.push_back(SeekHoldSeen{guid, capped || SeekHoldsUnit(out, son)});
+        const bool capped = ticks && IsSeekSource(out, son) &&
+            SeekHeldMs(out.holdSince, guid, nowMs) >= kSeekHoldMaxMs;
+        holdSeen.push_back(SeekHoldSeen{guid, capped || (ticks && SeekHoldsUnit(out, son))});
     }
     SeekHoldClockTick(record.holdSince, holdSeen, nowMs);
     out.holdSince = record.holdSince;

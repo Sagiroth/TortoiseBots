@@ -41,10 +41,22 @@ class SuccessorHighLine(unittest.TestCase):
 
     def test_the_successor_cap_trigger_gates_on_the_row_and_the_group(self):
         trigger = body(TRIGGERS, "bool SuccessorThreatCapTrigger::IsActive()")
-        self.assertIn("SuccessorCapStopsAutoAttack(ThreatSuccessorTarget(target), PlayerbotAI::IsTank(bot),", trigger)
         self.assertIn('AI_VALUE(bool, "group")', trigger)
         self.assertIn('AI_VALUE(bool, "neglect threat")', trigger)
+        # The data row decides before the percentage is read: a trash target never pays for the tank scan the threat
+        # value costs, and the bot's latch is cleared so a later boss starts from the high line.
+        self.assertIn("if (!ThreatSuccessorTarget(target))", trigger)
+        self.assertLess(trigger.index("ThreatSuccessorTarget(target)"), trigger.index('AI_VALUE2(uint8, "threat"'))
+        self.assertIn("ai->SuccessorThreatCap().Update(true, PlayerbotAI::IsTank(bot),", trigger)
         self.assertIn('creators["successor threat cap"]', TRIGGER_CONTEXT)
+
+    def test_the_cap_state_lives_on_the_bot(self):
+        ai_header = (ROOT / "ai/playerbot/PlayerbotAI.h").read_text()
+        self.assertIn("#include \"playerbot/ThreatCapPolicy.h\"", ai_header)
+        self.assertIn("ai::SuccessorCapHysteresis successorThreatCap_;", ai_header)
+        self.assertIn("ai::SuccessorCapHysteresis& SuccessorThreatCap() { return successorThreatCap_; }", ai_header)
+        self.assertIn("constexpr std::uint8_t kThreatSuccessorResumePct = 58;", THREAT_POLICY)
+        self.assertIn("bool Update(bool successorTarget, bool tank, std::uint8_t threatPct)", THREAT_POLICY)
 
 
 class AutoAttackVeto(unittest.TestCase):
@@ -54,7 +66,10 @@ class AutoAttackVeto(unittest.TestCase):
         self.assertIn('action->getName() == "auto shot"', THREAT_STRATEGY)
         veto = body(THREAT_STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
         self.assertIn("if (AutoAttackAction(action))", veto)
-        self.assertIn("SuccessorCapStopsAutoAttack(ThreatSuccessorTarget(target), PlayerbotAI::IsTank(bot),", veto)
+        # The row decides before the percentage: a trash target never reads the threat value for the cap.
+        self.assertIn("if (!ThreatSuccessorTarget(target))", veto)
+        self.assertLess(veto.index("ThreatSuccessorTarget(target)"), veto.index('AI_VALUE2(uint8, "threat"'))
+        self.assertIn("ai->SuccessorThreatCap().Update(true, PlayerbotAI::IsTank(bot),", veto)
 
     def test_the_stop_action_stops_the_swing_and_the_auto_repeat(self):
         execute = body(ACTIONS, "bool StopAutoAttackAction::Execute(Event& event)")
@@ -91,7 +106,8 @@ class SonHoldTimings(unittest.TestCase):
 
     def test_the_docs_state_the_shipped_timings(self):
         self.assertIn("for 3 s is the first off-tank's take", DOC)
-        self.assertIn("kept for 20 s is released to the damage dealers", DOC)
+        self.assertIn("kept fighting for 20 s is released to the damage dealers", DOC)
+        self.assertIn("falls under 58 % of that reference", DOC)
         self.assertIn("65 % of that reference instead of 80 %", DOC)
 
 
