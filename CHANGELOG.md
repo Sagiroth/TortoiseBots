@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: a priest no longer shields a warrior in Defensive Stance or a druid in Bear Form who isn't in danger, even when that tank is a player without Protection or Feral talents (#1553).
+
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.
 - Fixed: priests that know Heal rank 2 or higher stop picking Lesser Heal on their own while they can pay for Heal; orders and low-mana fallbacks still use it.
 - New: Hakkar's Son holds, releases and deaths are logged (BossTacticsSonHold, BossTacticsSonDeath), with the hold time on HoldKill rows and Hakkar's HP at each siphon sighting.
