@@ -187,12 +187,48 @@ class SeekSonRowReview(unittest.TestCase):
         self.assertIn("record.releaseLogged.erase(event.guid);", tick)
 
     def test_deaths_come_from_the_sons_the_fight_has_seen(self):
-        # fightSons only holds living Sons, so a death is found through the guids an earlier read saw alive.
+        # A death is found through the guids an earlier read listed, whether or not the corpse still sits in fightSons.
         tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
         self.assertIn("record.sonsSeen.insert(son->GetObjectGuid().GetRawValue());", tick)
         self.assertIn("SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged)", tick)
         self.assertIn("record.sonsSeen.erase(guid);", tick)
         self.assertNotIn("if (son->GetEntry() != kSonOfHakkarEntry || sServerFacade.IsAlive(son)", tick)
+
+    def test_a_corpse_still_in_fightsons_is_a_death(self):
+        # A sole-kill candidate keeps a corpse in fightSons for up to a second: liveNow counts only live Sons, so the
+        # death row (real held_ms) is pushed before the clock's own end.
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        live = tick[tick.index("std::set<std::uint64_t> liveNow;"):tick.index("SeekDeathCandidates(")]
+        self.assertIn("if (sServerFacade.IsAlive(son))", live)
+        self.assertIn("liveNow.insert(son->GetObjectGuid().GetRawValue());", live)
+        self.assertLess(tick.index("SeekDeathCandidates("), tick.index("SeekHoldClockTick(record.holdSince"))
+
+    def test_gone_keeps_the_record_and_logs_once(self):
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        gone = tick[tick.index("const auto held = record.holdSince.find(guid);"):
+                   tick.index("record.sonsSeen.erase(guid);")]
+        self.assertNotIn("holdSince.erase", gone)
+        self.assertNotIn("healerHeldSince.erase", gone)
+        self.assertIn("record.goneLogged.insert(guid);", gone)
+        skip = tick[tick.index("record.goneLogged.erase(event.guid) != 0"):]
+        skip = skip[:skip.index("continue;")]
+        self.assertNotIn("PushSonHoldRow", skip)
+        self.assertIn("record.releaseLogged.erase(event.guid);", skip)
+
+    def test_the_release_latch_dies_with_its_record(self):
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        # Every transition drops the latch, so a new hold's start clears it too.
+        push = 'event.start ? "tick" : SeekHoldEndWord(reason), event.heldMs, text);'
+        self.assertIn(push, tick)
+        after = tick[tick.index(push):]
+        self.assertIn("record.releaseLogged.erase(event.guid);", after[:after.index("}")])
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("std::set<std::uint64_t> healerBefore;", read)
+        self.assertIn("healerBefore.insert(entry.first);", read)
+        guard = "if (!record.healerHeldSince.count(guid) && !record.holdSince.count(guid))"
+        self.assertIn(guard, read)
+        remove = read[read.index(guard):]
+        self.assertIn("record.releaseLogged.erase(guid);", remove[:remove.index("\n        }")])
 
     def test_the_death_row_reads_the_fight_phase_and_last_release(self):
         tick = guard_body(ACTIONS, "void TickSeekHoldClock(")

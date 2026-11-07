@@ -270,9 +270,12 @@ namespace ai
         // SeekSonTicks).
         std::map<std::uint64_t, SeekHeldSon> holdSince;
         // The Sons whose release row this fight already logged for the current hold record: the release is one row per
-        // record, not one per bot's read. Erased when that hold ends, so a later hold logs again. Cleared with the
-        // fight (the whole record).
+        // record, not one per bot's read. Erased when that hold ends or a new one starts. Cleared with the fight (the
+        // whole record).
         std::set<std::uint64_t> releaseLogged;
+        // The Sons whose hold already ended as gone (they left the map): the clock's later end for the same record is
+        // the same hold and adds no row. Erased when that end arrives. Cleared with the fight.
+        std::set<std::uint64_t> goneLogged;
         // The reason of each Son's last logged release: the death row reports what the hold actually did. Cleared with
         // the fight.
         std::map<std::uint64_t, SeekHoldWhy> lastRelease;

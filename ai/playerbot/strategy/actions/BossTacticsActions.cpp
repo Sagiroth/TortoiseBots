@@ -2551,7 +2551,17 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.missing = record.missing;
         // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once a read sees it dead, out
         // of combat or on a tank; a Son this read did not see stays (SeekHealerClockTick).
+        std::set<std::uint64_t> healerBefore;
+        for (const auto& entry : record.healerHeldSince)
+            healerBefore.insert(entry.first);
         SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
+        // A release latch belongs to the record it was logged for: the healer clock letting go of a Son no hold record
+        // still covers drops it, so the next hold's own release logs again.
+        for (std::uint64_t guid : healerBefore)
+        {
+            if (!record.healerHeldSince.count(guid) && !record.holdSince.count(guid))
+                record.releaseLogged.erase(guid);
+        }
         healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
         out.nonTankSince = record.healerHeldSince;
         TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);
@@ -2797,8 +2807,8 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
     out.holdSince = record.holdSince;
     const bool log = sPlayerbotAIConfig.hasLog("bot_events.csv") && out.row &&
         out.row->targetEntry == kSonOfHakkarEntry;
-    // Every Son this fight's read has seen alive. fightSons only ever holds living Sons, so a Son missing from it
-    // cannot be asked about directly; this set remembers them for the death check.
+    // Every Son this fight's read has listed. A Son can drop out of fightSons (dead, errant) or still sit in it as a
+    // corpse, so this set remembers them for the death check, which asks the map for the truth.
     if (out.row && out.row->targetEntry == kSonOfHakkarEntry)
     {
         for (Unit* const son : fightSons)
@@ -2852,12 +2862,17 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
             record.lastRelease[guid] = why;
         }
 
-        // A Son the fight had seen alive that this read no longer lists. Dead on the map is the death the row records;
-        // a missing creature is a despawn or an evade, which is no death: its hold ends as gone and it is not looked up
-        // again. A Son still alive was simply out of this read's sight.
+        // A Son the fight had seen alive that this read no longer has alive. A corpse can still sit in fightSons for
+        // up to a second (a sole-kill candidate resolved from the map), so a listed Son that is not alive counts as
+        // gone from the living list: its death row is pushed here, before the clock tick would end its hold. A missing
+        // creature is a despawn or an evade, which is no death: its hold ends as gone and it is not looked up again.
+        // A Son alive but out of this read's sight was simply not listed.
         std::set<std::uint64_t> liveNow;
         for (Unit* const son : fightSons)
-            liveNow.insert(son->GetObjectGuid().GetRawValue());
+        {
+            if (sServerFacade.IsAlive(son))
+                liveNow.insert(son->GetObjectGuid().GetRawValue());
+        }
         for (std::uint64_t guid : SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged))
         {
             Creature* const creature = bot ? bot->GetMap()->GetCreature(ObjectGuid(guid)) : nullptr;
@@ -2873,7 +2888,7 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
             {
                 goneEvents.push_back(SeekHoldEvent{guid, false, SeekHoldEndReason::Gone,
                                                    SeekAgeMs(nowMs, held->second.sinceMs)});
-                record.holdSince.erase(held);
+                record.goneLogged.insert(guid);
             }
             record.sonsSeen.erase(guid);
         }
@@ -2886,6 +2901,12 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
         events.insert(events.end(), goneEvents.begin(), goneEvents.end());
     for (const SeekHoldEvent& event : events)
     {
+        // The gone row already ended this hold; the clock's own end for the same record adds nothing.
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.goneLogged.erase(event.guid) != 0)
+        {
+            record.releaseLogged.erase(event.guid);
+            continue;
+        }
         // A record that ends while the Son is dead is a death, whatever the sweep's own clock said.
         SeekHoldEndReason reason = event.reason;
         if (!event.start && event.reason != SeekHoldEndReason::Gone && record.sonDeathLogged.count(event.guid))
@@ -2919,8 +2940,8 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
                      static_cast<unsigned>(facts.hp), facts.spotYd);
         PushSonHoldRow(rows, out, record, nowMs, event.guid, son, event.start ? "start" : "end",
                        event.start ? "tick" : SeekHoldEndWord(reason), event.heldMs, text);
-        if (!event.start)
-            record.releaseLogged.erase(event.guid);
+        // A new hold is a new latch; a hold's end has no release left to suppress. Either way the old latch goes.
+        record.releaseLogged.erase(event.guid);
     }
 }
 

@@ -475,6 +475,30 @@ int main()
         CHECK(!SeekShouldLogRelease(true, true));
     }
 
+    // The release latch lives no longer than the record it was logged for. A NonTank release on a healer-only record
+    // latches; the healer clock removing that record (with no hold record covering the Son) drops the latch, and the
+    // next hold's own release logs again. A latch the hold record still covers survives the healer clock's end, so a
+    // hold's release is not logged twice.
+    {
+        bool latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+        latch = true;
+        CHECK(!SeekShouldLogRelease(true, latch));
+        const bool healerRecordEnded = true;
+        const bool heldByHold = false;
+        if (healerRecordEnded && !heldByHold)
+            latch = false;
+        // The next hold's start drops the latch too (it belongs to the new record).
+        latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+
+        bool holdLatch = true;
+        const bool holdCoversIt = true;
+        if (healerRecordEnded && !holdCoversIt)
+            holdLatch = false;
+        CHECK(!SeekShouldLogRelease(true, holdLatch));
+    }
+
     // SeekDeathCandidates: a Son seen alive and missing from this read's living list is looked up once, whether or not
     // a hold record ever existed for it; a Son still alive and a Son already logged are not.
     {
