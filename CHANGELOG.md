@@ -27,6 +27,18 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.20.2 (2026-11-07)
+
+### Dungeons & Groups
+- You can now lead your own bot party through a dungeon by default; bot-led runs work as before. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+- Every bot in a dungeon now uses boss tactics, interrupting key spells, killing adds first and staying out of frontal attacks. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+
+### Companions
+- An alt kicked from your party now stays your companion by default instead of playing on its own. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+- Server owners can bring back the old alt behaviour with the alt-bots setting. [#1549](https://github.com/Sagiroth/TortoiseBots/pull/1549)
+
+---
+
 ## v1.20.1 (2026-11-07)
 
 ### Groups & Dungeons
