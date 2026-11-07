@@ -24,7 +24,11 @@ namespace ai
         if (!PlayerbotAIStorage::Instance().GetAI(player) && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
             return false;
 
-        if (Group* group = inviter->GetGroup())
+        Group* group = inviter->GetGroup();
+        if (group && !group->IsLeader(inviter->GetObjectGuid()) && !group->IsAssistant(inviter->GetObjectGuid()))
+            return false;
+
+        if (group)
         {
             if(PlayerbotAIStorage::Instance().GetAI(player) && !PlayerbotAIStorage::Instance().GetAI(player)->IsRealPlayer())
                 if (!group->IsRaidGroup() && group->GetMembersCount() > 4)
@@ -410,8 +414,15 @@ namespace ai
     // RandomBotGroupNearby: pool guildmates group per the guild key.
     bool InviteGuildToGroupAction::isUseful()
     {
-        return bot->GetGuildId() && sPlayerbotAIConfig.randomBotGuildNearby &&
-            ai::RandomGroupInviteAllowed(IsDungeonCrew(bot));
+        if (!bot->GetGuildId() || !sPlayerbotAIConfig.randomBotGuildNearby ||
+            !ai::RandomGroupInviteAllowed(IsDungeonCrew(bot)))
+            return false;
+
+        if (ai->HasRealPlayerMaster())
+            return false;
+
+        Group* group = bot->GetGroup();
+        return !group || group->IsLeader(bot->GetObjectGuid());
     }
 
     std::vector<Player*> InviteGuildToGroupAction::getGuildMembers()

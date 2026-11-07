@@ -104,6 +104,7 @@ static bool HandleServicePortal(ChatHandler* handler, Player* requester, Player*
     facts.inCombat = bot->IsInCombat();
     facts.casting = bot->IsNonMeleeSpellCasted(false);
     facts.isMage = bot->GetClass() == CLASS_MAGE;
+    facts.requesterGrouped = requester && requester->IsInSameRaidWith(bot);
     ai::PortalCastDecision decision = !listed
         ? ai::PortalCastDecision{ai::PortalRefusal::UnknownCity, false, false}
         : ai::DecidePortalCast(facts, spellId, bot->HasSpell(spellId),
@@ -118,6 +119,9 @@ static bool HandleServicePortal(ChatHandler* handler, Player* requester, Player*
         bot->StoreNewItemInInventorySlot(ai::PortalRuneItemId(), 1);
     if (decision.needsStop)
         ai->StopMoving();
+    // A seated bot (drinking) would stand up and fail this one cast attempt.
+    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
     std::ostringstream cast;
     cast << spellId;
     if (!ai->DoSpecificAction("cast", ai::Event("service portal", cast.str(), requester), true))
