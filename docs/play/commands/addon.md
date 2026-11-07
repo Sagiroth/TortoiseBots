@@ -117,7 +117,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 - **Loot history (`TBM:LOOT`):** `.bot lootlog [cursor]` replays loot rows for your controllable party bots (owned alts and hired companions) from the last 24 hours, newest piece first, up to 40 rows per reply. A money row carries the copper amount as `<item>` and the corpse entry as `<itemId>`; an item row carries the item name, id and quality. Send the returned `<nextCursor>` back for the next page; `expired` means the piece it pointed at was pruned, so start over without a cursor.
 - **Guild bot rank (`TBM:ORDER_ACCESS`):** Carries the guild's bot rank and what it reaches.
   - `-|-|-|-|0|0` line: sent when `AiPlayerbot.GuildOrderBotRank = 0` (off), or when the guild has no unlocked bank (then also no tabs and no gold).
-  - `<rankIndex>` the rank every bot holds (by default the rank below the guild master); `<rankName>` its name.
+  - `<rankIndex>` the rank every bot holds (by default the guild's lowest rank); `<rankName>` its name.
   - `<tabsOk>`/`<tabsDenied>`: 1-based bank tabs it reaches or not (`-` when empty).
   - `<gold 0/1>`: whether it may take guild gold (only ranks 0-1 may).
   - `<canSetRank 0/1>`: whether you may change the rank (your rank must allow promoting and demoting members).
