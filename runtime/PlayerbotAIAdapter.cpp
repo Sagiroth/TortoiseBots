@@ -6,6 +6,7 @@
 #include "playerbot/BotActionLog.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotDbStore.h"
 #include "ByteBuffer.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -36,6 +37,9 @@ bool PlayerbotAIAdapter::Initialize()
     if (master_)
     {
         ai_->SetMaster(master_); // pi-lens-ignore: clang:all
+        // The engines were built before the master was known, so the saved
+        // strategies and values (loot settings, ignored spells) were skipped.
+        ai_->ResetStrategies(); // pi-lens-ignore: clang:all
         // AiFactory builds the engines before the native adapter knows the
         // owner. Re-apply the mature movement default at this seam so manual
         // same-account bots use Strategy/Trigger/Action follow rather than a
@@ -130,6 +134,10 @@ void PlayerbotAIAdapter::Shutdown()
     // RemoveAI first: map-thread hooks resolve the AI through storage, so
     // once this returns no new hook can reach ai_. Close then swaps the
     // tombstone in: a hook holding the old pointer still fails its reopen.
+    // Save a player's bot on logout: value commands such as `ll` and `ss`
+    // change only the live AI, and a strategy change saves only up to then.
+    if (ai_ && bot_ && !sPlayerbotAIConfig.bExplicitDbStoreSave && ai_->HasRealPlayerMaster()) // pi-lens-ignore: clang:all
+        sPlayerbotDbStore.Save(ai_);
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_); // pi-lens-ignore: clang:all
     if (botGuidLow_)
         ai::botdiag::BotActionLog::Close(botGuidLow_);
