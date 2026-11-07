@@ -236,6 +236,44 @@ namespace ai
         return seenAlive && ticks && holds;
     }
 
+    // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the
+    // hold itself and `Dosed` the hold once every seeker already carries the poison (nothing a kill buys) — both still
+    // hold the Son; `Cap20`, `NonTank` and `SelectedBurn` are the release paths.
+    enum class SeekHoldWhy
+    {
+        Held,
+        Cap20,
+        NonTank,
+        SelectedBurn,
+        Dosed,
+    };
+
+    // Whether a reason still holds the Son. Dosed is a hold variant, not a release: both the decision and the release
+    // log read held-ness through this one predicate.
+    inline bool SeekHoldWhyHolds(SeekHoldWhy why)
+    {
+        return why == SeekHoldWhy::Held || why == SeekHoldWhy::Dosed;
+    }
+
+    // The hold rule's one body: SeekHoldDecision answers SeekHoldWhyHolds(SeekHoldWhyOf(...)) and the seek logs the
+    // reason of each release, so the decision and its log cannot drift.
+    inline SeekHoldWhy SeekHoldWhyOf(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0,
+        std::uint32_t heldMs = 0)
+    {
+        if (heldMs >= kSeekHoldMaxMs)
+            return SeekHoldWhy::Cap20;
+        if (nonTankHeldMs >= kSeekNonTankBurnMs)
+            return SeekHoldWhy::NonTank;
+        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
+            return SeekHoldWhy::Held;
+        if (seekers <= 0)
+            return SeekHoldWhy::Dosed;
+        if (hpPct <= holdPct && !gatherReady && !forceBurn)
+            return SeekHoldWhy::Held;
+        return SeekHoldWhy::SelectedBurn;
+    }
+
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
     // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick
@@ -252,15 +290,8 @@ namespace ai
         float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0,
         std::uint32_t heldMs = 0)
     {
-        if (heldMs >= kSeekHoldMaxMs)
-            return false;
-        if (nonTankHeldMs >= kSeekNonTankBurnMs)
-            return false;
-        if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
-            return true;
-        if (seekers <= 0)
-            return true;
-        return hpPct <= holdPct && !gatherReady && !forceBurn;
+        return SeekHoldWhyHolds(SeekHoldWhyOf(isSelected, windowOpen, gatherReady, forceBurn, hpPct, holdPct,
+                                             distFromSpotYd, seekers, nonTankHeldMs, heldMs));
     }
 
     // One living Son at an area action's point: how far it stands from the point (the action's target, or the bot when

@@ -807,7 +807,7 @@ class HoldKillIsLogged(unittest.TestCase):
         self.assertEqual(fn.count("LogHoldKillPick("), 3)
         pick = body(ACTIONS, "void LogHoldKillPick(")
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", info1, info2);', pick)
-        self.assertIn('"held=%u:%u,hp=%u"', pick)
+        self.assertIn('"held=%u:%u,hp=%u,held_ms=%u"', pick)
         self.assertIn('"blockers="', pick)
         self.assertIn('info2 += "none";', pick)
         self.assertIn('info2 += ",to=" + std::to_string(destination->GetEntry())', pick)
@@ -825,7 +825,7 @@ class HoldKillIsLogged(unittest.TestCase):
         self.assertIn('held == HoldReason::Sole ? "sole" : veto', fn)
         veto = body(ACTIONS, "void LogHoldKillVeto(")
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);', veto)
-        self.assertIn('"held=%u:%u,hp=%u"', veto)
+        self.assertIn('"held=%u:%u,hp=%u,held_ms=%u"', veto)
         self.assertIn('"held=none"', veto)
 
     def test_one_row_per_bot_per_kind_per_five_seconds(self):

@@ -405,6 +405,67 @@ int main()
         CHECK(held.size() == 1 && held[11].sinceMs == 30000);
     }
 
+    // SeekHoldEvents: the clock reports each transition. A start carries the guid and a 0 age; a below-cap record no read
+    // ticked for kSeekHoldUntickedMs ends as Unticked with the record's age at the erase.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 1000, &events);
+        CHECK(events.size() == 1 && events[0].guid == 7 && events[0].start && events[0].heldMs == 0);
+        events.clear();
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unticked);
+        CHECK(events[0].heldMs == kSeekHoldUntickedMs + 100);
+        CHECK(held.empty());
+    }
+
+    // A Son seen dead ends as Died with its age at the read.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, true}}, 1000, &events);
+        events.clear();
+        SeekHoldClockTick(held, {SeekHoldSeen{9, false, false}}, 3000, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Died);
+        CHECK(events[0].heldMs == 2000);
+        CHECK(held.empty());
+    }
+
+    // A capped record no read saw alive for kSeekHoldStaleMs ends as Unseen; the unticked sweep must not take it first
+    // (a capped entry sweeps on the seen stamp, not the tick stamp).
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        for (std::uint32_t nowMs = 1000; nowMs <= 21000; nowMs += 1000)
+            SeekHoldClockTick(held, {SeekHoldSeen{11, true, true}}, nowMs, &events);
+        CHECK(events.size() == 1 && events[0].start);
+        events.clear();
+        SeekHoldClockTick(held, {}, 21000 + kSeekHoldStaleMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unseen);
+        CHECK(events[0].heldMs == kSeekHoldStaleMs + 100 + 20000);
+        CHECK(held.empty());
+    }
+
+    // A null collector changes nothing: the map takes the same path, and the same events would have been reported.
+    {
+        std::map<std::uint64_t, SeekHeldSon> with;
+        std::map<std::uint64_t, SeekHeldSon> without;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(with, {SeekHoldSeen{3, true, true}}, 1000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, true, true}}, 1000);
+        CHECK(events.size() == 1);
+        SeekHoldClockTick(with, {SeekHoldSeen{3, false, false}}, 4000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, false, false}}, 4000);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 2 && events[1].reason == SeekHoldEndReason::Died);
+        SeekHoldClockTick(with, {SeekHoldSeen{5, true, true}}, 10000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{5, true, true}}, 10000, nullptr);
+        SeekHoldClockTick(with, {}, 10000 + kSeekHoldUntickedMs + 1, &events);
+        SeekHoldClockTick(without, {}, 10000 + kSeekHoldUntickedMs + 1, nullptr);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 4 && events[3].reason == SeekHoldEndReason::Unticked);
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

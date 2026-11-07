@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <iterator>
 #include <map>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -127,6 +128,25 @@ namespace ai
         return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
     }
 
+    // Why a hold record ended: the read saw the Son dead, no read ticked it for kSeekHoldUntickedMs, or the capped
+    // record was not seen alive for kSeekHoldStaleMs.
+    enum class SeekHoldEndReason
+    {
+        Died,
+        Unticked,
+        Unseen,
+    };
+
+    // One hold-clock transition: `start` when a read creates a Son's record, `end` when one is erased. `reason` is the
+    // erase's own (unused on a start), `heldMs` the record's age at the erase (0 on a start).
+    struct SeekHoldEvent
+    {
+        std::uint64_t guid = 0;
+        bool start = false;
+        SeekHoldEndReason reason = SeekHoldEndReason::Died;
+        std::uint32_t heldMs = 0;
+    };
+
     // The hold clock after one bot's read. Every bot of the fight feeds the one record, but each read picks its own
     // source (the shared gather latch, else its own search around the spot), so a read that selects another Son or
     // none must not touch this Son's entry: a read that does not tick it changes nothing. A ticking read creates the
@@ -139,8 +159,10 @@ namespace ai
     // - below the cap, no read ticked it for kSeekHoldUntickedMs (the fight stopped holding it);
     // - at or past the cap, no read saw the Son alive for kSeekHoldStaleMs. The capped entry stays while the Son is
     //   alive and seen, so a closing window or a changed victim cannot start a fresh 20 s hold.
+    // `events` (optional) gets one entry per insert (start) and per erase (end, with its reason and the record's age),
+    // so a caller can log the transitions; passing null changes nothing.
     inline void SeekHoldClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekHoldSeen>& seen,
-                                  std::uint32_t nowMs)
+                                  std::uint32_t nowMs, std::vector<SeekHoldEvent>* events = nullptr)
     {
         for (const SeekHoldSeen& son : seen)
         {
@@ -148,13 +170,23 @@ namespace ai
             if (!son.alive)
             {
                 if (it != held.end())
+                {
+                    if (events)
+                        events->push_back(
+                            SeekHoldEvent{son.guid, false, SeekHoldEndReason::Died,
+                                          SeekAgeMs(nowMs, it->second.sinceMs)});
                     held.erase(it);
+                }
                 continue;
             }
             if (son.ticks)
             {
                 if (it == held.end())
+                {
                     it = held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs, nowMs})).first;
+                    if (events)
+                        events->push_back(SeekHoldEvent{son.guid, true, SeekHoldEndReason::Died, 0});
+                }
                 else if (nowMs > it->second.tickedMs)
                     it->second.tickedMs = nowMs;
             }
@@ -166,7 +198,17 @@ namespace ai
             const bool capped = SeekAgeMs(nowMs, it->second.sinceMs) >= kSeekHoldMaxMs;
             const std::uint32_t idleMs = capped ? SeekAgeMs(nowMs, it->second.seenMs)
                                                 : SeekAgeMs(nowMs, it->second.tickedMs);
-            it = idleMs > (capped ? kSeekHoldStaleMs : kSeekHoldUntickedMs) ? held.erase(it) : std::next(it);
+            if (idleMs > (capped ? kSeekHoldStaleMs : kSeekHoldUntickedMs))
+            {
+                if (events)
+                    events->push_back(
+                        SeekHoldEvent{it->first, false,
+                                      capped ? SeekHoldEndReason::Unseen : SeekHoldEndReason::Unticked,
+                                      SeekAgeMs(nowMs, it->second.sinceMs)});
+                it = held.erase(it);
+            }
+            else
+                ++it;
         }
     }
 
@@ -202,6 +244,11 @@ namespace ai
         // Only fighting time counts, and a release sticks while the Son lives and is seen (SeekHoldClockTick,
         // SeekSonTicks).
         std::map<std::uint64_t, SeekHeldSon> holdSince;
+        // The last hold verdict logged for each Son (SeekHoldWhy as its enum value): a release row is logged only on
+        // the held -> not-held flip, and a flip back to held records silently. Cleared with the fight.
+        std::map<std::uint64_t, std::uint8_t> holdVerdict;
+        // The Sons whose death row this fight already logged (one per guid). Cleared with the fight.
+        std::set<std::uint64_t> sonDeathLogged;
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
@@ -209,6 +256,7 @@ namespace ai
         std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
         std::uint32_t siphonThirdAtMs = 0;  // the +9 s read, after the 8 s heal has run its course
         std::uint32_t siphonSeenMs = 0;     // the cycle's first 24324 sighting: the note's clock starts here
+        std::uint32_t siphonSeenHpPct = 0;  // Hakkar's health percent at that sighting
         std::uint32_t siphonCycle = 0;
         int siphonDosed = 0;            // the +1 s read, which the run line reports
         int siphonUndosed = 0;

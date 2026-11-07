@@ -32,6 +32,8 @@ class SeekSonHoldWiring(unittest.TestCase):
     def test_the_hold_reads_the_sons_non_tank_time(self):
         hold = body(ACTIONS, "bool SeekHoldsUnit(const SeekFight& state, Unit* unit)")
         self.assertIn("SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs)", hold)
+        why = body(ACTIONS, "SeekHoldWhy SeekHoldWhyOfUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs)", why)
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
         self.assertIn("out.nonTankSince = record.healerHeldSince;", read)
         self.assertLess(read.index("SeekHealerClockTick("), read.index("out.nonTankSince = record.healerHeldSince;"))
@@ -119,6 +121,46 @@ class SeekHoldClockEngagement(unittest.TestCase):
         self.assertIn("SeekAgeMs(", clock)
         # A read that does not tick a live Son never erases it: only the seen-dead branch erases inside the read.
         self.assertNotIn("if (!son.held)", clock)
+
+
+class SeekSonRowsWiring(unittest.TestCase):
+    def test_the_four_rows_carry_their_formats(self):
+        self.assertIn('"son=%u,event=%s,reason=%s,held_ms=%u,nontank_ms=%u,hp=%u,spot_yd=%.1f,cycle=%u,due_in=%u,'
+                      'victim=%s"', ACTIONS)
+        self.assertIn('"son=%u,cycle=%u,due_in=%u,since_siphon=%d,phase=%s,raid_alive=%d,raid_in_cloud=%d,'
+                      'held_ms=%u,"', ACTIONS)
+        self.assertIn('"last_reason=%s"', ACTIONS)
+        self.assertIn('"BossTacticsSonHold"', ACTIONS)
+        self.assertIn('"BossTacticsSonDeath"', ACTIONS)
+        self.assertEqual(ACTIONS.count('"held=%u:%u,hp=%u,held_ms=%u"'), 2)
+        self.assertIn('"hakkar_dmg=%u,hakkar_hp=%u,hp_seen=%u"', ACTIONS)
+
+    def test_only_hakkars_seek_row_logs_them(self):
+        hold = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', hold)
+        self.assertIn("out.row->targetEntry == kSonOfHakkarEntry", hold)
+        self.assertIn("const std::uint32_t kSonOfHakkarEntry = 11357;", ACTIONS)
+        self.assertIn("const float kPoisonCloudYd = 8.0f;", ACTIONS)
+
+    def test_log_event_runs_outside_the_seek_lock(self):
+        call = ACTIONS.index("TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);")
+        lock = ACTIONS.rindex("std::lock_guard<std::mutex> lock(g_seekMutex);", 0, call)
+        start = ACTIONS.rindex("{", 0, lock)
+        depth = 0
+        i = start
+        while i < len(ACTIONS):
+            if ACTIONS[i] == "{":
+                depth += 1
+            elif ACTIONS[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        block = ACTIONS[start:i + 1]
+        self.assertIn("TickSeekHoldClock(", block)
+        self.assertNotIn("logEvent", block)
+        self.assertLess(i, ACTIONS.index("sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);"))
+        self.assertNotIn("logEvent", guard_body(ACTIONS, "void TickSeekHoldClock("))
 
 
 if __name__ == "__main__":
