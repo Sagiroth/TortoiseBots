@@ -760,7 +760,7 @@ Scatters newly seeded random bots at level 10 and above to validated level-fitti
 
 When enabled, random bots at level 10 and above scatter to a validated level-fitting overworld spot upon initial login instead of lingering in their racial starting zone.
 
-Level appropriateness is validated via zone level tables and area data. Pinned bots and dead bots stay with their corpse and are skipped.
+Level appropriateness is validated via zone level tables and area data; capitals are never picked. Pinned bots and dead bots stay with their corpse and are skipped.
 
 </details>
 

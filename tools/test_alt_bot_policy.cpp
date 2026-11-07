@@ -193,6 +193,14 @@ static void TestProtections()
     assert(AltBotMayVendorItem(2, false, false) == false);
     assert(AltBotMayVendorItem(0, true, false) == false);
     assert(AltBotMayVendorItem(1, false, true) == false);
+    // The vendor need counts what the sale may take; companions count all.
+    assert(AltBotItemCountsForVendorNeed(true, 0, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 1, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(true, 2, false, false) == false);
+    assert(AltBotItemCountsForVendorNeed(true, 0, true, false) == false);
+    assert(AltBotItemCountsForVendorNeed(true, 1, false, true) == false);
+    assert(AltBotItemCountsForVendorNeed(false, 2, false, false) == true);
+    assert(AltBotItemCountsForVendorNeed(false, 4, true, false) == true);
     // B10: repair is paid without the gold cheat.
     assert(AltBotRepairIsPaid(false) == true);
     assert(AltBotRepairIsPaid(true) == false);

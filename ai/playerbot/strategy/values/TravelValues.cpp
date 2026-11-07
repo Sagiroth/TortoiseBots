@@ -276,6 +276,8 @@ bool NeedTravelPurposeValue::Calculate()
         //in the field. Both sides read the same ten-minute fruitless-errand park.
         return VendorTripNeeded(ai) || BagPressureVendorTrip(ai);
     case TravelDestinationPurpose::AH:
+        if (!TortoiseBots::AltBotMayUseEconomy(TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid())))
+            return false;
         if (AI_VALUE2(bool, "group or", "should ah sell,can ah sell,following party"))
             return true;
         if (AI_VALUE2(bool, "has strategy", "free") && AI_VALUE(bool, "should ah sell") && AI_VALUE(bool, "can ah sell"))
@@ -378,6 +380,10 @@ bool ShouldTravelNamedValue::Calculate()
     if (name == "city")
     {
         if (bot->GetLevel() <= 5)
+            return false;
+
+        // The capital's only business here is the AH, which an autonomous alt never uses.
+        if (!TortoiseBots::AltBotMayUseEconomy(TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid())))
             return false;
 
         if (!botPos.isOverworld())
