@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunCarrierStrike (default 0), a Jin'do healer or off-tank cursed by Delusions turns on its own Shade while the raid can spare it, and stays on the raid otherwise.
 - Fixed: `spells` no longer hides a spell whose name is part of another (Polymorph, Heal, Healing Wave, Bear Form).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.
