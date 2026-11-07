@@ -767,6 +767,41 @@ static void TestShotStall()
     CHECK(!WalkoutShotStalled(s, 2000 + kSeekWalkoutShotStallMs + 1));
 }
 
+static void TestStandMoveRestartsTheStallClock()
+{
+    // The stand follows the patrolling Son: a re-plan that moves it more than the arrival distance starts the stall
+    // clock afresh at the new spot, so time spent at the old stand cannot abort the walk.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteStand(s, true, 10.0f, 10.0f, 50.0f, 1000);
+    WalkoutNoteAtStand(s, 2000);
+    CHECK(s.atStandSinceMs == 2000);
+    // A re-plan 2 yd away is the same stand: the clock keeps running.
+    WalkoutNoteStand(s, true, 12.0f, 10.0f, 50.0f, 3000);
+    CHECK(s.atStandSinceMs == 2000);
+    // 8 yd away it is a new stand: the clock restarts, and 6 s later there is no abort.
+    WalkoutNoteStand(s, true, 20.0f, 10.0f, 50.0f, 8000);
+    CHECK(s.atStandSinceMs == 0);
+    CHECK(!WalkoutShotStalled(s, 8000 + kSeekWalkoutShotStallMs));
+    // 6 s at the new stand: abort.
+    WalkoutNoteAtStand(s, 14000);
+    CHECK(WalkoutShotStalled(s, 14000 + kSeekWalkoutShotStallMs));
+}
+
+static void TestAnAbortAfterTheShotKeepsTheCycleClosed()
+{
+    // The shot landed (the Son joined the fight), so the walk-out did happen: a later abort (the puller dying, say)
+    // neither reopens the cycle nor frees the Son for a retry.
+    const WalkoutCycleRules rules = WalkoutRulesFromRow(3, 60.0f);
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 72000);
+    WalkoutNoteShot(s);
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Abort, 3000, rules));
+    CHECK(s.walkedSons.size() == 1 && s.walkedSons[0] == 100);
+    CHECK(s.cycleSpent);
+    CHECK(s.returner == 7);
+}
+
 static void TestStandCandidatesFan()
 {
     BossAnchorCircle c;
@@ -808,6 +843,8 @@ int main()
     TestWalkoutEndFreesSon();
     TestThreatPickUsesTheRunningReference();
     TestShotStall();
+    TestStandMoveRestartsTheStallClock();
+    TestAnAbortAfterTheShotKeepsTheCycleClosed();
     TestStandCandidatesFan();
     TestWalkoutRetryNeverStarts();
     TestCastFailExcludesPuller();

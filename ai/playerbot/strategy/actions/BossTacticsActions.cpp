@@ -1053,6 +1053,8 @@ struct WalkoutRecord
     float scanRayDeg = 0.0f;                // the fan offset that gave the stand
     std::uint32_t noStandLogMs = 0;         // the "no stand" row's throttle
     std::uint32_t noSonLogMs = 0;           // the "no son" row's throttle
+    std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
+    std::uint32_t lateLogMs = 0;            // the "late" row's throttle
     WalkoutCycleRules rules;                // the seek_pull row's rules the task runs under (defaults: the old ones)
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
@@ -1953,8 +1955,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             {
                 bool const before = WalkoutBusy(it->second.state);
                 // A seek_pull row: the puller-side aborts free the Son for the retry and sit the puller out; a
-                // Son-side end and a timeout keep it walked this cycle.
-                bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort &&
+                // Son-side end, a timeout and an abort after the shot keep it walked this cycle.
+                bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort && !it->second.state.shot &&
                     WalkoutEndFreesSon(problem ? problem : "son gone");
                 std::uint64_t const walkedSon = it->second.state.son;
                 reopened = WalkoutFinish(it->second.state, end, nowMs, rules);
@@ -2061,6 +2063,31 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
+    // A seek_pull row's start needs firstStartMinMs left to the siphon; a retry this late is not worth the scan.
+    if (wanted && sPlayerbotAIConfig.dungeonRunSeekPullCycle && rules.firstStartMinMs != 0 &&
+        dueInMs < rules.firstStartMinMs)
+    {
+        bool lateLog = false;
+        {
+            std::lock_guard<std::mutex> lock(g_walkoutMutex);
+            WalkoutRecord& record = g_walkouts[instanceId];
+            record.bossGuid = boss->GetObjectGuid().GetRawValue();
+            record.touchedMs = nowMs;
+            record.rules = rules;
+            if (nowMs - record.lateLogMs >= 10000)
+            {
+                record.lateLogMs = nowMs;
+                lateLog = true;
+            }
+        }
+        if (lateLog)
+        {
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out late due=%u", dueInMs / 1000);
+            LogSeekWalkout(ai, info1);
+        }
+        return;
+    }
     if (!wanted || !WalkoutCycleOpen(state, cycleNo, rules) ||
         !WalkoutRetryStartInTime(state, cycleNo, nowMs, rules))
         return;
@@ -2117,6 +2144,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // only when none has one is "no stand" logged.
         bool noStandLog = false;
         bool noSonLog = false;
+        bool noPullerLog = false;
         if (!scan.blocked && !sons.empty())
         {
             float reachYd = WalkoutShotRangeYd(false);
@@ -2167,6 +2195,14 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 record.noStandLogMs = nowMs;
                 noStandLog = true;
             }
+            // A stand was found, but no eligible puller has a path to it (the hunter-only pass included): the row
+            // says so once per instance per 10 s, like "no son".
+            if (rules.perCycleWalked && !scan.blocked && scan.stand && scan.puller == 0 &&
+                nowMs - record.noPullerLogMs >= 10000)
+            {
+                record.noPullerLogMs = nowMs;
+                noPullerLog = true;
+            }
             // Every Son near is walked this cycle already: the row says so, throttled like "no stand".
             if (rules.perCycleWalked && !scan.blocked && sons.empty() &&
                 nowMs - record.noSonLogMs >= 10000)
@@ -2177,6 +2213,13 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         if (noStandLog)
             LogSeekWalkout(ai, "seek pull: walk-out no stand");
+        if (noPullerLog)
+        {
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f",
+                     scan.x, scan.y, scan.reachYd);
+            LogSeekWalkout(ai, info1);
+        }
         if (noSonLog)
         {
             char info1[96];
@@ -7043,10 +7086,12 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             const float range = WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER);
             const float sonYd = bot->GetDistance(task.source);
             // The stand's arrival starts the shot-stall clock: in shot range with the floor and the sight line, or at
-            // the stand itself (a stand whose sight line is blocked still reads as arrived).
-            if (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||
-                (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
-                 bot->IsWithinLOSInMap(task.source)))
+            // the stand itself (a stand whose sight line is blocked still reads as arrived). Only a seek_pull row's
+            // rules read that clock.
+            if (sPlayerbotAIConfig.dungeonRunSeekPullCycle &&
+                (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||
+                 (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
+                  bot->IsWithinLOSInMap(task.source))))
                 NoteSeekWalkoutAtStand(bot);
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {

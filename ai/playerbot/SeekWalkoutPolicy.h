@@ -501,17 +501,24 @@ namespace ai
         return nowMs - s.standMs >= kSeekWalkoutReplanMs;
     }
 
-    // One re-plan: a found stand replaces the old one and restarts the no-stand clock; none keeps the old stand and
-    // runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
+    // One re-plan: a found stand replaces the old one and restarts the no-stand clock (a stand that moved more than
+    // kSeekWalkoutStandArriveYd also restarts the shot-stall clock: the puller stands at a new spot); none keeps the
+    // old stand and runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
     inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs)
     {
         s.standMs = nowMs;
         if (found)
         {
+            float const dx = x - s.standX;
+            float const dy = y - s.standY;
+            bool const moved = dx * dx + dy * dy >
+                kSeekWalkoutStandArriveYd * kSeekWalkoutStandArriveYd;
             s.standX = x;
             s.standY = y;
             s.standZ = z;
             s.noStandSinceMs = 0;
+            if (moved)
+                s.atStandSinceMs = 0;
             return false;
         }
         if (s.noStandSinceMs == 0)
@@ -579,14 +586,14 @@ namespace ai
 
     // The task ends: a Back end is inside already; a timeout or an abort leaves the puller outside, so its walk back
     // starts (exempt for kSeekWalkoutReturnMs at most). A timeout undoes the task's cycle mark when a retry is allowed
-    // (its Son stays walked, so the retry goes to another one); a seek_pull row reopens on an abort too. With the
-    // defaults that is never. True: the cycle was reopened.
+    // (its Son stays walked, so the retry goes to another one); a seek_pull row reopens on an abort too, but never
+    // after the shot landed (that walk-out did happen). With the defaults that is never. True: the cycle was reopened.
     inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs,
                               const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         bool reopened = false;
         if ((end == WalkoutEnd::Timeout || (rules.reopenOnAbort && end == WalkoutEnd::Abort)) &&
-            WalkoutActive(s) && WalkoutRetryAllowed(s, nowMs, rules))
+            WalkoutActive(s) && !s.shot && WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;
             s.lastCycle = s.prevLastCycle;

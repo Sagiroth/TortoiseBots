@@ -381,5 +381,53 @@ class SeekWalkoutSeekPull(unittest.TestCase):
         self.assertIn("lateLeadMs = static_cast<std::uint32_t>(pull->param * 1000.0f);", read)
 
 
+class SeekWalkoutRound2(unittest.TestCase):
+    """The seek_pull gate text, the fan literal and the glue calls a cold review found unpinned."""
+
+    def test_the_seek_pull_row_is_read_only_behind_the_flag(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        gated = ("if (sPlayerbotAIConfig.dungeonRunSeekPullCycle)\n"
+                 "    {\n"
+                 "        if (const BossTacticRow* const pull =\n"
+                 "                GetBossTactics().SeekPullRow(")
+        for fn in (update, read):
+            self.assertIn(gated, fn)
+            # The row lookup and its use sit inside the gate's block, closed right after it.
+            block = fn[fn.index(gated) + len(gated):]
+            self.assertIn(");", block)
+            self.assertLess(block.index(");"), block.index("    }\n"))
+
+    def test_the_stand_fan_keeps_the_son_heading_first(self):
+        stand = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("for (float const offset : {0.0f, 10.0f, -10.0f, 20.0f, -20.0f})", stand)
+
+    def test_the_glue_paths_keep_their_arguments(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        # The per-cycle walked list arms the free, and a landed shot never frees its Son.
+        self.assertIn("bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort && !it->second.state.shot &&",
+                      update)
+        # The hunter-only pass reaches the pick, and a no-stand abort keeps the Son walked under the seek row.
+        self.assertIn("state, nowMs, hunterOnly, rules);", update)
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules, !rules.perCycleWalked);", update)
+
+    def test_the_no_puller_row_is_throttled(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f"', update)
+        self.assertIn("noPullerLogMs", update)
+        self.assertIn("scan.stand && scan.puller == 0", update)
+
+    def test_a_late_start_returns_before_the_scan(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        gate = ("if (wanted && sPlayerbotAIConfig.dungeonRunSeekPullCycle && rules.firstStartMinMs != 0 &&\n"
+                "        dueInMs < rules.firstStartMinMs)")
+        self.assertIn(gate, update)
+        late = update[update.index(gate):]
+        self.assertIn('"seek pull: walk-out late due=%u"', late)
+        self.assertIn("lateLogMs", late)
+        # The late row and return come before the start scan's grid walk.
+        self.assertLess(update.index(gate), update.index("The start check's scan"))
+
+
 if __name__ == "__main__":
     unittest.main()
