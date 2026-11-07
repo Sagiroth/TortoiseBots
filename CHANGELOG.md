@@ -1,7 +1,5 @@
 # Changelog
 
-- Bots no longer get Gamemaster's Broom of Doom, Lucky Top Hat or Lucky Fishing Hat from any auto-gear path (`AiPlayerbot.RandomGearBlacklist` now ships with these three items), and the gear progression system also respects the blacklist.
-- Bots no longer get items players cannot really have from auto-gear: GM and developer gear, unreleased items with no way to obtain them, deprecated or test items, item level 0 gear and legendaries. Pool and hired bots already wearing one get it replaced on their next gear pass.
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.
 - Hakkar in Zul'Gurub: a Son of Hakkar on a healer or damage dealer is now taken by an off-tank, and killed if no tank takes it within seconds; the walk-out brings a Son only near the next Blood Siphon.

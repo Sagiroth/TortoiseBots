@@ -798,8 +798,10 @@ AiPlayerbot.RandomGearTabardsReplaceGuild = 0
 # Comma-separated item IDs that no auto-gear path hands out, e.g.
 # AiPlayerbot.RandomGearBlacklist = 12345,23456
 # Item IDs are on database.turtle-wow.org. The default blocks the GM-only
-# Gamemaster's Broom of Doom (10) and the prize hats Lucky Top Hat (163) and
-# Lucky Fishing Hat (19972); empty means nothing is blocked, and there is no
+# Gamemaster's Broom of Doom (10), the unobtainable trinket Fang of Alichos
+# (58260), the prize hats Lucky Top Hat (163) and Lucky Fishing Hat (19972),
+# and the event hats Red/Green Winter Hat (21524, 21525) and The Greatest
+# Wizzard Hat (7); empty means nothing is blocked, and there is no
 # separate on/off switch. The ban covers every auto-gear path including
 # .autogear and the gear progression system, and wins over the whitelist
 # below. A pool or hired bot already wearing a blocked item gets it replaced
@@ -812,7 +814,7 @@ AiPlayerbot.RandomGearTabardsReplaceGuild = 0
 # given by a quest), deprecated or test items, item level 0 outside shirt and
 # tabard, and legendary or better. These rules are always on; a pool or hired
 # bot wearing such an item gets it replaced the same way.
-AiPlayerbot.RandomGearBlacklist = 10,163,19972
+AiPlayerbot.RandomGearBlacklist = 10,163,19972,58260,21524,21525,7
 
 # Item ids always seeded on random gear regardless of the scoring rules below,
 # unless the id is also on the blacklist above. A whitelisted id also skips
