@@ -27,6 +27,17 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.20.4 (2026-11-07)
+
+### Guilds & Banks
+- Bots that join your guild now get the lowest rank instead of Officer. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- A rank you give a bot by hand now stays put, even after a server restart. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- `.bot order rank <n>` still moves all your bots to the same rank at once. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- Bank tab 1 now opens to the bots' rank so they can store and fetch order materials there. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+- The bank tab change shows up after a server restart, so restart twice if you just updated. [#1554](https://github.com/Sagiroth/TortoiseBots/pull/1554)
+
+---
+
 ## v1.20.3 (2026-11-07)
 
 ### World & Bots
