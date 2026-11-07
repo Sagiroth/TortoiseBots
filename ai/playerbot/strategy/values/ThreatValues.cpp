@@ -242,5 +242,5 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (maxThreat > 0 && fleeing)
         return 0;
 
-    return botThreat * 100 / maxThreat;
+    return ThreatPctSaturated(botThreat, maxThreat);
 }

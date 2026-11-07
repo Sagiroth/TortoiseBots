@@ -203,10 +203,38 @@ namespace ai
     }
 
     // A Son that has fought a non-tank this long goes to the first off-tank (SeekTakeFightingSonOnHealer); this long
-    // plus 4 s and no tank took it, the hold lets the damage dealers kill it (SeekHoldDecision). Walk 41: a Son sat on a
-    // healer at 100 % for 13 s and the siphon went undosed behind it.
-    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
-    constexpr std::uint32_t kSeekNonTankBurnMs = kSeekHealerTakeMs + 4000;
+    // and no tank took it, the hold lets the damage dealers kill it (SeekHoldDecision). Walk 41: a Son sat on a healer
+    // at 100 % for 13 s and the siphon went undosed behind it. Walk 48: the old 8 s take and 12 s release still left
+    // the held Sons at a median 26.5 s, and 12 of the 23 losses were Son wipes, so both steps are shorter.
+    constexpr std::uint32_t kSeekHealerTakeMs = 3000;
+    constexpr std::uint32_t kSeekNonTankBurnMs = 5000;
+
+    // A hold the fight keeps longer than this is released to the damage dealers whatever the window, the gather or the
+    // Son's health say: walk 48's held Sons lasted a median 26.5 s (p75 47 s, max 126 s), and the losses with a
+    // walk-out lost 8.8 members to Sons a fight against 4.5 without. A lost cloud costs less than a Son wipe. Only
+    // fighting time counts (SeekHoldClockTicks): a spare waiting at its spawn is the reservoir, not a stall.
+    constexpr std::uint32_t kSeekHoldMaxMs = 20000;
+
+    // Whether this read feeds the hold clock. Only a Son fighting a victim (`engaged`) counts toward the 20 s cap, so
+    // a spare standing at its spawn or waiting out a shut window never enters it: the hold rule holds every
+    // non-selected Son wherever it stands, and a clock on that would release the whole reservoir for good after 20 s,
+    // after which the area veto stops protecting the Sons later siphons need. The cap itself reaches the selected
+    // source, and a Son on a tank inside the window (`victimTank`: the Son's victim is a player tank). A Son on a
+    // non-tank is the healer clock's (SeekHealerClockTick).
+    inline bool SeekHoldClockTicks(bool selected, bool engaged, bool victimTank, bool windowOpen)
+    {
+        return engaged && (selected || (victimTank && windowOpen));
+    }
+
+    // Whether one read feeds the shared hold clock: a Son this read saw alive, that the clock counts
+    // (SeekHoldClockTicks) and that the hold rule still holds. A read of a Son seen dead erases its record and a
+    // read that does not tick a live Son changes nothing (SeekHoldClockTick), so another bot may keep feeding it.
+    // Every other Son is left out: an idle spare never gets a record, so the cap can never release the reservoir the
+    // area veto protects; a Son the rule already releases is damageable and needs no clock.
+    inline bool SeekSonTicks(bool seenAlive, bool ticks, bool holds)
+    {
+        return seenAlive && ticks && holds;
+    }
 
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
@@ -217,10 +245,15 @@ namespace ai
     //
     // `nonTankHeldMs` is how long the Son has been fighting a non-tank (0: on a tank, or no victim). Past
     // kSeekNonTankBurnMs it is no longer held, whatever else holds it: the off-tank had kSeekHealerTakeMs to take it
-    // and 4 s more, and a Son left on the raid costs more than the cycle's cloud (walk 45: six deaths behind one hold).
+    // and a moment more, and a Son left on the raid costs more than the cycle's cloud (walk 45: six deaths behind one
+    // hold). `heldMs` is how long the fight has held this Son while it fought (0: not held); past kSeekHoldMaxMs it is
+    // released too. The clock behind it counts fighting time only (SeekHoldClockTicks).
     inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
-        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0)
+        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0,
+        std::uint32_t heldMs = 0)
     {
+        if (heldMs >= kSeekHoldMaxMs)
+            return false;
         if (nonTankHeldMs >= kSeekNonTankBurnMs)
             return false;
         if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)

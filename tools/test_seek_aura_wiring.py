@@ -132,7 +132,7 @@ class SeekWalkWiring(unittest.TestCase):
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
                      "SeekPullRoleOf(", "SeekPullHitExemptOnLatch(", "SeekRolledDueMs(", "SeekLateEngagedBurn(",
-                     "SeekHealerClockTick(", "SeekHealerTakeGuid("):
+                     "SeekHealerClockTick(", "SeekHealerTakeGuid(", "SeekHoldClockTicks("):
             self.assertIn(rule, ACTIONS, rule)
         # SeekTakeFightingSonOnHealer is called by SeekHealerTakeGuid, the state policy's own rule.
         self.assertIn("SeekTakeFightingSonOnHealer(", STATE_POLICY)

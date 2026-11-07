@@ -781,6 +781,8 @@ struct SeekFight
     // The fight's Sons on a non-tank, and since when (the healer clock): the hold lets one go once it has sat there too
     // long (SeekHoldDecision's non-tank time).
     std::map<std::uint64_t, SeekHeldSon> nonTankSince;
+    // When each Son entered the hold (the hold clock): the 20 s cap releases it to the damage dealers.
+    std::map<std::uint64_t, SeekHeldSon> holdSince;
     // The boss's anchor centre (its spawn), when the boss has an anchor row: the seek's reach is measured from it
     // too (SeekReachYd).
     bool anchored = false;
@@ -2063,6 +2065,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     out.shotZ = scan.z;
 }
 
+// Defined after SeekHoldsUnit (the hold clock reads it); ReadSeekFight calls it under the record lock.
+void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs);
+
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
 bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
@@ -2518,6 +2524,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
         healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
         out.nonTankSince = record.healerHeldSince;
+        TickSeekHoldClock(out, fightSons, record, nowMs);
     }
     if (healerTakeGuid)
     {
@@ -2575,7 +2582,35 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
     const float holdPct = static_cast<float>(state.row->priority);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
                             unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
-                            SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+                            SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs),
+                            SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+}
+
+// The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
+// from the previous read, then tick, so one bot's read sees one consistent hold time. Only fighting time counts, and a
+// Son the cap already released keeps its release while it is alive and seen (SeekHoldClockTick); an idle spare never
+// gets a record, so the cap cannot release one the area veto protects. A read that does not tick a Son (it selected
+// another Son, or none) leaves that Son's record alone: the record is fight-wide and another bot may be feeding it.
+void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs)
+{
+    out.holdSince = record.holdSince;
+    std::vector<SeekHoldSeen> holdSeen;
+    holdSeen.reserve(fightSons.size());
+    for (Unit* const son : fightSons)
+    {
+        const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+        Unit* const victim = son->GetVictim();
+        const bool engaged = sServerFacade.IsAlive(son) && son->IsInCombat() && victim;
+        Player* const victimPlayer = engaged ? dynamic_cast<Player*>(victim) : nullptr;
+        const bool victimTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+        const bool alive = IsSeekSource(out, son);
+        const bool ticks = SeekSonTicks(alive, SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen),
+                                        SeekHoldsUnit(out, son));
+        holdSeen.push_back(SeekHoldSeen{guid, alive, ticks});
+    }
+    SeekHoldClockTick(record.holdSince, holdSeen, nowMs);
+    out.holdSince = record.holdSince;
 }
 
 // The source a single-target damage action would hit: its own target. The read's source alone used to answer the area

@@ -3,6 +3,8 @@
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
+#include "playerbot/ThreatCapPolicy.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
@@ -757,10 +759,11 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool HighThreatTrigger::IsActive()
 {
-    if (FankrissBurnSpawn(ai, AI_VALUE(Unit*, "current target"))) return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
     uint8 relativeThreat = AI_VALUE2(uint8, "threat", "current target");
 
-    if (relativeThreat >= 80)
+    if (relativeThreat >= ThreatHighLinePct(ThreatSuccessorTarget(target)))
     {
         //Watch delta.
         uint32 lastTime = MEM_AI_VALUE(float, "my threat::current target")->GetLastTime();
@@ -794,6 +797,28 @@ bool MediumThreatTrigger::IsActive()
         return true;
 
     return false;
+}
+
+// The `threat_successor` high line owns the auto-attack, the wand's Shoot and Auto Shot: the actions that start them
+// carry no threat type (or the core keeps the auto-repeat running without one), so the multiplier's exemption let them
+// climb past the off-tank. Over the successor line this trigger stops them (StopAutoAttackAction), under the resume
+// line it lets them start again; the bot's latch sits between the two. Tanks are never stopped, and a fight without
+// the row keeps the plain 80 % line.
+bool SuccessorThreatCapTrigger::IsActive()
+{
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
+    if (!AI_VALUE(bool, "group")) return false;
+    if (AI_VALUE(bool, "neglect threat")) return false;
+    // The row decides before the percentage is read: a trash target never pays for the tank scan the threat value
+    // costs, and the read clears the bot's latch so the next boss starts from the high line.
+    if (!ThreatSuccessorTarget(target))
+    {
+        ai->SuccessorThreatCap().Update(false, false, 0);
+        return false;
+    }
+    return ai->SuccessorThreatCap().Update(true, PlayerbotAI::IsTank(bot),
+        AI_VALUE2(uint8, "threat", "current target"));
 }
 
 bool LowTankThreatTrigger::IsActive()

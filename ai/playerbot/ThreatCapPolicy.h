@@ -12,10 +12,75 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace ai
 {
+    // The high-threat line, as a percentage of the reference tank's threat (ThreatValue::Calculate): the damage
+    // back-off vetoes single-target attacks at or above it. Every ordinary fight keeps 80 %. A boss whose data names
+    // a threat successor (`threat_successor`, Hakkar and Jin'do) can never be taunted back, and Cause Insanity deletes
+    // the charmed tank's threat, so the damage dealers leave a deeper margin under the off-tank: 65 %. Walk 48
+    // measured the leak at 80 %: inside the 10 s charm windows Hakkar stood on a non-tank 35 % of the frames against
+    // 21 % outside, and non-tank deaths from his melee ran 2.5x faster there.
+    constexpr std::uint8_t kThreatHighLinePct = 80;
+    constexpr std::uint8_t kThreatSuccessorHighLinePct = 65;
+
+    // The line the auto-attack resumes under once the successor cap stopped it. The cap's stop is not re-decided from
+    // the high line every tick: a threat read that wobbles around 65 % (one tank scan more or less) would otherwise
+    // start and stop the auto-repeat every tick, and the stop action's own interrupt would keep the bot from ever
+    // swinging. The band is deliberately wide: resuming means the off-tank has regained the margin.
+    constexpr std::uint8_t kThreatSuccessorResumePct = 58;
+
+    inline std::uint8_t ThreatHighLinePct(bool successorTarget)
+    {
+        return successorTarget ? kThreatSuccessorHighLinePct : kThreatHighLinePct;
+    }
+
+    // The percentage a damage dealer's threat reads against the reference tank's (ThreatValue::Calculate), saturated to
+    // the uint8 the threat values carry. botThreat * 100 / maxThreat above 255 used to wrap (300 % read as 44 %), and
+    // the cap then let the attack through exactly where the margin matters most. `maxThreat` <= 0 is the caller's "no
+    // reference" answer, kept at 0. The float-to-uint8 cast truncates exactly as the callers' implicit one did.
+    inline std::uint8_t ThreatPctSaturated(float botThreat, float maxThreat)
+    {
+        if (maxThreat <= 0.0f)
+            return 0;
+        const float pct = botThreat * 100.0f / maxThreat;
+        if (pct >= 255.0f)
+            return 255;
+        if (pct <= 0.0f)
+            return 0;
+        return static_cast<std::uint8_t>(pct);
+    }
+
+    // Whether a `threat_successor` boss's cap stops the bot's auto-attack, wand Shoot and Auto Shot. All three carry
+    // no threat type of their own (or run as the core's auto-repeat), so the old multiplier exempted them and a damage
+    // dealer at 80-99 % of the off-tank kept adding threat inside a charm. Tanks are never stopped: holding the boss
+    // is their job. `latched` is this bot's previous answer (SuccessorCapHysteresis): once stopped it stays stopped
+    // until the threat falls under kThreatSuccessorResumePct.
+    inline bool SuccessorCapStopsAutoAttack(bool successorTarget, bool tank, std::uint8_t threatPct,
+        bool latched = false)
+    {
+        if (!successorTarget || tank)
+            return false;
+        return threatPct >= (latched ? kThreatSuccessorResumePct : kThreatSuccessorHighLinePct);
+    }
+
+    // One bot's auto-attack stop, kept across ticks so the band in SuccessorCapStopsAutoAttack can decide: the first
+    // read at or over the high line stops the attack, and every read after it keeps it stopped until the threat falls
+    // under the resume line. Every read advances the state, so a trash target or a tank clears it and the next boss
+    // starts from the high line again.
+    struct SuccessorCapHysteresis
+    {
+        bool stopped = false;
+
+        bool Update(bool successorTarget, bool tank, std::uint8_t threatPct)
+        {
+            stopped = SuccessorCapStopsAutoAttack(successorTarget, tank, threatPct, stopped);
+            return stopped;
+        }
+    };
+
     // One tank on the target as the caller resolved it from the raid's tank order (GetRaidTankRoles): index 0 is the
     // main tank, every later one an assigned off-tank.
     struct ThreatCapTank
