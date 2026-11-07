@@ -797,17 +797,28 @@ AiPlayerbot.RandomGearTabardsReplaceGuild = 0
 
 # Comma-separated item IDs that no auto-gear path hands out, e.g.
 # AiPlayerbot.RandomGearBlacklist = 12345,23456
-# Item IDs are on database.turtle-wow.org. Empty (default) means nothing is
-# blocked, and there is no separate on/off switch. The ban covers every
-# auto-gear path including .autogear, and wins over the whitelist below. A
-# pool or hired bot already wearing a blocked item gets it replaced or
-# removed on its next gear pass; real players and owned bots keep whatever
+# Item IDs are on database.turtle-wow.org. The default blocks the GM-only
+# Gamemaster's Broom of Doom (10), the unobtainable trinket Fang of Alichos
+# (58260), the prize hats Lucky Top Hat (163) and Lucky Fishing Hat (19972),
+# and the event hats Red/Green Winter Hat (21524, 21525) and The Greatest
+# Wizzard Hat (7); empty means nothing is blocked, and there is no
+# separate on/off switch. The ban covers every auto-gear path including
+# .autogear and the gear progression system, and wins over the whitelist
+# below. A pool or hired bot already wearing a blocked item gets it replaced
+# or removed on its next gear pass; real players and owned bots keep whatever
 # they wear, and items a bot finds itself (loot, quest rewards, auction
 # house) are unaffected.
-AiPlayerbot.RandomGearBlacklist =
+# Besides this list, auto-gear (except the gear progression system and the
+# curated hire kits) never hands out items players cannot really have: no
+# known source (not dropped, sold, crafted, fished, found in a container or
+# given by a quest), deprecated or test items, item level 0 outside shirt and
+# tabard, and legendary or better. These rules are always on; a pool or hired
+# bot wearing such an item gets it replaced the same way.
+AiPlayerbot.RandomGearBlacklist = 10,163,19972,58260,21524,21525,7
 
 # Item ids always seeded on random gear regardless of the scoring rules below,
-# unless the id is also on the blacklist above.
+# unless the id is also on the blacklist above. A whitelisted id also skips
+# the "items players cannot really have" rules above.
 #AiPlayerbot.RandomGearWhitelist =
 
 # Roll need on items if slot is empty or broken, even if not appropriate for bot's spec

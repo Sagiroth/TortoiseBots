@@ -25,6 +25,12 @@ namespace ai
         bool pet;
         bool incomingHeal;
         bool inLos = true;
+        // A Shade of Jin'do (a needs_aura unit) attacks it (t1105h J1): healed one urgency band earlier, with the
+        // tank's in-band lead. The Shade's victim is a healer half the time and dies in seconds.
+        bool hunted = false;
+        // CapHuntedBoost set it: a tank is in this member's raw band or a more urgent one, so the hunt keeps only the
+        // in-band lead and never lifts it over that tank.
+        bool boostCapped = false;
     };
 
     inline float PredictedHealHealth(HealingCandidate const& candidate)
@@ -45,13 +51,33 @@ namespace ai
         return health < bands.almostFull && (!candidate.incomingHeal || health < bands.medium);
     }
 
-    inline unsigned HealingUrgency(HealingCandidate const& candidate, HealingBands const& bands)
+    // The member's own band, before any hunt boost: 0 critical, 1 low, 2 medium, 3 above.
+    inline unsigned HealingRawBand(HealingCandidate const& candidate, HealingBands const& bands)
     {
         float const health = PredictedHealHealth(candidate);
-        unsigned const band = health < bands.critical ? 0 : health < bands.low ? 1
-            : health < bands.medium ? 2 : 3;
+        return health < bands.critical ? 0 : health < bands.low ? 1 : health < bands.medium ? 2 : 3;
+    }
+
+    inline unsigned HealingUrgency(HealingCandidate const& candidate, HealingBands const& bands)
+    {
+        unsigned band = HealingRawBand(candidate, bands);
+        if (candidate.hunted && !candidate.boostCapped && !candidate.tank && band > 0)
+            --band;
         // Pets are a fallback, not competitors for an injured raid member's slot.
         return band + (candidate.pet ? 4 : 0);
+    }
+
+    // The hunt boost never lifts a non-tank over a tank in a more urgent band (t1105h review): over the whole list, a
+    // hunted non-tank whose raw band a tank's band equals or beats keeps only the in-band lead (boostCapped). Run once
+    // before the sort, so HealingPriority stays a per-candidate order (a pairwise rule would not be transitive).
+    inline void CapHuntedBoost(std::vector<HealingCandidate>& candidates, HealingBands const& bands)
+    {
+        unsigned bestTank = 4;
+        for (HealingCandidate const& candidate : candidates)
+            if (candidate.tank && !candidate.pet)
+                bestTank = std::min(bestTank, HealingRawBand(candidate, bands));
+        for (HealingCandidate& candidate : candidates)
+            candidate.boostCapped = candidate.hunted && !candidate.tank && bestTank <= HealingRawBand(candidate, bands);
     }
 
     // A visible eligible target prevents opportunistic pursuit behind a wall.
@@ -80,8 +106,8 @@ namespace ai
         // Small tank preference within a band; in emergencies the lowest health wins.
         if (leftBand != 0)
         {
-            leftHealth -= left.tank ? 10.0f : 0.0f;
-            rightHealth -= right.tank ? 10.0f : 0.0f;
+            leftHealth -= left.tank || left.hunted ? 10.0f : 0.0f;
+            rightHealth -= right.tank || right.hunted ? 10.0f : 0.0f;
         }
         if (leftHealth != rightHealth)
             return leftHealth < rightHealth;

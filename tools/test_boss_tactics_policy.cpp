@@ -72,6 +72,63 @@ static AuraOnMember Aura(std::uint32_t spellId, std::uint32_t dispelType)
     return aura;
 }
 
+// t1106b: a Delusions carrier turns on its Shade out to the hold reach (40 yd), melee and ranged alike; the old
+// 15/30 yd first override left 49 % of cursed ranged DPS on Jin'do with a Shade within 5 yd. A bot without the curse
+// has no gated row (the fight scan drops it), so it never takes a Shade.
+static void TestCarrierPicksItsShadeAt35Yd()
+{
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    rows.push_back(Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 2));
+    std::vector<BossTacticRow> uncursed(rows.begin() + 1, rows.end());
+
+    ActiveBossRows active = Active(rows);
+    CHECK(HasCarrierKillFirstRow(active));
+    CHECK(KillFirstPickModeFor(true, true, true, HasCarrierKillFirstRow(active)) == KillFirstPickMode::Carrier);
+    // The carrier picks its Shade at 35 yd, melee and ranged alike (there is one reach).
+    std::vector<TacticCandidate> shades(1);
+    shades[0].entry = 14986;
+    shades[0].distance = 35.0f;
+    shades[0].pickable = true;
+    CHECK(PickCarrierOverride(active, shades, kCarrierHoldReachYd) == 0);
+    // A free DPS takes it too, and the Shade outranks the totem.
+    CHECK(PickKillFirst(active, shades) == 0);
+    // No curse: no gated row, no carrier mode, and no pick of a Shade the bot could not hurt.
+    ActiveBossRows plain = Active(uncursed);
+    CHECK(!HasCarrierKillFirstRow(plain));
+    CHECK(KillFirstPickModeFor(true, true, true, HasCarrierKillFirstRow(plain)) == KillFirstPickMode::None);
+    CHECK(PickCarrierOverride(plain, shades, kCarrierHoldReachYd) == -1);
+    CHECK(PickKillFirst(plain, shades) == -1);
+}
+
+// t1106b: the kill-first no-switch row's reason and the direct-damage-only rule a needs_aura subject (the Shade) has:
+// a DoT cast at it and the pet sent at it are refused (BossTacticsKillFirstAction, DotCastAtTarget, CanPetAttack).
+static void TestCarrierNoSwitchReasonAndDirectOnly()
+{
+    CHECK(CarrierNoSwitchReason(false, true, true, 5.0f, kCarrierHoldReachYd) == CarrierNoSwitch::None);
+    CHECK(CarrierNoSwitchReason(true, false, false, 0.0f, kCarrierHoldReachYd) == CarrierNoSwitch::NoShade);
+    CHECK(CarrierNoSwitchReason(true, true, false, 5.0f, kCarrierHoldReachYd) == CarrierNoSwitch::NotAttackable);
+    CHECK(CarrierNoSwitchReason(true, true, true, 41.0f, kCarrierHoldReachYd) == CarrierNoSwitch::BeyondReach);
+    CHECK(CarrierNoSwitchReason(true, true, true, 39.0f, kCarrierHoldReachYd) == CarrierNoSwitch::None);
+    CHECK(AuraGatedDirectOnlyDamage(true, 24306));
+    CHECK(!AuraGatedDirectOnlyDamage(false, 24306));
+    CHECK(!AuraGatedDirectOnlyDamage(true, 0));
+}
+
+// t1106b round 2: "current target" can already name the pick while the live victim is another unit (or none), and the
+// old current-target-only test left the trigger off for the rest of the fight. The trigger must fire and the action
+// must re-attack the pick, not only log.
+static void TestKillFirstReattacksAStalePick()
+{
+    CHECK(!KillFirstNeedsAttack(false, false, false)); // no pick: nothing to attack
+    CHECK(KillFirstNeedsAttack(true, false, false));   // another current target
+    CHECK(KillFirstNeedsAttack(true, false, true));    // another current target, already swinging at the pick
+    CHECK(KillFirstNeedsAttack(true, true, false));    // bookkeeping says pick, live victim another unit or none
+    CHECK(!KillFirstNeedsAttack(true, true, true));    // already on it
+}
+
 static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable = true)
 {
     TacticCandidate c;
@@ -172,6 +229,9 @@ static CastDangerZone Zone(float x, float y, float z, float radius)
 int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
+    TestCarrierPicksItsShadeAt35Yd();
+    TestCarrierNoSwitchReasonAndDirectOnly();
+    TestKillFirstReattacksAStalePick();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
@@ -2985,6 +3045,10 @@ int main()
     CHECK(!AuraGateRefuses(true, 24306, true));   // NeedsAuraAllowsCarrier
     CHECK(!AuraGateRefuses(false, 24306, false)); // NeedsAuraKeyOffAllowsAll
     CHECK(!AuraGateRefuses(true, 0, false));      // NeedsAuraNoRowAllowsAll
+    CHECK(!CombatGateApplies(true, 24306, true));  // TestCarrierSkipsCombatGate
+    CHECK(CombatGateApplies(true, 24306, false));  // TestUncursedKeepsCombatGate
+    CHECK(CombatGateApplies(false, 24306, true));  // TestKeyOffKeepsCombatGate
+    CHECK(CombatGateApplies(true, 0, true));       // TestNoRowKeepsCombatGate
     {
         BossTacticRow shade = Row(309, 11380, BossTacticKind::NeedsAura, 14986, 24306);
         {
@@ -3152,6 +3216,132 @@ int main()
             CHECK(!table.HasThreatSuccessor(309, 11357));
             CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
         }
+    }
+
+    // t1105h J1: a Delusions 24306 carrier turns on its Shade of Jin'do 14986 even under an explicit attack order (the
+    // run's focus and the 3 s ward refocus give every DPS one). The scan already dropped the gated row for a bot without
+    // the aura, so an open aura-gated kill_first row means "this bot carries it".
+    {
+        std::vector<BossTacticRow> jindo;
+        BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986, 0, 0);
+        shade.botAura = 24306;
+        jindo.push_back(shade);
+        jindo.push_back(Row(309, 11380, BossTacticKind::KillFirst, 14987, 0, 1));
+        jindo.push_back(Row(309, 11380, BossTacticKind::KillFirst, 15112, 0, 2));
+        std::vector<BossTacticRow> uncursed(jindo.begin() + 1, jindo.end()); // the scan without the gated row
+        CHECK(HasCarrierKillFirstRow(Active(jindo)));
+        CHECK(!HasCarrierKillFirstRow(Active(uncursed)));
+        // TestDelusionsCarrierPicksShadeOverOrder: a DPS under an order is in the carrier mode only while it carries.
+        // Arguments: battle DPS, an explicit order, the order is the run's automation, a carrier row open.
+        CHECK(KillFirstPickModeFor(true, false, false, false) == KillFirstPickMode::Free);
+        CHECK(KillFirstPickModeFor(true, false, false, true) == KillFirstPickMode::Free);
+        // Automated focus + curse: the carrier switches to the Shade.
+        CHECK(KillFirstPickModeFor(true, true, true, true) == KillFirstPickMode::Carrier);
+        // TestUncursedBotIgnoresShadeUnderOrder: the order holds for an uncursed DPS, as before.
+        CHECK(KillFirstPickModeFor(true, true, true, false) == KillFirstPickMode::None);
+        // Player focus + curse (Codex HIGH, t1105h review): the player's target wins, no override.
+        CHECK(KillFirstPickModeFor(true, true, false, true) == KillFirstPickMode::None);
+        // Tanks and healers keep their jobs, cursed or not.
+        CHECK(KillFirstPickModeFor(false, false, false, true) == KillFirstPickMode::None);
+        CHECK(KillFirstPickModeFor(false, true, true, true) == KillFirstPickMode::None);
+        // The order is the automation's only while the run's own mark names the explicit target.
+        CHECK(OrderIsAutomated(0x500, 0x500));
+        CHECK(!OrderIsAutomated(0x500, 0x501));   // a player's order to another unit since
+        CHECK(!OrderIsAutomated(0x500, 0));       // a player's order (the mark is cleared by every command commit)
+        CHECK(!OrderIsAutomated(0, 0));           // no order at all
+        // Codex HIGH (f621c7d96): a run attack held for a bot out of control and fired later is still the run's. The run
+        // flag is recorded when the order is held (not read when it fires, outside the run's issuing), and the commit's
+        // cleared mark is set again from it.
+        {
+            std::uint64_t const target = 0x700;
+            // The deferred run attack: the commit cleared the mark, the held record says the run issued it.
+            std::uint64_t const deferredMark = RunOrderMark(true, true, target, 0);
+            CHECK(deferredMark == target);
+            CHECK(KillFirstPickModeFor(true, true, OrderIsAutomated(target, deferredMark), true) ==
+                KillFirstPickMode::Carrier);  // + curse: the carrier switches to its Shade
+            // A player's order (immediate or held): the mark stays cleared, the player's target wins.
+            std::uint64_t const playerMark = RunOrderMark(false, true, target, 0);
+            CHECK(playerMark == 0);
+            CHECK(KillFirstPickModeFor(true, true, OrderIsAutomated(target, playerMark), true) ==
+                KillFirstPickMode::None);
+            // An order the bot did not take leaves the mark as it was.
+            CHECK(RunOrderMark(true, false, target, 0x123) == 0x123);
+        }
+        // The carrier pick: the nearest live Shade within the hold reach (40 yd, melee and ranged alike, t1106b), never
+        // the ward the order names.
+        std::vector<TacticCandidate> c(4);
+        c[0].entry = 14987; c[0].distance = 2.0f; c[0].pickable = true;  // the ordered ward, nearest of all
+        c[1].entry = 14986; c[1].distance = 25.0f; c[1].pickable = true; c[1].victimHealer = true;
+        c[2].entry = 14986; c[2].distance = 18.0f; c[2].pickable = true;
+        c[3].entry = 14986; c[3].distance = 3.0f; c[3].pickable = false; // dead or not attackable
+        CHECK(PickCarrierOverride(Active(jindo), c, kCarrierHoldReachYd) == 2); // the nearer living Shade
+        c[2].distance = 35.0f;
+        c[1].distance = 39.0f;
+        CHECK(PickCarrierOverride(Active(jindo), c, kCarrierHoldReachYd) == 2); // 35 yd, melee or ranged: in reach
+        c[2].distance = 41.0f;
+        CHECK(PickCarrierOverride(Active(jindo), c, kCarrierHoldReachYd) == 1); // past it: the other at 39 yd
+        CHECK(Near(kCarrierHoldReachYd, 40.0f));
+        c[2].distance = 4.0f;
+        CHECK(PickCarrierOverride(Active(jindo), c, kCarrierHoldReachYd) == 2);
+        CHECK(PickCarrierOverride(Active(uncursed), c, kCarrierHoldReachYd) == -1); // curse over: no override
+        // An ungated kill_first row never makes a carrier pick (the ward stays the order's).
+        std::vector<TacticCandidate> wardOnly(1, c[0]);
+        CHECK(PickCarrierOverride(Active(jindo), wardOnly, kCarrierHoldReachYd) == -1);
+        // TestZeroThreatShadePickedOverTotem: a fresh Shade sits at 0 threat for everyone, so a carrier that has not
+        // hit it yet has no combat-gate ticket (inCombat false) and skips the gate; anyone else keeps it.
+        for (bool const cursed : {true, false})
+        {
+            std::vector<TacticCandidate> zeroThreat(3);
+            zeroThreat[0].entry = 14986; zeroThreat[0].distance = 6.0f;
+            zeroThreat[0].pickable = !AuraGateRefuses(true, 24306, cursed) &&
+                (false /*inCombat*/ || !CombatGateApplies(true, 24306, cursed));
+            zeroThreat[1].entry = 14987; zeroThreat[1].distance = 3.0f; zeroThreat[1].pickable = true;
+            zeroThreat[2].entry = 15112; zeroThreat[2].distance = 2.0f; zeroThreat[2].pickable = true;
+            if (cursed)
+            {
+                CHECK(PickKillFirst(Active(jindo), zeroThreat) == 0);
+                CHECK(PickCarrierOverride(Active(jindo), zeroThreat, kCarrierHoldReachYd) == 0);
+            }
+            else
+            {
+                CHECK(PickKillFirst(Active(uncursed), zeroThreat) == 1);
+                CHECK(PickCarrierOverride(Active(uncursed), zeroThreat, kCarrierHoldReachYd) == -1);
+            }
+        }
+    }
+
+    // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.
+    {
+        BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);
+        CHECK(ParseBossTacticKind("tank_ignore") == BossTacticKind::TankIgnore);
+        {
+            BossTacticTable table;
+            CHECK(table.TankIgnoreBosses(309, 14826).empty()); // not sealed
+            CHECK(table.Add(ignore));
+            table.Seal();
+            CHECK(table.TankIgnoreBosses(309, 14826) == std::vector<std::uint32_t>{11380});
+            CHECK(table.TankIgnoreBosses(309, 11380).empty());
+            CHECK(table.TankIgnoreBosses(509, 14826).empty());
+        }
+        // The row's shape: a target, nothing else; read straight from the table, so no gate and no mode word.
+        BossTacticRow noTarget = ignore; noTarget.targetEntry = 0;
+        BossTacticRow spell = ignore; spell.spellId = 24306;
+        BossTacticRow gated = ignore; gated.hpMax = 50;
+        BossTacticRow aura = ignore; aura.botAura = 24306;
+        BossTacticRow mode = ignore; mode.mode = TacticMode::UntilTank;
+        for (const BossTacticRow& bad : {noTarget, spell, gated, aura, mode})
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        // TestTankNoTauntOnTankIgnoreEntry: a tank leaves the troll alone while Jin'do fights, a DPS never does.
+        auto const engaged = [](std::uint32_t boss) { return boss == 11380; };
+        auto const idle = [](std::uint32_t) { return false; };
+        std::vector<std::uint32_t> const bosses{11380};
+        CHECK(TankIgnoresUnit(true, bosses, engaged));
+        CHECK(!TankIgnoresUnit(false, bosses, engaged));          // DPS still kill the trolls
+        CHECK(!TankIgnoresUnit(true, bosses, idle));              // no Jin'do fight: a normal mob
+        CHECK(!TankIgnoresUnit(true, std::vector<std::uint32_t>{}, engaged)); // no row
     }
 
     std::cout << "All boss tactics policy tests passed.\n";

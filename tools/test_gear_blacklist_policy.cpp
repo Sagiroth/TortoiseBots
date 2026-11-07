@@ -2,7 +2,9 @@
 // is never handed out by any auto-gear path. Guards
 //  - the blacklist lookup (empty list blocks nothing),
 //  - blacklist-over-whitelist precedence,
-//  - worn blocked gear counting as empty for pool/hired bots only; real
+//  - the rules for gear players cannot really have (no source, retired or
+//    test data, item level 0, legendary) and the whitelist override,
+//  - worn forbidden gear counting as empty for pool/hired bots only; real
 //    players and owned bots keep whatever they wear.
 //
 // Build and run (from the repo root):
@@ -50,23 +52,78 @@ static void TestWhitelistPrecedence()
     CHECK(!GearWhitelistApplies(blacklist, false, 12345));
 }
 
+static void TestRetiredNames()
+{
+    CHECK(GearNameLooksRetired("Martin Thunder3 jesse test"));
+    CHECK(GearNameLooksRetired("JYoo test item"));
+    CHECK(GearNameLooksRetired("Zandalar Illusionist's Robe DEPRECATED"));
+    CHECK(GearNameLooksRetired("Blessed Qiraji Naturalist Staff UNUSED"));
+    CHECK(GearNameLooksRetired("Torka's Egg Cracker [UNUSED]"));
+    CHECK(GearNameLooksRetired("[PH] Rising Dawn Gloves"));
+    CHECK(GearNameLooksRetired("(OLD)Medium Throwing Knife"));
+    CHECK(GearNameLooksRetired("ZZZZZ sword"));
+    CHECK(GearNameLooksRetired("Test Fire Sword"));
+
+    CHECK(!GearNameLooksRetired("Testament of Hope"));
+    CHECK(!GearNameLooksRetired("The Greatest Wizzard Hat"));
+    CHECK(!GearNameLooksRetired("Agatestone Crown"));
+    CHECK(!GearNameLooksRetired("Lucky Top Hat"));
+    CHECK(!GearNameLooksRetired(""));
+}
+
+static void TestForbiddenRules()
+{
+    BotGearFacts plain;
+    CHECK(!BotGearForbidden(plain));
+
+    BotGearFacts f = plain;
+    f.blacklisted = true;
+    CHECK(BotGearForbidden(f));
+    f.whitelisted = true; // the blacklist still wins
+    CHECK(BotGearForbidden(f));
+
+    f = plain;
+    f.knownSource = false;
+    CHECK(BotGearForbidden(f));
+    f.whitelisted = true; // the owner's explicit choice overrides
+    CHECK(!BotGearForbidden(f));
+
+    f = plain;
+    f.retired = true;
+    CHECK(BotGearForbidden(f));
+
+    f = plain;
+    f.itemLevel = 0;
+    CHECK(BotGearForbidden(f));
+    f.cosmeticSlot = true;
+    CHECK(!BotGearForbidden(f));
+
+    f = plain;
+    f.quality = 4;
+    CHECK(!BotGearForbidden(f));
+    f.quality = kGearQualityLegendary;
+    CHECK(BotGearForbidden(f));
+    f.quality = 6;
+    CHECK(BotGearForbidden(f));
+}
+
 static void TestWornCountsAsEmpty()
 {
-    std::list<uint32_t> blacklist = { 12345 };
-
-    // Pool and hired bots re-gear a blocked worn piece.
-    CHECK(GearWornCountsAsEmpty(false, blacklist, 12345));
-    CHECK(!GearWornCountsAsEmpty(false, blacklist, 23456));
+    // Pool and hired bots re-gear a forbidden worn piece.
+    CHECK(GearWornCountsAsEmpty(false, true));
+    CHECK(!GearWornCountsAsEmpty(false, false));
 
     // Real players and owned bots keep whatever they wear.
-    CHECK(!GearWornCountsAsEmpty(true, blacklist, 12345));
-    CHECK(!GearWornCountsAsEmpty(true, blacklist, 23456));
+    CHECK(!GearWornCountsAsEmpty(true, true));
+    CHECK(!GearWornCountsAsEmpty(true, false));
 }
 
 int main()
 {
     TestLookup();
     TestWhitelistPrecedence();
+    TestRetiredNames();
+    TestForbiddenRules();
     TestWornCountsAsEmpty();
     std::printf("gear blacklist policy OK (%d checks)\n", checks);
     return 0;

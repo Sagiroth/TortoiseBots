@@ -2,6 +2,7 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_dungeon_run_policy.cpp -o /tmp/test_dungeon_run_policy && /tmp/test_dungeon_run_policy
 #include "../runtime/DungeonRunPolicy.h"
 #include "../runtime/RemoteCommanderPolicy.h"
+#include "../ai/playerbot/BossTacticsPolicy.h"
 
 #include <cstdlib>
 #include <memory>
@@ -8650,6 +8651,38 @@ static void TestKillFirstNewWardPreemptsHeldTotem()
     // The ward dies: back on the totem that is still up.
     f.killFirst.pop_back();
     CHECK(Tick(r, f) == "focus 501");
+}
+
+// ZG t1106b: the held totem focus was re-sent only while NO damage dealer was on the totem, so one hunter held the
+// refocus off for the totem's whole life (94 % of totem-up frames with no bot on it; totem life 12 s in losses, 5 s
+// in kills). It is due while fewer than kTotemFocusDpsWanted damage dealers (or every living one) are on the totem,
+// still no oftener than kTotemRefocusMs.
+static void TestTotemRefocusWhileFewerDpsThanWantedHoldIt()
+{
+    UnitFact totem = Unit(501, 15112, 4);
+    totem.creatureType = kCreatureTotem;
+    Run r;
+    r.focusGuid = 501;
+    r.focusSentMs = 10000;
+    r.runMs = 13000;
+    totem.dpsOnItCount = 1;
+    CHECK(FocusResendDue(r, totem, 5));      // one DPS on it: the second volley is due
+    totem.dpsOnItCount = 3;
+    CHECK(!FocusResendDue(r, totem, 5));     // three: the volley is on it
+    totem.dpsOnItCount = 2;
+    CHECK(FocusResendDue(r, totem, 3));      // three wanted, two on it: still one short
+    totem.dpsOnItCount = 1;
+    CHECK(FocusResendDue(r, totem, 2));      // a party with two DPS wants both of them on it
+    totem.dpsOnItCount = 2;
+    CHECK(!FocusResendDue(r, totem, 2));     // ... and both are: no resend
+    // The interval still bounds it: never every tick.
+    r.runMs = 12000;
+    CHECK(!FocusResendDue(r, totem, 5));
+    // ... and only the focused unit is re-sent.
+    r.runMs = 13000;
+    UnitFact other = totem;
+    other.guid = 502;
+    CHECK(!FocusResendDue(r, other, 5));
 }
 
 // r30 t 398.8 2c: the tank leaves a caster at its camp alone. Common start per the spec.
@@ -27309,6 +27342,54 @@ static void TestRaidBossCappedAddIsReArmed()
     CHECK(orders == 2 * static_cast<int>(kGuardOrdersPerUnit));
 }
 
+// ZG t1106b integration: one Delusions carrier (aura 24306) and the Shade of Jin'do, read as the fight read hands the
+// bot to the pick. The three fixes must hold together, not only one at a time: the carrier is not combat-gated off a
+// fresh Shade at 0 threat, it takes a Shade 35 yd out over the boss and the ordered ward, and no totem focus order is
+// ever sent to it. The gate is what makes the Shade pickable at all (a Shade copies Jin'do's threat list empty, so no
+// bot is "in combat" with it before its first hit); the reach is what the 40 yd pick needs; the carrier skip is what
+// keeps the totem focus from spending the carrier's volley elsewhere.
+static void TestDelusionsCarrierComposesGateReachAndTotemSkip()
+{
+    using namespace ai;
+    CHECK(!CombatGateApplies(true, 24306, true));   // a carrier: no combat ticket needed for its Shade
+    CHECK(CombatGateApplies(true, 24306, false));   // an uncursed bot: still gated (0 threat, not attackable)
+    CHECK(!AuraGateRefuses(true, 24306, true));
+
+    std::vector<TacticCandidate> fight(4);
+    fight[0].entry = 14986; fight[0].distance = 35.0f; // the fresh Shade, in the fight and in the carrier's reach
+    fight[1].entry = 11380; fight[1].distance = 3.0f;  // Jin'do himself
+    fight[2].entry = 14987; fight[2].distance = 2.0f;  // the ward the run's order names
+    fight[3].entry = 15112; fight[3].distance = 1.0f;  // the Brain Wash Totem
+    fight[1].pickable = fight[2].pickable = fight[3].pickable = true;
+    fight[0].pickable = !AuraGateRefuses(true, 24306, true) && !CombatGateApplies(true, 24306, true);
+    CHECK(fight[0].pickable);
+
+    BossTacticRow shade;
+    shade.map = 309;
+    shade.bossEntry = 11380;
+    shade.kind = BossTacticKind::KillFirst;
+    shade.targetEntry = 14986;
+    shade.botAura = 24306;
+    BossTacticRow ward = shade;
+    ward.targetEntry = 14987;
+    ward.botAura = 0;
+    ward.priority = 1;
+    BossTacticRow totem = ward;
+    totem.targetEntry = 15112;
+    totem.priority = 2;
+    std::vector<BossTacticRow> rows = {shade, ward, totem};
+    ActiveBossRows active;
+    for (const BossTacticRow& row : rows)
+        active.push_back(&row);
+
+    CHECK(std::fabs(kCarrierHoldReachYd - 40.0f) < 0.01f);
+    CHECK(PickCarrierOverride(active, fight, kCarrierHoldReachYd) == 0); // the 35 yd Shade, not the nearer boss/ward
+    CHECK(PickKillFirst(active, fight) == 0);
+
+    CHECK(FocusSkipsBot(false, false, false, true, true, false, true));   // never a totem order for the carrier
+    CHECK(!FocusSkipsBot(false, false, false, true, true, false, false)); // the uncursed DPS beside it still joins
+}
+
 // Jin'do: the totem focus leaves the tanks and the healers out (the totem dies in 1-2 s and holds no healer), a
 // tank_hold target keeps its own rule, and the guard skips a totem and an aura-gated unit only with their keys on.
 static void TestTotemFocusSkipsTanksAndHealers()
@@ -27316,6 +27397,10 @@ static void TestTotemFocusSkipsTanksAndHealers()
     CHECK(FocusSkipsBot(true, false, false, true, true));    // a tank is no totem focuser
     CHECK(FocusSkipsBot(false, true, false, true, true));    // nor a healer
     CHECK(!FocusSkipsBot(false, false, false, true, true));  // a DPS joins
+    // t1106b: a carrier of an aura-gated row (Delusions) is never sent at a totem, in reach of its Shade or not.
+    CHECK(FocusSkipsBot(false, false, false, true, true, false, true));
+    CHECK(!FocusSkipsBot(false, false, false, false, true, false, true)); // no totem: its focus is another order
+    CHECK(!FocusSkipsBot(false, false, false, true, false, false, true)); // the key off: every bot joins
 }
 
 static void TestTotemFocusKeyOffJoinsAll()
@@ -27392,6 +27477,7 @@ static void TestTotemFocusRefiresWhileTotemLives()
     Facts f = Party(0);
     f.anyInCombat = true;
     f.totemFocus = true;
+    f.dpsAlive = 5; // the glue's read of the party's damage dealers (ReadKillFirst)
     UnitFact totem = Unit(501, 15112, 5);
     totem.creatureType = kCreatureTotem;
     totem.owner = 500;
@@ -27413,10 +27499,12 @@ static void TestTotemFocusRefiresWhileTotemLives()
     CHECK(r.focusIconGuid == 0); // a re-send moves no mark either
 }
 
-// The re-send is for a totem nobody is hitting: while a damage dealer attacks the held totem no order goes out (every
-// focus order cancels the commander's tasks and takes the bots off stay), and the first tick after the last damage
-// dealer left it sends the focus. Failing case before the dpsOnIt gate: a re-send every 3 s whoever was on it.
-static void TestTotemFocusIsNotResentWhileADpsAttacksIt()
+// The re-send is for a totem fewer damage dealers are on than it wants (kTotemFocusDpsWanted, every living one when
+// the party has fewer): one DPS on the held totem still gets the second volley (ZG t1106b: a lone hunter held the
+// refocus off for the totem's whole 12 s life, and 94 % of totem-up frames had no bot on it), three on it send no
+// order (every focus order cancels the commander's tasks and takes the bots off stay), and the first tick after two
+// of them left sends the focus.
+static void TestTotemFocusIsNotResentWhileEnoughDpsAttackIt()
 {
     DungeonPlan plan;
     plan.steps = {Step(PlanStepKind::Boss)};
@@ -27425,18 +27513,25 @@ static void TestTotemFocusIsNotResentWhileADpsAttacksIt()
     Facts f = Party(0);
     f.anyInCombat = true;
     f.totemFocus = true;
+    f.dpsAlive = 5;
     UnitFact totem = Unit(501, 15112, 5);
     totem.creatureType = kCreatureTotem;
     totem.owner = 500;
     totem.ownerEngaged = true;
-    totem.dpsOnIt = true;
+    totem.dpsOnItCount = 1;
     f.killFirst = {totem};
     CHECK(Tick(r, f) == "focus 501");
+    CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f) == "focus 501"); // one DPS is not a volley: due again at the 3 s mark
+    // Three damage dealers are on it: nothing goes out, however long.
+    f.killFirst[0].dpsOnItCount = 3;
     for (int tick = 0; tick < 12; ++tick)
-        CHECK(Tick(r, f).empty()); // a damage dealer is on it: nothing goes out, however long
-    f.killFirst[0].dpsOnIt = false;
-    CHECK(Tick(r, f) == "focus 501"); // the burst ended: the order is due at once
-    CHECK(Tick(r, f).empty());        // and not again before the next 3 s
+        CHECK(Tick(r, f).empty());
+    // Two of them leave it: the order is due at once, and not again before the next 3 s.
+    f.killFirst[0].dpsOnItCount = 1;
+    CHECK(Tick(r, f) == "focus 501");
+    CHECK(Tick(r, f).empty());
 }
 
 // A kill_first unit that is no totem (a healer, a Shade) is focused when the pick changes and never re-sent, the
@@ -27459,9 +27554,9 @@ static void TestGeneralKillFirstFocusIsNeverResent()
     }
 }
 
-// The totem re-send is sent at the end of the fight branch, so a tick that re-sends still ran everything before it: the
-// fight ceiling pauses the run on that tick instead of the order skipping it. Failing case with the early return: the
-// run was still Running on the re-send tick.
+// The totem re-send is sent after the fight ceiling and the retreat, so a tick that re-sends still ran them: the fight
+// ceiling pauses the run on that tick instead of the order skipping it. Failing case with an early return at the top of
+// the branch: the run was still Running on the re-send tick.
 static void TestTotemResendTickStillRunsTheFightBranch()
 {
     DungeonPlan plan;
@@ -27471,6 +27566,7 @@ static void TestTotemResendTickStillRunsTheFightBranch()
     Facts f = Party(0);
     f.anyInCombat = true;
     f.totemFocus = true;
+    f.dpsAlive = 5;
     UnitFact totem = Unit(501, 15112, 5);
     totem.creatureType = kCreatureTotem;
     totem.owner = 500;
@@ -27779,6 +27875,94 @@ static void TestGuardSkipsAuraGatedShade()
         shade.auraGated = true;
         f.partyAttackers = {shade};
         CHECK(GuardTick(r, f) == "attack 50102 NearDps");
+    }
+}
+
+// t1105h J1: a Delusions carrier with its Shade in reach is no focus target, whatever the focus is: the run's focus and
+// the 3 s ward refocus would pull it back off the only unit its damage counts on. Once the curse ends it joins again.
+static void TestFocusSkipsDelusionsCarrier()
+{
+    for (bool totemKey : {true, false})
+        for (bool totemTarget : {true, false})
+        {
+            CHECK(FocusSkipsBot(false, false, false, totemTarget, totemKey, true));
+            CHECK(!FocusSkipsBot(false, false, false, totemTarget, totemKey, false));
+        }
+    // Only the run's own focus leaves a carrier on its Shade (Codex HIGH, t1105h review): a player's focus arms it. The
+    // hold reaches kCarrierHoldReachYd (40 yd), so a Shade at 20 yd keeps a melee carrier out of the 3 s refocus.
+    CHECK(CarrierFocusSkip(true, true));    // automated focus + curse, Shade within 40 yd: no refocus
+    CHECK(!CarrierFocusSkip(false, true));  // player focus + curse: the carrier takes the player's focus
+    CHECK(!CarrierFocusSkip(true, false));  // no Shade within the hold reach (or the curse is gone): it joins
+    CHECK(!FocusSkipsBot(false, false, false, true, true));   // an uncursed DPS still joins the totem focus
+    CHECK(!FocusSkipsBot(false, false, true, false, false));  // and a tank_hold focus
+}
+
+// t1105h J2: the Sacrificed Trolls 14826 go to the damage dealers while Jin'do fights. The run's boss here is 10184, so
+// the test's troll names that entry as its tank_ignore boss: no off-tank and no main tank is sent at it, and the
+// healer guard's ranged dps still is.
+static void TestJindoTrollGoesToDpsNotTank()
+{
+    UnitFact troll = Hitter(45201, 14826, 20, false);
+    {
+        // Off-tanks: a troll on a DPS is no pick-up while the boss fights.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact ignored = troll;
+        ignored.tankIgnoreBoss = 10184;
+        f.partyAttackers = {ignored};
+        CHECK(TankIgnoredFact(f, f.partyAttackers[0]));
+        for (int k = 0; k < 40; ++k)
+            CHECK(Tick(r, f).empty());
+        CHECK(GuardPick(f, 0.0f, &r, &r) == nullptr);
+    }
+    {
+        // No row: an ordinary add, picked up as before.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.partyAttackers = {troll};
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // The row's boss is not in this fight: the troll is a normal mob again.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        UnitFact other = troll;
+        other.tankIgnoreBoss = 11380;
+        f.partyAttackers = {other};
+        CHECK(!TankIgnoredFact(f, f.partyAttackers[0]));
+        std::string order;
+        for (int k = 0; k < 40 && order.empty(); ++k)
+            order = Tick(r, f);
+        CHECK(order == "attack 45201 Offy");
+    }
+    {
+        // A troll on a healer still gets the healer guard's ranged dps.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = FocusGuardFacts();
+        UnitFact onHealer = Hitter(45202, 14826, 18, true);
+        onHealer.tankIgnoreBoss = 10184;
+        f.partyAttackers = {onHealer};
+        CHECK(GuardTick(r, f) == "attack 45202 NearDps");
+    }
+    {
+        // The main tank's own engage on arrival leaves it too.
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidBossGuardFacts();
+        f.leadHasAttacker = true;
+        f.leadAttacker = troll;
+        f.leadAttacker.victimLead = true;
+        f.leadAttacker.tankIgnoreBoss = 10184;
+        CHECK(EngageTarget(r, f) == nullptr);
+        f.leadAttacker.tankIgnoreBoss = 0;
+        CHECK(EngageTarget(r, f) != nullptr);
     }
 }
 
@@ -31622,6 +31806,105 @@ static void TestRaidTrashHealerGuardMainTankLastResort()
     }
 }
 
+// Opus 4 (t1105h review): a tank_ignore unit on a healer with no free ranged dps goes to an OFF-tank, never the main
+// tank. The test's tank_ignore "boss" is the fight's own engaged entry (12130 on the main tank in the trash fixture, the
+// run's boss 10184 in the boss fixture).
+static void TestTankIgnoreHealerAddGoesToTheOffTank()
+{
+    {
+        // A raid trash fight with an off-tank and no ranged dps: GuardPickHealerAdd hands the troll to the off-tank.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts();
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact troll = Hitter(50081, 14826, 20, true);
+        troll.x = 20.0f;
+        troll.tankIgnoreBoss = 12130;
+        f.partyAttackers = {troll};
+        CHECK(GuardPickHealerAdd(r, f) == &f.partyAttackers[0]);
+        std::string got;
+        for (int k = 0; k < 20 && got.find("attack 50081 ") != 0; ++k)
+            got = GuardTick(r, f);
+        CHECK(got.find("attack 50081 ") == 0);
+        CHECK(got != "attack 50081 Tanky");
+    }
+    {
+        // No off-tank at all: the main tank's last resort never takes a tank_ignore unit.
+        DungeonPlan plan;
+        Facts f = RaidTrashFacts(false);
+        f.raid.healerGuard = true;
+        f.leadHasAttacker = true;
+        f.leadHit = true;
+        Run r = StartRaidTrashFight(plan, f);
+        f.members = {Mem("Tanky", 0)};
+        f.leadAttacker = Hitter(60, 12130, 5);
+        f.leadAttacker.victimLead = true;
+        UnitFact troll = Hitter(50082, 14826, 20, true);
+        troll.x = 20.0f;
+        troll.tankIgnoreBoss = 12130;
+        f.partyAttackers = {troll};
+        for (int k = 0; k < 30; ++k)
+            CHECK(GuardTick(r, f).find("attack 50082") != 0);
+        // A second add on a healer, farther: the troll does not hold the main tank's last resort back from it.
+        UnitFact other = Hitter(50085, 11368, 22, true);
+        other.x = 22.0f;
+        f.partyAttackers = {troll, other};
+        std::string last;
+        for (int k = 0; k < 30 && last.find("attack 50085") != 0; ++k)
+        {
+            last = GuardTick(r, f);
+            CHECK(last.find("attack 50082") != 0);
+        }
+        CHECK(last == "attack 50085 Tanky");
+        // The same add without the row is the main tank's last resort, as before.
+        DungeonPlan plan2;
+        Facts g = RaidTrashFacts(false);
+        g.raid.healerGuard = true;
+        g.leadHasAttacker = true;
+        g.leadHit = true;
+        Run r2 = StartRaidTrashFight(plan2, g);
+        g.members = {Mem("Tanky", 0)};
+        g.leadAttacker = f.leadAttacker;
+        UnitFact plain = troll;
+        plain.tankIgnoreBoss = 0;
+        g.partyAttackers = {plain};
+        std::string got;
+        for (int k = 0; k < 30 && got.find("attack 50082") != 0; ++k)
+            got = GuardTick(r2, g);
+        CHECK(got == "attack 50082 Tanky");
+    }
+    {
+        // Jin'do's boss fight: no ranged dps in reach, the troll on the healer goes to an off-tank (RaidGuardTick).
+        DungeonPlan plan;
+        Run r = RaidBossRun(plan);
+        Facts f = RaidHealerGuardFacts();
+        f.members = {Mem("Tanky", 0), Mem("Healy", 20)};
+        UnitFact troll = Hitter(50083, 14826, 18, true);
+        troll.tankIgnoreBoss = 10184;
+        f.partyAttackers = {troll};
+        std::string got;
+        for (int k = 0; k < 40 && got.empty(); ++k)
+            got = GuardTick(r, f);
+        CHECK(got == "attack 50083 Offy");
+        // On a damage dealer it is still nobody's but the dps' (TestJindoTrollGoesToDpsNotTank).
+        DungeonPlan plan2;
+        Run r2 = RaidBossRun(plan2);
+        Facts g = RaidHealerGuardFacts();
+        g.members = f.members;
+        UnitFact onDps = Hitter(50084, 14826, 18, false);
+        onDps.tankIgnoreBoss = 10184;
+        g.partyAttackers = {onDps};
+        for (int k = 0; k < 40; ++k)
+            CHECK(GuardTick(r2, g).empty());
+    }
+}
+
+
 // The last resort is not held by the guard's budgets: with guardOrders at kGuardOrdersPerFight and fightOrders at
 // kGuardOrdersFightCap (both spent by earlier pick-ups), a loose healer add still goes to the main tank 8 s after it
 // went loose. Before the fix the budget exit returned first and the clock never ran, so the add stayed on the healer.
@@ -33781,6 +34064,44 @@ static void TestAutoCcCastersFirstThenPlanRank()
     g.units = {AutoHumanoid(20, 22), AutoHumanoid(21, 20, true), AutoHumanoid(22, 12), AutoHumanoid(23, 18, true)};
     CHECK(Tick(p, g) == "cc moon 21 Magey polymorph");
     CHECK(Tick(p, g) == "cc square 23 Magetwo polymorph");
+}
+
+// ZG t1106b: the totem re-send used to wait for a tick with no other order (`order.empty()` at the guard), so a CC,
+// auto-CC or guard order spent the tick and the second volley never went out. It now goes out ahead of them.
+static void TestTotemRefocusGoesOutAheadOfACcOrder()
+{
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Move, 0), PullStep(40, {10471})};
+    plan.killFirst = {15112};
+    Run r = Start(&plan);
+    Facts f = Party(0);
+    Tick(r, f);
+    CHECK(r.step == 1);
+    f.units = {Unit(31, 10471, 40)};
+    CHECK(Tick(r, f) == "pullback 31");
+    f.anyInCombat = true;
+    f.totemFocus = true;
+    f.dpsAlive = 5;
+    UnitFact totem = Unit(501, 15112, 4);
+    totem.creatureType = kCreatureTotem;
+    totem.owner = 500;
+    totem.ownerEngaged = true;
+    f.killFirst = {totem};
+    r.focusGuid = 501;
+    r.focusSentMs = r.runMs;
+    f.killFirst[0].dpsOnItCount = 1;
+    f.autoCc = true;
+    f.autoCcAbove = 0;
+    f.members = {AutoCcMem("Magey", CcFamily::Polymorph)};
+    // Two ticks inside the refocus interval, no CC hold yet: nothing is due.
+    CHECK(Tick(r, f).empty());
+    CHECK(Tick(r, f).empty());
+    // The CC re-send and the totem refocus fall due on the same tick: the totem wins.
+    f.partyAttackers = {AutoHumanoid(5, 20)};
+    r.ccHolds[5] = Run::CcHold{"Magey", "moon", CcFamily::Polymorph, true};
+    r.ccSent.insert(5);
+    r.ccLandedSeen.insert(5);
+    CHECK(Tick(r, f) == "focus 501");
 }
 
 static void TestAutoCcPicksTheFamilyThatFits()
@@ -36660,6 +36981,8 @@ int main()
     TestACrowdControlledFocusTakesItsSkullOff();
     TestKillFirstKeepsItsUnitAgainstAnEqualRank();
     TestKillFirstNewWardPreemptsHeldTotem();
+    TestTotemRefocusWhileFewerDpsThanWantedHoldIt();
+    TestTotemRefocusGoesOutAheadOfACcOrder();
     TestGuardLeavesACasterAtItsCamp();
     TestGuardTakesACasterWithNoCampByIt();
     TestGuardTakesACampCasterWithinAStep();
@@ -37104,13 +37427,17 @@ int main()
     TestRaidHealerGuardCapsAndRearmsOneAdd();
     TestRaidHealerGuardPrunesMarksWithTheAddAndTheBot();
     TestRaidHealerGuardDropsAPendingOrderWhenTheGateTurnsOff();
+    TestDelusionsCarrierComposesGateReachAndTotemSkip();
     TestTotemFocusSkipsTanksAndHealers();
     TestTotemFocusKeyOffJoinsAll();
+    TestFocusSkipsDelusionsCarrier();
+    TestJindoTrollGoesToDpsNotTank();
+    TestTankIgnoreHealerAddGoesToTheOffTank();
     TestExplicitTotemFocusArmsEveryBot();
     TestTankHoldFocusUnchanged();
     TestKillFirstTotemOfAnEngagedBossIsFocusedOnTheFirstTick();
     TestTotemFocusRefiresWhileTotemLives();
-    TestTotemFocusIsNotResentWhileADpsAttacksIt();
+    TestTotemFocusIsNotResentWhileEnoughDpsAttackIt();
     TestGeneralKillFirstFocusIsNeverResent();
     TestTotemResendTickStillRunsTheFightBranch();
     TestTotemFocusFiresBeforeTheAutoCcTick();

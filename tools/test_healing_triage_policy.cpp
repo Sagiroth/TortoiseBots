@@ -1,6 +1,8 @@
 #include "../ai/playerbot/HealingTriagePolicy.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <vector>
 #include <iostream>
 #include <limits>
 
@@ -79,5 +81,61 @@ int main()
     CHECK(HealingPriority(caster, equal, bands)); // reproducible tie, not roster insertion order
     CHECK(!HealingPriority(equal, caster, bands));
     CHECK(!HealingPriority(caster, caster, bands));
+    // t1105h J1: a member a Shade of Jin'do hunts (Shadow Shock 602 every 2 s and its melee) is healed one band earlier
+    // and with the tank's in-band lead; an emergency elsewhere still comes first.
+    HealingCandidate hunted{10, 5500, 10000, 0, false, false, false};  // 55 %: the medium band
+    HealingCandidate dps{11, 4800, 10000, 0, false, false, false};     // 48 %: the low band
+    CHECK(HealingPriority(dps, hunted, bands));          // unhunted: the lower band first, as before
+    hunted.hunted = true;
+    CHECK(HealingUrgency(hunted, bands) == 1);
+    CHECK(HealingPriority(hunted, dps, bands));          // hunted: same band, and its lead wins
+    HealingCandidate critical{12, 1500, 10000, 0, false, false, false}; // 15 %: critical
+    HealingCandidate huntedLow{13, 3000, 10000, 0, false, false, false, true, true}; // 30 %: low -> critical
+    CHECK(HealingUrgency(huntedLow, bands) == 0);
+    CHECK(HealingPriority(critical, huntedLow, bands));  // in an emergency the lowest health wins
+    HealingCandidate huntedTop{14, 9950, 10000, 0, false, false, false, true, true};
+    CHECK(!NeedsPartyHealing(huntedTop, bands));         // the weighting never makes a full member a heal target
+    // Opus 1 (t1105h review): the boost never lifts a non-tank over a tank in a more urgent band. CapHuntedBoost runs on
+    // the whole candidate list before the sort: a hunted member whose raw band a tank's band equals or beats keeps only
+    // the in-band lead, so the order stays a per-candidate key (the sort's comparator stays transitive).
+    {
+        HealingBands const live{25, 45, 65, 90};
+        auto order = [&](std::vector<HealingCandidate> list)
+        {
+            CapHuntedBoost(list, live);
+            std::sort(list.begin(), list.end(), [&](HealingCandidate const& l, HealingCandidate const& r)
+                { return HealingPriority(l, r, live); });
+            std::vector<std::uint64_t> guids;
+            for (HealingCandidate const& c : list)
+                guids.push_back(c.guid);
+            return guids;
+        };
+        HealingCandidate tank26{20, 2600, 10000, 0, true, false, false};   // 26 %: low
+        HealingCandidate hunted44{21, 4400, 10000, 0, false, false, false, true, true}; // 44 %: low
+        HealingCandidate tank40{22, 4000, 10000, 0, true, false, false};   // 40 %: low
+        HealingCandidate hunted35{23, 3500, 10000, 0, false, false, false, true, true};
+        HealingCandidate tank60{24, 6000, 10000, 0, true, false, false};   // 60 %: medium
+        HealingCandidate dps26{25, 2600, 10000, 0, false, false, false};   // 26 %: low
+        // The 44 % hunted DPS stays behind the 26 % tank: it is not lifted into a more urgent band than the tank's.
+        CHECK((order({hunted44, tank26}) == std::vector<std::uint64_t>{20, 21}));
+        {
+            std::vector<HealingCandidate> two{hunted44, tank26};
+            CapHuntedBoost(two, live);
+            CHECK(HealingUrgency(two[0], live) == 1);
+            std::sort(two.begin(), two.end(), [&](HealingCandidate const& l, HealingCandidate const& r)
+                { return HealingPriority(l, r, live); });
+            // Same band as without the hunt: the first healer takes the tank, a second one shares the band as before.
+            CHECK(two[HealingAssignment(two, live, 0)].guid == 20);
+            CHECK(HealingUrgency(two[1], live) == HealingUrgency(two[0], live));
+        }
+        // Same raw band as a tank: only the in-band lead, so the lower one first (35 % before the 40 % tank).
+        CHECK((order({tank40, hunted35}) == std::vector<std::uint64_t>{23, 22}));
+        // A tank in a less urgent band is passed by the hunted member, as before.
+        CHECK((order({tank60, hunted44}) == std::vector<std::uint64_t>{21, 24}));
+        // No tank in the list: the full boost (one band up) over an unhunted member of its raw band.
+        CHECK((order({dps26, hunted44}) == std::vector<std::uint64_t>{21, 25}));
+        // Three-way with a tank: a total order, no cycle (tank 40, hunted 44, dps 26).
+        CHECK((order({tank40, hunted44, dps26}) == std::vector<std::uint64_t>{25, 22, 21}));
+    }
     std::cout << "healing triage policy: OK\n";
 }

@@ -93,7 +93,8 @@ class BotsLetRunnersGoAtLedgesTest(unittest.TestCase):
         valid = body(POSSIBLE, "bool PossibleAttackTargetsValue::IsValid(")
         ledge = at(valid, "if (AttackersValue::RunnerLetGoAtLedge(target, player))\n        return false;")
         # Before the attackers check (skipped for explicit orders) and every early acceptance.
-        self.assertLess(ledge, at(valid, "if (checkAttackerValid && !AttackersValue::IsValid(target, player))"))
+        self.assertLess(ledge, at(valid, "if (checkAttackerValid)"))
+        self.assertIn("AttackersValue::IsValid(target, player, nullptr,", valid)
         self.assertLess(ledge, at(valid, 'PAI_VALUE(ObjectGuid, "attack target")'))
 
     def test_the_runner_finisher_fills_the_drop(self):

@@ -278,6 +278,10 @@ class RandomItemMgr
         // Seed/hire gate: tier cap + REP/PVP flags from the new knobs.
         // Fail-open for uncached items (custom items, sparse DBC).
         bool PassesSourceTier(uint32 itemId);
+        // Gear no auto-gear path hands out: the owner blacklist, and unless
+        // whitelisted, items with no known source, retired or test data,
+        // item level 0 outside shirt/tabard, and legendary or better.
+        bool IsForbiddenBotGear(uint32 itemId);
         std::string GetPlayerSpecName(Player* player);
         uint32 GetPlayerSpecId(Player* player);
         // Issue #189 Phase 2: unknown-spec fallback. Spent talents decide
@@ -359,6 +363,12 @@ class RandomItemMgr
         // process lifetime like the raid index above.
         void BuildSourceTierIndex();
         bool sourceTierIndexed = false;
+        // Every item the game hands a player: loot of any creature or game
+        // object template (spawned or not), item containers, fishing,
+        // vendors, quest rewards and crafts (recipes and trainer-taught).
+        // Built once at the end of BuildSourceTierIndex.
+        void BuildKnownSourceIndex();
+        std::set<uint32> knownSourceItems;
         // Creature template -> lowest map tier of its spawns (id..id4).
         std::map<uint32, ItemSourceTier> creatureSpawnTier;
         // GameObject template -> lowest map tier of its spawns.
