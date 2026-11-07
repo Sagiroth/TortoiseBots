@@ -188,6 +188,20 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     it->second.NoteBossGuid(guid);
 }
 
+// The run's plan boss for an open fight that has none, only when the glue found him among the engaged units (a trash
+// fight the step turn catches is not his). The first pick of a fight wins (Book::AdoptBoss); the data pick covers a
+// move-step pull and the walk back.
+void CombatMonitorService::AdoptBoss(uint32_t groupId, uint32_t entry, char const* name)
+{
+    if (!Enabled() || groupId == 0 || entry == 0 || !name)
+        return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto const it = m_books.find(groupId);
+    if (it == m_books.end())
+        return;
+    it->second.AdoptBoss(entry, name);
+}
+
 void CombatMonitorService::NoteBossGuid(uint32_t groupId, uint64_t guid)
 {
     if (!Enabled() || groupId == 0 || guid == 0)
