@@ -21,8 +21,8 @@ int main()
     CHECK(!IsGuildOrderBot(true, true, true));
     CHECK(!IsGuildOrderBot(false, false, true));
 
-    // Default is the rank below the master; a master-only guild keeps rank 0.
-    CHECK(DefaultBotRank(5) == 1);
+    // Default is the lowest rank; a master-only guild keeps rank 0.
+    CHECK(DefaultBotRank(5) == 4);
     CHECK(DefaultBotRank(2) == 1);
     CHECK(DefaultBotRank(1) == 0);
     CHECK(DefaultBotRank(0) == 0);

@@ -719,9 +719,9 @@ Whether bots share one guild rank for guild bank access.
 <details>
 <summary>How it works in detail</summary>
 
-When on, every bot in a guild with a real player member holds the guild's bot rank. This defaults to the rank below the guild master, or the rank picked with `.bot order rank`. New bots join at that rank at once, and bots already in the guild move there once when the server starts. All-bot guilds keep their own ranks.
+When on, bots that join a guild with a real player member get the guild's bot rank. This defaults to the guild's lowest rank, or the rank picked with `.bot order rank` (which also moves every bot already in the guild). A rank a player gives a bot by hand stays. All-bot guilds keep their own ranks.
 
-- The master can open bank tabs to one rank for all bots.
+- Bank tab 1 is opened to the bot rank in the database at startup and shutdown; the core reads tab ranks at startup, so it applies from the next start.
 - When off, ranks stay as they are. `.bot order access` answers `TBM:ORDER_ACCESS|-|-|-|-|0|0`, and the addon shows that the server does not manage bot ranks.
 - Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
 

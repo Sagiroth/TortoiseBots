@@ -27,13 +27,13 @@ inline bool IsGuildOrderBot(bool claimed, bool onPoolAccount, bool autonomousAlt
 }
 
 // The rank newly joined bots get, and the startup sweep falls back to:
-// the highest rank below the guild master. Rank 0 is the master; a guild
-// with only a master row keeps its bots at the lowest rank.
+// the guild's lowest rank. Rank 0 is the master; a guild with only a master
+// row keeps its bots at rank 0.
 inline uint32_t DefaultBotRank(uint32_t rankCount)
 {
     if (rankCount < 2)
         return 0;
-    return 1;
+    return rankCount - 1;
 }
 
 // Clamp a player-chosen bot rank to the guild's ranks. Rank 0 stays the

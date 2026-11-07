@@ -810,7 +810,7 @@ public:
     uint32_t guildOrderSubOrderDepth;
     // Guild bank access for guild bots: every bot in a guild with a real
     // player member holds one shared rank (`.bot order rank` picks it,
-    // defaulting to the rank below the master).
+    // defaulting to the guild's lowest rank).
     bool guildOrderBotRank;
     uint32 botActiveAlone;
     uint32 minEnchantingBotLevel;

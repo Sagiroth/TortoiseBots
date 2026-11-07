@@ -64,7 +64,7 @@ Recipe tools stay available as long as [`AiPlayerbot.CraftToolsAlways`](../serve
 
 ## Requirements
 
-- Bank delivery needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master. Bots in a guild with a real player hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank access; all-bot guilds keep their own ranks.
+- Bank delivery needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master. Bots in a guild with a real player join at the guild's bot rank (by default the lowest rank), and bank tab 1 opens to that rank by itself; open more tabs to it if you want; all-bot guilds keep their own ranks.
 - Guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, `.bot order` answers `disabled`.
 - Guild bank item withdrawals and guild bank gold use are controlled by [`AiPlayerbot.GuildOrderBankWithdraw`](../server/settings/guild-orders.md#aiplayerbotguildorderbankwithdraw) and [`AiPlayerbot.GuildOrderBankGold`](../server/settings/guild-orders.md#aiplayerbotguildorderbankgold); both default to `1`.
 
@@ -164,17 +164,20 @@ An enchanter bot puts one enchant on your own item, from real materials, meeting
 
 ## Guild bank access
 
-Every bot in a guild with at least one real player in it shares the guild's **bot rank** (by default the highest rank below the guild master).
-- A bot that joins gets the bot rank at once; bots already in the guild are moved there once when the server starts.
-- The founding guild-master rank is never rewritten. A guild of only a master with no other ranked members keeps its ranks.
-- Your own characters are never touched: only bot characters get the bot rank. Bots in such guilds no longer promote, demote, kick or invite anyone.
+Every bot that joins a guild with at least one real player in it gets the guild's **bot rank** (by default the lowest rank).
+- **Your promotions stay:** promote or demote a bot in the normal guild window and it keeps that rank, also after a restart.
+- **Tab 1 is the bots' tab:** the server opens bank tab 1 to the bot rank by itself, so bots can always put in and take out order materials there. The guild bank keeps its tab settings in memory, so this shows after the next server restart (after the first update: the second restart). The server reopens it at every start, so don't keep valuables in tab 1.
+- **More tabs:** open any other tab to the bot rank in the guild bank window to let the bots use it too.
+- **Same rules as players:** a tab open to the lowest rank is open to every guild member, because the bank checks ranks, not whether someone is a bot.
+- **Guild gold:** only the guild master and the rank right below may take gold from the bank. Bots at a lower rank buy with their own gold; give them that rank (`.bot order rank 1`) if orders should also spend guild gold.
+- The founding guild-master rank is never rewritten. Your own characters are never touched. Bots in such guilds no longer promote, demote, kick or invite anyone.
 
 ```text
 .bot order rank <rankIndex>
 .bot order access
 ```
 
-- **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
+- **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2 (also bots you promoted by hand) and new bots join there. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
 - **See what the bots can reach:** `.bot order access` (and the top of `.bot order list`) shows the bot rank, which bank tabs it reaches, and whether it may take guild gold. Guilds without an unlocked bank show no tabs and no gold.
 - The header shows red when anything is missing (a tab the bots cannot use, or no gold access). Open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank.
 - **Turn it off:** setting `AiPlayerbot.GuildOrderBotRank = 0` leaves every rank alone; `.bot order access` then answers that the server does not manage bot ranks.
