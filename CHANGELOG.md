@@ -1,6 +1,7 @@
 # Changelog
 
 - Fixed: priests that know Heal rank 2 or higher stop picking Lesser Heal on their own while they can pay for Heal; orders and low-mana fallbacks still use it.
+- New: Hakkar's Son holds, releases and deaths are logged (BossTacticsSonHold, BossTacticsSonDeath), with the hold time on HoldKill rows and Hakkar's HP at each siphon sighting.
 - New: behind AiPlayerbot.DungeonRunCarrierStrike (default 0), a Jin'do healer or off-tank cursed by Delusions turns on its own Shade while the raid can spare it, and stays on the raid otherwise.
 - Fixed: `spells` no longer hides a spell whose name is part of another (Polymorph, Heal, Healing Wave, Bear Form).
 - Fixed: Hakkar in Zul'Gurub no longer releases the idle Sons of Hakkar the raid keeps for later siphons (the 20 s hold counts only time a Son spends fighting).

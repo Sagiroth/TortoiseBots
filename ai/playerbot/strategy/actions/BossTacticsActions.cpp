@@ -11,6 +11,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <set>
 #include <tuple>
 #include <unordered_map>
 #include "BossTacticsActions.h"
@@ -569,18 +570,21 @@ bool HoldKillLogDue(Player* bot, HoldKillLogKind kind)
     return true;
 }
 
-// The hold-kill action's row: the subject it holds, the blocker counts of the hold_kill rows of its entry and where the
-// bot was sent.
-//   info1 = "held=<entry>:<guid low>,hp=<pct>"
+// The hold-kill action's row: the subject it holds, how long the seek hold has kept it, the blocker counts of the
+// hold_kill rows of its entry and where the bot was sent.
+//   info1 = "held=<entry>:<guid low>,hp=<pct>,held_ms=<n>"
 //   info2 = "blockers=<blocker entry>:<count>,...,to=<entry>:<guid low>|stop"
 void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* held, Unit* destination,
-                     const std::function<std::uint32_t(std::uint32_t)>& countNear)
+                     const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                     const std::map<std::uint64_t, SeekHeldSon>* holdSince = nullptr, std::uint32_t holdNowMs = 0)
 {
     if (!HoldKillLogDue(bot, HoldKillLogKind::Action))
         return;
-    char info1[64];
-    snprintf(info1, sizeof(info1), "held=%u:%u,hp=%u", held->GetEntry(), held->GetGUIDLow(),
-             static_cast<uint32>(held->GetHealthPercent()));
+    const std::uint32_t heldMs = holdSince
+        ? SeekHeldMs(*holdSince, held->GetObjectGuid().GetRawValue(), holdNowMs) : 0;
+    char info1[96];
+    snprintf(info1, sizeof(info1), "held=%u:%u,hp=%u,held_ms=%u", held->GetEntry(), held->GetGUIDLow(),
+             static_cast<uint32>(held->GetHealthPercent()), static_cast<uint32>(heldMs));
     std::string info2 = "blockers=";
     bool first = true;
     for (const BossTacticRow* row : fight.rows)
@@ -604,15 +608,20 @@ void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight
 // The multiplier's row: why it stood the action down (`veto` is the action class, or "sole" when the one_at_a_time pick
 // rather than a hold_kill budget holds the subject) and the subject when the veto has one.
 //   info1 = "veto=<assist|aoe|area|dot|sole>"
-//   info2 = "held=<entry>:<guid low>,hp=<pct>" or "held=none"
-void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subject)
+//   info2 = "held=<entry>:<guid low>,hp=<pct>,held_ms=<n>" or "held=none"
+void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subject,
+                     const std::map<std::uint64_t, SeekHeldSon>* holdSince = nullptr, std::uint32_t holdNowMs = 0)
 {
     if (!HoldKillLogDue(bot, HoldKillLogKind::Veto))
         return;
-    char info2[64];
+    char info2[96];
     if (subject)
-        snprintf(info2, sizeof(info2), "held=%u:%u,hp=%u", subject->GetEntry(), subject->GetGUIDLow(),
-                 static_cast<uint32>(subject->GetHealthPercent()));
+    {
+        const std::uint32_t heldMs = holdSince
+            ? SeekHeldMs(*holdSince, subject->GetObjectGuid().GetRawValue(), holdNowMs) : 0;
+        snprintf(info2, sizeof(info2), "held=%u:%u,hp=%u,held_ms=%u", subject->GetEntry(), subject->GetGUIDLow(),
+                 static_cast<uint32>(subject->GetHealthPercent()), static_cast<uint32>(heldMs));
+    }
     else
         snprintf(info2, sizeof(info2), "held=none");
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);
@@ -1009,6 +1018,10 @@ const std::uint32_t kSeekSiphonThirdMs = 9000;
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
 const std::uint32_t kHakkarSiphonUndosedSpell = 24322;
+// The Sons' entry (the seek row's target) and the radius of the cloud one leaves behind: 24320's radius index 14, the
+// distance the Son death row counts the raid at.
+const std::uint32_t kSonOfHakkarEntry = 11357;
+const float kPoisonCloudYd = 8.0f;
 // The cloud search around the bot (the cached dynamic-object list's own radius), the drag's arrival radius at the
 // spot, and the log throttle.
 const float kSeekCloudSearchYd = 30.0f;
@@ -1294,21 +1307,23 @@ void CountHakkarSiphonAuras(Unit* boss, int& healStacks, int& dmgHolders)
 // One siphon row per accepted cycle, read one and three seconds after the sighting: the group members dosed and not,
 // the pets and totems/guardians on either side, and the boss's own heal stacks and damage holders. A no-op unless
 // bot_events.csv is in AiPlayerbot.AllowedLogFiles.
-void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, std::uint32_t elapsedMs, int dosed, int undosed,
-               int petHeal, int petDmg, int totems, int guardians, int healStacks, int dmgHolders, Unit* boss)
+void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, std::uint32_t elapsedMs, std::uint32_t seenHpPct,
+               int dosed, int undosed, int petHeal, int petDmg, int totems, int guardians, int healStacks,
+               int dmgHolders, Unit* boss)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
     // The row's clock is the real time since the cycle's first 24324 sighting, not the read's nominal delay.
     const std::string at = SeekSiphonAtLabel(elapsedMs);
-    char info1[224];
+    char info1[256];
     snprintf(info1, sizeof(info1),
              "cycle=%u,%s,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,totems=%u,guardians=%u,hakkar_stacks=%u,"
-             "hakkar_dmg=%u,hakkar_hp=%u",
+             "hakkar_dmg=%u,hakkar_hp=%u,hp_seen=%u",
              cycle, at.c_str(), static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
              static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg), static_cast<unsigned>(totems),
              static_cast<unsigned>(guardians), static_cast<unsigned>(healStacks),
-             static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
+             static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u,
+             static_cast<unsigned>(seenHpPct));
     char info2[224];
     snprintf(info2, sizeof(info2),
              "Hakkar siphon %u @+%ums: %d dosed, %d not, pets %d heal/%d dmg, totems %d, guardians %d, hakkar heal "
@@ -2065,9 +2080,18 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     out.shotZ = scan.z;
 }
 
+// One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
+// file, and the fight record's lock is never held across that I/O.
+struct SeekLogRow
+{
+    std::string type;
+    std::string info1;
+    std::string info2;
+};
+
 // Defined after SeekHoldsUnit (the hold clock reads it); ReadSeekFight calls it under the record lock.
-void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
-                       std::uint32_t nowMs);
+void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs, std::vector<SeekLogRow>& rows);
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
@@ -2096,10 +2120,12 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
     std::uint32_t pendingSiphonElapsedMs = 0;
+    std::uint32_t pendingSiphonHpPct = 0;
     std::uint32_t pendingCycle = 0;
     std::uint64_t gatherGuid = 0;
     std::uint64_t pullGuid = 0;
     std::uint32_t pullStartMs = 0;
+    std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
         SweepSeekRecords(nowMs);
@@ -2145,6 +2171,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
             record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
+            record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
             record.siphonCycle = record.cycleNo;
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
@@ -2152,6 +2179,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphon = true;
             pendingSiphonAtSec = 1;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonAtMs = 0;
         }
@@ -2160,6 +2188,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphon = true;
             pendingSiphonAtSec = 3;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
         }
@@ -2168,6 +2197,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphon = true;
             pendingSiphonAtSec = 9;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonThirdAtMs = 0;
         }
@@ -2211,8 +2241,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         CountSiphonPets(bot, petHeal, petDmg);
         CountSiphonSummons(bot, totems, guardians);
         CountHakkarSiphonAuras(boss, healStacks, dmgHolders);
-        LogSiphon(ai, bot, pendingCycle, pendingSiphonElapsedMs, dosed, undosed, petHeal, petDmg, totems, guardians,
-                  healStacks, dmgHolders, boss);
+        LogSiphon(ai, bot, pendingCycle, pendingSiphonElapsedMs, pendingSiphonHpPct, dosed, undosed, petHeal, petDmg,
+                  totems, guardians, healStacks, dmgHolders, boss);
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
         if (it != g_seekRecords.end())
@@ -2521,11 +2551,24 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.missing = record.missing;
         // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once a read sees it dead, out
         // of combat or on a tank; a Son this read did not see stays (SeekHealerClockTick).
+        std::set<std::uint64_t> healerBefore;
+        for (const auto& entry : record.healerHeldSince)
+            healerBefore.insert(entry.first);
         SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
+        // A release latch belongs to the record it was logged for: the healer clock letting go of a Son no hold record
+        // still covers drops it, so the next hold's own release logs again.
+        for (std::uint64_t guid : healerBefore)
+        {
+            if (!record.healerHeldSince.count(guid) && !record.holdSince.count(guid))
+                record.releaseLogged.erase(guid);
+        }
         healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
         out.nonTankSince = record.healerHeldSince;
-        TickSeekHoldClock(out, fightSons, record, nowMs);
+        TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);
     }
+    // The hold and death rows were built under the lock; logEvent runs without it.
+    for (const SeekLogRow& row : seekRows)
+        sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);
     if (healerTakeGuid)
     {
         // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
@@ -2572,6 +2615,16 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
 }
 
+// The row's hold verdict for this source (SeekHoldWhyOf): the reason SeekHoldsUnit and the release log both read.
+SeekHoldWhy SeekHoldWhyOfUnit(const SeekFight& state, Unit* unit)
+{
+    const float holdPct = static_cast<float>(state.row->priority);
+    return SeekHoldWhyOf(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
+                         unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
+                         SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs),
+                         SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+}
+
 // Whether the row holds the damage on this source: every Son but the one selected source, always, and the selected
 // source outside the dose window or beyond the seek's reach, and at the hold percent until the gather is ready or the
 // burn is forced. The decision itself is the policy's (SeekHoldDecision).
@@ -2586,20 +2639,192 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
                             SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
 }
 
+const char* SeekHoldWhyWord(SeekHoldWhy why)
+{
+    switch (why)
+    {
+        case SeekHoldWhy::Cap20:
+            return "cap20";
+        case SeekHoldWhy::NonTank:
+            return "nontank";
+        case SeekHoldWhy::SelectedBurn:
+            return "selected_burn";
+        case SeekHoldWhy::Dosed:
+            return "dosed";
+        case SeekHoldWhy::Held:
+            break;
+    }
+    return "held";
+}
+
+// The release reason in words for the row's plain-English half.
+const char* SeekHoldWhyText(SeekHoldWhy why)
+{
+    switch (why)
+    {
+        case SeekHoldWhy::Cap20:
+            return "the 20 s cap";
+        case SeekHoldWhy::NonTank:
+            return "time on a non-tank";
+        case SeekHoldWhy::SelectedBurn:
+            return "the burn";
+        case SeekHoldWhy::Dosed:
+            return "a dosed raid";
+        case SeekHoldWhy::Held:
+            break;
+    }
+    return "the hold";
+}
+
+const char* SeekHoldEndWord(SeekHoldEndReason reason)
+{
+    switch (reason)
+    {
+        case SeekHoldEndReason::Died:
+            return "died";
+        case SeekHoldEndReason::Gone:
+            return "gone";
+        case SeekHoldEndReason::Unticked:
+            return "unticked";
+        case SeekHoldEndReason::Unseen:
+            return "unseen";
+    }
+    return "died";
+}
+
+// The victim's role, the test TickSeekHoldClock makes for the clock: a player tank, a player non-tank, a pet or another
+// non-player unit, or none.
+const char* SeekVictimWord(Unit* son)
+{
+    Unit* const victim = son ? son->GetVictim() : nullptr;
+    if (!victim)
+        return "none";
+    Player* const player = dynamic_cast<Player*>(victim);
+    if (!player)
+        return "pet";
+    return PlayerbotAI::IsTank(player) ? "tank" : "nontank";
+}
+
+// The fight's phase for an event of a Son no live unit can answer for: the gather's readiness names the burn, the
+// gather itself gather, and the open dose window the hold. The death row reads this: a dead Son is never a source, so
+// the seek row's own word could only say gather or none.
+const char* SeekFightPhaseWord(const SeekFight& state)
+{
+    if (state.gathering)
+        return state.ready || state.forceBurn ? "burn" : "gather";
+    return state.windowOpen ? "hold" : "none";
+}
+
+// The numbers a Son hold or death row prints, read at the transition.
+struct SeekSonLogFacts
+{
+    std::uint32_t hp = 0;
+    float spotYd = 0.0f;
+    const char* victim = "none";
+    std::uint32_t nonTankMs = 0;
+};
+
+SeekSonLogFacts SeekSonFactsOf(Unit* son, const SeekCycleRecord& record, const SeekFight& state,
+                               std::uint32_t nowMs)
+{
+    SeekSonLogFacts facts;
+    if (!son || !state.row)
+        return facts;
+    facts.hp = static_cast<std::uint32_t>(son->GetHealthPercent());
+    facts.spotYd = son->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
+    facts.victim = SeekVictimWord(son);
+    facts.nonTankMs = SeekNonTankHeldMs(record.healerHeldSince, son->GetObjectGuid().GetRawValue(), nowMs);
+    return facts;
+}
+
+void PushSonHoldRow(std::vector<SeekLogRow>& rows, const SeekFight& state, const SeekCycleRecord& record,
+                    std::uint32_t nowMs, std::uint64_t guid, Unit* son, const char* event, const char* reason,
+                    std::uint32_t heldMs, const char* text)
+{
+    const SeekSonLogFacts facts = SeekSonFactsOf(son, record, state, nowMs);
+    char info1[256];
+    snprintf(info1, sizeof(info1),
+             "son=%u,event=%s,reason=%s,held_ms=%u,nontank_ms=%u,hp=%u,spot_yd=%.1f,cycle=%u,due_in=%u,victim=%s",
+             ObjectGuid(guid).GetCounter(), event, reason, static_cast<unsigned>(heldMs),
+             static_cast<unsigned>(facts.nonTankMs), static_cast<unsigned>(facts.hp), facts.spotYd, state.cycleNo,
+             static_cast<unsigned>(state.dueInMs / 1000), facts.victim);
+    rows.push_back(SeekLogRow{"BossTacticsSonHold", info1, text});
+}
+
+void PushSonDeathRow(std::vector<SeekLogRow>& rows, Player* bot, const SeekFight& state, SeekCycleRecord& record,
+                     std::uint32_t nowMs, std::uint64_t guid, Unit* son, const char* phase)
+{
+    int raidAlive = 0;
+    int raidInCloud = 0;
+    if (bot)
+    {
+        const auto count = [&](Player* member)
+        {
+            if (!member || member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+                return;
+            ++raidAlive;
+            if (son && member->GetDistance2dToCenter(son->GetPositionX(), son->GetPositionY()) <= kPoisonCloudYd)
+                ++raidInCloud;
+        };
+        if (Group* group = bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(group))
+                count(member);
+        }
+        else
+            count(bot);
+    }
+    const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
+    const int sinceSiphon = record.siphonSeenMs
+        ? static_cast<int>(SeekAgeMs(nowMs, record.siphonSeenMs) / 1000) : -1;
+    const char* lastReason = "none";
+    const auto release = record.lastRelease.find(guid);
+    if (release != record.lastRelease.end())
+        lastReason = SeekHoldWhyWord(release->second);
+    char info1[256];
+    snprintf(info1, sizeof(info1),
+             "son=%u,cycle=%u,due_in=%u,since_siphon=%d,phase=%s,raid_alive=%d,raid_in_cloud=%d,held_ms=%u,"
+             "last_reason=%s",
+             ObjectGuid(guid).GetCounter(), state.cycleNo, static_cast<unsigned>(state.dueInMs / 1000), sinceSiphon,
+             phase, raidAlive, raidInCloud, static_cast<unsigned>(heldMs), lastReason);
+    char info2[192];
+    snprintf(info2, sizeof(info2), "Son %u died in the %s phase, %d of %d raid members in its cloud, held %u ms",
+             ObjectGuid(guid).GetCounter(), phase, raidInCloud, raidAlive, static_cast<unsigned>(heldMs));
+    rows.push_back(SeekLogRow{"BossTacticsSonDeath", info1, info2});
+    record.sonDeathLogged.insert(guid);
+}
+
 // The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
 // from the previous read, then tick, so one bot's read sees one consistent hold time. Only fighting time counts, and a
 // Son the cap already released keeps its release while it is alive and seen (SeekHoldClockTick); an idle spare never
 // gets a record, so the cap cannot release one the area veto protects. A read that does not tick a Son (it selected
 // another Son, or none) leaves that Son's record alone: the record is fight-wide and another bot may be feeding it.
-void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
-                       std::uint32_t nowMs)
+// Hakkar's seek row also collects the held, released and dead Sons' rows here, under the caller's record lock; the
+// caller logs them once it is released.
+void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs, std::vector<SeekLogRow>& rows)
 {
     out.holdSince = record.holdSince;
+    const bool log = sPlayerbotAIConfig.hasLog("bot_events.csv") && out.row &&
+        out.row->targetEntry == kSonOfHakkarEntry;
+    // Every Son this fight's read has listed. A Son can drop out of fightSons (dead, errant) or still sit in it as a
+    // corpse, so this set remembers them for the death check, which asks the map for the truth.
+    if (out.row && out.row->targetEntry == kSonOfHakkarEntry)
+    {
+        for (Unit* const son : fightSons)
+            record.sonsSeen.insert(son->GetObjectGuid().GetRawValue());
+    }
+    std::map<std::uint64_t, Unit*> sonsByGuid;
+    std::vector<std::pair<Unit*, SeekHoldWhy>> whys;
     std::vector<SeekHoldSeen> holdSeen;
     holdSeen.reserve(fightSons.size());
+    if (log)
+        whys.reserve(fightSons.size());
     for (Unit* const son : fightSons)
     {
         const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+        if (log)
+            sonsByGuid[guid] = son;
         Unit* const victim = son->GetVictim();
         const bool engaged = sServerFacade.IsAlive(son) && son->IsInCombat() && victim;
         Player* const victimPlayer = engaged ? dynamic_cast<Player*>(victim) : nullptr;
@@ -2608,9 +2833,116 @@ void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, Seek
         const bool ticks = SeekSonTicks(alive, SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen),
                                         SeekHoldsUnit(out, son));
         holdSeen.push_back(SeekHoldSeen{guid, alive, ticks});
+        if (log && alive)
+            whys.push_back(std::make_pair(son, SeekHoldWhyOfUnit(out, son)));
     }
-    SeekHoldClockTick(record.holdSince, holdSeen, nowMs);
+
+    std::vector<SeekHoldEvent> goneEvents;
+    if (log)
+    {
+        // One release row per hold record: the verdict is each read's own (SelectedBurn follows that bot's source
+        // search), so the first read that lets a held Son go logs it and the other reads stay silent until this hold
+        // ends. A Son the fight holds no record for was never held, so it is not released.
+        for (const auto& entry : whys)
+        {
+            Unit* const son = entry.first;
+            const SeekHoldWhy why = entry.second;
+            const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+            const bool hasHoldRecord = record.holdSince.count(guid) || record.healerHeldSince.count(guid);
+            if (SeekHoldWhyHolds(why) || !SeekShouldLogRelease(hasHoldRecord, record.releaseLogged.count(guid) != 0))
+                continue;
+            const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
+            const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
+            char text[192];
+            snprintf(text, sizeof(text), "Son %u released after %.1f s held (%s), %u %% hp, %.1f yd from the spot",
+                     ObjectGuid(guid).GetCounter(), static_cast<double>(heldMs) / 1000.0, SeekHoldWhyText(why),
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+            PushSonHoldRow(rows, out, record, nowMs, guid, son, "release", SeekHoldWhyWord(why), heldMs, text);
+            record.releaseLogged.insert(guid);
+            record.lastRelease[guid] = why;
+        }
+
+        // A Son the fight had seen alive that this read no longer has alive. A corpse can still sit in fightSons for
+        // up to a second (a sole-kill candidate resolved from the map), so a listed Son that is not alive counts as
+        // gone from the living list: its death row is pushed here, before the clock tick would end its hold. A missing
+        // creature is a despawn or an evade, which is no death: its hold ends as gone and it is not looked up again.
+        // A Son alive but out of this read's sight was simply not listed.
+        std::set<std::uint64_t> liveNow;
+        for (Unit* const son : fightSons)
+        {
+            if (sServerFacade.IsAlive(son))
+                liveNow.insert(son->GetObjectGuid().GetRawValue());
+        }
+        for (std::uint64_t guid : SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged))
+        {
+            Creature* const creature = bot ? bot->GetMap()->GetCreature(ObjectGuid(guid)) : nullptr;
+            if (creature && !sServerFacade.IsAlive(creature))
+            {
+                PushSonDeathRow(rows, bot, out, record, nowMs, guid, creature, SeekFightPhaseWord(out));
+                continue;
+            }
+            if (creature)
+                continue;
+            const auto held = record.holdSince.find(guid);
+            if (held != record.holdSince.end())
+            {
+                goneEvents.push_back(SeekHoldEvent{guid, false, SeekHoldEndReason::Gone,
+                                                   SeekAgeMs(nowMs, held->second.sinceMs)});
+                record.goneLogged.insert(guid);
+            }
+            record.sonsSeen.erase(guid);
+        }
+    }
+
+    std::vector<SeekHoldEvent> events;
+    SeekHoldClockTick(record.holdSince, holdSeen, nowMs, log ? &events : nullptr);
     out.holdSince = record.holdSince;
+    if (log)
+        events.insert(events.end(), goneEvents.begin(), goneEvents.end());
+    for (const SeekHoldEvent& event : events)
+    {
+        // The gone row already ended this hold; the clock's own end for the same record adds nothing.
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.goneLogged.erase(event.guid) != 0)
+        {
+            record.releaseLogged.erase(event.guid);
+            continue;
+        }
+        // A record that ends while the Son is dead is a death, whatever the sweep's own clock said.
+        SeekHoldEndReason reason = event.reason;
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.sonDeathLogged.count(event.guid))
+            reason = SeekHoldEndReason::Died;
+        Unit* son = nullptr;
+        const auto seen = sonsByGuid.find(event.guid);
+        if (seen != sonsByGuid.end())
+            son = seen->second;
+        else if (bot)
+            son = bot->GetMap()->GetCreature(ObjectGuid(event.guid));
+        const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
+        char text[224];
+        if (event.start)
+            snprintf(text, sizeof(text), "Son %u entered the hold at %u %% hp, %.1f yd from the spot",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<unsigned>(facts.hp), facts.spotYd);
+        else if (reason == SeekHoldEndReason::Died)
+            snprintf(text, sizeof(text), "Son %u died after %.1f s held (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        else if (reason == SeekHoldEndReason::Gone)
+            snprintf(text, sizeof(text), "Son %u vanished from the map after %.1f s held",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0);
+        else if (reason == SeekHoldEndReason::Unticked)
+            snprintf(text, sizeof(text),
+                     "Son %u left the hold after %.1f s without a read ticking it (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        else
+            snprintf(text, sizeof(text), "Son %u left the hold after %.1f s unseen (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        PushSonHoldRow(rows, out, record, nowMs, event.guid, son, event.start ? "start" : "end",
+                       event.start ? "tick" : SeekHoldEndWord(reason), event.heldMs, text);
+        // A new hold is a new latch; a hold's end has no release left to suppress. Either way the old latch goes.
+        record.releaseLogged.erase(event.guid);
+    }
 }
 
 // The source a single-target damage action would hit: its own target. The read's source alone used to answer the area
@@ -4051,9 +4383,9 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     // A seek_aura source the row holds takes the drop path at once: the nearest pick would be the Son itself (it is
     // not a hold_kill entry), and re-attacking it is what kept the pre-damage going past the hold percent (H2).
     bool seekHeld = false;
+    SeekFight state;
     if (sPlayerbotAIConfig.dungeonRunSeekAura)
     {
-        SeekFight state;
         seekHeld = ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, held);
     }
     // The kill_first pick moves the bot off a held boss entry (a Voidwalker, the Blood Priest). A pick that is the held
@@ -4064,7 +4396,7 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
         {
             if (pick != held)
             {
-                LogHoldKillPick(ai, bot, fight, held, pick, countNear);
+                LogHoldKillPick(ai, bot, fight, held, pick, countNear, &state.holdSince, state.nowMs);
                 return Attack(bot, pick);
             }
         }
@@ -4087,13 +4419,14 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
         const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
         if (nearestIndex >= 0)
         {
-            LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear);
+            LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear, &state.holdSince,
+                            state.nowMs);
             return Attack(bot, fight.units[nearestIndex]);
         }
     }
     // Nothing to switch to: drop the held pick and stop, so the assist rows re-pick once the blocker is dead. Every
     // picker skips a held entry, so the bot has no dps target while the blocker lives and waits the Servant out.
-    LogHoldKillPick(ai, bot, fight, held, nullptr, countNear);
+    LogHoldKillPick(ai, bot, fight, held, nullptr, countNear, &state.holdSince, state.nowMs);
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);
     context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
@@ -4508,7 +4841,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
             Unit* const struck = action->GetTarget();
             if (SeekDotOnSource(state, action))
             {
-                LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
+                LogHoldKillVeto(ai, bot, "seek", action->GetTarget(), &state.holdSince, state.nowMs);
                 return 0.0f;
             }
             const bool pullHit = IsSeekSource(state, struck) &&
@@ -4526,7 +4859,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
                     heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
                 if (heldSource)
                 {
-                    LogHoldKillVeto(ai, bot, "seek", heldSource);
+                    LogHoldKillVeto(ai, bot, "seek", heldSource, &state.holdSince, state.nowMs);
                     return 0.0f;
                 }
             }

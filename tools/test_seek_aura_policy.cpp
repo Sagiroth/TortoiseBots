@@ -209,6 +209,41 @@ int main()
     CHECK(!SeekHoldDecision(false, true, true, false, 80.0f, 30.0f, 5.0f, 5, 0, 20000));
     CHECK(!SeekHoldDecision(true, false, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
 
+    // SeekHoldWhyOf: the hold rule's one body answers why, and SeekHoldDecision reads held-ness through it. The cap
+    // wins over the healer's burn and every other reason; the dosed path (no seeker left) still holds the Son, since a
+    // kill buys nothing then.
+    CHECK(SeekHoldWhyOf(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000) == SeekHoldWhy::Cap20);
+    CHECK(SeekHoldWhyOf(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000) == SeekHoldWhy::NonTank);
+    CHECK(SeekHoldWhyOf(true, true, true, false, 14.0f, 30.0f, 5.0f, 5) == SeekHoldWhy::SelectedBurn);
+    CHECK(SeekHoldWhyOf(false, true, true, false, 20.0f, 30.0f, 5.0f, 5) == SeekHoldWhy::Held);
+    CHECK(SeekHoldWhyOf(true, true, true, false, 20.0f, 30.0f, 5.0f, 0) == SeekHoldWhy::Dosed);
+    CHECK(SeekHoldWhyHolds(SeekHoldWhy::Held) && SeekHoldWhyHolds(SeekHoldWhy::Dosed));
+    CHECK(!SeekHoldWhyHolds(SeekHoldWhy::Cap20) && !SeekHoldWhyHolds(SeekHoldWhy::NonTank) &&
+          !SeekHoldWhyHolds(SeekHoldWhy::SelectedBurn));
+    // The decision and its reason cannot drift: over the decision's cases (the dosed one aside) SeekHoldDecision is
+    // exactly (SeekHoldWhyOf == Held).
+    {
+        const auto agrees = [](bool selected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+                               float holdPct, float dist, int seekers, std::uint32_t nonTankMs = 0,
+                               std::uint32_t heldMs = 0)
+        {
+            return SeekHoldDecision(selected, windowOpen, gatherReady, forceBurn, hpPct, holdPct, dist, seekers,
+                                    nonTankMs, heldMs) ==
+                (SeekHoldWhyOf(selected, windowOpen, gatherReady, forceBurn, hpPct, holdPct, dist, seekers, nonTankMs,
+                               heldMs) == SeekHoldWhy::Held);
+        };
+        CHECK(agrees(true, true, true, false, 20.0f, 30.0f, 5.0f, 5));    // held at the percent
+        CHECK(agrees(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));   // held until the gather is ready
+        CHECK(agrees(true, true, true, false, 14.0f, 30.0f, 5.0f, 5));    // the burn
+        CHECK(agrees(false, true, true, false, 20.0f, 30.0f, 5.0f, 5));   // not the pick
+        CHECK(agrees(true, false, false, false, 20.0f, 30.0f, 5.0f, 5));  // the window shut
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 40.0f, 5));  // out of reach
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 4999)); // below the non-tank burn
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000)); // the non-tank burn
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 19999)); // below the cap
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000)); // the cap
+    }
+
     // SeekSonTicks: what one read feeds into the shared hold clock. Only a Son this read saw alive, that the clock
     // counts and that the hold rule still holds is fed; a read of a Son seen dead erases its record, and a
     // non-ticking read of a live Son changes nothing (another bot may be feeding it). An idle spare or a Son the rule

@@ -405,6 +405,113 @@ int main()
         CHECK(held.size() == 1 && held[11].sinceMs == 30000);
     }
 
+    // SeekHoldEvents: the clock reports each transition. A start carries the guid and a 0 age; a below-cap record no read
+    // ticked for kSeekHoldUntickedMs ends as Unticked with the record's age at the erase.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true, true}}, 1000, &events);
+        CHECK(events.size() == 1 && events[0].guid == 7 && events[0].start && events[0].heldMs == 0);
+        events.clear();
+        SeekHoldClockTick(held, {}, 1000 + kSeekHoldUntickedMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unticked);
+        CHECK(events[0].heldMs == kSeekHoldUntickedMs + 100);
+        CHECK(held.empty());
+    }
+
+    // A Son seen dead ends as Died with its age at the read.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(held, {SeekHoldSeen{9, true, true}}, 1000, &events);
+        events.clear();
+        SeekHoldClockTick(held, {SeekHoldSeen{9, false, false}}, 3000, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Died);
+        CHECK(events[0].heldMs == 2000);
+        CHECK(held.empty());
+    }
+
+    // A capped record no read saw alive for kSeekHoldStaleMs ends as Unseen; the unticked sweep must not take it first
+    // (a capped entry sweeps on the seen stamp, not the tick stamp).
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        std::vector<SeekHoldEvent> events;
+        for (std::uint32_t nowMs = 1000; nowMs <= 21000; nowMs += 1000)
+            SeekHoldClockTick(held, {SeekHoldSeen{11, true, true}}, nowMs, &events);
+        CHECK(events.size() == 1 && events[0].start);
+        events.clear();
+        SeekHoldClockTick(held, {}, 21000 + kSeekHoldStaleMs + 100, &events);
+        CHECK(events.size() == 1 && !events[0].start && events[0].reason == SeekHoldEndReason::Unseen);
+        CHECK(events[0].heldMs == kSeekHoldStaleMs + 100 + 20000);
+        CHECK(held.empty());
+    }
+
+    // A null collector changes nothing: the map takes the same path, and the same events would have been reported.
+    {
+        std::map<std::uint64_t, SeekHeldSon> with;
+        std::map<std::uint64_t, SeekHeldSon> without;
+        std::vector<SeekHoldEvent> events;
+        SeekHoldClockTick(with, {SeekHoldSeen{3, true, true}}, 1000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, true, true}}, 1000);
+        CHECK(events.size() == 1);
+        SeekHoldClockTick(with, {SeekHoldSeen{3, false, false}}, 4000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{3, false, false}}, 4000);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 2 && events[1].reason == SeekHoldEndReason::Died);
+        SeekHoldClockTick(with, {SeekHoldSeen{5, true, true}}, 10000, &events);
+        SeekHoldClockTick(without, {SeekHoldSeen{5, true, true}}, 10000, nullptr);
+        SeekHoldClockTick(with, {}, 10000 + kSeekHoldUntickedMs + 1, &events);
+        SeekHoldClockTick(without, {}, 10000 + kSeekHoldUntickedMs + 1, nullptr);
+        CHECK(with.empty() && without.empty());
+        CHECK(events.size() == 4 && events[3].reason == SeekHoldEndReason::Unticked);
+    }
+
+    // SeekShouldLogRelease: only a Son the fight still holds a record for can be released, and one row per hold record
+    // (the first read that sees the release logs it). A Son never held is not "released after 0.0 s".
+    {
+        CHECK(!SeekShouldLogRelease(false, false));
+        CHECK(!SeekShouldLogRelease(false, true));
+        CHECK(SeekShouldLogRelease(true, false));
+        CHECK(!SeekShouldLogRelease(true, true));
+    }
+
+    // The release latch lives no longer than the record it was logged for. A NonTank release on a healer-only record
+    // latches; the healer clock removing that record (with no hold record covering the Son) drops the latch, and the
+    // next hold's own release logs again. A latch the hold record still covers survives the healer clock's end, so a
+    // hold's release is not logged twice.
+    {
+        bool latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+        latch = true;
+        CHECK(!SeekShouldLogRelease(true, latch));
+        const bool healerRecordEnded = true;
+        const bool heldByHold = false;
+        if (healerRecordEnded && !heldByHold)
+            latch = false;
+        // The next hold's start drops the latch too (it belongs to the new record).
+        latch = false;
+        CHECK(SeekShouldLogRelease(true, latch));
+
+        bool holdLatch = true;
+        const bool holdCoversIt = true;
+        if (healerRecordEnded && !holdCoversIt)
+            holdLatch = false;
+        CHECK(!SeekShouldLogRelease(true, holdLatch));
+    }
+
+    // SeekDeathCandidates: a Son seen alive and missing from this read's living list is looked up once, whether or not
+    // a hold record ever existed for it; a Son still alive and a Son already logged are not.
+    {
+        const std::set<std::uint64_t> seen = {1, 2, 3, 4};
+        const std::set<std::uint64_t> live = {1, 3};
+        const std::set<std::uint64_t> logged = {2};
+        const std::vector<std::uint64_t> candidates = SeekDeathCandidates(seen, live, logged);
+        CHECK(candidates.size() == 1 && candidates[0] == 4);
+        const std::vector<std::uint64_t> neverHeld = SeekDeathCandidates({9}, {}, {});
+        CHECK(neverHeld.size() == 1 && neverHeld[0] == 9);
+        CHECK(SeekDeathCandidates({}, {1, 2}, {}).empty());
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

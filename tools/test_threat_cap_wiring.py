@@ -72,15 +72,17 @@ class SonHoldTimings(unittest.TestCase):
         self.assertIn("constexpr std::uint32_t kSeekHealerTakeMs = 3000;", SEEK_POLICY)
         self.assertIn("constexpr std::uint32_t kSeekNonTankBurnMs = 5000;", SEEK_POLICY)
         self.assertIn("constexpr std::uint32_t kSeekHoldMaxMs = 20000;", SEEK_POLICY)
-        decision = body(SEEK_POLICY, "inline bool SeekHoldDecision(")
+        decision = body(SEEK_POLICY, "inline SeekHoldWhy SeekHoldWhyOf(")
         self.assertIn("if (heldMs >= kSeekHoldMaxMs)", decision)
+        self.assertIn("if (nonTankHeldMs >= kSeekNonTankBurnMs)", decision)
+        self.assertIn("SeekHoldWhyHolds(SeekHoldWhyOf(", body(SEEK_POLICY, "inline bool SeekHoldDecision("))
 
     def test_the_hold_read_feeds_the_hold_clock(self):
         hold = body(BOSS, "bool SeekHoldsUnit(const SeekFight& state, Unit* unit)")
         self.assertIn("SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs)", hold)
         read = body(BOSS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
-        self.assertIn("TickSeekHoldClock(out, fightSons, record, nowMs)", read)
-        self.assertIn("SeekHoldClockTick(record.holdSince, holdSeen, nowMs)", BOSS)
+        self.assertIn("TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows)", read)
+        self.assertIn("SeekHoldClockTick(record.holdSince, holdSeen, nowMs,", BOSS)
         # The alive/feed composition is the policy's (SeekSonTicks), so the release can be tested without the action.
         self.assertIn("SeekSonTicks(alive, SeekHoldClockTicks(", BOSS)
         self.assertNotIn("capped ||", BOSS)
