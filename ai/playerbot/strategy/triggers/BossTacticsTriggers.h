@@ -49,6 +49,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A cursed healer or off-tank whose Shade is in reach and whose raid can spare it (AiPlayerbot.DungeonRunCarrierStrike;
+    // the guard is CarrierStrikeAllowed). Checked every second while a carrier row is open.
+    class BossTacticsCarrierStrikeTrigger : public Trigger
+    {
+    public:
+        BossTacticsCarrierStrikeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics carrier strike", 1) {}
+        bool IsActive() override;
+    };
+
     // This DPS bot's current target is a boss entry a hold_kill row holds (its blocker still lives).
     class BossTacticsHoldKillTrigger : public Trigger
     {

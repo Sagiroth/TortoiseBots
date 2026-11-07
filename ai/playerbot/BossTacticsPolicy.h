@@ -2609,6 +2609,18 @@ namespace ai
         return false;
     }
 
+    // Whether the fight's open rows ask for a threat successor: the boss is taunt-immune, so a threat wipe (Hex) hands it
+    // to whoever stands highest, and only the assigned off-tank that held it takes it back. An off-tank that leaves for a
+    // Shade stops holding, the damage dealers' cap falls to half the main tank's threat (ThreatCapPolicy.h), and the
+    // wipe hands the boss to a damage dealer.
+    inline bool HasThreatSuccessorRow(const ActiveBossRows& active)
+    {
+        for (const BossTacticRow* row : active)
+            if (row->kind == BossTacticKind::ThreatSuccessor)
+                return true;
+        return false;
+    }
+
     // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
     // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
     // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
@@ -2623,6 +2635,139 @@ namespace ai
         if (!explicitOrder)
             return KillFirstPickMode::Free;
         return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
+    }
+
+    // --- carrier strike ---------------------------------------------------------------------------------------------
+    // A cursed healer or off-tank turns on its own Shade (a kill_first row gated by the curse) while the raid is safe.
+    // The kill_first node itself is DPS-only and sits far below every heal row, so this carrier needs its own node and
+    // an explicit guard: a healer that leaves the raid to hit a Shade must not be the difference between a member
+    // living and dying.
+    enum class CarrierStrikeRole : std::uint8_t { Dps, Healer, OffTank, MainTank };
+    enum class CarrierStrikeVerdict : std::uint8_t
+    {
+        Strike,
+        NotCarrier,
+        NoShade,
+        MainTank,
+        ThreatSuccessor,
+        HoldsBoss,
+        GuardLowMember,
+        GuardTank,
+        GuardHealers,
+        GuardMana,
+        GuardDispel,
+        Dps,
+    };
+
+    // One other healer as the count reads it, every field the caller's read of the member.
+    struct CarrierHealer
+    {
+        bool alive = false;
+        bool cursed = false;     // carries the fight's carrier aura
+        bool charmed = false;    // a charmer owns its AI (the Brain Wash Totem), so it does not heal the raid
+        float distanceYd = 0.0f; // from the carrier (the raid)
+        float dropYd = 0.0f;     // signed height against the carrier: how far below it (+), how far above it (-)
+    };
+
+    // A healer whose height against the carrier exceeds this is on another floor (Jin'do's troll pit floor sits ~12 yd
+    // under the boss's), where its heals cannot reach the raid. Read both ways: the carrier itself may be the one in the
+    // pit, and a healer on the room floor is then just as far from it.
+    constexpr float kCarrierPitDropYd = 6.0f;
+
+    // The other healers that can really heal the raid: alive, not carriers, not charmed, within the carrier's own heal
+    // reach (twice the heal range) and on the same floor as the carrier.
+    inline bool CarrierHealerCounts(const CarrierHealer& healer, float reachYd)
+    {
+        return healer.alive && !healer.cursed && !healer.charmed && healer.distanceYd <= reachYd &&
+            std::fabs(healer.dropYd) <= kCarrierPitDropYd;
+    }
+
+    inline std::uint8_t CarrierHealerCount(const std::vector<CarrierHealer>& healers, float reachYd)
+    {
+        std::uint8_t count = 0;
+        for (const CarrierHealer& healer : healers)
+            if (CarrierHealerCounts(healer, reachYd))
+                ++count;
+        return count;
+    }
+
+    struct CarrierStrikeInput
+    {
+        CarrierStrikeRole role;
+        bool cursed;            // this bot carries the carrier row's aura
+        bool shadeInReach;      // a pickable unit of the carrier row within kCarrierHoldReachYd
+        bool holdsBoss;         // a boss of the fight is on this bot
+        bool threatSuccessor;   // the fight's boss has a `threat_successor` row: a tank leaving it hands it to a DPS
+        std::uint8_t lowestMemberPct; // the lowest living group member within 2x heal range
+        std::uint8_t tankPct;         // the main tank (0: no main tank alive)
+        std::uint8_t otherHealers;    // CarrierHealerCount: healers other than this bot that can heal the raid
+        std::uint8_t manaPct;
+        bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
+    };
+
+    // The carrier's own guards that no config key carries; the lowest-member line is the live AiPlayerbot.LowHealth the
+    // caller passes to CarrierStrikeAllowed (a healer that leaves the raid must not drop it below the low-heal line).
+    constexpr std::uint8_t kCarrierStrikeTankPct = 60;
+    constexpr std::uint8_t kCarrierStrikeHealers = 2;    // other healers that can heal the raid still standing
+    constexpr std::uint8_t kCarrierStrikeManaPct = 30;
+
+    // The first check that fails gives the verdict; earlier checks are the roles this rule never covers.
+    inline CarrierStrikeVerdict CarrierStrikeAllowed(const CarrierStrikeInput& in, std::uint8_t lowHealthPct)
+    {
+        if (in.role == CarrierStrikeRole::Dps)
+            return CarrierStrikeVerdict::Dps;
+        if (in.role == CarrierStrikeRole::MainTank)
+            return CarrierStrikeVerdict::MainTank;
+        // On a successor fight no off-tank may leave the boss, held or not: while no off-tank holds, the damage dealers'
+        // cap is half the main tank's threat, and the next threat wipe hands the boss to a damage dealer.
+        if (in.role == CarrierStrikeRole::OffTank && in.threatSuccessor)
+            return CarrierStrikeVerdict::ThreatSuccessor;
+        if (!in.cursed)
+            return CarrierStrikeVerdict::NotCarrier;
+        if (!in.shadeInReach)
+            return CarrierStrikeVerdict::NoShade;
+        if (in.role == CarrierStrikeRole::OffTank && in.holdsBoss)
+            return CarrierStrikeVerdict::HoldsBoss;
+        if (in.role == CarrierStrikeRole::Healer)
+        {
+            if (in.dispelNowPending)
+                return CarrierStrikeVerdict::GuardDispel;
+            if (in.lowestMemberPct < lowHealthPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+            if (in.otherHealers < kCarrierStrikeHealers)
+                return CarrierStrikeVerdict::GuardHealers;
+            if (in.manaPct < kCarrierStrikeManaPct)
+                return CarrierStrikeVerdict::GuardMana;
+        }
+        if (in.role == CarrierStrikeRole::OffTank)
+        {
+            if (in.lowestMemberPct < lowHealthPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+        }
+        return CarrierStrikeVerdict::Strike;
+    }
+
+    // The damaging spells this class strikes a Shade with, shortest cast first; empty means melee or wand (Attack).
+    // CLASS_* ids are kept literal so this header stays free of the core includes.
+    inline std::vector<const char*> CarrierStrikeSpells(std::uint8_t cls)
+    {
+        switch (cls)
+        {
+            case 5:  // CLASS_PRIEST
+                return {"mind blast", "smite"};
+            case 11: // CLASS_DRUID
+                return {"moonfire", "wrath"};
+            case 7:  // CLASS_SHAMAN
+                return {"earth shock", "lightning bolt"};
+            case 2:  // CLASS_PALADIN
+                return {"holy shock"};
+            default:
+                return {};
+        }
     }
 
     // Whether the kill_first trigger has work: the current target is not the pick, or the bookkeeping already names the

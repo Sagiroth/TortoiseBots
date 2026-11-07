@@ -338,6 +338,7 @@ namespace ai
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptTrigger(ai); };
             creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepTrigger(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstTrigger(ai); };
+            creators["boss tactics carrier strike"] = [](PlayerbotAI* ai) { return new BossTacticsCarrierStrikeTrigger(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathTrigger(ai); };
             creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldTrigger(ai); };

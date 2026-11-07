@@ -85,11 +85,8 @@ Spell* ListedCastSpell(const ActiveBossRows& active, Unit* caster)
 }
 
 // A bot on battle duty: not a tank, not a healer. The hold's role gate, for the clauses an explicit attack order may
-// lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto).
-bool IsBattleDps(Player* bot)
-{
-    return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
-}
+// lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto). Declared in BossTacticsActions.h: the
+// carrier strike trigger reads it too.
 
 // A bot on tank or healer duty keeps it; an explicit player order wins.
 bool IsFreeDps(PlayerbotAI* ai, Player* bot)
@@ -821,6 +818,11 @@ void ResetSeekTickCache()
     t_seekTick.read = false;
     t_seekTick.fight = SeekFight();
 }
+}
+
+bool ai::IsBattleDps(Player* bot)
+{
+    return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
 }
 
 ai::BossTacticsScanScope::BossTacticsScanScope()
@@ -3070,6 +3072,13 @@ Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
     return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
 }
 
+Unit* ai::FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    if (!ai || !bot)
+        return nullptr;
+    return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
+}
+
 bool ai::CarriesAuraGatedKillFirst(PlayerbotAI* ai, Player* bot)
 {
     if (!ai || !bot)
@@ -3855,6 +3864,90 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);
 }
 
+// The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
+// with the guard numbers behind the verdict. One row per bot whenever the verdict changes, and at most one every
+// kCarrierStrikeLogGapMs while it stays the same: the trigger evaluates it every second and a healer can sit under one
+// guard for a whole curse.
+//   info1 = "verdict=<strike|not_carrier|no_shade|main_tank|holds_boss|guard_low_member|guard_tank|guard_healers|
+//             guard_mana|guard_dispel>,role=<healer|offtank|maintank|dps>"
+//   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,low=<pct>,tank=<pct>,healers=<n>,mana=<pct>,spell=<id|melee|none>"
+constexpr uint32 kCarrierStrikeLogGapMs = 5000;
+std::mutex g_carrierStrikeLogMutex;
+
+struct CarrierStrikeLogRecord
+{
+    CarrierStrikeVerdict verdict = CarrierStrikeVerdict::NotCarrier;
+    uint32 atMs = 0;
+};
+std::unordered_map<uint64, CarrierStrikeLogRecord> g_carrierStrikeLog;
+
+static bool CarrierStrikeLogDue(Player* bot, CarrierStrikeVerdict verdict)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_carrierStrikeLogMutex);
+    CarrierStrikeLogRecord& record = g_carrierStrikeLog[bot->GetObjectGuid().GetRawValue()];
+    if (record.atMs != 0 && record.verdict == verdict && nowMs - record.atMs < kCarrierStrikeLogGapMs)
+        return false;
+    record.verdict = verdict;
+    record.atMs = nowMs;
+    return true;
+}
+
+const char* CarrierStrikeVerdictWord(CarrierStrikeVerdict verdict)
+{
+    switch (verdict)
+    {
+        case CarrierStrikeVerdict::Strike:          return "strike";
+        case CarrierStrikeVerdict::NotCarrier:      return "not_carrier";
+        case CarrierStrikeVerdict::NoShade:         return "no_shade";
+        case CarrierStrikeVerdict::MainTank:        return "main_tank";
+        case CarrierStrikeVerdict::ThreatSuccessor: return "threat_successor";
+        case CarrierStrikeVerdict::HoldsBoss:       return "holds_boss";
+        case CarrierStrikeVerdict::GuardLowMember:  return "guard_low_member";
+        case CarrierStrikeVerdict::GuardTank:       return "guard_tank";
+        case CarrierStrikeVerdict::GuardHealers:    return "guard_healers";
+        case CarrierStrikeVerdict::GuardMana:       return "guard_mana";
+        case CarrierStrikeVerdict::GuardDispel:     return "guard_dispel";
+        case CarrierStrikeVerdict::Dps:             return "dps";
+    }
+    return "not_carrier";
+}
+
+const char* CarrierStrikeRoleWord(CarrierStrikeRole role)
+{
+    switch (role)
+    {
+        case CarrierStrikeRole::Healer:   return "healer";
+        case CarrierStrikeRole::OffTank:  return "offtank";
+        case CarrierStrikeRole::MainTank: return "maintank";
+        case CarrierStrikeRole::Dps:      return "dps";
+    }
+    return "dps";
+}
+
+void ai::LogCarrierStrike(PlayerbotAI* ai, Player* bot, CarrierStrikeVerdict verdict, CarrierStrikeRole role,
+    Unit* shade, float shadeYd, std::uint8_t lowestPct, std::uint8_t tankPct, std::uint8_t otherHealers,
+    std::uint8_t manaPct, const char* spell)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    if (!CarrierStrikeLogDue(bot, verdict))
+        return;
+    char info1[96];
+    snprintf(info1, sizeof(info1), "verdict=%s,role=%s", CarrierStrikeVerdictWord(verdict),
+             CarrierStrikeRoleWord(role));
+    char shadeText[48];
+    if (shade)
+        snprintf(shadeText, sizeof(shadeText), "%u:%u", shade->GetEntry(), shade->GetGUIDLow());
+    else
+        snprintf(shadeText, sizeof(shadeText), "none");
+    char info2[192];
+    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,low=%u,tank=%u,healers=%u,mana=%u,spell=%s", shadeText,
+             shadeYd, static_cast<unsigned>(lowestPct), static_cast<unsigned>(tankPct),
+             static_cast<unsigned>(otherHealers), static_cast<unsigned>(manaPct), spell ? spell : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsCarrierStrike", info1, info2);
+}
+
 bool BossTacticsKillFirstAction::Execute(Event& event)
 {
     (void)event;
@@ -3889,6 +3982,27 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
         context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
     }
     return Attack(bot, pick);
+}
+
+bool BossTacticsCarrierStrikeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    Unit* shade = FindBossCarrierStrikePick(ai, bot, fight);
+    if (!shade)
+        return false;
+    // A healer uses the class's shortest damaging spell; when none can be cast (a talentless paladin, mana, cooldown)
+    // the melee/wand fallback keeps it on the Shade. An off-tank always attacks.
+    if (PlayerbotAI::IsHeal(bot))
+    {
+        for (const char* name : CarrierStrikeSpells(bot->GetClass()))
+        {
+            std::string const spell(name);
+            if (ai->CanCastSpell(spell, shade))
+                return ai->CastSpell(spell, shade);
+        }
+    }
+    return Attack(bot, shade);
 }
 
 bool BossTacticsHoldKillAction::Execute(Event& event)

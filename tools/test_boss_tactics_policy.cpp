@@ -3310,6 +3310,150 @@ int main()
         }
     }
 
+    // t1106c item 1: a cursed healer or off-tank strikes its own Shade while the raid is safe (CarrierStrikeAllowed).
+    {
+        // The lowest-member line is the caller's live AiPlayerbot.LowHealth, passed with the read (50 = the default).
+        CarrierStrikeInput safe;
+        safe.role = CarrierStrikeRole::Healer;
+        safe.cursed = true;
+        safe.shadeInReach = true;
+        safe.holdsBoss = false;
+        safe.threatSuccessor = false;
+        safe.lowestMemberPct = 72;
+        safe.tankPct = 80;
+        safe.otherHealers = 3;
+        safe.manaPct = 60;
+        safe.dispelNowPending = false;
+        CHECK(CarrierStrikeAllowed(safe, 50) == CarrierStrikeVerdict::Strike); // TestCursedHealerStrikesWhenRaidSafe
+        {
+            CarrierStrikeInput in = safe;
+            in.lowestMemberPct = 49;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember); // TestCursedHealerYieldsBelowLowHealth
+        }
+        {
+            // A live band below the member's health lets the strike through: the guard is the config's, not a literal.
+            CarrierStrikeInput in = safe;
+            in.lowestMemberPct = 45;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember); // TestLowHealthBandRefuses
+            CHECK(CarrierStrikeAllowed(in, 40) == CarrierStrikeVerdict::Strike);         // TestLowHealthBandIsTheConfig
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.tankPct = 59;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardTank); // TestCursedHealerYieldsForTank
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.otherHealers = 1;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardHealers); // TestLastHealersKeepHealing
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.dispelNowPending = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardDispel); // TestDispelNowPendingWins
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.manaPct = 29;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardMana); // TestHealerManaFloor
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::MainTank;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::MainTank); // TestMainTankNeverStrikes
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::HoldsBoss); // TestOffTankOnBossNeverStrikes
+        }
+        {
+            // A fight whose boss asks for a threat successor keeps its off-tank on the boss even when the boss is not on
+            // it: with no off-tank holding, the damage dealers' cap falls to half the main tank's threat and the next
+            // threat wipe (Jin'do's Hex) hands the boss to a damage dealer.
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = false;
+            in.threatSuccessor = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::ThreatSuccessor); // TestOffTankOnSuccessorFightNeverStrikes
+        }
+        {
+            // The rule is the tanks': a healer on the same fight still strikes, and the row only stops the off-tank.
+            CarrierStrikeInput in = safe;
+            in.threatSuccessor = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike); // TestHealerStrikesOnSuccessorFight
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = false;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike); // TestOffTankStrikesWhenFree
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.cursed = false;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::NotCarrier); // TestUncursedHealerNoStrike
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::Dps;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Dps); // TestDpsLeftToKillFirst
+        }
+        // The fight-level read behind the refusal: the fight's open rows carry the kind (HasThreatSuccessorRow).
+        {
+            std::vector<BossTacticRow> none;
+            BossTacticRow successor = Row(309, 11380, BossTacticKind::ThreatSuccessor);
+            BossTacticRow first = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+            CHECK(!HasThreatSuccessorRow(Active(none))); // TestNoSuccessorRow
+            CHECK(HasThreatSuccessorRow(Active(std::vector<BossTacticRow>{successor}))); // TestSuccessorRowRead
+            CHECK(!HasThreatSuccessorRow(Active(std::vector<BossTacticRow>{first}))); // TestOtherRowIsNoSuccessor
+        }
+        // t1106c round 2: the other-healer count keeps only healers that can heal the raid (CarrierHealerCount).
+        {
+            CarrierHealer healer;
+            healer.alive = true;
+            healer.cursed = false;
+            healer.charmed = false;
+            healer.distanceYd = 20.0f;
+            healer.dropYd = 0.0f;
+            std::vector<CarrierHealer> healers(3, healer);
+            CHECK(CarrierHealerCount(healers, 40.0f) == 3); // TestOtherHealerCount
+            std::vector<CarrierHealer> one = healers;
+            one[0].alive = false;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestDeadHealerNotCounted
+            one = healers;
+            one[0].cursed = true;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCursedHealerNotCounted
+            one = healers;
+            one[0].charmed = true;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCharmedHealerNotCounted
+            one = healers;
+            one[0].distanceYd = 41.0f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestHealerBeyondReachNotCounted
+            one = healers;
+            one[0].distanceYd = 40.0f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestHealerAtReachCounts
+            one = healers;
+            one[0].dropYd = 12.4f; // Jin'do's pit floor sits ~12 yd under the boss's
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestHealerInThePitNotCounted
+            one = healers;
+            one[0].dropYd = kCarrierPitDropYd;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestHealerAtThePitLineCounts
+            // The carrier can be the one in the pit: a healer on the room floor then reads the same ~12 yd above it, and
+            // "above" is not "on the carrier's floor" either (TestCarrierInThePitCountsOnlyItsOwnFloor).
+            one = healers;
+            one[0].dropYd = -12.4f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCarrierInThePitLeavesTheRoomFloorOut
+            one = healers;
+            one[0].dropYd = -kCarrierPitDropYd;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestCarrierInThePitKeepsItsOwnFloor
+        }
+        // The strike spells: the class's shortest casts first, nothing for a class without one (melee or wand).
+        CHECK(CarrierStrikeSpells(5) == std::vector<const char*>({"mind blast", "smite"})); // TestCarrierStrikeSpellsPriest
+        CHECK(CarrierStrikeSpells(1).empty()); // TestCarrierStrikeSpellsWarrior
+    }
+
     // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.
     {
         BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);

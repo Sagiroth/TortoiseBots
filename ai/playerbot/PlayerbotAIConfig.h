@@ -672,6 +672,11 @@ public:
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;
+    // A cursed healer or off-tank strikes its own Shade (a kill_first row gated by the curse) while the raid is safe:
+    // the lowest member at or above 50 %, the main tank at or above 60 %, two other uncursed healers, 30 % mana and no
+    // pending `now` dispel. The main tank never strikes and an off-tank only while the boss is not on it. Off, the
+    // carrier node is never active (default off).
+    bool dungeonRunCarrierStrike = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
