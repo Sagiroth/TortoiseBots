@@ -697,7 +697,7 @@ When enabled, masterless pool bots actively manage their quest logs:
 - Obsolete or failed quests are abandoned when the quest log nears capacity.
 - War-effort item turn-ins and banned joke quests are declined.
 
-Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
+Banned quests are dropped across all bots including owned companions. An alt playing on its own also skips grey quests lacking gear upgrades, but it never drops quests already in its log. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
 
 </details>
 
