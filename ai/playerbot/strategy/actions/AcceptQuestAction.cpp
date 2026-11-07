@@ -103,7 +103,8 @@ bool AcceptAllQuestsAction::WouldAcceptQuest(PlayerbotAI* ai, Player* bot, Quest
     // extended to fixed RewItemId upgrades as well as choice rewards.
     if (sPlayerbotAIConfig.botQuestLogUpkeep &&
         !ai->HasActivePlayerMaster() &&
-        sRandomBotFacade.IsRandomBot(bot) &&
+        (sRandomBotFacade.IsRandomBot(bot) ||
+            TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid())) &&
         !quest->GetRequiredClasses() &&
         quest->GetQuestLevel() > 0 &&
         bot->GetLevel() > bot->GetQuestLevelForPlayer(quest) + (uint32)sWorld.getConfig(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF) + 1)
