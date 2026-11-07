@@ -21,7 +21,6 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
 #include "playerbot/FollowTrailPolicy.h"
-#include "playerbot/ThreatCapPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
 #include "../../runtime/BotManager.h"
 
@@ -466,10 +465,6 @@ public:
     void Reset(bool full = false);
     static bool IsTank(Player* player, bool inGroup = true);
     static bool IsHeal(Player* player, bool inGroup = true);
-    // This bot's `threat_successor` auto-attack cap latch (ThreatCapPolicy.h): the stop starts at 65 % of the
-    // off-tank's threat and only resumes under 58 %, so a read that wobbles around the line does not flap the
-    // auto-repeat every tick. Cleared by a read off the boss.
-    ai::SuccessorCapHysteresis& SuccessorThreatCap() { return successorThreatCap_; }
     bool IsRanged(Player* player, bool inGroup = true);
     bool IsMelee(Player* player, bool inGroup = true);
     Creature* GetCreature(ObjectGuid guid) const;
@@ -1174,9 +1169,6 @@ protected:
     bool m_chatGatePublished = false;
     bool m_chatGateIgnoreAll = false;
     bool m_chatGateOnlyOrders = false;
-    // The `threat_successor` auto-attack stop the last read decided (ThreatCapPolicy.h): per bot, so the band between
-    // the 65 % stop line and the 58 % resume line holds across ticks.
-    ai::SuccessorCapHysteresis successorThreatCap_;
     time_t m_chatGatePublishedAt = 0;
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;

@@ -15,22 +15,6 @@
 
 using namespace ai;
 
-bool StopAutoAttackAction::isUseful()
-{
-    if (bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING))
-        return true;
-    Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
-    return autoRepeat && autoRepeat->m_spellInfo;
-}
-
-bool StopAutoAttackAction::Execute(Event& event)
-{
-    (void)event;
-    bot->AttackStop();
-    bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-    return true;
-}
-
 bool MeleeAction::isUseful()
 {
     // Already swinging at the current target and facing it: nothing to do.
