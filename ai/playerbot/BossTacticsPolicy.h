@@ -64,6 +64,7 @@ namespace ai
         ThreatSuccessor = 22, // damage dealers are capped at the highest off-tank's threat (ThreatCapPolicy.h)
         Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
         TankIgnore = 24,      // while the boss fights, tanks leave `target_entry` to the damage dealers (no guard, no taunt)
+        SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -185,6 +186,8 @@ namespace ai
             return BossTacticKind::Anchor;
         if (text == "tank_ignore")
             return BossTacticKind::TankIgnore;
+        if (text == "seek_pull")
+            return BossTacticKind::SeekPull;
         return BossTacticKind::None;
     }
 
@@ -523,6 +526,14 @@ namespace ai
             if (row.kind == BossTacticKind::TankIgnore &&
                 (row.targetEntry == 0 || row.spellId != 0 || row.mode != TacticMode::Default))
                 return false;
+            // seek_pull: the seek source (`target_entry`), the most walk-outs in one cycle (`priority`, 1-5), the kill
+            // lead in seconds (`param`, 10-85) and the last start watchdog (`window_s`, 10-85). Read straight from the
+            // table (SeekPullRow), so it carries no gate, and it names no spell, spot or cycle columns.
+            if (row.kind == BossTacticKind::SeekPull &&
+                (row.targetEntry == 0 || row.spellId != 0 || row.priority < 1 || row.priority > 5 ||
+                    row.param < 10.0f || row.param > 85.0f || row.windowSec < 10.0f || row.windowSec > 85.0f ||
+                    row.mode != TacticMode::Default))
+                return false;
             // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
             // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
             // It takes no mode word.
@@ -540,7 +551,8 @@ namespace ai
             // decides the run).
             if (RowGateSet(row) && (row.kind == BossTacticKind::SeekAura || row.kind == BossTacticKind::PullGate ||
                     row.kind == BossTacticKind::Spread || row.kind == BossTacticKind::BurnMana ||
-                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor))
+                    row.kind == BossTacticKind::RangedOnly || row.kind == BossTacticKind::Anchor ||
+                    row.kind == BossTacticKind::SeekPull))
                 return false;
             std::vector<BossTacticRow>& rows = rows_[Key(row.map, row.bossEntry)];
             for (const BossTacticRow& have : rows)
@@ -768,6 +780,19 @@ namespace ai
                 if (row.kind == kind)
                     return true;
             return false;
+        }
+
+        // The seek_pull row of one boss and source (null: none): the seek walk-out's per-cycle rules. Read straight
+        // from the table by the walk-out's own read, never from the fight scan. Null before the seal.
+        const BossTacticRow* SeekPullRow(std::uint32_t map, std::uint32_t bossEntry, std::uint32_t targetEntry) const
+        {
+            const std::vector<BossTacticRow>* rows = Rows(map, bossEntry);
+            if (!rows)
+                return nullptr;
+            for (const BossTacticRow& row : *rows)
+                if (row.kind == BossTacticKind::SeekPull && row.targetEntry == targetEntry)
+                    return &row;
+            return nullptr;
         }
 
         // The map's linked_death groups, in load order: each (anchor, priority) key's rows name one group. The link

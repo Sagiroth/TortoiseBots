@@ -125,7 +125,7 @@ class SeekWalkoutRound1(unittest.TestCase):
 
     def test_any_end_walks_back_without_attacking(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("WalkoutFinish(it->second.state, end, nowMs)", update)
+        self.assertIn("WalkoutFinish(it->second.state, end, nowMs, rules)", update)
         self.assertIn("WalkoutReturning(", update)
         self.assertIn("WalkoutReturnDone(", update)
         walk = self.walk()
@@ -199,7 +199,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
 class SeekWalkoutRound3(unittest.TestCase):
     def test_a_move_failed_abort_is_unspent_and_excludes_the_puller(self):
         note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved,")
-        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs)", note)
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, it->second.rules)", note)
         self.assertIn("WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs)", note)
         self.assertNotIn("WalkoutFinish(", note)
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
@@ -217,7 +217,7 @@ class SeekWalkoutRound4(unittest.TestCase):
         self.assertIn("it->second.scanned = false;", note)
         self.assertLess(note.index("WalkoutExclude("), note.index("it->second.scanned = false;"))
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))", update)
+        self.assertIn("if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs, rules))", update)
         self.assertLess(update.index("WalkoutMayStartFor("), update.index("WalkoutStart(record.state"))
 
 
@@ -242,9 +242,9 @@ class SeekWalkoutT1105h(unittest.TestCase):
 class SeekWalkoutT1105j(unittest.TestCase):
     def test_a_failed_walkout_may_retry_once_in_the_cycle(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo) ||", update)
+        self.assertIn("if (!wanted || !WalkoutCycleOpen(state, cycleNo, rules) ||", update)
         self.assertIn("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);", update)
-        self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs);", update)
+        self.assertIn("reopened = WalkoutFinish(it->second.state, end, nowMs, rules);", update)
         # A walked Son that died is forgotten before the scan, so its respawn is the retry's Son.
         self.assertIn("WalkoutForgetGoneSons(it->second.state,", update)
         self.assertLess(update.index("WalkoutForgetGoneSons("), update.index("state = it->second.state;"))
@@ -258,12 +258,13 @@ class SeekWalkoutT1105j(unittest.TestCase):
 
     def test_the_retry_time_is_read_at_the_start(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs)", update)
+        self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs, rules)", update)
 
     def test_a_cast_fail_excludes_the_puller_and_rescans(self):
         abort = body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)")
-        self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());",
+        self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime(),",
                       abort)
+        self.assertIn("it->second.rules);", abort)
         self.assertIn("it->second.scanned = false;", abort)
 
 
@@ -303,6 +304,129 @@ class SeekWalkoutT1106b(unittest.TestCase):
         self.assertIn("IsWithinLOSInMap(son)", timeout)
         self.assertIn("GetPositionZ()", timeout)
         self.assertIn("GetDistance2d(state.standX, state.standY)", timeout)
+
+
+class SeekWalkoutSeekPull(unittest.TestCase):
+    """The seek_pull row (flag AiPlayerbot.DungeonRunSeekPullCycle): walk 51's per-cycle rules."""
+
+    def test_the_flag_arms_the_rules(self):
+        cfg = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekPullCycle", false)', cfg)
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn("inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec)", policy)
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("SeekPullRow(", update)
+        self.assertIn("WalkoutRulesFromRow(", update)
+
+    def test_the_walked_list_is_per_cycle(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        # Right after the gone Sons are forgotten, the earlier cycles' Sons are dropped.
+        self.assertIn("if (rules.perCycleWalked)\n                WalkoutForgetEarlierCycles(it->second.state, cycleNo);", update)
+        self.assertLess(update.index("WalkoutForgetGoneSons(it->second.state,"), update.index("WalkoutForgetEarlierCycles("))
+
+    def test_a_stalled_shot_aborts_unspent(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("rules.shotStall && WalkoutShotStalled(state, nowMs)", update)
+        stall = update[update.index("rules.shotStall && WalkoutShotStalled(state, nowMs)"):]
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules)", stall)
+        self.assertIn("WalkoutExclude(it->second.state, state.puller, nowMs)", stall)
+        self.assertIn('LogSeekWalkoutAbort(ai, "no shot"', stall)
+        self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s"',
+                      ACTIONS)
+
+    def test_the_action_notes_the_arrival_at_the_stand(self):
+        walk = walkout_branch()
+        self.assertIn("NoteSeekWalkoutAtStand(bot);", walk)
+        self.assertIn("kSeekWalkoutStandArriveYd", walk)
+        self.assertIn("NoteSeekWalkoutAtStand", ACTIONS)
+        note = body(ACTIONS, "void NoteSeekWalkoutAtStand(Player* bot)")
+        self.assertIn("WalkoutNoteAtStand(it->second.state, nowMs)", note)
+
+    def test_the_pick_and_the_abort_share_the_top_tank_reference(self):
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son,")
+        self.assertIn("LiveTopTankThreat(", pick)
+        self.assertIn("WalkoutPickThreatTooHigh(", pick)
+        # The default rules keep the old main-tank reference; the seek_pull branch never reads it.
+        self.assertIn("rules.pickTopTankThreat\n                ? WalkoutPickThreatTooHigh(", pick)
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("LiveTopTankThreat(", update)
+        helper = body(ACTIONS, "float LiveTopTankThreat(Group* group, Unit* boss, Player* except)")
+        self.assertIn("WalkoutTopTankThreat(", helper)
+
+    def test_the_hunter_reach_and_the_fan_widen_the_scan(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("rules.hunterReachScan", update)
+        self.assertIn("WalkoutRulesFromRow(", update)
+        stand = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("WalkoutStandCandidatesFan(", stand)
+        self.assertIn("rules.standFan", stand)
+
+    def test_the_no_son_row_is_throttled(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn('"seek pull: walk-out no son walked=%d"', update)
+        self.assertIn("noSonLogMs", update)
+        self.assertIn("noStandLogMs", update)
+
+    def test_the_start_row_carries_the_scan(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        for field in ("-> %u due=%u try=%d reach=%.0f ray=%.0f",):
+            self.assertIn(field, update)
+
+    def test_the_kill_lead_is_the_rows(self):
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("SeekLateEngagedBurnWithin(", read)
+        self.assertIn("SeekPullRow(", read)
+        self.assertIn("kSeekLateEngageMs", read)
+        # The row's own param is the lead, not a fixed 30 s the row is only looked up for.
+        self.assertIn("lateLeadMs = static_cast<std::uint32_t>(pull->param * 1000.0f);", read)
+
+
+class SeekWalkoutRound2(unittest.TestCase):
+    """The seek_pull gate text, the fan literal and the glue calls a cold review found unpinned."""
+
+    def test_the_seek_pull_row_is_read_only_behind_the_flag(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        gated = ("if (sPlayerbotAIConfig.dungeonRunSeekPullCycle)\n"
+                 "    {\n"
+                 "        if (const BossTacticRow* const pull =\n"
+                 "                GetBossTactics().SeekPullRow(")
+        for fn in (update, read):
+            self.assertIn(gated, fn)
+            # The row lookup and its use sit inside the gate's block, closed right after it.
+            block = fn[fn.index(gated) + len(gated):]
+            self.assertIn(");", block)
+            self.assertLess(block.index(");"), block.index("    }\n"))
+
+    def test_the_stand_fan_keeps_the_son_heading_first(self):
+        stand = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("for (float const offset : {0.0f, 10.0f, -10.0f, 20.0f, -20.0f})", stand)
+
+    def test_the_glue_paths_keep_their_arguments(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        # The per-cycle walked list arms the free, and a landed shot never frees its Son.
+        self.assertIn("bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort && !it->second.state.shot &&",
+                      update)
+        # The hunter-only pass reaches the pick, and a no-stand abort keeps the Son walked under the seek row.
+        self.assertIn("state, nowMs, hunterOnly, rules);", update)
+        self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules, !rules.perCycleWalked);", update)
+
+    def test_the_no_puller_row_is_throttled(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn('"seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f"', update)
+        self.assertIn("noPullerLogMs", update)
+        self.assertIn("scan.stand && scan.puller == 0", update)
+
+    def test_a_late_start_returns_before_the_scan(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        gate = ("if (wanted && sPlayerbotAIConfig.dungeonRunSeekPullCycle && rules.firstStartMinMs != 0 &&\n"
+                "        dueInMs < rules.firstStartMinMs)")
+        self.assertIn(gate, update)
+        late = update[update.index(gate):]
+        self.assertIn('"seek pull: walk-out late due=%u"', late)
+        self.assertIn("lateLogMs", late)
+        # The late row and return come before the start scan's grid walk.
+        self.assertLess(update.index(gate), update.index("The start check's scan"))
 
 
 if __name__ == "__main__":

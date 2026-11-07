@@ -652,6 +652,9 @@ public:
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;
+    // The seek_pull boss-tactic kind (a seek_aura source is walked out and killed every cycle, up to the row's
+    // walk-outs a cycle): on, the rows load and run; off, the old one-walk-out-per-cycle rules hold (default off).
+    bool dungeonRunSeekPullCycle = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

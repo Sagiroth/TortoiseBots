@@ -89,9 +89,18 @@ namespace ai
     // cloud was never earned. A pick already overdue (dueInMs 0) is late by definition; no due time is not.
     constexpr std::uint32_t kSeekLateEngageMs = 30000;
 
+    // The same rule at another lead: a seek_pull row's `param` is the kill lead (walk 51: back -> death median 27 s,
+    // p75 31 s, so a burn from 45 s kills about 18 s before the siphon; no earlier than the row's lead keeps the
+    // killed Son's 60 s respawn ahead of the next cycle's walk-out).
+    inline bool SeekLateEngagedBurnWithin(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs,
+                                          std::uint32_t leadMs)
+    {
+        return sourceInCombat && dueMs != 0 && dueInMs <= leadMs;
+    }
+
     inline bool SeekLateEngagedBurn(bool sourceInCombat, std::uint32_t dueMs, std::uint32_t dueInMs)
     {
-        return sourceInCombat && dueMs != 0 && dueInMs <= kSeekLateEngageMs;
+        return SeekLateEngagedBurnWithin(sourceInCombat, dueMs, dueInMs, kSeekLateEngageMs);
     }
 
     // Who seeks: every living bot that lacks the aura, except the boss's victim (the main tank) and the two tanks kept

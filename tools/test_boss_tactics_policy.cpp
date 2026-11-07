@@ -408,6 +408,80 @@ int main()
         }
     }
 
+    // seek_pull (walk 51): the seek source, the most walk-outs in one cycle, the kill lead and the last-start window.
+    {
+        BossTacticRow pull = Row(309, 14834, BossTacticKind::SeekPull, 11357, 0, 3, 45.0f);
+        pull.windowSec = 60.0f;
+        {
+            BossTacticTable table;
+            CHECK(table.Add(pull));
+            CHECK(table.SeekPullRow(309, 14834, 11357) == nullptr); // not sealed
+            table.Seal();
+            const BossTacticRow* found = table.SeekPullRow(309, 14834, 11357);
+            CHECK(found != nullptr);
+            CHECK(found->priority == 3);
+            CHECK(Near(found->param, 45.0f));
+            CHECK(Near(found->windowSec, 60.0f));
+            CHECK(table.SeekPullRow(309, 14834, 11358) == nullptr);
+            CHECK(table.SeekPullRow(531, 14834, 11357) == nullptr);
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.priority = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.priority = 6;
+            CHECK(!table.Add(bad));
+            bad.priority = 1;
+            CHECK(table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.param = 5.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.param = 86.0f;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.windowSec = 90.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.windowSec = 9.0f;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.spellId = 24321;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.spotZ = 54.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.cycleSec = 90.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.targetEntry = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = Gated(pull, 0, 50);
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+    }
+
     // Kind text: exactly the lowercase spellings the table holds.
     CHECK(ParseBossTacticKind("interrupt") == BossTacticKind::Interrupt);
     CHECK(ParseBossTacticKind("kill_first") == BossTacticKind::KillFirst);
@@ -3458,6 +3532,8 @@ int main()
     {
         BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);
         CHECK(ParseBossTacticKind("tank_ignore") == BossTacticKind::TankIgnore);
+        CHECK(ParseBossTacticKind("seek_pull") == BossTacticKind::SeekPull);
+        CHECK(static_cast<int>(BossTacticKind::SeekPull) == 25);
         {
             BossTacticTable table;
             CHECK(table.TankIgnoreBosses(309, 14826).empty()); // not sealed

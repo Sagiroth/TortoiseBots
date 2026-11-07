@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -41,6 +42,42 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutSiphonLeadMs = 75000; // a walk-out starts only this close to the next siphon
     constexpr int kSeekWalkoutMaxPerCycle = 1;             // walk-outs started in one seek cycle: no retry
     constexpr std::uint32_t kSeekWalkoutRetryMinMs = 25000; // a failed walk-out reopens the cycle only with more left
+    constexpr std::uint32_t kSeekWalkoutShotStallMs = 6000; // at the stand this long without a shot aborts ("no shot")
+    constexpr float kSeekWalkoutStandArriveYd = 3.0f;       // at the stand is this close to it
+
+    // A seek_pull row's rules (walk 51): every Son is walked once per cycle, up to `maxPerCycle` walk-outs start a
+    // cycle, each with `firstStartMinMs` left at the least, a failed one reopens the cycle, a shot that stalls at the
+    // stand aborts, the pick compares with the live top tank and the stand search fans out and reaches a hunter's
+    // range. The defaults are the old one-walk-out-per-cycle rules.
+    struct WalkoutCycleRules
+    {
+        int maxPerCycle = kSeekWalkoutMaxPerCycle;
+        std::uint32_t retryMinMs = kSeekWalkoutRetryMinMs;
+        std::uint32_t firstStartMinMs = 0; // 0: no deadline (the old rule)
+        bool perCycleWalked = false;
+        bool reopenOnAbort = false;
+        bool shotStall = false;
+        bool pickTopTankThreat = false;
+        bool standFan = false;
+        bool hunterReachScan = false;
+    };
+
+    // The rules a seek_pull row arms: `priority` walk-outs a cycle, `windowSec` the last start and the retry floor.
+    inline WalkoutCycleRules WalkoutRulesFromRow(int priority, float windowSec)
+    {
+        WalkoutCycleRules rules;
+        rules.maxPerCycle = std::max(1, std::min(5, priority));
+        std::uint32_t const windowMs = static_cast<std::uint32_t>(windowSec * 1000.0f);
+        rules.retryMinMs = windowMs;
+        rules.firstStartMinMs = windowMs;
+        rules.perCycleWalked = true;
+        rules.reopenOnAbort = true;
+        rules.shotStall = true;
+        rules.pickTopTankThreat = true;
+        rules.standFan = true;
+        rules.hunterReachScan = true;
+        return rules;
+    }
 
     // The one cast the puller opens the Son with, by class id: the hunter's Auto Shot (spell 75), the wand's Shoot
     // (spell 5019) for a mage, warlock or priest, a druid's Wrath (5176 at rank 1), a shaman's Lightning Bolt (403 at
@@ -131,6 +168,14 @@ namespace ai
         return topTankThreat > 0.0f && botThreat >= kSeekWalkoutAbortThreatShare * topTankThreat;
     }
 
+    // The pick's threat rule against the live top tank, the same reference the running abort reads: at
+    // kSeekWalkoutThreatShare of it or more. Cause Insanity at ~17 s zeroes the old main tank's threat, so a pick that
+    // still compared with roles.tanks[0] passed a bot the abort turned on seconds later.
+    inline bool WalkoutPickThreatTooHigh(float botThreat, float topTankThreat)
+    {
+        return topTankThreat <= 0.0f ? botThreat > 0.0f : botThreat >= kSeekWalkoutThreatShare * topTankThreat;
+    }
+
     // Why the running task's puller cannot go on (the abort's logged reason), or null: dead, charmed, under Cause
     // Insanity, the boss's victim (the real danger: he turns toward it, off the platform), or its threat level with the
     // live top tank's (`threatHigh`, WalkoutRunningThreatTooHigh).
@@ -198,6 +243,35 @@ namespace ai
         return out;
     }
 
+    // The stand search's rays: the same points for every offset from the bearing to the Son (`offsetsDeg`, in order),
+    // so a ray blocked by a ledge has neighbours to fall back on. Offset 0 alone is WalkoutStandCandidates point for
+    // point. Empty when the Son stands inside the circle.
+    inline std::vector<std::pair<float, float>> WalkoutStandCandidatesFan(const BossAnchorCircle& c, float sonX,
+                                                                         float sonY,
+                                                                         const std::vector<float>& offsetsDeg)
+    {
+        std::vector<std::pair<float, float>> out;
+        float const dx = sonX - c.x;
+        float const dy = sonY - c.y;
+        float const d = std::sqrt(dx * dx + dy * dy);
+        if (d <= c.radius)
+            return out;
+        float const baseX = dx / d;
+        float const baseY = dy / d;
+        constexpr float kPi = 3.14159265358979323846f;
+        for (float const offset : offsetsDeg)
+        {
+            float const rad = offset * kPi / 180.0f;
+            float const cs = std::cos(rad);
+            float const sn = std::sin(rad);
+            float const ux = baseX * cs - baseY * sn;
+            float const uy = baseX * sn + baseY * cs;
+            for (float r = c.radius; r < d; r += kSeekWalkoutStandStepYd)
+                out.emplace_back(c.x + ux * r, c.y + uy * r);
+        }
+        return out;
+    }
+
     // Whether a candidate is the stand: a floor read there at or above kSeekWalkoutMinStandZ (the pullers that walked
     // down the slope to the Son's height died there), within the shot's range of the Son, and in sight of it.
     inline bool WalkoutStandOk(bool floorFound, float floorZ, float toSonYd, float rangeYd, bool sight)
@@ -255,10 +329,14 @@ namespace ai
         bool cycleSpent = false;
         std::uint32_t lastCycle = 0;
         std::vector<std::uint64_t> walkedSons;
+        // The cycle each walked Son was walked in, in walkedSons' order: a Son walked in an earlier cycle is free
+        // again (WalkoutForgetEarlierCycles), so the fight keeps walking a Son out every cycle.
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> walkedAt;
         // The stand the task walks to (the platform search), and its refused moves in a row.
         float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
         std::uint32_t standMs = 0;       // the stand's last re-plan
         std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
+        std::uint32_t atStandSinceMs = 0; // the puller stood at its stand since then, unshot (0: not yet)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -296,22 +374,24 @@ namespace ai
         return WalkoutActive(s) || s.returner != 0;
     }
 
-    // The seek cycle still takes a walk-out: not spent by one, and fewer than kSeekWalkoutMaxPerCycle started in it
-    // (with one per cycle, no second start).
-    inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo)
+    // The seek cycle still takes a walk-out: not spent by one, and fewer than the rules' walk-outs started in it (with
+    // the defaults, one per cycle, no second start).
+    inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo,
+                                 const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (s.cycleSpent && s.lastCycle == cycleNo)
             return false;
-        return s.countedCycle != cycleNo || s.cycleStarts < kSeekWalkoutMaxPerCycle;
+        return s.countedCycle != cycleNo || s.cycleStarts < rules.maxPerCycle;
     }
 
     // A new task: none running, the cycle open (WalkoutCycleOpen), and never twice for one living Son (a walked Son
     // that died is forgotten, WalkoutForgetGoneSons, so its respawn may be walked to again).
-    inline bool WalkoutMayStart(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son)
+    inline bool WalkoutMayStart(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
+                                const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (WalkoutBusy(s) || son == 0)
             return false;
-        if (!WalkoutCycleOpen(s, cycleNo))
+        if (!WalkoutCycleOpen(s, cycleNo, rules))
             return false;
         return std::find(s.walkedSons.begin(), s.walkedSons.end(), son) == s.walkedSons.end();
     }
@@ -336,9 +416,11 @@ namespace ai
         s.moveFails = 0;
         s.standMs = nowMs;
         s.noStandSinceMs = 0;
+        s.atStandSinceMs = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
+        s.walkedAt.emplace_back(son, cycleNo);
     }
 
     // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,
@@ -372,26 +454,30 @@ namespace ai
         return false;
     }
 
-    // A retry (a second walk-out in the cycle) starts only while the siphon is still more than kSeekWalkoutRetryMinMs
+    // A retry (a second walk-out in the cycle) starts only while the siphon is still more than the rules' retry floor
     // away, read when it starts against the deadline stored by the cycle's first walk-out: the failed puller's walk
     // back (up to kSeekWalkoutReturnMs) runs between the end that reopened the cycle and this start.
-    inline bool WalkoutRetryStartInTime(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint32_t nowMs)
+    inline bool WalkoutRetryStartInTime(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint32_t nowMs,
+                                        const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (s.countedCycle != cycleNo || s.cycleStarts < 1)
             return true;
-        return static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(kSeekWalkoutRetryMinMs);
+        return static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(rules.retryMinMs);
     }
 
     // A new task for this puller: WalkoutMayStart, the bot not sitting out its exclusion (a scan cached before the
     // exclusion may still name it), a retry still in time (WalkoutRetryStartInTime), and the next Blood Siphon due in
-    // kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once
-    // due): the dose window's whole length, so the Son is back and burned before the siphon (the 12 s non-tank burn,
-    // SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the healers meanwhile).
+    // kSeekWalkoutSiphonLeadMs or less (`dueInMs`, 0 once due): the dose window's whole length, so the Son is back
+    // and burned before the siphon (the 12 s non-tank burn, SeekAuraPolicy.h kSeekNonTankBurnMs, keeps it off the
+    // healers meanwhile). A seek_pull row's `firstStartMinMs` also refuses any start with less time left.
     inline bool WalkoutMayStartFor(const SeekWalkoutState& s, std::uint32_t cycleNo, std::uint64_t son,
-                                   std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs)
+                                   std::uint64_t bot, std::uint32_t nowMs, std::uint32_t dueInMs,
+                                   const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
-        return dueInMs <= kSeekWalkoutSiphonLeadMs && WalkoutMayStart(s, cycleNo, son) &&
-            !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs);
+        return dueInMs <= kSeekWalkoutSiphonLeadMs &&
+            (rules.firstStartMinMs == 0 || dueInMs >= rules.firstStartMinMs) &&
+            WalkoutMayStart(s, cycleNo, son, rules) &&
+            !WalkoutExcluded(s, bot, nowMs) && WalkoutRetryStartInTime(s, cycleNo, nowMs, rules);
     }
 
     // The Son the walk-out goes for: nearest first (`yd`), the first that has a stand (`hasStand(i)`, asked lazily in
@@ -415,17 +501,24 @@ namespace ai
         return nowMs - s.standMs >= kSeekWalkoutReplanMs;
     }
 
-    // One re-plan: a found stand replaces the old one and restarts the no-stand clock; none keeps the old stand and
-    // runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
+    // One re-plan: a found stand replaces the old one and restarts the no-stand clock (a stand that moved more than
+    // kSeekWalkoutStandArriveYd also restarts the shot-stall clock: the puller stands at a new spot); none keeps the
+    // old stand and runs the clock. True: kSeekWalkoutNoStandMs straight without any stand, the task aborts ("no stand").
     inline bool WalkoutNoteStand(SeekWalkoutState& s, bool found, float x, float y, float z, std::uint32_t nowMs)
     {
         s.standMs = nowMs;
         if (found)
         {
+            float const dx = x - s.standX;
+            float const dy = y - s.standY;
+            bool const moved = dx * dx + dy * dy >
+                kSeekWalkoutStandArriveYd * kSeekWalkoutStandArriveYd;
             s.standX = x;
             s.standY = y;
             s.standZ = z;
             s.noStandSinceMs = 0;
+            if (moved)
+                s.atStandSinceMs = 0;
             return false;
         }
         if (s.noStandSinceMs == 0)
@@ -436,7 +529,26 @@ namespace ai
     inline void WalkoutNoteShot(SeekWalkoutState& s)
     {
         if (WalkoutActive(s))
+        {
             s.shot = true;
+            s.atStandSinceMs = 0;
+        }
+    }
+
+    // The puller reached its stand without a shot: the stall clock starts once and keeps its first tick.
+    inline void WalkoutNoteAtStand(SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        if (WalkoutActive(s) && s.atStandSinceMs == 0)
+            s.atStandSinceMs = nowMs;
+    }
+
+    // A shot that will not come: the puller has stood at its stand kSeekWalkoutShotStallMs without landing it (a
+    // blocked LoS, a cast the generic AI keeps interrupting). The task aborts unspent ("no shot"), so the Son is free
+    // and the next bot retries.
+    inline bool WalkoutShotStalled(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        return WalkoutActive(s) && !s.shot && s.atStandSinceMs != 0 &&
+            nowMs - s.atStandSinceMs >= kSeekWalkoutShotStallMs;
     }
 
 
@@ -464,21 +576,24 @@ namespace ai
 
     // A failed walk-out (a timeout, no stand, a refused cast or move) leaves the cycle open only while the siphon is
     // more than kSeekWalkoutRetryMinMs away (a later Son is not back and burned before it) and fewer than
-    // kSeekWalkoutMaxPerCycle started in the cycle: with one per cycle, never.
-    inline bool WalkoutRetryAllowed(const SeekWalkoutState& s, std::uint32_t nowMs)
+    // kSeekWalkoutMaxPerCycle (the rules') started in the cycle: with one per cycle, never.
+    inline bool WalkoutRetryAllowed(const SeekWalkoutState& s, std::uint32_t nowMs,
+                                    const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
-        return s.cycleStarts < kSeekWalkoutMaxPerCycle &&
-            static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(kSeekWalkoutRetryMinMs);
+        return s.cycleStarts < rules.maxPerCycle &&
+            static_cast<std::int32_t>(s.siphonDueMs - nowMs) > static_cast<std::int32_t>(rules.retryMinMs);
     }
 
     // The task ends: a Back end is inside already; a timeout or an abort leaves the puller outside, so its walk back
     // starts (exempt for kSeekWalkoutReturnMs at most). A timeout undoes the task's cycle mark when a retry is allowed
-    // (its Son stays walked, so the retry goes to another one); with one walk-out per cycle that is never. True: the
-    // cycle was reopened.
-    inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs)
+    // (its Son stays walked, so the retry goes to another one); a seek_pull row reopens on an abort too, but never
+    // after the shot landed (that walk-out did happen). With the defaults that is never. True: the cycle was reopened.
+    inline bool WalkoutFinish(SeekWalkoutState& s, WalkoutEnd end, std::uint32_t nowMs,
+                              const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         bool reopened = false;
-        if (end == WalkoutEnd::Timeout && WalkoutActive(s) && WalkoutRetryAllowed(s, nowMs))
+        if ((end == WalkoutEnd::Timeout || (rules.reopenOnAbort && end == WalkoutEnd::Abort)) &&
+            WalkoutActive(s) && !s.shot && WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;
             s.lastCycle = s.prevLastCycle;
@@ -493,33 +608,100 @@ namespace ai
         s.son = 0;
         s.startMs = 0;
         s.shot = false;
+        s.atStandSinceMs = 0;
         return reopened;
     }
 
-    // No pull happened (the cast or the moves failed, or no stand): abort with the Son free again, and the cycle too
-    // when a retry is allowed (WalkoutRetryAllowed).
-    inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs)
+    // Whether an abort's reason frees its Son for the cycle's retry: the puller's own ends (dead, charmed, insanity,
+    // victim, threat, gone, a failed cast or move, a stalled shot) leave the Son where it stands, so the retry may take
+    // another Son or the same one from another bot. A Son-side end ("no stand", "son gone") and a timeout keep it
+    // walked this cycle.
+    inline bool WalkoutEndFreesSon(const char* reason)
+    {
+        if (!reason)
+            return false;
+        for (const char* free : {"threat", "victim", "dead", "charmed", "insanity", "gone", "cast failed",
+                                 "move failed", "no shot"})
+            if (std::strcmp(reason, free) == 0)
+                return true;
+        return false;
+    }
+
+    // One walked Son leaves the list, and its cycle record with it.
+    inline void WalkoutEraseWalked(SeekWalkoutState& s, std::uint64_t son)
+    {
+        std::vector<std::uint64_t>::iterator const it = std::find(s.walkedSons.begin(), s.walkedSons.end(), son);
+        if (it != s.walkedSons.end())
+            s.walkedSons.erase(it);
+        for (auto at = s.walkedAt.begin(); at != s.walkedAt.end(); ++at)
+        {
+            if (at->first == son)
+            {
+                s.walkedAt.erase(at);
+                break;
+            }
+        }
+    }
+
+    // A seek_pull fight walks each cycle its own Sons: every Son walked in a cycle other than `cycleNo` is free again,
+    // except the running task's own (it is still being walked to). Without it, two failed walk-outs leave both Sons
+    // in the list for the rest of the fight (walk 51: 30 cycles with no walk-out at all).
+    inline void WalkoutForgetEarlierCycles(SeekWalkoutState& s, std::uint32_t cycleNo)
+    {
+        std::vector<std::uint64_t> keptSons;
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> keptAt;
+        keptSons.reserve(s.walkedSons.size());
+        keptAt.reserve(s.walkedAt.size());
+        for (std::uint64_t const son : s.walkedSons)
+        {
+            std::uint32_t cycle = 0;
+            bool found = false;
+            for (const std::pair<std::uint64_t, std::uint32_t>& at : s.walkedAt)
+            {
+                if (at.first == son)
+                {
+                    cycle = at.second;
+                    found = true;
+                    break;
+                }
+            }
+            if (son == s.son || !found || cycle == cycleNo)
+            {
+                keptSons.push_back(son);
+                if (found)
+                    keptAt.emplace_back(son, cycle);
+            }
+        }
+        s.walkedSons.swap(keptSons);
+        s.walkedAt.swap(keptAt);
+    }
+
+    // No pull happened (the cast or the moves failed, a stalled shot, or no stand): abort with the Son free again
+    // (`freeSon`; a seek_pull row's "no stand" keeps it walked this cycle), and the cycle too when a retry is allowed
+    // (WalkoutRetryAllowed).
+    inline void WalkoutAbortUnspent(SeekWalkoutState& s, std::uint32_t nowMs,
+                                    const WalkoutCycleRules& rules = WalkoutCycleRules(), bool freeSon = true)
     {
         if (!WalkoutActive(s))
             return;
-        std::vector<std::uint64_t>::iterator const it = std::find(s.walkedSons.begin(), s.walkedSons.end(), s.son);
-        if (it != s.walkedSons.end())
-            s.walkedSons.erase(it);
-        if (WalkoutRetryAllowed(s, nowMs))
+        if (freeSon)
+            WalkoutEraseWalked(s, s.son);
+        if (WalkoutRetryAllowed(s, nowMs, rules))
         {
             s.cycleSpent = s.prevCycleSpent;
             s.lastCycle = s.prevLastCycle;
         }
-        WalkoutFinish(s, WalkoutEnd::Abort, nowMs);
+        WalkoutFinish(s, WalkoutEnd::Abort, nowMs, rules);
     }
 
     // The shot could not be cast at the stand: abort unspent, and the puller sits out the picks like a move fail, so the
     // retry goes to another bot (the cached scan would hand it the same puller, Son and stand, to fail again).
-    inline void WalkoutCastFailed(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
+    inline void WalkoutCastFailed(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs,
+                                  const WalkoutCycleRules& rules = WalkoutCycleRules())
     {
         if (!WalkoutActive(s))
             return;
-        WalkoutAbortUnspent(s, nowMs);
+        WalkoutAbortUnspent(s, nowMs, rules);
         WalkoutExclude(s, bot, nowMs);
     }
 
@@ -528,8 +710,12 @@ namespace ai
     template <typename IsGone>
     inline void WalkoutForgetGoneSons(SeekWalkoutState& s, IsGone isGone)
     {
-        s.walkedSons.erase(std::remove_if(s.walkedSons.begin(), s.walkedSons.end(),
-            [&](std::uint64_t son) { return son != s.son && isGone(son); }), s.walkedSons.end());
+        for (std::size_t i = s.walkedSons.size(); i-- > 0;)
+        {
+            std::uint64_t const son = s.walkedSons[i];
+            if (son != s.son && isGone(son))
+                WalkoutEraseWalked(s, son);
+        }
     }
 
     inline void WalkoutReturnDone(SeekWalkoutState& s)
