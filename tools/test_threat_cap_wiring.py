@@ -12,7 +12,6 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 THREAT_POLICY = (ROOT / "ai/playerbot/ThreatCapPolicy.h").read_text()
-THREAT_STRATEGY = (ROOT / "ai/playerbot/strategy/generic/ThreatStrategy.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
 SEEK_POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 SEEK_FIGHT = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
