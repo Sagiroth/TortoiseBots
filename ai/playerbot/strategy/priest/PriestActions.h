@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/policy/class/PriestHealLinePolicy.h"
 #include "playerbot/policy/heal/ShieldTargetPolicy.h"
 #include "playerbot/AoeFearPolicy.h"
 
@@ -82,8 +83,28 @@ namespace ai
     BUFF_ACTION(CastAscendanceAction, "ascendance");
 
     // holy
-    HEAL_ACTION(CastLesserHealAction, "lesser heal");
-    HEAL_PARTY_ACTION_E(CastLesserHealOnPartyAction, "lesser heal", 50, HealManaEfficiency::MEDIUM);
+    class CastLesserHealAction : public CastHealingSpellAction
+    {
+    public:
+        CastLesserHealAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "lesser heal") {}
+        bool isUseful() override
+        {
+            if (PriestKnowsHealLine(bot))
+                return false;
+            return CastHealingSpellAction::isUseful();
+        }
+    };
+    class CastLesserHealOnPartyAction : public HealPartyMemberAction
+    {
+    public:
+        CastLesserHealOnPartyAction(PlayerbotAI* ai) : HealPartyMemberAction(ai, "lesser heal", 50, HealManaEfficiency::MEDIUM) {}
+        bool isUseful() override
+        {
+            if (PriestKnowsHealLine(bot))
+                return false;
+            return HealPartyMemberAction::isUseful();
+        }
+    };
     HEAL_ACTION(CastHealAction, "heal");
     HEAL_PARTY_ACTION_E(CastHealOnPartyAction, "heal", 50, HealManaEfficiency::MEDIUM);
     HEAL_ACTION(CastGreaterHealAction, "greater heal");
