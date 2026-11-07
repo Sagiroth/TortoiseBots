@@ -23,6 +23,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics kill first",
         NextAction::array(0, new NextAction("boss tactics kill first", ACTION_HIGH + 1), NULL)));
 
+    // A cursed healer or off-tank strikes its own Shade while the raid can spare it (AiPlayerbot.DungeonRunCarrierStrike):
+    // just below a critical heal, so critical heals, every emergency row and reaching a party member to heal win over it,
+    // and above every lower heal band, cure and rotation row.
+    triggers.push_back(new TriggerNode(
+        "boss tactics carrier strike",
+        NextAction::array(0, new NextAction("boss tactics carrier strike", ACTION_CRITICAL_HEAL - 1), NULL)));
+
     // A DPS bot on a boss entry a hold_kill row holds leaves it (the blocker is the kill): below the kill-first pick,
     // which is where it switches to first, and above the generic assist rows the multiplier stands down meanwhile.
     triggers.push_back(new TriggerNode(

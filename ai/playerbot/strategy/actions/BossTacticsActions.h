@@ -29,6 +29,9 @@ namespace ai
         ActiveBossRows rows;
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
+    // A bot on battle duty: not a tank, not a healer. The hold's role gate, for the clauses an explicit attack order
+    // may lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto).
+    bool IsBattleDps(Player* bot);
     // The fight scan's one-slot cache belongs to one AI update: an explicit command runs between updates on the same
     // world thread with the same update tick, so ScanBossTactics only caches while a scope is open, and UpdateAI
     // clears the slot when it returns. One scope per UpdateAI, the whole body.
@@ -126,6 +129,11 @@ namespace ai
     // (DungeonRun::CarrierFocusSkip, FocusSkipsBot), so its refocus does not pull it back off its Shade.
     Unit* FindBossCarrierPick(PlayerbotAI* ai, Player* bot);
 
+    // The carrier strike's Shade, whatever the bot's role or orders: the nearest pickable unit of an open aura-gated
+    // kill_first row within kCarrierHoldReachYd, or null. The engine only reads it while
+    // AiPlayerbot.DungeonRunCarrierStrike is on; the trigger and the action both go through here.
+    Unit* FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
     // Whether this bot carries the aura of an open aura-gated kill_first row right now (a Delusions carrier), whatever
     // its target: such a bot can hurt only the row's unit, so the totem focus never sends it at a totem and counts no
     // volley of it (t1106b). False on a map without rows and for a bot that lacks the aura (the fight scan drops a
@@ -138,6 +146,13 @@ namespace ai
     // (BossTacticsKillFirstAction's stale current target); nullptr derives it from the fight read.
     void LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick, Unit* current,
         const char* keptReason = nullptr);
+
+    // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
+    // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
+    // A no-op without bot_events.csv.
+    void LogCarrierStrike(PlayerbotAI* ai, Player* bot, CarrierStrikeVerdict verdict, CarrierStrikeRole role,
+        Unit* shade, float shadeYd, std::uint8_t lowestPct, std::uint8_t tankPct, std::uint8_t otherHealers,
+        std::uint8_t manaPct, const char* spell);
 
     // tank_ignore (t1105h J2): whether this bot, a tank, leaves the target alone because a boss whose tank_ignore row
     // names the target's entry fights within kBossTacticsEngageRange of it (alive, not evading, engaged with our group).
@@ -217,6 +232,16 @@ namespace ai
     {
     public:
         BossTacticsKillFirstAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics kill first") {}
+        bool Execute(Event& event) override;
+    };
+
+    // A cursed healer or off-tank strikes its own Shade with the class's shortest damaging spell, or with Attack when
+    // no spell can be cast (and always for an off-tank). No order or attack target is recorded, so when the guard
+    // fails or the curse ends the heal rows win again and the Shade is dropped by the aura gate.
+    class BossTacticsCarrierStrikeAction : public AttackAction
+    {
+    public:
+        BossTacticsCarrierStrikeAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics carrier strike") {}
         bool Execute(Event& event) override;
     };
 

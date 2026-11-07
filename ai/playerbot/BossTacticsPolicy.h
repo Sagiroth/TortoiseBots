@@ -2625,6 +2625,100 @@ namespace ai
         return orderAutomated && carrierRowOpen ? KillFirstPickMode::Carrier : KillFirstPickMode::None;
     }
 
+    // --- carrier strike ---------------------------------------------------------------------------------------------
+    // A cursed healer or off-tank turns on its own Shade (a kill_first row gated by the curse) while the raid is safe.
+    // The kill_first node itself is DPS-only and sits far below every heal row, so this carrier needs its own node and
+    // an explicit guard: a healer that leaves the raid to hit a Shade must not be the difference between a member
+    // living and dying.
+    enum class CarrierStrikeRole : std::uint8_t { Dps, Healer, OffTank, MainTank };
+    enum class CarrierStrikeVerdict : std::uint8_t
+    {
+        Strike,
+        NotCarrier,
+        NoShade,
+        MainTank,
+        HoldsBoss,
+        GuardLowMember,
+        GuardTank,
+        GuardHealers,
+        GuardMana,
+        GuardDispel,
+        Dps,
+    };
+
+    struct CarrierStrikeInput
+    {
+        CarrierStrikeRole role;
+        bool cursed;            // this bot carries the carrier row's aura
+        bool shadeInReach;      // a pickable unit of the carrier row within kCarrierHoldReachYd
+        bool holdsBoss;         // a boss of the fight is on this bot
+        std::uint8_t lowestMemberPct; // the lowest living group member within 2x heal range
+        std::uint8_t tankPct;         // the main tank (0: no main tank alive)
+        std::uint8_t otherHealers;    // living healers other than this bot that do not carry the aura
+        std::uint8_t manaPct;
+        bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
+    };
+
+    constexpr std::uint8_t kCarrierStrikeLowestPct = 50; // = AiPlayerbot.LowHealth; below it the low-heal rows win
+    constexpr std::uint8_t kCarrierStrikeTankPct = 60;
+    constexpr std::uint8_t kCarrierStrikeHealers = 2;    // other live, uncursed healers still healing
+    constexpr std::uint8_t kCarrierStrikeManaPct = 30;
+
+    // The first check that fails gives the verdict; earlier checks are the roles this rule never covers.
+    inline CarrierStrikeVerdict CarrierStrikeAllowed(const CarrierStrikeInput& in)
+    {
+        if (in.role == CarrierStrikeRole::Dps)
+            return CarrierStrikeVerdict::Dps;
+        if (in.role == CarrierStrikeRole::MainTank)
+            return CarrierStrikeVerdict::MainTank;
+        if (!in.cursed)
+            return CarrierStrikeVerdict::NotCarrier;
+        if (!in.shadeInReach)
+            return CarrierStrikeVerdict::NoShade;
+        if (in.role == CarrierStrikeRole::OffTank && in.holdsBoss)
+            return CarrierStrikeVerdict::HoldsBoss;
+        if (in.role == CarrierStrikeRole::Healer)
+        {
+            if (in.dispelNowPending)
+                return CarrierStrikeVerdict::GuardDispel;
+            if (in.lowestMemberPct < kCarrierStrikeLowestPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+            if (in.otherHealers < kCarrierStrikeHealers)
+                return CarrierStrikeVerdict::GuardHealers;
+            if (in.manaPct < kCarrierStrikeManaPct)
+                return CarrierStrikeVerdict::GuardMana;
+        }
+        if (in.role == CarrierStrikeRole::OffTank)
+        {
+            if (in.lowestMemberPct < kCarrierStrikeLowestPct)
+                return CarrierStrikeVerdict::GuardLowMember;
+            if (in.tankPct < kCarrierStrikeTankPct)
+                return CarrierStrikeVerdict::GuardTank;
+        }
+        return CarrierStrikeVerdict::Strike;
+    }
+
+    // The damaging spells this class strikes a Shade with, shortest cast first; empty means melee or wand (Attack).
+    // CLASS_* ids are kept literal so this header stays free of the core includes.
+    inline std::vector<const char*> CarrierStrikeSpells(std::uint8_t cls)
+    {
+        switch (cls)
+        {
+            case 5:  // CLASS_PRIEST
+                return {"mind blast", "smite"};
+            case 11: // CLASS_DRUID
+                return {"moonfire", "wrath"};
+            case 7:  // CLASS_SHAMAN
+                return {"earth shock", "lightning bolt"};
+            case 2:  // CLASS_PALADIN
+                return {"holy shock"};
+            default:
+                return {};
+        }
+    }
+
     // Whether the kill_first trigger has work: the current target is not the pick, or the bookkeeping already names the
     // pick while the live victim is another unit (or none). The target value can lead the swing by a tick; testing only
     // the target left the trigger off for the rest of the fight, and the action's kept-target branch never attacked.

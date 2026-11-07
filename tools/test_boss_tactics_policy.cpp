@@ -3310,6 +3310,76 @@ int main()
         }
     }
 
+    // t1106c item 1: a cursed healer or off-tank strikes its own Shade while the raid is safe (CarrierStrikeAllowed).
+    {
+        CarrierStrikeInput safe;
+        safe.role = CarrierStrikeRole::Healer;
+        safe.cursed = true;
+        safe.shadeInReach = true;
+        safe.holdsBoss = false;
+        safe.lowestMemberPct = 72;
+        safe.tankPct = 80;
+        safe.otherHealers = 3;
+        safe.manaPct = 60;
+        safe.dispelNowPending = false;
+        CHECK(CarrierStrikeAllowed(safe) == CarrierStrikeVerdict::Strike); // TestCursedHealerStrikesWhenRaidSafe
+        {
+            CarrierStrikeInput in = safe;
+            in.lowestMemberPct = 49;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::GuardLowMember); // TestCursedHealerYieldsBelowLowHealth
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.tankPct = 59;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::GuardTank); // TestCursedHealerYieldsForTank
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.otherHealers = 1;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::GuardHealers); // TestLastHealersKeepHealing
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.dispelNowPending = true;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::GuardDispel); // TestDispelNowPendingWins
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.manaPct = 29;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::GuardMana); // TestHealerManaFloor
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::MainTank;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::MainTank); // TestMainTankNeverStrikes
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = true;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::HoldsBoss); // TestOffTankOnBossNeverStrikes
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = false;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::Strike); // TestOffTankStrikesWhenFree
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.cursed = false;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::NotCarrier); // TestUncursedHealerNoStrike
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::Dps;
+            CHECK(CarrierStrikeAllowed(in) == CarrierStrikeVerdict::Dps); // TestDpsLeftToKillFirst
+        }
+        // The strike spells: the class's shortest casts first, nothing for a class without one (melee or wand).
+        CHECK(CarrierStrikeSpells(5) == std::vector<const char*>({"mind blast", "smite"})); // TestCarrierStrikeSpellsPriest
+        CHECK(CarrierStrikeSpells(1).empty()); // TestCarrierStrikeSpellsWarrior
+    }
+
     // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.
     {
         BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);
