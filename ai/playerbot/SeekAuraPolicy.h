@@ -5,6 +5,7 @@
 // another Son of Hakkar 11357. Tested in tools/test_seek_aura_policy.cpp; callers pass plain numbers so this header
 // stays free of core includes, and the row's columns arrive exactly as BossTacticsMgr reads them.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -191,15 +192,37 @@ namespace ai
         return SeekSourceFinishable(inCombat, hpPct, holdPct, seekers) && distFromSpotYd <= kSeekFallbackYd;
     }
 
+    // The seek's reach of a Son: its distance from B, or with a live boss anchor, for a Son inside the anchor's own
+    // radius (`anchorRadiusYd`, the raid's), the nearer of that and its distance from the anchor's centre (the boss's
+    // spawn). B sits 15 yd from Hakkar's spawn, so a Son brought to the far edge of the anchor stood 37-38 yd from B,
+    // beyond kSeekFallbackYd, and was held through the siphon.
+    inline float SeekReachYd(float distFromSpotYd, float distFromAnchorYd, bool anchored, float anchorRadiusYd)
+    {
+        return anchored && distFromAnchorYd <= anchorRadiusYd ? std::min(distFromSpotYd, distFromAnchorYd)
+                                                              : distFromSpotYd;
+    }
+
+    // A Son that has fought a non-tank this long goes to the first off-tank (SeekTakeFightingSonOnHealer); this long
+    // plus 4 s and no tank took it, the hold lets the damage dealers kill it (SeekHoldDecision). Walk 41: a Son sat on a
+    // healer at 100 % for 13 s and the siphon went undosed behind it.
+    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
+    constexpr std::uint32_t kSeekNonTankBurnMs = kSeekHealerTakeMs + 4000;
+
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the
     // dose window and within the seek's reach of the spot; at or below the hold percent it still waits for the gather
     // (or the forced burn). Every other Son stays held wherever it stands: a second low Son killed beside the pick
     // spends the raid's only source for a later cycle, and a pick killed while the window is shut leaves the next
     // siphon without its cloud (the poison lasts longer than the window). With no seeker left without the poison the
     // raid is dosed: nothing is killed then, however the gather ran, until the siphon strips the aura again.
+    //
+    // `nonTankHeldMs` is how long the Son has been fighting a non-tank (0: on a tank, or no victim). Past
+    // kSeekNonTankBurnMs it is no longer held, whatever else holds it: the off-tank had kSeekHealerTakeMs to take it
+    // and 4 s more, and a Son left on the raid costs more than the cycle's cloud (walk 45: six deaths behind one hold).
     inline bool SeekHoldDecision(bool isSelected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
-        float holdPct, float distFromSpotYd, int seekers)
+        float holdPct, float distFromSpotYd, int seekers, std::uint32_t nonTankHeldMs = 0)
     {
+        if (nonTankHeldMs >= kSeekNonTankBurnMs)
+            return false;
         if (!isSelected || distFromSpotYd > kSeekFallbackYd || !windowOpen)
             return true;
         if (seekers <= 0)
@@ -294,14 +317,39 @@ namespace ai
         return SeekPullStep::Walk;
     }
 
-    // A Son that has been fighting a non-tank (a healer, a damage dealer) is the first off-tank's own take once the
-    // third off-tank cannot take it — dead, or busy holding a Son of its own — and the non-tank has had it for a while.
-    // Walk 41: a Son sat on a healer at 100 % for 13 s and the siphon went undosed behind it.
-    constexpr std::uint32_t kSeekHealerTakeMs = 8000;
-
-    inline bool SeekTakeFightingSonOnHealer(bool thirdTankTakes, std::uint32_t heldMs)
+    // A Son that has been fighting a non-tank (a healer, a damage dealer) for kSeekHealerTakeMs is the first off-tank's
+    // own take, whatever the third off-tank does: the third off-tank had those seconds.
+    inline bool SeekTakeFightingSonOnHealer(std::uint32_t heldMs)
     {
-        return !thirdTankTakes && heldMs >= kSeekHealerTakeMs;
+        return heldMs >= kSeekHealerTakeMs;
+    }
+
+    // Whether an off-tank may take a Son, drag one or walk a pull at all: never while it is the boss's victim (after
+    // Cause Insanity the threat successor can hand Hakkar to it, and its walk would bring him onto the gather).
+    inline bool SeekTankTakeAllowed(bool isBossVictim)
+    {
+        return !isBossVictim;
+    }
+
+    // Who pulls an unengaged Son this read: exactly one actor. The third off-tank while three tanks live and it is not
+    // the boss's victim (SeekTankTakeAllowed stands its whole task down then); otherwise the ranged fallback (two tanks,
+    // the third off-tank the victim, or the anchored shot that leaves the tanks no Son to walk to).
+    struct SeekPullActors
+    {
+        bool thirdTank = false;
+        bool fallback = false;
+    };
+
+    inline SeekPullActors SeekPullActorsFor(std::size_t tankCount, bool thirdTankIsBossVictim, bool anchorShot)
+    {
+        SeekPullActors out;
+        if (tankCount >= 3 && !thirdTankIsBossVictim && !anchorShot)
+        {
+            out.thirdTank = true;
+            return out;
+        }
+        out.fallback = tankCount >= 2;
+        return out;
     }
 
     // Who opens a Son that is not fighting yet: the third off-tank while it lives. With fewer than three tanks alive

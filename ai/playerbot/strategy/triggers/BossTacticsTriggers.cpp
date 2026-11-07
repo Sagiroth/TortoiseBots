@@ -72,11 +72,16 @@ bool BossTacticsKillFirstTrigger::IsActive()
 {
     if (!Ready(ai, bot))
         return false;
-    Unit* pick = FindBossKillFirst(ai, bot, ScanBossTactics(ai, bot));
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    Unit* pick = FindBossKillFirst(ai, bot, fight);
     if (!pick)
+    {
+        // A Delusions carrier with a Shade the pick did not take is the case this trigger is the only one to see (a
+        // pick would put the action on it): one row per bot per 5 s says why (t1106b).
+        LogCarrierNoSwitch(ai, bot, fight, nullptr, AI_VALUE(Unit*, "current target"));
         return false;
-    AiObjectContext* context = ai->GetAiObjectContext();
-    return AI_VALUE(Unit*, "current target") != pick;
+    }
+    return KillFirstNeedsAttack(true, AI_VALUE(Unit*, "current target") == pick, bot->GetVictim() == pick);
 }
 
 bool BossTacticsHoldKillTrigger::IsActive()

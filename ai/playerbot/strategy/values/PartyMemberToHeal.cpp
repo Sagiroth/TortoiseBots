@@ -10,6 +10,7 @@
 #include "playerbot/HealReachPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
 #include "playerbot/DungeonPlanMgr.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RaidTankRolePolicy.h"
@@ -218,6 +219,18 @@ Unit* PartyMemberToHeal::Calculate()
             ++healerOrdinal;
     }
 
+    // t1105h J1: a member a needs_aura unit attacks (a Shade of Jin'do, only in his fight) is weighted up. Only on a
+    // map with such a row and with AiPlayerbot.DungeonRunAuraGatedTargets on, so every other heal pick is unchanged.
+    bool const huntOn = sPlayerbotAIConfig.dungeonRunAuraGatedTargets &&
+        GetBossTactics().HasRequiredAuraMap(bot->GetMapId());
+    auto const HuntedByGatedUnit = [this](Unit* target)
+    {
+        for (Unit* attacker : target->GetAttackers())
+            if (attacker && attacker->IsAlive() && attacker->GetVictim() == target && attacker->IsCreature() &&
+                GetBossTactics().RequiredAura(bot->GetMapId(), attacker->GetEntry()) != 0)
+                return true;
+        return false;
+    };
     std::vector<HealingCandidate> candidates;
     std::map<uint64, Unit*> targets;
     auto addTarget = [&](Unit* target, bool tank, bool pet)
@@ -247,6 +260,7 @@ Unit* PartyMemberToHeal::Calculate()
             target->GetMaxHealth(), preHealing ? getIncomingdamage(target) : 0,
             tank, pet, false,
             sServerFacade.IsWithinLOSInMap(bot, target)};
+        candidate.hunted = huntOn && HuntedByGatedUnit(target);
         if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };
@@ -304,6 +318,8 @@ Unit* PartyMemberToHeal::Calculate()
 
     if (candidates.empty())
         return nullptr;
+    // The Shade-victim boost never lifts a non-tank over a tank in a more urgent band (t1105h review).
+    CapHuntedBoost(candidates, bands);
     std::sort(candidates.begin(), candidates.end(), [&](HealingCandidate const& left, HealingCandidate const& right)
         { return HealingPriority(left, right, bands); });
     return targets.at(candidates[HealingAssignment(candidates, bands, healerOrdinal)].guid);

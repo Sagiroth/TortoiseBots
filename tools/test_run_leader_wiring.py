@@ -2102,7 +2102,7 @@ class RunFactKeyWiringTest(unittest.TestCase):
         self.assertIn("return isPlayer && inLeadGroup;", skip)
         focus = body(policy, "inline bool FocusSkipsBot(", "\n}\n")
         self.assertIn("if (totemKeyOn && totemTarget)", focus)
-        self.assertIn("return isTank || isHealer;", focus)
+        self.assertIn("return isTank || isHealer || gatedCarrier;", focus)  # t1106b: a carrier never takes a totem
         self.assertIn("return tankHoldTarget && isTank;", focus)
 
     def test_the_totem_focus_reads_the_key_and_goes_before_the_guard(self):
@@ -2112,7 +2112,12 @@ class RunFactKeyWiringTest(unittest.TestCase):
                       "        sPlayerbotAIConfig.dungeonRunTotemFocus);", COMMANDS)
         self.assertIn("return CommanderFocus(handler, order, target, intent, s_runIssuing);", COMMANDS)
         self.assertIn("TortoiseBots::DungeonRun::FocusSkipsBot(ai->IsTank(bot), PlayerbotAI::IsHeal(bot), dpsOnly,\n"
-                      "                totemTarget, totemFocus)", COMMANDS)
+                      "                totemTarget, totemFocus, carrier, gatedCarrier)", COMMANDS)
+        # A Delusions carrier with its Shade in reach is skipped (t1105h J1).
+        self.assertIn("bool const carrier = TortoiseBots::DungeonRun::CarrierFocusSkip(automatedKillFirst,\n"
+                      "            automatedKillFirst && ai::FindBossCarrierPick(ai, bot) != nullptr);", COMMANDS)
+        # ... and a carrier is known even with no Shade in reach, so a totem is never sent to it (t1106b).
+        self.assertIn("bool const gatedCarrier = totemTarget && ai::CarriesAuraGatedKillFirst(ai, bot);", COMMANDS)
         # The focus order hands the tick to the totem before the guard (and now before every other order) can spend it.
         policy = strip_comments(self.POLICY)
         totem = policy.index("if (f.totemFocus && !r.retreatOn)")
@@ -2127,11 +2132,24 @@ class RunFactKeyWiringTest(unittest.TestCase):
         # Every live guard site passes the run's own plan.
         self.assertEqual(skip.count("plan->KillFirstRank"), 1)
         self.assertNotRegex(skip, r"GuardSkipsUnit\(f,")
-        self.assertEqual(self.POLICY.count("GuardSkipsUnit(r.plan, f, u)"), 8)
+        # The healer guard's ranged dps read GuardSkipsUnit alone; every site that sends a tank reads TankSkipsUnit
+        # (GuardSkipsUnit plus a tank_ignore unit while its boss fights, t1105h).
+        self.assertEqual(self.POLICY.count("GuardSkipsUnit(r.plan, f, u)"), 1)
+        self.assertEqual(len(re.findall(r"(?<!Off)TankSkipsUnit\(r\.plan, f, u\)", self.POLICY)), 6)
+        # An add on a healer may go to an off-tank (t1105h review): GuardPickHealerAdd with an off-tank alive, and
+        # RaidGuardTick's off-tank pick-up.
+        self.assertEqual(self.POLICY.count("OffTankSkipsUnit(r.plan, f, u)"), 2)
+        off = body(strip_comments(self.POLICY), "inline bool OffTankSkipsUnit(", "\n}\n")
+        self.assertIn("return GuardSkipsUnit(plan, f, u) || (TankIgnoredFact(f, u) && !u.victimHealer);", off)
+        self.assertIn("healerGuardAdd && free.empty() && !TankIgnoredFact(f, *u) &&", self.POLICY)
+        tank = body(strip_comments(self.POLICY), "inline bool TankSkipsUnit(", "\n}\n")
+        self.assertIn("return GuardSkipsUnit(plan, f, u) || TankIgnoredFact(f, u);", tank)
+        healer = body(strip_comments(self.POLICY), "inline bool RaidHealerGuard(", "\n}\n")
+        self.assertIn("GuardSkipsUnit(r.plan, f, u)", healer)
         # GuardPick has no run parameter of its own: it takes the plan off the run it is filtering by.
         pick = body(strip_comments(self.POLICY), "inline const UnitFact* GuardPick(", "\n}\n")
         self.assertIn("capped && capped->plan ? capped->plan : (ccRun ? ccRun->plan : nullptr)", pick)
-        self.assertIn("GuardSkipsUnit(plan, f, u)", pick)
+        self.assertIn("TankSkipsUnit(plan, f, u)", pick)
 
     def test_the_aura_gated_fact_is_read_under_the_key(self):
         self.assertIn("f.auraGatedTargets = sPlayerbotAIConfig.dungeonRunAuraGatedTargets;", COMMANDS)

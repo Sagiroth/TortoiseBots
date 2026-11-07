@@ -45,6 +45,15 @@ namespace ai
         return futurePurpose.empty() ? "quest" : futurePurpose;
     }
 
+    // A dropped or retired trainer trip parks the trainer need as a plain
+    // park. A leftover "needs money" mark from an earlier fruitless visit
+    // would otherwise lift that park as soon as the purse covers a rank,
+    // and the bot re-walks the trainer it just failed to reach.
+    inline bool DropParkClearsTrainerMoneyPark(const std::string& parkKey)
+    {
+        return parkKey.rfind("trainer", 0) == 0;
+    }
+
     // Same-quest giver re-pick loop (night2 pool: 62 bots picked 3+ givers in
     // 15 min, same quest id re-picked standing at the NPC with no accept,
     // move-fail or drop between picks - each CopyTarget restarts the 5-min

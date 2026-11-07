@@ -340,6 +340,8 @@ bool UnstuckAction::Execute(Event& event)
             RESET_AI_VALUE(bool, "travel target active");
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey, time(0) + 5 * MINUTE);
+            if (DropParkClearsTrainerMoneyPark(parkKey))
+                SET_AI_VALUE2(bool, "manual bool", "trainer park needs money", false);
             SET_AI_VALUE2(int32, "manual int", "stuck keep count", 0);
             ai->TellDebug(master, "Unstuck: retiring travel target after 3 stuck keeps without progress.", "debug unstuck");
             return ai->DoSpecificAction("reset", event, true);

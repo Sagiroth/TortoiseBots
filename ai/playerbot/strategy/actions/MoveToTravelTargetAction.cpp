@@ -1395,6 +1395,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,
                 time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : orderLeg ? TortoiseBots::GuildOrders::kOrderLegParkSeconds : 5 * MINUTE));
+            if (DropParkClearsTrainerMoneyPark(parkKey))
+                SET_AI_VALUE2(bool, "manual bool", "trainer park needs money", false);
         }
     }
     else

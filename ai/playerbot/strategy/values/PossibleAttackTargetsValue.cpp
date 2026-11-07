@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/FankrissGauntletPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/actions/ViscidusActions.h"
 #include "PossibleTargetsValue.h"
@@ -314,6 +315,15 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
             return false;
     }
 
+    // A tank_ignore entry (t1105h J2, Jin'do's Sacrificed Trolls 14826) is no tank's target while its boss fights: no tank
+    // pick, no attacker-of-non-tank or snare taunt, so the tanks stay on the boss and the damage dealers kill it.
+    if (target && player && !GetBossTactics().TankIgnoreBosses(player->GetMapId(), target->GetEntry()).empty())
+    {
+        PlayerbotAI* const botAi = PlayerbotAIStorage::Instance().GetAI(player);
+        if (botAi && TankIgnoresTarget(botAi, player, target))
+            return false;
+    }
+
     // Chases stop at ledges (owner decision 2026-10-23): a bot of an active
     // dungeon run lets a runner below a cliff (or with no complete way to it)
     // go, whatever picked it (the tank's victim, a raid mark, the current
@@ -322,9 +332,14 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
         return false;
 
     // Check for the valid attackers value
-    if (checkAttackerValid && !AttackersValue::IsValid(target, player))
+    if (checkAttackerValid)
     {
-        return false;
+        std::uint32_t const requiredAura = sPlayerbotAIConfig.dungeonRunAuraGatedTargets
+            ? GetBossTactics().RequiredAura(player->GetMapId(), target->GetEntry()) : 0;
+        if (!AttackersValue::IsValid(target, player, nullptr,
+                CombatGateApplies(sPlayerbotAIConfig.dungeonRunAuraGatedTargets, requiredAura,
+                    requiredAura != 0 && player->HasAura(requiredAura))))
+            return false;
     }
 
     if (!IsPossibleTarget(target, player, range, ignoreCC))

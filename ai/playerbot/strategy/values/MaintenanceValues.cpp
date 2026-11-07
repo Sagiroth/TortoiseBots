@@ -11,6 +11,7 @@
 #include "playerbot/strategy/triggers/RpgTriggers.h"
 #include "playerbot/RandomBotFacade.h"
 #include "runtime/HireLifecycle.h"
+#include "runtime/AltBotService.h"
 #include "playerbot/policy/gear/VendorWeaponUpgradePolicy.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/TravelMgr.h"
@@ -212,6 +213,11 @@ bool CanBuyValue::CanAffordVendorWeaponUpgrade(PlayerbotAI* ai)
     return VendorWeaponUpgradeAffordable(1, bot->GetMoney(), spellReserve);
 }
 
+static bool VendorNeedCountsItem(bool isAutonomous, Item* item, ItemPrototype const* proto)
+{
+    return TortoiseBots::AltBotItemCountsForVendorNeed(isAutonomous, proto->Quality, item->IsSoulBound(), item->IsEquipped());
+}
+
 bool CanSellValue::Calculate()
 {
     if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT))
@@ -224,11 +230,12 @@ bool CanSellValue::Calculate()
     // and the sell errand then finds nothing to sell. Require at least one
     // held item a vendor actually buys: one bag walk per 2 s cache window, the
     // same walk SellableStockWorthAVendorTrip already does below.
+    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(bot->GetObjectGuid());
     for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
     {
         ItemPrototype const* proto = item ? item->GetProto() : nullptr;
 
-        if (proto && proto->SellPrice > 0)
+        if (proto && proto->SellPrice > 0 && VendorNeedCountsItem(isAltBot, item, proto))
             return true;
     }
 
@@ -635,11 +642,12 @@ bool ai::SellableStockWorthAVendorTrip(PlayerbotAI* ai)
 
     uint32 sellValue = 0;
     uint32 sellableCount = 0;
+    bool const isAltBot = TortoiseBots::AltBotService::Instance().IsAutonomous(ai->GetBot()->GetObjectGuid());
     for (Item* item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_VENDOR)))
     {
         ItemPrototype const* proto = item->GetProto();
 
-        if (!proto || !proto->SellPrice)
+        if (!proto || !proto->SellPrice || !VendorNeedCountsItem(isAltBot, item, proto))
             continue;
 
         sellValue += proto->SellPrice * item->GetCount();

@@ -20,6 +20,7 @@ using ai::TravelIsResetToNull;
 using ai::TravelMoveFailPathTag;
 using ai::TravelMoveFailBlacklistsKind;
 using ai::TravelPurposeParkKey;
+using ai::DropParkClearsTrainerMoneyPark;
 using ai::TravelTargetIsNull;
 using ai::GiverRepickParksQuest;
 using ai::GIVER_REPICK_PARK_AFTER;
@@ -94,6 +95,14 @@ int main()
     CHECK(TravelPurposeParkKey("512") == "512");
     CHECK(TravelPurposeParkKey("trainer class") == "trainer class");
     std::cout << "  [PASS] purpose-park key matches the request gate\n";
+
+    // A dropped trainer trip is a plain park; other drops leave the mark alone.
+    CHECK(DropParkClearsTrainerMoneyPark("trainer class"));
+    CHECK(DropParkClearsTrainerMoneyPark("trainer trade"));
+    CHECK(!DropParkClearsTrainerMoneyPark("quest"));
+    CHECK(!DropParkClearsTrainerMoneyPark("512"));
+    CHECK(!DropParkClearsTrainerMoneyPark("city"));
+    std::cout << "  [PASS] dropped trainer trip clears the money park mark\n";
 
     // (f) Move-fail path tag: NOPATH vs INCOMPLETE vs unloaded tile vs full
     // path, from the raw PathFinder::getPathType() bits (finding 14).

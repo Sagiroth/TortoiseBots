@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "FankrissFocusActions.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
@@ -607,6 +608,11 @@ namespace
     {
         if (!ai || !target || !SpellAppliesPeriodicDamage(spellId))
             return true;
+        // A needs_aura entry (a Shade of Jin'do) takes direct damage only, and only from a carrier: a DoT tick lands
+        // only while the caster still carries the aura, so the cast spends the Shade's clock for nothing.
+        if (AuraGatedDirectOnlyDamage(sPlayerbotAIConfig.dungeonRunAuraGatedTargets,
+                GetBossTactics().RequiredAura(ai->GetBot()->GetMapId(), target->GetEntry())))
+            return false;
         CcGuard ccGuard(ai);
         bool const ccMarkOrControlled = sPlayerbotAIConfig.dungeonRunAutoCc &&
             (ccGuard.IsCcMarkedUnit(target) || ccGuard.IsCrowdControlledUnit(target));

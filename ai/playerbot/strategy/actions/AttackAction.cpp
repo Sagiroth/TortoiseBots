@@ -29,6 +29,9 @@ void CommitExplicitAttackTarget(PlayerbotAI* ai, ObjectGuid guid)
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<ObjectGuid>("attack target")->Set(guid);
     context->GetValue<ObjectGuid>("explicit attack target")->Set(guid);
+    // A command commit is a player's order until the run marks it as its own (Commander's NoteRunOrder, after the
+    // action): the carrier override never takes a player's target away (OrderIsAutomated).
+    context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
 
     // A player's order outranks an earlier reach give-up. That give-up puts the
     // creature and its whole kind on the "unreachable" lists for five minutes,
@@ -183,6 +186,12 @@ bool AttackAction::CanPetAttack(PlayerbotAI* ai, Pet* pet, Unit* target)
 
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsValidAttackTarget(target))
+        return false;
+
+    // A needs_aura entry (a Shade of Jin'do) takes damage only from a carrier's own direct hit: a pet's damage is
+    // credited to the pet and the core zeroes it, so the order would only park the pet off the boss.
+    if (AuraGatedDirectOnlyDamage(sPlayerbotAIConfig.dungeonRunAuraGatedTargets,
+            GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry())))
         return false;
 
     // AiPlayerbot.DungeonRunCharmYield: the pet never takes the raid's charmed member either; the owner's own attack

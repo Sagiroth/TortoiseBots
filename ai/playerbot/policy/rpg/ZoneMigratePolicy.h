@@ -125,4 +125,18 @@ namespace ai
     {
         return !pickIsNull && pickIsGrind && leaveCondition && leavePending;
     }
+
+    // Level-fitting teleport (login scatter, alt start, post-rez rescue):
+    // the zone must sit within +-5 of the bot's level (clamped to 1..60) and
+    // must not be a capital. Capitals carry a nominal zone level of 10, so
+    // without the capital veto a level 10-15 bot lands among service NPCs
+    // instead of in a grind zone.
+    inline bool LevelFittingTeleportAllowsZone(std::int32_t zoneLevel, std::int32_t botLevel, bool zoneIsCapital)
+    {
+        if (zoneIsCapital)
+            return false;
+        std::int32_t const lower = botLevel - 5 < 1 ? 1 : botLevel - 5;
+        std::int32_t const upper = botLevel + 5 > 60 ? 60 : botLevel + 5;
+        return zoneLevel >= lower && zoneLevel <= upper;
+    }
 }
