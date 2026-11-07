@@ -27,9 +27,9 @@ def body(text, start, end):
 class PlayerLedBindWiringTest(unittest.TestCase):
     def test_keys_default_off_and_hot_reload(self):
         keys = body(CONFIG, "void PlayerbotAIConfig::LoadDungeonRunKeys()", "\n}\n")
-        self.assertIn('dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", false);', keys)
+        self.assertIn('dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", true);', keys)
         self.assertIn('config.GetFloatDefault("AiPlayerbot.DungeonRunPlayerLedPullYd", 40.0f)', keys)
-        self.assertIn("AiPlayerbot.DungeonRunPlayerLed = 0", TEMPLATE)
+        self.assertIn("AiPlayerbot.DungeonRunPlayerLed = 1", TEMPLATE)
         self.assertIn("AiPlayerbot.DungeonRunPlayerLedPullYd = 40", TEMPLATE)
 
     def test_binding_state_reads_the_commanders_lead(self):

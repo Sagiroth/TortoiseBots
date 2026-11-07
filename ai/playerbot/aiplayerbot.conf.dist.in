@@ -992,12 +992,12 @@ AiPlayerbot.OnyxiaWhelpsAndEggs = 1
 # before anything else (in a listed order), stay out of the boss's front during a
 # listed frontal attack. Built from Turtle's own core data; Uldaman up to
 # Ironaya and the Obsidian Sentinel so far (docs/play/boss-tactics.md).
-# This changes how bots play in dungeons, so it is off for everybody by default.
+# On by default: every bot uses the tactics on a map that has rows.
 # Bots of a bound group (a commander's or the run leader's) get the tactics regardless of
 # this key. An explicit target order from a player always wins.
-# 0 - off, except for commander-bound groups (Default)
-# 1 - on for every bot on a map that has rows
-AiPlayerbot.DungeonTactics = 0
+# 0 - off, except for commander-bound groups
+# 1 - on for every bot on a map that has rows (Default)
+AiPlayerbot.DungeonTactics = 1
 
 # The "die together" boss tactic (ai_boss_tactic kind linked_death, docs/play/boss-tactics.md).
 # A linked_death row lists one partner of a group (its boss_entry is the group's anchor) and a hold percent
@@ -1508,9 +1508,9 @@ AiPlayerbot.DungeonRunLootFfa = 0
 # [tank <Bot>]`: he walks wherever he wants, and the run leader pulls the plan's
 # packs near him with the tank bot, marks, crowd controls, rests and revives.
 # Plain `.bot run start` stays bot-led. Needs AiPlayerbot.DungeonSelfClear = 1.
-# 0 - `.bot run start ... player` is refused (Default)
-# 1 - a player who leads his party may start a player-led run
-AiPlayerbot.DungeonRunPlayerLed = 0
+# 0 - `.bot run start ... player` is refused
+# 1 - a player who leads his party may start a player-led run (Default)
+AiPlayerbot.DungeonRunPlayerLed = 1
 
 # How close (yards, straight line) the leading player must stand to a plan pack
 # or boss for the player-led run to pull it.
@@ -2647,13 +2647,13 @@ AiPlayerbot.FleeingEnabled = 1
 # master never get this flee anyway. Takes effect after a server restart.
 #AiPlayerbot.PoolMeleeHoldGround = 0
 
-# Alt-bots (issue #872, on by default). 1 = an alt you brought in with `.bot add`
+# Alt-bots (issue #872, off by default). 1 = an alt you brought in with `.bot add`
 # keeps playing on its own when you kick it from your party (or the party
 # breaks up): it quests, grinds and travels like a pool bot, with protections
 # for your gear, gold and talents, and takes one pool bot's slot while it is
 # out. `.bot remove`, `.bot add` again or logging in on the alt ends it.
 # Hardcore characters are refused. 0 = a kicked alt stays your companion.
-#AiPlayerbot.AltBots = 1
+#AiPlayerbot.AltBots = 0
 
 # 1 = alt-bots log out when their owner logs out. 0 = they keep playing until
 # `.bot remove` (or a server restart; they do not come back after one).

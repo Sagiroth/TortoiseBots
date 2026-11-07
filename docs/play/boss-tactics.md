@@ -24,7 +24,7 @@ It is **off by default**. A normal player's bots play exactly as before.
 The `boss tactics` strategy is added to a bot by the `enter boss tactics` trigger of the `dungeon` strategy (re-checked every 5 ticks) when all of these hold:
 
 - the bot is on a map that has a row in `ai_boss_tactic` OR `ai_boss_stand` (a stand set alone arms it), and
-- either `AiPlayerbot.DungeonTactics = 1` (server owner opt-in; default `0`), or the bot is in a bound group:
+- either `AiPlayerbot.DungeonTactics = 1` (the default; a server owner can set `0`), or the bot is in a bound group:
   - a remote bind needs `AiPlayerbot.RemoteCommander = 1`,
   - an `inparty` bind needs `AiPlayerbot.DungeonSelfClear = 1`.
 
