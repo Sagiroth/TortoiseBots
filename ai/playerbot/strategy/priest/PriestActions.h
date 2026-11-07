@@ -2,6 +2,8 @@
 #include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/policy/heal/ShieldTargetPolicy.h"
 #include "playerbot/AoeFearPolicy.h"
+#include "playerbot/ChatHelper.h"
+#include "runtime/PlayerbotAIStorage.h"
 
 namespace ai
 {
@@ -40,6 +42,8 @@ namespace ai
             // give no rage), so above the critical band the rows fall
             // through to direct heals; the critical rows keep the shield.
             if (target && !ShouldShieldTarget(TankForShield(target->IsPlayer() && ai->IsTank((Player*)target, false),
+                target->IsPlayer() && (PlayerbotAIStorage::Instance().GetPlayerForcedRole(((Player*)target)->GetObjectGuid()) != static_cast<uint8>(BOT_ROLE_NONE) ||
+                    (PlayerbotAIStorage::Instance().GetAI((Player*)target) && PlayerbotAIStorage::Instance().GetAI((Player*)target)->GetForcedRole() != static_cast<uint8>(BOT_ROLE_NONE))),
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_WARRIOR && ai->HasAura(71, target),
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_DRUID && (ai->HasAura(5487, target) || ai->HasAura(9634, target))),
                 target->GetPowerType() == POWER_RAGE, target->IsInCombat(),
