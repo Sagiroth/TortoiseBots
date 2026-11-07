@@ -293,15 +293,6 @@ namespace ai
         virtual bool IsActive() override;
     };
 
-    // The `threat_successor` high line (ThreatCapPolicy.h) owns the bot's auto-attack, wand Shoot and Auto Shot: the
-    // actions that start them are exempt from the threat multiplier, so the trigger stops them over the line.
-    class SuccessorThreatCapTrigger : public Trigger
-    {
-    public:
-        SuccessorThreatCapTrigger(PlayerbotAI* ai) : Trigger(ai, "successor threat cap", 1) {}
-        virtual bool IsActive() override;
-    };
-
     // mod-playerbots LowTankThreatTrigger (LD-8): the bot climbs past half
     // the main tank's threat (or the tank holds nothing). No live consumers
     // in 1.18.1 (Misdirection/Tricks are WotLK-only); raid tactics read it.
