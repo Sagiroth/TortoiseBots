@@ -22,11 +22,18 @@ class OwnedBotRelogWiringTest(unittest.TestCase):
         init = body("bool PlayerbotAIAdapter::Initialize()")
         self.assertLess(init.index("ai_->SetMaster(master_);"), init.index("ai_->ResetStrategies();"))
 
-    def test_logout_saves_for_a_real_master_before_the_ai_goes(self):
-        shutdown = body("void PlayerbotAIAdapter::Shutdown()")
-        self.assertIn("ai_->HasRealPlayerMaster()", shutdown)
-        self.assertIn("!sPlayerbotAIConfig.bExplicitDbStoreSave", shutdown)
-        self.assertLess(shutdown.index("sPlayerbotDbStore.Save(ai_);"), shutdown.index("delete ai_;"))
+    def test_snapshot_save_rules(self):
+        save = body("void PlayerbotAIAdapter::SavePlayerSnapshot()")
+        self.assertIn("ai_->HasRealPlayerMaster()", save)
+        self.assertIn("!AltBotService::Instance().IsAutonomous(", save)
+        self.assertIn("sPlayerbotAIConfig.bExplicitDbStoreSave", save)
+        self.assertNotIn("sPlayerbotDbStore.Save", body("void PlayerbotAIAdapter::Shutdown()"))
+
+    def test_bot_logout_saves_before_the_alt_session_ends(self):
+        manager = (ROOT / "runtime" / "BotManager.cpp").read_text()
+        i = manager.index("void BotManager::OnPlayerBeforeLogout(")
+        logout = manager[i:manager.index("\n}\n", i)]
+        self.assertLess(logout.index("SavePlayerSnapshot()"), logout.index("AltBotService::Instance().OnBotLogout(player);"))
 
 
 if __name__ == "__main__":

@@ -1308,9 +1308,14 @@ void BotManager::OnPlayerBeforeLogout(::Player* player)
         DetachOwnedBots(player);
     }
     else
+    {
+        auto saved = m_bots.find(player->GetObjectGuid().GetCounter());
+        if (saved != m_bots.end() && saved->second.aiAdapter)
+            saved->second.aiAdapter->SavePlayerSnapshot();
         // The `.bot gear` pin survives logout/relog (it ends on a new
         // `.bot gear` pass, dismiss, or character deletion).
         AltBotService::Instance().OnBotLogout(player);
+    }
     TortoiseBots::DowntimeService::OnBotLogout(player);
     auto it = m_bots.find(player->GetObjectGuid().GetCounter());
     if (it == m_bots.end())
@@ -1447,7 +1452,10 @@ void BotManager::ReleaseToClient(::Player* player)
         return;
 
     if (it->second.aiAdapter)
+    {
+        it->second.aiAdapter->SavePlayerSnapshot();
         it->second.aiAdapter->Shutdown();
+    }
 
     TB_LOG_DETAIL("TortoiseBots: releasing module control of %s to a network client", player->GetName());
     AltBotService::Instance().OnReclaimed(player);

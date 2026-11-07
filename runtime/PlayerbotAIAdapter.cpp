@@ -2,6 +2,7 @@
 #include "PlayerbotAIAdapter.h"
 #include "BotManager.h"
 #include "PlayerbotAIStorage.h"
+#include "AltBotService.h"
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BotActionLog.h"
 #include "playerbot/AiFactory.h"
@@ -129,15 +130,25 @@ void PlayerbotAIAdapter::DetachMaster()
         ai_->ClearMasterPointer(); // pi-lens-ignore: clang:all
 }
 
+// Value commands such as `ll` and `ss` change only the live AI, and a
+// strategy change saves only up to then, so a player's bot saves when it
+// leaves. An owned alt whose owner is offline is still the player's
+// companion; an alt playing on its own runs the pool kit, which must not
+// overwrite it. Call before the alt session ends (it ends on logout).
+void PlayerbotAIAdapter::SavePlayerSnapshot()
+{
+    if (!ai_ || !bot_ || sPlayerbotAIConfig.bExplicitDbStoreSave) // pi-lens-ignore: clang:all
+        return;
+    if (ai_->HasRealPlayerMaster() ||
+        (ai_->IsOwnedBot() && !AltBotService::Instance().IsAutonomous(bot_->GetObjectGuid())))
+        sPlayerbotDbStore.Save(ai_);
+}
+
 void PlayerbotAIAdapter::Shutdown()
 {
     // RemoveAI first: map-thread hooks resolve the AI through storage, so
     // once this returns no new hook can reach ai_. Close then swaps the
     // tombstone in: a hook holding the old pointer still fails its reopen.
-    // Save a player's bot on logout: value commands such as `ll` and `ss`
-    // change only the live AI, and a strategy change saves only up to then.
-    if (ai_ && bot_ && !sPlayerbotAIConfig.bExplicitDbStoreSave && ai_->HasRealPlayerMaster()) // pi-lens-ignore: clang:all
-        sPlayerbotDbStore.Save(ai_);
     if (bot_) PlayerbotAIStorage::Instance().RemoveAI(bot_); // pi-lens-ignore: clang:all
     if (botGuidLow_)
         ai::botdiag::BotActionLog::Close(botGuidLow_);
