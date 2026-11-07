@@ -694,7 +694,7 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         self.assertIn("std::numeric_limits<float>::max()", at)
         unit_near = body(ACTIONS, "bool HeldUnitNear(")
         self.assertIn("HeldSubjectNear(ai, around, fight, countNear, nullptr)", unit_near)
-        isa = body(ACTIONS, "bool IsBattleDps(")
+        isa = body(ACTIONS, "bool ai::IsBattleDps(")
         self.assertIn("!PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot)", isa)
         free = body(ACTIONS, "bool IsFreeDps(", "\n}\n")
         self.assertIn("if (!IsBattleDps(bot))", free)
