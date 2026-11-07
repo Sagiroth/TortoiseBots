@@ -16665,12 +16665,17 @@ static void RefreshCombatMonitor(uint64 commanderRaw, RemoteCommander::Binding c
     }
     bool const allDead = facts.total > 0 && facts.alive == 0;
     FeedCombatMonitor(binding, lead, bots, facts.anyInCombat, allDead, ctx, &facts.engagedUnits);
-    // A fight the run opened before its boss step (the pull at a move step, a boss step reached in a walk back): the
-    // open fight adopts the plan's boss, so its kill is read as that boss. A plan boss wins over the data pick below.
+    // The plan boss only when he is one of the units being fought: a trash fight still open when the step turns to his
+    // boss step (or in the fight's last 3 s) is not his fight and stays unnamed. The first pick within a fight wins.
     if (ctx.bossEntry)
-        CombatMonitorService::Instance().AdoptBoss(binding.groupId, ctx.bossEntry, ctx.bossName.c_str());
+        for (DungeonRun::UnitFact const& u : facts.engagedUnits)
+            if (u.entry == ctx.bossEntry || u.formOf == ctx.bossEntry)
+            {
+                CombatMonitorService::Instance().AdoptBoss(binding.groupId, ctx.bossEntry, ctx.bossName.c_str());
+                break;
+            }
     // No boss in the fight yet: the same data pick the bound sampler makes (world-boss rank, instance-bind, plan
-    // boss; most health first), once per fight.
+    // boss; most health first). It names the boss on a move-step pull and on a boss step reached in a walk back.
     if (CombatMonitorService::Instance().InFight(binding.groupId) &&
         CombatMonitorService::Instance().BossEntry(binding.groupId) == 0)
         NoteFightBoss(binding.groupId, lead);

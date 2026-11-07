@@ -618,8 +618,8 @@ static void TestNoteBossKeepsRunBoss()
 
 static std::string EndedPayload(Book& b, Seq& seq, uint32_t endMs);
 
-// Zul'Gurub walk 52: the Hakkar pull opens the fight on the move step before the boss step, and a boss step reached in
-// a walk back gives the run path no boss entry. The plan boss adopted on the open fight makes the kill a kill.
+// The glue adopts the plan boss on an open fight only when he is one of the units being fought; his death, before or
+// after the adoption, then makes the kill.
 static void TestAdoptBossKillAfterMoveStart()
 {
     FightContext ctx;
@@ -638,6 +638,47 @@ static void TestAdoptBossKillAfterMoveStart()
     CHECK(Contains(p, "\"kind\":\"move\""));
     CHECK(Contains(p, "\"boss\":14834"));
     CHECK(Contains(p, "\"boss_name\":\"Hakkar\""));
+    CHECK(Contains(p, "\"outcome\":\"kill\""));
+}
+
+// A trash fight still open when the run reaches the boss step: the boss is not among the units being fought, so the
+// glue adopts nothing and the fight ends unnamed (never the boss's kill).
+static void TestTrashFightOnBossStepStaysUnnamed()
+{
+    FightContext ctx;
+    ctx.kind = "move";
+    ctx.plan = "zul_gurub";
+    ctx.step = 693;
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.OnDamage(1, 0, 500, "Tanky", 11357, 777, "Son of Hakkar", 1000);
+    b.NoteBossDied(11357, 0);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"kind\":\"move\""));
+    CHECK(Contains(p, "\"boss\":0"));
+    CHECK(Contains(p, "\"outcome\":\"end\""));
+    CHECK(!Contains(p, "\"outcome\":\"kill\""));
+}
+
+// The data pick names the boss on a move-step pull (he is among the units being fought), and his death makes the
+// fight a kill: this, not AdoptBoss, is what fixes the walk 52 fights.
+static void TestDataPickOnMoveStartIsKill()
+{
+    FightContext ctx;
+    ctx.kind = "move";
+    Book b;
+    b.SetMembers(Trio());
+    b.Start(0, 1700000000, ctx, 1);
+    b.NoteBoss(14834, "Hakkar");
+    b.NoteBossDied(14834, 0);
+    Seq seq;
+    std::string const p = EndedPayload(b, seq, 6000);
+    CHECK(!p.empty());
+    CHECK(Contains(p, "\"kind\":\"move\""));
+    CHECK(Contains(p, "\"boss\":14834"));
     CHECK(Contains(p, "\"outcome\":\"kill\""));
 }
 
@@ -1746,6 +1787,8 @@ int main()
     TestNoteBossOutsideFightIgnored();
     TestNoteBossKeepsRunBoss();
     TestAdoptBossKillAfterMoveStart();
+    TestTrashFightOnBossStepStaysUnnamed();
+    TestDataPickOnMoveStartIsKill();
     TestAdoptBossNeverOverrides();
     TestAdoptBossOutsideFightNoop();
     TestNoteBossAfterDeathStillKill();

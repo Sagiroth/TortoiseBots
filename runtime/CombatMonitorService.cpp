@@ -188,8 +188,9 @@ void CombatMonitorService::NoteBoss(uint32_t groupId, uint32_t entry, char const
     it->second.NoteBossGuid(guid);
 }
 
-// The run's plan boss for an open fight that has none (the pull at a move step, a boss step reached in a walk back):
-// the first pick of a fight wins, and the sampler's data pick never follows a plan boss (Book::AdoptBoss).
+// The run's plan boss for an open fight that has none, only when the glue found him among the engaged units (a trash
+// fight the step turn catches is not his). The first pick of a fight wins (Book::AdoptBoss); the data pick covers a
+// move-step pull and the walk back.
 void CombatMonitorService::AdoptBoss(uint32_t groupId, uint32_t entry, char const* name)
 {
     if (!Enabled() || groupId == 0 || entry == 0 || !name)

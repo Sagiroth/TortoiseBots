@@ -818,8 +818,9 @@ public:
             bossDied_ = true;
     }
 
-    // The run's plan boss for a fight opened before its boss step (the pull at a move step, a walk back over a boss
-    // step): the same pick as NoteBoss, so a plan boss wins over the sampler's data pick when both exist.
+    // The run's plan boss on an open fight that names none, and only when he is one of the units being fought (the
+    // glue's engaged-unit check): the data pick covers a move-step pull and the walk back, and the first pick within
+    // a fight wins (a plan boss adoption never replaces a boss already picked).
     void AdoptBoss(uint32_t entry, std::string const& name)
     {
         NoteBoss(entry, name);

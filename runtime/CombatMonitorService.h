@@ -34,8 +34,8 @@ public:
                  CombatMonitor::FightContext const& ctx, std::vector<std::string> const& debuffKeysUp, uint32_t nowMs);
     // world thread: the fight's boss as the sampler picked it from the engaged creatures (once per fight)
     void NoteBoss(uint32_t groupId, uint32_t entry, char const* name, uint64_t guid = 0);
-    // world thread: the run's plan boss for an open fight that has none yet (the pull at a move step, a walk back over
-    // a boss step); once per fight, and never over the data pick
+    // world thread: the run's plan boss for an open fight that has none, only when he is among the engaged units (the
+    // data pick covers a move-step pull and the walk back); the first pick within a fight wins
     void AdoptBoss(uint32_t groupId, uint32_t entry, char const* name);
     // world thread: the boss unit's raw guid (a run's plan boss), once per fight
     void NoteBossGuid(uint32_t groupId, uint64_t guid);
