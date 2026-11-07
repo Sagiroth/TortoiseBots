@@ -4,11 +4,24 @@
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
 using namespace ai;
+
+namespace
+{
+// The damage the threat multiplier used to exempt: the melee auto-attack, the wand's Shoot and the hunter's Auto Shot.
+// The successor cap has to see them (ThreatCapPolicy.h); every other ACTION_THREAT_NONE action keeps the old exemption.
+bool AutoAttackAction(Action* action)
+{
+    return dynamic_cast<MeleeAction*>(action) || dynamic_cast<CastShootAction*>(action) ||
+        action->getName() == "auto shot";
+}
+}
 
 float ThreatMultiplier::GetValue(Action* action)
 {
@@ -18,7 +31,22 @@ float ThreatMultiplier::GetValue(Action* action)
     if (AI_VALUE(bool, "neglect threat"))
         return 1.0f;
 
-    if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+    if (action == NULL)
+        return 1.0f;
+
+    // On a `threat_successor` boss the auto-attack, the wand's Shoot and Auto Shot stop at the successor line like any
+    // other attack: they used to be exempt, so a damage dealer at 80-99 % of the off-tank kept adding white and wand
+    // threat inside Cause Insanity's charm and the boss turned to it. Tanks are never vetoed.
+    if (AutoAttackAction(action))
+    {
+        Unit* const target = AI_VALUE(Unit*, "current target");
+        if (SuccessorCapStopsAutoAttack(ThreatSuccessorTarget(target), PlayerbotAI::IsTank(bot),
+                AI_VALUE2(uint8, "threat", "current target")))
+            return 0.0f;
+        if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+            return 1.0f;
+    }
+    else if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     // Burn the raid's timed Fankriss Spawn before its enrage. Single-target
@@ -84,6 +112,13 @@ float ThreatMultiplier::GetValue(Action* action)
     }
 
     return 1.0f;
+}
+
+void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "successor threat cap",
+        NextAction::array(0, new NextAction("stop auto attack", ACTION_HIGH), NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)

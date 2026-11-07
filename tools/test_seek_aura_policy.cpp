@@ -160,12 +160,12 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
-    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 8 s is the first
-    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 8 s (walk 45: with three
+    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 3 s is the first
+    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 3 s (walk 45: with three
     // tanks alive the old gate never let the first off-tank take one, and 87 of 99 deaths from Sons were non-tanks).
-    CHECK(kSeekHealerTakeMs == 8000);
-    CHECK(SeekTakeFightingSonOnHealer(8000));
-    CHECK(!SeekTakeFightingSonOnHealer(7999));
+    CHECK(kSeekHealerTakeMs == 3000);
+    CHECK(SeekTakeFightingSonOnHealer(3000));
+    CHECK(!SeekTakeFightingSonOnHealer(2999));
     // An off-tank that is Hakkar's victim (Cause Insanity, then the threat successor) takes no Son and walks no drag:
     // it would bring Hakkar onto the gather. The other off-tank takes it.
     CHECK(SeekTankTakeAllowed(false));
@@ -187,18 +187,27 @@ int main()
         CHECK(!none.thirdTank && !none.fallback);
     }
 
-    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
-    // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),
-    // the hold is today's.
-    CHECK(kSeekNonTankBurnMs == kSeekHealerTakeMs + 4000);
-    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 11999));
-    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 12000));
+    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 5 s is no longer held, the damage dealers kill it
+    // (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0), the hold is today's.
+    CHECK(kSeekNonTankBurnMs == 5000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 4999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000));
     // Not the pick, the window shut, far from the spot, the raid dosed: released all the same.
-    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 12000));
+    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 5000));
     CHECK(SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 0));
     // On a tank (no non-tank time): held exactly as before.
     CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0) ==
           SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5));
+
+    // SeekHoldReleasesAfter20s: a Son the hold keeps longer than 20 s is released to the damage dealers, whatever the
+    // window and the gather say. Walk 48: the held Sons lasted a median 26.5 s (up to 126 s) and 12 of the 23 losses
+    // were Son wipes.
+    CHECK(kSeekHoldMaxMs == 20000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 19999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
+    // Not the pick (otherwise held all fight), the window shut and the gather still running: released too.
+    CHECK(!SeekHoldDecision(false, true, true, false, 80.0f, 30.0f, 5.0f, 5, 0, 20000));
+    CHECK(!SeekHoldDecision(true, false, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));

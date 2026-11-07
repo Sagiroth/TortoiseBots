@@ -214,9 +214,9 @@ int main()
     CHECK(SeekSiphonAtLabel(9007) == "at=+9007ms");
 
     // SeekHealerClockTick: a read only sees the Sons inside its own reach, so a Son it did not list says nothing. The
-    // clock of a Son on a healer reaches 8 s through reads of bots that did not see it in between (the old code erased
-    // every guid the current read lacked, so the clock never filled with 20 bots reading); only a Son seen dead, out
-    // of combat or on a tank leaves, and an entry nobody has seen for kSeekHealerStaleMs is swept.
+    // clock of a Son on a healer reaches its take through reads of bots that did not see it in between (the old code
+    // erased every guid the current read lacked, so the clock never filled with 20 bots reading); only a Son seen dead,
+    // out of combat or on a tank leaves, and an entry nobody has seen for kSeekHealerStaleMs is swept.
     {
         std::map<std::uint64_t, SeekHeldSon> held;
         const SeekSonSeen onHealer{7, true, true, false, true};
@@ -227,11 +227,11 @@ int main()
         CHECK(held.count(7) == 1);
         SeekHealerClockTick(held, {SeekSonSeen{9, true, true, false, false}}, 5000);
         CHECK(held.count(7) == 1);
-        // A bot that sees it again refreshes seenMs and keeps sinceMs, so the 8 s clock runs from the first read.
+        // A bot that sees it again refreshes seenMs and keeps sinceMs, so the take clock runs from the first read.
         SeekHealerClockTick(held, {onHealer}, 7000);
         CHECK(held[7].sinceMs == 1000 && held[7].seenMs == 7000);
-        CHECK(SeekHealerTakeGuid(held, 8999) == 0);
-        CHECK(SeekHealerTakeGuid(held, 9000) == 7);
+        CHECK(SeekHealerTakeGuid(held, 3999) == 0);
+        CHECK(SeekHealerTakeGuid(held, 4000) == 7);
         // The non-tank time the hold reads (0 for a Son not on a non-tank).
         CHECK(SeekNonTankHeldMs(held, 7, 9000) == 8000);
         CHECK(SeekNonTankHeldMs(held, 8, 9000) == 0);
@@ -254,7 +254,7 @@ int main()
         CHECK(held.count(7) == 1);
         SeekHealerClockTick(held, {}, 20000 + kSeekHealerStaleMs + 1);
         CHECK(held.empty());
-        // Codex: 6 s on a healer, then seen on a tank, then back on a healer: the 12 s release counts from the new
+        // Codex: 6 s on a healer, then seen on a tank, then back on a healer: the release counts from the new
         // start, never from the first one.
         SeekHealerClockTick(held, {onHealer}, 100000);
         SeekHealerClockTick(held, {SeekSonSeen{7, true, true, true, false}}, 106000);
@@ -265,6 +265,21 @@ int main()
         // The lowest guid among the due entries is the take.
         SeekHealerClockTick(held, {SeekSonSeen{12, true, true, false, true}, SeekSonSeen{5, true, true, false, true}}, 40000);
         CHECK(SeekHealerTakeGuid(held, 48000) == 5);
+    }
+
+    // SeekHoldClockTick: a Son seen held enters the clock and keeps its first read; a Son seen released leaves; one a
+    // read did not see keeps its entry (a bot's read only reaches the Sons around it). The read reports a capped Son
+    // as held, so its release survives the next read instead of starting a fresh 20 s hold.
+    {
+        std::map<std::uint64_t, SeekHeldSon> held;
+        SeekHoldClockTick(held, {SeekHoldSeen{7, true}}, 1000);
+        CHECK(held.size() == 1 && held[7].sinceMs == 1000);
+        CHECK(SeekHeldMs(held, 7, 21000) == 20000);
+        SeekHoldClockTick(held, {}, 3000);
+        CHECK(held.count(7) == 1);
+        SeekHoldClockTick(held, {SeekHoldSeen{7, false}}, 4000);
+        CHECK(held.empty());
+        CHECK(SeekHeldMs(held, 7, 4000) == 0);
     }
 
     std::cout << "seek fight state policy: all tests passed\n";

@@ -90,6 +90,24 @@ int main()
     // The cap is only for the successor target: the plain max ignores the flag.
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, false}}, false) == 40000.0f);
 
+    // ThreatHighLineIsSixtyFiveOnASuccessor: every other fight vetoes at 80 %, a `threat_successor` boss at 65 %: the
+    // boss cannot be taunted back and Cause Insanity deletes the charmed tank's threat, so the damage dealers leave room
+    // under the off-tank for the next reset.
+    CHECK(kThreatHighLinePct == 80);
+    CHECK(kThreatSuccessorHighLinePct == 65);
+    CHECK(ThreatHighLinePct(true) == 65);
+    CHECK(ThreatHighLinePct(false) == 80);
+
+    // SuccessorCapStopsAutoAttack: auto-attack, the wand's Shoot and the hunter's Auto Shot are damage like any other
+    // once the boss has a `threat_successor` row. At 70 % of the off-tank a damage dealer stops, at 60 % it keeps
+    // attacking, an ordinary boss keeps the old exemption and a tank is never stopped (Hakkar has to be held).
+    CHECK(SuccessorCapStopsAutoAttack(true, false, 70));
+    CHECK(!SuccessorCapStopsAutoAttack(true, false, 60));
+    CHECK(!SuccessorCapStopsAutoAttack(false, false, 70));
+    CHECK(!SuccessorCapStopsAutoAttack(true, true, 70));
+    CHECK(!SuccessorCapStopsAutoAttack(false, true, 90));
+    CHECK(SuccessorCapStopsAutoAttack(true, false, 65));
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

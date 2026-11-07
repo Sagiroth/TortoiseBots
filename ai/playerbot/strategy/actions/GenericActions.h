@@ -17,6 +17,17 @@ namespace ai
         virtual bool isUseful() override;
     };
 
+    // Stops the melee auto-attack and the running auto-repeat (a wand's Shoot, a hunter's Auto Shot): the damage the
+    // threat multiplier exempted from the veto, so a `threat_successor` boss's cap had nothing to bind on once it was
+    // running. The trigger fires only over the successor line (ThreatCapPolicy.h).
+    class StopAutoAttackAction : public Action
+    {
+    public:
+        StopAutoAttackAction(PlayerbotAI* ai) : Action(ai, "stop auto attack") {}
+        virtual bool isUseful() override;
+        virtual bool Execute(Event& event) override;
+    };
+
     class UseLightwellAction : public MovementAction
     {
     public:

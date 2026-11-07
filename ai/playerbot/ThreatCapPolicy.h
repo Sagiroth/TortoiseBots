@@ -12,10 +12,34 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace ai
 {
+    // The high-threat line, as a percentage of the reference tank's threat (ThreatValue::Calculate): the damage
+    // back-off vetoes single-target attacks at or above it. Every ordinary fight keeps 80 %. A boss whose data names
+    // a threat successor (`threat_successor`, Hakkar and Jin'do) can never be taunted back, and Cause Insanity deletes
+    // the charmed tank's threat, so the damage dealers leave a deeper margin under the off-tank: 65 %. Walk 48
+    // measured the leak at 80 %: inside the 10 s charm windows Hakkar stood on a non-tank 35 % of the frames against
+    // 21 % outside, and non-tank deaths from his melee ran 2.5x faster there.
+    constexpr std::uint8_t kThreatHighLinePct = 80;
+    constexpr std::uint8_t kThreatSuccessorHighLinePct = 65;
+
+    inline std::uint8_t ThreatHighLinePct(bool successorTarget)
+    {
+        return successorTarget ? kThreatSuccessorHighLinePct : kThreatHighLinePct;
+    }
+
+    // Whether a `threat_successor` boss's cap stops the bot's auto-attack, wand Shoot and Auto Shot. All three carry
+    // no threat type of their own (or run as the core's auto-repeat), so the old multiplier exempted them and a damage
+    // dealer at 80-99 % of the off-tank kept adding threat inside a charm. Tanks are never stopped: holding the boss
+    // is their job.
+    inline bool SuccessorCapStopsAutoAttack(bool successorTarget, bool tank, std::uint8_t threatPct)
+    {
+        return successorTarget && !tank && threatPct >= kThreatSuccessorHighLinePct;
+    }
+
     // One tank on the target as the caller resolved it from the raid's tank order (GetRaidTankRoles): index 0 is the
     // main tank, every later one an assigned off-tank.
     struct ThreatCapTank
