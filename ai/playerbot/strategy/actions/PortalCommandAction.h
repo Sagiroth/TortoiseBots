@@ -66,6 +66,7 @@ namespace ai
             facts.inCombat = bot->IsInCombat();
             facts.casting = bot->IsNonMeleeSpellCasted(false);
             facts.isMage = bot->GetClass() == CLASS_MAGE;
+            facts.requesterGrouped = requester && requester->IsInSameRaidWith(bot);
             ai::PortalCastDecision decision = ai::DecidePortalCast(facts, spellId, bot->HasSpell(spellId),
                 bot->HasItemCount(ai::PortalRuneItemId(), 1), bot->IsMoving());
             if (decision.refusal != ai::PortalRefusal::None)

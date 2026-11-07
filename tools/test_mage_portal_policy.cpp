@@ -61,6 +61,11 @@ int main()
     CHECK(ai::CheckPortalCast(nonMage, 11416, true) == ai::PortalRefusal::NotMage);
     CHECK(ai::CheckPortalCast(ok, 0, false) == ai::PortalRefusal::UnknownCity);
     CHECK(ai::CheckPortalCast(ok, 11416, false) == ai::PortalRefusal::NotLearned);
+    ai::PortalCastFacts ungrouped = ok;
+    ungrouped.requesterGrouped = false;
+    CHECK(ai::CheckPortalCast(ungrouped, 11416, true) == ai::PortalRefusal::NotGrouped);
+    CHECK(ai::CheckPortalCast(ungrouped, 11416, false) == ai::PortalRefusal::NotLearned);
+    CHECK(std::string(ai::PortalRefusalCode(ai::PortalRefusal::NotGrouped)) == "group");
 
     // Shared decision: clean cast grants rune and stops when moving; a
     // running cast refuses with code busy; refusals grant nothing.

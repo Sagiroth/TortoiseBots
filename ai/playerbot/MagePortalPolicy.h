@@ -130,6 +130,7 @@ enum class PortalRefusal
     NotMage,
     UnknownCity,
     NotLearned,
+    NotGrouped,
 };
 
 // The caller's live-state probe: everything the policy needs about the bot
@@ -141,6 +142,8 @@ struct PortalCastFacts
     bool casting = false;
     bool isMage = true;
     bool hasRune = true;
+    // A portal only teleports the mage's own party or raid.
+    bool requesterGrouped = true;
 };
 
 inline PortalRefusal CheckPortalCast(PortalCastFacts const& facts, uint32_t spellId, bool knowsSpell)
@@ -157,6 +160,8 @@ inline PortalRefusal CheckPortalCast(PortalCastFacts const& facts, uint32_t spel
         return PortalRefusal::UnknownCity;
     if (!knowsSpell)
         return PortalRefusal::NotLearned;
+    if (!facts.requesterGrouped)
+        return PortalRefusal::NotGrouped;
     return PortalRefusal::None;
 }
 
@@ -171,6 +176,7 @@ inline char const* PortalRefusalCode(PortalRefusal refusal)
         case PortalRefusal::NotMage: return "unknown";
         case PortalRefusal::UnknownCity: return "unknown";
         case PortalRefusal::NotLearned: return "unknown";
+        case PortalRefusal::NotGrouped: return "group";
     }
     return "unknown";
 }
@@ -186,6 +192,7 @@ inline char const* PortalRefusalText(PortalRefusal refusal)
         case PortalRefusal::NotMage: return "That bot is not a mage.";
         case PortalRefusal::UnknownCity: return "Unknown portal city.";
         case PortalRefusal::NotLearned: return "The bot has not learned that portal.";
+        case PortalRefusal::NotGrouped: return "Only the mage's group can use its portal. Invite the bot first.";
     }
     return "Unknown portal city.";
 }

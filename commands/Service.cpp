@@ -104,6 +104,7 @@ static bool HandleServicePortal(ChatHandler* handler, Player* requester, Player*
     facts.inCombat = bot->IsInCombat();
     facts.casting = bot->IsNonMeleeSpellCasted(false);
     facts.isMage = bot->GetClass() == CLASS_MAGE;
+    facts.requesterGrouped = requester && requester->IsInSameRaidWith(bot);
     ai::PortalCastDecision decision = !listed
         ? ai::PortalCastDecision{ai::PortalRefusal::UnknownCity, false, false}
         : ai::DecidePortalCast(facts, spellId, bot->HasSpell(spellId),
