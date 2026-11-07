@@ -2666,19 +2666,20 @@ namespace ai
         bool cursed = false;     // carries the fight's carrier aura
         bool charmed = false;    // a charmer owns its AI (the Brain Wash Totem), so it does not heal the raid
         float distanceYd = 0.0f; // from the carrier (the raid)
-        float dropYd = 0.0f;     // how far below the carrier it stands (the pit under Jin'do's room)
+        float dropYd = 0.0f;     // signed height against the carrier: how far below it (+), how far above it (-)
     };
 
-    // A healer this far below the carrier is in the pit under the fight's room (Jin'do's troll pit floor sits ~12 yd
-    // under the boss's), where its heals cannot reach the raid.
+    // A healer whose height against the carrier exceeds this is on another floor (Jin'do's troll pit floor sits ~12 yd
+    // under the boss's), where its heals cannot reach the raid. Read both ways: the carrier itself may be the one in the
+    // pit, and a healer on the room floor is then just as far from it.
     constexpr float kCarrierPitDropYd = 6.0f;
 
     // The other healers that can really heal the raid: alive, not carriers, not charmed, within the carrier's own heal
-    // reach (twice the heal range) and on the room's floor.
+    // reach (twice the heal range) and on the same floor as the carrier.
     inline bool CarrierHealerCounts(const CarrierHealer& healer, float reachYd)
     {
         return healer.alive && !healer.cursed && !healer.charmed && healer.distanceYd <= reachYd &&
-            healer.dropYd <= kCarrierPitDropYd;
+            std::fabs(healer.dropYd) <= kCarrierPitDropYd;
     }
 
     inline std::uint8_t CarrierHealerCount(const std::vector<CarrierHealer>& healers, float reachYd)

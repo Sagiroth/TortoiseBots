@@ -3440,6 +3440,14 @@ int main()
             one = healers;
             one[0].dropYd = kCarrierPitDropYd;
             CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestHealerAtThePitLineCounts
+            // The carrier can be the one in the pit: a healer on the room floor then reads the same ~12 yd above it, and
+            // "above" is not "on the carrier's floor" either (TestCarrierInThePitCountsOnlyItsOwnFloor).
+            one = healers;
+            one[0].dropYd = -12.4f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCarrierInThePitLeavesTheRoomFloorOut
+            one = healers;
+            one[0].dropYd = -kCarrierPitDropYd;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestCarrierInThePitKeepsItsOwnFloor
         }
         // The strike spells: the class's shortest casts first, nothing for a class without one (melee or wand).
         CHECK(CarrierStrikeSpells(5) == std::vector<const char*>({"mind blast", "smite"})); // TestCarrierStrikeSpellsPriest
