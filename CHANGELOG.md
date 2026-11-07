@@ -27,6 +27,24 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.20.0 (2026-11-07)
+
+### Raids & Dungeons
+- In Zul'Gurub, only bots carrying Delusions are sent to fight Jin'do's Shades, and tanks now leave them alone. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+- Sons of Hakkar that land on a non-tank are picked up by another tank, then released so damage dealers can finish them. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+- Bots re-plan their walk out of Hakkar's siphon and retry once per cycle instead of stalling. [#1541](https://github.com/Sagiroth/TortoiseBots/pull/1541)
+
+### Bots & Levelling
+- Alts playing on their own no longer wander into Stormwind or Ironforge for the auction house and get stuck there. [#1538](https://github.com/Sagiroth/TortoiseBots/pull/1538)
+- An alt deciding whether it needs a vendor now counts only what it may actually sell, so it stops waiting on errands it cannot finish. [#1538](https://github.com/Sagiroth/TortoiseBots/pull/1538)
+
+### Items & Gear
+- Bots no longer receive Game Master weapons, legendary gear or other items players cannot really obtain. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+- Automatic gearing now hands out only gear that can actually be found in the world. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+- Event hats and other blocked items are kept off bots by default. [#1539](https://github.com/Sagiroth/TortoiseBots/pull/1539)
+
+---
+
 ## v1.19.0 (2026-11-06)
 
 ### Groups & Dungeons
