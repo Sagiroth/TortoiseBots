@@ -438,7 +438,7 @@ class SeekWalkoutRound2(unittest.TestCase):
         self.assertLess(update.index(gate), update.index("The start check's scan"))
 
 
-class SeekWalkoutRound3(unittest.TestCase):
+class SeekWalkoutWalk52(unittest.TestCase):
     """Walk 52's fixes: the platform pick, a mid-cast puller, the first-charm gate, the seek lead, facing and rows."""
 
     def test_the_pick_stands_on_the_platform_and_waits_for_a_cast(self):
