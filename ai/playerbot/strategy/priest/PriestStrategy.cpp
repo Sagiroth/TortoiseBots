@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "PriestMultipliers.h"
 #include "PriestStrategy.h"
 
 using namespace ai;
@@ -84,6 +85,16 @@ private:
 PriestStrategy::PriestStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
 {
     actionNodeFactories.Add(std::make_unique<PriestStrategyActionNodeFactory>());
+}
+
+void PriestStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PriestLesserHealMultiplier(ai));
+}
+
+void PriestStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PriestLesserHealMultiplier(ai));
 }
 
 
