@@ -78,6 +78,9 @@ namespace ai
                 bot->StoreNewItemInInventorySlot(ai::PortalRuneItemId(), 1);
             if (decision.needsStop)
                 ai->StopMoving();
+            // A seated bot (drinking) would stand up and fail this one cast attempt.
+            if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
             if (!ai->DoSpecificAction("cast", ai::Event("portal", std::to_string(spellId), requester), true))
             {
                 ai->TellPlayer(requester, "The portal fizzled; try again.");
