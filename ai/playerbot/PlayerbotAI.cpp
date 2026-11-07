@@ -4004,6 +4004,25 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
     return !IsRanged(player, inGroup);
 }
 
+bool PlayerbotAI::HasExplicitNonTankRole(Player* player)
+{
+    // Same read IsTank trusts: the player-wide stored role always counts,
+    // while the bot AI's own role only counts for an owned companion with
+    // an active master. A hire running on its own keeps its own read.
+    uint8 forcedRole = PlayerbotAIStorage::Instance().GetPlayerForcedRole(player->GetObjectGuid());
+    if (forcedRole != static_cast<uint8>(BOT_ROLE_NONE))
+        return forcedRole != static_cast<uint8>(BOT_ROLE_TANK);
+
+    PlayerbotAI* botAi = PlayerbotAIStorage::Instance().GetAI(player);
+    if (botAi)
+    {
+        uint8 botForcedRole = botAi->GetForcedRole();
+        if (botForcedRole != static_cast<uint8>(BOT_ROLE_NONE) && botAi->HasActivePlayerMaster())
+            return botForcedRole != static_cast<uint8>(BOT_ROLE_TANK);
+    }
+    return false;
+}
+
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
     uint8 forcedRole = PlayerbotAIStorage::Instance().GetPlayerForcedRole(player->GetObjectGuid());
@@ -4019,7 +4038,7 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
             return true;
         // An explicit forced role wins over the talent read below for owned
         // companions: a Feral ordered to DPS must not report as a tank.
-        if (botAi->GetForcedRole() != static_cast<uint8>(BOT_ROLE_NONE) && botAi->HasActivePlayerMaster())
+        if (HasExplicitNonTankRole(player))
             return false;
     }
 
