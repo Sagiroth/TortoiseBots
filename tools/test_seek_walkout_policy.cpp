@@ -183,37 +183,40 @@ static void TestShotSpellPerClass()
 
 static void TestPullerUsable()
 {
-    CHECK(WalkoutPullerUsable(true, false, false, false, false));
-    CHECK(!WalkoutPullerUsable(false, false, false, false, false));
-    CHECK(!WalkoutPullerUsable(true, true, false, false, false));
-    CHECK(!WalkoutPullerUsable(true, false, true, false, false));
-    CHECK(!WalkoutPullerUsable(true, false, false, true, false));
-    // Entering the boss's top two threats aborts the task at once, not only becoming his victim.
-    CHECK(!WalkoutPullerUsable(true, false, false, false, true));
+    CHECK(WalkoutPullerUsable(true, false, false, false));
+    CHECK(!WalkoutPullerUsable(false, false, false, false));
+    CHECK(!WalkoutPullerUsable(true, true, false, false));
+    CHECK(!WalkoutPullerUsable(true, false, true, false));
+    // Becoming his victim is the danger; threat alone no longer aborts a running task.
+    CHECK(!WalkoutPullerUsable(true, false, false, true));
 }
 
 static void TestCastFailAbortUnspends()
 {
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutStart(s, 7, 100, 1000, 3, 60000);
     CHECK(!WalkoutMayStart(s, 3, 200));
-    // The shot cannot be cast at the stand: abort, and neither the Son nor the cycle counts as spent.
+    // The shot cannot be cast at the stand with 59 s to the siphon: abort, and the Son is free again for the next
+    // cycle; the cycle's one walk-out stays spent (max 1 per cycle).
     WalkoutAbortUnspent(s, 2000);
     CHECK(!WalkoutActive(s));
     CHECK(WalkoutReturning(s, 2000));
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStart(s, 3, 100));
-    // A cycle spent before the task stays spent (the unspend only undoes this task's own marks).
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutMayStart(s, 4, 100));
+    // A cycle spent before the task stays spent, and an abort frees only its own Son: the timed-out cycle 3's Son 100
+    // stays walked.
     SeekWalkoutState t;
     WalkoutStart(t, 7, 100, 1000, 3);
     WalkoutFinish(t, WalkoutEnd::Timeout, 2000);
     WalkoutReturnDone(t);
-    WalkoutStart(t, 7, 300, 3000, 4);
+    WalkoutStart(t, 7, 300, 3000, 4, 60000);
     WalkoutAbortUnspent(t, 4000);
     WalkoutReturnDone(t);
-    CHECK(!WalkoutMayStart(t, 3, 300)); // cycle 3 was the timed-out task's
-    CHECK(WalkoutMayStart(t, 4, 300));
-    CHECK(!WalkoutMayStart(t, 4, 100)); // Son 100 was walked to by the timed-out task
+    CHECK(WalkoutMayStart(t, 3, 300)); // the aborted Son is free again for a cycle that is open
+    CHECK(!WalkoutMayStart(t, 4, 300)); // cycle 4's one walk-out is spent
+    CHECK(!WalkoutMayStart(t, 5, 100)); // Son 100 was walked to by the timed-out task
+    CHECK(WalkoutMayStart(t, 5, 300));
 }
 
 static void TestWalkBackAfterAnyEnd()
@@ -348,16 +351,43 @@ static void TestThreatRule()
 {
     // Only the victim, or a threat at 90 % of the main tank's or more: a damage dealer is nearly always in the top two
     // when the off-tanks hold little threat.
-    CHECK(!WalkoutThreatTooHigh(800.0f, 1000.0f));
-    CHECK(WalkoutThreatTooHigh(900.0f, 1000.0f));
+    CHECK(!WalkoutThreatTooHigh(600.0f, 1000.0f));
+    CHECK(WalkoutThreatTooHigh(700.0f, 1000.0f));
     CHECK(WalkoutThreatTooHigh(1200.0f, 1000.0f));
     CHECK(!WalkoutThreatTooHigh(500.0f, 0.0f));   // no main-tank reference: the victim rule alone
-    CHECK(WalkoutPullerProblem(true, false, false, false, false) == nullptr);
-    CHECK(std::string(WalkoutPullerProblem(false, false, false, false, false)) == "dead");
-    CHECK(std::string(WalkoutPullerProblem(true, true, false, false, false)) == "charmed");
-    CHECK(std::string(WalkoutPullerProblem(true, false, true, false, false)) == "insanity");
-    CHECK(std::string(WalkoutPullerProblem(true, false, false, true, false)) == "victim");
-    CHECK(std::string(WalkoutPullerProblem(true, false, false, false, true)) == "threat");
+    CHECK(WalkoutPullerProblem(true, false, false, false) == nullptr);
+    CHECK(std::string(WalkoutPullerProblem(false, false, false, false)) == "dead");
+    CHECK(std::string(WalkoutPullerProblem(true, true, false, false)) == "charmed");
+    CHECK(std::string(WalkoutPullerProblem(true, false, true, false)) == "insanity");
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, true)) == "victim");
+}
+
+// t1105h review (Codex HIGH): a running task aborts on threat again, at 1.0 x the live top tank's threat (the highest
+// tank on the boss's list this tick, never a cached main tank). The 0.7 pick margin and the victim abort stay.
+static void TestRunningThreatAbort()
+{
+    // Growth during the task: below the top tank goes on, level with it aborts with reason `threat`.
+    std::vector<float> tanks{1000.0f, 400.0f};
+    CHECK(Near(WalkoutTopTankThreat(tanks), 1000.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(800.0f, WalkoutTopTankThreat(tanks)));
+    CHECK(WalkoutPullerProblem(true, false, false, false, WalkoutRunningThreatTooHigh(800.0f, 1000.0f)) == nullptr);
+    CHECK(WalkoutRunningThreatTooHigh(1000.0f, WalkoutTopTankThreat(tanks)));
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, false,
+        WalkoutRunningThreatTooHigh(1000.0f, 1000.0f))) == "threat");
+    // The pick margin is still 0.7: 800 of 1000 is never picked, though it runs on.
+    CHECK(WalkoutThreatTooHigh(800.0f, 1000.0f));
+    // A main-tank swap: the old main tank (index 0) dropped to 500 and the off-tank holds 1200. The bot at 1000 compares
+    // against the new top tank and goes on; against the old main tank it would have aborted.
+    std::vector<float> swapped{500.0f, 1200.0f};
+    CHECK(Near(WalkoutTopTankThreat(swapped), 1200.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(1000.0f, WalkoutTopTankThreat(swapped)));
+    CHECK(WalkoutRunningThreatTooHigh(1000.0f, swapped[0]));
+    // No living tank on the list: only the victim rule speaks.
+    CHECK(Near(WalkoutTopTankThreat({}), 0.0f));
+    CHECK(!WalkoutRunningThreatTooHigh(5000.0f, 0.0f));
+    // The other reasons come first: dead, charmed, insanity and victim keep their words.
+    CHECK(std::string(WalkoutPullerProblem(true, false, false, true, true)) == "victim");
+    CHECK(std::string(WalkoutPullerProblem(false, false, false, false, true)) == "dead");
 }
 
 static void TestPullerInsideWithAPath()
@@ -383,21 +413,24 @@ static void TestMoveFailsAbort()
     CHECK(!WalkoutNoteMove(s, false));
     CHECK(!WalkoutNoteMove(s, true));   // a good move resets the count
     CHECK(!WalkoutNoteMove(s, false));
-    CHECK(WalkoutNoteMove(s, false));   // two failed moves in a row: abort ("move failed")
+    CHECK(!WalkoutNoteMove(s, false));
+    CHECK(WalkoutNoteMove(s, false));   // three failed moves in a row: abort ("move failed")
 }
 
 static void TestMoveFailAbortUnspendsAndExcludes()
 {
-    // Two refused moves abort, unspent like a cast fail: no pull happened, so the Son and the cycle stay free, and the
+    // Two refused moves abort: no pull happened, so the Son is free again for the next cycle (max 1 per cycle), and the
     // puller is left out of the picks for 60 s so another bot takes the next one.
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutStart(s, 7, 100, 1000, 3, 60000);
+    WalkoutNoteMove(s, false);
     WalkoutNoteMove(s, false);
     CHECK(WalkoutNoteMove(s, false));
     WalkoutAbortUnspent(s, 2000);
     WalkoutExclude(s, 7, 2000);
     WalkoutReturnDone(s);
-    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutMayStart(s, 4, 100));
     CHECK(WalkoutExcluded(s, 7, 2000));
     CHECK(WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs - 1));
     CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
@@ -424,22 +457,208 @@ static void TestSonsNearestFirstWithAStand()
 static void TestExcludedPullerNeverRestarts()
 {
     // Two quick move failures, an immediate return inside, and a start while the scan still names the same bot: the
-    // start check under the lock refuses the excluded bot; another bot may start.
+    // failed cycle stays spent and the next one's start check under the lock refuses the excluded bot; another bot
+    // may start.
     SeekWalkoutState s;
-    WalkoutStart(s, 7, 100, 1000, 3);
+    WalkoutStart(s, 7, 100, 1000, 3, 89000); // due at 90000: plenty of time left in the cycle
     WalkoutNoteMove(s, false);
     WalkoutNoteMove(s, false);
     WalkoutAbortUnspent(s, 1500);
     WalkoutExclude(s, 7, 1500);
     WalkoutReturnDone(s);
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600, 0));
+    CHECK(!WalkoutMayStartFor(s, 4, 100, 7, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 8, 1600, 0));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 7, 1500 + kSeekWalkoutExcludeMs, 0));
+}
+
+static void TestWalkoutReplansStandWhenSonMoves()
+{
+    // The stand follows the Son's live position: re-planned every second, the newest one walked to; only 5 s straight
+    // without any stand aborts ("no stand").
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 0);
+    s.standX = 1.0f;
+    s.standY = 2.0f;
+    s.standZ = 50.0f;
+    s.standMs = 1000;
+    CHECK(!WalkoutReplanDue(s, 1999));
+    CHECK(WalkoutReplanDue(s, 2000));
+    CHECK(!WalkoutNoteStand(s, true, 5.0f, 6.0f, 51.0f, 2000));
+    CHECK(Near(s.standX, 5.0f) && Near(s.standY, 6.0f) && Near(s.standZ, 51.0f));
+    CHECK(!WalkoutReplanDue(s, 2500));
+    // The Son walked out of every stand's reach: the old stand is kept a while.
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 3000));
+    CHECK(Near(s.standX, 5.0f));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 7999));
+    // It came back: the clock restarts.
+    CHECK(!WalkoutNoteStand(s, true, 8.0f, 9.0f, 52.0f, 8000));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 9000));
+    CHECK(!WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 13999));
+    CHECK(WalkoutNoteStand(s, false, 0.0f, 0.0f, 0.0f, 14000));
+}
+
+static void TestWalkoutPickMarginBelowAbort()
+{
+    // Picked only below 0.7 of the main tank's threat; there is no threat abort any more (only the victim one).
+    CHECK(Near(kSeekWalkoutThreatShare, 0.7f));
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    c.highThreat = WalkoutThreatTooHigh(0.69f * 1000.0f, 1000.0f);
+    CHECK(WalkoutEligible(c));
+    c.highThreat = WalkoutThreatTooHigh(0.71f * 1000.0f, 1000.0f);
+    CHECK(!WalkoutEligible(c));
+    CHECK(WalkoutPullerUsable(true, false, false, false));
+}
+
+static void TestWalkoutWaitsForTheSiphon()
+{
+    // A walk-out starts once the next Blood Siphon is due in 75 s or less: as soon as the dose window opens, so the
+    // Son is back and burned well before the siphon (the 12 s non-tank burn keeps it off the healers).
+    SeekWalkoutState s;
+    CHECK(Near(static_cast<float>(kSeekWalkoutSiphonLeadMs), 75000.0f));
+    CHECK(!WalkoutMayStartFor(s, 0, 100, 7, 1000, 75001));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 75000));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 70000));
+    CHECK(WalkoutMayStartFor(s, 0, 100, 7, 1000, 0));
+}
+
+static void TestWalkoutWaitsOnlyForACastOnTheSon()
+{
+    // At the stand the puller waits only for a cast aimed at the walk-out's Son (the pull shot itself). Its Auto Shot
+    // or a wand's Shoot still on the boss is not the pull: it is interrupted and the shot goes out now.
+    CHECK(WalkoutShotWaits(true, true));
+    CHECK(!WalkoutShotWaits(false, true));  // a cast or autorepeat on another target
+    CHECK(!WalkoutShotWaits(false, false)); // nothing running
+    CHECK(!WalkoutShotWaits(true, false));  // a stale flag alone never waits
+}
+
+static void TestOneWalkoutPerCycle()
+{
+    // kSeekWalkoutMaxPerCycle 1: a second start in the same cycle is refused however much of the window is left; the
+    // cycle's own walk-out is never retried, and the next cycle takes its own.
+    CHECK(kSeekWalkoutMaxPerCycle == 1);
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 89000); // the siphon is due at 90000
+    CHECK(!WalkoutCycleOpen(s, 3));
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 2000, 88000));
+    // A timeout with 60 s left reopens nothing, and the retry's time rule is not what refuses it.
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
+    WalkoutReturnDone(s);
+    CHECK(WalkoutRetryStartInTime(s, 3, 26000));
+    CHECK(!WalkoutRetryAllowed(s, 26000));
+    CHECK(!WalkoutCycleOpen(s, 3));
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 27000, 63000));
+    // The next cycle starts its own count.
+    CHECK(WalkoutCycleOpen(s, 4));
+    CHECK(WalkoutMayStart(s, 4, 200));
+}
+
+static void TestWalkoutTimeoutLateSpendsCycle()
+{
+    // A timeout spends the cycle at any time left (max one walk-out): an abort (puller dead, the boss's victim) or a
+    // Back end neither reopens it.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 45000); // due at 46000: 20 s left
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000));
+    WalkoutReturnDone(s);
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    SeekWalkoutState b;
+    WalkoutStart(b, 7, 100, 1000, 3, 89000);
+    WalkoutNoteShot(b);
+    CHECK(!WalkoutFinish(b, WalkoutEnd::Back, 20000));
+    CHECK(!WalkoutMayStart(b, 3, 200));
+    SeekWalkoutState a;
+    WalkoutStart(a, 7, 100, 1000, 3, 89000);
+    CHECK(!WalkoutFinish(a, WalkoutEnd::Abort, 20000));
+    WalkoutReturnDone(a);
+    CHECK(!WalkoutMayStart(a, 3, 200));
+}
+
+static void TestWalkoutUnspentNeverRetries()
+{
+    // A failed cast or "no stand" frees the Son but not the cycle: one walk-out per cycle, however much time is left.
+    SeekWalkoutState late;
+    WalkoutStart(late, 7, 100, 1000, 3, 21000); // due at 22000
+    WalkoutAbortUnspent(late, 2000);
+    WalkoutReturnDone(late);
+    CHECK(!WalkoutMayStart(late, 3, 100));
+    CHECK(WalkoutMayStart(late, 4, 100)); // the Son itself is free again
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 89000);
+    WalkoutAbortUnspent(s, 2000); // 87 s left: still no second walk-out
+    WalkoutReturnDone(s);
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    CHECK(WalkoutMayStart(s, 4, 200));
+    CHECK(kSeekWalkoutMaxPerCycle == 1);
+    CHECK(kSeekWalkoutRetryMinMs == 25000);
+}
+
+static void TestWalkoutForgetsDeadSons()
+{
+    // A walked Son that died is forgotten: once it respawns (49033/49034 come back after 60 s) it is the next cycle's
+    // Son.
+    // A Son still alive stays walked; the running task's own Son is never forgotten.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1, 70000);
+    WalkoutNoteShot(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 15000);
+    WalkoutStart(s, 7, 200, 100000, 2, 70000);
+    WalkoutForgetGoneSons(s, [](std::uint64_t son) { return son == 100 || son == 200; });
+    CHECK(s.walkedSons.size() == 1 && s.walkedSons[0] == 200);
+    WalkoutNoteShot(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 110000);
     CHECK(WalkoutMayStart(s, 3, 100));
-    CHECK(!WalkoutMayStartFor(s, 3, 100, 7, 1600));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 8, 1600));
-    CHECK(WalkoutMayStartFor(s, 3, 100, 7, 1500 + kSeekWalkoutExcludeMs));
+    WalkoutForgetGoneSons(s, [](std::uint64_t) { return false; });
+    CHECK(!WalkoutMayStart(s, 3, 200));
+}
+
+static void TestWalkoutRetryNeverStarts()
+{
+    // The retry's own checks are still there but cannot pass the cap: a walk-out that timed out with 40 s left is the
+    // cycle's only one. The first start of the next cycle keeps the plain siphon lead.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 65000); // the siphon is due at 66000
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 26000)); // 40 s left
+    WalkoutReturnDone(s);
+    CHECK(WalkoutRetryStartInTime(s, 3, 26000));
+    CHECK(!WalkoutMayStartFor(s, 3, 200, 8, 26000, 40000));
+    CHECK(WalkoutMayStartFor(s, 4, 200, 8, 70000, 20000));
+    // An unspent abort's cycle is just as spent.
+    SeekWalkoutState u;
+    WalkoutStart(u, 7, 100, 1000, 3, 65000);
+    WalkoutAbortUnspent(u, 2000);
+    WalkoutReturnDone(u);
+    CHECK(!WalkoutMayStartFor(u, 3, 100, 8, 2000, 64000));
+    CHECK(WalkoutMayStartFor(u, 4, 100, 8, 2000, 64000));
+}
+
+static void TestCastFailExcludesPuller()
+{
+    // A cast that fails at the stand frees the Son, and the puller sits out the picks for 60 s like a move fail: the
+    // next cycle's walk-out goes to another bot instead of the same puller, Son and stand.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 65000);
+    WalkoutCastFailed(s, 7, 2000);
+    WalkoutReturnDone(s);
+    CHECK(WalkoutExcluded(s, 7, 2000));
+    CHECK(!WalkoutMayStartFor(s, 3, 100, 8, 2500, 63500));
+    CHECK(!WalkoutMayStartFor(s, 4, 100, 7, 2500, 63500));
+    CHECK(WalkoutMayStartFor(s, 4, 100, 8, 2500, 63500));
+    CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
 }
 
 int main()
 {
+    TestWalkoutRetryNeverStarts();
+    TestCastFailExcludesPuller();
+    TestOneWalkoutPerCycle();
+    TestWalkoutWaitsOnlyForACastOnTheSon();
+    TestWalkoutTimeoutLateSpendsCycle();
+    TestWalkoutUnspentNeverRetries();
+    TestWalkoutForgetsDeadSons();
     TestRoleOrder();
     TestExclusions();
     TestExemptOnlyWhileActive();
@@ -455,11 +674,15 @@ int main()
     TestPetHoldsAgeOut();
     TestStandSearchStaysOnThePlatform();
     TestThreatRule();
+    TestRunningThreatAbort();
     TestPullerInsideWithAPath();
     TestMoveFailsAbort();
     TestMoveFailAbortUnspendsAndExcludes();
     TestSonsNearestFirstWithAStand();
     TestExcludedPullerNeverRestarts();
+    TestWalkoutReplansStandWhenSonMoves();
+    TestWalkoutPickMarginBelowAbort();
+    TestWalkoutWaitsForTheSiphon();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

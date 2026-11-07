@@ -60,6 +60,39 @@ class TotemFocusWiringTest(unittest.TestCase):
         # ... and it is the totem branch, by guid, with the skull left alone.
         self.assertIn("return IssueKillFirstFocus(r, *totem, FocusMovesSkull(f.totemFocus, true))", tick)
 
+    def test_the_refocus_wants_three_dps_and_leaves_the_carriers_out(self):
+        # t1106b: one hunter on the totem used to hold the re-send off for its whole life (any one DPS was enough).
+        self.assertIn("constexpr std::uint32_t kTotemFocusDpsWanted = 3;", POLICY)
+        self.assertIn("return std::min(kTotemFocusDpsWanted, dpsAlive);", POLICY)
+        self.assertIn("k.dpsOnItCount < TotemFocusDpsWanted(dpsAlive)", POLICY)
+        self.assertIn("if (FocusResendDue(r, *totem, f.dpsAlive))", POLICY)
+        # The count leaves the tanks, the healers and the aura-gated carriers out, per bot and per unit.
+        fn = body(COMMANDER, "void ReadKillFirst(ai::DungeonPlan const& plan")
+        self.assertIn("std::uint32_t const aura = ai::GetBossTactics().RequiredAura(lead->GetMapId(), entry)", fn)
+        self.assertEqual(fn.count("!isCarrier(bot)"), 2)
+        self.assertIn("++fact.dpsOnItCount;", fn)
+        # ... and a totem is never sent to a carrier (the fight scan drops a gated row for a bot without the aura).
+        self.assertIn("bool const gatedCarrier = totemTarget && ai::CarriesAuraGatedKillFirst(ai, bot);", COMMANDER)
+        self.assertIn("totemTarget, totemFocus, carrier, gatedCarrier)", COMMANDER)
+        self.assertIn("return isTank || isHealer || gatedCarrier;", POLICY)
+
+    def test_the_resend_goes_out_ahead_of_the_cc_and_the_guard(self):
+        tick = body(POLICY, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{")
+        resend = tick.index("if (resendTotem != 0)")
+        for later in ("if (CheckCc(r, f, dt, order))", "if (RunCcReapplyTick(r, f, dt, order))",
+                "if (CheckGuard(r, f, dt, order))"):
+            self.assertLess(resend, tick.index(later), later)
+        # ... but after the fight ceiling and the retreat, which keep the tick.
+        self.assertLess(tick.index("if (RetreatTick(r, f, *s, dt, order))"), resend)
+
+    def test_one_row_per_bot_that_takes_the_totem_order(self):
+        helper = body(COMMANDER, "static bool TotemFocusBot(PlayerbotAI* ai")
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTotemFocus", info1, info2);', helper)
+        self.assertIn('if (attacked && sPlayerbotAIConfig.hasLog("bot_events.csv"))', helper)
+        self.assertIn("prevEntry", helper)
+        self.assertIn("prevOnTotem", helper)
+        self.assertIn("bot->GetDistance(totem)", helper)
+
     def test_the_generic_focus_leaves_the_skull_for_a_totem_too(self):
         tick = body(POLICY, "inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const RestLines& lines)\n{")
         self.assertIn(
