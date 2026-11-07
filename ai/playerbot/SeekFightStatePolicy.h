@@ -26,12 +26,20 @@
 
 namespace ai
 {
-    // One Son's entry in the healer-held clock: `sinceMs` is the first read that saw it fighting a non-tank, `seenMs`
-    // the last one that did.
+    // An age that never wraps: a bot keeps its WorldTimer sample while waiting for the map's lock, so a sample can
+    // arrive after a newer one. An older sample reads age 0, never a huge unsigned difference.
+    inline std::uint32_t SeekAgeMs(std::uint32_t nowMs, std::uint32_t stampMs)
+    {
+        return nowMs < stampMs ? 0 : nowMs - stampMs;
+    }
+
+    // One Son's entry in a clock: `sinceMs` is the first read that fed it, `seenMs` the last read that saw the Son
+    // alive, `tickedMs` the last read that fed it (the hold clock's own sweep; the healer clock sweeps on `seenMs`).
     struct SeekHeldSon
     {
         std::uint32_t sinceMs = 0;
         std::uint32_t seenMs = 0;
+        std::uint32_t tickedMs = 0;
     };
 
     // What one bot's read saw of one Son it can reach: alive and fighting, and whether its victim is a player tank or a
@@ -49,17 +57,24 @@ namespace ai
     // reach, or the raid left). Far above the 3 s take, far below a fight.
     constexpr std::uint32_t kSeekHealerStaleMs = 20000;
 
-    // One Son's hold read: whether this read saw it held (SeekHoldsUnit).
+    // One Son's hold read: whether this read saw it alive, and whether it feeds the one fight-wide record
+    // (SeekSonTicks).
     struct SeekHoldSeen
     {
         std::uint64_t guid = 0;
-        bool held = false;
+        bool alive = false;
+        bool ticks = false;
     };
 
-    // A hold entry no read refreshed for this long is dropped. A read only sees the Sons inside its reach (a grid walk
-    // around the bot), so one bot not seeing a Son says nothing; the sweep only removes Sons that left every bot's
-    // view or died out of it, and a Son respawning under the same guid then starts a clean hold instead of inheriting
-    // the old release. One cap long, so a genuinely held Son is never dropped between two reads.
+    // A hold entry below the cap that no read ticked for this long is dropped: the fight stopped holding the Son, and
+    // the next tick starts a clean clock. The feed is fight-wide, so a bot that selected another Son (or none) cannot
+    // erase or restart the record of the Son the others are holding; an entry a read did not tick is left alone.
+    constexpr std::uint32_t kSeekHoldUntickedMs = 5000;
+
+    // A capped hold entry no read has seen the Son alive for this long is dropped. A read only sees the Sons inside its
+    // reach (a grid walk around the bot), so one bot not seeing a Son says nothing; the sweep only removes Sons that
+    // left every bot's view or died out of it, and a Son respawning under the same guid then starts a clean hold
+    // instead of inheriting the old release. One cap long, so a genuinely held Son is never dropped between two reads.
     constexpr std::uint32_t kSeekHoldStaleMs = 20000;
 
     // The Son-on-a-non-tank clock after one bot's read. Every bot of the fight feeds the one record, and a read only
@@ -83,12 +98,12 @@ namespace ai
             }
             auto it = held.find(son.guid);
             if (it == held.end())
-                held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs}));
-            else
+                held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs, nowMs}));
+            else if (nowMs > it->second.seenMs)
                 it->second.seenMs = nowMs;
         }
         for (auto it = held.begin(); it != held.end();)
-            it = nowMs - it->second.seenMs > kSeekHealerStaleMs ? held.erase(it) : std::next(it);
+            it = SeekAgeMs(nowMs, it->second.seenMs) > kSeekHealerStaleMs ? held.erase(it) : std::next(it);
     }
 
     // The Son the first off-tank takes off a non-tank now: the first (lowest guid) of the clock's entries that has been
@@ -97,7 +112,7 @@ namespace ai
     {
         for (const auto& entry : held)
         {
-            if (SeekTakeFightingSonOnHealer(nowMs - entry.second.sinceMs))
+            if (SeekTakeFightingSonOnHealer(SeekAgeMs(nowMs, entry.second.sinceMs)))
                 return entry.first;
         }
         return 0;
@@ -109,41 +124,50 @@ namespace ai
                                            std::uint32_t nowMs)
     {
         auto const it = held.find(son);
-        return it == held.end() ? 0 : nowMs - it->second.sinceMs;
+        return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
     }
 
-    // The hold clock after one bot's read: a Son seen held enters it (or keeps `sinceMs`), one seen not held leaves.
-    // `sinceMs` is the first read that saw it held; SeekHoldDecision releases it at kSeekHoldMaxMs. The read reports a
-    // Son already past the cap as held (SeekSonHeld), so the release survives a closing window and is not restarted;
-    // a dead or gone Son is reported not held. A bot's read only reaches the Sons around it, so a Son it did not see
-    // keeps its entry until the sweep drops what no read refreshed for kSeekHoldStaleMs.
+    // The hold clock after one bot's read. Every bot of the fight feeds the one record, but each read picks its own
+    // source (the shared gather latch, else its own search around the spot), so a read that selects another Son or
+    // none must not touch this Son's entry: a read that does not tick it changes nothing. A ticking read creates the
+    // entry (`sinceMs = nowMs`) or keeps its first tick and refreshes `tickedMs`; a read that sees the Son alive
+    // refreshes `seenMs`. `sinceMs` is the first tick, and SeekHoldDecision releases the Son at kSeekHoldMaxMs whatever
+    // later reads say.
     //
-    // Known limits of the shared record (documented, not handled):
-    // - The source a read selects is that read's own answer (the shared gather latch when it holds, else the search
-    //   around the spot), so a read can select another Son or none where another selected this one. A read that sees
-    //   that Son without ticking it reports it not held and drops a below-cap record: the engaged clock restarts (a
-    //   longer hold, never a shorter one).
-    // - `nowMs` is each bot's own WorldTimer sample and a read keeps its sample while waiting for the lock, so
-    //   samples can arrive out of order. An older sample makes `nowMs - sinceMs` and `nowMs - seenMs` unsigned-wrap:
-    //   for that read the Son can look capped (released) and an entry can be swept. The record keeps its `sinceMs`, so
-    //   the next current sample reads the true elapsed again; a swept entry restarts from the next sighting.
+    // An entry is erased only when:
+    // - this read saw the Son dead (or it despawned: no read ticks it and a respawn under the same guid starts clean);
+    // - below the cap, no read ticked it for kSeekHoldUntickedMs (the fight stopped holding it);
+    // - at or past the cap, no read saw the Son alive for kSeekHoldStaleMs. The capped entry stays while the Son is
+    //   alive and seen, so a closing window or a changed victim cannot start a fresh 20 s hold.
     inline void SeekHoldClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekHoldSeen>& seen,
                                   std::uint32_t nowMs)
     {
         for (const SeekHoldSeen& son : seen)
         {
-            if (!son.held)
+            auto it = held.find(son.guid);
+            if (!son.alive)
             {
-                held.erase(son.guid);
+                if (it != held.end())
+                    held.erase(it);
                 continue;
             }
-            SeekHeldSon& entry = held[son.guid];
-            if (entry.sinceMs == 0)
-                entry.sinceMs = nowMs;
-            entry.seenMs = nowMs;
+            if (son.ticks)
+            {
+                if (it == held.end())
+                    it = held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs, nowMs})).first;
+                else if (nowMs > it->second.tickedMs)
+                    it->second.tickedMs = nowMs;
+            }
+            if (it != held.end() && nowMs > it->second.seenMs)
+                it->second.seenMs = nowMs;
         }
         for (auto it = held.begin(); it != held.end();)
-            it = nowMs - it->second.seenMs > kSeekHoldStaleMs ? held.erase(it) : std::next(it);
+        {
+            const bool capped = SeekAgeMs(nowMs, it->second.sinceMs) >= kSeekHoldMaxMs;
+            const std::uint32_t idleMs = capped ? SeekAgeMs(nowMs, it->second.seenMs)
+                                                : SeekAgeMs(nowMs, it->second.tickedMs);
+            it = idleMs > (capped ? kSeekHoldStaleMs : kSeekHoldUntickedMs) ? held.erase(it) : std::next(it);
+        }
     }
 
     // How long the fight has held this Son (0: no entry, it is not held). The hold reads it (SeekHoldDecision).
@@ -151,7 +175,7 @@ namespace ai
                                     std::uint32_t nowMs)
     {
         auto const it = held.find(son);
-        return it == held.end() ? 0 : nowMs - it->second.sinceMs;
+        return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
     }
 
     struct SeekCycleRecord
@@ -175,7 +199,8 @@ namespace ai
         // for a while. See SeekHealerClockTick for who may leave the map.
         std::map<std::uint64_t, SeekHeldSon> healerHeldSince;
         // When each Son of the fight entered the hold: the 20 s cap releases it to the damage dealers (SeekHeldMs).
-        // Only fighting time counts and a release sticks while the Son lives (SeekHoldClockTicks, SeekSonHeld).
+        // Only fighting time counts, and a release sticks while the Son lives and is seen (SeekHoldClockTick,
+        // SeekSonTicks).
         std::map<std::uint64_t, SeekHeldSon> holdSince;
         bool ready = false;
         std::uint32_t cycleNo = 0;

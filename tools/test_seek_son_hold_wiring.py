@@ -92,10 +92,12 @@ class SeekHoldClockEngagement(unittest.TestCase):
         # selected source and a Son on a tank inside the window.
         tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
         self.assertIn("SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen)", tick)
-        # The record/release composition is the policy's (SeekSonHeld), not a hand-rolled expression in the action.
-        self.assertIn("SeekSonHeld(IsSeekSource(out, son), ticks,", tick)
-        self.assertIn("SeekHeldMs(out.holdSince, guid, nowMs)", tick)
+        # The alive/feed composition is the policy's (SeekSonTicks), not a hand-rolled expression in the action.
+        self.assertIn("const bool alive = IsSeekSource(out, son);", tick)
+        self.assertIn("SeekSonTicks(alive, SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen),",
+                      tick)
         self.assertIn("SeekHoldsUnit(out, son))", tick)
+        self.assertIn("SeekHoldSeen{guid, alive, ticks}", tick)
         self.assertNotIn("capped ||", tick)
         self.assertIn("sServerFacade.IsAlive(son)", tick)
         self.assertIn("son->IsInCombat()", tick)
@@ -105,12 +107,18 @@ class SeekHoldClockEngagement(unittest.TestCase):
                       SEEK_POLICY)
         self.assertIn("return engaged && (selected || (victimTank && windowOpen));", SEEK_POLICY)
 
-    def test_the_hold_clock_drops_what_nobody_sees(self):
-        # A read only reaches the Sons around the bot, so an unseen Son keeps its entry; the sweep drops what no read
-        # refreshed for the grace, so the map cannot grow and a respawn under the same guid starts a clean hold.
+    def test_the_hold_clock_drops_what_nobody_ticks(self):
+        # A read only reaches the Sons around the bot, so an unseen Son keeps its entry; the sweep drops a below-cap
+        # record no read ticked for kSeekHoldUntickedMs and a capped record no read saw alive for kSeekHoldStaleMs, so
+        # the map cannot grow and a respawn under the same guid starts a clean hold.
+        self.assertIn("constexpr std::uint32_t kSeekHoldUntickedMs = 5000;", STATE_POLICY)
         self.assertIn("constexpr std::uint32_t kSeekHoldStaleMs = 20000;", STATE_POLICY)
         clock = body(STATE_POLICY, "inline void SeekHoldClockTick(")
-        self.assertIn("nowMs - it->second.seenMs > kSeekHoldStaleMs ? held.erase(it) : std::next(it)", clock)
+        self.assertIn("kSeekHoldUntickedMs", clock)
+        self.assertIn("kSeekHoldStaleMs", clock)
+        self.assertIn("SeekAgeMs(", clock)
+        # A read that does not tick a live Son never erases it: only the seen-dead branch erases inside the read.
+        self.assertNotIn("if (!son.held)", clock)
 
 
 if __name__ == "__main__":

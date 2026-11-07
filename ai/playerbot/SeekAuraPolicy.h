@@ -226,19 +226,14 @@ namespace ai
         return engaged && (selected || (victimTank && windowOpen));
     }
 
-    // What one read records in the hold clock. A Son already at or past the 20 s cap (`heldMs`) keeps its record while
-    // it is alive and seen, whatever this read's clock says: the release is final, so a window shutting or its victim
-    // changing must not start a fresh hold on a Son the raid may now kill. `seenAlive` is the Son this read saw alive
-    // on the row's entry, `ticks` whether this read counts (SeekHoldClockTicks) and `holds` the hold rule's answer.
-    // Every other Son is recorded only while it ticks and the rule holds it; an idle spare is never recorded, so the
-    // cap can never release the reservoir the area veto protects.
-    inline bool SeekSonHeld(bool seenAlive, bool ticks, std::uint32_t heldMs, bool holds)
+    // Whether one read feeds the shared hold clock: a Son this read saw alive, that the clock counts
+    // (SeekHoldClockTicks) and that the hold rule still holds. A read of a Son seen dead erases its record and a
+    // read that does not tick a live Son changes nothing (SeekHoldClockTick), so another bot may keep feeding it.
+    // Every other Son is left out: an idle spare never gets a record, so the cap can never release the reservoir the
+    // area veto protects; a Son the rule already releases is damageable and needs no clock.
+    inline bool SeekSonTicks(bool seenAlive, bool ticks, bool holds)
     {
-        if (!seenAlive)
-            return false;
-        if (heldMs >= kSeekHoldMaxMs)
-            return true;
-        return ticks && holds;
+        return seenAlive && ticks && holds;
     }
 
     // Whether the damage on a source is held. Only the one selected source is ever damageable, and only inside the

@@ -112,11 +112,10 @@ class SonHoldTimings(unittest.TestCase):
         read = body(BOSS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
         self.assertIn("TickSeekHoldClock(out, fightSons, record, nowMs)", read)
         self.assertIn("SeekHoldClockTick(record.holdSince, holdSeen, nowMs)", BOSS)
-        # The held/capped composition is the policy's (SeekSonHeld), so the release can be tested without the action.
-        self.assertIn("SeekSonHeld(IsSeekSource(out, son), ticks,", BOSS)
+        # The alive/feed composition is the policy's (SeekSonTicks), so the release can be tested without the action.
+        self.assertIn("SeekSonTicks(alive, SeekHoldClockTicks(", BOSS)
         self.assertNotIn("capped ||", BOSS)
-        self.assertIn("inline bool SeekSonHeld(bool seenAlive, bool ticks, std::uint32_t heldMs, bool holds)",
-                      SEEK_POLICY)
+        self.assertIn("inline bool SeekSonTicks(bool seenAlive, bool ticks, bool holds)", SEEK_POLICY)
         self.assertIn("SeekHoldClockTick", SEEK_FIGHT)
         self.assertIn("SeekHeldMs", SEEK_FIGHT)
 

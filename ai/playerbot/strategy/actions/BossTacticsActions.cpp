@@ -2586,8 +2586,9 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 
 // The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
 // from the previous read, then tick, so one bot's read sees one consistent hold time. Only fighting time counts, and a
-// Son the cap already released keeps its release (SeekSonHeld); an idle spare never gets a record, so the cap cannot
-// release one the area veto protects.
+// Son the cap already released keeps its release while it is alive and seen (SeekHoldClockTick); an idle spare never
+// gets a record, so the cap cannot release one the area veto protects. A read that does not tick a Son (it selected
+// another Son, or none) leaves that Son's record alone: the record is fight-wide and another bot may be feeding it.
 void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
                        std::uint32_t nowMs)
 {
@@ -2601,9 +2602,10 @@ void TickSeekHoldClock(SeekFight& out, const std::vector<Unit*>& fightSons, Seek
         const bool engaged = sServerFacade.IsAlive(son) && son->IsInCombat() && victim;
         Player* const victimPlayer = engaged ? dynamic_cast<Player*>(victim) : nullptr;
         const bool victimTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
-        const bool ticks = SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen);
-        holdSeen.push_back(SeekHoldSeen{guid, SeekSonHeld(IsSeekSource(out, son), ticks,
-            SeekHeldMs(out.holdSince, guid, nowMs), SeekHoldsUnit(out, son))});
+        const bool alive = IsSeekSource(out, son);
+        const bool ticks = SeekSonTicks(alive, SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen),
+                                        SeekHoldsUnit(out, son));
+        holdSeen.push_back(SeekHoldSeen{guid, alive, ticks});
     }
     SeekHoldClockTick(record.holdSince, holdSeen, nowMs);
     out.holdSince = record.holdSince;
