@@ -22,7 +22,7 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
@@ -251,7 +251,7 @@ def new_kind_problem(row):
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
     if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor",
-                "tank_ignore") and (
+                "tank_ignore", "seek_pull") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
     if kind == "burn_mana":
@@ -299,6 +299,24 @@ def new_kind_problem(row):
             return "threat_successor with a target"
         if row["tactic_mode"]:
             return "a mode word on threat_successor"
+        return None
+    if kind == "seek_pull":
+        # The seek source (target_entry), the most walk-outs in one cycle (priority), the kill lead (param) and the
+        # last-start window. No spell, spot, cycle columns, gate or mode word.
+        if not row["target_entry"]:
+            return "seek_pull without its source"
+        if row["spell_id"]:
+            return "seek_pull with a spell"
+        if not 1 <= row["priority"] <= 5:
+            return "seek_pull cycle walk-outs outside [1, 5]"
+        if not 10.0 <= row["param"] <= 85.0:
+            return "seek_pull kill lead outside [10, 85]"
+        if not 10.0 <= row["window_s"] <= 85.0:
+            return "seek_pull last-start window outside [10, 85]"
+        if row["tactic_mode"]:
+            return "a mode word on seek_pull"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
         return None
     if kind == "tank_ignore":
         # The entry the tanks leave to the damage dealers while the boss fights, and nothing else (read straight from
@@ -664,6 +682,28 @@ class BossTacticsSql(unittest.TestCase):
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
+
+    def test_hakkar_seek_pull_row(self):
+        # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
+        # source, priority 3 walk-outs a cycle, param the 45 s kill lead, window_s the 60 s last start.
+        name = "20261107230000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the seek_pull migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        pull = live.get((309, 14834, "seek_pull", 11357, 0))
+        self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
+        self.assertEqual(name, pull["file"], "the seek_pull migration owns the row")
+        self.assertEqual((3, 45.0, 60.0, "", 0, 0.0, 0, 100),
+                         (pull["priority"], pull["param"], pull["window_s"], pull["tactic_mode"],
+                          pull["cycle_spell"], pull["cycle_s"], pull["hp_min"], pull["hp_max"]),
+                         "the Hakkar seek_pull row drifted")
+        self.assertIsNone(new_kind_problem(pull))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
 
     def test_hakkar_anchor_rows(self):
         # 20261106030000_world.sql: the fight stays on his platform. The anchor centre is his spawn (tw_world creature

@@ -2,6 +2,7 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_seek_walkout_policy.cpp -o /tmp/test_seek_walkout_policy && /tmp/test_seek_walkout_policy
 #include "../ai/playerbot/SeekWalkoutPolicy.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -650,8 +651,164 @@ static void TestCastFailExcludesPuller()
     CHECK(!WalkoutExcluded(s, 7, 2000 + kSeekWalkoutExcludeMs));
 }
 
+// seek_pull (walk 51): a Son walked in an earlier cycle is free again, and the running task's own Son never is.
+static void TestPerCycleWalkedFreesSons()
+{
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1, 72000);
+    WalkoutFinish(s, WalkoutEnd::Abort, 3000); // a threat abort through the end path
+    WalkoutReturnDone(s);
+    WalkoutStart(s, 7, 200, 5000, 2, 72000);
+    WalkoutFinish(s, WalkoutEnd::Timeout, 30000);
+    WalkoutReturnDone(s);
+    CHECK(s.walkedSons.size() == 2 && s.walkedAt.size() == 2);
+    // The default rules: both Sons stay walked for life, so cycles 3 and later never walk out (walk 51's silent
+    // cycles).
+    CHECK(!WalkoutMayStart(s, 3, 100));
+    CHECK(!WalkoutMayStart(s, 3, 200));
+    // The row's rules forget the earlier cycles first.
+    WalkoutForgetEarlierCycles(s, 3);
+    CHECK(s.walkedSons.empty() && s.walkedAt.empty());
+    CHECK(WalkoutMayStart(s, 3, 100));
+    CHECK(WalkoutMayStart(s, 3, 200));
+    // A running task's Son is never dropped, whatever the cycle asked for.
+    WalkoutStart(s, 8, 200, 40000, 3, 72000);
+    WalkoutForgetEarlierCycles(s, 4);
+    CHECK(std::find(s.walkedSons.begin(), s.walkedSons.end(), 200) != s.walkedSons.end());
+    CHECK(s.walkedAt.size() == 1 && s.walkedAt[0].first == 200 && s.walkedAt[0].second == 3);
+    // A Son of the cycle itself stays, an older one goes.
+    SeekWalkoutState t;
+    WalkoutStart(t, 7, 100, 1000, 1);
+    WalkoutNoteShot(t);
+    WalkoutFinish(t, WalkoutEnd::Back, 2000);
+    WalkoutStart(t, 7, 200, 3000, 2);
+    WalkoutNoteShot(t);
+    WalkoutFinish(t, WalkoutEnd::Back, 4000);
+    WalkoutStart(t, 7, 300, 5000, 3);
+    WalkoutForgetEarlierCycles(t, 3);
+    CHECK(t.walkedSons.size() == 1 && t.walkedSons[0] == 300);
+    CHECK(t.walkedAt.size() == 1 && t.walkedAt[0].second == 3);
+}
+
+static void TestRetryRulesFromTheRow()
+{
+    const WalkoutCycleRules rules = WalkoutRulesFromRow(3, 60.0f);
+    CHECK(rules.maxPerCycle == 3);
+    CHECK(rules.retryMinMs == 60000u);
+    CHECK(rules.firstStartMinMs == 60000u);
+    CHECK(rules.perCycleWalked && rules.reopenOnAbort && rules.shotStall && rules.pickTopTankThreat &&
+          rules.standFan && rules.hunterReachScan);
+    // A threat abort with 72 s left reopens the cycle: three starts fit, the fourth does not, and every start needs
+    // 60 s or more to the siphon.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 3, 72000); // due at 73000
+    CHECK(WalkoutFinish(s, WalkoutEnd::Abort, 3000, rules));
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStartFor(s, 3, 200, 8, 4000, 69000, rules));
+    WalkoutStart(s, 8, 200, 4000, 3, 69000);
+    CHECK(WalkoutFinish(s, WalkoutEnd::Abort, 5000, rules));
+    WalkoutReturnDone(s);
+    CHECK(WalkoutMayStartFor(s, 3, 300, 9, 6000, 67000, rules));
+    WalkoutStart(s, 9, 300, 6000, 3, 67000);
+    CHECK(!WalkoutFinish(s, WalkoutEnd::Timeout, 7000, rules)); // three starts: no fourth
+    WalkoutReturnDone(s);
+    CHECK(!WalkoutMayStartFor(s, 3, 400, 10, 8000, 65000, rules));
+    // A retry with only 59 s left is refused, and so is a first start.
+    SeekWalkoutState r;
+    WalkoutStart(r, 7, 100, 1000, 3, 72000);
+    CHECK(WalkoutFinish(r, WalkoutEnd::Timeout, 3000, rules));
+    WalkoutReturnDone(r);
+    CHECK(!WalkoutMayStartFor(r, 3, 200, 8, 14000, 59000, rules));
+    SeekWalkoutState f;
+    CHECK(!WalkoutMayStartFor(f, 3, 100, 8, 1000, 59000, rules));
+    // The default rules keep the old one walk-out per cycle.
+    SeekWalkoutState old;
+    WalkoutStart(old, 7, 100, 1000, 3, 89000);
+    CHECK(!WalkoutFinish(old, WalkoutEnd::Timeout, 26000));
+    WalkoutReturnDone(old);
+    CHECK(!WalkoutMayStart(old, 3, 200));
+    CHECK(!WalkoutMayStartFor(old, 3, 200, 8, 27000, 62000));
+}
+
+static void TestWalkoutEndFreesSon()
+{
+    // Puller-side ends free the Son for the retry; Son-side ends keep it walked for this cycle.
+    for (const char* reason : {"threat", "victim", "dead", "charmed", "insanity", "gone", "cast failed",
+                               "move failed", "no shot"})
+        CHECK(WalkoutEndFreesSon(reason));
+    for (const char* reason : {"no stand", "son gone", "timeout"})
+        CHECK(!WalkoutEndFreesSon(reason));
+}
+
+static void TestThreatPickUsesTheRunningReference()
+{
+    // Cause Insanity zeroes the main tank's threat at ~17 s: the pick compares with the live top tank, like the abort.
+    CHECK(!WalkoutPickThreatTooHigh(0.0f, 0.0f));
+    CHECK(WalkoutPickThreatTooHigh(50.0f, 0.0f));
+    CHECK(!WalkoutPickThreatTooHigh(699.0f, 1000.0f));
+    CHECK(WalkoutPickThreatTooHigh(700.0f, 1000.0f));
+    CHECK(WalkoutPickThreatTooHigh(703.0f, 1000.0f));
+}
+
+static void TestShotStall()
+{
+    SeekWalkoutState s;
+    CHECK(!WalkoutShotStalled(s, 1000));
+    WalkoutStart(s, 7, 100, 1000, 1);
+    CHECK(!WalkoutShotStalled(s, 2000)); // on the way, not at the stand
+    WalkoutNoteAtStand(s, 2000);
+    CHECK(s.atStandSinceMs == 2000);
+    WalkoutNoteAtStand(s, 2500); // the stand clock keeps its first tick
+    CHECK(s.atStandSinceMs == 2000);
+    CHECK(!WalkoutShotStalled(s, 2000 + kSeekWalkoutShotStallMs - 1));
+    CHECK(WalkoutShotStalled(s, 2000 + kSeekWalkoutShotStallMs));
+    WalkoutNoteShot(s);
+    CHECK(s.atStandSinceMs == 0);
+    CHECK(!WalkoutShotStalled(s, 2000 + kSeekWalkoutShotStallMs + 1));
+}
+
+static void TestStandCandidatesFan()
+{
+    BossAnchorCircle c;
+    c.x = 0.0f;
+    c.y = 0.0f;
+    c.z = 54.0f;
+    c.radius = 30.0f;
+    const std::vector<std::pair<float, float>> base = WalkoutStandCandidates(c, -78.0f, 0.0f);
+    const std::vector<std::pair<float, float>> zero = WalkoutStandCandidatesFan(c, -78.0f, 0.0f, {0.0f});
+    CHECK(zero.size() == base.size());
+    for (std::size_t i = 0; i < base.size(); ++i)
+    {
+        CHECK(zero[i].first == base[i].first);
+        CHECK(zero[i].second == base[i].second);
+    }
+    const std::vector<std::pair<float, float>> fan =
+        WalkoutStandCandidatesFan(c, -78.0f, 0.0f, {0.0f, 10.0f, -10.0f, 20.0f, -20.0f});
+    CHECK(fan.size() == base.size() * 5);
+    // The rays come in the offsets' order, and every point stays between the circle's edge and the Son.
+    for (std::size_t i = 0; i < fan.size(); ++i)
+    {
+        float const r = std::sqrt(fan[i].first * fan[i].first + fan[i].second * fan[i].second);
+        CHECK(r >= c.radius - 0.01f && r < 78.0f);
+    }
+    const float cos10 = std::cos(10.0f * 3.14159265358979323846f / 180.0f);
+    const float sin10 = std::sin(10.0f * 3.14159265358979323846f / 180.0f);
+    CHECK(Near(fan[base.size()].first, -30.0f * cos10));
+    CHECK(Near(fan[base.size()].second, -30.0f * sin10));
+    CHECK(Near(fan[base.size() * 2].first, -30.0f * cos10));
+    CHECK(Near(fan[base.size() * 2].second, 30.0f * sin10));
+    // A Son inside the circle has no ray: the anchored shot is its pull.
+    CHECK(WalkoutStandCandidatesFan(c, 10.0f, 0.0f, {0.0f, 10.0f}).empty());
+}
+
 int main()
 {
+    TestPerCycleWalkedFreesSons();
+    TestRetryRulesFromTheRow();
+    TestWalkoutEndFreesSon();
+    TestThreatPickUsesTheRunningReference();
+    TestShotStall();
+    TestStandCandidatesFan();
     TestWalkoutRetryNeverStarts();
     TestCastFailExcludesPuller();
     TestOneWalkoutPerCycle();

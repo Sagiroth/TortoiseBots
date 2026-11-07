@@ -160,6 +160,15 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
+    // seek_pull's kill lead (walk 51: back -> death median 27 s, p75 31 s): the same rule with the row's own lead.
+    CHECK(SeekLateEngagedBurnWithin(true, 91000, 44000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(true, 91000, 46000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(false, 91000, 44000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(true, 0, 0, 45000));
+    // The old 30 s rule is the same function at its own lead.
+    for (std::uint32_t dueIn : {0u, 25000u, 30000u, 30001u})
+        CHECK(SeekLateEngagedBurn(true, 91000, dueIn) == SeekLateEngagedBurnWithin(true, 91000, dueIn, 30000));
+
     // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 3 s is the first
     // off-tank's own take, whatever the third off-tank does: the third off-tank had those 3 s (walk 45: with three
     // tanks alive the old gate never let the first off-tank take one, and 87 of 99 deaths from Sons were non-tanks).
