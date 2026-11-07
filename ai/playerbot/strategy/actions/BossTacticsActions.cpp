@@ -2672,6 +2672,8 @@ const char* SeekHoldEndWord(SeekHoldEndReason reason)
     {
         case SeekHoldEndReason::Died:
             return "died";
+        case SeekHoldEndReason::Gone:
+            return "gone";
         case SeekHoldEndReason::Unticked:
             return "unticked";
         case SeekHoldEndReason::Unseen:
@@ -2693,13 +2695,14 @@ const char* SeekVictimWord(Unit* son)
     return PlayerbotAI::IsTank(player) ? "tank" : "nontank";
 }
 
-// The seek phase the Son death row names: the seek row's own words for a living Son (hold or burn), the gather once the
-// raid is on a source, and none when the seek is not running.
-const char* SeekSonPhaseWord(const SeekFight& state, Unit* son)
+// The fight's phase for an event of a Son no live unit can answer for: the gather's readiness names the burn, the
+// gather itself gather, and the open dose window the hold. The death row reads this: a dead Son is never a source, so
+// the seek row's own word could only say gather or none.
+const char* SeekFightPhaseWord(const SeekFight& state)
 {
-    if (son && IsSeekSource(state, son))
-        return son == state.source && !SeekHoldsUnit(state, son) ? "burn" : "hold";
-    return state.gathering ? "gather" : "none";
+    if (state.gathering)
+        return state.ready || state.forceBurn ? "burn" : "gather";
+    return state.windowOpen ? "hold" : "none";
 }
 
 // The numbers a Son hold or death row prints, read at the transition.
@@ -2732,7 +2735,7 @@ void PushSonHoldRow(std::vector<SeekLogRow>& rows, const SeekFight& state, const
     char info1[256];
     snprintf(info1, sizeof(info1),
              "son=%u,event=%s,reason=%s,held_ms=%u,nontank_ms=%u,hp=%u,spot_yd=%.1f,cycle=%u,due_in=%u,victim=%s",
-             static_cast<unsigned>(guid), event, reason, static_cast<unsigned>(heldMs),
+             ObjectGuid(guid).GetCounter(), event, reason, static_cast<unsigned>(heldMs),
              static_cast<unsigned>(facts.nonTankMs), static_cast<unsigned>(facts.hp), facts.spotYd, state.cycleNo,
              static_cast<unsigned>(state.dueInMs / 1000), facts.victim);
     rows.push_back(SeekLogRow{"BossTacticsSonHold", info1, text});
@@ -2765,22 +2768,18 @@ void PushSonDeathRow(std::vector<SeekLogRow>& rows, Player* bot, const SeekFight
     const int sinceSiphon = record.siphonSeenMs
         ? static_cast<int>(SeekAgeMs(nowMs, record.siphonSeenMs) / 1000) : -1;
     const char* lastReason = "none";
-    const auto verdict = record.holdVerdict.find(guid);
-    if (verdict != record.holdVerdict.end())
-    {
-        const SeekHoldWhy why = static_cast<SeekHoldWhy>(verdict->second);
-        if (!SeekHoldWhyHolds(why))
-            lastReason = SeekHoldWhyWord(why);
-    }
+    const auto release = record.lastRelease.find(guid);
+    if (release != record.lastRelease.end())
+        lastReason = SeekHoldWhyWord(release->second);
     char info1[256];
     snprintf(info1, sizeof(info1),
              "son=%u,cycle=%u,due_in=%u,since_siphon=%d,phase=%s,raid_alive=%d,raid_in_cloud=%d,held_ms=%u,"
              "last_reason=%s",
-             static_cast<unsigned>(guid), state.cycleNo, static_cast<unsigned>(state.dueInMs / 1000), sinceSiphon,
+             ObjectGuid(guid).GetCounter(), state.cycleNo, static_cast<unsigned>(state.dueInMs / 1000), sinceSiphon,
              phase, raidAlive, raidInCloud, static_cast<unsigned>(heldMs), lastReason);
     char info2[192];
     snprintf(info2, sizeof(info2), "Son %u died in the %s phase, %d of %d raid members in its cloud, held %u ms",
-             static_cast<unsigned>(guid), phase, raidInCloud, raidAlive, static_cast<unsigned>(heldMs));
+             ObjectGuid(guid).GetCounter(), phase, raidInCloud, raidAlive, static_cast<unsigned>(heldMs));
     rows.push_back(SeekLogRow{"BossTacticsSonDeath", info1, info2});
     record.sonDeathLogged.insert(guid);
 }
@@ -2798,6 +2797,13 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
     out.holdSince = record.holdSince;
     const bool log = sPlayerbotAIConfig.hasLog("bot_events.csv") && out.row &&
         out.row->targetEntry == kSonOfHakkarEntry;
+    // Every Son this fight's read has seen alive. fightSons only ever holds living Sons, so a Son missing from it
+    // cannot be asked about directly; this set remembers them for the death check.
+    if (out.row && out.row->targetEntry == kSonOfHakkarEntry)
+    {
+        for (Unit* const son : fightSons)
+            record.sonsSeen.insert(son->GetObjectGuid().GetRawValue());
+    }
     std::map<std::uint64_t, Unit*> sonsByGuid;
     std::vector<std::pair<Unit*, SeekHoldWhy>> whys;
     std::vector<SeekHoldSeen> holdSeen;
@@ -2821,63 +2827,69 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
             whys.push_back(std::make_pair(son, SeekHoldWhyOfUnit(out, son)));
     }
 
+    std::vector<SeekHoldEvent> goneEvents;
     if (log)
     {
-        // The first read whose verdict for a guid flips from held to not held is the release; a flip back to held
-        // records the new value silently.
+        // One release row per hold record: the verdict is each read's own (SelectedBurn follows that bot's source
+        // search), so the first read that lets a held Son go logs it and the other reads stay silent until this hold
+        // ends. A Son the fight holds no record for was never held, so it is not released.
         for (const auto& entry : whys)
         {
             Unit* const son = entry.first;
             const SeekHoldWhy why = entry.second;
             const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
-            const auto verdict = record.holdVerdict.find(guid);
-            if (verdict != record.holdVerdict.end() &&
-                SeekHoldWhyHolds(static_cast<SeekHoldWhy>(verdict->second)) && !SeekHoldWhyHolds(why))
-            {
-                const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
-                const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
-                char text[192];
-                snprintf(text, sizeof(text), "Son %u released after %.1f s held (%s), %u %% hp, %.1f yd from the spot",
-                         static_cast<unsigned>(guid), static_cast<double>(heldMs) / 1000.0, SeekHoldWhyText(why),
-                         static_cast<unsigned>(facts.hp), facts.spotYd);
-                PushSonHoldRow(rows, out, record, nowMs, guid, son, "release", SeekHoldWhyWord(why), heldMs, text);
-            }
-            record.holdVerdict[guid] = static_cast<std::uint8_t>(why);
+            const bool hasHoldRecord = record.holdSince.count(guid) || record.healerHeldSince.count(guid);
+            if (SeekHoldWhyHolds(why) || !SeekShouldLogRelease(hasHoldRecord, record.releaseLogged.count(guid) != 0))
+                continue;
+            const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
+            const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
+            char text[192];
+            snprintf(text, sizeof(text), "Son %u released after %.1f s held (%s), %u %% hp, %.1f yd from the spot",
+                     ObjectGuid(guid).GetCounter(), static_cast<double>(heldMs) / 1000.0, SeekHoldWhyText(why),
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+            PushSonHoldRow(rows, out, record, nowMs, guid, son, "release", SeekHoldWhyWord(why), heldMs, text);
+            record.releaseLogged.insert(guid);
+            record.lastRelease[guid] = why;
         }
 
-        // A Son this read saw dead: the first read to see it logs the death, before the tick erases its record.
-        for (Unit* son : fightSons)
+        // A Son the fight had seen alive that this read no longer lists. Dead on the map is the death the row records;
+        // a missing creature is a despawn or an evade, which is no death: its hold ends as gone and it is not looked up
+        // again. A Son still alive was simply out of this read's sight.
+        std::set<std::uint64_t> liveNow;
+        for (Unit* const son : fightSons)
+            liveNow.insert(son->GetObjectGuid().GetRawValue());
+        for (std::uint64_t guid : SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged))
         {
-            const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
-            if (son->GetEntry() != kSonOfHakkarEntry || sServerFacade.IsAlive(son) ||
-                record.sonDeathLogged.count(guid))
-                continue;
-            PushSonDeathRow(rows, bot, out, record, nowMs, guid, son, SeekSonPhaseWord(out, son));
-        }
-        // A Son the fight's clocks knew that no longer exists on the map disappeared inside a hold: dead out of this
-        // read's sight, or despawned. It is the record's guid, looked up on the map, never a guid this read lacked
-        // from its own search (a Son out of reach is not dead).
-        std::set<std::uint64_t> known;
-        for (const auto& entry : record.healerHeldSince)
-            known.insert(entry.first);
-        for (const auto& entry : record.holdSince)
-            known.insert(entry.first);
-        for (std::uint64_t guid : known)
-        {
-            if (record.sonDeathLogged.count(guid) || sonsByGuid.count(guid))
-                continue;
             Creature* const creature = bot ? bot->GetMap()->GetCreature(ObjectGuid(guid)) : nullptr;
-            if (creature && sServerFacade.IsAlive(creature))
+            if (creature && !sServerFacade.IsAlive(creature))
+            {
+                PushSonDeathRow(rows, bot, out, record, nowMs, guid, creature, SeekFightPhaseWord(out));
                 continue;
-            PushSonDeathRow(rows, bot, out, record, nowMs, guid, creature, SeekSonPhaseWord(out, creature));
+            }
+            if (creature)
+                continue;
+            const auto held = record.holdSince.find(guid);
+            if (held != record.holdSince.end())
+            {
+                goneEvents.push_back(SeekHoldEvent{guid, false, SeekHoldEndReason::Gone,
+                                                   SeekAgeMs(nowMs, held->second.sinceMs)});
+                record.holdSince.erase(held);
+            }
+            record.sonsSeen.erase(guid);
         }
     }
 
     std::vector<SeekHoldEvent> events;
     SeekHoldClockTick(record.holdSince, holdSeen, nowMs, log ? &events : nullptr);
     out.holdSince = record.holdSince;
+    if (log)
+        events.insert(events.end(), goneEvents.begin(), goneEvents.end());
     for (const SeekHoldEvent& event : events)
     {
+        // A record that ends while the Son is dead is a death, whatever the sweep's own clock said.
+        SeekHoldEndReason reason = event.reason;
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.sonDeathLogged.count(event.guid))
+            reason = SeekHoldEndReason::Died;
         Unit* son = nullptr;
         const auto seen = sonsByGuid.find(event.guid);
         if (seen != sonsByGuid.end())
@@ -2888,24 +2900,27 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
         char text[224];
         if (event.start)
             snprintf(text, sizeof(text), "Son %u entered the hold at %u %% hp, %.1f yd from the spot",
-                     static_cast<unsigned>(event.guid), static_cast<unsigned>(facts.hp), facts.spotYd);
-        else if (event.reason == SeekHoldEndReason::Died)
+                     ObjectGuid(event.guid).GetCounter(), static_cast<unsigned>(facts.hp), facts.spotYd);
+        else if (reason == SeekHoldEndReason::Died)
             snprintf(text, sizeof(text), "Son %u died after %.1f s held (%u %% hp, %.1f yd from the spot)",
-                     static_cast<unsigned>(event.guid), static_cast<double>(event.heldMs) / 1000.0,
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
                      static_cast<unsigned>(facts.hp), facts.spotYd);
-        else if (event.reason == SeekHoldEndReason::Unticked)
+        else if (reason == SeekHoldEndReason::Gone)
+            snprintf(text, sizeof(text), "Son %u vanished from the map after %.1f s held",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0);
+        else if (reason == SeekHoldEndReason::Unticked)
             snprintf(text, sizeof(text),
                      "Son %u left the hold after %.1f s without a read ticking it (%u %% hp, %.1f yd from the spot)",
-                     static_cast<unsigned>(event.guid), static_cast<double>(event.heldMs) / 1000.0,
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
                      static_cast<unsigned>(facts.hp), facts.spotYd);
         else
             snprintf(text, sizeof(text), "Son %u left the hold after %.1f s unseen (%u %% hp, %.1f yd from the spot)",
-                     static_cast<unsigned>(event.guid), static_cast<double>(event.heldMs) / 1000.0,
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
                      static_cast<unsigned>(facts.hp), facts.spotYd);
         PushSonHoldRow(rows, out, record, nowMs, event.guid, son, event.start ? "start" : "end",
-                       event.start ? "tick" : SeekHoldEndWord(event.reason), event.heldMs, text);
+                       event.start ? "tick" : SeekHoldEndWord(reason), event.heldMs, text);
         if (!event.start)
-            record.holdVerdict.erase(event.guid);
+            record.releaseLogged.erase(event.guid);
     }
 }
 

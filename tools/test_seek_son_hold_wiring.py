@@ -7,6 +7,7 @@ tools/test_seek_walkout_policy.cpp (the siphon lead of the walk-out start). Thes
 Run: python3 -m unittest tools/test_seek_son_hold_wiring.py
 """
 import pathlib
+import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -161,6 +162,57 @@ class SeekSonRowsWiring(unittest.TestCase):
         self.assertNotIn("logEvent", block)
         self.assertLess(i, ACTIONS.index("sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);"))
         self.assertNotIn("logEvent", guard_body(ACTIONS, "void TickSeekHoldClock("))
+
+
+class SeekSonRowReview(unittest.TestCase):
+    """The Son rows after the review: a joinable id, one release per hold, deaths for Sons never held, the fight's
+    phase and the real last release on the death row, and no death row for a despawn."""
+
+    def test_every_son_id_is_the_guid_low(self):
+        # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
+        # a raw guid is a different number.
+        ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
+        self.assertEqual(len(ids), 2)
+        for match in ids:
+            call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
+            self.assertIn("ObjectGuid(guid).GetCounter()", call)
+
+    def test_one_release_row_per_hold_record(self):
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        self.assertIn("const bool hasHoldRecord = record.holdSince.count(guid) || "
+                      "record.healerHeldSince.count(guid);", tick)
+        self.assertIn("SeekShouldLogRelease(hasHoldRecord, record.releaseLogged.count(guid) != 0)", tick)
+        self.assertIn("record.releaseLogged.insert(guid);", tick)
+        self.assertIn("record.lastRelease[guid] = why;", tick)
+        self.assertIn("record.releaseLogged.erase(event.guid);", tick)
+
+    def test_deaths_come_from_the_sons_the_fight_has_seen(self):
+        # fightSons only holds living Sons, so a death is found through the guids an earlier read saw alive.
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        self.assertIn("record.sonsSeen.insert(son->GetObjectGuid().GetRawValue());", tick)
+        self.assertIn("SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged)", tick)
+        self.assertIn("record.sonsSeen.erase(guid);", tick)
+        self.assertNotIn("if (son->GetEntry() != kSonOfHakkarEntry || sServerFacade.IsAlive(son)", tick)
+
+    def test_the_death_row_reads_the_fight_phase_and_last_release(self):
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        self.assertIn("PushSonDeathRow(rows, bot, out, record, nowMs, guid, creature, SeekFightPhaseWord(out));", tick)
+        death = body(ACTIONS, "void PushSonDeathRow(")
+        self.assertIn("record.lastRelease.find(guid)", death)
+        self.assertIn("lastReason = SeekHoldWhyWord(release->second);", death)
+        self.assertNotIn("holdVerdict", death)
+        phase = body(ACTIONS, "const char* SeekFightPhaseWord(const SeekFight& state)")
+        self.assertIn('state.ready || state.forceBurn ? "burn" : "gather"', phase)
+        self.assertIn('return state.windowOpen ? "hold" : "none";', phase)
+
+    def test_a_despawn_is_not_a_death(self):
+        tick = guard_body(ACTIONS, "void TickSeekHoldClock(")
+        loop = tick[tick.index("SeekDeathCandidates("):tick.index("std::vector<SeekHoldEvent> events;")]
+        self.assertIn("if (creature && !sServerFacade.IsAlive(creature))", loop)
+        self.assertIn("if (creature)", loop)
+        gone = loop[loop.index("const auto held = record.holdSince.find(guid);"):]
+        self.assertNotIn("PushSonDeathRow", gone)
+        self.assertIn("SeekHoldEndReason::Gone", gone)
 
 
 if __name__ == "__main__":

@@ -466,6 +466,28 @@ int main()
         CHECK(events.size() == 4 && events[3].reason == SeekHoldEndReason::Unticked);
     }
 
+    // SeekShouldLogRelease: only a Son the fight still holds a record for can be released, and one row per hold record
+    // (the first read that sees the release logs it). A Son never held is not "released after 0.0 s".
+    {
+        CHECK(!SeekShouldLogRelease(false, false));
+        CHECK(!SeekShouldLogRelease(false, true));
+        CHECK(SeekShouldLogRelease(true, false));
+        CHECK(!SeekShouldLogRelease(true, true));
+    }
+
+    // SeekDeathCandidates: a Son seen alive and missing from this read's living list is looked up once, whether or not
+    // a hold record ever existed for it; a Son still alive and a Son already logged are not.
+    {
+        const std::set<std::uint64_t> seen = {1, 2, 3, 4};
+        const std::set<std::uint64_t> live = {1, 3};
+        const std::set<std::uint64_t> logged = {2};
+        const std::vector<std::uint64_t> candidates = SeekDeathCandidates(seen, live, logged);
+        CHECK(candidates.size() == 1 && candidates[0] == 4);
+        const std::vector<std::uint64_t> neverHeld = SeekDeathCandidates({9}, {}, {});
+        CHECK(neverHeld.size() == 1 && neverHeld[0] == 9);
+        CHECK(SeekDeathCandidates({}, {1, 2}, {}).empty());
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

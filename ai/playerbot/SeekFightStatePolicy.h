@@ -128,11 +128,12 @@ namespace ai
         return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
     }
 
-    // Why a hold record ended: the read saw the Son dead, no read ticked it for kSeekHoldUntickedMs, or the capped
-    // record was not seen alive for kSeekHoldStaleMs.
+    // Why a hold record ended: the read saw the Son dead, the Son vanished from the map (despawn, evade), no read
+    // ticked it for kSeekHoldUntickedMs, or the capped record was not seen alive for kSeekHoldStaleMs.
     enum class SeekHoldEndReason
     {
         Died,
+        Gone,
         Unticked,
         Unseen,
     };
@@ -220,6 +221,30 @@ namespace ai
         return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
     }
 
+    // Whether a read logs a Son's release: the fight must still hold a record to release (a Son that was never held is
+    // not "released after 0.0 s"), and one row per hold record is enough — every bot's read can see the same release,
+    // and the first one logs it.
+    inline bool SeekShouldLogRelease(bool hasHoldRecord, bool alreadyLogged)
+    {
+        return hasHoldRecord && !alreadyLogged;
+    }
+
+    // The Sons a read must look up for a death: seen alive by an earlier read of this fight, absent from the read's
+    // living list, and without a death row yet. The caller looks each one up on the map: dead is a death, a missing
+    // creature is a despawn or an evade and not a death.
+    inline std::vector<std::uint64_t> SeekDeathCandidates(const std::set<std::uint64_t>& seen,
+                                                          const std::set<std::uint64_t>& live,
+                                                          const std::set<std::uint64_t>& logged)
+    {
+        std::vector<std::uint64_t> candidates;
+        for (std::uint64_t guid : seen)
+        {
+            if (!live.count(guid) && !logged.count(guid))
+                candidates.push_back(guid);
+        }
+        return candidates;
+    }
+
     struct SeekCycleRecord
     {
         std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
@@ -244,9 +269,17 @@ namespace ai
         // Only fighting time counts, and a release sticks while the Son lives and is seen (SeekHoldClockTick,
         // SeekSonTicks).
         std::map<std::uint64_t, SeekHeldSon> holdSince;
-        // The last hold verdict logged for each Son (SeekHoldWhy as its enum value): a release row is logged only on
-        // the held -> not-held flip, and a flip back to held records silently. Cleared with the fight.
-        std::map<std::uint64_t, std::uint8_t> holdVerdict;
+        // The Sons whose release row this fight already logged for the current hold record: the release is one row per
+        // record, not one per bot's read. Erased when that hold ends, so a later hold logs again. Cleared with the
+        // fight (the whole record).
+        std::set<std::uint64_t> releaseLogged;
+        // The reason of each Son's last logged release: the death row reports what the hold actually did. Cleared with
+        // the fight.
+        std::map<std::uint64_t, SeekHoldWhy> lastRelease;
+        // Every Son this fight's Hakkar read saw alive. A guid here that a read no longer lists is looked up: still
+        // alive is out of this read's sight, dead is a death, a missing creature is gone (despawn, evade). Cleared
+        // with the fight.
+        std::set<std::uint64_t> sonsSeen;
         // The Sons whose death row this fight already logged (one per guid). Cleared with the fight.
         std::set<std::uint64_t> sonDeathLogged;
         bool ready = false;
