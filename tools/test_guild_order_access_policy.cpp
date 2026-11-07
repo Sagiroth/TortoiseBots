@@ -67,10 +67,10 @@ int main()
     CHECK(!BotRankMayWithdrawGold(0, false));
     CHECK(!BotRankMayWithdrawGold(1, false));
 
-    // The red header shows when anything is missing: any denied tab, or no gold.
-    CHECK(BotRankHasNoAccess({}, {}, false));
+    // The red header shows only for a denied tab; no gold alone stays plain.
+    CHECK(!BotRankHasNoAccess({}, {}, false));
     CHECK(BotRankHasNoAccess({1}, {2}, true));
-    CHECK(BotRankHasNoAccess({1, 2}, {}, false));
+    CHECK(!BotRankHasNoAccess({1, 2}, {}, false));
     CHECK(!BotRankHasNoAccess({1, 2}, {}, true));
 
     if (failures == 0)

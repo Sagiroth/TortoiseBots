@@ -179,7 +179,7 @@ Every bot that joins a guild with at least one real player in it gets the guild'
 
 - **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2 (also bots you promoted by hand) and new bots join there. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
 - **See what the bots can reach:** `.bot order access` (and the top of `.bot order list`) shows the bot rank, which bank tabs it reaches, and whether it may take guild gold. Guilds without an unlocked bank show no tabs and no gold.
-- The header shows red when anything is missing (a tab the bots cannot use, or no gold access). Open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank.
+- The header shows red when a bank tab is closed to the bots. Open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank. "gold no" is normal below Officer: the bots then buy with their own gold only.
 - **Turn it off:** setting `AiPlayerbot.GuildOrderBotRank = 0` leaves every rank alone; `.bot order access` then answers that the server does not manage bot ranks.
 
 ## Who may give orders
