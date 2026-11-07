@@ -242,21 +242,30 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
 
     // The lowest member in the heal rows' own reach (twice the heal range), this bot included.
     uint8 lowestMemberPct = static_cast<uint8>(bot->GetHealthPercent());
-    uint8 otherHealers = 0;
+    std::vector<CarrierHealer> otherHealers;
     float const reach = 2.0f * (bot->InBattleGround() ? sPlayerbotAIConfig.healDistanceBg : ai->GetRange("heal"));
     Group* const group = bot->GetGroup();
     if (group)
     {
         for (Player* member : LiveGroupMembers(group))
         {
-            if (!member || !member->IsInWorld() || !member->IsAlive() || member->GetMapId() != bot->GetMapId())
+            if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
                 continue;
-            if (sServerFacade.getDistance2d(bot, member) <= reach)
+            float const distanceYd = sServerFacade.getDistance2d(bot, member);
+            if (member->IsAlive() && distanceYd <= reach)
                 lowestMemberPct = std::min(lowestMemberPct, static_cast<uint8>(member->GetHealthPercent()));
-            if (member != bot && PlayerbotAI::IsHeal(member) && !member->HasAura(aura))
-                ++otherHealers;
+            if (member == bot || !PlayerbotAI::IsHeal(member))
+                continue;
+            CarrierHealer healer;
+            healer.alive = member->IsAlive();
+            healer.cursed = member->HasAura(aura);
+            healer.charmed = !member->GetCharmerGuid().IsEmpty();
+            healer.distanceYd = distanceYd;
+            healer.dropYd = bot->GetPositionZ() - member->GetPositionZ();
+            otherHealers.push_back(healer);
         }
     }
+    uint8 const otherHealerCount = CarrierHealerCount(otherHealers, reach);
     Player* const mainTank = tankRoles.MainTank();
     uint8 const tankPct = mainTank ? static_cast<uint8>(mainTank->GetHealthPercent()) : 0;
 
@@ -266,24 +275,26 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
     in.cursed = bot->HasAura(aura);
     in.shadeInReach = shade != nullptr;
     in.holdsBoss = holdsBoss;
+    in.threatSuccessor = HasThreatSuccessorRow(fight.rows);
     in.lowestMemberPct = lowestMemberPct;
     in.tankPct = tankPct;
-    in.otherHealers = otherHealers;
+    in.otherHealers = otherHealerCount;
     in.manaPct = AI_VALUE2(uint8, "mana", "self target");
     in.dispelNowPending = CarrierDispelNowPending(ai, bot, fight.rows);
 
-    CarrierStrikeVerdict const verdict = CarrierStrikeAllowed(in);
+    CarrierStrikeVerdict const verdict =
+        CarrierStrikeAllowed(in, static_cast<uint8>(sPlayerbotAIConfig.lowHealth));
     float const shadeYd = shade ? bot->GetDistance(shade) : -1.0f;
     if (verdict != CarrierStrikeVerdict::Strike)
     {
         // The guard failed or the curse ended: a strike cast still in flight must not land (the heal or the cure wins).
         InterruptCarrierStrikeCast(ai, bot, shadeEntry);
-        LogCarrierStrike(ai, bot, verdict, role, shade, shadeYd, lowestMemberPct, tankPct, otherHealers, in.manaPct,
+        LogCarrierStrike(ai, bot, verdict, role, shade, shadeYd, lowestMemberPct, tankPct, otherHealerCount, in.manaPct,
             "none");
         return false;
     }
     std::string const spell = CarrierStrikeSpellText(ai, bot, verdict, role, shade);
-    LogCarrierStrike(ai, bot, verdict, role, shade, shadeYd, lowestMemberPct, tankPct, otherHealers, in.manaPct,
+    LogCarrierStrike(ai, bot, verdict, role, shade, shadeYd, lowestMemberPct, tankPct, otherHealerCount, in.manaPct,
         spell.c_str());
     return true;
 }

@@ -3897,17 +3897,18 @@ const char* CarrierStrikeVerdictWord(CarrierStrikeVerdict verdict)
 {
     switch (verdict)
     {
-        case CarrierStrikeVerdict::Strike:         return "strike";
-        case CarrierStrikeVerdict::NotCarrier:     return "not_carrier";
-        case CarrierStrikeVerdict::NoShade:        return "no_shade";
-        case CarrierStrikeVerdict::MainTank:       return "main_tank";
-        case CarrierStrikeVerdict::HoldsBoss:      return "holds_boss";
-        case CarrierStrikeVerdict::GuardLowMember: return "guard_low_member";
-        case CarrierStrikeVerdict::GuardTank:      return "guard_tank";
-        case CarrierStrikeVerdict::GuardHealers:   return "guard_healers";
-        case CarrierStrikeVerdict::GuardMana:      return "guard_mana";
-        case CarrierStrikeVerdict::GuardDispel:    return "guard_dispel";
-        case CarrierStrikeVerdict::Dps:            return "dps";
+        case CarrierStrikeVerdict::Strike:          return "strike";
+        case CarrierStrikeVerdict::NotCarrier:      return "not_carrier";
+        case CarrierStrikeVerdict::NoShade:         return "no_shade";
+        case CarrierStrikeVerdict::MainTank:        return "main_tank";
+        case CarrierStrikeVerdict::ThreatSuccessor: return "threat_successor";
+        case CarrierStrikeVerdict::HoldsBoss:       return "holds_boss";
+        case CarrierStrikeVerdict::GuardLowMember:  return "guard_low_member";
+        case CarrierStrikeVerdict::GuardTank:       return "guard_tank";
+        case CarrierStrikeVerdict::GuardHealers:    return "guard_healers";
+        case CarrierStrikeVerdict::GuardMana:       return "guard_mana";
+        case CarrierStrikeVerdict::GuardDispel:     return "guard_dispel";
+        case CarrierStrikeVerdict::Dps:             return "dps";
     }
     return "not_carrier";
 }

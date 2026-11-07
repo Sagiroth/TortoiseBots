@@ -1063,12 +1063,14 @@ AiPlayerbot.DungeonRunPullGate = 0
 AiPlayerbot.DungeonRunCharmYield = 0
 
 # A cursed healer or off-tank strikes its own Shade (the kill_first row the curse gates, e.g. Jin'do's Shades) while the
-# raid can spare it: the lowest member in heal range at or above 50 %, the main tank at or above 60 %, two other live
-# uncursed healers, at least 30 % mana, and no `now` dispel_priority aura pending on a member in reach this class can
-# cure. The main tank never strikes; an off-tank only while the boss is not on it. The node sits just below a critical
-# heal, so a critical heal, every emergency row and reaching a party member to heal all win over it. This is its own key
-# on top of AiPlayerbot.DungeonTactics (or a commander-bound group). `.reload config` reads it again with the other
-# AiPlayerbot.DungeonRun* keys.
+# raid can spare it: the lowest member in heal range at or above AiPlayerbot.LowHealth (default 50 %), the main tank at
+# or above 60 %, two other live uncursed healers in heal range that are not charmed and not in the pit, at least 30 %
+# mana, and no `now` dispel_priority aura pending on a member in reach this class can cure. The main tank never strikes;
+# an off-tank only while the boss is not on it, and never where the boss has a `threat_successor` row (leaving a boss that
+# cannot be taunted would put the damage dealers under half the main tank's threat and hand it to one on the next threat
+# wipe). The node sits just below a critical heal, so a critical heal, every emergency row and reaching a party member to
+# heal all win over it. This is its own key on top of AiPlayerbot.DungeonTactics (or a commander-bound group).
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
 # 0 - off: no carrier strike (Default)
 # 1 - on
 AiPlayerbot.DungeonRunCarrierStrike = 0

@@ -2609,6 +2609,18 @@ namespace ai
         return false;
     }
 
+    // Whether the fight's open rows ask for a threat successor: the boss is taunt-immune, so a threat wipe (Hex) hands it
+    // to whoever stands highest, and only the assigned off-tank that held it takes it back. An off-tank that leaves for a
+    // Shade stops holding, the damage dealers' cap falls to half the main tank's threat (ThreatCapPolicy.h), and the
+    // wipe hands the boss to a damage dealer.
+    inline bool HasThreatSuccessorRow(const ActiveBossRows& active)
+    {
+        for (const BossTacticRow* row : active)
+            if (row->kind == BossTacticKind::ThreatSuccessor)
+                return true;
+        return false;
+    }
+
     // Which kill_first pick a bot makes. A free DPS (no explicit attack order) takes every open row (PickKillFirst). A DPS
     // under the run's own order (`orderAutomated`: the run's focus, the 3 s ward refocus) takes only the carrier
     // override (PickCarrierOverride): its own subject's damage counts and nobody else's does. A player's order is never
@@ -2637,6 +2649,7 @@ namespace ai
         NotCarrier,
         NoShade,
         MainTank,
+        ThreatSuccessor,
         HoldsBoss,
         GuardLowMember,
         GuardTank,
@@ -2646,31 +2659,68 @@ namespace ai
         Dps,
     };
 
+    // One other healer as the count reads it, every field the caller's read of the member.
+    struct CarrierHealer
+    {
+        bool alive = false;
+        bool cursed = false;     // carries the fight's carrier aura
+        bool charmed = false;    // a charmer owns its AI (the Brain Wash Totem), so it does not heal the raid
+        float distanceYd = 0.0f; // from the carrier (the raid)
+        float dropYd = 0.0f;     // how far below the carrier it stands (the pit under Jin'do's room)
+    };
+
+    // A healer this far below the carrier is in the pit under the fight's room (Jin'do's troll pit floor sits ~12 yd
+    // under the boss's), where its heals cannot reach the raid.
+    constexpr float kCarrierPitDropYd = 6.0f;
+
+    // The other healers that can really heal the raid: alive, not carriers, not charmed, within the carrier's own heal
+    // reach (twice the heal range) and on the room's floor.
+    inline bool CarrierHealerCounts(const CarrierHealer& healer, float reachYd)
+    {
+        return healer.alive && !healer.cursed && !healer.charmed && healer.distanceYd <= reachYd &&
+            healer.dropYd <= kCarrierPitDropYd;
+    }
+
+    inline std::uint8_t CarrierHealerCount(const std::vector<CarrierHealer>& healers, float reachYd)
+    {
+        std::uint8_t count = 0;
+        for (const CarrierHealer& healer : healers)
+            if (CarrierHealerCounts(healer, reachYd))
+                ++count;
+        return count;
+    }
+
     struct CarrierStrikeInput
     {
         CarrierStrikeRole role;
         bool cursed;            // this bot carries the carrier row's aura
         bool shadeInReach;      // a pickable unit of the carrier row within kCarrierHoldReachYd
         bool holdsBoss;         // a boss of the fight is on this bot
+        bool threatSuccessor;   // the fight's boss has a `threat_successor` row: a tank leaving it hands it to a DPS
         std::uint8_t lowestMemberPct; // the lowest living group member within 2x heal range
         std::uint8_t tankPct;         // the main tank (0: no main tank alive)
-        std::uint8_t otherHealers;    // living healers other than this bot that do not carry the aura
+        std::uint8_t otherHealers;    // CarrierHealerCount: healers other than this bot that can heal the raid
         std::uint8_t manaPct;
         bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
     };
 
-    constexpr std::uint8_t kCarrierStrikeLowestPct = 50; // = AiPlayerbot.LowHealth; below it the low-heal rows win
+    // The carrier's own guards that no config key carries; the lowest-member line is the live AiPlayerbot.LowHealth the
+    // caller passes to CarrierStrikeAllowed (a healer that leaves the raid must not drop it below the low-heal line).
     constexpr std::uint8_t kCarrierStrikeTankPct = 60;
-    constexpr std::uint8_t kCarrierStrikeHealers = 2;    // other live, uncursed healers still healing
+    constexpr std::uint8_t kCarrierStrikeHealers = 2;    // other healers that can heal the raid still standing
     constexpr std::uint8_t kCarrierStrikeManaPct = 30;
 
     // The first check that fails gives the verdict; earlier checks are the roles this rule never covers.
-    inline CarrierStrikeVerdict CarrierStrikeAllowed(const CarrierStrikeInput& in)
+    inline CarrierStrikeVerdict CarrierStrikeAllowed(const CarrierStrikeInput& in, std::uint8_t lowHealthPct)
     {
         if (in.role == CarrierStrikeRole::Dps)
             return CarrierStrikeVerdict::Dps;
         if (in.role == CarrierStrikeRole::MainTank)
             return CarrierStrikeVerdict::MainTank;
+        // On a successor fight no off-tank may leave the boss, held or not: while no off-tank holds, the damage dealers'
+        // cap is half the main tank's threat, and the next threat wipe hands the boss to a damage dealer.
+        if (in.role == CarrierStrikeRole::OffTank && in.threatSuccessor)
+            return CarrierStrikeVerdict::ThreatSuccessor;
         if (!in.cursed)
             return CarrierStrikeVerdict::NotCarrier;
         if (!in.shadeInReach)
@@ -2681,7 +2731,7 @@ namespace ai
         {
             if (in.dispelNowPending)
                 return CarrierStrikeVerdict::GuardDispel;
-            if (in.lowestMemberPct < kCarrierStrikeLowestPct)
+            if (in.lowestMemberPct < lowHealthPct)
                 return CarrierStrikeVerdict::GuardLowMember;
             if (in.tankPct < kCarrierStrikeTankPct)
                 return CarrierStrikeVerdict::GuardTank;
@@ -2692,7 +2742,7 @@ namespace ai
         }
         if (in.role == CarrierStrikeRole::OffTank)
         {
-            if (in.lowestMemberPct < kCarrierStrikeLowestPct)
+            if (in.lowestMemberPct < lowHealthPct)
                 return CarrierStrikeVerdict::GuardLowMember;
             if (in.tankPct < kCarrierStrikeTankPct)
                 return CarrierStrikeVerdict::GuardTank;

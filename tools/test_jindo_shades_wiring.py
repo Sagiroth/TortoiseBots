@@ -42,6 +42,13 @@ class JindoShadesWiring(unittest.TestCase):
         action = ACTIONS[start:ACTIONS.index("\n}\n", start)]
         self.assertNotIn('"explicit attack target"', action)
         self.assertNotIn('"attack target"', action)
+        # The count is only the healers that can heal the raid, and the fight-level reads reach the policy.
+        self.assertIn("if (member == bot || !PlayerbotAI::IsHeal(member))", TRIGGERS)
+        self.assertIn("healer.charmed = !member->GetCharmerGuid().IsEmpty();", TRIGGERS)
+        self.assertIn("uint8 const otherHealerCount = CarrierHealerCount(otherHealers, reach);", TRIGGERS)
+        self.assertIn("in.threatSuccessor = HasThreatSuccessorRow(fight.rows);", TRIGGERS)
+        self.assertIn("CarrierStrikeAllowed(in, static_cast<uint8>(sPlayerbotAIConfig.lowHealth))", TRIGGERS)
+        self.assertIn('return "threat_successor";', ACTIONS)
 
     def test_kill_first_reads_the_carrier_mode(self):
         self.assertIn("const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),\n"
