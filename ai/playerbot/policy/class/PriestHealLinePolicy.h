@@ -1,22 +1,21 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-
-class Player;
 
 namespace ai
 {
-    // Heal spell-line ranks (core spell_template, name 'Heal'): 2054 is
-    // rank 1 (level 16), then 2055, 6063, 6064. Lesser Heal (2050/2052/2053)
-    // is the level 1-18 line it replaces.
-    inline bool PriestHealLineKnown(std::function<bool(std::uint32_t)> const& has)
+    // Pure gate for the priest Lesser Heal suppression. The bot reads live
+    // state (spellbook, mana) into these two plain inputs, so the rule stays
+    // testable in tools/test_priest_heal_line_policy.cpp without the server.
+    //
+    // Automatic selection drops Lesser Heal only while the bot both knows
+    // Heal rank 2+ (level 22: 2055, 6063, 6064) and could pay for the Heal
+    // cast now. Heal rank 1 (level 16) stays on Lesser Heal's 3-rank
+    // downranking ladder; an unaffordable Heal keeps Lesser Heal as the
+    // low-mana fallback. Explicit player orders are untouched (multipliers
+    // only shape automatic selection).
+    inline bool PriestSuppressLesserHeal(bool knowsHealRank2Plus, bool healAffordable)
     {
-        return has(2054) || has(2055) || has(6063) || has(6064);
-    }
-
-    inline bool PriestKnowsHealLine(Player* bot)
-    {
-        return PriestHealLineKnown([bot](std::uint32_t id) { return bot->HasSpell(id); });
+        return knowsHealRank2Plus && healAffordable;
     }
 }

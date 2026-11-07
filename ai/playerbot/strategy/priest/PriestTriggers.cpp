@@ -3,6 +3,7 @@
 #include "playerbot/BoostReadinessPolicy.h"
 #include "PriestTriggers.h"
 #include "PriestActions.h"
+#include "PriestMultipliers.h"
 #include "../../../runtime/policy/class/PriestFadePolicy.h"
 
 using namespace ai;
@@ -193,7 +194,8 @@ bool PriestWandBlocksCastTrigger::IsActive()
     // Shadowform first ("remove shadowform" prerequisite).
     WandSpellProbe bestHeal = WandSpellProbe::Blocked;
     if (healTarget)
-        bestHeal = BetterWandSpellProbe(ProbeSpell("flash heal", healTarget, false), ProbeSpell("lesser heal", healTarget, false));
+        bestHeal = BetterWandSpellProbe(ProbeSpell("flash heal", healTarget, false),
+            ProbeSpell(PriestShouldSuppressLesserHeal(ai) ? "heal" : "lesser heal", healTarget, false));
     else if (renewTarget)
         bestHeal = ProbeSpell("renew", renewTarget, false);
 
