@@ -48,6 +48,13 @@ class DungeonCrewWiringTest(unittest.TestCase):
         fn = body(INVITE, "bool InviteGuildToGroupAction::isUseful()", "\n    }\n}")
         self.assertIn("ai::RandomGroupInviteAllowed(", fn)
         self.assertIn("randomBotGuildNearby", fn)
+
+    def test_only_the_group_leader_invites_or_converts_to_raid(self):
+        guild = body(INVITE, "bool InviteGuildToGroupAction::isUseful()", "\n    }\n}")
+        self.assertIn("ai->HasRealPlayerMaster()", guild)
+        self.assertIn("group->IsLeader(bot->GetObjectGuid())", guild)
+        invite = body(INVITE, "bool InviteToGroupAction::Invite(", "bool JoinGroupAction::Execute(")
+        self.assertLess(invite.index("group->IsLeader(inviter->GetObjectGuid())"), invite.index("ConvertToRaid()"))
     def test_release_passes_the_instance_map(self):
         auto = body(ACTION, "class AutoReleaseSpiritAction", "class CorpseRunAction")
         useful = body(auto, "virtual bool isUseful() override", "\n        }\n")
