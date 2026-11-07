@@ -28,7 +28,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | Feature | On? | Setting | More |
 | :--- | :---: | :--- | :--- |
 | Log in your alts as bots and command them | Always | — | [`.bot add`](commands/roster-and-hiring.md#bot-add) |
-| An alt that leaves your group keeps playing on its own (alt-bot) | Yes | [`AiPlayerbot.AltBots`](../server/settings/party.md#aiplayerbotaltbots) | [Alt-bots](commands/roster-and-hiring.md#alt-bots-autonomous-alts) |
+| An alt that leaves your group keeps playing on its own (alt-bot) | No | [`AiPlayerbot.AltBots`](../server/settings/party.md#aiplayerbotaltbots) | [Alt-bots](commands/roster-and-hiring.md#alt-bots-autonomous-alts) |
 | Alt-bots log out when you log out | No | [`AiPlayerbot.AltBotsLogoutWithOwner`](../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) | [Alt-bots](commands/roster-and-hiring.md#alt-bots-autonomous-alts) |
 | Alts in your group level up to your level | No | [`AiPlayerbot.SyncAltLevelToMaster`](../server/settings/party.md#aiplayerbotsyncaltleveltomaster) | [Getting started](getting-started.md#levelling-spells-and-gear) |
 | `.bot maintenance`: refill reagents, ammo, food and repair | No | [`AiPlayerbot.OwnedBotMaintenanceEnabled`](../server/settings/party.md#aiplayerbotownedbotmaintenanceenabled) | [Maintenance](commands/roster-and-hiring.md#bot-maintenance) |
@@ -105,7 +105,7 @@ New here? Read [Getting Started](getting-started.md) first.
 | Onyxia: kill whelps, avoid eggs | Yes | [`AiPlayerbot.OnyxiaWhelpsAndEggs`](../server/settings/dungeons-raids.md#aiplayerbotonyxiawhelpsandeggs) | [Onyxia](dungeons-and-raids.md#specific-encounter-tactics) |
 | Stay out of permanent boss auras | Yes | [`AiPlayerbot.AvoidCreatureAuras`](../server/settings/dungeons-raids.md#aiplayerbotavoidcreatureauras) | [Raid reactions](dungeons-and-raids.md#universal-raid-reactions) |
 | Bots walk a stored dungeon route by themselves (run leader, work in progress) | Yes | [`AiPlayerbot.DungeonSelfClear`](../server/settings/dungeons-raids.md#aiplayerbotdungeonselfclear) | [Run leader](dungeon-run-leader.md) |
-| 5-man boss rules (what to interrupt, which add first) for normal parties; run-leader and commander parties use them anyway | No | [`AiPlayerbot.DungeonTactics`](../server/settings/dungeons-raids.md#aiplayerbotdungeontactics) | [Boss tactics](boss-tactics.md) |
+| 5-man boss rules (what to interrupt, which add first) for normal parties; run-leader and commander parties use them anyway | Yes | [`AiPlayerbot.DungeonTactics`](../server/settings/dungeons-raids.md#aiplayerbotdungeontactics) | [Boss tactics](boss-tactics.md) |
 
 ## The Living World (Pool Bots Leveling, Questing, Wandering)
 

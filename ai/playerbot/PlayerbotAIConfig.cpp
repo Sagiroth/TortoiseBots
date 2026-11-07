@@ -186,7 +186,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunFightForward = config.GetBoolDefault("AiPlayerbot.DungeonRunFightForward", true);
     dungeonRunLightRest = config.GetBoolDefault("AiPlayerbot.DungeonRunLightRest", true);
     dungeonRunLootFfa = config.GetBoolDefault("AiPlayerbot.DungeonRunLootFfa", false);
-    dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", false);
+    dungeonRunPlayerLed = config.GetBoolDefault("AiPlayerbot.DungeonRunPlayerLed", true);
     dungeonRunPlayerLedPullYd = std::min(100.0f, std::max(5.0f, config.GetFloatDefault("AiPlayerbot.DungeonRunPlayerLedPullYd", 40.0f)));
     dungeonRunPlayerLedAwayMinutes = static_cast<uint32>(std::min(60, std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunPlayerLedAwayMinutes", 10))));
     dungeonRunGiveItems = config.GetBoolDefault("AiPlayerbot.DungeonRunGiveItems", true);
@@ -534,7 +534,7 @@ bool PlayerbotAIConfig::Initialize()
     logValuesPerTick = config.GetBoolDefault("AiPlayerbot.LogValuesPerTick", false);
     fleeingEnabled = config.GetBoolDefault("AiPlayerbot.FleeingEnabled", true);
     poolMeleeHoldGround = config.GetBoolDefault("AiPlayerbot.PoolMeleeHoldGround", false);
-    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", true);
+    altBots = config.GetBoolDefault("AiPlayerbot.AltBots", false);
     altBotsLogoutWithOwner = config.GetBoolDefault("AiPlayerbot.AltBotsLogoutWithOwner", false);
     bombRunoutDistance = config.GetFloatDefault("AiPlayerbot.BombRunoutDistance", 30.0f);
     hazardEvasionDistance = config.GetFloatDefault("AiPlayerbot.HazardEvasionDistance", 12.0f);
@@ -1057,7 +1057,7 @@ bool PlayerbotAIConfig::Initialize()
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
-    dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);
+    dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", true);
     LoadDungeonRunKeys();
     avoidCreatureAuras = config.GetBoolDefault("AiPlayerbot.AvoidCreatureAuras", true);
     allowRepairedTaxiPaths = config.GetBoolDefault("AiPlayerbot.AllowRepairedTaxiPaths", false);

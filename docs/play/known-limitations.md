@@ -28,7 +28,7 @@ The run leader (`.bot run`) lets your party walk a stored dungeon route by itsel
 - **It runs your own party.** You lead the party and stay in it.
   - Bind with `.bot commander bind <LeadBot> inparty` (the lead bot becomes the party leader), then start with `.bot run start`.
   - A bot-only party from outside needs [`AiPlayerbot.RemoteCommander`](../server/settings/performance.md#aiplayerbotremotecommander) = `1` (off by default).
-  - Walking in front while bots pull near you (`.bot run start ... player`) needs `AiPlayerbot.DungeonRunPlayerLed` = `1` (off by default) and has not been proven in a live run.
+  - Walking in front while bots pull near you (`.bot run start ... player`) needs `AiPlayerbot.DungeonRunPlayerLed` = `1` (on by default) and has not been proven in a live run.
 - **You stay in control.** Any order you give the bound bots pauses a bot-led run; you can pause, skip, resume or stop it. Every wait has a time limit, and when it runs out the run pauses and tells you why.
 - **Some route steps are not supported yet:** `skip`, per-leg `rest`, `companions_loot`, and `area_trigger` steps. Gossip steps work (the run talks to the NPC for you).
 - **Hazard areas are not known to the run.** A fight, a knockback or a pull can still drag the party into a spot the route marks to avoid (for example the lava in Ragefire Chasm).

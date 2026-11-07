@@ -343,7 +343,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 
 ## Alt-Bots: Autonomous Alts
 
-An **alt-bot** is one of your own alts that plays on its own, like a pool bot, while you do something else. Switched on by default ([`AiPlayerbot.AltBots`](../../server/settings/party.md#aiplayerbotaltbots)).
+An **alt-bot** is one of your own alts that plays on its own, like a pool bot, while you do something else. Off by default; the server switches it on with [`AiPlayerbot.AltBots`](../../server/settings/party.md#aiplayerbotaltbots) = `1`.
 
 ### Start and stop
 
