@@ -48,6 +48,8 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         # A point off the platform's level: no pre-place, one `reason=floor` row.
         self.assertIn("else if (prePlaceFloorRefused)", start)
         self.assertIn('prePlaceFloorRefused->GetName(), "floor");', start)
+        self.assertIn('"son=%u,event=preplace_skip,receiver=%s,reason=%s"', start)
+        self.assertNotIn("event=preplace_end", start)
         # Recorded under the lock, right after the task starts, for that task.
         self.assertLess(start.index("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);"),
                         start.index("WalkoutPrePlaceSet(record.state, prePlaceTank ?"))
@@ -79,7 +81,7 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertIn("bool const victim = alive && boss->GetVictim() == receiver;", lost)
         # The stale-reader guard: a compare-and-clear on the tank, puller and task start the reader saw.
         self.assertIn("WalkoutPrePlaceClearIf(it->second.state, state.prePlaceReceiver, state.prePlacePuller,\n"
-                      "                                   state.prePlaceStartMs);", lost)
+                      "                                   state.prePlaceStartMs, state.prePlaceGen);", lost)
         self.assertNotIn("WalkoutPrePlaceClear(it->second.state);", lost)
         self.assertIn('"son=%u,event=preplace_end,receiver=%s,reason=%s"', lost)
 
@@ -88,8 +90,8 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertIn("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row ||", helper)
         self.assertIn("SeekMeetPrePlaceFor(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), x, y)", helper)
         self.assertIn("task.valid = true;\n    task.x = x;\n    task.y = y;", helper)
-        self.assertIn("const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false) == MeetPrePlaceStep::Walk;",
-                      helper)
+        self.assertIn("const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) =="
+                      " MeetPrePlaceStep::Walk;", helper)
         self.assertIn("task.walkToSpot = walk;\n    task.prePlaceHold = !walk;", helper)
         # At the point the task stays valid (no `task.valid = false` in the helper).
         self.assertNotIn("task.valid = false;", helper)
@@ -111,7 +113,13 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
     def test_the_hold_stops_a_walk_and_frees_the_rotation(self):
         fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
         hold = fn[fn.index("if (task.prePlaceHold)"):fn.index("if (task.take)")]
-        self.assertIn("const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving);", hold)
+        # The own walk to the point (the move this action sent there) is told apart from any other move.
+        self.assertIn("const bool ownWalk = moving && hasLast && std::fabs(lastX - task.x) < 1.0f &&"
+                      " std::fabs(lastY - task.y) < 1.0f;", hold)
+        self.assertIn("const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving,"
+                      " ownWalk);", hold)
+        self.assertLess(hold.index("if (step == MeetPrePlaceStep::Walk)\n            return true;"),
+                        hold.index("hasLast = false;"))
         self.assertIn("if (step == MeetPrePlaceStep::HoldStop)\n            ai->StopMoving();", hold)
         self.assertIn("return MeetPrePlaceStepConsumesTick(step);", hold)
         # No cast stop and no attack stop: the rotation and the threat go on.
@@ -122,7 +130,7 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
     def test_the_rows_are_documented(self):
         self.assertIn("event=preplace,receiver=<name>,receiver_yd=%.1f,point_yd=%.1f", ROWS)
         self.assertIn("event=preplace_end", ROWS)
-        self.assertIn("receiver_victim\\|floor>", ROWS)
+        self.assertIn("event=preplace_skip,receiver=<name>,reason=floor", ROWS)
 
     def test_precedence_and_limits_are_documented(self):
         boss = (ROOT / "docs/play/boss-tactics.md").read_text()
@@ -133,6 +141,13 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertIn("own pull of a Son that wanders into the tanks' reach waits", SETTINGS)
         self.assertIn("up to 40 yd from the gather spot", SETTINGS)
         self.assertIn("replaces the pre-place", SETTINGS)
+        # Round 2: no threat claim, the melee-reach note, and the two new limits.
+        for doc in (SETTINGS, boss):
+            self.assertNotIn("keeps its threat", doc)
+            self.assertIn("walk 57 watches tanks[2]'s threat", doc)
+        self.assertIn("its rotation keeps the tick", SETTINGS)
+        self.assertIn("may stop the dodge's walk at the effect's edge", SETTINGS)
+        self.assertIn("height is re-derived from the ground", SETTINGS)
         self.assertIn("the tank dies, is charmed or becomes Hakkar's\n    // victim", CONFIG_H)
         self.assertIn("receiver_yd=%.1f", ROWS)
 

@@ -1089,7 +1089,7 @@ AiPlayerbot.DungeonRunSeekNearestTake = 0
 
 # The meet's pre-place for Hakkar's Sons (recommended on; needs DungeonRunSeekSonMeet): when a walk-out starts, the
 # third tank walks to a point 2 yd inside the tanks' circle edge (23 yd) on the line from Hakkar's anchor toward the
-# puller's stand and holds there (its rotation keeps running), so the puller's way back and the Son's chase end at a
+# puller's stand and holds there (its rotation keeps the tick), so the puller's way back and the Son's chase end at a
 # tank. Only while that tank is alive, not charmed, not Hakkar's victim and holds no Son; it ends when the meet closes,
 # the task ends without one, or the tank dies, is charmed or becomes Hakkar's victim. A Son fighting near the spot
 # still comes first. Off keeps the receiver where its tank AI stands it.

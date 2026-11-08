@@ -832,6 +832,10 @@ namespace ai
         // the point on the tanks' circle edge it waits at, and the task (puller, start) it belongs to. It hands over to
         // the meet at the shot (`prePlaceMeetMs` is then that meet's shot time) and ends when that meet closes, when the
         // task ends without a meet for it, or when a new task starts (WalkoutPrePlaceLive).
+        // Every WalkoutStart bumps `startGen` (review round 2, ABA): a replacement task with the same tank, puller and
+        // start ms is still told apart from the one a stale reader saw.
+        std::uint32_t startGen = 0;
+        std::uint32_t prePlaceGen = 0;
         std::uint64_t prePlaceReceiver = 0;
         std::uint64_t prePlacePuller = 0;
         std::uint32_t prePlaceStartMs = 0;
@@ -886,6 +890,9 @@ namespace ai
     constexpr float kSeekMeetPrePlaceInsetYd = 2.0f;
     // The pre-placed tank walks to its point while farther than this; within it the task holds it there.
     constexpr float kSeekMeetPrePlaceArriveYd = 4.0f;
+    // The tank's own walk to the point is let finish until this close (review round 2): the hold no longer stops it at
+    // the 4 yd ring, 4 yd short of the point.
+    constexpr float kSeekMeetPrePlaceSettleYd = 1.0f;
 
     // The pre-place point: kSeekMeetPrePlaceInsetYd inside the tank circle's edge (23 yd for Hakkar's 25) on the ray from
     // the circle's centre toward the stand. A stand inside the circle gives the same point on its ray. False (no point)
@@ -904,9 +911,11 @@ namespace ai
     }
 
     // The pre-placed tank's step this tick (review round 1, the gather's `atSpot` pattern): farther than
-    // kSeekMeetPrePlaceArriveYd it walks to the point; at the point the task stays valid and holds it there: a tank
-    // that is moving is stopped (the tick is taken), a standing one leaves the tick to its rotation (the action returns
-    // false), so it keeps attacking and its threat but never walks off the point.
+    // kSeekMeetPrePlaceArriveYd it walks to the point. Within it, the tank's own walk to the point (`ownWalk`: the move
+    // under way is the one this action sent there) goes on until kSeekMeetPrePlaceSettleYd (round 2). Otherwise the task
+    // stays valid and holds it there: a tank that is moving (any other move) is stopped and the tick is taken; a
+    // standing one leaves the tick to its rotation (the action returns false), so its rotation keeps the tick but it
+    // never walks off the point.
     enum class MeetPrePlaceStep : std::uint8_t
     {
         Walk = 0,
@@ -914,9 +923,11 @@ namespace ai
         HoldFree = 2,
     };
 
-    inline MeetPrePlaceStep MeetPrePlaceStepFor(float toPointYd, bool moving)
+    inline MeetPrePlaceStep MeetPrePlaceStepFor(float toPointYd, bool moving, bool ownWalk)
     {
         if (toPointYd > kSeekMeetPrePlaceArriveYd)
+            return MeetPrePlaceStep::Walk;
+        if (moving && ownWalk && toPointYd > kSeekMeetPrePlaceSettleYd)
             return MeetPrePlaceStep::Walk;
         return moving ? MeetPrePlaceStep::HoldStop : MeetPrePlaceStep::HoldFree;
     }
@@ -951,6 +962,7 @@ namespace ai
 
     inline void WalkoutPrePlaceClear(SeekWalkoutState& s)
     {
+        s.prePlaceGen = 0;
         s.prePlaceReceiver = 0;
         s.prePlacePuller = 0;
         s.prePlaceStartMs = 0;
@@ -967,6 +979,7 @@ namespace ai
         if (receiver == 0 || !WalkoutActive(s) || s.shot)
             return;
         s.prePlaceReceiver = receiver;
+        s.prePlaceGen = s.startGen;
         s.prePlacePuller = s.puller;
         s.prePlaceStartMs = s.startMs;
         s.prePlaceX = x;
@@ -974,12 +987,13 @@ namespace ai
     }
 
     // The live check's compare-and-clear (EndLostWalkoutPrePlace): only the pre-place the reader saw (the same tank,
-    // puller and task start) is cleared. A stale reader whose record a new task has replaced clears nothing (false).
+    // puller, task start and start generation) is cleared. A stale reader whose record a new task has replaced clears
+    // nothing (false), even when the replacement has the same tank, puller and start ms.
     inline bool WalkoutPrePlaceClearIf(SeekWalkoutState& s, std::uint64_t receiver, std::uint64_t puller,
-                                       std::uint32_t startMs)
+                                       std::uint32_t startMs, std::uint32_t gen)
     {
         if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlacePuller != puller ||
-            s.prePlaceStartMs != startMs)
+            s.prePlaceStartMs != startMs || s.prePlaceGen != gen)
             return false;
         WalkoutPrePlaceClear(s);
         return true;
@@ -992,7 +1006,7 @@ namespace ai
         if (s.prePlaceReceiver == 0)
             return;
         if (s.meetReceiver != 0 && s.meetReceiver == s.prePlaceReceiver && s.prePlacePuller == s.puller &&
-            s.prePlaceStartMs == s.startMs)
+            s.prePlaceStartMs == s.startMs && s.prePlaceGen == s.startGen)
         {
             s.prePlaceMeet = true;
             s.prePlaceMeetMs = s.meetMs;
@@ -1009,7 +1023,8 @@ namespace ai
             return false;
         if (s.prePlaceMeet)
             return s.meetReceiver == s.prePlaceReceiver && s.meetMs == s.prePlaceMeetMs;
-        return WalkoutActive(s) && !s.shot && s.puller == s.prePlacePuller && s.startMs == s.prePlaceStartMs;
+        return WalkoutActive(s) && !s.shot && s.puller == s.prePlacePuller && s.startMs == s.prePlaceStartMs &&
+            s.startGen == s.prePlaceGen;
     }
 
     // One record's marks for the two global counts: busy (a task or a walk back runs: the anchor's exemption reads it)
@@ -1082,6 +1097,7 @@ namespace ai
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
         s.walkedAt.emplace_back(son, cycleNo);
+        ++s.startGen;
     }
 
     // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,

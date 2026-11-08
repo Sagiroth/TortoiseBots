@@ -972,8 +972,8 @@ Whether the receiving third tank walks to the puller's way back when a Hakkar wa
 
 **Pre-place:** in walk 56 the receiver stood a median 47.5 yd from the puller when the shot landed, so the Son spent 5-10 s on the hunter among the healers before a tank reached it, and 8 of 21 peels were the puller dying. With the key on:
 - when the walk-out starts, the third tank (tanks[2]) is pre-placed if it is alive, not charmed, not Hakkar's victim, holds no Son and stands inside the tanks' circle; otherwise there is no pre-place and nothing changes;
-- it walks to a point 2 yd inside the tanks' circle edge (23 yd for Hakkar's 25 yd tank radius) on the line from the anchor's centre toward the puller's stand, so a small step past it still counts as inside the circle at the shot; a point whose floor is off the platform's level (the anchor clamp's own floor read) gives no pre-place and a `event=preplace_end,reason=floor` row;
-- within 4 yd of the point it holds there until the meet starts (then while it waits for the Son) or the pre-place ends: a walk its tank AI starts is stopped, and otherwise the tick goes to its rotation, so it keeps attacking Hakkar and keeps its threat but does not walk off the point;
+- it walks to a point 2 yd inside the tanks' circle edge (23 yd for Hakkar's 25 yd tank radius) on the line from the anchor's centre toward the puller's stand, so a small step past it still counts as inside the circle at the shot; a point whose floor is off the platform's level (the anchor clamp's own floor read) gives no pre-place and a `event=preplace_skip,reason=floor` row;
+- its own walk to the point runs on until it is within 1 yd; from then on, within 4 yd of the point, it holds there until the meet starts (then while it waits for the Son) or the pre-place ends: any other walk (its tank AI's chase) is stopped, and otherwise its rotation keeps the tick, so it does not walk off the point. A melee tank at the point stands out of Hakkar's melee reach, so its threat on him comes only from ranged or self-cast abilities: walk 57 watches tanks[2]'s threat;
 - a Son that already fights near the spot (on a healer or anyone else) comes first: tanks[2] takes it as today and leaves the point. That is deliberate: a Son on a healer outranks the pre-place. If tanks[2] still holds that Son at the shot, the meet's pick refuses it as `busy`, falls back to the second off-tank as today, and the pre-place ends;
 - the meet's receiver pick at the shot is today's (the third tank first), so the pre-placed tank is normally the receiver; the puller's walk back then ends at it as before;
 - the pre-place ends when its meet closes, when the task ends without a meet for it, when another tank is picked at the shot, or when the tank dies, is charmed or becomes Hakkar's victim;
@@ -983,7 +983,9 @@ Whether the receiving third tank walks to the puller's way back when a Hakkar wa
 Known limits (not fixed):
 - the point is set from the stand at the start and does not follow the stand's re-plan while the Son patrols (the puller's walk back still ends at the receiver's live position, only longer);
 - while it is pre-placed, the third tank's own pull of a Son that wanders into the tanks' reach waits until the pre-place ends;
-- a point on the north half of the circle stands up to 40 yd from the gather spot, so a Son fighting at the spot is a longer run for tanks[2] (the first off-tank's nearest take and healer clock still cover a Son on a non-tank).
+- a point on the north half of the circle stands up to 40 yd from the gather spot, so a Son fighting at the spot is a longer run for tanks[2] (the first off-tank's nearest take and healer clock still cover a Son on a non-tank);
+- a dodge (`avoid aoe`, `boss tactics avoid cast`) outranks the hold while the tank stands in the effect, but once it is just outside, the hold may stop the dodge's walk at the effect's edge, and a dodge that carried it more than 4 yd off is walked back toward the point;
+- the move's height is re-derived from the ground at the point (the walk's ground snap), not taken from the floor the start checked.
 
 </details>
 

@@ -1586,14 +1586,24 @@ static void TestMeetPrePlaceTankPastThePointIsStillPicked()
 static void TestMeetPrePlaceHoldAtThePoint()
 {
     // Far: walk (takes the tick).
-    CHECK(MeetPrePlaceStepFor(10.0f, false) == MeetPrePlaceStep::Walk);
-    CHECK(MeetPrePlaceStepFor(4.01f, true) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepFor(10.0f, false, false) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepFor(4.01f, true, false) == MeetPrePlaceStep::Walk);
     CHECK(MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::Walk));
-    // At the point the hold stays (never "no task"): moving -> stop, standing -> free.
-    CHECK(MeetPrePlaceStepFor(0.0f, true) == MeetPrePlaceStep::HoldStop);
-    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceArriveYd, true) == MeetPrePlaceStep::HoldStop);
-    CHECK(MeetPrePlaceStepFor(0.0f, false) == MeetPrePlaceStep::HoldFree);
-    CHECK(MeetPrePlaceStepFor(3.9f, false) == MeetPrePlaceStep::HoldFree);
+    // Round 2 (R2-1). FAILING CASE before the settle: a tank 3 yd out and still on its own walk to the point keeps
+    // walking (it was stopped at the 4 yd ring, 4 yd short of the point).
+    CHECK(MeetPrePlaceStepFor(3.0f, true, true) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceArriveYd, true, true) == MeetPrePlaceStep::Walk);
+    // Settled (within 1 yd): even its own walk is held.
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceSettleYd, true, true) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.5f, true, true) == MeetPrePlaceStep::HoldStop);
+    // At the point the hold stays (never "no task"): any other move -> stop, standing -> free.
+    CHECK(MeetPrePlaceStepFor(3.0f, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.0f, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceArriveYd, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.0f, false, false) == MeetPrePlaceStep::HoldFree);
+    CHECK(MeetPrePlaceStepFor(3.9f, false, false) == MeetPrePlaceStep::HoldFree);
+    // A standing tank's own-walk flag is meaningless: not moving is free.
+    CHECK(MeetPrePlaceStepFor(3.0f, false, true) == MeetPrePlaceStep::HoldFree);
     CHECK(MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::HoldStop));
     // The rotation is not blocked: a standing tank's hold returns the tick.
     CHECK(!MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::HoldFree));
@@ -1633,12 +1643,34 @@ static void TestMeetPrePlaceReviewCases()
     WalkoutAbortUnspent(r, 2000);
     WalkoutStart(r, puller + 1, son + 1, 3000, 2);
     WalkoutPrePlaceSet(r, tank2, 5.0f, 6.0f);
-    CHECK(!WalkoutPrePlaceClearIf(r, seen.prePlaceReceiver, seen.prePlacePuller, seen.prePlaceStartMs));
+    CHECK(!WalkoutPrePlaceClearIf(r, seen.prePlaceReceiver, seen.prePlacePuller, seen.prePlaceStartMs,
+                                  seen.prePlaceGen));
     CHECK(WalkoutPrePlaceLive(r) && Near(r.prePlaceX, 5.0f));
     // The current reader clears it.
-    CHECK(WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000));
+    CHECK(WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000, r.prePlaceGen));
     CHECK(!WalkoutPrePlaceLive(r));
-    CHECK(!WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000));
+    CHECK(!WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000, r.prePlaceGen));
+
+    // Round 2 (ABA). FAILING CASE before the generation: the replacement has the same tank, the same puller and the
+    // same start ms (an end and a new start in one timer tick, or a timer wrap); only the start generation differs, and
+    // the stale reader clears nothing.
+    SeekWalkoutState a;
+    WalkoutStart(a, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(a, tank2, 1.0f, 2.0f);
+    const SeekWalkoutState aSeen = a;
+    WalkoutAbortUnspent(a, 1000);
+    WalkoutStart(a, puller, son + 1, 1000, 1);
+    WalkoutPrePlaceSet(a, tank2, 9.0f, 9.5f);
+    CHECK(a.prePlaceStartMs == aSeen.prePlaceStartMs && a.prePlacePuller == aSeen.prePlacePuller);
+    CHECK(a.prePlaceGen != aSeen.prePlaceGen);
+    CHECK(!WalkoutPrePlaceClearIf(a, aSeen.prePlaceReceiver, aSeen.prePlacePuller, aSeen.prePlaceStartMs,
+                                  aSeen.prePlaceGen));
+    CHECK(WalkoutPrePlaceLive(a) && Near(a.prePlaceX, 9.0f));
+    // The old task's pre-place does not read as live for the same-ms replacement either.
+    SeekWalkoutState b = aSeen;
+    WalkoutAbortUnspent(b, 1000);
+    WalkoutStart(b, puller, son + 1, 1000, 1);
+    CHECK(!WalkoutPrePlaceLive(b));
 
     // N1: a pre-placed meet is open, a new task starts. The new start's set replaces the pre-place: with no pick the old
     // receiver loses its hold (the meet stays open and runs under today's rules); with a pick it holds the new point.

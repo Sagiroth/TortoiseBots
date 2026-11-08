@@ -2055,7 +2055,7 @@ void EndLostWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss, std::uint32_t
         auto const it = g_walkouts.find(instanceId);
         ended = it != g_walkouts.end() &&
             WalkoutPrePlaceClearIf(it->second.state, state.prePlaceReceiver, state.prePlacePuller,
-                                   state.prePlaceStartMs);
+                                   state.prePlaceStartMs, state.prePlaceGen);
     }
     if (!ended)
         return;
@@ -2692,7 +2692,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         const std::uint64_t guid = sonGuid;
         char info2[128];
-        snprintf(info2, sizeof(info2), "son=%u,event=preplace_end,receiver=%s,reason=%s",
+        snprintf(info2, sizeof(info2), "son=%u,event=preplace_skip,receiver=%s,reason=%s",
                  ObjectGuid(guid).GetCounter(), prePlaceFloorRefused->GetName(), "floor");
         LogSeekMeet(ai, info2);
     }
@@ -7652,7 +7652,7 @@ bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& t
     task.x = x;
     task.y = y;
     task.z = row->spotZ;
-    const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false) == MeetPrePlaceStep::Walk;
+    const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) == MeetPrePlaceStep::Walk;
     task.walkToSpot = walk;
     task.prePlaceHold = !walk;
     return true;
@@ -8142,11 +8142,15 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
     }
     if (task.prePlaceHold)
     {
-        // The pre-placed tank at its point: a walk (its tank AI's chase) is stopped, and a standing tank leaves the tick to
-        // its rotation, so it keeps attacking and its threat but stays on the point (MeetPrePlaceStepFor).
-        hasLast = false;
+        // The pre-placed tank at its point: its own walk to the point (the move this action sent there) finishes to 1 yd;
+        // any other walk (its tank AI's chase) is stopped, and a standing tank leaves the tick to its rotation, so it
+        // stays on the point (MeetPrePlaceStepFor).
         const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
-        const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving);
+        const bool ownWalk = moving && hasLast && std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f;
+        const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving, ownWalk);
+        if (step == MeetPrePlaceStep::Walk)
+            return true; // the own walk runs on (or the next read sends the walk again)
+        hasLast = false;
         if (step == MeetPrePlaceStep::HoldStop)
             ai->StopMoving();
         return MeetPrePlaceStepConsumesTick(step);
