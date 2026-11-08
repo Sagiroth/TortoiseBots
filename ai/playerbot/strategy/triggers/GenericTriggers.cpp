@@ -3,6 +3,7 @@
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ThreatCapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
@@ -1491,18 +1492,22 @@ bool NotDpsTargetActiveTrigger::IsActive()
 
         if(sServerFacade.IsAlive(target))
         {
-            // do not switch if enemy target
+            // do not switch if enemy target (read first, unchanged: a hostile player always wins over the hold)
             Unit* enemy = AI_VALUE(Unit*, "enemy player target");
-            if (enemy)
+
+            // AiPlayerbot.DungeonRunCarrierHold: a Delusions carrier on its Shade keeps it; "dps assist" would pull it
+            // to the skull (Jin'do). It suppresses only the dps-target comparison below. Key off, or not a
+            // needs_aura subject the bot carries the aura for: as before.
+            bool holdsCurrent = false;
+            if (!enemy && sPlayerbotAIConfig.dungeonRunCarrierHold)
             {
-                return target != enemy;
+                std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+                holdsCurrent = CarrierHoldsCurrent(sPlayerbotAIConfig.dungeonRunCarrierHold, requiredAura != 0,
+                    requiredAura != 0 && bot->HasAura(requiredAura));
             }
 
-            Unit* dps = AI_VALUE(Unit*, "dps target");
-            if (dps)
-            {
-                return target != dps;
-            }
+            Unit* dps = (!enemy && !holdsCurrent) ? AI_VALUE(Unit*, "dps target") : nullptr;
+            return NotDpsTargetFires(enemy != nullptr, target == enemy, holdsCurrent, dps != nullptr, target == dps);
         }
     }
 

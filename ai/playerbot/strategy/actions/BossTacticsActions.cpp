@@ -5133,21 +5133,35 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
 // core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). The gate sits
 // in the taunt actions, not in "attacker of non-tank target": that value also picks the warrior gap closer's Charge,
 // which is no taunt.
-//   info1 = "reason=<needs_aura|taunt_immune>"
+//   info1 = "reason=<needs_aura|taunt_immune|holding_boss>"
 //   info2 = "target=<entry>:<guid low>,spell=<spell>"
 constexpr uint32 kTauntGateLogGapMs = 5000;
 std::mutex g_tauntGateLogMutex;
-std::unordered_map<uint64, uint32> g_tauntGateLog;
+std::unordered_map<uint64, TauntGateLogTimes> g_tauntGateLog;
 
-static bool TauntGateLogDue(Player* bot)
+// One row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
+static bool TauntGateLogDue(Player* bot, TauntGate gate)
 {
     const uint32 nowMs = WorldTimer::getMSTime();
     std::lock_guard<std::mutex> lock(g_tauntGateLogMutex);
-    uint32& last = g_tauntGateLog[bot->GetObjectGuid().GetRawValue()];
-    if (last != 0 && nowMs - last < kTauntGateLogGapMs)
-        return false;
-    last = nowMs;
-    return true;
+    return TauntGateLogDueFor(g_tauntGateLog[bot->GetObjectGuid().GetRawValue()], gate, nowMs, kTauntGateLogGapMs);
+}
+
+// The bot is the current victim of a boss of the fight: a creature with tactic rows (or a world boss) that is not the
+// taunt target itself. Only read for a carrier at a needs_aura subject, so the attackers walk is rare.
+static bool BotHoldsBoss(PlayerbotAI* ai, Player* bot, Unit* exclude)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* attacker = ai->GetUnit(guid);
+        if (!attacker || attacker == exclude || !attacker->IsAlive() || attacker->GetVictim() != bot)
+            continue;
+        Creature* creature = dynamic_cast<Creature*>(attacker);
+        if (creature && GetBossTactics().Rows(creature->GetMapId(), creature->GetEntry()) != nullptr)
+            return true;
+    }
+    return false;
 }
 
 bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
@@ -5157,11 +5171,14 @@ bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const ch
     if (!ai || !bot || !target)
         return false;
     std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
-    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura,
-        requiredAura != 0 && bot->HasAura(requiredAura), TargetTauntImmune(target));
+    bool const botHasAura = requiredAura != 0 && bot->HasAura(requiredAura);
+    // Only a carrier at a needs_aura subject needs the boss-victim read (the NeedsAura word comes first otherwise).
+    bool const holdsBoss = botHasAura && BotHoldsBoss(ai, bot, target);
+    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura, botHasAura,
+        TargetTauntImmune(target), holdsBoss);
     if (gate == TauntGate::Allow)
         return false;
-    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot))
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot, gate))
     {
         char info1[32];
         snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));

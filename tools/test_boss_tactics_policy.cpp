@@ -291,19 +291,98 @@ static void TestCarrierScanWord()
 // taunt as it was.
 static void TestTauntGate()
 {
-    // TauntGateFor(keyOn, requiredAura, botHasAura, tauntImmune)
-    CHECK(TauntGateFor(false, 24306, false, true) == TauntGate::Allow);   // TestTauntGateOffAllows
-    CHECK(TauntGateFor(false, 24306, true, true) == TauntGate::Allow);
-    CHECK(TauntGateFor(true, 24306, false, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura: no aura, refused
-    CHECK(TauntGateFor(true, 24306, true, false) == TauntGate::Allow);       // TestTauntGateCarrierAllowed: the carrier may
-    CHECK(TauntGateFor(true, 0, false, true) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
-    CHECK(TauntGateFor(true, 0, true, true) == TauntGate::TauntImmune);      // the aura does not lift immunity
-    CHECK(TauntGateFor(true, 24306, true, true) == TauntGate::TauntImmune);  // immune stays refused for a carrier
-    CHECK(TauntGateFor(true, 24306, false, true) == TauntGate::NeedsAura);   // no aura: the aura word comes first
-    CHECK(TauntGateFor(true, 0, false, false) == TauntGate::Allow);
+    // TauntGateFor(keyOn, requiredAura, botHasAura, tauntImmune, holdsBoss)
+    CHECK(TauntGateFor(false, 24306, false, true, false) == TauntGate::Allow);   // TestTauntGateOffAllows
+    CHECK(TauntGateFor(false, 24306, true, true, true) == TauntGate::Allow);
+    CHECK(TauntGateFor(true, 24306, false, false, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura: no aura, refused
+    CHECK(TauntGateFor(true, 24306, true, false, false) == TauntGate::Allow);       // TestTauntGateCarrierAllowed: a cursed off-tank may
+    CHECK(TauntGateFor(true, 0, false, true, false) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
+    CHECK(TauntGateFor(true, 0, true, true, false) == TauntGate::TauntImmune);      // the aura does not lift immunity
+    CHECK(TauntGateFor(true, 24306, true, true, false) == TauntGate::TauntImmune);  // immune stays refused for a carrier
+    CHECK(TauntGateFor(true, 24306, false, true, false) == TauntGate::NeedsAura);   // no aura: the aura word comes first
+    CHECK(TauntGateFor(true, 0, false, false, false) == TauntGate::Allow);
+    // TestTauntGateHoldingBoss (1c): a cursed main tank that is the boss's victim does not taunt the Shade.
+    CHECK(TauntGateFor(true, 24306, true, false, true) == TauntGate::HoldingBoss);
+    CHECK(TauntGateFor(true, 24306, true, true, true) == TauntGate::HoldingBoss);   // holding_boss comes before taunt_immune
+    CHECK(TauntGateFor(true, 24306, false, false, true) == TauntGate::NeedsAura);   // an uncursed tank: needs_aura first
+    CHECK(TauntGateFor(true, 24306, true, false, false) == TauntGate::Allow);       // a cursed off-tank off the boss
+    CHECK(TauntGateFor(false, 24306, true, false, true) == TauntGate::Allow);       // key off: allow
+    CHECK(TauntGateFor(true, 0, false, false, true) == TauntGate::Allow);           // holding a boss is no rule for a plain target
     CHECK(std::strcmp(TauntGateWord(TauntGate::Allow), "allow") == 0);
     CHECK(std::strcmp(TauntGateWord(TauntGate::NeedsAura), "needs_aura") == 0);
     CHECK(std::strcmp(TauntGateWord(TauntGate::TauntImmune), "taunt_immune") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::HoldingBoss), "holding_boss") == 0);
+}
+
+// 1b: the refusal row is throttled per (bot, gate word); a taunt_immune row at t=0 must not block a needs_aura row at 1 s.
+static void TestTauntGateLogThrottlePerWord()
+{
+    TauntGateLogTimes last{};
+    constexpr std::uint32_t gap = 5000;
+    CHECK(TauntGateLogDueFor(last, TauntGate::TauntImmune, 1000, gap));        // first row of the word
+    CHECK(TauntGateLogDueFor(last, TauntGate::NeedsAura, 2000, gap));          // another word, 1 s later: not blocked
+    CHECK(!TauntGateLogDueFor(last, TauntGate::TauntImmune, 3000, gap));       // same word inside the gap
+    CHECK(!TauntGateLogDueFor(last, TauntGate::NeedsAura, 6999, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::TauntImmune, 6000, gap));        // gap over
+    CHECK(TauntGateLogDueFor(last, TauntGate::NeedsAura, 7000, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::HoldingBoss, 7001, gap));        // the new word has its own slot
+    CHECK(!TauntGateLogDueFor(last, TauntGate::HoldingBoss, 7002, gap));
+    TauntGateLogTimes other{};
+    CHECK(TauntGateLogDueFor(other, TauntGate::TauntImmune, 7003, gap));       // another bot has its own array
+}
+
+// 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
+// interval is 1 s under the hold.
+static void TestCarrierHold()
+{
+    // CarrierHoldsCurrent(keyOn, currentIsNeedsAura, botHasRequiredAura)
+    CHECK(CarrierHoldsCurrent(true, true, true));      // a carrier on a Shade, dps target Jin'do: the trigger does not fire
+    CHECK(!CarrierHoldsCurrent(true, false, false));   // a non-carrier on Jin'do: the trigger fires
+    CHECK(!CarrierHoldsCurrent(true, false, true));    // a carrier on Jin'do (not a Shade): fires
+    CHECK(!CarrierHoldsCurrent(true, true, false));    // an uncursed bot on a Shade (cannot hurt it): today's rule
+    CHECK(!CarrierHoldsCurrent(false, true, true));    // key off: today
+    CHECK(!CarrierHoldsCurrent(false, false, false));
+    // KillFirstCheckSeconds(totemFocus, carrierHold)
+    CHECK(KillFirstCheckSeconds(false, false) == 2);   // today
+    CHECK(KillFirstCheckSeconds(true, false) == 1);    // TotemFocus
+    CHECK(KillFirstCheckSeconds(false, true) == 1);    // CarrierHold, whatever TotemFocus says
+    CHECK(KillFirstCheckSeconds(true, true) == 1);
+}
+
+// Fix round: the hold never beats a hostile player target, and only suppresses the dps-target comparison.
+static void TestNotDpsTargetFires()
+{
+    // NotDpsTargetFires(enemyKnown, targetIsEnemy, holdsCurrent, dpsKnown, targetIsDps)
+    CHECK(NotDpsTargetFires(true, false, true, true, false));    // carrier on a Shade, enemy player known: fires as before
+    CHECK(NotDpsTargetFires(true, false, false, false, false));  // enemy known, target is not it: fires
+    CHECK(!NotDpsTargetFires(true, true, true, true, false));    // already on the enemy player: quiet
+    CHECK(!NotDpsTargetFires(false, false, true, true, false));  // carrier on a Shade, dps target Jin'do: the hold keeps it
+    CHECK(NotDpsTargetFires(false, false, false, true, false));  // non-carrier on Jin'do's side: fires (today)
+    CHECK(!NotDpsTargetFires(false, false, false, true, true));  // on the dps target: quiet
+    CHECK(!NotDpsTargetFires(false, false, false, false, false));  // nothing to compare: quiet
+}
+
+// Fix round: the kill-first interval follows the keys at every check, so an already-built trigger flips between 1 s
+// and 2 s on a `.reload config`.
+static void TestKillFirstCheckDueFlips()
+{
+    std::int64_t last = 0;
+    // Keys off: the base interval-2 rule. First check is due, then every second tick is skipped.
+    CHECK(KillFirstCheckDue(false, false, 100, last));
+    CHECK(!KillFirstCheckDue(false, false, 101, last));
+    CHECK(KillFirstCheckDue(false, false, 102, last));
+    CHECK(!KillFirstCheckDue(false, false, 103, last));
+    // The key flips on (same trigger, same `last`): every second is due now.
+    CHECK(KillFirstCheckDue(false, true, 103, last));
+    CHECK(KillFirstCheckDue(false, true, 104, last));
+    CHECK(KillFirstCheckDue(false, true, 105, last));
+    CHECK(KillFirstCheckDue(true, false, 106, last));            // TotemFocus alone does the same
+    // The key flips off again: two seconds from the last due check.
+    CHECK(!KillFirstCheckDue(false, false, 107, last));
+    CHECK(KillFirstCheckDue(false, false, 108, last));
+    // Same second asked twice with the key on: still due (the base interval-1 rule asks every tick).
+    CHECK(KillFirstCheckDue(false, true, 108, last));
+    CHECK(KillFirstCheckDue(false, true, 108, last));
 }
 
 static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
@@ -407,6 +486,10 @@ int main()
     TestCarrierScanWord();
     TestCarrierScanTakesPrecedence();
     TestTauntGate();
+    TestTauntGateLogThrottlePerWord();
+    TestCarrierHold();
+    TestNotDpsTargetFires();
+    TestKillFirstCheckDueFlips();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

@@ -18,6 +18,7 @@
 // rows, calls Seal() once, and readers see nothing before the seal.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -3002,17 +3003,22 @@ namespace ai
     // --- taunt gate ------------------------------------------------------------------------------------------------
     // A tank never taunts a subject it must not hold: a needs_aura entry (the Shade of Jin'do, which only a carrier can
     // damage and which copies the boss's threat list onto a healer) or a creature the core marks immune to taunts
-    // (Jin'do). A needs_aura subject is refused only for a bot that LACKS the aura: a Delusions carrier can damage the
-    // Shade, so it may taunt it (the same rule as AttackerOfNonTankSkipsUnit, which keeps the Shade in the scan for it).
-    // Key off, every taunt passes as before.
-    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune };
+    // (Jin'do). A needs_aura subject is refused for a bot that LACKS the aura, and also for a carrier that is the
+    // BOSS's current victim (`holdsBoss`, the main tank holding Jin'do: a Shade taunt would move the boss's threat
+    // pull off it, walk 54: 19 of 114 Shade taunts, Jin'do on a damage dealer 5 s later in 3 of them). A cursed
+    // off-tank that does not hold the boss may still taunt the Shade (the same rule as AttackerOfNonTankSkipsUnit,
+    // which keeps the Shade in the scan for a carrier). Key off, every taunt passes as before.
+    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss };
 
-    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune)
+    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune,
+                                  bool holdsBoss)
     {
         if (!keyOn)
             return TauntGate::Allow;
         if (requiredAura != 0 && !botHasAura)
             return TauntGate::NeedsAura;
+        if (requiredAura != 0 && holdsBoss)
+            return TauntGate::HoldingBoss;
         if (tauntImmune)
             return TauntGate::TauntImmune;
         return TauntGate::Allow;
@@ -3025,8 +3031,72 @@ namespace ai
             case TauntGate::Allow:       return "allow";
             case TauntGate::NeedsAura:   return "needs_aura";
             case TauntGate::TauntImmune: return "taunt_immune";
+            case TauntGate::HoldingBoss: return "holding_boss";
         }
         return "allow";
+    }
+
+    // The gate's refusal row is throttled per (bot, gate word), not per bot: the 495 taunt_immune rows at Jin'do (walk
+    // 54) could hide a needs_aura row that fell in the same 5 s. `lastMs` is one bot's last-row time per word (indexed
+    // by the TauntGate value; 0 = never). Returns whether a row for `gate` is due, and stamps `nowMs` when it is.
+    constexpr std::size_t kTauntGateWords = 4;
+    using TauntGateLogTimes = std::array<std::uint32_t, kTauntGateWords>;
+
+    inline bool TauntGateLogDueFor(TauntGateLogTimes& lastMs, TauntGate gate, std::uint32_t nowMs, std::uint32_t gapMs)
+    {
+        std::uint32_t& last = lastMs[static_cast<std::size_t>(gate)];
+        if (last != 0 && nowMs - last < gapMs)
+            return false;
+        last = nowMs;
+        return true;
+    }
+
+    // Carrier hold (AiPlayerbot.DungeonRunCarrierHold): a Delusions carrier standing on its Shade keeps it. "not dps
+    // target active" fires whenever the current target differs from "dps target" (the skull, Jin'do), and its action
+    // "dps assist" (relevance 60) outranks kill-first (21), so the carrier was pulled off a live Shade for Jin'do
+    // (76 times in walk 54, 65 in walk 53). With the key on the trigger stays quiet when the current target is a
+    // needs_aura subject the bot carries the aura for. A non-carrier on the Shade (it cannot damage it) and every
+    // other target keep today's rule; key off is today.
+    inline bool CarrierHoldsCurrent(bool keyOn, bool currentIsNeedsAura, bool botHasRequiredAura)
+    {
+        return keyOn && currentIsNeedsAura && botHasRequiredAura;
+    }
+
+    // Whether "not dps target active" fires, for a live non-player current target. The hostile player target is
+    // decided first and is never suppressed by the hold (a carrier on a Shade still switches to an enemy player);
+    // the hold (`holdsCurrent`) only suppresses the dps-target comparison. No enemy and no dps target: no fire.
+    inline bool NotDpsTargetFires(bool enemyKnown, bool targetIsEnemy, bool holdsCurrent, bool dpsKnown,
+                                  bool targetIsDps)
+    {
+        if (enemyKnown)
+            return !targetIsEnemy;
+        if (holdsCurrent)
+            return false;
+        if (dpsKnown)
+            return !targetIsDps;
+        return false;
+    }
+
+    // The kill-first trigger's check interval in seconds: every second under TotemFocus (a totem lives 1-2 s) or
+    // CarrierHold (the re-pick after a Shade dies took a median 2.0 s), every two seconds otherwise.
+    inline std::uint32_t KillFirstCheckSeconds(bool totemFocus, bool carrierHold)
+    {
+        return (totemFocus || carrierHold) ? 1 : 2;
+    }
+
+    // Whether the kill-first trigger is due at `nowSec`, with both keys read by the caller at every check (so a
+    // `.reload config` takes effect on a trigger that is already built). `lastSec` is the last due time (0 = never);
+    // it is stamped whenever the check is due. Keys off this is the base Trigger::needCheck rule for interval 2:
+    // due when never checked or two seconds have passed.
+    inline bool KillFirstCheckDue(bool totemFocus, bool carrierHold, std::int64_t nowSec, std::int64_t& lastSec)
+    {
+        std::int64_t const gap = KillFirstCheckSeconds(totemFocus, carrierHold);
+        if (gap < 2 || lastSec == 0 || nowSec - lastSec >= gap)
+        {
+            lastSec = nowSec;
+            return true;
+        }
+        return false;
     }
 
     // tank_ignore (t1105h J2): a tank leaves a unit alone (no guard pick, no engage, no taunt, no tank target) while one

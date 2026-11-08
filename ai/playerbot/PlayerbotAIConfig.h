@@ -692,6 +692,9 @@ public:
     // nearest living unit of the carrier row's entry that is this fight's, in reach, in sight and attackable -- and the
     // kill-first row says which check kept every grid hit out of the pick. Off, the pick stays as before (default off).
     bool dungeonRunCarrierScan = false;
+    // Carrier hold: a Delusions carrier standing on its Shade keeps it ("not dps target active" stays quiet for it, so
+    // "dps assist" no longer pulls it to Jin'do), and the kill-first trigger checks every second. Off = as before.
+    bool dungeonRunCarrierHold = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;
