@@ -20,11 +20,10 @@ int main()
     std::cout << "Starting TortoiseBots shield-target policy tests...\n";
 
     // Rage tank above critical: shield refused (eats rage).
+    // Rage tank above critical: shield refused, in or out of combat (the rule has no combat input; the wiring test pins that the guard reads none).
     CHECK(!ShouldShieldTarget(true, true, 50, 20));
     // Rage tank at/below critical: the save wins.
     CHECK(ShouldShieldTarget(true, true, 20, 20));
-    // Rage tank out of combat above critical: refused too (a 30 s shield cast between pulls eats the next pull's opening hits).
-    CHECK(!ShouldShieldTarget(true, true, 50, 20));
     // Mana tank (paladin) at 50 %: shields as usual.
     CHECK(ShouldShieldTarget(true, false, 50, 20));
     // Rage non-tank (DPS warrior) at 50 %: shields as usual.
