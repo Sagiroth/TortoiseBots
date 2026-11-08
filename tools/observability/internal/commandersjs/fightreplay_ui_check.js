@@ -36,7 +36,7 @@ assert.ok(ctx.FightReplay && typeof ctx.FightReplay.botsAt === "function", "figh
 assert.ok(ctx.AggroLanes && typeof ctx.AggroLanes.lanes === "function", "aggrolanes.js loads as AggroLanes");
 vm.runInContext([grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grabConst("cmdPt"), grab("cmdPlanSvg"),
   grab("cmdFloors"), grab("cmdFloorZs"), grabConst("CMD_FLOOR_GAP_YD"), grabConst("FD_REPLAY_OFF"), grab("fdPlayHtml"),
-  grab("fdLanesHtml"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
+  grab("fdRangeBandHtml"), grab("fdLanesHtml"), grab("cmdBossTable"), grab("fdReplayBind")].join("\n"), ctx);
 
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const f = (n) => n.toFixed(2);

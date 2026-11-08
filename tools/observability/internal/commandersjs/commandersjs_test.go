@@ -368,6 +368,20 @@ func TestFightAurasUIJS(t *testing.T) {
 	runCheck(t, "fightauras_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFdViewJS runs fdview_check.js: the Fight debugger's time range as pure arithmetic and state (the pixel-to-time grid, the
+// clamp and its 1 s minimum, membership, overlap, the label, the band style, set / clear / follow, and the live view's hand-over
+// with its re-clamp).
+func TestFdViewJS(t *testing.T) {
+	runCheck(t, "fdview_check.js", "../../web/static/js/fdview.js")
+}
+
+// TestFdRangeUIJS runs fdrange_ui_check.js: the range in app.js (the band and the dimmed marks on the timeline, lanes and aura strip,
+// the death recap that hides what is outside and counts it, the cycle Select buttons, the range bar, the live follow range and a
+// fixed live range, the hand-over, and the wiring pins of the drag, the click guard and Escape).
+func TestFdRangeUIJS(t *testing.T) {
+	runCheck(t, "fdrange_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {

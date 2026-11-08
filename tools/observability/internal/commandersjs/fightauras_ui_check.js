@@ -20,12 +20,13 @@ function grab(name) {
 
 const FightAuras = require(path.join(jsDir, "fightauras.js"));
 const FdLive = require(path.join(jsDir, "fdlive.js"));
+const FdView = require(path.join(jsDir, "fdview.js"));
 const FightDebug = require(path.join(jsDir, "fightdebug.js"));
 const Fights = require(path.join(jsDir, "fights.js"));
-const ctx = { console, FightAuras, FdLive, FightDebug, Fights, document: { activeElement: null } };
+const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document: { activeElement: null } };
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdAuIv", "fdAuraFight", "fdAuState", "fdAuCarry", "fdAuMarkVal", "fdAuMarkParse", "fdAuPct",
-  "fdAurasControlsHtml", "fdAurasRestHtml", "fdAurasParts", "fdAurasHtml", "fdAurasPaint", "fdAurasSync", "fdAuLiveKey", "fdAuLiveOpts"];
+  "fdAurasControlsHtml", "fdAurasRestHtml", "fdRangeBandHtml", "fdOutCls", "fdAurasParts", "fdAurasHtml", "fdAurasPaint", "fdAurasSync", "fdAuLiveKey", "fdAuLiveOpts"];
 vm.runInContext(["var FD_AU_NAMES_MAX = 8; const fdAuMemo = new WeakMap();"].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
@@ -150,7 +151,7 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(draw(none, { key: "live", sid: null, marker: null }).includes("No boss debuff has been seen on a bot yet."));
   // a live view with no commander
   assert.ok(run("fdAurasHtml(f, FightAuras.intervals(f), au, o)", { f: live, au: { key: "live", sid: null, marker: null }, o: { unbound: true } }).includes("needs a bound commander"));
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(run("fdAuLiveOpts(st)", { st: { cmd: null, auraNames: { 5: "x" } } }))), { names: { 5: "x" }, unbound: true });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(run("fdAuLiveOpts(st, r)", { st: { cmd: null, auraNames: { 5: "x" } }, r: { from: 1, to: 2 } }))), { names: { 5: "x" }, unbound: true, range: { from: 1, to: 2 } });
 }
 // ---- the picks: reset on another fight, the boss default, a reader's pick stays, the live pick carries over to the filed key
 {
@@ -265,9 +266,9 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(track.includes("/api/v1/commanders/track?commander=") && track.includes("'&x=1'") && /Array\.isArray\(fight\.auras\) && fight\.auras\.length \? '' : '&x=1'/.test(track), "fdTrackLoad asks for x=1 only when the fight has no aura rows");
   assert.ok(/\+ '&to=' \+ to \+ sampled/.test(track), "and puts the choice on the url");
   const live = grab("fdLivePaintDebug");
-  assert.ok(live.includes("fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st))"), "the 1 s live tick repaints the Auras panel (only its body)");
+  assert.ok(live.includes("fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange))"), "the 1 s live tick repaints the Auras panel (only its body)");
   const render = src.slice(src.indexOf("  function renderFightDebug("), src.indexOf("  // The window an underperf answer covers"));
-  assert.ok(render.includes("if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt));"), "the card render draws the live fight's panel");
+  assert.ok(render.includes("if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt, range));"), "the card render draws the live fight's panel");
   assert.ok(render.includes("const pending = !!fight && !hist && (track === undefined || track === 'loading');") && render.includes("track.raw.tracked === false"), "an unasked track is pending (not for a past night); an untracked raid has its own hint");
   assert.ok(render.includes("fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander)"), "and the filed fight's, with the track fallback");
   assert.ok(render.includes(".fd-checks, .fd-timeline, .fd-auras, .fd-roles').forEach(el => { el.hidden = noWin; });"), "the panel hides with the other fight panels");

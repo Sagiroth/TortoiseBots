@@ -31,8 +31,9 @@ vm.createContext(ctx);
 vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
 vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdlive.js"), "utf8"), ctx, { filename: "fdlive.js" });
+vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdview.js"), "utf8"), ctx, { filename: "fdview.js" });
 vm.runInContext([
-  grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
+  grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdViewHandover"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
   grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"),
   grab("fdShowAllGet"), grab("fdWindowStart"), grab("fdOlderState"),

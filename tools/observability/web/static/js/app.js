@@ -6585,15 +6585,107 @@
     if (t && t.textContent !== title) t.textContent = title;
     const sel = bar.querySelector('select[data-fd-livewin]');
     if (sel && sel.value !== String(fd.liveWin)) sel.value = String(fd.liveWin);
-    fd.liveRange = FdLive.range(st, now, fd.liveWin);
+    fdLiveRangeOf(fd, st, now);
     if (st.key) fd.liveKey = st.key;
+    fdSet(card.querySelector('.fd-rangebar'), st.key ? fdRangeBarHtml(fd.view, true, fd.liveWin) : '');
+    fdWholeTags(card, fd.view, true);
+  }
+
+  // The range every range-aware panel of the live view gets, worked out once per paint and kept in fd.liveRange: the follow window
+  // (FdLive.range, null for Whole fight) while the view follows, else the fixed range the reader dragged (fight ms from the start).
+  // The view belongs to one live fight: the next fight starts from its defaults.
+  function fdLiveRangeOf(fd, st, now) {
+    fdViewSync(fd, st && st.key ? 'live:' + st.key : 'live');
+    fd.liveRange = FdView.effective(fd.view, true, FdLive.range(st, now, fd.liveWin));
+    return fd.liveRange;
+  }
+
+  // The range bar above the replay row: the picked range with its buttons, or a hint. Post-fight: Clear and Zoom replay here. Live:
+  // Clear (the same as Follow live) and Follow live; a running fight has no replay to zoom. `win` is the live window in seconds.
+  function fdRangeBarHtml(view, live, win) {
+    const r = view && view.range;
+    if (live) {
+      if (r && view.follow === false) {
+        return `<span class="fd-rangelabel">Range ${esc(FdView.label(r))}</span> &middot; <button type="button" class="fd-link" data-fd-range-clear>Clear</button>`
+          + ' &middot; <button type="button" class="fd-link" data-fd-follow>Follow live</button>';
+      }
+      const what = win === 0 ? 'the whole fight' : 'the ' + fdLiveWinLabel(win).charAt(0).toLowerCase() + fdLiveWinLabel(win).slice(1);
+      return `<span class="fd-rangehint">Following ${esc(what)}. Drag to fix a range.</span>`;
+    }
+    if (r) {
+      return `<span class="fd-rangelabel">Range ${esc(FdView.label(r))}</span> &middot; <button type="button" class="fd-link" data-fd-range-clear>Clear</button>`
+        + ' &middot; <button type="button" class="fd-link" data-fd-range-zoom>Zoom replay here</button>';
+    }
+    return '<span class="fd-rangehint">Drag across the timeline to pick a range.</span>';
+  }
+
+  // The "whole fight" tags of the panels that have no time data: shown while a range is set (in a live view, only a range the
+  // reader fixed: the follow window is the view's default, not a filter on those panels).
+  function fdWholeTags(card, view, live) {
+    const on = !!(view && view.range && (!live || view.follow === false));
+    card.querySelectorAll('.fd-whole').forEach(n => { n.hidden = !on; });
+  }
+
+  // The fight object the range is measured on: the live view's synthetic fight, or the picked filed fight's detail.
+  function fdViewFight(key, fd) {
+    if (fd.sel === 'live') {
+      const st = fdLive[key], bind = cmdFindBind(key);
+      return st && st.key && bind ? FdLive.fight(st, bind, Date.now()) : null;
+    }
+    const det = fd.sel ? fd.details[fd.sel] : null;
+    return (det && det.fight) || null;
+  }
+
+  // A range button of the bar or a cycle's Select button. true: the state changed and the card needs a render.
+  function fdRangeAction(key, fd, node) {
+    const d = node.dataset || {};
+    if (d.fdRangeClear != null || d.fdFollow != null) {
+      fd.view = FdView.clear(fd.view);
+      return true;
+    }
+    if (d.fdRangeSet != null) {
+      const m = /^(\d+)-(\d+)$/.exec(String(d.fdRangeSet)), f = fdViewFight(key, fd);
+      if (!m || !f) return false;
+      fd.view = FdView.setRange(fd.view, Number(m[1]), Number(m[2]), f.dur_ms, fd.sel === 'live');
+      return true;
+    }
+    return false;
+  }
+
+  const FD_DRAG_BARS = ['.fd-tl', '.fd-lanebar', '.fd-au-bar']; // the bars a drag can start on: each stands for the whole fight
+  const FD_DRAG_PX = 6;                                         // a press that moves less than this is a click (the seek)
+
+  // The band of a drag in progress, drawn in the bar it started on. A repaint rebuilds the bars, so it is drawn again after each one.
+  function fdDragBandSync(card, fd) {
+    card.querySelectorAll('.fd-range-live').forEach(n => n.remove());
+    const dr = fd && fd.drag;
+    if (!dr || !dr.moved) return;
+    const bar = card.querySelectorAll(dr.sel)[dr.idx];
+    if (!bar) return;
+    const el = document.createElement('i');
+    el.className = 'fd-range fd-range-live';
+    el.setAttribute('style', FdView.bandStyle({ from: Math.min(dr.a, dr.b), to: Math.max(dr.a, dr.b) }, dr.dur));
+    bar.appendChild(el);
+  }
+
+  // The view (range, follow) belongs to the picked fight: another fight starts with no range. A hand-over sets the key itself first.
+  function fdViewSync(fd, key) {
+    if (!fd.view || fd.view.key !== key) fd.view = FdView.create(key);
+    return fd.view;
+  }
+
+  // The hand-over of a live view to its filed fight: the view takes the filed key (so the reset above does not fire), a following
+  // view becomes the whole fight and a fixed range is kept (fitted to the filed fight on its first render).
+  function fdViewHandover(fd, filedKey) {
+    fd.view = FdView.handover(fd.view, filedKey);
+    return fd.view;
   }
 
   // What the timeline slot shows for a live fight: the fight's own timeline, or a line saying why there is none.
-  function fdLiveTimelineHtml(st, liveFight) {
+  function fdLiveTimelineHtml(st, liveFight, range) {
     if (st && st.unkept) return '<p class="empty-hint">The fight was too short to keep.</p>';
     if (st && st.cmd === null) return '<p class="empty-hint">Live fight data needs a bound commander.</p>';
-    if (liveFight) return fdTimelineHtml(FightDebug.timeline(liveFight), FightDebug.deathRecaps(liveFight), null);
+    if (liveFight) return fdTimelineHtml(FightDebug.timeline(liveFight), FightDebug.deathRecaps(liveFight), null, range || null);
     if (st && st.noLive) return '<p class="empty-hint">No live fight.</p>';
     return '<p class="empty-hint">Waiting for the live fight…</p>';
   }
@@ -6604,8 +6696,9 @@
     if (!fd || !st || !card || !bind || fd.sel !== 'live') return;
     fdLivePaintBar(card, fd, st);
     const lf = st.key ? FdLive.fight(st, bind, Date.now()) : null;
-    fdSet(card.querySelector('.fd-tl'), fdLiveTimelineHtml(st, lf));
-    fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st)); // only the panel's body is repainted, not the card
+    fdSet(card.querySelector('.fd-tl'), fdLiveTimelineHtml(st, lf, fd.liveRange));
+    fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange)); // only the panel's body is repainted, not the card
+    fdDragBandSync(card, fd);
   }
 
   // The Auras pick belongs to one live fight: its key carries the fight's own, so the next fight starts from its defaults.
@@ -6613,8 +6706,8 @@
     return 'live:' + (fight && fight.key);
   }
 
-  function fdAuLiveOpts(st) {
-    return { names: st ? st.auraNames : null, unbound: !!st && st.cmd === null };
+  function fdAuLiveOpts(st, range) {
+    return { names: st ? st.auraNames : null, unbound: !!st && st.cmd === null, range: range || null };
   }
 
   // The hand-over: the fight a live view shows was filed. Its view becomes the filed fight's, in place (the existing detail
@@ -6628,6 +6721,7 @@
     if (!(st && FdLive.handoff(st, summary)) && !kept && !(fd && fd.sel === 'live' && fd.liveKey === summary.key)) return;
     if (fd && (fd.sel === 'live' || kept)) {
       fdAuCarry(fd, 'live:' + fd.liveKey, summary.key);
+      if (fd.view && fd.view.key === 'live:' + fd.liveKey) fdViewHandover(fd, summary.key); // before the render: its reset rule must not fire
       fd.sel = summary.key;
       fd.userSel = true;
       fd.death = null;
@@ -8564,13 +8658,13 @@
           <div class="fd-rtplay" data-fd-rtplayrow></div>
         </section>
         <section class="fd-raid" aria-label="Raid frames" hidden>
-          <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span></h3><div class="fd-ready"></div></div>
+          <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span> <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
         <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
         <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
-        <section class="fd-roles" aria-label="Roles" hidden><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
-        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots</summary><div class="fd-underbody"></div></details></section>
+        <section class="fd-roles" aria-label="Roles" hidden><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
+        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
@@ -8600,8 +8694,8 @@
             <div class="cmd-feed" hidden></div>
             <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
-          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
-          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
+          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
           <section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
         </div>
         <p class="fd-nofight" hidden></p>
@@ -8610,10 +8704,10 @@
           <div class="cmd-panel"><h3 class="cmd-h">Notes</h3><div class="cmd-notes"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Threat</h3><div class="cmd-threat"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Deaths</h3><div class="cmd-deaths"></div></div>
-          <div class="cmd-panel"><h3 class="cmd-h">Roles</h3><div class="raid-roles"></div></div>
-          <div class="cmd-panel"><h3 class="cmd-h">Run totals</h3><div class="raid-totals"></div></div>
-          <div class="cmd-panel"><h3 class="cmd-h">Underperforming bots</h3><details class="raid-underbox"><summary class="cmd-h">Underperforming bots</summary><div class="raid-underbody"></div></details></div>
-          <div class="cmd-panel"><h3 class="cmd-h">Ready check</h3><div class="raid-ready"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Roles <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="raid-roles"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Run totals <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="raid-totals"></div></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Underperforming bots</h3><details class="raid-underbox"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="raid-underbody"></div></details></div>
+          <div class="cmd-panel"><h3 class="cmd-h">Ready check <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="raid-ready"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Boss debuffs</h3><div class="raid-debuffs"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Orders</h3><div class="raid-orders-note">controls need a bound commander</div></div>
           <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
@@ -8717,6 +8811,13 @@
     });
     // Arrow keys walk the fight rail (the cards' own buttons keep Enter and Space).
     card.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        // Escape drops the range (a live view follows the fight again), or the drag in progress; an open list keeps its own Escape.
+        const fd = cmdFd[key];
+        if (!fd || !card.classList.contains('fd-on') || (e.target.closest && e.target.closest('select, input, textarea'))) return;
+        if (fd.drag) { fd.drag = null; fdDragBandSync(card, fd); } else if (fd.view && (fd.view.range || fd.view.follow === false)) { fd.view = FdView.clear(fd.view); fdRender(key); }
+        return;
+      }
       const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : 0;
       const rail = e.target.closest && e.target.closest('.fd-rail');
       const btn = rail && e.target.closest('.fd-fight');
@@ -8735,7 +8836,8 @@
         // The live window: the follow range of the live view (Whole fight = 0).
         const w = Number(e.target.value);
         fd.liveWin = FdLive.WINDOWS.indexOf(w) >= 0 ? w : FdLive.DEFAULT_WINDOW;
-        if (fdLive[key]) fdLivePaintBar(card, fd, fdLive[key]);
+        fd.view = FdView.clear(fd.view); // picking a window follows the fight again
+        if (fdLive[key]) fdLivePaintDebug(key);
         return;
       }
       if (e.target && e.target.matches && e.target.matches('[data-fd-ausid], [data-fd-aumark]')) {
@@ -8803,6 +8905,23 @@
     card.addEventListener('click', e => {
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on')) return;
+      if (Date.now() - fd.dragEnd < 300) return; // the click that ends a drag is not a seek
+      const rbtn = e.target.closest && e.target.closest('[data-fd-range-clear], [data-fd-range-zoom], [data-fd-follow], [data-fd-range-set]');
+      if (rbtn) {
+        if (rbtn.dataset.fdRangeZoom != null) {
+          // Post-fight only: the replay jumps to the start of the range (a running fight has no replay).
+          const zr = fd.sel !== 'live' && fd.view && fd.view.range;
+          if (!zr) return;
+          fd.rp.t = zr.from;
+          fd.rp.on = true;
+          fdRunStopAll(fd);
+          fdReplayStop(fd);
+          fdReplaySync(key);
+        } else if (fdRangeAction(key, fd, rbtn)) {
+          fdRender(key);
+        }
+        return;
+      }
       const hit = e.target.closest && e.target.closest('[data-fd-play], [data-fd-speed], [data-fd-exit]');
       if (hit) {
         if (hit.dataset.fdPlay != null) fdReplayPlay(key);
@@ -8833,6 +8952,47 @@
       fdRunSync(card, fd);
       fdReplayStop(fd);
       fdReplaySync(key);
+    });
+    // Drag-select a range on the timeline, a lane or the aura strip. A press that moves FD_DRAG_PX or more is a drag (the pointer is
+    // captured by the card then, so a repaint that rebuilds the bar cannot lose it); a shorter one stays a click and seeks as before.
+    card.addEventListener('pointerdown', e => {
+      const fd = cmdFd[key];
+      if (!fd || !card.classList.contains('fd-on') || (e.button != null && e.button !== 0)) return;
+      if (e.target.closest && e.target.closest('button, select, input, a, summary')) return;
+      const bar = e.target.closest && e.target.closest(FD_DRAG_BARS.join(', '));
+      if (!bar) return;
+      const sel = FD_DRAG_BARS.find(q => bar.matches(q)), fight = fdViewFight(key, fd), rect = bar.getBoundingClientRect();
+      if (!sel || !fight || !(fight.dur_ms > 0) || !(rect.width > 0)) return;
+      fd.drag = { sel, idx: Array.from(card.querySelectorAll(sel)).indexOf(bar), x0: e.clientX, left: rect.left, width: rect.width, dur: fight.dur_ms, id: e.pointerId, moved: false, a: 0, b: 0 };
+    });
+    card.addEventListener('pointermove', e => {
+      const fd = cmdFd[key], dr = fd && fd.drag;
+      if (!dr || dr.id !== e.pointerId) return;
+      if (!dr.moved) {
+        if (Math.abs(e.clientX - dr.x0) < FD_DRAG_PX) return;
+        dr.moved = true;
+        try { card.setPointerCapture(e.pointerId); } catch (err) { /* a pointer that is already gone */ }
+      }
+      dr.a = FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur);
+      dr.b = FdView.pxToMs(e.clientX - dr.left, dr.width, dr.dur);
+      fdDragBandSync(card, fd);
+    });
+    card.addEventListener('pointerup', e => {
+      const fd = cmdFd[key], dr = fd && fd.drag;
+      if (!dr || dr.id !== e.pointerId) return;
+      fd.drag = null;
+      fdDragBandSync(card, fd);
+      try { card.releasePointerCapture(e.pointerId); } catch (err) { /* not captured */ }
+      if (!dr.moved) return;
+      fd.dragEnd = Date.now();
+      fd.view = FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live');
+      fdRender(key);
+    });
+    card.addEventListener('pointercancel', e => {
+      const fd = cmdFd[key];
+      if (!fd || !fd.drag || fd.drag.id !== e.pointerId) return;
+      fd.drag = null;
+      fdDragBandSync(card, fd);
     });
     card.addEventListener('input', e => {
       if (!e.target.matches || !e.target.matches('.fd-scrub') || e.target.hasAttribute('data-fd-rtscrub')) return;
@@ -9127,7 +9287,7 @@
   }
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, au: { key: null, sid: null, marker: null, userSid: false, userMark: false }, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, view: FdView.create(null), dragEnd: 0, drag: null, au: { key: null, sid: null, marker: null, userSid: false, userMark: false }, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -9141,7 +9301,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark', 'data-fd-range-set', 'data-fd-range-clear', 'data-fd-range-zoom', 'data-fd-follow'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -9629,7 +9789,11 @@
       // screen with its one-line note until the next fight.
       const filed = fdLiveFiledRow(fd, list);
       const short = fdLive[bind.commander] && fdLive[bind.commander].unkept;
-      if (filed) { fdAuCarry(fd, 'live:' + fd.liveKey, filed.key); fd.sel = filed.key; fd.userSel = true; fd.liveKey = null; }
+      if (filed) {
+        fdAuCarry(fd, 'live:' + fd.liveKey, filed.key);
+        if (fd.view && fd.view.key === 'live:' + fd.liveKey) fdViewHandover(fd, filed.key); // the range follows the fight to its filed key
+        fd.sel = filed.key; fd.userSel = true; fd.liveKey = null;
+      }
       else if (!short) { fd.sel = null; fd.userSel = false; }
     }
     if (!fd.userSel) {
@@ -9696,6 +9860,13 @@
     if (liveSt) { fdLivePaintBar(card, fd, liveSt); fdLiveCatchUp(key); fdLiveTickSync(); }
     const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
     const fight = det && det.fight;
+    // The time range: a filed fight's own (a handed-over fixed range is fitted to this fight on its first render here), or the live
+    // view's (worked out once by the bar above). Every range-aware panel below gets this one value.
+    if (!selLive) {
+      fdViewSync(fd, fd.sel);
+      if (fight) fd.view = FdView.reclamp(fd.view, fight.dur_ms);
+    }
+    const range = selLive ? (liveSt ? fd.liveRange : null) : FdView.effective(fd.view, false, null);
     // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
     // positions and no lanes; the pack table carries the stored non-tank seconds instead.
     const selRow = !selLive && fd.sel ? list.find(r => r && r.key === fd.sel) || null : null;
@@ -9819,17 +9990,19 @@
     fdSet(card.querySelector('.fd-checklist'), fdChecksHtml(checks, recaps, guids, fd.bot));
     fdPackShow(card, bind, fd, selRow ? selRow.pack_key || (det && det.pack_key) || '' : '');
 
-    fdSet(card.querySelector('.fd-tl'), selLive ? fdLiveTimelineHtml(liveSt, liveFight)
-      : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
-    fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
+    fdSet(card.querySelector('.fd-tl'), selLive ? fdLiveTimelineHtml(liveSt, liveFight, range)
+      : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range) : '');
+    fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death, range) : '');
+    if (!liveSt) fdSet(card.querySelector('.fd-rangebar'), !selLive && fight ? fdRangeBarHtml(fd.view, false, 0) : '');
+    fdWholeTags(card, fd.view, selLive);
     // The Auras panel: the live fight's sampled rows, or the filed fight's own (else the track's sampled ones).
-    if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt));
+    if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt, range));
     else {
       // No rows and no track yet: the aura data may still come (a past night's fight never fetches one). A raid past the track's
       // 20 commanders has no samples to fall back on.
       const pending = !!fight && !hist && (track === undefined || track === 'loading');
       const untracked = !!(track && track !== 'loading' && track.raw && track.raw.tracked === false);
-      fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending, untracked });
+      fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending, untracked, range });
     }
     // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
     // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
@@ -9843,7 +10016,7 @@
         const lanes = card.querySelector('.fd-lanes');
         if (lanesUntracked) {
           fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
-        } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms));
+        } else if (track && track !== 'loading') fdSet(lanes, fdLanesHtml(lanesRes, fight.dur_ms, range));
         else fdSet(lanes, `<p class="empty-hint">${track === 'loading' ? 'Loading positions…' : 'No positions kept for this fight (the dashboard keeps the last 30 min, from its own start).'}</p>`);
         fdCursorSync(card, fd);
       }
@@ -9893,6 +10066,7 @@
     botEl.hidden = !panel;
     fdSet(botEl, fdBotHtml(panel));
     fdUnderSync(card, bind, fd);
+    fdDragBandSync(card, fd);
   }
 
   // The window an underperf answer covers: the binding, its night (or "" for
@@ -10463,15 +10637,26 @@
     }).join('');
   }
 
-  function fdTimelineHtml(tl, recaps, selDeath) {
+  // The band that shows the time range over a bar (a bar standing for durMs); the class says it only draws, it takes no pointer.
+  function fdRangeBandHtml(range, durMs) {
+    return range ? `<i class="fd-range" style="${FdView.bandStyle(range, durMs)}"></i>` : '';
+  }
+
+  // A mark outside the range is dimmed, not removed: the timeline keeps its whole length.
+  function fdOutCls(t, range) {
+    return FdView.inRange(t, range) ? '' : ' fd-out';
+  }
+
+  function fdTimelineHtml(tl, recaps, selDeath, range) {
     if (!tl) return '';
-    let html = '';
+    range = range || null;
+    let html = fdRangeBandHtml(range, tl.durMs);
     (tl.ticks || []).forEach(t => { html += `<span class="fd-tick" style="left:${t.pct.toFixed(2)}%">${esc(t.label)}</span>`; });
     (tl.hits || []).forEach(h => {
       const r = (recaps || [])[h.i];
       const t = tl.durMs > 0 ? (h.pct / 100) * tl.durMs : 0;
       const spell = h.s ? ' with ' + h.s : '';
-      html += `<i class="fd-hit" style="left:${h.pct.toFixed(2)}%;height:${Math.round(h.h)}px" title="${esc(h.a + ' hit ' + (r ? r.name : '') + ' for ' + h.d + spell + ' at ' + (t / 1000).toFixed(1) + ' s')}"></i>`;
+      html += `<i class="fd-hit${fdOutCls(t, range)}" style="left:${h.pct.toFixed(2)}%;height:${Math.round(h.h)}px" title="${esc(h.a + ' hit ' + (r ? r.name : '') + ' for ' + h.d + spell + ' at ' + (t / 1000).toFixed(1) + ' s')}"></i>`;
     });
     // The Boss lane: one marker per cast from the finished fight's log, coloured by the table's ability order. A click scrubs
     // the replay to that cast; the marker carries the caster, the spell and its target in words.
@@ -10480,12 +10665,12 @@
       const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid, c.e) : null;
       const ci = slot ? slot.index % 8 : 0;
       const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
-      html += `<button type="button" class="fd-bosscast bc-${ci}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
+      html += `<button type="button" class="fd-bosscast bc-${ci}${fdOutCls(c.t_ms, range)}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
     });
     if (!(tl.deaths || []).length) return html + '<p class="empty-hint">No deaths this fight.</p>';
     tl.deaths.forEach(d => {
       const r = (recaps || [])[d.i] || d;
-      html += `<button type="button" class="fd-skull fd-death${d.i === selDeath ? ' on' : ''}" data-fd-death="${d.i}" data-x="${r.x}" data-y="${r.y}" style="left:${d.pct.toFixed(2)}%" aria-label="${esc(d.name + ' died at ' + (d.t_ms / 1000).toFixed(1) + ' s')}">✕</button>`;
+      html += `<button type="button" class="fd-skull fd-death${d.i === selDeath ? ' on' : ''}${fdOutCls(d.t_ms, range)}" data-fd-death="${d.i}" data-x="${r.x}" data-y="${r.y}" style="left:${d.pct.toFixed(2)}%" aria-label="${esc(d.name + ' died at ' + (d.t_ms / 1000).toFixed(1) + ' s')}">✕</button>`;
     });
     return html;
   }
@@ -10597,32 +10782,32 @@
       const pctOf = t => (dur > 0 ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0).toFixed(2);
       const by = (iv.bySid && iv.bySid[sid]) || {};
       html += `<div class="fd-au-strip"><div class="fd-au-row fd-au-raid"><span class="fd-au-name">Raid</span><span class="fd-au-pct">${esc(fdAuPct(up.raid.pct, up.raid.lower, up.raid.upMs))}</span>`
-        + `<span class="fd-au-bar"><i class="fd-au-fill" style="width:${Math.max(0, Math.min(100, up.raid.pct)).toFixed(2)}%"></i></span></div>`;
+        + `<span class="fd-au-bar"><i class="fd-au-fill" style="width:${Math.max(0, Math.min(100, up.raid.pct)).toFixed(2)}%"></i>${fdRangeBandHtml(range, dur)}</span></div>`;
       up.bots.forEach(b => {
         const on = (by[b.guid] || []).map(([f, t]) => `<i class="fd-au-on" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
         const unknownBars = FightAuras.unknownSpans(iv, sid, b.guid, fight).map(([f, t]) => `<i class="fd-au-unk" title="not known: the module's list starts later" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
         const died = spans[b.guid] && spans[b.guid][1] < dur ? `<i class="fd-au-death" style="left:${pctOf(spans[b.guid][1])}%"></i>` : '';
-        html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct, b.lower, b.upMs))}</span><span class="fd-au-bar">${unknownBars}${on}${died}</span></div>`;
+        html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct, b.lower, b.upMs))}</span><span class="fd-au-bar">${unknownBars}${on}${died}${fdRangeBandHtml(range, dur)}</span></div>`;
       });
       html += '<div class="fd-au-marks">' + marks.map(m => {
         const label = m.label + ' at ' + fdLiveClock(m.t);
-        return `<i class="fd-au-mark" data-fd-bosscast="${esc(m.t)}" style="left:${pctOf(m.t)}%" title="${esc(label)}"></i>`;
+        return `<i class="fd-au-mark${fdOutCls(m.t, range)}" data-fd-bosscast="${esc(m.t)}" style="left:${pctOf(m.t)}%" title="${esc(label)}"></i>`;
       }).join('') + '</div></div>';
       if (marks.length) {
         const at = FightAuras.atMarkers(iv, sid, fight, marks);
         if (au.marker === 'deaths') {
           html += '<table class="data-table fd-au-table"><caption>At each death</caption><thead><tr><th>Time</th><th>Victim</th><th>Had it</th></tr></thead><tbody>'
-            + at.map(a => `<tr><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${esc(a.label)}</td><td>${a.on ? 'yes' : a.unknown ? '?' : 'no'}</td></tr>`).join('') + '</tbody></table>';
+            + at.map(a => `<tr${fdOutCls(a.t, range) ? ' class="fd-out"' : ''}><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${esc(a.label)}</td><td>${a.on ? 'yes' : a.unknown ? '?' : 'no'}</td></tr>`).join('') + '</tbody></table>';
         } else {
           const label = marks[0].label;
           html += `<table class="data-table fd-au-table"><caption>At each ${esc(label)}</caption><thead><tr><th>#</th><th>Time</th><th>Had it</th><th>Who</th></tr></thead><tbody>`
             + at.map((a, k) => {
               const who = a.names.slice(0, FD_AU_NAMES_MAX).map(esc).join(', ') + (a.names.length > FD_AU_NAMES_MAX ? ' +' + (a.names.length - FD_AU_NAMES_MAX) : '');
-              return `<tr><td>${k + 1}</td><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${a.on} / ${a.alive}${a.unknown ? ` (${a.unknown} ?)` : ''}</td><td>${who}</td></tr>`;
+              return `<tr${fdOutCls(a.t, range) ? ' class="fd-out"' : ''}><td>${k + 1}</td><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${a.on} / ${a.alive}${a.unknown ? ` (${a.unknown} ?)` : ''}</td><td>${who}</td></tr>`;
             }).join('') + '</tbody></table>';
-          html += '<table class="data-table fd-au-table"><caption>Each cycle</caption><thead><tr><th>#</th><th>From &ndash; to</th><th>Raid uptime</th><th>Had it at the cast</th><th>Deaths</th></tr></thead><tbody>'
+          html += '<table class="data-table fd-au-table"><caption>Each cycle</caption><thead><tr><th>#</th><th>From &ndash; to</th><th>Raid uptime</th><th>Had it at the cast</th><th>Deaths</th><th></th></tr></thead><tbody>'
             + FightAuras.cycles(iv, sid, fight, marks).map(c => `<tr><td>${esc(c.i)}</td><td class="mono">${esc(fdLiveClock(c.from) + ' - ' + fdLiveClock(c.to))}</td><td>${esc(fdAuPct(c.raidPct, c.lower, c.upMs))}</td>`
-              + `<td>${c.on == null ? '' : c.on + ' / ' + c.alive + (c.unknown ? ' (' + c.unknown + ' ?)' : '')}</td><td>${c.deaths.map(d => esc(d.name)).join(', ')}</td></tr>`).join('') + '</tbody></table>';
+              + `<td>${c.on == null ? '' : c.on + ' / ' + c.alive + (c.unknown ? ' (' + c.unknown + ' ?)' : '')}</td><td>${c.deaths.map(d => esc(d.name)).join(', ')}</td><td><button type="button" class="fd-link" data-fd-range-set="${esc(Math.round(c.from) + '-' + Math.round(c.to))}">Select</button></td></tr>`).join('') + '</tbody></table>';
         }
       }
       const apps = FightAuras.applications(iv, sid, fight);
@@ -10673,10 +10858,16 @@
     fdAurasPaint(card, fdAurasParts(fight, iv, fdAuState(fd, key, fight, iv), opts));
   }
 
-  function fdRecapHtml(recaps, selDeath) {
+  // The death recap: with a range, only deaths inside it (the picked one when it is inside, else the first inside) and a line that
+  // says how many are left out.
+  function fdRecapHtml(recaps, selDeath, range) {
     const list = recaps || [];
-    const r = list[selDeath] || list[0];
-    if (!r) return '';
+    const shown = list.filter(x => FdView.inRange(x.t_ms, range || null));
+    const hidden = list.length - shown.length;
+    const note = hidden > 0 ? `<p class="fd-recapout empty-hint">${hidden} ${hidden === 1 ? 'death' : 'deaths'} outside the range</p>` : '';
+    const picked = list[selDeath];
+    const r = picked && shown.indexOf(picked) >= 0 ? picked : shown[0];
+    if (!r) return note;
     const spellCell = h => {
       const name = h.s || h.sp || '';
       if (!name) return '<td></td>';
@@ -10692,7 +10883,7 @@
       : '';
     return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
-      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>`;
+      + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>` + note;
   }
 
   // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.
@@ -10805,7 +10996,7 @@
 
   // The lanes: one bar per engaged enemy, its parts coloured by whom it faced; the red ones are the healer and the damage
   // dealers. The summary names the healer time, which is the row this strip exists for.
-  function fdLanesHtml(res, durMs) {
+  function fdLanesHtml(res, durMs, range) {
     const dur = durMs > 0 ? durMs : 0;
     const pct = (ms) => dur > 0 ? Math.max(0, Math.min(100, (ms / dur) * 100)) : 0;
     const lanes = (res && res.lanes) || [];
@@ -10817,6 +11008,7 @@
         bar += `<i class="fd-seg k-${esc(s.kind)}${s.bad ? ' bad' : ''}" style="left:${pct(s.fromMs).toFixed(2)}%;width:${pct(s.toMs - s.fromMs).toFixed(2)}%"`
           + ` title="${esc(label + ' on ' + (s.victim || s.kind) + ' ' + (s.fromMs / 1000).toFixed(1) + '-' + (s.toMs / 1000).toFixed(1) + ' s')}"></i>`;
       });
+      bar += fdRangeBandHtml(range || null, dur);
       const bad = l.badMs ? ' · ' + (l.badMs / 1000).toFixed(1) + ' s on ' + esc((l.badNames || []).join(', ')) : '';
       html += `<div class="fd-lane"><span class="fd-lanel">${esc(label)}</span><span class="fd-lanebar">${bar}</span>`
         + `<span class="fd-lanesum">${l.onTankPct}% on tanks${bad}</span></div>`;

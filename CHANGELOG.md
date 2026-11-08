@@ -400,6 +400,7 @@
 - Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
+- New: drag across the Fight debugger's timeline, a lane or the aura strip to pick a time range; the timeline, deaths, auras and each aura cycle (a Select button) follow it, and a running fight can follow its last 30 s to 5 min or hold the range you picked.
 - New: the Fight debugger has an Auras panel: how long each bot kept a boss aura (Poisonous Blood on Hakkar, Hex on Jin'do), with the boss's casts marked on it, who had it at each cast and how long each application lasted; for a fight that is still running, or one without aura rows, it reads the bots' boss debuffs from the 2 s report instead.
 - New: a fight record can now show the boss's health every two seconds, each change of who it was hitting and every time a key aura landed on or left a bot; it stays off until enabled.
 - The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.

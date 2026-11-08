@@ -30,7 +30,7 @@ vm.createContext(ctx);
 });
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fdRunModel"), grab("fdRunClock"), grab("fdRunPct"), grab("fdRunT"),
   grab("fdRunHtml"), grab("fdRunWindow"), grab("fdRunCoverage"), grabConst("FD_TRACK_WINDOW_S"), grab("fdRunPlayHtml"),
-  grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdLanesHtml"), grab("cmdClock")].join("\n"), ctx);
+  grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdRangeBandHtml"), grab("fdLanesHtml"), grab("cmdClock")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the model: walking between the fights, P1..Pn blocks, a boss block from its name, deaths at their second ----------------
