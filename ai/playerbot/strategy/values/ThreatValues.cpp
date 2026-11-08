@@ -245,6 +245,43 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     return botThreat;
 }
 
+namespace ai
+{
+// The threat cap's own tank list (ThreatValues.h): GetTankThreat's successor pick and the nearest take's cap guard.
+std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target, const RaidTankRoles& roles, Player* skip,
+                                            std::vector<Player*>* who)
+{
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions (on its Shade by design) counts as on the
+    // boss while it keeps a real share of the Jin'do threat (ThreatCapPolicy.h ThreatCapCursedOnBoss).
+    const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;
+    std::vector<ThreatCapTank> tanks;
+    tanks.reserve(roles.tanks.size());
+    if (who)
+        who->clear();
+    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+    {
+        Player* player = roles.tanks[index];
+        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == skip)
+            continue;
+        ObjectGuid const charmer = player->GetCharmerGuid();
+        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+            continue;
+        // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
+        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
+        ThreatCapTank tank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
+            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
+            target->GetVictim() == player};
+        tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);
+        tanks.push_back(tank);
+        if (who)
+            who->push_back(player);
+    }
+    if (keepsAway)
+        ThreatCapCursedOnBoss(tanks);
+    return tanks;
+}
+}
+
 float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 {
     if (!target)
@@ -284,28 +321,8 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
     // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions (on its Shade by design) counts as on the
     // boss while it keeps a real share of the Jin'do threat (ThreatCapPolicy.h ThreatCapCursedOnBoss).
-    const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    std::vector<ThreatCapTank> tanks;
-    tanks.reserve(roles.tanks.size());
-    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
-    {
-        Player* player = roles.tanks[index];
-        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
-            continue;
-        ObjectGuid const charmer = player->GetCharmerGuid();
-        if (!charmer.IsEmpty() && !charmer.IsPlayer())
-            continue;
-        // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
-        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
-        ThreatCapTank tank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
-            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
-            target->GetVictim() == player};
-        tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);
-        tanks.push_back(tank);
-    }
-    if (keepsAway)
-        ThreatCapCursedOnBoss(tanks);
+    const std::vector<ThreatCapTank> tanks = ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);
 
     const ThreatCapPick pick = ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
     LogHexSnapshot(ai, target, roles, group);

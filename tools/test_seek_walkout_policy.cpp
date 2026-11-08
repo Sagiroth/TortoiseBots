@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -2313,21 +2314,30 @@ static void TestWalkoutMeetLostRecord()
 // The pre-place's late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3) and its arrival latch.
 static void TestMeetPrePlaceLateWalk()
 {
-    // Named failing case: the key on, the puller 25 yd from its stand and not in position -> the walk is not due yet
-    // (today it starts at once).
-    CHECK(MeetPrePlaceWalkDue(true, 25.0f, false) == false);
+    // Named failing case: the key on, the puller 25 yd from its stand and not in position, the tank at its point -> the
+    // walk is not due yet (today it starts at once).
+    CHECK(MeetPrePlaceWalkDue(true, 25.0f, 0.0f, false) == false);
     CHECK(kSeekMeetPrePlaceLeadYd == 10.0f);
-    CHECK(MeetPrePlaceWalkDue(true, 9.0f, false) == true);
-    // The 10 yd edge (mutation `<=` -> `<`: this fails).
-    CHECK(MeetPrePlaceWalkDue(true, 10.0f, false) == true);
-    CHECK(MeetPrePlaceWalkDue(true, 10.1f, false) == false);
+    CHECK(kSeekMeetPrePlaceLeadSlackYd == 4.0f);
+    // Review H2: the lead is the tank's own walk plus 4 yd. Walk 57's median tank 31 yd from its point walks while the
+    // puller is still 35 yd out (mutation: drop the receiver's distance and this fails), not at 35.5.
+    CHECK(MeetPrePlaceWalkDue(true, 35.0f, 31.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 35.5f, 31.0f, false) == false);
+    // The 10 yd floor for a tank near its point (mutation `<=` -> `<`: the 10.0 case fails).
+    CHECK(MeetPrePlaceWalkDue(true, 9.0f, 0.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 10.0f, 2.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 10.1f, 2.0f, false) == false);
+    // An unknown stand is passed as far: not due until the puller is in position.
+    const float far = std::numeric_limits<float>::max();
+    CHECK(MeetPrePlaceWalkDue(true, far, 31.0f, false) == false);
+    CHECK(MeetPrePlaceWalkDue(true, far, 31.0f, true) == true);
     // In position, however far (mutation: drop pullerInPos and these fail).
-    CHECK(MeetPrePlaceWalkDue(true, 25.0f, true) == true);
-    CHECK(MeetPrePlaceWalkDue(true, 30.0f, true) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 25.0f, 0.0f, true) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 60.0f, 5.0f, true) == true);
     // Key off: today's answer, due at once whatever the puller does.
-    CHECK(MeetPrePlaceWalkDue(false, 25.0f, false) == true);
-    CHECK(MeetPrePlaceWalkDue(false, 1.0e9f, false) == true);
-    CHECK(MeetPrePlaceWalkDue(false, 5.0f, true) == true);
+    CHECK(MeetPrePlaceWalkDue(false, 25.0f, 0.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(false, far, 31.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(false, 5.0f, 0.0f, true) == true);
 
     // In position: at the stand, in shot position once, shot, or the meet handed over.
     SeekWalkoutState s;
@@ -2344,15 +2354,18 @@ static void TestMeetPrePlaceLateWalk()
     s.prePlaceMeet = true;
     CHECK(WalkoutPullerInPos(s));
 
-    // The walk and arrival latches: once per pre-place, only for its own receiver and generation.
+    // The commit and the arrival latch: only for its own receiver and generation.
     SeekWalkoutState w;
     WalkoutStart(w, 11, 21, 1000, 1);
     WalkoutPrePlaceSet(w, 31, 5.0f, 6.0f);
     std::uint32_t afterMs = 99;
-    CHECK(!WalkoutPrePlaceNoteWalk(w, 32, w.startGen, 2000));      // another tank
-    CHECK(!WalkoutPrePlaceNoteWalk(w, 31, w.startGen + 1, 2000));  // a stale generation
-    CHECK(WalkoutPrePlaceNoteWalk(w, 31, w.startGen, 2000));
-    CHECK(!WalkoutPrePlaceNoteWalk(w, 31, w.startGen, 3000));      // latched once
+    CHECK(!WalkoutPrePlaceConfirm(w, 32, w.startGen, true, 2000));      // another tank
+    CHECK(!WalkoutPrePlaceConfirm(w, 31, w.startGen + 1, true, 2000));  // a stale generation
+    CHECK(!w.prePlaceWalking);
+    CHECK(WalkoutPrePlaceConfirm(w, 31, w.startGen, false, 1500));      // confirmed, no latch asked
+    CHECK(!w.prePlaceWalking);
+    CHECK(WalkoutPrePlaceConfirm(w, 31, w.startGen, true, 2000));
+    CHECK(WalkoutPrePlaceConfirm(w, 31, w.startGen, true, 3000));       // still current; the walk start stays 2000
     CHECK(w.prePlaceWalkMs == 2000);
     CHECK(!WalkoutPrePlaceNoteArrive(w, 32, w.startGen, 6500, afterMs));
     CHECK(WalkoutPrePlaceNoteArrive(w, 31, w.startGen, 6500, afterMs));
@@ -2365,6 +2378,75 @@ static void TestMeetPrePlaceLateWalk()
     // An arrival with no latched walk (already at the point) says 0.
     CHECK(WalkoutPrePlaceNoteArrive(w, 31, w.startGen, 8000, afterMs));
     CHECK(afterMs == 0);
+}
+
+// Review (Codex HIGH / Opus L6): a pre-place replaced between the reader's snapshot and its commit publishes nothing.
+// The reader snapshots generation g1 and point A; a new task for the same tank installs g2 at point B; the commit of
+// g1 fails, so the task (the move toward A) is never filled and g2's walk is not latched by the stale reader.
+static void TestMeetPrePlaceReplacedBetweenSnapshotAndCommit()
+{
+    SeekWalkoutState w;
+    WalkoutStart(w, 11, 21, 1000, 1);
+    WalkoutPrePlaceSet(w, 31, 5.0f, 6.0f);
+    const std::uint32_t g1 = w.prePlaceGen;
+    const float ax = w.prePlaceX;
+    const float ay = w.prePlaceY;
+    // The old task ends, a new one starts with the same puller and tank, at a new point.
+    WalkoutStart(w, 11, 22, 1200, 1);
+    WalkoutPrePlaceSet(w, 31, 50.0f, 60.0f);
+    CHECK(w.prePlaceGen != g1);
+    CHECK(!WalkoutPrePlaceConfirm(w, 31, g1, true, 1300));
+    CHECK(!w.prePlaceWalking);
+    // A task filled only after a true commit: with the stale snapshot nothing moves toward (ax, ay).
+    bool published = false;
+    float tx = 0.0f, ty = 0.0f;
+    if (WalkoutPrePlaceConfirm(w, 31, g1, true, 1300))
+    {
+        published = true;
+        tx = ax;
+        ty = ay;
+    }
+    CHECK(!published);
+    CHECK(tx == 0.0f && ty == 0.0f);
+    // The current generation still commits, and its point is the new one.
+    CHECK(WalkoutPrePlaceConfirm(w, 31, w.prePlaceGen, true, 1300));
+    CHECK(w.prePlaceX == 50.0f && w.prePlaceY == 60.0f);
+    // An ended pre-place (its task gone) does not commit either.
+    const std::uint32_t g2 = w.prePlaceGen;
+    WalkoutPrePlaceClear(w);
+    CHECK(!WalkoutPrePlaceConfirm(w, 31, g2, true, 1400));
+}
+
+// Review L1: the lost-meet record's age is signed, so a reader's clock a tick older than the writer's keeps the row.
+static void TestWalkoutLostMeetWriterClockNewer()
+{
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lost;
+    WalkoutNoteMeetLost(lost, "peeled", 7, 5000, 10000);
+    // A reader at 4990 (10 ms older than the writer's stamp): still within the window (unsigned: a wrapped age, false).
+    CHECK(WalkoutMeetLostWithin(lost, 7, 4990, 10000));
+    CHECK(WalkoutLostMeetAgeMs(4990, 5000) == -10);
+    // A writer at 4990 adding another Son prunes nothing newer than its clock (unsigned: the 5000 row wrapped and went).
+    WalkoutNoteMeetLost(lost, "peeled", 8, 4990, 10000);
+    CHECK(lost.size() == 2);
+    CHECK(WalkoutMeetLostWithin(lost, 7, 4990, 10000));
+    // Across the clock wrap too.
+    lost.clear();
+    WalkoutNoteMeetLost(lost, "peeled", 3, 0x00000010u, 10000);
+    CHECK(WalkoutMeetLostWithin(lost, 3, 0xFFFFFFF0u, 10000));
+}
+
+// Review L3: the cap take latch keeps one tank's take of one Son; another Son or another tank checks the cap again.
+static void TestWalkoutCapTakeLatch()
+{
+    SeekWalkoutState s;
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
+    WalkoutCapTakeLatch(s, 41, 7);
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 8));   // a new Son: re-check
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 42, 7));   // another tank
+    CHECK(!WalkoutCapTakeLatched(0, 0, 0, 0));
+    WalkoutCapTakeLatch(s, 41, 8);                                    // a new take replaces the latch
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
 }
 
 int main()
@@ -2456,6 +2538,9 @@ int main()
     TestMeetPrePlaceReviewCases();
     TestWalkoutMeetLostRecord();
     TestMeetPrePlaceLateWalk();
+    TestMeetPrePlaceReplacedBetweenSnapshotAndCommit();
+    TestWalkoutLostMeetWriterClockNewer();
+    TestWalkoutCapTakeLatch();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

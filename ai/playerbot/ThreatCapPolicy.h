@@ -340,19 +340,24 @@ namespace ai
         return ThreatCapPickReference(tanks, successorCap, notHolder).threat;
     }
 
-    // Whether the tank at `selfPos` in `tanks` (the cap's own tank list) is the damage dealers' threat-cap reference
-    // while the main tank holds the boss: the successor pick (ThreatCapPickReference, successorCap on) names an
-    // off-tank, the main tank is the holder, and this off-tank carries the picked threat. The nearest take's reach
-    // (DungeonRunSeekNearestTakeReach) holds such a tank back: its walk to a Son would drop the cap. Two off-tanks
-    // with the very same threat both read as the reference (the safe side). A bad `selfPos` is no reference.
-    inline bool ThreatCapIsReferenceTank(const std::vector<ThreatCapTank>& tanks, int selfPos, bool notHolder = false)
+    // The share of today's reference below which a leave counts as collapsing the cap (ThreatCapLeaveCollapses).
+    constexpr float kThreatCapCollapseShare = 0.5f;
+
+    // Whether the tank at `selfPos` in `tanks` (the cap's own tank list, ThreatCapTanksOf) leaving the boss would collapse
+    // the damage dealers' threat-cap reference (walk 57 F4 review H1/M2): the successor pick (ThreatCapPickReference,
+    // successorCap on, the cap's own `notHolder`) is re-run with that tank marked off the boss (its threat stays: it
+    // does not vanish when the tank walks off). Today's pick naming no off-tank reference has none to lose: false.
+    // Otherwise it collapses when the new pick names no off-tank reference, or one under kThreatCapCollapseShare of
+    // today's. The holder (main, an off-tank, nobody) is whatever the list says. A bad `selfPos` never collapses.
+    inline bool ThreatCapLeaveCollapses(std::vector<ThreatCapTank> tanks, int selfPos, bool notHolder = false)
     {
         if (selfPos < 0 || static_cast<std::size_t>(selfPos) >= tanks.size())
             return false;
-        const ThreatCapTank& self = tanks[static_cast<std::size_t>(selfPos)];
-        if (!self.offTank)
+        const ThreatCapPick now = ThreatCapPickReference(tanks, true, notHolder);
+        if (!now.offTank)
             return false;
-        const ThreatCapPick pick = ThreatCapPickReference(tanks, true, notHolder);
-        return pick.holder == ThreatCapPick::Holder::Main && pick.offTank && self.threat == pick.threat;
+        tanks[static_cast<std::size_t>(selfPos)].onBoss = false;
+        const ThreatCapPick after = ThreatCapPickReference(tanks, true, notHolder);
+        return !after.offTank || after.threat < now.threat * kThreatCapCollapseShare;
     }
 }

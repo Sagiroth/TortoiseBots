@@ -1057,11 +1057,15 @@ Whether the first off-tank reaches a walked Son of Hakkar on a non-tank from up 
 **Reach:** in walk 57 the identified Son kills were mostly walked Sons whose meet was peeled (1.02 a fight) or that were met and then sat on a non-tank (0.69 a fight), while the 8 yd nearest take fired only 20 times in 58 fights. With the key on, on top of the 8 yd rule, the first off-tank (tanks[1]) takes a Son at once when all of these hold:
 - the nearest take's own Son rules hold (on a non-tank, not the open meet's Son, its victim inside the raid circle plus 2 yd);
 - the Son is a walked one: the walk-out walked it this cycle, or its meet was just lost;
-- the receiver (tanks[2]) is more than 15 yd from the Son, or the Son's meet closed as `peeled` or `receiver_victim` in the last 10 s;
+- the receiver (tanks[2]) is more than 15 yd from the Son, or the Son's meet closed as `peeled` or `receiver_victim` in the last 10 s and the receiver cannot take it itself (it is not within 8 yd with its taunt ready: two tanks never taunt one Son);
 - the first off-tank is within 20 yd of the Son (the take's Attack closes the gap) with its taunt ready, is not Hakkar's victim and holds no Son;
-- the first off-tank is not the damage dealers' threat-cap reference while the main tank holds Hakkar (the `threat_successor` pick names it): its walk would drop the cap.
+- its leaving Hakkar does not collapse the damage dealers' threat cap: the cap's own reference pick (the `threat_successor` pick, with `DungeonRunThreatSuccessorNotHolder` as set, read from the very tank list the cap uses) is re-run with the first off-tank marked off Hakkar, and the take is held back when that pick has no off-tank reference left, or one under half of today's. That holds whoever holds Hakkar (the main tank, an off-tank or nobody); a pick that has no off-tank reference today has none to lose.
+
+With the key on, the same cap guard also holds back the first off-tank's 3 s healer-clock take of a Son (the branch then has no take that tick); key off, the healer clock is unchanged. A take that passed the guard is latched for its Son in the fight's walk-out record, so it is not re-checked (and abandoned) mid-walk; another Son or another tank checks again (with no walk-out record yet there is no latch, and each tick checks).
 
 The take row says `src=nearest_reach` when only the reach let the take through (`src=nearest` when the 8 yd rule did).
+
+Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon cycle (the walk-out record forgets the Sons of earlier cycles), so a Son walked last cycle and never lost counts as one that joined by itself.
 
 </details>
 
@@ -1098,7 +1102,9 @@ Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's
 <details>
 <summary>How it works in detail</summary>
 
-**Late walk:** in walk 57 the pre-place started a median 11 s before the shot, the third tank's threat on Hakkar at Cause Insanity fell 24 %, and it still stood a median 42.8 yd from the puller at the shot. With the key on, the pre-placed tank keeps its normal tank work (the task is left as with no pre-place) until the puller is within 10 yd of its stand, or is in position (it stood at its stand, reached shot position, or the shot landed); then it walks to its point as before. Once begun the walk is not undone.
+**Late walk:** in walk 57 the pre-place started a median 11 s before the shot, the third tank's threat on Hakkar at Cause Insanity fell 24 %, and it still stood a median 42.8 yd from the puller at the shot. With the key on, the pre-placed tank keeps its normal tank work (the task is left as with no pre-place) until the puller's walk left to its stand is no longer than the tank's own walk to its point plus 4 yd (both walk at the same speed, so the tank reaches its point about when the shot lands; walk 57's median tank stood 31 yd from its point, so it walks with the puller still about 35 yd out), at the latest when the puller is within 10 yd of its stand, or when the puller is in position (it stood at its stand, reached shot position, or the shot landed); then it walks to its point as before. A stand not known (the puller's task not the pre-place's) waits for the puller to be in position. Once begun the walk is not undone. The point, the stand and the pre-place's generation come from one locked read, and the move is published only after the same generation is confirmed again under the lock, so a pre-place replaced in between never sends the tank to the old point.
+
+Limits (documented, not fixed): the late walk keeps tanks[2] on Hakkar longer, so it is Hakkar's victim more often when the pre-place starts or runs; walk 58 measures the `preplace_end` / meet `reason=receiver_victim` count against walk 57's 13.
 
 Diagnostics (always on with `DungeonRunSeekMeetPrePlace`, key or not): a `BossTacticsSonMeet` row `event=preplace_arrive,receiver=<name>,after_ms=<ms>,point_yd=<yd>` once per pre-place when the tank first comes within 4 yd of its point (`after_ms` since its walk began), and the shot's `event=meet` row gains `receiver_point_yd=` (the receiver's distance to its pre-place point; `-1.0` when the receiver is not the pre-placed tank). Walk 57 could not tell a tank pulled back by its melee reach from one still walking.
 

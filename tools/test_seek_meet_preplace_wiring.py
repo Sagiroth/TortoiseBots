@@ -87,16 +87,21 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
 
     def test_the_receivers_pre_shot_task_is_walk_to_spot_to_the_point(self):
         helper = body(ACTIONS, "bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)")
-        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row ||", helper)
-        self.assertIn("SeekMeetPrePlaceFor(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), x, y)", helper)
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row)\n        return false;", helper)
+        # Review (Codex HIGH / Opus L6): the point comes from the same locked snapshot as the generation.
+        self.assertIn("if (!SeekMeetPrePlaceProgressRead(instanceId, self, progress))\n        return false;", helper)
+        self.assertIn("const float x = progress.x;\n    const float y = progress.y;", helper)
+        self.assertNotIn("SeekMeetPrePlaceFor(", ACTIONS)
         self.assertIn("task.valid = true;\n    task.x = x;\n    task.y = y;", helper)
         self.assertIn("const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) =="
                       " MeetPrePlaceStep::Walk;", helper)
         self.assertIn("task.walkToSpot = walk;\n    task.prePlaceHold = !walk;", helper)
         # At the point the task stays valid (no `task.valid = false` in the helper).
         self.assertNotIn("task.valid = false;", helper)
-        accessor = body(ACTIONS, "bool SeekMeetPrePlaceFor(std::uint32_t instanceId, std::uint64_t bot, float& x, float& y)")
+        accessor = body(ACTIONS, "bool SeekMeetPrePlaceProgressRead(")
         self.assertIn("!WalkoutPrePlaceLive(it->second.state)", accessor)
+        self.assertIn("out.x = s.prePlaceX;", accessor)
+        self.assertIn("out.gen = s.prePlaceGen;", accessor)
         fn = tank_pick()
         # The third tank's branch: after its own Son and a fighting Son, before its pull.
         branch = fn[fn.index("    if (thirdTank || pickupTank)\n    {"):]
@@ -118,13 +123,21 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertIn("### `AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`", SETTINGS)
         helper = body(ACTIONS, "bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)")
         gate = helper.index("if (!MeetPrePlaceWalkDue(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceLate, pullerToStandYd,")
-        self.assertIn("progress.pullerInPos))\n            return false;", helper)
+        # Review H2: the tank's own walk to its point is the lead.
+        self.assertIn("bot->GetDistance2d(x, y), progress.pullerInPos))\n            return false;", helper)
         self.assertIn("? puller->GetDistance2d(progress.standX, progress.standY) : std::numeric_limits<float>::max();",
                       helper)
         # Only before the walk began; the first due read latches it; all of it before the task is filled.
         self.assertLess(helper.index("if (!progress.walking)"), gate)
-        self.assertLess(gate, helper.index("SeekMeetPrePlaceNoteWalk(instanceId, self, progress.gen, nowMs);"))
-        self.assertLess(helper.index("SeekMeetPrePlaceNoteWalk("), helper.index("task.row = row;"))
+        # The commit: the snapshot's generation is re-checked (and the walk latched) under the lock before the task is
+        # filled; a replaced pre-place returns before any move is published.
+        commit = helper.index("if (!SeekMeetPrePlaceConfirm(instanceId, self, progress.gen, true, nowMs))\n        return false;")
+        self.assertLess(gate, commit)
+        self.assertLess(commit, helper.index("task.row = row;"))
+        self.assertLess(commit, helper.index("task.walkToSpot = walk;"))
+        confirm = body(ACTIONS, "bool SeekMeetPrePlaceConfirm(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", confirm)
+        self.assertIn("WalkoutPrePlaceConfirm(it->second.state, bot, gen, latchWalk, nowMs)", confirm)
         read = body(ACTIONS, "bool SeekMeetPrePlaceProgressRead(")
         self.assertIn("out.pullerInPos = WalkoutPullerInPos(s);", read)
         self.assertIn("!WalkoutPrePlaceLive(it->second.state)", read)

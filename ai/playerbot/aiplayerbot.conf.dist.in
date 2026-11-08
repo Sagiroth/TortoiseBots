@@ -1128,9 +1128,10 @@ AiPlayerbot.DungeonRunSeekNearestTake = 0
 
 # The nearest take's reach for Hakkar's Sons (recommended on; needs DungeonRunSeekNearestTake): the first off-tank also
 # takes a walked Son on a non-tank (its victim inside the raid circle, plus 2 yd) from up to 20 yd when the receiving
-# third tank is more than 15 yd from it, or that Son's meet closed as peeled or receiver_victim in the last 10 s. Never
-# while the first off-tank is Hakkar's victim, holds a Son, or is the damage dealers' threat-cap reference while the
-# main tank holds Hakkar. The take row says src=nearest_reach. Off keeps the 8 yd nearest take.
+# third tank is more than 15 yd from it, or that Son's meet closed as peeled or receiver_victim in the last 10 s and the
+# receiver cannot take it itself (within 8 yd, its taunt ready). Never while the first off-tank is Hakkar's victim or
+# holds a Son, or when its leaving Hakkar would collapse the damage dealers' threat-cap reference; that guard also holds
+# back its 3 s healer-clock take. The take row says src=nearest_reach. Off keeps the 8 yd nearest take and the clock.
 AiPlayerbot.DungeonRunSeekNearestTakeReach = 0
 
 # The meet's pre-place for Hakkar's Sons (recommended on; needs DungeonRunSeekSonMeet): when a walk-out starts, the
@@ -1142,9 +1143,9 @@ AiPlayerbot.DungeonRunSeekNearestTakeReach = 0
 AiPlayerbot.DungeonRunSeekMeetPrePlace = 0
 
 # The pre-place's late walk for Hakkar's Sons (recommended on, its value still being tested; needs
-# DungeonRunSeekMeetPrePlace): the pre-placed third tank stays on Hakkar until the walk-out's puller is within 10 yd of
-# its stand or in position (at its stand, in shot position or shot), then walks to its point. Off walks it when the
-# walk-out starts.
+# DungeonRunSeekMeetPrePlace): the pre-placed third tank stays on Hakkar until the walk-out puller's way left to its
+# stand is no longer than the tank's own walk to its point plus 4 yd (at the latest 10 yd from the stand), or the puller
+# is in position (at its stand, in shot position or shot), then walks to its point. Off walks it when the walk-out starts.
 AiPlayerbot.DungeonRunSeekMeetPrePlaceLate = 0
 
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.

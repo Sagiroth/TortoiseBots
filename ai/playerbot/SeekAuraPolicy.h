@@ -491,19 +491,22 @@ namespace ai
     }
 
     // The reach rule alone (DungeonRunSeekNearestTakeReach): `reachKey` is the key on and the Son a walked one (the
-    // caller's read), `meetLost` its meet closed as peeled or receiver_victim in the last 10 s, `selfIsReference`
-    // tanks[1] is the damage dealers' threat-cap reference while the main tank holds the boss (its walk would drop the
-    // cap). tanks[1] only: within 20 yd, its taunt ready, not the boss's victim, holding no Son, not the reference, and
-    // the receiver more than 15 yd from the Son or the Son's meet lost.
-    inline bool SeekNearestTakerReach(int selfIdx, float receiverYd, float selfYd, bool selfTauntReady,
-                                      bool selfIsBossVictim, bool selfHoldsSon, bool reachKey, bool meetLost,
-                                      bool selfIsReference)
+    // caller's read), `meetLost` its meet closed as peeled or receiver_victim in the last 10 s, `selfCollapsesCap`
+    // tanks[1] leaving the boss would collapse the damage dealers' threat-cap reference (ThreatCapLeaveCollapses; the
+    // caller passes false for a Son whose take already started, the take latch). tanks[1] only: within 20 yd, its
+    // taunt ready, not the boss's victim, holding no Son, its leave not collapsing the cap, and the receiver more than
+    // 15 yd from the Son, or the Son's meet lost while the receiver cannot take it itself (within 8 yd with its taunt
+    // ready, it can: two tanks would taunt the one Son).
+    inline bool SeekNearestTakerReach(int selfIdx, float receiverYd, bool receiverTauntReady, float selfYd,
+                                      bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon, bool reachKey,
+                                      bool meetLost, bool selfCollapsesCap)
     {
         if (!reachKey || selfIdx != 1)
             return false;
-        const bool receiverFar = receiverYd > kSeekNearestTakeReachRecvYd || meetLost;
+        const bool receiverCanTake = receiverYd <= kSeekNearestTakeYd && receiverTauntReady;
+        const bool receiverFar = receiverYd > kSeekNearestTakeReachRecvYd || (meetLost && !receiverCanTake);
         const bool selfCan = selfYd <= kSeekNearestTakeReachYd && selfTauntReady && !selfIsBossVictim &&
-            !selfHoldsSon && !selfIsReference;
+            !selfHoldsSon && !selfCollapsesCap;
         return receiverFar && selfCan;
     }
 
@@ -515,13 +518,13 @@ namespace ai
     // other tank index is not a taker here. The last three default off: today's rule.
     inline bool SeekNearestTakerIs(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
                                    float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon,
-                                   bool reachKey = false, bool meetLost = false, bool selfIsReference = false)
+                                   bool reachKey = false, bool meetLost = false, bool selfCollapsesCap = false)
     {
         if (SeekNearestTakerNear(selfIdx, receiverIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady,
                                  selfIsBossVictim, selfHoldsSon))
             return true;
-        return SeekNearestTakerReach(selfIdx, receiverYd, selfYd, selfTauntReady, selfIsBossVictim, selfHoldsSon,
-                                     reachKey, meetLost, selfIsReference);
+        return SeekNearestTakerReach(selfIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady, selfIsBossVictim,
+                                     selfHoldsSon, reachKey, meetLost, selfCollapsesCap);
     }
 
     // The stance or form a tank's taunt needs (by class id): a warrior's Taunt needs Defensive Stance, a druid's Growl
@@ -560,14 +563,31 @@ namespace ai
         // The reach's inputs (DungeonRunSeekNearestTakeReach): the key on and the Son a walked one, and its meet lost.
         bool reachKey = false;
         bool meetLost = false;
+        // This tank's cap-checked take of this Son already started (the walk-out state's take latch): the collapse is
+        // not re-checked for it (walk 57 F4 review L3).
+        bool capLatched = false;
     };
+
+    // The cap guard for one Son: the collapse holds the take back, unless that Son's take already started.
+    inline bool SeekCapGuardBlocks(bool selfCollapsesCap, bool capLatched)
+    {
+        return selfCollapsesCap && !capLatched;
+    }
+
+    // Whether the healer clock's take goes ahead (walk 57 F4 review H1): key off (DungeonRunSeekNearestTakeReach) always,
+    // as today; key on, unless the cap guard blocks it (SeekCapGuardBlocks). A blocked take leaves the branch with no
+    // task this tick.
+    inline bool SeekHealerClockTakeAllowed(bool reachKey, bool selfCollapsesCap, bool capLatched)
+    {
+        return !reachKey || !SeekCapGuardBlocks(selfCollapsesCap, capLatched);
+    }
 
     // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes
     // (SeekNearestTakerIs), or -1. Flag off: always -1, so the 3 s healer clock is the only take. `viaReach` (when
     // given) says the pick was taken only by the reach (SeekNearestTakerReach), not by the 8 yd rule: its row's
     // `src=nearest_reach`.
     inline int PickSeekNearestTake(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
-                                   const std::vector<SeekNearestTakeCand>& sons, bool selfIsReference = false,
+                                   const std::vector<SeekNearestTakeCand>& sons, bool selfCollapsesCap = false,
                                    bool* viaReach = nullptr)
     {
         if (viaReach)
@@ -583,7 +603,7 @@ namespace ai
                 continue;
             if (!SeekNearestTakerIs(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
                                     c.selfTauntReady, selfIsBossVictim, selfHoldsSon, c.reachKey, c.meetLost,
-                                    selfIsReference))
+                                    SeekCapGuardBlocks(selfCollapsesCap, c.capLatched)))
                 continue;
             if (best < 0 || c.selfYd < sons[static_cast<std::size_t>(best)].selfYd)
             {

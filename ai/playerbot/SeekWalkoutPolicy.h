@@ -1039,7 +1039,32 @@ namespace ai
         // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
         // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
         std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+        // The cap-checked take latch (DungeonRunSeekNearestTakeReach, review L3): the tank whose reach or healer-clock
+        // take of `capTakeSon` passed the cap's collapse check; that take keeps going without a re-check, and a new take
+        // (another Son, or another tank) checks again.
+        std::uint64_t capTaker = 0;
+        std::uint64_t capTakeSon = 0;
     };
+
+    // The cap take latch (above): set it for this taker and Son, or read whether this taker's take of `son` is latched.
+    inline void WalkoutCapTakeLatch(SeekWalkoutState& s, std::uint64_t taker, std::uint64_t son)
+    {
+        s.capTaker = taker;
+        s.capTakeSon = son;
+    }
+
+    inline bool WalkoutCapTakeLatched(std::uint64_t latchedTaker, std::uint64_t latchedSon, std::uint64_t taker,
+                                      std::uint64_t son)
+    {
+        return taker != 0 && son != 0 && latchedTaker == taker && latchedSon == son;
+    }
+
+    // A lost meet's age at `nowMs`, signed (review L1): readers' clocks may be a tick older than the writer's, so a record
+    // stamped after `nowMs` reads as a small negative age, never as a wrapped 49-day one.
+    inline std::int64_t WalkoutLostMeetAgeMs(std::uint32_t nowMs, std::uint32_t stampMs)
+    {
+        return static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - stampMs));
+    }
 
     // Whether a meet's close word counts as lost for the nearest take's reach: the Son was peeled onto someone else, or
     // the receiver became the boss's victim. Other closes (son_dead, receiver_dead, receiver_charmed, receiver_busy,
@@ -1058,7 +1083,10 @@ namespace ai
             return;
         lost.erase(std::remove_if(lost.begin(), lost.end(),
                                   [&](const std::pair<std::uint64_t, std::uint32_t>& e)
-                                  { return e.first == son || nowMs - e.second >= keepMs; }),
+                                  {
+                                      return e.first == son ||
+                                          WalkoutLostMeetAgeMs(nowMs, e.second) >= static_cast<std::int64_t>(keepMs);
+                                  }),
                    lost.end());
         lost.emplace_back(son, nowMs);
     }
@@ -1069,7 +1097,7 @@ namespace ai
     {
         for (const auto& e : lost)
         {
-            if (e.first == son && nowMs - e.second < windowMs)
+            if (e.first == son && WalkoutLostMeetAgeMs(nowMs, e.second) < static_cast<std::int64_t>(windowMs))
                 return true;
         }
         return false;
@@ -1200,16 +1228,22 @@ namespace ai
 
     // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): walk 57's pre-place started a median 11 s before the
     // shot, the third tank's threat on Hakkar fell 24 %, and it still stood a median 42.8 yd from the puller at the
-    // shot. With the key the pre-placed tank stays on Hakkar until the puller is within kSeekMeetPrePlaceLeadYd of its
-    // stand, or in position (at its stand, in shot position, shot, or the meet already handed over); then it walks.
+    // shot (31 yd from its point at the start). With the key the pre-placed tank stays on Hakkar until the puller's
+    // walk left to its stand is no longer than the tank's own walk to its point plus kSeekMeetPrePlaceLeadSlackYd (both
+    // run at the same speed, so the tank arrives about when the puller shoots), never later than the puller within
+    // kSeekMeetPrePlaceLeadYd of its stand (the floor), or once the puller is in position (at its stand, in shot
+    // position, shot, or the meet already handed over).
     constexpr float kSeekMeetPrePlaceLeadYd = 10.0f;
+    constexpr float kSeekMeetPrePlaceLeadSlackYd = 4.0f;
 
-    // Whether the pre-placed tank's walk to its point is due now. Key off: always (today: at the walk-out start).
-    inline bool MeetPrePlaceWalkDue(bool flagLate, float pullerToStandYd, bool pullerInPos)
+    // Whether the pre-placed tank's walk to its point is due now. Key off: always (today: at the walk-out start). An
+    // unknown stand is passed as a far puller (not due until in position).
+    inline bool MeetPrePlaceWalkDue(bool flagLate, float pullerToStandYd, float receiverToPointYd, bool pullerInPos)
     {
         if (!flagLate)
             return true;
-        return pullerInPos || pullerToStandYd <= kSeekMeetPrePlaceLeadYd;
+        const float leadYd = std::max(kSeekMeetPrePlaceLeadYd, receiverToPointYd + kSeekMeetPrePlaceLeadSlackYd);
+        return pullerInPos || pullerToStandYd <= leadYd;
     }
 
     // Whether the walk-out's puller is in position for MeetPrePlaceWalkDue: the pre-place's meet already handed over,
@@ -1217,18 +1251,6 @@ namespace ai
     inline bool WalkoutPullerInPos(const SeekWalkoutState& s)
     {
         return s.prePlaceMeet || s.shot || s.atStandSinceMs != 0 || s.firstInShotMs != 0;
-    }
-
-    // The pre-place's walk began (first due read): latched once for the pre-place `receiver` of generation `gen`, so
-    // the arrival row can say how long the walk took. False for a stale reader or a walk already latched.
-    inline bool WalkoutPrePlaceNoteWalk(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen,
-                                        std::uint32_t nowMs)
-    {
-        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceWalking)
-            return false;
-        s.prePlaceWalking = true;
-        s.prePlaceWalkMs = nowMs;
-        return true;
     }
 
     // The pre-placed tank came within kSeekMeetPrePlaceArriveYd of its point: true once per pre-place (the one
@@ -1340,6 +1362,23 @@ namespace ai
             return s.meetReceiver == s.prePlaceReceiver && s.meetMs == s.prePlaceMeetMs;
         return WalkoutActive(s) && !s.shot && s.puller == s.prePlacePuller && s.startMs == s.prePlaceStartMs &&
             s.startGen == s.prePlaceGen;
+    }
+
+    // The pre-place task's commit (review: one snapshot, Codex HIGH / Opus L6): the reader's one locked snapshot named
+    // pre-place generation `gen` for `receiver`; before its movement task is published the same generation must still
+    // be the live pre-place (a replacement in between, even for the same tank, returns false and the tick publishes no
+    // move toward the stale point). `latchWalk` also latches the walk's start (the arrival row's `after_ms` start).
+    inline bool WalkoutPrePlaceConfirm(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen, bool latchWalk,
+                                       std::uint32_t nowMs)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || !WalkoutPrePlaceLive(s))
+            return false;
+        if (latchWalk && !s.prePlaceWalking)
+        {
+            s.prePlaceWalking = true;
+            s.prePlaceWalkMs = nowMs;
+        }
+        return true;
     }
 
     // One record's marks for the two global counts: busy (a task or a walk back runs: the anchor's exemption reads it)

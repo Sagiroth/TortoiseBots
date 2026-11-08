@@ -2,6 +2,7 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_seek_aura_policy.cpp -o /tmp/test_seek_aura_policy
 //   /tmp/test_seek_aura_policy
 #include "../ai/playerbot/SeekAuraPolicy.h"
+#include "../ai/playerbot/ThreatCapPolicy.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -270,8 +271,8 @@ int main()
     // The 20 yd edge (mutation 20 -> 8: the failing case and this fail): 20 takes, 21 holds back.
     CHECK(SeekNearestTakerIs(1, 2, 18.0f, true, 20.0f, true, false, false, true, false, false));
     CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 21.0f, true, false, false, true, false, false));
-    // Holds back as Hakkar's victim, holding a Son, or as the threat-cap reference (mutation: drop the reference guard
-    // and the last one fails).
+    // Holds back as Hakkar's victim, holding a Son, or when its leave collapses the threat cap (review H1; mutation:
+    // drop the collapse guard and the last one fails).
     CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, true, false, true, false, false));
     CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, true, true, false, false));
     CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, true, false, true));
@@ -280,10 +281,18 @@ int main()
     // The receiver within 15 yd keeps the Son (15 is not "more than 15")...
     CHECK(!SeekNearestTakerIs(1, 2, 15.0f, true, 14.0f, true, false, false, true, false, false));
     CHECK(SeekNearestTakerIs(1, 2, 15.5f, true, 14.0f, true, false, false, true, false, false));
-    // ...unless the Son's meet was just lost: meetLost alone lets tanks[1] take at 18 yd with the receiver at 6 yd.
-    CHECK(SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, true, false));
-    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, false, false));
-    // The reference guard is the reach's only: the 8 yd rule still takes (today's behaviour, not narrowed).
+    // ...unless the Son's meet was just lost and the receiver cannot take it itself: meetLost with the receiver at 6 yd,
+    // its taunt NOT ready, lets tanks[1] take at 18 yd (review M1: was the "receiver 6 yd" case).
+    CHECK(SeekNearestTakerIs(1, 2, 6.0f, false, 18.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, false, 18.0f, true, false, false, true, false, false));
+    // Review M1: meetLost, the receiver at 6 yd with its taunt ready -> the receiver takes; tanks[1] does not (two tanks
+    // would taunt one Son). Mutation: drop the receiver's own take test and this fails.
+    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, true, false));
+    // The receiver within 8 yd but not ready, or ready but past 8 yd (yet within 15): tanks[1] takes a lost-meet Son.
+    CHECK(SeekNearestTakerIs(1, 2, 12.0f, true, 18.0f, true, false, false, true, true, false));
+    CHECK(SeekNearestTakerIs(1, 2, 8.0f, false, 18.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 8.0f, true, 18.0f, true, false, false, true, true, false));
+    // The collapse guard is the reach's only: the 8 yd rule still takes (today's behaviour, not narrowed).
     CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, false, true, false, true));
     // Only tanks[1]: the main tank and a fourth tank never reach.
     CHECK(!SeekNearestTakerIs(0, 2, 18.0f, true, 14.0f, true, false, false, true, true, false));
@@ -314,6 +323,27 @@ int main()
         CHECK(viaReach);
         CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, true, &viaReach) == -1);
         CHECK(!viaReach);
+        // Review L3: a Son whose cap-checked take already started (latched) keeps it although the cap would collapse
+        // now (mutation: ignore the latch and this fails).
+        c.capLatched = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, true, &viaReach) == 0);
+        CHECK(viaReach);
+        c.capLatched = false;
+        CHECK(SeekCapGuardBlocks(true, false));
+        // Review H1: tanks[1] is the cap's reference (main tank holds, tanks[1] 400 on the boss, tanks[2] away), the
+        // healer clock fires for it: its leave collapses the cap, so with the reach key on the take is held back; key
+        // off: today's take. A latched take goes on. Mutation: drop the collapse check and the key-on case fails.
+        const std::vector<ThreatCapTank> h1 = {{1000.0f, false, true, true}, {400.0f, true, true, false},
+                                               {200.0f, true, false, false}};
+        const bool collapses = ThreatCapLeaveCollapses(h1, 1);
+        CHECK(collapses);
+        CHECK(!SeekHealerClockTakeAllowed(true, collapses, false));
+        CHECK(SeekHealerClockTakeAllowed(false, collapses, false));
+        CHECK(SeekHealerClockTakeAllowed(true, collapses, true));
+        // tanks[2] (away) leaving collapses nothing: its healer-clock take is not held back.
+        CHECK(SeekHealerClockTakeAllowed(true, ThreatCapLeaveCollapses(h1, 2), false));
+        CHECK(!SeekCapGuardBlocks(true, true));
+        CHECK(!SeekCapGuardBlocks(false, false));
         CHECK(PickSeekNearestTake(false, 1, 2, false, false, {c}, false, &viaReach) == -1);
         // A Son the 8 yd rule takes is `nearest`, not `nearest_reach`, even with the key on.
         c.selfYd = 4.0f;

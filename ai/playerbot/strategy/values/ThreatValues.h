@@ -44,4 +44,14 @@ namespace ai
     // damage dealers are then measured against the assigned off-tanks' highest threat, so the second tank stays second
     // for a threat reset. A taunt-immune target without the row keeps the highest tank.
     bool ThreatSuccessorTarget(Unit* target);
+
+    struct RaidTankRoles;
+
+    // The threat cap's own tank list on `target` (ThreatValue::GetTankThreat's successor pick): the raid's tank order
+    // `roles`, a dead, unsafe or creature-charmed tank and `skip` (the reading bot; null: none) left out, the Hex and
+    // Delusions marks and ThreatCapCursedOnBoss applied. `who` (when given) gets each listed tank, in list order. The
+    // nearest take's cap guard (BossTacticsActions SeekTankLeaveCollapsesCap) reads the same list, so the two cannot
+    // drift.
+    std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target, const RaidTankRoles& roles, Player* skip,
+                                                std::vector<Player*>* who = nullptr);
 }
