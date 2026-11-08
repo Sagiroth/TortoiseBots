@@ -66,13 +66,18 @@ class ShieldTankStanceWiringTest(unittest.TestCase):
         )
         self.assertNotIn("GetPlayerForcedRole", body)
 
-    def test_guard_uses_group_combat_helper(self):
-        # The rage-tank rule also holds between chained pulls: the call feeds
-        # ShouldShieldTarget the helper over the target's and the healer's
-        # combat, not the target's flag alone.
+    def test_guard_reads_no_combat_state(self):
+        # The rage-tank rule holds in or out of combat, so the guard reads no
+        # combat state: a shield cast between pulls still eats the next pull's
+        # opening hits. Adding a combat input back breaks this pin.
         body = shield_body()
-        self.assertIn(
-            "TankEngagedForShield(target->IsInCombat(), bot->IsInCombat())", body
+        self.assertNotIn("TankEngagedForShield", body)
+        self.assertNotIn("IsInCombat", body)
+        self.assertRegex(
+            body,
+            r"target->GetPowerType\(\) == POWER_RAGE,\s*"
+            r"\(unsigned\)target->GetHealthPercent\(\),\s*"
+            r"sPlayerbotAIConfig\.criticalHealth",
         )
 
 
