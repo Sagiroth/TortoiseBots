@@ -602,6 +602,99 @@ int main()
         CHECK(!SeekMeetHoldsSon(true, false, true));
     }
 
+    // Healers skip the open meet's puller as a heal target (DungeonRunSeekMeetNoHeal, walk 55: 24 of 27 meets were
+    // peeled onto a healer by heal threat).
+    {
+        // Failing case: the meet is open and the puller stands at 60 % hp -> held. Before the change nothing held it.
+        CHECK(SeekMeetHealHeld(true, true, true, 60.0f));
+        CHECK(SeekMeetHealHeld(true, true, true, 100.0f));
+        // Under the floor the heal wins over the threat; at the floor it is still held (below, not at or below).
+        CHECK(kSeekMeetHealFloorPct == 40.0f);
+        CHECK(!SeekMeetHealHeld(true, true, true, 35.0f));
+        CHECK(!SeekMeetHealHeld(true, true, true, 39.9f));
+        CHECK(SeekMeetHealHeld(true, true, true, 40.0f));
+        // The meet closed lifts the hold.
+        CHECK(!SeekMeetHealHeld(true, false, true, 60.0f));
+        // Any other member is healed as ever.
+        CHECK(!SeekMeetHealHeld(true, true, false, 60.0f));
+        CHECK(!SeekMeetHealHeld(true, true, false, 10.0f));
+        // Flag off is today's behaviour whatever the rest says.
+        CHECK(!SeekMeetHealHeld(false, true, true, 60.0f));
+        CHECK(!SeekMeetHealHeld(false, true, true, 100.0f));
+        CHECK(!SeekMeetHealHeld(false, false, false, 0.0f));
+    }
+
+    // Whose heal is held: the meet's own puller. The returner is the same bot in the normal path (the abort moves the
+    // puller to `returner`) and is held as the puller; an unrelated walk-out puller that became the returner during the
+    // open meet is not held (review L2).
+    {
+        const std::uint64_t puller = 0x1234;
+        const std::uint64_t returnerSameBot = puller;
+        const std::uint64_t unrelatedReturner = 0x5678;
+        CHECK(SeekMeetHealWalker(puller, puller));
+        CHECK(SeekMeetHealWalker(returnerSameBot, puller));
+        CHECK(!SeekMeetHealWalker(unrelatedReturner, puller));
+        CHECK(!SeekMeetHealWalker(0x9999, puller));
+        // No open meet / no puller named: nobody is held, not even guid 0.
+        CHECK(!SeekMeetHealWalker(0, 0));
+        CHECK(!SeekMeetHealWalker(puller, 0));
+    }
+
+    // The scope: the key on and at least one meet open on the server (an atomic count). The key off, or a count of 0,
+    // never reaches the lock; no map constant is involved, so a seek_pull row on any map works.
+    {
+        CHECK(SeekMeetHealScope(true, 1));
+        CHECK(SeekMeetHealScope(true, 3));
+        CHECK(!SeekMeetHealScope(false, 1));   // key off: no lock
+        CHECK(!SeekMeetHealScope(true, 0));    // count 0: no lock
+        CHECK(!SeekMeetHealScope(false, 0));
+    }
+
+    // The open-meet count stays exact over every life a meet can have. The delta is applied wherever a record's receiver
+    // is set, cleared or dropped; this replays the sequences, and a path that skipped its decrement would leave the
+    // count above 0 here.
+    {
+        int count = 0;
+        auto step = [&](bool before, bool after) { count += SeekMeetOpenDelta(before, after); };
+        CHECK(SeekMeetOpenDelta(false, true) == 1);
+        CHECK(SeekMeetOpenDelta(true, false) == -1);
+        CHECK(SeekMeetOpenDelta(true, true) == 0);   // a second meet on a record that still holds one
+        CHECK(SeekMeetOpenDelta(false, false) == 0);
+        // Opened, then closed by a taken or lost reader: back to 0.
+        step(false, true);
+        CHECK(count == 1);
+        step(true, false);
+        CHECK(count == 0);
+        // Opened, then the record is dropped (a wipe, a reset, the stale sweep): back to 0.
+        step(false, true);
+        step(true, false);
+        CHECK(count == 0);
+        // Two instances at once, one replaced while open (delta 0), both closed.
+        step(false, true);
+        step(false, true);
+        step(true, true);
+        CHECK(count == 2);
+        step(true, false);
+        step(true, false);
+        CHECK(count == 0);
+        // A stale second close of a record that no longer holds a meet changes nothing.
+        step(false, false);
+        CHECK(count == 0);
+    }
+
+    // The floor reads the hp after the incoming hits (review M1): the puller at 45 % with a swing worth 10 % is at 35 %
+    // and is healed; at 60 % with 25 % incoming it is at 35 % and healed; at 60 % with 10 % it stays held.
+    {
+        CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 1000) == 35.0f);
+        CHECK(!SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 100, 1000)));
+        CHECK(!SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(60.0f, 250, 1000)));
+        CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(60.0f, 100, 1000)));
+        // No incoming damage: the plain hp. A swing larger than the bar clamps at 0 (healed). No max hp: unchanged.
+        CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 0, 1000)));
+        CHECK(SeekMeetHealHpAfterIncoming(20.0f, 500, 1000) == 0.0f);
+        CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 0) == 45.0f);
+    }
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

@@ -1,5 +1,7 @@
 # Changelog
 
+- Fixed: a priest that knows Heal rank 2 or higher no longer falls back to Lesser Heal while Heal is merely mid-cast or on cooldown; Lesser Heal is used only when the priest cannot pay for the Heal rank it would cast.
+- New: behind AiPlayerbot.DungeonRunSeekMeetNoHeal (default 0, recommended on), bots that heal members stop healing Hakkar's Son puller while the meet is open unless its health after the next hit is under 40 %, so the heal's threat no longer peels the Son onto a healer.
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
 - New: behind AiPlayerbot.DungeonRunCarrierHold (default 0), a Delusions carrier on its Shade of Jin'do keeps it instead of being pulled to the boss, and the kill-first check runs every second.
 - Changed: with AiPlayerbot.DungeonRunTauntGate on, the main tank holding Jin'do no longer taunts a Shade (reason holding_boss), and each taunt-gate refusal word is logged once per bot per 5 s.

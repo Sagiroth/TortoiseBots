@@ -1067,6 +1067,7 @@ struct WalkoutRecord
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
 std::atomic<int> g_walkoutsActive{0}; // records whose task or walk back runs (WalkoutBusy)
+std::atomic<int> g_walkoutMeetsOpen{0}; // records holding a meet (meetReceiver != 0), SeekMeetOpenDelta
 // The held pets' stances by puller guid; the bot's own next update hands each back (ReleaseWalkoutPet).
 std::unordered_map<std::uint64_t, WalkoutPetStance> g_petHolds;
 std::atomic<int> g_petHoldCount{0};
@@ -1535,10 +1536,28 @@ void NoteWalkoutBusy(bool before, const SeekWalkoutState& after)
         g_walkoutsActive.fetch_add(1, std::memory_order_relaxed);
 }
 
+// The open-meet count follows one record's change (g_walkouts' mutex held): the meet's receiver before and after.
+void NoteWalkoutMeet(bool before, const SeekWalkoutState& after)
+{
+    int const delta = SeekMeetOpenDelta(before, after.meetReceiver != 0);
+    if (delta)
+        g_walkoutMeetsOpen.fetch_add(delta, std::memory_order_relaxed);
+}
+
+// WalkoutMeetCloseIf with the count kept (g_walkoutMutex held): the one place a shared meet is cleared.
+bool CloseWalkoutMeetIf(SeekWalkoutState& state, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
+{
+    bool const before = state.meetReceiver != 0;
+    bool const closed = WalkoutMeetCloseIf(state, receiver, son, meetMs);
+    NoteWalkoutMeet(before, state);
+    return closed;
+}
+
 std::unordered_map<std::uint32_t, WalkoutRecord>::iterator DropWalkoutRecord(
     std::unordered_map<std::uint32_t, WalkoutRecord>::iterator it)
 {
     NoteWalkoutBusy(WalkoutBusy(it->second.state), SeekWalkoutState());
+    NoteWalkoutMeet(it->second.state.meetReceiver != 0, SeekWalkoutState());
     return g_walkouts.erase(it);
 }
 
@@ -2083,7 +2102,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
                 cleared = it != g_walkouts.end() &&
-                    WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
+                    CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
             }
             const std::uint64_t guid = state.meetSon;
             if (cleared && takenBy)
@@ -2209,10 +2228,12 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         meetRoles.tanks[static_cast<std::size_t>(pick)])
                     {
                         Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
+                        bool const meetBefore = it->second.state.meetReceiver != 0;
                         it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
                         it->second.state.meetSon = guid;
                         it->second.state.meetMs = nowMs;
                         it->second.state.meetPuller = it->second.state.puller;
+                        NoteWalkoutMeet(meetBefore, it->second.state);
                         state.meetReceiver = it->second.state.meetReceiver;
                         state.meetSon = guid;
                         state.meetMs = nowMs;
@@ -2625,7 +2646,7 @@ bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
-    return it != g_walkouts.end() && WalkoutMeetCloseIf(it->second.state, receiver, son, meetMs);
+    return it != g_walkouts.end() && CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs);
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -3760,6 +3781,20 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
                              static_cast<float>(state.row->priority));
 }
 }  // namespace
+
+std::uint64_t ai::SeekMeetHealPuller(std::uint32_t instanceId)
+{
+    // The cheap exits first: the key off, or no meet open anywhere on the server, never reaches the lock.
+    if (!SeekMeetHealScope(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal,
+                           g_walkoutMeetsOpen.load(std::memory_order_relaxed)))
+        return 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return 0;
+    const SeekWalkoutState& state = it->second.state;
+    return SeekMeetOpen(state.meetReceiver, state.meetMs, WorldTimer::getMSTime()) ? state.meetPuller : 0;
+}
 
 void ai::ReconcileSeekFightState(const BossTacticTable& next)
 {

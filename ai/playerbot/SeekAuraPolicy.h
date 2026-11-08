@@ -255,6 +255,52 @@ namespace ai
         return meetOpen && sonIsMeetSon && !sonVictimIsTank;
     }
 
+    // Healers leave the open meet's puller alone (DungeonRunSeekMeetNoHeal). Walk 55: 24 of 27 meets ended with the Son
+    // peeled onto a healer, because a heal on the puller adds threat on every mob that has the puller on its list (heal
+    // threat x0.5 split over Hakkar and the Son, a 1-1.5k heal about 250-375 on the Son against the one Auto Shot the
+    // puller holds). So while the meet is open a heal target that is the puller is skipped, unless its hp after the
+    // incoming hits is below kSeekMeetHealFloorPct (then the heal wins over the threat). `flagOn` is the key.
+    constexpr float kSeekMeetHealFloorPct = 40.0f;
+    inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
+    {
+        return flagOn && meetOpen && isPuller && hpPct >= kSeekMeetHealFloorPct;
+    }
+
+    // Whether the meet hold can apply at all: the key on and at least one pulled-Son meet open on the server (the count
+    // of records holding a receiver, kept by SeekMeetOpenDelta). Checked before any lock, so the key off, and every
+    // server or map without a meet, cost one atomic read.
+    inline bool SeekMeetHealScope(bool flagOn, int openMeets)
+    {
+        return flagOn && openMeets > 0;
+    }
+
+    // The change one record's meet makes to that count (+1 opened, -1 closed or dropped, 0 neither): `before` and `after`
+    // are "the record names a receiver" around the change. Every place that opens, closes or drops a meet applies it, so
+    // the count is exact whatever ends the meet (a taken Son, a lost receiver, the 20 s cap seen by a reader, a wipe or
+    // reset that drops the record).
+    inline int SeekMeetOpenDelta(bool before, bool after)
+    {
+        return (after ? 1 : 0) - (before ? 1 : 0);
+    }
+
+    // The walker a healer skips: the meet's own puller. The returner is the same bot in the normal path (the abort moves
+    // the puller to `returner`); a second walk-out inside the open meet makes an unrelated bot the returner, and that
+    // one is not held.
+    inline bool SeekMeetHealWalker(std::uint64_t guid, std::uint64_t meetPuller)
+    {
+        return guid != 0 && guid == meetPuller;
+    }
+
+    // The hp the floor is read against: current hp less the damage the target's attackers deal in one swing
+    // (`incoming`, the heal pick's own estimate). A puller at 45 % with 10 % incoming is at 35 %: healed.
+    inline float SeekMeetHealHpAfterIncoming(float hpPct, std::uint32_t incoming, std::uint32_t maxHp)
+    {
+        if (!maxHp)
+            return hpPct;
+        const float left = hpPct - 100.0f * static_cast<float>(incoming) / static_cast<float>(maxHp);
+        return left > 0.0f ? left : 0.0f;
+    }
+
     // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the
     // hold itself and `Dosed` the hold once every seeker already carries the poison (nothing a kill buys) — both still
     // hold the Son; `Cap20`, `NonTank` and `SelectedBurn` are the release paths.
