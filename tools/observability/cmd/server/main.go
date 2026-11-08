@@ -1171,8 +1171,8 @@ func qUint(s string) uint32 {
 	return uint32(v)
 }
 
-// combatLiveHandler serves GET /api/v1/combat/live?commander=<name>&since=<cursor>: the live row's header and the events whose
-// index is at or past the cursor (the page's catch-up after a gap, a resync or a fresh open). A bad name or cursor is a 400, a
+// combatLiveHandler serves GET /api/v1/combat/live?commander=<name>&since=<cursor>[&key=<fight key>]: the live row's header and the events whose
+// index is at or past the cursor (from 0 when key names another fight than the live one) (the page's catch-up after a gap, a resync or a fresh open). A bad name or cursor is a 400, a
 // commander with no live fight a 404.
 func combatLiveHandler(combatStore *combat.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1195,7 +1195,8 @@ func combatLiveHandler(combatStore *combat.Store) http.HandlerFunc {
 				return
 			}
 		}
-		d, ok := combatStore.LiveSince(names[0], since)
+		// key: the fight the caller's cursor belongs to; another live fight answers from 0 (a cursor of an older fight means nothing).
+		d, ok := combatStore.LiveSince(names[0], since, q.Get("key"))
 		if !ok {
 			fail(http.StatusNotFound, "no live fight")
 			return

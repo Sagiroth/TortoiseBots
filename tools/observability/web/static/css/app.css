@@ -3422,11 +3422,14 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-live-more { grid-column: 1 / -1; margin: 0; font-size: 0.78rem; }
 .fd-tile { display: grid; gap: 4px; padding: 10px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-width: 0; font-size: 0.84rem; }
 .fd-tile-head, .fd-tile-boss { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fd-tile-title, .fd-tile-group, .fd-tile-bossname { overflow-wrap: anywhere; min-width: 0; }
+.fd-tile-open { white-space: nowrap; }
 .fd-tile-time { font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .fd-tile-hp { position: relative; height: 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; }
 .fd-tile-hp i { display: block; height: 100%; background: color-mix(in srgb, var(--text-muted) 35%, transparent); }
 .fd-tile-hp span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.68rem; }
 .fd-tile-nums { color: var(--text-muted); font-size: 0.74rem; }
+.fd-tile-hp[hidden], .fd-tile-ev[hidden] { display: none; }
 .fd-tile-mech:empty { display: none; }
 .fd-tile-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-size: 0.74rem; color: var(--text-muted); }
 .fd-tile-events li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

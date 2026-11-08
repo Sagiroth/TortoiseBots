@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -232,6 +233,11 @@ func TestCombatLiveRoute(t *testing.T) {
 	}
 	if got.Cur != 2 || got.From != 1 || len(got.Events) != 1 || got.Events[0].I != 1 || got.Key == "" {
 		t.Fatalf("delta: %s", body)
+	}
+	// A cursor that belongs to another fight (key=) answers from 0.
+	code, body = do("/api/v1/combat/live?commander=Gbmage&since=1&key=" + url.QueryEscape("Gbmage\x007\x005-0"))
+	if code != 200 || !strings.Contains(body, `"from":0`) {
+		t.Fatalf("another fight's key: %d %s", code, body)
 	}
 	if code, body := do("/api/v1/combat/live?commander=Gbmage&since=x"); code != 400 || !strings.Contains(body, "bad since") {
 		t.Fatalf("since=x: %d %s", code, body)

@@ -17,8 +17,8 @@
 
   function create(commander) {
     return {
-      commander: String(commander), key: null, auraNames: {}, startMs: 0, fightMs: 0, fightAtMs: 0, boss: 0, bossName: "",
-      cur: 0, gap: false, ended: false, outcome: "", unkept: false, events: [], samples: [], pos: [], version: 0,
+      commander: String(commander), key: null, gen: 0, auraNames: {}, startMs: 0, fightMs: 0, fightAtMs: 0, boss: 0, bossName: "",
+      cur: 0, top: 0, gap: false, ended: false, outcome: "", unkept: false, events: [], samples: [], pos: [], version: 0,
       lastCatchUp: 0, wantCatchUp: false, memo: null, noLive: false, trackFor: null,
     };
   }
@@ -40,67 +40,104 @@
     }
   }
 
+  // Another fight: everything of the old one goes, and the generation moves so a request asked for the old one is told apart.
   function reset(st, key, h, nowMs) {
     st.key = key == null ? null : String(key);
+    st.gen++;
     st.startMs = 0; st.fightMs = 0; st.fightAtMs = 0; st.boss = 0; st.bossName = "";
-    st.cur = 0; st.gap = false; st.ended = false; st.outcome = ""; st.unkept = false;
-    st.events = []; st.samples = []; st.pos = []; st.wantCatchUp = false; st.memo = null;
+    st.cur = 0; st.top = 0; st.gap = false; st.ended = false; st.outcome = ""; st.unkept = false;
+    st.events = []; st.samples = []; st.pos = []; st.wantCatchUp = false; st.memo = null; st.trackFor = null;
     header(st, h, nowMs);
     st.version++;
   }
 
+  // One event stored by its own index (the order of the list is the index order; an index already held is not stored twice).
+  // An element that is not an object still takes its index, so the cursor stays contiguous.
   function addEvent(st, i, ev) {
-    if (!ev || typeof ev !== "object") return;
-    st.events.push({ i, t: num(ev.t), ev });
-    if (st.events.length > EVENTS_MAX) st.events.splice(0, st.events.length - EVENTS_MAX);
-    if (ev.k === "end") {
+    const o = ev && typeof ev === "object" ? ev : { k: "?" };
+    const list = st.events;
+    let at = list.length;
+    while (at > 0 && list[at - 1].i > i) at--;
+    if (at > 0 && list[at - 1].i === i) return;
+    list.splice(at, 0, { i, t: num(o.t), ev: o });
+    if (list.length > EVENTS_MAX) list.splice(0, list.length - EVENTS_MAX);
+    if (o.k === "end") {
       st.ended = true;
-      st.outcome = typeof ev.o === "string" ? ev.o : "";
-      if (ev.kept === false) st.unkept = true;
-      if (num(ev.dur)) st.fightMs = ev.dur;
+      st.outcome = typeof o.o === "string" ? o.o : "";
+      if (o.kept === false) st.unkept = true;
+      if (num(o.dur)) st.fightMs = o.dur;
     }
   }
 
+  // st.cur is the contiguous cursor: every index below it is held (or dropped by a cap). Events held past it (frames that came
+  // while a catch-up was out) join it once the indexes between are in.
+  function absorb(st) {
+    for (let k = 0; k < st.events.length; k++) {
+      const i = st.events[k].i;
+      if (i < st.cur) continue;
+      if (i !== st.cur) break;
+      st.cur++;
+    }
+    if (st.top < st.cur) st.top = st.cur;
+    st.wantCatchUp = st.cur < st.top;
+  }
+
   // One SSE `events` frame: the daemon's datagram plus `key`, `from` and `cur` (the index of its first event and the next
-  // index after its last). "ok" appended or nothing new, "dup" nothing to do, "gap" events were missed (catch up from
-  // st.cur), "reset" another fight (catch up from 0).
+  // index after its last). "ok" appended or nothing new, "dup" nothing to do, "gap" events between st.cur and the frame
+  // were missed (the frame's own events are kept by index; catch up from st.cur), "reset" another fight that this frame does
+  // not start (catch up from 0). A hole only asks for a catch-up: st.gap says what the daemon reports as dropped, nothing else.
   function applyEventsFrame(st, f, nowMs) {
     if (!f || typeof f.key !== "string" || !f.key) return "dup"; // a daemon without the cursor: the catch-up route is not there either
     const from = num(f.from), cur = num(f.cur);
+    let res = "ok";
     if (f.key !== st.key) {
       reset(st, f.key, f.fight, nowMs);
-      if (from > 0) { st.wantCatchUp = true; return "reset"; }
+      if (from > 0) res = "reset";
     }
     if (cur <= st.cur) {
       if (f.fight) header(st, f.fight, nowMs);
       return "dup";
     }
-    if (from > st.cur) { st.gap = true; st.wantCatchUp = true; st.version++; return "gap"; }
     const evs = Array.isArray(f.events) ? f.events : [];
     for (let p = 0; p < evs.length; p++) {
-      const i = from + p;
-      if (i >= st.cur) addEvent(st, i, evs[p]);
+      if (from + p >= st.cur) addEvent(st, from + p, evs[p]);
     }
-    st.cur = cur;
+    if (cur > st.top) st.top = cur;
+    const hole = from > st.cur;
+    if (!hole) st.cur = cur;
+    absorb(st);
     header(st, f.fight, nowMs);
     st.version++;
-    return "ok";
+    return hole ? (res === "reset" ? "reset" : "gap") : res;
   }
 
-  // The answer of GET /api/v1/combat/live: everything the daemon's live row still holds from the asked cursor.
+  // The answer of GET /api/v1/combat/live: everything the daemon's live row still holds from the asked cursor. A late answer
+  // never moves the cursor back: it is merged by index with what the stream already delivered.
   function applyCatchUp(st, d, nowMs) {
     if (!d || typeof d.key !== "string") return;
     if (d.key !== st.key) reset(st, d.key, d, nowMs);
-    const evs = Array.isArray(d.events) ? d.events.slice().sort((a, b) => a.i - b.i) : [];
-    evs.forEach((e) => {
-      if (e && e.i >= st.cur) addEvent(st, e.i, e.e);
+    (Array.isArray(d.events) ? d.events : []).forEach((e) => {
+      if (e && typeof e.i === "number") addEvent(st, e.i, e.e);
     });
-    st.cur = num(d.cur);
+    st.cur = Math.max(st.cur, num(d.cur));
+    if (st.top < st.cur) st.top = st.cur;
+    absorb(st);
     st.gap = st.gap || !!d.gap;
-    st.wantCatchUp = false;
     st.lastCatchUp = num(nowMs);
     header(st, d, nowMs);
     st.version++;
+  }
+
+  // What a request is asked under: the answer is dropped (accepts) when the view moved to another fight meanwhile.
+  function token(st) {
+    return { key: st.key, gen: st.gen };
+  }
+
+  // Whether an answer to a request that started under tok still belongs to the view. A view that had no fight when it asked
+  // takes the answer when the fight it holds now is the answer's own.
+  function accepts(st, tok, d) {
+    if (!tok || tok.gen === st.gen) return true;
+    return tok.key === null && !!d && d.key === st.key;
   }
 
   // Marks a catch-up as asked (the rate limit starts now, whatever the answer turns out to be).
@@ -145,6 +182,8 @@
       });
       bots[b.guid] = { hp: mx ? Math.round(num(b.hp) * 100 / mx) : 0, a: b.alive === false ? 0 : 1, dps: m ? num(m.dps) : 0, hps: m ? num(m.hps) : 0, db };
     });
+    // A mob's victim `v` is a string guid here (the commander frame's `victim` is the bot's id as a decimal string) and a number in
+    // the track's rows (`v` is the bound bot's guid); both are kept as strings, which is also what a bot's id is.
     const mobs = (Array.isArray(bind.mobs) ? bind.mobs : []).filter((m) => m && m.id != null).map((m) => ({ id: String(m.id), e: num(m.entry), hp: num(m.hp), v: m.victim != null ? String(m.victim) : "" }));
     st.samples.push({ t, bots, mobs, w: combat ? num(combat.win_s) : 0 });
     if (st.samples.length > SAMPLES_MAX) st.samples.splice(0, st.samples.length - SAMPLES_MAX);
@@ -290,7 +329,7 @@
 
   const api = {
     TICK_MS, EVENTS_MAX, SAMPLES_MAX, POS_MAX, WINDOWS, DEFAULT_WINDOW, CATCHUP_MIN_MS, CLOCK_SLACK_MS,
-    create, reset, applyEventsFrame, applyCatchUp, markCatchUp, needCatchUp, applySample, applyTrackX, applyPos,
+    create, reset, applyEventsFrame, applyCatchUp, token, accepts, markCatchUp, needCatchUp, applySample, applyTrackX, applyPos,
     nowFightMs, range, auraRowsFrom, auraRows, bossHp, fight, handoff,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdLive = api;

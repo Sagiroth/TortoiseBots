@@ -28,14 +28,18 @@ const NOW = 2000000;
   assert.strictEqual(F.applyEventsFrame(st, frame(3, 2), NOW), "dup", "a repeat");
   assert.strictEqual(st.version, v, "a dup changes nothing");
   assert.strictEqual(F.applyEventsFrame(st, frame(7, 2), NOW), "gap", "events 5 and 6 were missed");
-  assert.strictEqual(st.events.length, 5, "a gap appends nothing");
-  assert.strictEqual(st.cur, 5);
-  assert.ok(st.gap && F.needCatchUp(st, NOW), "a gap asks for a catch-up");
-  // the catch-up returns 5 and 6; the frame 7-9 then follows in order: 9 events
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 7, 8], "the frame past the hole is kept by its indexes");
+  assert.strictEqual(st.cur, 5, "the contiguous cursor waits at the hole");
+  assert.strictEqual(st.gap, false, "a hole only asks for a catch-up: st.gap is what the daemon reports as dropped");
+  assert.ok(F.needCatchUp(st, NOW), "a hole asks for a catch-up");
+  // the catch-up returns 5 and 6 and closes the hole: 9 events in order, the cursor past the held frame
   F.applyCatchUp(st, { key: KEY, cur: 7, gap: false, events: [{ i: 5, e: ev(5) }, { i: 6, e: ev(6) }], start_ms: 1000000, fight_ms: 6000, boss: 11502, boss_name: "Magmadar" }, NOW);
-  assert.strictEqual(F.applyEventsFrame(st, frame(7, 2), NOW), "ok");
   assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 5, 6, 7, 8], "nine events in order");
   assert.strictEqual(st.cur, 9);
+  assert.ok(!st.wantCatchUp && !st.gap);
+  assert.strictEqual(F.applyEventsFrame(st, frame(7, 2), NOW), "dup", "the held frame again is a dup");
+  assert.strictEqual(F.applyEventsFrame(st, frame(9, 2), NOW), "ok");
+  assert.strictEqual(st.cur, 11);
   assert.strictEqual(F.applyEventsFrame(st, { from: 0, cur: 1, events: [ev(0)] }, NOW), "dup", "an old daemon's frame has no key: ignored");
 }
 
@@ -47,7 +51,8 @@ const NOW = 2000000;
   const other = "Gbmage\u00007\u000055-7";
   assert.strictEqual(F.applyEventsFrame(st, frame(4, 2, { key: other }), NOW), "reset");
   assert.strictEqual(st.key, other);
-  assert.deepStrictEqual([st.events.length, st.samples.length, st.cur], [0, 0, 0], "the old fight is gone");
+  assert.deepStrictEqual([st.events.map((e) => e.i), st.samples.length, st.cur], [[4, 5], 0, 0], "the old fight is gone; the new frame's events are kept by index");
+  assert.strictEqual(st.gap, false, "a reset is not a daemon-reported gap");
   assert.ok(F.needCatchUp(st, NOW), "the caller catches up from 0");
   assert.strictEqual(F.applyEventsFrame(st, frame(0, 2, { key: "Gbmage\u00007\u000055-8" }), NOW), "ok", "a new fight's first frame resets and appends");
   assert.strictEqual(st.events.length, 2);
@@ -217,6 +222,82 @@ const bind = (t, db, extra) => Object.assign({
   st.wantCatchUp = true;
   assert.ok(!F.needCatchUp(st, 200000 + 100), "a gap waits for the limit");
   assert.ok(F.needCatchUp(st, 200000 + F.CATCHUP_MIN_MS));
+}
+
+// ---- (review H1) a catch-up answered after newer frames never moves the cursor back; events join by index, none twice
+{
+  const st = F.create("C");
+  F.applyEventsFrame(st, frame(0, 5), NOW);
+  F.applyEventsFrame(st, frame(5, 2), NOW);
+  F.applyEventsFrame(st, frame(7, 2), NOW); // cur 9
+  F.applyCatchUp(st, { key: KEY, cur: 7, events: [{ i: 5, e: ev(5) }, { i: 6, e: ev(6) }] }, NOW);
+  assert.strictEqual(st.cur, 9, "the stale answer left the cursor where the stream had it");
+  assert.strictEqual(F.applyEventsFrame(st, frame(9, 2), NOW), "ok", "the next frame continues without a gap");
+  assert.strictEqual(st.gap, false);
+  F.applyCatchUp(st, { key: KEY, cur: 11, events: [7, 8, 9, 10].map((i) => ({ i, e: ev(i) })) }, NOW);
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "no index twice, in order");
+  assert.strictEqual(st.cur, 11);
+}
+
+// ---- (review M1) a catch-up of another fight: the daemon answers from 0 for a key it does not hold (route `key=`), and the view resets onto it
+{
+  const st = F.create("C");
+  const K2 = "Gbmage\u00007\u000055-9";
+  F.applyEventsFrame(st, frame(0, 4), NOW); // fight A, cursor 4: the request asked since=4 for key A
+  const tok = F.token(st);
+  F.applyCatchUp(st, { key: K2, cur: 6, events: [0, 1, 2, 3, 4, 5].map((i) => ({ i, e: ev(i) })) }, NOW);
+  assert.strictEqual(st.key, K2);
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 5], "the new fight's events from 0");
+  assert.strictEqual(st.cur, 6);
+  assert.strictEqual(st.gap, false);
+  assert.ok(F.accepts(st, tok, { key: K2 }) === false, "the old request's token no longer matches the view");
+}
+
+// ---- (review M2) frames that arrive while a catch-up is in flight are kept, not thrown away
+{
+  const st = F.create("C");
+  F.applyEventsFrame(st, frame(0, 3), NOW);
+  F.applyEventsFrame(st, frame(6, 2), NOW); // hole: 3..5 missing; the catch-up is asked (since=3)
+  F.markCatchUp(st, NOW);
+  assert.strictEqual(F.applyEventsFrame(st, frame(8, 2), NOW), "gap", "a second frame while it is out");
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 6, 7, 8, 9]);
+  F.applyCatchUp(st, { key: KEY, cur: 6, events: [3, 4, 5].map((i) => ({ i, e: ev(i) })) }, NOW + 100);
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], "the answer filled the hole and the held frames joined it");
+  assert.strictEqual(st.cur, 10);
+  assert.ok(!st.wantCatchUp, "nothing more to ask");
+  assert.strictEqual(st.gap, false);
+  // the daemon's own gap flag is the only thing that sets st.gap (and log_dropped)
+  F.applyCatchUp(st, { key: KEY, cur: 10, gap: true, events: [] }, NOW);
+  assert.strictEqual(st.gap, true);
+  assert.strictEqual(F.fight(st, null, NOW).log_dropped, 1);
+}
+
+// ---- (review Codex H1, L4) a late answer for fight A after fight B started is dropped by its token
+{
+  const st = F.create("C");
+  F.applyEventsFrame(st, frame(0, 2), NOW);
+  const tok = F.token(st);
+  const B = "Gbmage\u00007\u000055-7";
+  F.applyEventsFrame(st, frame(0, 3, { key: B }), NOW); // the stream moved on to fight B
+  const lateA = { key: KEY, cur: 2, events: [{ i: 0, e: ev(0) }, { i: 1, e: ev(1) }] };
+  assert.strictEqual(F.accepts(st, tok, lateA), false, "the answer for A is dropped");
+  assert.strictEqual(st.key, B);
+  assert.strictEqual(st.cur, 3);
+  // a view that had no fight when it asked takes the answer of the fight it holds now
+  const fresh = F.create("C");
+  const t0 = F.token(fresh);
+  F.applyEventsFrame(fresh, frame(0, 2), NOW);
+  assert.strictEqual(F.accepts(fresh, t0, { key: KEY }), true);
+  assert.strictEqual(F.accepts(fresh, t0, { key: B }), false);
+  assert.strictEqual(F.accepts(fresh, F.token(fresh), { key: B }), true, "a request asked under the current fight is applied (it resets onto an answer of another one)");
+}
+
+// ---- (review M3, L1) elements that are not objects keep their index; a held cursor stays contiguous
+{
+  const st = F.create("C");
+  F.applyEventsFrame(st, { key: KEY, from: 0, cur: 3, events: [ev(0), 7, ev(2)] }, NOW);
+  assert.strictEqual(st.cur, 3);
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2]);
 }
 
 console.log("fdlive_check.js ok");

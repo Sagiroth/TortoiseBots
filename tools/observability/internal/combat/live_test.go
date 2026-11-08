@@ -625,7 +625,7 @@ func TestLiveCursorCounts(t *testing.T) {
 	if _, _, ok = s.ApplyEvents(nextEvents(liveHeader(), castEvent(30, "C"), castEvent(40, "D")), liveNow); ok {
 		t.Fatal("a duplicate seq must be rejected")
 	}
-	d, found := s.LiveSince("Gbmage", 0)
+	d, found := s.LiveSince("Gbmage", 0, "")
 	if !found || d.Cur != 5 || len(d.Events) != 5 {
 		t.Fatalf("LiveSince: found=%v cur=%d events=%d", found, d.Cur, len(d.Events))
 	}
@@ -642,22 +642,22 @@ func TestLiveSinceGap(t *testing.T) {
 	events = append(events, `{"k":"engage","t":5,"e":1,"n":"Trash"}`)
 	s.ApplyEvents(liveEvents(liveHeader(), events...), liveNow)
 
-	d, ok := s.LiveSince("Gbmage", 0)
+	d, ok := s.LiveSince("Gbmage", 0, "")
 	if !ok || !d.Gap {
 		t.Fatalf("since 0: ok=%v gap=%v, want a gap", ok, d.Gap)
 	}
 	if len(d.Events) != LiveLogMax+1 || d.Events[0].I != 1 || d.From != 1 || d.Cur != uint64(LiveLogMax+2) {
 		t.Fatalf("since 0: %d events, first i=%d, from=%d, cur=%d", len(d.Events), d.Events[0].I, d.From, d.Cur)
 	}
-	d, _ = s.LiveSince("Gbmage", 1)
+	d, _ = s.LiveSince("Gbmage", 1, "")
 	if d.Gap {
 		t.Fatal("since 1: nothing at or after 1 was dropped, no gap")
 	}
-	d, _ = s.LiveSince("Gbmage", uint64(LiveLogMax+2))
+	d, _ = s.LiveSince("Gbmage", uint64(LiveLogMax+2), "")
 	if len(d.Events) != 0 || d.From != d.Cur || d.Gap {
 		t.Fatalf("at the head: %d events from=%d cur=%d gap=%v", len(d.Events), d.From, d.Cur, d.Gap)
 	}
-	if _, ok := s.LiveSince("Nobody", 0); ok {
+	if _, ok := s.LiveSince("Nobody", 0, ""); ok {
 		t.Fatal("no live row must report false")
 	}
 }
@@ -674,8 +674,46 @@ func TestLiveSinceNewFight(t *testing.T) {
 	if !ok || sum.EvFrom != 0 || sum.EvCur != 1 {
 		t.Fatalf("new fight: ok=%v from=%d cur=%d, want 0/1", ok, sum.EvFrom, sum.EvCur)
 	}
-	d, _ := s.LiveSince("Gbmage", 3) // a cursor of the old fight
+	d, _ := s.LiveSince("Gbmage", 3, "") // a cursor of the old fight
 	if d.Cur != 1 || len(d.Events) != 1 || d.Events[0].I != 0 {
 		t.Fatalf("stale cursor: cur=%d events=%+v", d.Cur, d.Events)
+	}
+}
+
+// TestLiveSinceOtherKey: a cursor asked for another fight than the live one answers from 0, not from a cursor that means
+// nothing here; the caller's own key keeps its cursor.
+func TestLiveSinceOtherKey(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), castEvent(1, "A"), castEvent(2, "B"), castEvent(3, "C"), castEvent(4, "D")), liveNow)
+	own := Key("Gbmage", 7, "55-6")
+	d, _ := s.LiveSince("Gbmage", 2, own)
+	if len(d.Events) != 2 || d.Events[0].I != 2 {
+		t.Fatalf("own key keeps the cursor: %+v", d.Events)
+	}
+	d, _ = s.LiveSince("Gbmage", 2, Key("Gbmage", 7, "55-5"))
+	if len(d.Events) != 4 || d.Events[0].I != 0 || d.Key != own {
+		t.Fatalf("another fight's cursor answers from 0: %d events, key %q", len(d.Events), d.Key)
+	}
+	d, _ = s.LiveSince("Gbmage", 2, "")
+	if len(d.Events) != 2 {
+		t.Fatalf("no key given: the cursor stands: %+v", d.Events)
+	}
+}
+
+// TestLiveCursorCountsEveryElement: the frame numbers its elements by position, so an element the daemon cannot read still
+// takes its index, and a datagram cut short by a not-kept end still reports the whole datagram's range.
+func TestLiveCursorCountsEveryElement(t *testing.T) {
+	s := newLiveStore(t)
+	sum, _, ok := s.ApplyEvents(liveEvents(liveHeader(), castEvent(1, "A"), `7`, castEvent(3, "C")), liveNow)
+	if !ok || sum.EvFrom != 0 || sum.EvCur != 3 {
+		t.Fatalf("a bad element in the middle: ok=%v from=%d cur=%d, want 0/3", ok, sum.EvFrom, sum.EvCur)
+	}
+	d, _ := s.LiveSince("Gbmage", 0, "")
+	if len(d.Events) != 2 || d.Events[0].I != 0 || d.Events[1].I != 2 || d.Cur != 3 {
+		t.Fatalf("the held events keep their positions: %+v cur=%d", d.Events, d.Cur)
+	}
+	sum, _, ok = s.ApplyEvents(nextEvents(liveHeader(), castEvent(5, "D"), `{"k":"end","t":9,"o":"end","dur":9,"kept":false}`, castEvent(10, "E")), liveNow)
+	if !ok || sum.EvFrom != 3 || sum.EvCur != 6 {
+		t.Fatalf("a not-kept end: ok=%v from=%d cur=%d, want 3/6 (the datagram's three elements)", ok, sum.EvFrom, sum.EvCur)
 	}
 }

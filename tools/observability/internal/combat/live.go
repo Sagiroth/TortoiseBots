@@ -176,6 +176,8 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 	for _, raw := range dg.Events {
 		var ev liveEvent
 		if err := json.Unmarshal(raw, &ev); err != nil {
+			// The frame numbers its elements by position (from + position): an element this daemon cannot read still takes its index.
+			row.next++
 			continue
 		}
 		if ev.K == "end" {
@@ -184,7 +186,8 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 				// Shorter than the module's minimum: no COMBAT_FIGHT follows.
 				sum := s.liveSummaryLocked(dg.Commander, row)
 				sum.Outcome, sum.Live = ev.O, false
-				sum.EvFrom, sum.EvCur = from, row.next
+				// The row is gone, but the frame still numbers every element of the datagram, the ones after the end too.
+				sum.EvFrom, sum.EvCur = from, from+uint64(len(dg.Events))
 				delete(s.live, dg.Commander)
 				return sum, true, true
 			}
@@ -401,18 +404,20 @@ type LiveDelta struct {
 
 // LiveSince returns the events of the commander's live fight with index >= since (at most what the ring holds, about
 // LiveLogMax + LiveEventsMax). false when the commander has no live row. A cursor past the row's next index belongs
-// to an older fight and counts as 0.
-func (s *Store) LiveSince(commander string, since uint64) (LiveDelta, bool) {
+// to an older fight and counts as 0; so does a cursor asked for another fight: key is the fight key the caller's cursor
+// belongs to ("" = unknown), and when the live row is a different fight the answer starts at 0 instead of at a cursor
+// that means nothing here.
+func (s *Store) LiveSince(commander string, since uint64, key string) (LiveDelta, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	row := s.live[commander]
 	if row == nil {
 		return LiveDelta{}, false
 	}
-	if since > row.next {
+	sum := s.liveSummaryLocked(commander, row)
+	if since > row.next || (key != "" && key != sum.Key) {
 		since = 0
 	}
-	sum := s.liveSummaryLocked(commander, row)
 	d := LiveDelta{
 		V: 1, Commander: commander, Key: sum.Key, Summary: sum,
 		StartMs: row.header.StartMs, FightMs: row.header.FightMs,

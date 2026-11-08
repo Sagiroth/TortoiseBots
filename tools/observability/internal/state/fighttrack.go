@@ -121,13 +121,8 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 		if b.Run != nil {
 			f.Step = b.Run.Step
 		}
-		var meters map[uint32][2]uint32
 		if b.Combat != nil {
 			f.WinS = b.Combat.WinS
-			meters = make(map[uint32][2]uint32, len(b.Combat.Bots))
-			for _, cb := range b.Combat.Bots {
-				meters[cb.GUID] = [2]uint32{saturate32(cb.DPS), saturate32(cb.HPS)}
-			}
 		}
 		ids := make(map[string]uint32, len(b.Bots))
 		for _, bot := range b.Bots {
@@ -140,8 +135,14 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 			}
 			ids[id] = bot.GUID
 			tb := TrackBot{GUID: bot.GUID, X: float32(bot.X), Y: float32(bot.Y), HP: hpPercent(bot.HP, bot.MaxHP), Alive: bot.Alive, Map: bot.MapID}
-			if m, ok := meters[bot.GUID]; ok {
-				tb.DPS, tb.HPS = m[0], m[1]
+			if b.Combat != nil {
+				// A scan of the report's window (at most a raid's bots): no map per report.
+				for i := range b.Combat.Bots {
+					if cb := &b.Combat.Bots[i]; cb.GUID == bot.GUID {
+						tb.DPS, tb.HPS = saturate32(cb.DPS), saturate32(cb.HPS)
+						break
+					}
+				}
 			}
 			n := 0
 			for _, d := range bot.Debuffs {

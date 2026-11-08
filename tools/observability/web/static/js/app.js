@@ -6236,9 +6236,9 @@
       const bind = group ? (state.raids.binds || []).find(b => b && b.commander === group.key) : null;
       if (bind) push([bind]);
       // The list view's live tiles: their fight names, at most six (nothing else subscribes: no viewer, no frames).
-      if (!group && state.raids.openGroup == null) raidLiveKeys().forEach(n => { if (names.indexOf(n) < 0) names.push(n); });
+      if (!group && state.raids.openGroup == null) raidLiveNames().forEach(n => { if (names.indexOf(n) < 0) names.push(n); });
     } else if (state.activeTab === 'dungeons' && state.dungeons.openKey == null) {
-      dgnLiveKeys().forEach(n => { if (names.indexOf(n) < 0) names.push(n); });
+      dgnLiveNames().forEach(n => { if (names.indexOf(n) < 0) names.push(n); });
     }
     return names;
   }
@@ -6302,6 +6302,7 @@
       },
       events: d => {
         if (!d || !d.commander) return;
+        fdLiveNoteBoss(d.commander, d.fight ? d.fight.boss_name : undefined);
         fdLiveEvents(d);
         const start = d.fight && typeof d.fight.start === 'number' ? d.fight.start : 0;
         const ring = cmdLiveEvents[d.commander] || (cmdLiveEvents[d.commander] = []);
@@ -6313,7 +6314,7 @@
         cmdLivePaintEvents(d.commander);
         cmdSched.mark(d.commander);
       },
-      fight_live: d => { if (d) cmdLiveFightChanged(d.commander, d); },
+      fight_live: d => { if (d) { fdLiveNoteBoss(cmdLiveKeyCommander(d.key), d.boss_name); cmdLiveFightChanged(d.commander, d); } },
       fight: s => {
         if (!s) return;
         cmdLiveFightChanged(cmdLiveKeyCommander(s.key), s);
@@ -6337,7 +6338,8 @@
   const FD_LIVE_TILES = 6;     // tiles per list view; the rest are a count
   const FD_LIVE_TRACK_EDGE = 4; // seconds of track before the fight's start the catch-up asks for
   const fdLive = {};           // fight name -> FdLive state
-  const fdLiveBusy = {};       // fight name -> true while a catch-up is in flight
+  const fdLiveReconciling = {}; // fight name -> true while its filed-row lookup is out
+  const fdLiveBoss = {};       // fight name -> the boss its live row names (every subscribed name, tile or not: it ranks the tiles)
   let fdLiveTimer = 0;
 
   function fdLiveState(key) {
@@ -6347,7 +6349,6 @@
 
   function fdLiveDrop(key) {
     delete fdLive[key];
-    delete fdLiveBusy[key];
   }
 
   // m:ss of a fight time in ms.
@@ -6374,12 +6375,21 @@
     (state.raids.runs || []).forEach(run => (run.groups || []).forEach(group => {
       if (group && group.combat) out.push({ run, group, name: group.commander || group.key });
     }));
-    const boss = t => (fdLive[t.name] && fdLive[t.name].bossName ? 1 : 0);
+    const boss = t => (fdLiveBoss[t.name] || (fdLive[t.name] && fdLive[t.name].bossName) ? 1 : 0);
     out.sort((a, b) => boss(b) - boss(a) || (Number(b.group.combat.fight_ms) || 0) - (Number(a.group.combat.fight_ms) || 0));
     return out;
   }
   function raidLiveKeys() {
     return raidLiveGroups().slice(0, FD_LIVE_TILES).map(t => t.name);
+  }
+  // What the list view subscribes: every fighting group's name (at most the stream's 20), not just the six tiles, so the live
+  // rows' boss names rank the tiles and the stream's URL does not change each time the top six reorder.
+  function raidLiveNames() {
+    return raidLiveGroups().slice(0, LiveView.MAX_COMMANDERS).map(t => t.name);
+  }
+  // A frame's live row names its boss (or none): kept for the names the stream carries.
+  function fdLiveNoteBoss(name, boss) {
+    if (name && typeof boss === 'string') fdLiveBoss[name] = boss;
   }
 
   // The runs whose bound commander's fight runs (the commander found by member guid), longest fight first.
@@ -6397,6 +6407,9 @@
   function dgnLiveKeys() {
     return dgnLiveGroups().slice(0, FD_LIVE_TILES).map(t => t.name);
   }
+  function dgnLiveNames() {
+    return dgnLiveGroups().slice(0, LiveView.MAX_COMMANDERS).map(t => t.name);
+  }
 
   // Every live view on screen: the debugger's, the raid tiles and the dungeon tiles.
   function fdLiveViewKeys() {
@@ -6412,6 +6425,8 @@
   function fdLiveTickSync() {
     const keys = fdLiveViewKeys();
     Object.keys(fdLive).forEach(k => { if (keys.indexOf(k) < 0) fdLiveDrop(k); });
+    const fighting = raidLiveNames();
+    Object.keys(fdLiveBoss).forEach(n => { if (fighting.indexOf(n) < 0) delete fdLiveBoss[n]; });
     if (keys.length && !fdLiveTimer) fdLiveTimer = setInterval(refreshGate.guard(fdLiveTick), FdLive.TICK_MS); // a paused page freezes its live views with the rest
     else if (!keys.length && fdLiveTimer) { clearInterval(fdLiveTimer); fdLiveTimer = 0; }
   }
@@ -6445,42 +6460,71 @@
       st.trackFor = null;
       st.noLive = false;
       fdLiveCatchUp(k);
+      fdLiveReconcile(k); // the `fight` frame may be among the lost ones
     });
+    Object.keys(cmdFd).forEach(k => { if (cmdFd[k].liveKey && !fdLive[k]) fdLiveReconcile(k); });
+  }
+
+  // The SSE `fight` frame is a notification, not the only way to the filed fight: when frames were lost, or the live row is gone
+  // (404), look the live key up in the filed fights of that name and hand over when it is there.
+  function fdLiveReconcile(name) {
+    const st = fdLive[name], fd = cmdFd[name];
+    const key = (st && st.key) || (fd && fd.liveKey) || null;
+    if (!key || fdLiveReconciling[name]) return;
+    fdLiveReconciling[name] = true;
+    const gen = st ? st.gen : 0;
+    fetch('/api/v1/combat/fights?commander=' + encodeURIComponent(name), { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(list => {
+        if (st && (fdLive[name] !== st || st.gen !== gen)) return; // the view moved on to another fight meanwhile
+        const row = (Array.isArray(list) ? list : []).find(r => r && r.key === key && !r.live);
+        if (row) fdLiveHandoff(name, row);
+      })
+      .catch(() => {})
+      .then(() => { delete fdLiveReconciling[name]; });
   }
 
   // The catch-up of one view: the events after its cursor (GET /api/v1/combat/live), then, once per fight, the track's samples
   // from just before the fight's start (GET /api/v1/commanders/track with x=1). One request in flight per view, one catch-up
-  // per CATCHUP_MIN_MS; a name with no live row (404) stops asking until a frame of that fight arrives.
+  // per CATCHUP_MIN_MS; a name with no live row (404) stops asking until a frame of that fight arrives. Each request is asked
+  // under the view's fight key and generation: an answer that comes back after the view moved to another fight is dropped, and
+  // the route is told the key so a cursor of an older fight is answered from 0.
   function fdLiveCatchUp(key) {
     const st = fdLive[key];
-    if (!st || fdLiveBusy[key]) return;
+    if (!st || st.busy) return;
     const now = Date.now();
     const wantEvents = !st.noLive && FdLive.needCatchUp(st, now);
     const wantTrack = !!(st.key && st.startMs && st.trackFor !== st.key);
     if (!wantEvents && !wantTrack) return;
-    fdLiveBusy[key] = true;
+    st.busy = true;
+    const mine = () => fdLive[key] === st;
     const track = () => {
-      if (fdLive[key] !== st || !st.key || !st.startMs || st.trackFor === st.key) return null;
+      if (!mine() || !st.key || !st.startMs || st.trackFor === st.key) return null;
+      const tok = FdLive.token(st);
       st.trackFor = st.key;
       const to = Math.ceil(Date.now() / 1000) + 1;
       const from = Math.max(Math.floor(st.startMs / 1000) - FD_LIVE_TRACK_EDGE, to - 1800);
       return fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(key) + '&from=' + from + '&to=' + to + '&x=1', { credentials: 'same-origin' })
-        .then(jsonOrThrow).then(json => { if (fdLive[key] === st) FdLive.applyTrackX(st, json); }).catch(() => {});
+        .then(jsonOrThrow).then(json => { if (mine() && st.gen === tok.gen) FdLive.applyTrackX(st, json); }).catch(() => {});
     };
     let p = Promise.resolve();
     if (wantEvents) {
+      const tok = FdLive.token(st);
       FdLive.markCatchUp(st, now);
-      p = fetch('/api/v1/combat/live?commander=' + encodeURIComponent(key) + '&since=' + st.cur, { credentials: 'same-origin' })
+      p = fetch('/api/v1/combat/live?commander=' + encodeURIComponent(key) + '&since=' + st.cur + (st.key ? '&key=' + encodeURIComponent(st.key) : ''), { credentials: 'same-origin' })
         .then(r => {
-          if (r.status === 404) { if (fdLive[key] === st) st.noLive = true; return null; }
+          if (r.status === 404) {
+            if (mine() && FdLive.accepts(st, tok, null)) { st.noLive = true; if (st.key) fdLiveReconcile(key); }
+            return null;
+          }
           return jsonOrThrow(r);
         })
-        .then(d => { if (d && fdLive[key] === st) { st.noLive = false; FdLive.applyCatchUp(st, d, Date.now()); } })
+        .then(d => { if (d && mine() && FdLive.accepts(st, tok, d)) { st.noLive = false; FdLive.applyCatchUp(st, d, Date.now()); } })
         .catch(() => {});
     }
     p.then(track).then(() => {
-      delete fdLiveBusy[key];
-      if (fdLive[key] === st) { const dk = fdLiveDebugKey(); if (dk === key) fdLivePaintDebug(key); fdLivePaintTiles(); }
+      st.busy = false;
+      if (mine()) { const dk = fdLiveDebugKey(); if (dk === key) fdLivePaintDebug(key); fdLivePaintTiles(); }
     });
   }
 
@@ -6502,8 +6546,8 @@
 
   // What the timeline slot shows for a live fight: the fight's own timeline, or a line saying why there is none.
   function fdLiveTimelineHtml(st, liveFight) {
-    if (liveFight) return fdTimelineHtml(FightDebug.timeline(liveFight), FightDebug.deathRecaps(liveFight), null);
     if (st && st.unkept) return '<p class="empty-hint">The fight was too short to keep.</p>';
+    if (liveFight) return fdTimelineHtml(FightDebug.timeline(liveFight), FightDebug.deathRecaps(liveFight), null);
     if (st && st.noLive) return '<p class="empty-hint">No live fight.</p>';
     return '<p class="empty-hint">Waiting for the live fight…</p>';
   }
@@ -6520,10 +6564,13 @@
   // The hand-over: the fight a live view shows was filed. Its view becomes the filed fight's, in place (the existing detail
   // fetch runs); the filter, the aura pick and the bot pick stay as they were.
   function fdLiveHandoff(key, summary) {
-    const st = fdLive[key];
-    if (!st || !summary || !FdLive.handoff(st, summary)) return;
-    const fd = cmdFd[key];
-    if (fd && fd.sel === 'live') {
+    const st = fdLive[key], fd = cmdFd[key];
+    if (!summary) return;
+    // The view's own fight, or the one its card last showed live (the pick may have left `live` when the window closed, and the
+    // state with it): a pick the reader made themselves stands.
+    const kept = !!(fd && fd.liveKey && fd.liveKey === summary.key && !fd.userSel);
+    if (!(st && FdLive.handoff(st, summary)) && !kept && !(fd && fd.sel === 'live' && fd.liveKey === summary.key)) return;
+    if (fd && (fd.sel === 'live' || kept)) {
       fd.sel = summary.key;
       fd.userSel = true;
       fd.death = null;
@@ -6545,19 +6592,83 @@
     return (list || []).find(r => r && !r.live && String(r.id) === parts[2] && String(r.session) === parts[1]) || null;
   }
 
+  const FD_LIVE_TILE_EVENTS = 3; // the newest events a tile lists
+
+  function fdLiveHpOf(t) {
+    return t.bossHp == null ? null : Math.max(0, Math.min(100, Math.round(Number(t.bossHp) || 0)));
+  }
+  function fdLiveNumsText(t) {
+    return (Number(t.alive) || 0) + '/' + (Number(t.total) || 0) + ' alive · ' + (Number(t.dps) || 0) + ' dps · ' + (Number(t.hps) || 0) + ' hps';
+  }
+
   // One live tile's markup: raid or run name, group, boss and fight time, boss health, who is alive, the window's dps and hps, an
   // empty slot for the mechanics scorecard, the newest events and the link to the debugger's live view. Every text is escaped.
+  // The tile is built once; fdLiveTilePatch updates it in place each tick.
   function fdLiveTileHtml(t) {
-    const hp = t.bossHp == null ? null : Math.max(0, Math.min(100, Math.round(Number(t.bossHp) || 0)));
+    const hp = fdLiveHpOf(t);
+    const evs = t.events || [];
+    let lis = '';
+    for (let k = 0; k < FD_LIVE_TILE_EVENTS; k++) lis += `<li class="fd-tile-ev"${evs[k] ? '' : ' hidden'}>${esc(evs[k] || '')}</li>`;
     return `<article class="fd-tile" data-fd-tile="${esc(t.name)}">`
-      + `<div class="fd-tile-head"><b>${esc(t.title)}</b> <span class="cell-muted">${esc(t.group)}</span></div>`
-      + `<div class="fd-tile-boss">${t.boss ? esc(t.boss) : '<span class="cell-muted">trash</span>'} <span class="fd-tile-time">${esc(fdLiveClock(t.ms))}</span></div>`
-      + (hp != null ? `<div class="fd-tile-hp" title="Boss health"><i style="width:${hp}%"></i><span>${hp}%</span></div>` : '')
-      + `<div class="fd-tile-nums">${Number(t.alive) || 0}/${Number(t.total) || 0} alive · ${Number(t.dps) || 0} dps · ${Number(t.hps) || 0} hps</div>`
+      + `<div class="fd-tile-head"><b class="fd-tile-title">${esc(t.title)}</b> <span class="cell-muted fd-tile-group">${esc(t.group)}</span></div>`
+      + `<div class="fd-tile-boss"><span class="fd-tile-bossname${t.boss ? '' : ' cell-muted'}">${t.boss ? esc(t.boss) : 'trash'}</span> <span class="fd-tile-time">${esc(fdLiveClock(t.ms))}</span></div>`
+      + `<div class="fd-tile-hp" title="Boss health"${hp == null ? ' hidden' : ''}><i style="width:${hp == null ? 0 : hp}%"></i><span>${hp == null ? '' : hp + '%'}</span></div>`
+      + `<div class="fd-tile-nums">${esc(fdLiveNumsText(t))}</div>`
       + '<div class="fd-tile-mech"></div>'
-      + `<ul class="fd-tile-events">${(t.events || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
-      + `<a class="btn" href="${esc(t.href)}">Open live</a>`
+      + `<ul class="fd-tile-events">${lis}</ul>`
+      + `<a class="btn fd-tile-open" href="${esc(t.href)}">Open live</a>`
       + '</article>';
+  }
+
+  // The 1 s update of a tile that is already on the page: only the texts that changed, so a link the reader focused stays focused.
+  function fdLiveTilePatch(el, t) {
+    const text = (sel, v) => { const n = el.querySelector(sel); if (n && n.textContent !== v) n.textContent = v; return n; };
+    text('.fd-tile-title', String(t.title));
+    text('.fd-tile-group', String(t.group));
+    const name = text('.fd-tile-bossname', t.boss ? String(t.boss) : 'trash');
+    if (name) name.classList.toggle('cell-muted', !t.boss);
+    text('.fd-tile-time', fdLiveClock(t.ms));
+    const hp = fdLiveHpOf(t), bar = el.querySelector('.fd-tile-hp');
+    if (bar) {
+      bar.hidden = hp == null;
+      const fill = bar.querySelector('i');
+      if (fill && hp != null) fill.style.width = hp + '%';
+      const label = bar.querySelector('span');
+      if (label && hp != null && label.textContent !== hp + '%') label.textContent = hp + '%';
+    }
+    text('.fd-tile-nums', fdLiveNumsText(t));
+    const lis = el.querySelectorAll('.fd-tile-ev');
+    for (let k = 0; k < lis.length; k++) {
+      const v = (t.events || [])[k] || '';
+      if (lis[k].textContent !== v) lis[k].textContent = v;
+      lis[k].hidden = !v;
+    }
+    const link = el.querySelector('.fd-tile-open');
+    if (link && link.getAttribute('href') !== t.href) link.setAttribute('href', t.href);
+  }
+
+  // The grid: tiles by their fight name, in order. A tile that is already there is patched, a new one is built by make(tile), one
+  // that left is removed; the "+N more" note sits last. Nothing that stays is rebuilt.
+  function fdLiveGridSync(host, tiles, more, make) {
+    const have = {};
+    Array.prototype.slice.call(host.children).forEach(c => {
+      if (c.dataset && c.dataset.fdTile != null) have[c.dataset.fdTile] = c;
+    });
+    const want = tiles.map(t => {
+      const el = have[t.name] || make(t);
+      delete have[t.name];
+      fdLiveTilePatch(el, t);
+      return el;
+    });
+    Object.keys(have).forEach(n => host.removeChild(have[n]));
+    want.forEach((el, i) => { if (host.children[i] !== el) host.insertBefore(el, host.children[i] || null); });
+    let note = host.querySelector('.fd-live-more');
+    if (more) {
+      if (!note) { note = document.createElement('p'); note.className = 'fd-live-more cell-muted'; }
+      const v = '+' + more + ' more fighting';
+      if (note.textContent !== v) note.textContent = v;
+      if (host.lastElementChild !== note) host.appendChild(note);
+    } else if (note) host.removeChild(note);
   }
 
   // One tile's numbers from what the view holds: the stream's state (boss, clock, health, newest events) and the report's
@@ -6591,9 +6702,12 @@
     more = Math.max(0, groups.length - FD_LIVE_TILES);
     const shown = groups.slice(0, FD_LIVE_TILES);
     shown.forEach(g => { fdLiveState(g.name); fdLiveCatchUp(g.name); });
-    const html = shown.map(g => fdLiveTileHtml(make(g))).join('') + (more ? `<p class="fd-live-more cell-muted">+${more} more fighting</p>` : '');
     host.hidden = !shown.length;
-    setHtml(host, html);
+    fdLiveGridSync(host, shown.map(make), more, t => {
+      const box = document.createElement('div');
+      box.innerHTML = fdLiveTileHtml(t);
+      return box.firstElementChild;
+    });
   }
 
   // The FightSummary's key is "commander\x00session\x00id" (internal/combat.Key).

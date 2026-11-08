@@ -589,3 +589,20 @@ func TestTrackJSONUnchanged(t *testing.T) {
 		t.Fatalf("track JSON changed:\n got %s\nwant %s", raw, golden)
 	}
 }
+
+// TestTrackSamplesNeedNoPerReportMap: the meters are read by scanning the report's window; a bot far down a long window (25 entries) and one
+// listed twice (first wins) still get their numbers.
+func TestTrackSamplesNeedNoPerReportMap(t *testing.T) {
+	b := liveSampleBinding()
+	for g := uint32(100); g < 125; g++ {
+		b.Combat.Bots = append(b.Combat.Bots, model.CommanderCombatBot{GUID: g, DPS: uint64(g), HPS: 1})
+	}
+	b.Bots = append(b.Bots, trackBot(124, 0, 0, 100, 100))
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, b))
+	frames, _ := s.Track("c", 100, 100)
+	last := frames[0].Bots[len(frames[0].Bots)-1]
+	if last.GUID != 124 || last.DPS != 124 || last.HPS != 1 {
+		t.Fatalf("bot 124: %+v", last)
+	}
+}
