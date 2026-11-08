@@ -287,6 +287,107 @@ namespace ai
         return loggedStartMs != startMs;
     }
 
+    // The walk-out stand rows (DungeonRunSeekWalkoutStandLog, diagnostic, walk 56 fix 4): while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` at once, at most kSeekWalkoutCastRefusedRowsMax a walk-out. A 25 s task
+    // writes at most 26 stand rows.
+    constexpr std::uint32_t kSeekWalkoutStandRowMs = 1000;
+    constexpr int kSeekWalkoutCastRefusedRowsMax = 10;
+
+    // The branch the puller's walk-out tick took: `out` walking (not at the stand, not in shot position), `inpos` at
+    // the stand but not in shot position (range, floor or sight missing), `wait` a pull shot in flight, `face` the turn
+    // with the cast left to the next tick, `castwait` its own cast on the Son still running, `checkfail` the shot's cast
+    // check refused (the `abort cast failed` row follows), `cast` the pull cast went out, `castrefused` CastSpell said no.
+    enum class WalkoutStandBranch : std::uint8_t
+    {
+        Out = 0,
+        InPos = 1,
+        Wait = 2,
+        Face = 3,
+        CastWait = 4,
+        CheckFail = 5,
+        Cast = 6,
+        CastRefused = 7,
+    };
+
+    inline const char* WalkoutStandBranchWord(WalkoutStandBranch b)
+    {
+        switch (b)
+        {
+            case WalkoutStandBranch::Out: return "out";
+            case WalkoutStandBranch::InPos: return "inpos";
+            case WalkoutStandBranch::Wait: return "wait";
+            case WalkoutStandBranch::Face: return "face";
+            case WalkoutStandBranch::CastWait: return "castwait";
+            case WalkoutStandBranch::CheckFail: return "checkfail";
+            case WalkoutStandBranch::Cast: return "cast";
+            case WalkoutStandBranch::CastRefused: return "castrefused";
+        }
+        return "out";
+    }
+
+    // A second since the walk-out's last stand row (the throttle; the first row of a walk-out is keyed by its start,
+    // WalkoutStandRowClaim).
+    inline bool WalkoutStandRowDue(std::uint32_t lastRowMs, std::uint32_t nowMs)
+    {
+        return nowMs - lastRowMs >= kSeekWalkoutStandRowMs;
+    }
+
+    // Whether this read writes the stand row: the walk-out's first (its start not logged yet) or a second after the last.
+    inline bool WalkoutStandRowClaim(std::uint32_t loggedStartMs, std::uint32_t startMs, std::uint32_t lastRowMs,
+                                     std::uint32_t nowMs)
+    {
+        return loggedStartMs != startMs || WalkoutStandRowDue(lastRowMs, nowMs);
+    }
+
+    // Whether a refused pull cast still writes its row: fewer than kSeekWalkoutCastRefusedRowsMax this walk-out (`rows`
+    // counts the walk-out started at `loggedStartMs`).
+    inline bool WalkoutCastRefusedRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs, int rows)
+    {
+        return loggedStartMs != startMs || rows < kSeekWalkoutCastRefusedRowsMax;
+    }
+
+    // The refused cast's reason word: the core's or the cast check's own result when CastSpell noted one (`castFail`,
+    // SpellCastResult; 0 is SPELL_CAST_OK in the core, so none noted), else the CastSpell gate the state before the call
+    // points at (PlayerbotAISpells.cpp: flying, the stand-up delay, the moving turn's delay, a move with no master), else
+    // `gate` (the self-harm, dispel-hold and pet-redirect gates).
+    inline std::string WalkoutCastRefuseWord(std::uint32_t castFail, std::uint32_t castOk, bool flying, bool standing,
+                                             bool stopped, bool inFront)
+    {
+        if (castFail != castOk)
+            return "spell_fail_" + std::to_string(castFail);
+        if (flying)
+            return "flying";
+        if (!standing)
+            return "stand_delay";
+        if (!stopped && !inFront)
+            return "facing_delay";
+        if (!stopped)
+            return "moving";
+        return "gate";
+    }
+
+    // The stand row's text.
+    inline std::string WalkoutStandRowText(WalkoutStandBranch branch, bool combatEngine, bool inRange, bool los,
+                                           bool front, bool stopped, std::uint32_t castSpellId, const std::string& refuse,
+                                           std::uint32_t tickMs)
+    {
+        char buf[224];
+        snprintf(buf, sizeof(buf),
+                 "seek pull: walk-out stand branch=%s state=%c inrange=%d los=%d front=%d stopped=%d cast=%u refuse=%s "
+                 "tick_ms=%u",
+                 WalkoutStandBranchWord(branch), combatEngine ? 'c' : 'n', inRange ? 1 : 0, los ? 1 : 0, front ? 1 : 0,
+                 stopped ? 1 : 0, static_cast<unsigned>(castSpellId), refuse.empty() ? "-" : refuse.c_str(),
+                 static_cast<unsigned>(tickMs));
+        return buf;
+    }
+
+    // The castrefused row's text.
+    inline std::string WalkoutCastRefusedRowText(std::uint32_t spellId, const std::string& reason)
+    {
+        return "seek pull: walk-out castrefused spell=" + std::to_string(spellId) + " reason=" + reason;
+    }
+
     // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
     // damage dealer. None: no puller. The pet stays held at the puller's heels the whole task (it never takes the Son).
     enum class WalkoutRole : std::uint8_t

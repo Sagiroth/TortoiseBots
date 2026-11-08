@@ -1065,6 +1065,13 @@ struct WalkoutRecord
     std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
     std::uint32_t lateLogMs = 0;            // the "late" row's throttle
     std::uint32_t preemptLogStartMs = 0;    // the "walk-out preempted" row's throttle: the task start it logged for
+    // The stand rows (DungeonRunSeekWalkoutStandLog): the walk-out they count (its start), the last row, the last read
+    // (tick_ms), and the castrefused rows written for that walk-out.
+    std::uint32_t standLogStartMs = 0;
+    std::uint32_t standRowMs = 0;
+    std::uint32_t standReadMs = 0;
+    std::uint32_t refusedLogStartMs = 0;
+    int refusedRows = 0;
     WalkoutCycleRules rules;                // the seek_pull row's rules the task runs under (defaults: the old ones)
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
@@ -1770,6 +1777,89 @@ void NoteSeekWalkoutInShot(Player* bot, bool inShot)
     if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
         return;
     WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());
+}
+
+// One stand read of the puller (DungeonRunSeekWalkoutStandLog), under g_walkoutMutex: `tickMs` is the time since its
+// previous read this walk-out (0 for the first), and true when this read writes the stand row (WalkoutStandRowClaim:
+// the walk-out's first, then one a second). False for a bot that is not the running task's puller.
+bool ClaimSeekWalkoutStandRow(Player* bot, std::uint32_t& tickMs)
+{
+    tickMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    std::uint32_t const startMs = record.state.startMs;
+    bool const fresh = record.standLogStartMs != startMs;
+    tickMs = fresh ? 0 : nowMs - record.standReadMs;
+    bool const due = WalkoutStandRowClaim(record.standLogStartMs, startMs, record.standRowMs, nowMs);
+    record.standLogStartMs = startMs;
+    record.standReadMs = nowMs;
+    if (due)
+        record.standRowMs = nowMs;
+    return due;
+}
+
+// Whether a refused pull cast writes its castrefused row (WalkoutCastRefusedRowDue: at most
+// kSeekWalkoutCastRefusedRowsMax a walk-out), counting it under g_walkoutMutex.
+bool ClaimSeekWalkoutCastRefusedRow(Player* bot)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const startMs = record.state.startMs;
+    if (!WalkoutCastRefusedRowDue(record.refusedLogStartMs, startMs, record.refusedRows))
+        return false;
+    if (record.refusedLogStartMs != startMs)
+    {
+        record.refusedLogStartMs = startMs;
+        record.refusedRows = 0;
+    }
+    ++record.refusedRows;
+    return true;
+}
+
+// The stand row (DungeonRunSeekWalkoutStandLog, diagnostic): one a second while the puller walks out unshot, naming the
+// branch its tick took, its engine state, whether the Son is in range, sight and front, whether it stands still, the
+// cast it attempted and the refusal's reason. A no-op with the key off.
+void LogSeekWalkoutStand(PlayerbotAI* ai, Player* bot, Unit* son, WalkoutStandBranch branch, float rangeYd,
+                         std::uint32_t castSpellId = 0, const std::string& refuse = std::string())
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog || !ai || !bot || !son)
+        return;
+    std::uint32_t tickMs = 0;
+    if (!ClaimSeekWalkoutStandRow(bot, tickMs))
+        return;
+    bool const front = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    std::string const text = WalkoutStandRowText(branch, ai->IsStateActive(BotState::BOT_STATE_COMBAT),
+        bot->GetDistance(son) <= rangeYd, bot->IsWithinLOSInMap(son), front, bot->IsStopped(), castSpellId, refuse,
+        tickMs);
+    LogSeekWalkout(ai, text.c_str());
+}
+
+// The puller's state just before its pull cast, for the refusal's reason word (WalkoutCastRefuseWord).
+struct WalkoutCastBefore
+{
+    bool flying = false;
+    bool standing = true;
+    bool stopped = true;
+    bool inFront = true;
+};
+
+WalkoutCastBefore ReadWalkoutCastBefore(Player* bot, Unit* son)
+{
+    WalkoutCastBefore before;
+    before.flying = bot->IsFlying() || bot->IsTaxiFlying();
+    before.standing = bot->GetStandState() == UNIT_STAND_STATE_STAND;
+    before.stopped = bot->IsStopped();
+    before.inFront = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    return before;
 }
 
 // The walk-out focus's pull cast went out now (the shot-in-flight wait, WalkoutPullShotInFlight).
@@ -7927,7 +8017,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 // yet (the instant Arcane Shot leaves no cast behind): no second cast, no abort.
                 if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),
                                                     task.source->IsInCombat()))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);
                     return true;
+                }
                 // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
                 // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).
                 const WalkoutFaceStep step = WalkoutFaceThenCast(sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast,
@@ -7940,14 +8033,21 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 // The walk-out focus without FaceCast: the turn takes this tick and the cast goes out on the next one,
                 // facing the Son (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
                 if (step.returnAfterFace)
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Face, range);
                     return true;
+                }
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
                 // now.
                 bool castOnSon = false;
                 Spell* const cast = WalkoutCurrentCast(bot, task.source, castOnSon);
                 if (WalkoutShotWaits(castOnSon, cast != nullptr))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CastWait, range,
+                                        cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0);
                     return true;
+                }
                 bot->InterruptNonMeleeSpells(false);
                 if (!bot->IsStopped())
                     ai->StopMoving();
@@ -7959,16 +8059,51 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                     ? WalkoutPullShotSpell(bot->GetClass(), bot->GetClass() == CLASS_HUNTER &&
                                                                 ai->CanCastSpell("arcane shot", task.source))
                     : WalkoutShotSpell(bot->GetClass());
+                // DungeonRunSeekWalkoutStandLog (diagnostic): the attempted cast's id and the refusal's reason.
+                const bool standLog = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog;
+                const std::uint32_t spellId = standLog && *spell ? AI_VALUE2(uint32, "spell id", spell) : 0;
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
+                    // Logged before the abort, which clears the record the row is keyed by.
+                    if (standLog)
+                    {
+                        std::string const check =
+                            "check_" + std::to_string(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()));
+                        LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CheckFail, range, spellId, check);
+                    }
                     AbortSeekWalkoutUnspent(ai, bot, sonYd);
                     return false;
+                }
+                WalkoutCastBefore before;
+                if (standLog)
+                {
+                    before = ReadWalkoutCastBefore(bot, task.source);
+                    ai->ClearLastCastCheckFail();
                 }
                 const bool pullCast = ai->CastSpell(spell, task.source);
                 if (pullCast && focusOn)
                     NoteSeekWalkoutPullCast(bot);
+                if (standLog)
+                {
+                    // Every refused pull cast logs its castrefused row at once (at most 10 a walk-out); the stand row
+                    // names the branch once a second.
+                    std::string const refuse = pullCast ? std::string() :
+                        WalkoutCastRefuseWord(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()),
+                                              static_cast<std::uint32_t>(SPELL_CAST_OK), before.flying, before.standing,
+                                              before.stopped, before.inFront);
+                    if (!pullCast && ClaimSeekWalkoutCastRefusedRow(bot))
+                        LogSeekWalkout(ai, WalkoutCastRefusedRowText(spellId, refuse).c_str());
+                    LogSeekWalkoutStand(ai, bot, task.source,
+                                        pullCast ? WalkoutStandBranch::Cast : WalkoutStandBranch::CastRefused, range,
+                                        spellId, refuse);
+                }
                 return pullCast;
             }
+            // Not in shot position: at the stand (range, floor or sight missing) or still walking out.
+            LogSeekWalkoutStand(ai, bot, task.source,
+                                bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd
+                                    ? WalkoutStandBranch::InPos : WalkoutStandBranch::Out,
+                                range);
             // The stand the platform search found (never the Son's own height, down the slope).
             x = task.x;
             y = task.y;

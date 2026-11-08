@@ -677,6 +677,10 @@ public:
     // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out
     // focus and the wall-time clock stay as before (default off, recommended on).
     bool dungeonRunSeekWalkoutFaceCast = false;
+    // The walk-out stand rows (Hakkar's seek pull, diagnostic, safe on for test walks): on, while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` (at most 10 a walk-out); no behaviour changes (default off).
+    bool dungeonRunSeekWalkoutStandLog = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never

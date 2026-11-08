@@ -1,5 +1,6 @@
 # Changelog
 
+- New: a diagnostic stand row a second and a castrefused row for Hakkar's walk-out puller, so a missing pull shot shows its branch and refusal reason (`DungeonRunSeekWalkoutStandLog`).
 - Fixed: Hakkar's walk-out no longer aborts as `no shot` while its Son patrols out of sight: the 6 s clock counts only the time in shot position (`DungeonRunSeekWalkoutFaceCast`).
 - Fixed: Hakkar's walk-out puller turns to its Son and shoots in the same tick, and its own facing no longer swings it back to Hakkar first (`DungeonRunSeekWalkoutFaceCast`).
 - Fixed: Hakkar's walk-out puller no longer drops out of combat mid-task and walks back unshot, and no bot is picked mid-meal or off the combat engine (`DungeonRunSeekWalkoutHoldCombat`).

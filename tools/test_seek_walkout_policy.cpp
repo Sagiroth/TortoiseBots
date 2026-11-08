@@ -1652,6 +1652,82 @@ static void TestWalkoutStallCountsOnlyInShot()
     CHECK(n.inShotMs == 0 && n.lastInShotMs == 0);
 }
 
+
+static void TestWalkoutStandRowDue()
+{
+    // Named failing case: no second row 999 ms after the last.
+    CHECK(WalkoutStandRowDue(0, 999) == false);
+    CHECK(WalkoutStandRowDue(5000, 5000 + kSeekWalkoutStandRowMs));
+    CHECK(WalkoutStandRowDue(0, 1000));
+    CHECK(!WalkoutStandRowDue(5000, 5500));
+    // A row at 0, none at 999, a row at 1000 (through the claim, as the glue keys it by the walk-out's start).
+    std::uint32_t logged = 0, last = 0;
+    const std::uint32_t start = 400;
+    int rows = 0;
+    for (std::uint32_t t = 400; t <= 400 + 25000; t += 100)
+    {
+        if (WalkoutStandRowClaim(logged, start, last, t))
+        {
+            ++rows;
+            last = t;
+        }
+        logged = start;
+        if (t == 400)
+            CHECK(rows == 1);  // the walk-out's first read writes a row
+        if (t == 1300)
+            CHECK(rows == 1);  // 900 ms later: none
+        if (t == 1400)
+            CHECK(rows == 2);  // 1000 ms: the next
+    }
+    CHECK(rows == 26); // bounded: a 25 s task writes at most 26 stand rows
+    // A new walk-out writes its first row at once, whatever the last row's time.
+    CHECK(WalkoutStandRowClaim(400, 30000, 29900, 30000));
+    // The castrefused rows: at most kSeekWalkoutCastRefusedRowsMax a walk-out, a new walk-out starts afresh.
+    CHECK(WalkoutCastRefusedRowDue(400, 400, kSeekWalkoutCastRefusedRowsMax - 1));
+    CHECK(!WalkoutCastRefusedRowDue(400, 400, kSeekWalkoutCastRefusedRowsMax));
+    CHECK(WalkoutCastRefusedRowDue(400, 30000, kSeekWalkoutCastRefusedRowsMax));
+}
+
+static void TestWalkoutStandRowText()
+{
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Out), "out") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::InPos), "inpos") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Wait), "wait") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Face), "face") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CastWait), "castwait") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CheckFail), "checkfail") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Cast), "cast") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CastRefused), "castrefused") == 0);
+    CHECK(WalkoutStandRowText(WalkoutStandBranch::CastRefused, true, true, true, false, true, 3044, "facing_delay", 512) ==
+          "seek pull: walk-out stand branch=castrefused state=c inrange=1 los=1 front=0 stopped=1 cast=3044 "
+          "refuse=facing_delay tick_ms=512");
+    CHECK(WalkoutStandRowText(WalkoutStandBranch::Out, false, false, false, false, false, 0, "", 0) ==
+          "seek pull: walk-out stand branch=out state=n inrange=0 los=0 front=0 stopped=0 cast=0 refuse=- tick_ms=0");
+    CHECK(WalkoutCastRefusedRowText(75, "spell_fail_51") == "seek pull: walk-out castrefused spell=75 reason=spell_fail_51");
+    // The refusal's reason: the core's own result first, then the CastSpell gates in their order.
+    CHECK(WalkoutCastRefuseWord(51, 0, true, false, false, false) == "spell_fail_51");
+    CHECK(WalkoutCastRefuseWord(0, 0, true, true, true, true) == "flying");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, false, true, true) == "stand_delay");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, false, false) == "facing_delay");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, false, true) == "moving");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, true, true) == "gate");
+}
+
+
+static void TestWalkoutFlagsOffKeepToday()
+{
+    // Every new flag off: the pure rules give today's answers.
+    CHECK(!WalkoutHoldsCombat(false, true, true, false, 1000, false));
+    CHECK(!WalkoutFaceTargetYields(false, true));
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteAtStand(s, 2000);
+    for (std::uint32_t t = 2000; t <= 9000; t += 500)
+        CHECK(WalkoutStallDue(s, t, false) == WalkoutShotStalled(s, t));
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(WalkoutEligible(c)); // combatEngine stays true unless the glue fills it under the flag
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1700,6 +1776,9 @@ int main()
     TestWalkoutFaceThenCast();
     TestWalkoutFaceTargetYields();
     TestWalkoutStallCountsOnlyInShot();
+    TestWalkoutStandRowDue();
+    TestWalkoutStandRowText();
+    TestWalkoutFlagsOffKeepToday();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

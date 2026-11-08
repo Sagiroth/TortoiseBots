@@ -82,6 +82,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller's combat actions are held until its shot lands (not below 40 % health; reaction actions still run), it turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`](#aiplayerbotdungeonrunseekwalkoutholdcombat) | `0` | `1` (recommended): the live, unshot Hakkar walk-out puller stays on the combat engine, and the pick skips a bot off the combat engine or eating or drinking. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFaceCast`](#aiplayerbotdungeonrunseekwalkoutfacecast) | `0` | `1` (recommended): the Hakkar walk-out puller turns to the Son and casts in one tick, its per-update facing no longer turns it back to Hakkar, and the 6 s no-shot clock counts only the time in shot position. |
+| [`AiPlayerbot.DungeonRunSeekWalkoutStandLog`](#aiplayerbotdungeonrunseekwalkoutstandlog) | `0` | `1` (diagnostic, safe on for test walks): one `seek pull: walk-out stand` row a second while the Hakkar walk-out puller walks out, and a `castrefused` row for every refused pull cast. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -972,6 +973,20 @@ Whether the Hakkar walk-out puller turns to its Son and casts in the same tick. 
 - At the stand the puller stops, turns to the Son with the instant forced turn (an orientation set plus a heartbeat, not a spline) and casts in the same tick.
 - `UpdateFaceTarget` leaves the live, unshot walk-out puller's facing alone. Every other bot, and the puller once its shot landed (the walk back), is turned as before.
 - The 6 s `no shot` clock (a `seek_pull` row's stall rule) counts only the time the puller is in shot position: the Son in shot range and sight, the puller on the stand's floor (z 46.5 or higher) and not moving. Each read adds the time since the previous in-shot read, at most 250 ms. Walk 56's Sons patrolled out of sight under the ledge while the wall-time clock ran; the 25 s task timeout still bounds the walk-out.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekWalkoutStandLog`
+Whether the Hakkar walk-out writes its diagnostic stand rows. Diagnostic: changes no behaviour, safe to turn on for test walks.
+**Default:** `0` · **Values:** `0` off, `1` on (rows go to `bot_events.csv`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Stand rows:** walk 56 could not tell from its frames why a puller in range and sight never shot: the frames carry no facing and no cast refusals. With the key on, while the walk-out puller walks out unshot:
+- One `seek pull: walk-out stand branch=<word> state=<c|n> inrange=<0|1> los=<0|1> front=<0|1> stopped=<0|1> cast=<spell id> refuse=<reason> tick_ms=<ms>` row a second (the walk-out's first read writes one at once, so a 25 s task writes at most 26). The branch is the one its tick took; `tick_ms` is the time since its previous walk-out tick, so a gap shows a tick that did not run.
+- Every pull cast that `CastSpell` refuses logs `seek pull: walk-out castrefused spell=<id> reason=<reason>` at once, at most 10 a walk-out.
+- The words are listed in [`refusal-rows.md`](../../play/refusal-rows.md).
 
 </details>
 

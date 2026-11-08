@@ -41,7 +41,9 @@ class WalkoutFocusWiring(unittest.TestCase):
 
     def test_the_facing_branch_returns_before_the_cast(self):
         walk = walkout_branch()
-        face = walk.index("if (step.returnAfterFace)\n                    return true;")
+        face = walk.index("if (step.returnAfterFace)\n                {\n"
+                          "                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Face, range);\n"
+                          "                    return true;")
         stop = walk.index("if (step.stop && !bot->IsStopped())\n                    ai->StopMoving();")
         turn = walk.index("if (step.face)\n                    sServerFacade.SetFacingTo(bot, task.source, step.force);")
         # Stop, then turn, then return: the stop's spline cannot undo the facing.
@@ -62,7 +64,9 @@ class WalkoutFocusWiring(unittest.TestCase):
         wait = walk.index("if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),")
         self.assertLess(wait, walk.index("bot->InterruptNonMeleeSpells(false);"))
         self.assertLess(wait, walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd);"))
-        self.assertIn("task.source->IsInCombat()))\n                    return true;", walk)
+        self.assertIn("task.source->IsInCombat()))\n                {\n"
+                      "                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);\n"
+                      "                    return true;", walk)
         self.assertIn("if (pullCast && focusOn)\n                    NoteSeekWalkoutPullCast(bot);", walk)
         note = body(ACTIONS, "void NoteSeekWalkoutPullCast(Player* bot)")
         self.assertIn("it->second.state.pullCastMs = WorldTimer::getMSTime();", note)
@@ -240,6 +244,81 @@ class WalkoutInShotClockWiring(unittest.TestCase):
         self.assertIn("bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);",
                       update)
         self.assertNotIn("WalkoutShotStalled(", update)
+
+
+
+class WalkoutStandLogWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutStandLog (walk 56 fix 4): diagnostic stand and castrefused rows, no behaviour change."""
+
+    def test_the_flag_defaults_off(self):
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandLog", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekWalkoutStandLog = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekWalkoutStandLog = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekWalkoutStandLog`", SETTINGS)
+
+    def test_the_stand_row_is_a_throttled_no_op_with_the_flag_off(self):
+        fn = body(ACTIONS, "void LogSeekWalkoutStand(PlayerbotAI* ai, Player* bot, Unit* son, WalkoutStandBranch branch,")
+        off = fn.index("if (!sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog || !ai || !bot || !son)\n        return;")
+        claim = fn.index("if (!ClaimSeekWalkoutStandRow(bot, tickMs))\n        return;")
+        self.assertLess(off, claim)
+        self.assertLess(claim, fn.index("IsWithinLOSInMap(son)"))
+        self.assertIn("ai->IsStateActive(BotState::BOT_STATE_COMBAT)", fn)
+        claimFn = body(ACTIONS, "bool ClaimSeekWalkoutStandRow(Player* bot, std::uint32_t& tickMs)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", claimFn)
+        self.assertIn("WalkoutStandRowClaim(record.standLogStartMs, startMs, record.standRowMs, nowMs)", claimFn)
+        self.assertIn("tickMs = fresh ? 0 : nowMs - record.standReadMs;", claimFn)
+        refused = body(ACTIONS, "bool ClaimSeekWalkoutCastRefusedRow(Player* bot)")
+        self.assertIn("WalkoutCastRefusedRowDue(record.refusedLogStartMs, startMs, record.refusedRows)", refused)
+
+    def test_every_branch_logs_its_word(self):
+        walk = walkout_branch()
+        for word in ("Wait", "Face", "CastWait", "CheckFail", "Cast", "CastRefused", "InPos", "Out"):
+            self.assertIn("WalkoutStandBranch::" + word, walk)
+        # The check-fail row goes out before the abort clears the record it is keyed by.
+        self.assertLess(walk.index("WalkoutStandBranch::CheckFail"), walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd);"))
+
+    def test_the_castrefused_row_follows_the_cast_spell_call(self):
+        walk = walkout_branch()
+        clear = walk.index("before = ReadWalkoutCastBefore(bot, task.source);\n"
+                           "                    ai->ClearLastCastCheckFail();")
+        cast = walk.index("const bool pullCast = ai->CastSpell(spell, task.source);")
+        row = walk.index("if (!pullCast && ClaimSeekWalkoutCastRefusedRow(bot))\n"
+                         "                        LogSeekWalkout(ai, WalkoutCastRefusedRowText(spellId, refuse).c_str());")
+        self.assertLess(clear, cast)
+        self.assertLess(cast, row)
+        self.assertLess(row, walk.index("return pullCast;"))
+        # Only under the flag: the clear and the spell id lookup never run with it off.
+        self.assertIn("const bool standLog = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog;", walk)
+        self.assertIn('const std::uint32_t spellId = standLog && *spell ? AI_VALUE2(uint32, "spell id", spell) : 0;', walk)
+        self.assertIn("if (standLog)\n                {\n                    before = ReadWalkoutCastBefore(", walk)
+        self.assertIn('"seek pull: walk-out castrefused spell="', (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text())
+
+
+
+class WalkoutAllNewFlagsOff(unittest.TestCase):
+    """With HoldCombat, FaceCast and StandLog off, every new path is skipped (the pure off-values are in
+    tools/test_seek_walkout_policy.cpp: TestWalkoutFlagsOffKeepToday)."""
+
+    def test_every_live_puller_read_sits_behind_its_flag(self):
+        trig = body(TRIGGERS, "bool CombatEndTrigger::IsActive()")
+        self.assertEqual(trig.count("ai::IsLiveWalkoutPuller(bot)"), 1)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat && ai::IsLiveWalkoutPuller(bot)", trig)
+        face = body(PLAYERBOT_AI, "void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)")
+        self.assertEqual(face.count("ai::IsLiveWalkoutPuller(bot)"), 1)
+        self.assertIn("faceCastOn && ai::IsLiveWalkoutPuller(bot)", face)
+        # No other caller.
+        for text in (ACTIONS, PLAYERBOT_AI, TRIGGERS):
+            self.assertLessEqual(text.count("IsLiveWalkoutPuller(bot)"), 1)
+
+    def test_the_stand_branch_paths_sit_behind_their_flags(self):
+        walk = walkout_branch()
+        self.assertEqual(walk.count("NoteSeekWalkoutInShot("), 1)
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))\n"
+                      "                NoteSeekWalkoutInShot(", walk)
+        self.assertEqual(walk.count("ai->ClearLastCastCheckFail();"), 1)
+        self.assertEqual(walk.count("ClaimSeekWalkoutCastRefusedRow(bot)"), 1)
+        pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(")
+        self.assertEqual(pick.count("c.combatEngine ="), 1)
 
 
 if __name__ == "__main__":

@@ -1093,6 +1093,12 @@ AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 # wall-time clock.
 AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0
 
+# The walk-out stand rows (Hakkar's seek pull; diagnostic, safe to turn on for test walks): while the walk-out puller
+# walks out unshot, bot_events.csv gets one "seek pull: walk-out stand" row a second (the branch its tick took, its
+# engine state, range, sight, facing, the cast it attempted and the refusal's reason), and every refused pull cast logs
+# "seek pull: walk-out castrefused" (at most 10 a walk-out). Changes no behaviour.
+AiPlayerbot.DungeonRunSeekWalkoutStandLog = 0
+
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
 # victim inside the live anchor's raid circle, plus 2 yd, and not the open meet's Son) at once when the receiving third
 # tank is more than 8 yd from it or its taunt is not ready, and the first off-tank is within 8 yd with its taunt ready,

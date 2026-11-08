@@ -73,6 +73,30 @@ navmesh path is the costliest question the walk-out asks; the members the loop c
 `away`, `no_ai` and `hunter_only`. There is no line-of-sight or busy code: the sight test is the stand's
 (`FindSeekWalkoutStand`), not the pick's.
 
+## The walk-out stand row's words
+
+`DungeonRunSeekWalkoutStandLog` (diagnostic) writes the stand row once a second while the walk-out puller walks out
+unshot. `state=` is the puller's AI engine (`c` combat, `n` non-combat); the walk-out runs only on the combat engine, so a
+gap in the rows with no `branch=` at all is a tick that did not run. `tick_ms=` is the time since the walk-out's previous
+tick (0 on its first).
+
+| `branch=` | Meaning |
+| :--- | :--- |
+| `out` | Walking out: not within 3 yd of the stand and not in shot position. |
+| `inpos` | At the stand (within 3 yd) but not in shot position: range, the stand's floor or the sight line is missing. |
+| `wait` | A pull shot sent under 2 s ago is waited for (the Son not in combat yet). |
+| `face` | Turned to the Son with the cast left to the next tick (the walk-out focus without `DungeonRunSeekWalkoutFaceCast`). |
+| `castwait` | Its own cast on the Son is still running (`cast=` names it). |
+| `checkfail` | The shot's cast check refused; the `abort cast failed` row follows. `refuse=check_<n>` is the cast check's noted result (0: none noted). |
+| `cast` | The pull cast went out (`cast=` is its spell id). |
+| `castrefused` | `CastSpell` returned false (`refuse=` as in the castrefused row). |
+
+The `refuse=` and castrefused `reason=` words, from `WalkoutCastRefuseWord`: `spell_fail_<n>` (the core's or the cast
+check's own SpellCastResult, noted by `CastSpell`: spell in progress, or `prepare()` refused), else the `CastSpell` gate
+the puller's state just before the call points at: `flying`, `stand_delay` (it was sitting), `facing_delay` (moving and
+not facing the Son), `moving` (moving with no master), else `gate` (the self-harm, dispel-hold or pet-redirect gate).
+`-` in the stand row: no refusal.
+
 ## The take's reason codes
 
 An off-tank's take of a Son of Hakkar (`LogSeekTake`) says what it did about the taunt this tick. `taunt` is the cast
@@ -116,6 +140,8 @@ ref survives line drift.
 | 12 | no puller | `seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f` | UpdateSeekWalkout | no (the 20 rejected members are invisible) | now info2 `reason=<code>:<n>\|...,members=<m> top=<threat> low=<threat>`; info1 unchanged |
 | 13 | no son | `seek pull: walk-out no son walked=%d` | UpdateSeekWalkout | yes: every Son near is `walked` this cycle (the count is the reason) | keep |
 | 13a | walk-out preempted | `seek pull: walk-out preempted action=<name>` | BossTacticsWalkoutFocusMultiplier | yes: `action=` names the first combat action the walk-out focus held (`DungeonRunSeekWalkoutFocus`): the action the engine was about to run that tick; one row per walk-out | new |
+| 13b | walk-out stand | `seek pull: walk-out stand branch=<word> state=<c\|n> inrange=<0\|1> los=<0\|1> front=<0\|1> stopped=<0\|1> cast=<spell id> refuse=<reason> tick_ms=<ms>` | LogSeekWalkoutStand | yes: `branch=` and `refuse=` (below); one a second per walk-out (its first tick at once, at most 26 a task), only with `DungeonRunSeekWalkoutStandLog` | new |
+| 13c | walk-out castrefused | `seek pull: walk-out castrefused spell=<id> reason=<reason>` | BossTacticsSeekTankAction (walk-out) | yes: `reason=` (below); every refused pull cast, at most 10 a walk-out, only with `DungeonRunSeekWalkoutStandLog` | new |
 | 14 | ranged walk-out start | `seek pull: ranged walk-out <name> -> <son> due=%u try=%d reach=%.0f ray=%.0f` (with a `seek_pull` row also ` tr=%.2f`, the bot's threat over the live top tank's) | UpdateSeekWalkout | not a refusal (the decision to act) | document |
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
