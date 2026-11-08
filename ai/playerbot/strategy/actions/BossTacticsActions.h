@@ -652,6 +652,7 @@ namespace ai
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
         std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
+        const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

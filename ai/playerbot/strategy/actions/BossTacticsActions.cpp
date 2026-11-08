@@ -1423,8 +1423,10 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
 }
 
 // One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
-// why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet.
-void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet)
+// why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
+// names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
+// pull_join, other, with `+edge` when only the take edge let it chase).
+void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
         return;
@@ -1437,9 +1439,9 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bo
         last = nowMs;
     }
     Unit* const victim = son->GetVictim();
-    char info1[192];
-    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d", bot->GetName(),
-             son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0);
+    char info1[224];
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s", bot->GetName(),
+             son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0, src.c_str());
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
@@ -7706,6 +7708,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     task.source = son;
                     task.take = true;
                     task.meet = true;
+                    task.takeSrc = "meet";
                     return task;
                 }
                 // Waiting is for the walker's Son only: while its victim is the puller, the returner or nobody, no other
@@ -7839,6 +7842,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = state.healerSon;
             task.take = true;
+            task.takeSrc = "healer_clock";
             return task;
         }
         if (fighting)
@@ -7846,6 +7850,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = fighting;
             task.take = true;
+            task.takeSrc = thirdTank ? "receiver" : "pickup";
             return task;
         }
         // The meet's pre-place: the third tank walks to the circle's edge on the walk-out's way back and waits there.
@@ -7858,7 +7863,10 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = state.pullTarget;
             if (state.pullTarget->IsInCombat())
+            {
                 task.take = true;
+                task.takeSrc = "pull_join";
+            }
             else
                 task.pull = true;
         }
@@ -7875,6 +7883,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                 task.valid = true;
                 task.source = nearestSon;
                 task.take = true;
+                task.takeSrc = "nearest";
                 return task;
             }
         }
@@ -7884,6 +7893,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = state.healerSon;
             task.take = true;
+            task.takeSrc = "healer_clock";
         }
         return task;
     }
@@ -8147,6 +8157,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
         bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
         bool edgeFar = false;
+        bool edgeTake = false; // only the take edge let this chase through (the row's `+edge`)
         if (chaseRefused && sPlayerbotAIConfig.dungeonRunSeekTakeEdge)
         {
             // The take edge (DungeonRunSeekTakeEdge): a Son just outside the raid circle whose victim stands inside it
@@ -8163,11 +8174,12 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                     sonVictim ? sonVictim->GetPositionY() : 0.0f);
                 chaseRefused = edge != SeekTakeEdge::Allowed;
                 edgeFar = edge == SeekTakeEdge::Far;
+                edgeTake = !chaseRefused;
             }
         }
         const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
         LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),
-                    task.meet);
+                    task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.

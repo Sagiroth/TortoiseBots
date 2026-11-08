@@ -1,5 +1,6 @@
 # Changelog
 
+- New: the Hakkar `seek take` row names the take path that produced it (`src=meet|nearest|healer_clock|receiver|pickup|pull_join|other`, `+edge` for a take-edge chase).
 - Changed: when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (`DungeonRunSeekMeetPrePlace`).
 - Fixed: a Son of Hakkar on a healer or damage dealer is taunted at once by the nearest free off-tank when the receiving tank cannot reach it, instead of after 3 s (`DungeonRunSeekNearestTake`).
 - Fixed: Hakkar's walk-out puller no longer loses its pull shot to follow or step-out: with `DungeonRunSeekWalkoutFocus` its other combat actions wait until the shot lands (not below 40 % health), it turns to the Son before it casts, and a hunter opens with Arcane Shot.

@@ -169,12 +169,12 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertLess(read.index("std::vector<Unit*> fightSons = out.sons;"), read.index("UpdateSeekWalkout(ai,"))
 
     def test_the_take_row_says_why(self):
-        self.assertIn("seek take: %s -> %u victim=%s reason=%s meet=%d", ACTIONS)
+        self.assertIn("seek take: %s -> %u victim=%s reason=%s meet=%d src=%s", ACTIONS)
         take = execute()
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
         self.assertIn("LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr,"
-                      " canTaunt, edgeFar),\n                    task.meet);", take)
+                      " canTaunt, edgeFar),\n                    task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));", take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
         self.assertIn("bool meet = false;", ACTIONS_H)
 
