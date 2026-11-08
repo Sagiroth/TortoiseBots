@@ -3002,14 +3002,16 @@ namespace ai
     // --- taunt gate ------------------------------------------------------------------------------------------------
     // A tank never taunts a subject it must not hold: a needs_aura entry (the Shade of Jin'do, which only a carrier can
     // damage and which copies the boss's threat list onto a healer) or a creature the core marks immune to taunts
-    // (Jin'do). Key off, every taunt passes as before.
+    // (Jin'do). A needs_aura subject is refused only for a bot that LACKS the aura: a Delusions carrier can damage the
+    // Shade, so it may taunt it (the same rule as AttackerOfNonTankSkipsUnit, which keeps the Shade in the scan for it).
+    // Key off, every taunt passes as before.
     enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune };
 
-    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool tauntImmune)
+    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune)
     {
         if (!keyOn)
             return TauntGate::Allow;
-        if (requiredAura != 0)
+        if (requiredAura != 0 && !botHasAura)
             return TauntGate::NeedsAura;
         if (tauntImmune)
             return TauntGate::TauntImmune;

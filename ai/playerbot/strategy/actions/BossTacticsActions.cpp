@@ -4719,8 +4719,9 @@ bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const ch
         return false;
     if (!ai || !bot || !target)
         return false;
-    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,
-        GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry()), TargetTauntImmune(target));
+    std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura,
+        requiredAura != 0 && bot->HasAura(requiredAura), TargetTauntImmune(target));
     if (gate == TauntGate::Allow)
         return false;
     if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot))

@@ -13,6 +13,7 @@
 //   /tmp/test_attacker_of_non_tank_policy
 
 #include "../ai/playerbot/policy/combat/AttackerOfNonTankPolicy.h"
+#include "../ai/playerbot/BossTacticsPolicy.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -131,6 +132,37 @@ int main()
         CHECK(AttackerOfNonTankSkipsUnit(true, kDelusions, false));
         CHECK(!AttackerOfNonTankSkipsUnit(true, kDelusions, true));  // a cursed tank keeps the Shade
         CHECK(!AttackerOfNonTankSkipsUnit(false, kDelusions, false));
+    }
+
+    // The value and the taunt gate agree (TestShadeValueAndGateAgree): a Shade of Jin'do on the healer plus a tauntable
+    // Voodoo Slave on a DPS. An uncursed tank: the value drops the Shade, picks the Slave, and the gate allows the
+    // Slave. A cursed tank: the value picks the Shade (it is on the healer) and the gate allows that taunt, so the
+    // Shade is never picked and then refused. Key off: the Shade is picked and the gate allows it as before.
+    {
+        constexpr std::uint32_t kDelusions = 24306;
+        struct Seen { AttackerOfNonTankCandidate candidate; std::uint32_t requiredAura; };
+        std::vector<Seen> seen = { { Mob(5.0f, true), kDelusions }, { Mob(20.0f, false), 0 } };
+        struct Case { bool gateOn; bool botHasAura; std::size_t seenPick; };
+        for (const Case& c : { Case{ true, false, 1 }, Case{ true, true, 0 }, Case{ false, false, 0 } })
+        {
+            std::vector<AttackerOfNonTankCandidate> candidates;
+            std::vector<std::size_t> origin;
+            for (std::size_t i = 0; i < seen.size(); ++i)
+                if (!AttackerOfNonTankSkipsUnit(c.gateOn, seen[i].requiredAura, c.botHasAura && seen[i].requiredAura != 0))
+                {
+                    candidates.push_back(seen[i].candidate);
+                    origin.push_back(i);
+                }
+            std::size_t const pick = AttackerOfNonTankPick(candidates);
+            CHECK(pick < candidates.size());
+            CHECK(origin[pick] == c.seenPick);
+            // The gate answers the same bot for the unit the value returned: never a refusal.
+            std::uint32_t const required = seen[origin[pick]].requiredAura;
+            CHECK(TauntGateFor(c.gateOn, required, c.botHasAura && required != 0, false) == TauntGate::Allow);
+        }
+        // The disagreement the pair used to have: an uncursed tank is refused at the Shade, and the value never offers it.
+        CHECK(TauntGateFor(true, kDelusions, false, false) == TauntGate::NeedsAura);
+        CHECK(AttackerOfNonTankSkipsUnit(true, kDelusions, false));
     }
 
     // Empty scan / nothing fighting: no pick.
