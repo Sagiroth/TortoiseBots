@@ -6,6 +6,7 @@
 #include "playerbot/CombatSpreadPolicy.h"
 #include "playerbot/TravelRouteCachePolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
+#include "playerbot/PlaceUnstickPolicy.h"
 #include "../../../../runtime/StayArrivalPolicy.h"
 
 namespace ai
@@ -88,6 +89,7 @@ namespace ai
             magmaLogAt = other.magmaLogAt;
             swimHandoffLogAt = other.swimHandoffLogAt;
             magmaRefusal = other.magmaRefusal;
+            placeUnstick = other.placeUnstick;
             stayWalk = other.stayWalk;
             moveEvent = Event();
         }
@@ -179,6 +181,10 @@ namespace ai
         // MoveTo2 refuses it again from memory, without terrain queries, for
         // kMagmaRefusalSeconds. clear() leaves it alone too.
         MagmaRefusal magmaRefusal;
+        // The navmesh-island unstick clock and cooldown (PlaceUnstickPolicy.h), fed by MoveTo2's
+        // dispatch result (MovementAction::TryPlaceUnstick); clear() leaves it alone (a move's clear
+        // must not restart the clock or end the cooldown).
+        PlaceUnstickState placeUnstick;
         // The stay walk's failures and back-off (StayArrivalPolicy.h StayWalkBackoff), read by
         // "return to stay position" and its trigger; clear() leaves it alone (a move's clear
         // must not end a back-off the stay walk earned).

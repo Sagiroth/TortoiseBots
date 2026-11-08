@@ -12,6 +12,11 @@ namespace ai
         bool isUseful() override { return true; }
         bool isUsefulWhenStunned() override { return true; }
         virtual bool Execute(Event& event) override;
+        // A spot beside the summoner for player, as the summon teleport picks it (ground on the
+        // summoner's floor, in the summoner's sight). No side effects; the navmesh-island unstick
+        // (MovementAction::TryPlaceUnstick) uses it with its own combat-keeping teleport.
+        static bool FindSpotBeside(Player* summoner, Player* player, float followRange, float followAngle,
+            float& outX, float& outY, float& outZ);
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);

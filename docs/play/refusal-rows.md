@@ -266,6 +266,7 @@ when absent), and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<
 | 48 | `LongStuckFallback` | `graveyard` / `homebind` | `LongStuckFallbackTeleport` | not a refusal (the fallback moved the bot) | document |
 | 49 | `ReachGiveUp` | info1 the target's name; info2 `combat-stuck\|entry=..\|dist=..\|los=..` | `GiveUpCombatStuckTarget` | yes: the `combat-stuck` prefix | keep |
 | 50 | `UnstuckTrip` | info1 the stuck source; info2 the trips swallowed | `UnstuckAction::Execute` | not a refusal (an episode starts) | document |
+| 50a | `BotUnstick` | info1 the master's name; info2 `reason=nopath_island secs=<n> master_yd=<n> result=teleported\|refused` | `MovementAction::TryPlaceUnstick` (`DungeonRunPlaceUnstick`) | yes: `reason=` | document |
 
 ### Dungeon run notes
 

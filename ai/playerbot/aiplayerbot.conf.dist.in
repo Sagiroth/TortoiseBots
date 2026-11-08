@@ -1119,6 +1119,18 @@ AiPlayerbot.DungeonRunSeekWalkoutStandLog = 0
 # refusals that abort the walk-out ("move failed"), up to 3 times a walk-out. Off keeps floor + 2 to the Son's z + 2 and counts every refusal.
 AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
 
+# The navmesh-island unstick (recommended on): a bot in a dungeon or raid that a teleport, summon, knockback or
+# placement left on a small piece of navmesh with no path off it fails every move ("dispatch-short", path type NOPATH)
+# and never moves again. With this on, after 10 s of such failures one navmesh query checks that the bot's own spot is
+# cut off (not just a target off the mesh); then the bot is teleported beside its master (player or bot), wherever the
+# master stands, a boss room included. Combat is kept, the pet goes along only when it is stuck on the island too, a
+# stay or guard point on the island is cleared (others are kept), nobody is whispered, and a BotUnstick row is
+# logged; at most once per 30 s. Never while the master is on a transport or stands off the navmesh itself.
+# Only while the master is alive, more than 20 yd away and within sight distance (or the group is driven by a dungeon
+# run or raid walk commander). Never on battlegrounds, never while the bot is dead, charmed, possessing another unit or casting, and
+# never while the master fights the bot's own target within 5 yd of the bot. Off keeps such a bot where it is.
+AiPlayerbot.DungeonRunPlaceUnstick = 0
+
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
 # victim inside the live anchor's raid circle, plus 2 yd, and not the open meet's Son) at once when the receiving third
 # tank is more than 8 yd from it or its taunt is not ready, and the first off-tank is within 8 yd with its taunt ready,

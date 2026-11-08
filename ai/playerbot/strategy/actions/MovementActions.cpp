@@ -30,6 +30,11 @@
 #include "playerbot/MagmaHazardPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
+#include "playerbot/PlaceUnstickPolicy.h"
+#include "UseMeetingStoneAction.h"
+#include "Maps/PathFinder.h"
+#include "Maps/MoveMap.h" // the navmesh-island unstick's isolation query
+#include "Pet.h"
 #include "playerbot/BoundRunMapGuard.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "host/ModuleLog.h"
@@ -1833,15 +1838,244 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
     {
         // DispatchMovement stamps its own site (dispatch-short / hazard-short).
         lastMove.setPath(TravelPath());
+        // A dispatch-short with a NOPATH route feeds the navmesh-island clock (flag-gated inside).
+        TryPlaceUnstick(lastMove);
         return false; // nowhere to go: let the caller retry later or drop the target
     }
 
     lastMove.moveFailReason = MOVE_FAIL_NONE;
+    // A launched move ends any NOPATH streak.
+    if (sPlayerbotAIConfig.dungeonRunPlaceUnstick)
+        ai::PlaceUnstickOnMoveResult(lastMove.placeUnstick, WorldTimer::getMSTime(), true, MOVE_FAIL_NONE, 0,
+            ai::PlaceUnstickSpot());
 
     if (!idle)
         ClearIdleState();
 
     return true;
+}
+
+static_assert(ai::kPlaceUnstickFailDispatchShort == MOVE_FAIL_DISPATCH_SHORT, "PlaceUnstickPolicy.h mirrors MOVE_FAIL_DISPATCH_SHORT");
+static_assert(ai::kPlaceUnstickPathNoPath == ai::TRAVEL_PATHFIND_NOPATH, "PlaceUnstickPolicy.h mirrors PATHFIND_NOPATH");
+
+// Where the bot stands, for the navmesh-island clock.
+static ai::PlaceUnstickSpot PlaceUnstickSpotOf(Player* bot)
+{
+    ai::PlaceUnstickSpot at;
+    Map* map = bot->GetMap();
+    at.inInstance = map && map->IsDungeon();
+    at.mapId = bot->GetMapId();
+    at.instanceId = bot->GetInstanceId();
+    at.x = bot->GetPositionX();
+    at.y = bot->GetPositionY();
+    at.z = bot->GetPositionZ();
+    return at;
+}
+
+// The enclosure test (PlaceUnstickRegionEnclosed): the polygons connected to startRef inside a
+// kPlaceUnstickRegionRadiusYd circle around (fx, fy, fz), at most kPlaceUnstickRegionCap of them. Detour
+// flags a full result buffer or node pool in the status: that is a truncated answer.
+static bool PlaceUnstickRegionAround(dtNavMeshQuery const* query, dtQueryFilter const& filter, dtPolyRef startRef,
+    float const* centerYZX)
+{
+    dtNavMesh const* const mesh = query->getAttachedNavMesh();
+    dtPolyRef polys[ai::kPlaceUnstickRegionCap];
+    int polyCount = 0;
+    dtStatus const status = query->findPolysAroundCircle(startRef, centerYZX, ai::kPlaceUnstickRegionRadiusYd, &filter,
+        polys, nullptr, nullptr, &polyCount, ai::kPlaceUnstickRegionCap);
+    bool const queryOk = !dtStatusFailed(status) && polyCount > 0 && mesh;
+    bool const truncated = dtStatusDetail(status, DT_BUFFER_TOO_SMALL) || dtStatusDetail(status, DT_OUT_OF_NODES);
+    float maxVertexYd = 0.0f;
+    for (int i = 0; queryOk && i < polyCount; ++i)
+    {
+        dtMeshTile const* tile = nullptr;
+        dtPoly const* poly = nullptr;
+        if (dtStatusFailed(mesh->getTileAndPolyByRef(polys[i], &tile, &poly)) || !tile || !poly)
+            return false;
+        for (unsigned int k = 0; k < poly->vertCount; ++k)
+        {
+            // Detour's vertices are Y, Z, X; the 2D distance is the one Detour's circle test uses.
+            float const* v = &tile->verts[poly->verts[k] * 3];
+            float const dy = v[0] - centerYZX[0];
+            float const dx = v[2] - centerYZX[2];
+            maxVertexYd = std::max(maxVertexYd, std::sqrt(dx * dx + dy * dy));
+        }
+    }
+    return ai::PlaceUnstickRegionEnclosed(queryOk, truncated, maxVertexYd);
+}
+
+// The isolation query (PlaceUnstickStartIsolated): one navmesh path from (fx, fy, fz) to the
+// master over the core's player filter (ground and water, PathInfo::createFilter), with the
+// core's own poly pick (PathInfo::FindWalkPoly), and the enclosure test of the start's region.
+// The core's NOPATH does not say which end failed; this does, and it reports how far the path
+// gets and whether the start sits on a small closed region. Used for the bot and, when it is
+// not beside the island, for the bot's pet.
+static bool ProbePlaceUnstickIsolated(uint32 mapId, float fx, float fy, float fz, Player* master)
+{
+    MMAP::MMapManager* const mmap = MMAP::MMapFactory::createOrGetMMapManager();
+    if (!mmap)
+        return false;
+    dtNavMeshQuery const* const query = mmap->GetNavMeshQuery(mapId);
+    if (!query || !query->getAttachedNavMesh())
+        return false;
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND | NAV_WATER);
+    filter.setExcludeFlags(0);
+    // Detour's coordinates are Y, Z, X.
+    float start[VERTEX_SIZE] = {fy, fz, fx};
+    float end[VERTEX_SIZE] = {master->GetPositionY(), master->GetPositionZ(), master->GetPositionX()};
+    float startNearest[VERTEX_SIZE] = {0.0f, 0.0f, 0.0f};
+    float endNearest[VERTEX_SIZE] = {0.0f, 0.0f, 0.0f};
+    dtPolyRef const startRef = PathInfo::FindWalkPoly(query, start, filter, startNearest);
+    if (startRef == INVALID_POLYREF)
+        return ai::PlaceUnstickStartIsolated(true, false, false, false, 0.0f, false);
+    dtPolyRef const endRef = PathInfo::FindWalkPoly(query, end, filter, endNearest);
+    if (endRef == INVALID_POLYREF)
+        return ai::PlaceUnstickStartIsolated(true, true, false, false, 0.0f, false);
+    dtPolyRef polys[256];
+    int polyCount = 0;
+    if (dtStatusFailed(query->findPath(startRef, endRef, startNearest, endNearest, &filter, polys, &polyCount, 256)) ||
+        polyCount < 1)
+        return ai::PlaceUnstickStartIsolated(false, true, true, false, 0.0f, false);
+    bool const reachedEnd = polys[polyCount - 1] == endRef;
+    if (reachedEnd)
+        return ai::PlaceUnstickStartIsolated(true, true, true, true, 0.0f, false);
+    float straight[64 * VERTEX_SIZE];
+    int straightCount = 0;
+    if (dtStatusFailed(query->findStraightPath(startNearest, endNearest, polys, polyCount, straight, nullptr, nullptr,
+            &straightCount, 64)) || straightCount < 1)
+        return ai::PlaceUnstickStartIsolated(false, true, true, reachedEnd, 0.0f, false);
+    // The farthest point the path reaches (its last corner), from the start.
+    float const reachX = straight[(straightCount - 1) * VERTEX_SIZE + 2];
+    float const reachY = straight[(straightCount - 1) * VERTEX_SIZE];
+    float const reachZ = straight[(straightCount - 1) * VERTEX_SIZE + 1];
+    float const reachYd = ai::PlaceUnstickDist(fx, fy, fz, reachX, reachY, reachZ);
+    // The enclosure test only for a partial path that got past the 2 yd rule (bounded: one capped search).
+    bool const regionEnclosed = reachYd > ai::kPlaceUnstickReachYd && PlaceUnstickRegionAround(query, filter, startRef, start);
+    return ai::PlaceUnstickStartIsolated(true, true, true, reachedEnd, reachYd, regionEnclosed);
+}
+
+// The navmesh-island unstick (walk 55 FROZEN-REPRO): a bot on a piece of navmesh with no path
+// off it fails every move as dispatch-short with path type NOPATH and never moves again. After
+// 10 s of that, in a dungeon or raid, with the start proven cut off, it is teleported beside its
+// master: the summon's spot (SummonAction::FindSpotBeside), its own teleport that keeps combat
+// and the pet, no whisper. The decision is PlaceUnstickPolicy.h.
+bool MovementAction::TryPlaceUnstick(LastMovement& lastMove)
+{
+    if (!sPlayerbotAIConfig.dungeonRunPlaceUnstick)
+        return false;
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+    ai::PlaceUnstickState& state = lastMove.placeUnstick;
+    ai::PlaceUnstickSpot const at = PlaceUnstickSpotOf(bot);
+    ai::PlaceUnstickOnMoveResult(state, nowMs, false, lastMove.moveFailReason, lastMove.movePathType, at);
+    if (!ai::PlaceUnstickCountsFail(lastMove.moveFailReason, lastMove.movePathType))
+        return false;
+
+    // Cheap exits before any lookup: the clock must have run its 10 s first.
+    uint32 const streakMs = ai::PlaceUnstickStreakMs(state, nowMs);
+    if (streakMs < ai::kPlaceUnstickStreakMs)
+        return false;
+
+    Map* map = bot->GetMap();
+    if (!map || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->GetTransport() || bot->IsTaxiFlying())
+        return false;
+
+    // Its master: the player or bot it answers to, else the group's master (a bot leader it follows).
+    Player* master = ai->GetMaster();
+    if (!master || master == bot)
+        master = ai->GetGroupMaster();
+    bool const hasMaster = master && master != bot && master->IsInWorld() && !master->IsBeingTeleported() &&
+        master->GetMapId() == bot->GetMapId() && master->GetInstanceId() == bot->GetInstanceId() &&
+        sServerFacade.IsAlive(master);
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    bool const liveTarget = target && target->IsInWorld() && target->GetMapId() == bot->GetMapId() &&
+        sServerFacade.IsAlive(target);
+
+    ai::PlaceUnstickInputs in;
+    in.flagOn = true;
+    in.inInstance = map->IsDungeon();
+    in.inBattleground = bot->InBattleGround() || map->IsBattleGround();
+    in.hasMaster = hasMaster;
+    in.masterYd = hasMaster ? bot->GetDistance(master) : 0.0f;
+    in.masterOnTransport = hasMaster && master->GetTransport() != nullptr;
+    // The misuse cap: the summon command's own bound (SummonAction::Execute), or a commander-bound group.
+    in.masterInSight = hasMaster && in.masterYd <= sPlayerbotAIConfig.sightDistance;
+    in.runCommanded = TortoiseBots::BotCommands::IsInCommandedGroup(bot);
+    in.botAlive = sServerFacade.IsAlive(bot);
+    in.botCharmed = !bot->GetCharmerGuid().IsEmpty();
+    in.botCharming = ai::PlaceUnstickBotPossessing(bot->GetMover() == bot);
+    in.botCasting = bot->IsNonMeleeSpellCasted(true);
+    in.masterFightNearBot = ai::PlaceUnstickIsFight(hasMaster && master->IsInCombat(), liveTarget,
+        liveTarget ? bot->GetDistance(target) : 0.0f);
+    in.streakMs = streakMs;
+    in.teleportedBefore = state.teleported;
+    in.sinceTeleportMs = nowMs - state.lastTeleportMs;
+
+    // Every cheap gate first (isolation assumed); the navmesh query runs only when they all pass.
+    in.startIsolated = true;
+    if (ai::PlaceUnstickDecide(in) != ai::PlaceUnstickVerdict::Teleport)
+        return false;
+    in.startIsolated = ProbePlaceUnstickIsolated(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(),
+        bot->GetPositionZ(), master);
+    if (ai::PlaceUnstickDecide(in) != ai::PlaceUnstickVerdict::Teleport)
+    {
+        // Connected (a destination off the mesh, not an island): ask again after another 10 s.
+        ai::PlaceUnstickRestartStreak(state, nowMs);
+        return false;
+    }
+
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    if (!SummonAction::FindSpotBeside(master, bot, ai->GetRange("follow"), GetFollowAngle(), x, y, z))
+    {
+        ai::PlaceUnstickStamp(state, nowMs);
+        return false;
+    }
+
+    ai::PlaceUnstickStamp(state, nowMs);
+    float const islandX = at.x, islandY = at.y, islandZ = at.z;
+    // The pet goes along only when it is stuck too: beside the island start, or cut off itself
+    // (the same probe from its spot, run only for a live pet farther out).
+    Pet* const pet = bot->GetPet();
+    bool const petLive = pet && pet->IsInWorld() && sServerFacade.IsAlive(pet) && pet->GetMapId() == bot->GetMapId();
+    float const petFromIslandYd = petLive
+        ? ai::PlaceUnstickDist(pet->GetPositionX(), pet->GetPositionY(), pet->GetPositionZ(), islandX, islandY, islandZ) : 0.0f;
+    bool const petIsolated = petLive && petFromIslandYd > ai::kPlaceUnstickPetNearYd &&
+        ProbePlaceUnstickIsolated(pet->GetMapId(), pet->GetPositionX(), pet->GetPositionY(), pet->GetPositionZ(), master);
+    bool const movePet = ai::PlaceUnstickMovesPet(petLive, petFromIslandYd, petIsolated);
+
+    bot->GetMotionMaster()->Clear();
+    // A rescue, not a fight change: the core's same-map teleport drops combat (CombatStop) and
+    // the pet unless told not to.
+    bool const moved = bot->TeleportTo(bot->GetMapId(), x, y, z, bot->GetOrientation(),
+        TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET);
+
+    if (moved)
+    {
+        if (movePet)
+            pet->NearTeleportTo(x, y, z, pet->GetOrientation());
+        // A stay or guard point on the island would walk the bot straight back: clear only that one.
+        for (char const* anchor : {"stay", "guard"})
+        {
+            PositionEntry pos = AI_VALUE2(PositionEntry, "pos", anchor);
+            if (ai::PlaceUnstickClearsAnchor(pos.isSet(), pos.mapId == bot->GetMapId(),
+                    ai::PlaceUnstickDist(pos.x, pos.y, pos.z, islandX, islandY, islandZ)))
+                RESET_AI_VALUE2(PositionEntry, "pos", anchor);
+        }
+    }
+
+    // One row per attempt (the 30 s cooldown is the throttle); no whisper.
+    std::ostringstream row;
+    row << "reason=nopath_island secs=" << (state.lastStreakMs / 1000) << " master_yd=" << static_cast<int>(in.masterYd)
+        << " result=" << (moved ? "teleported" : "refused");
+    sPlayerbotAIConfig.logEvent(ai, "BotUnstick", master->GetName(), row.str());
+    sLog.outDetail("BotUnstick %s reason=nopath_island secs=%u master_yd=%d result=%s",
+        bot->GetName(), state.lastStreakMs / 1000, static_cast<int>(in.masterYd), moved ? "teleported" : "refused");
+
+    if (moved)
+        lastMove.clear();
+    return moved;
 }
 
 bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
