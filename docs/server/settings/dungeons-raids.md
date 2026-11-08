@@ -88,6 +88,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
+| [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -1087,6 +1088,19 @@ Known limits (not fixed):
 - a point on the north half of the circle stands up to 40 yd from the gather spot, so a Son fighting at the spot is a longer run for tanks[2] (the first off-tank's nearest take and healer clock still cover a Son on a non-tank);
 - a dodge (`avoid aoe`, `boss tactics avoid cast`) outranks the hold while the tank stands in the effect, but once it is just outside, the hold may stop the dodge's walk at the effect's edge, and a dodge that carried it more than 4 yd off is walked back toward the point;
 - the move's height is re-derived from the ground at the point (the walk's ground snap), not taken from the floor the start checked.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`
+Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's puller nears its stand, instead of walking when the walk-out starts. Recommended on (its value is still being tested on the A/B arm).
+**Default:** `0` · **Values:** `0` off (the walk starts with the walk-out, as before), `1` on (needs `DungeonRunSeekMeetPrePlace`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Late walk:** in walk 57 the pre-place started a median 11 s before the shot, the third tank's threat on Hakkar at Cause Insanity fell 24 %, and it still stood a median 42.8 yd from the puller at the shot. With the key on, the pre-placed tank keeps its normal tank work (the task is left as with no pre-place) until the puller is within 10 yd of its stand, or is in position (it stood at its stand, reached shot position, or the shot landed); then it walks to its point as before. Once begun the walk is not undone.
+
+Diagnostics (always on with `DungeonRunSeekMeetPrePlace`, key or not): a `BossTacticsSonMeet` row `event=preplace_arrive,receiver=<name>,after_ms=<ms>,point_yd=<yd>` once per pre-place when the tank first comes within 4 yd of its point (`after_ms` since its walk began), and the shot's `event=meet` row gains `receiver_point_yd=` (the receiver's distance to its pre-place point; `-1.0` when the receiver is not the pre-placed tank). Walk 57 could not tell a tank pulled back by its melee reach from one still walking.
 
 </details>
 

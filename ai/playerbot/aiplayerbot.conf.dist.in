@@ -1141,6 +1141,12 @@ AiPlayerbot.DungeonRunSeekNearestTakeReach = 0
 # still comes first. Off keeps the receiver where its tank AI stands it.
 AiPlayerbot.DungeonRunSeekMeetPrePlace = 0
 
+# The pre-place's late walk for Hakkar's Sons (recommended on, its value still being tested; needs
+# DungeonRunSeekMeetPrePlace): the pre-placed third tank stays on Hakkar until the walk-out's puller is within 10 yd of
+# its stand or in position (at its stand, in shot position or shot), then walks to its point. Off walks it when the
+# walk-out starts.
+AiPlayerbot.DungeonRunSeekMeetPrePlaceLate = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

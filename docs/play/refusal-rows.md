@@ -206,7 +206,7 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 
 | # | Row | Row text / info1 shape | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 43a | meet | `son=%u,event=meet,receiver=<name>,tank_idx=%d,receiver_yd=%.1f,due_in=%u` | UpdateSeekWalkout | not a refusal (a receiver was picked) | document |
+| 43a | meet | `son=%u,event=meet,receiver=<name>,tank_idx=%d,receiver_yd=%.1f,due_in=%u,receiver_point_yd=%.1f` | UpdateSeekWalkout | not a refusal (a receiver was picked; `receiver_point_yd` is its distance to its pre-place point, `-1.0` when it is not the pre-placed tank) | document |
 | 43b | no meet | `son=%u,event=no_meet,reason=<code>:<n>\|...,tanks=%d` | UpdateSeekWalkout | no (no tank could wait, and why) | added |
 | 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
 | 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` (`peeled` adds `,victim=%u,victim_role=<tank\|healer\|dps\|pet>,son_yd=%.1f`) | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
@@ -214,6 +214,7 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 | 43f | pre-place | `son=%u,event=preplace,receiver=<name>,receiver_yd=%.1f,point_yd=%.1f` | UpdateSeekWalkout | not a refusal (`DungeonRunSeekMeetPrePlace`: the walk-out started and the third tank walks to the circle edge on its way back; `receiver_yd` to the puller, `point_yd` to that point) | new |
 | 43g | pre-place end | `son=%u,event=preplace_end,receiver=<name\|none>,reason=<receiver_dead\|receiver_charmed\|receiver_victim>` | UpdateSeekWalkout | yes: the pre-placed tank can no longer wait, so the pre-place ends and the shot's pick is today's | new |
 | 43h | pre-place skip | `son=%u,event=preplace_skip,receiver=<name>,reason=floor` | UpdateSeekWalkout | yes: at the start, the point's floor is off the platform's level, so no pre-place began | new |
+| 43i | pre-place arrive | `son=%u,event=preplace_arrive,receiver=<name>,after_ms=%u,point_yd=%.1f` | FindBossSeekTank (SeekMeetPrePlaceTask) | not a refusal (once per pre-place: the tank came within 4 yd of its point; `after_ms` since its walk began, which `DungeonRunSeekMeetPrePlaceLate` delays) | new |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
 index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`

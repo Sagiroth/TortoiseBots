@@ -190,8 +190,30 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("if (!canTaunt || gateRefused)", take)
         self.assertIn("bool meet = false;", ACTIONS_H)
 
+    def test_the_pre_place_arrival_diagnostics(self):
+        # Walk 57 F3: one `event=preplace_arrive` row per pre-place (claimed under the lock), and the meet row's
+        # `receiver_point_yd=`, both always on with the pre-place (no late key in the way).
+        task = body(ACTIONS, "bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)")
+        self.assertIn('"son=%u,event=preplace_arrive,receiver=%s,after_ms=%u,point_yd=%.1f"', task)
+        self.assertIn("if (!walk && botAi && SeekMeetPrePlaceNoteArrive(instanceId, self, progress.gen, nowMs, afterMs))",
+                      task)
+        self.assertIn("LogSeekMeet(botAi, info1);", task)
+        arrive = task[task.index("if (!walk && botAi"):]
+        self.assertNotIn("dungeonRunSeekMeetPrePlaceLate", arrive)
+        claim = body(ACTIONS, "bool SeekMeetPrePlaceNoteArrive(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", claim)
+        self.assertIn("WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs)", claim)
+        fn = update()
+        meet = fn[fn.index("Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];"):]
+        self.assertIn("? receiver->GetDistance2d(it->second.state.prePlaceX, it->second.state.prePlaceY)", meet)
+        self.assertLess(meet.index("float const receiverPointYd ="), meet.index('"receiver_point_yd=%.1f"'))
+        self.assertIn("receiverPointYd);", meet)
+        # Read before the shot's hand-over can clear the pre-place.
+        self.assertLess(meet.index("float const receiverPointYd ="), meet.index("WalkoutPrePlaceNoteMeet(it->second.state);"))
+
     def test_the_meet_rows(self):
-        for row in ('"son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u"',
+        for row in ('"son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"\n'
+                    '                                 "receiver_point_yd=%.1f"',
                     '"son=%u,event=no_meet,reason=%s,tanks=%d"',
                     '"son=%u,event=taken,receiver=%s,by=%s,after_ms=%u"',
                     '"son=%u,event=lost,reason=%s,after_ms=%u"',

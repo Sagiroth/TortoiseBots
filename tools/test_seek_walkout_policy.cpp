@@ -2310,6 +2310,63 @@ static void TestWalkoutMeetLostRecord()
     CHECK(s.lostMeets.empty());
 }
 
+// The pre-place's late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3) and its arrival latch.
+static void TestMeetPrePlaceLateWalk()
+{
+    // Named failing case: the key on, the puller 25 yd from its stand and not in position -> the walk is not due yet
+    // (today it starts at once).
+    CHECK(MeetPrePlaceWalkDue(true, 25.0f, false) == false);
+    CHECK(kSeekMeetPrePlaceLeadYd == 10.0f);
+    CHECK(MeetPrePlaceWalkDue(true, 9.0f, false) == true);
+    // The 10 yd edge (mutation `<=` -> `<`: this fails).
+    CHECK(MeetPrePlaceWalkDue(true, 10.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 10.1f, false) == false);
+    // In position, however far (mutation: drop pullerInPos and these fail).
+    CHECK(MeetPrePlaceWalkDue(true, 25.0f, true) == true);
+    CHECK(MeetPrePlaceWalkDue(true, 30.0f, true) == true);
+    // Key off: today's answer, due at once whatever the puller does.
+    CHECK(MeetPrePlaceWalkDue(false, 25.0f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(false, 1.0e9f, false) == true);
+    CHECK(MeetPrePlaceWalkDue(false, 5.0f, true) == true);
+
+    // In position: at the stand, in shot position once, shot, or the meet handed over.
+    SeekWalkoutState s;
+    CHECK(!WalkoutPullerInPos(s));
+    s.atStandSinceMs = 5;
+    CHECK(WalkoutPullerInPos(s));
+    s.atStandSinceMs = 0;
+    s.firstInShotMs = 5;
+    CHECK(WalkoutPullerInPos(s));
+    s.firstInShotMs = 0;
+    s.shot = true;
+    CHECK(WalkoutPullerInPos(s));
+    s.shot = false;
+    s.prePlaceMeet = true;
+    CHECK(WalkoutPullerInPos(s));
+
+    // The walk and arrival latches: once per pre-place, only for its own receiver and generation.
+    SeekWalkoutState w;
+    WalkoutStart(w, 11, 21, 1000, 1);
+    WalkoutPrePlaceSet(w, 31, 5.0f, 6.0f);
+    std::uint32_t afterMs = 99;
+    CHECK(!WalkoutPrePlaceNoteWalk(w, 32, w.startGen, 2000));      // another tank
+    CHECK(!WalkoutPrePlaceNoteWalk(w, 31, w.startGen + 1, 2000));  // a stale generation
+    CHECK(WalkoutPrePlaceNoteWalk(w, 31, w.startGen, 2000));
+    CHECK(!WalkoutPrePlaceNoteWalk(w, 31, w.startGen, 3000));      // latched once
+    CHECK(w.prePlaceWalkMs == 2000);
+    CHECK(!WalkoutPrePlaceNoteArrive(w, 32, w.startGen, 6500, afterMs));
+    CHECK(WalkoutPrePlaceNoteArrive(w, 31, w.startGen, 6500, afterMs));
+    CHECK(afterMs == 4500);
+    CHECK(!WalkoutPrePlaceNoteArrive(w, 31, w.startGen, 7000, afterMs));  // one row per pre-place
+    // A new pre-place clears both latches.
+    WalkoutPrePlaceSet(w, 31, 5.0f, 6.0f);
+    CHECK(!w.prePlaceWalking);
+    CHECK(!w.prePlaceArrived);
+    // An arrival with no latched walk (already at the point) says 0.
+    CHECK(WalkoutPrePlaceNoteArrive(w, 31, w.startGen, 8000, afterMs));
+    CHECK(afterMs == 0);
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -2398,6 +2455,7 @@ int main()
     TestMeetPrePlaceHoldAtThePoint();
     TestMeetPrePlaceReviewCases();
     TestWalkoutMeetLostRecord();
+    TestMeetPrePlaceLateWalk();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

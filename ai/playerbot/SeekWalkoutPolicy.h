@@ -1032,6 +1032,10 @@ namespace ai
         bool prePlaceMeet = false;
         std::uint32_t prePlaceMeetMs = 0;
         float prePlaceX = 0.0f, prePlaceY = 0.0f;
+        // The pre-place's progress (walk 57 F3 diagnostics): its walk began (and when), and its arrival row went out.
+        bool prePlaceWalking = false;
+        std::uint32_t prePlaceWalkMs = 0;
+        bool prePlaceArrived = false;
         // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
         // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
         std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
@@ -1194,6 +1198,52 @@ namespace ai
         return moving ? MeetPrePlaceStep::HoldStop : MeetPrePlaceStep::HoldFree;
     }
 
+    // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): walk 57's pre-place started a median 11 s before the
+    // shot, the third tank's threat on Hakkar fell 24 %, and it still stood a median 42.8 yd from the puller at the
+    // shot. With the key the pre-placed tank stays on Hakkar until the puller is within kSeekMeetPrePlaceLeadYd of its
+    // stand, or in position (at its stand, in shot position, shot, or the meet already handed over); then it walks.
+    constexpr float kSeekMeetPrePlaceLeadYd = 10.0f;
+
+    // Whether the pre-placed tank's walk to its point is due now. Key off: always (today: at the walk-out start).
+    inline bool MeetPrePlaceWalkDue(bool flagLate, float pullerToStandYd, bool pullerInPos)
+    {
+        if (!flagLate)
+            return true;
+        return pullerInPos || pullerToStandYd <= kSeekMeetPrePlaceLeadYd;
+    }
+
+    // Whether the walk-out's puller is in position for MeetPrePlaceWalkDue: the pre-place's meet already handed over,
+    // the shot landed, the puller stood at its stand, or it reached shot position once this task.
+    inline bool WalkoutPullerInPos(const SeekWalkoutState& s)
+    {
+        return s.prePlaceMeet || s.shot || s.atStandSinceMs != 0 || s.firstInShotMs != 0;
+    }
+
+    // The pre-place's walk began (first due read): latched once for the pre-place `receiver` of generation `gen`, so
+    // the arrival row can say how long the walk took. False for a stale reader or a walk already latched.
+    inline bool WalkoutPrePlaceNoteWalk(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen,
+                                        std::uint32_t nowMs)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceWalking)
+            return false;
+        s.prePlaceWalking = true;
+        s.prePlaceWalkMs = nowMs;
+        return true;
+    }
+
+    // The pre-placed tank came within kSeekMeetPrePlaceArriveYd of its point: true once per pre-place (the one
+    // `event=preplace_arrive` row), with the time since its walk began (0 when no walk was latched).
+    inline bool WalkoutPrePlaceNoteArrive(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen,
+                                          std::uint32_t nowMs, std::uint32_t& afterMs)
+    {
+        afterMs = 0;
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceArrived)
+            return false;
+        s.prePlaceArrived = true;
+        afterMs = s.prePlaceWalking ? nowMs - s.prePlaceWalkMs : 0;
+        return true;
+    }
+
     // Whether the hold's step takes the tick (the action returns true): the walk and the stop do; a standing tank's hold
     // does not, so the rotation runs.
     inline bool MeetPrePlaceStepConsumesTick(MeetPrePlaceStep step)
@@ -1232,6 +1282,9 @@ namespace ai
         s.prePlaceMeetMs = 0;
         s.prePlaceX = 0.0f;
         s.prePlaceY = 0.0f;
+        s.prePlaceWalking = false;
+        s.prePlaceWalkMs = 0;
+        s.prePlaceArrived = false;
     }
 
     // The task just started (WalkoutStart): pre-place `receiver` at (x, y) for it. Only an unshot running task takes one.

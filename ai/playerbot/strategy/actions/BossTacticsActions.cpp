@@ -2436,6 +2436,13 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         meetRoles.tanks[static_cast<std::size_t>(pick)])
                     {
                         Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
+                        // The receiver's distance to its pre-place point at the shot (walk 57 F3; -1: not the
+                        // pre-placed tank, or no pre-place).
+                        float const receiverPointYd =
+                            it->second.state.prePlaceReceiver != 0 &&
+                                    it->second.state.prePlaceReceiver == receiver->GetObjectGuid().GetRawValue()
+                                ? receiver->GetDistance2d(it->second.state.prePlaceX, it->second.state.prePlaceY)
+                                : -1.0f;
                         bool const meetBefore = it->second.state.meetReceiver != 0;
                         it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
                         it->second.state.meetSon = guid;
@@ -2447,9 +2454,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         state.meetMs = nowMs;
                         state.meetPuller = it->second.state.puller;
                         snprintf(info1, sizeof(info1),
-                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u",
+                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"
+                                 "receiver_point_yd=%.1f",
                                  ObjectGuid(guid).GetCounter(), receiver->GetName(), pick,
-                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000);
+                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000,
+                                 receiverPointYd);
                     }
                     else
                     {
@@ -2892,6 +2901,58 @@ bool SeekMeetPrePlaceFor(std::uint32_t instanceId, std::uint64_t bot, float& x, 
     x = it->second.state.prePlaceX;
     y = it->second.state.prePlaceY;
     return true;
+}
+
+// The pre-place's progress for this bot (g_walkoutMutex, walk 57 F3): the walk-out's puller and stand, whether the
+// puller is in position (WalkoutPullerInPos), whether the walk already began, the pre-place's generation and its Son.
+// False without a live pre-place naming this bot.
+struct SeekPrePlaceProgress
+{
+    std::uint64_t puller = 0;
+    float standX = 0.0f, standY = 0.0f;
+    bool standKnown = false;
+    bool pullerInPos = false;
+    bool walking = false;
+    std::uint32_t gen = 0;
+    std::uint64_t son = 0;
+};
+
+bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, SeekPrePlaceProgress& out)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end() || it->second.state.prePlaceReceiver != bot ||
+        !WalkoutPrePlaceLive(it->second.state))
+        return false;
+    const SeekWalkoutState& s = it->second.state;
+    out.puller = s.prePlacePuller;
+    out.standKnown = WalkoutActive(s) && s.puller == s.prePlacePuller;
+    out.standX = s.standX;
+    out.standY = s.standY;
+    out.pullerInPos = WalkoutPullerInPos(s);
+    out.walking = s.prePlaceWalking;
+    out.gen = s.prePlaceGen;
+    out.son = s.son ? s.son : s.meetSon;
+    return true;
+}
+
+// Latches the pre-place's walk start (WalkoutPrePlaceNoteWalk) under g_walkoutMutex.
+void SeekMeetPrePlaceNoteWalk(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it != g_walkouts.end())
+        WalkoutPrePlaceNoteWalk(it->second.state, bot, gen, nowMs);
+}
+
+// Claims the pre-place's one arrival row (WalkoutPrePlaceNoteArrive) under g_walkoutMutex.
+bool SeekMeetPrePlaceNoteArrive(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, std::uint32_t nowMs,
+                                std::uint32_t& afterMs)
+{
+    afterMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs);
 }
 
 // The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
@@ -8456,6 +8517,25 @@ bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& t
     if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row ||
         !SeekMeetPrePlaceFor(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), x, y))
         return false;
+    // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): until the walk is due the tank stays on Hakkar (the
+    // task is untouched, as with no pre-place). Key off: due at once, as before. The first due read latches the walk's
+    // start for the arrival row.
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    SeekPrePlaceProgress progress;
+    if (!SeekMeetPrePlaceProgressRead(instanceId, self, progress))
+        return false;
+    if (!progress.walking)
+    {
+        Player* const puller = progress.puller ? bot->GetMap()->GetPlayer(ObjectGuid(progress.puller)) : nullptr;
+        const float pullerToStandYd = puller && puller->IsInWorld() && progress.standKnown
+            ? puller->GetDistance2d(progress.standX, progress.standY) : std::numeric_limits<float>::max();
+        if (!MeetPrePlaceWalkDue(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceLate, pullerToStandYd,
+                                 progress.pullerInPos))
+            return false;
+        SeekMeetPrePlaceNoteWalk(instanceId, self, progress.gen, nowMs);
+    }
     task.row = row;
     task.source = nullptr;
     task.take = false;
@@ -8468,6 +8548,19 @@ bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& t
     const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) == MeetPrePlaceStep::Walk;
     task.walkToSpot = walk;
     task.prePlaceHold = !walk;
+    // The arrival row (always on with the pre-place): once per pre-place, when the tank first comes within
+    // kSeekMeetPrePlaceArriveYd of its point, with the time since its walk began. Walk 57 could not tell "pulled back
+    // by reach melee" from "still walking".
+    std::uint32_t afterMs = 0;
+    PlayerbotAI* const botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!walk && botAi && SeekMeetPrePlaceNoteArrive(instanceId, self, progress.gen, nowMs, afterMs))
+    {
+        const std::uint64_t guid = progress.son;
+        char info1[160];
+        snprintf(info1, sizeof(info1), "son=%u,event=preplace_arrive,receiver=%s,after_ms=%u,point_yd=%.1f",
+                 ObjectGuid(guid).GetCounter(), bot->GetName(), afterMs, bot->GetDistance2d(x, y));
+        LogSeekMeet(botAi, info1);
+    }
     return true;
 }
 }

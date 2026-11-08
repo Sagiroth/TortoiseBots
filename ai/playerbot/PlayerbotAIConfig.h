@@ -709,6 +709,11 @@ public:
     // the task ends without one, another tank is picked at the shot, or the tank dies, is charmed or becomes Hakkar's
     // victim. Off, the receiver stands wherever its tank AI left it, as before (default off, recommended on).
     bool dungeonRunSeekMeetPrePlace = false;
+    // The pre-place's late walk (Hakkar's Sons, walk 57 F3; needs dungeonRunSeekMeetPrePlace): on, the pre-placed third
+    // tank stays on Hakkar until the walk-out's puller is within 10 yd of its stand or in position (at its stand, in
+    // shot position or shot), then walks to its point. Off, it walks when the walk-out starts, as before (default off,
+    // recommended on; its value is still being tested).
+    bool dungeonRunSeekMeetPrePlaceLate = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

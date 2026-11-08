@@ -110,6 +110,26 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertLess(fn.index("!SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))\n        return task;"),
                         fn.index("if (thirdTank && SeekMeetPrePlaceTask("))
 
+    def test_the_late_walk_reads_the_key(self):
+        # Walk 57 F3: DungeonRunSeekMeetPrePlaceLate holds the walk until the puller nears its stand or is in position.
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceLate", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekMeetPrePlaceLate = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekMeetPrePlaceLate = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`", SETTINGS)
+        helper = body(ACTIONS, "bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)")
+        gate = helper.index("if (!MeetPrePlaceWalkDue(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceLate, pullerToStandYd,")
+        self.assertIn("progress.pullerInPos))\n            return false;", helper)
+        self.assertIn("? puller->GetDistance2d(progress.standX, progress.standY) : std::numeric_limits<float>::max();",
+                      helper)
+        # Only before the walk began; the first due read latches it; all of it before the task is filled.
+        self.assertLess(helper.index("if (!progress.walking)"), gate)
+        self.assertLess(gate, helper.index("SeekMeetPrePlaceNoteWalk(instanceId, self, progress.gen, nowMs);"))
+        self.assertLess(helper.index("SeekMeetPrePlaceNoteWalk("), helper.index("task.row = row;"))
+        read = body(ACTIONS, "bool SeekMeetPrePlaceProgressRead(")
+        self.assertIn("out.pullerInPos = WalkoutPullerInPos(s);", read)
+        self.assertIn("!WalkoutPrePlaceLive(it->second.state)", read)
+        self.assertIn("out.standKnown = WalkoutActive(s) && s.puller == s.prePlacePuller;", read)
+
     def test_the_hold_stops_a_walk_and_frees_the_rotation(self):
         fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
         hold = fn[fn.index("if (task.prePlaceHold)"):fn.index("if (task.take)")]
