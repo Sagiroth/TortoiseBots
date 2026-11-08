@@ -1,6 +1,6 @@
 # Changelog
 
-- Fixed: a priest no longer shields a warrior in Defensive Stance or a druid in Bear Form who isn't in danger, even when that tank is a player without Protection or Feral talents; an explicitly assigned non-tank role wins over the stance; the rage-tank rule also holds between chained pulls while the healer is in combat (#1553).
+- Fixed: a priest no longer shields a warrior in Defensive Stance or a druid in Bear Form above critical health, in or out of combat, even when that tank is a player without Protection or Feral talents; an assigned non-tank role wins over the stance (#1553).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.
 - Hakkar in Zul'Gurub: a Son of Hakkar on a healer or damage dealer is now taken by an off-tank, and killed if no tank takes it within seconds; the walk-out brings a Son only near the next Blood Siphon.

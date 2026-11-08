@@ -14,22 +14,21 @@
 
 using ai::ShouldShieldTarget;
 using ai::TankForShield;
-using ai::TankEngagedForShield;
 
 int main()
 {
     std::cout << "Starting TortoiseBots shield-target policy tests...\n";
 
-    // Rage tank in combat above critical: shield refused (eats rage).
-    CHECK(!ShouldShieldTarget(true, true, true, 50, 20));
-    // Rage tank in combat at/below critical: the save wins.
-    CHECK(ShouldShieldTarget(true, true, true, 20, 20));
-    // Rage tank out of combat: no rage to lose.
-    CHECK(ShouldShieldTarget(true, true, false, 50, 20));
+    // Rage tank above critical: shield refused (eats rage).
+    CHECK(!ShouldShieldTarget(true, true, 50, 20));
+    // Rage tank at/below critical: the save wins.
+    CHECK(ShouldShieldTarget(true, true, 20, 20));
+    // Rage tank out of combat above critical: refused too (a 30 s shield cast between pulls eats the next pull's opening hits).
+    CHECK(!ShouldShieldTarget(true, true, 50, 20));
     // Mana tank (paladin) at 50 %: shields as usual.
-    CHECK(ShouldShieldTarget(true, false, true, 50, 20));
+    CHECK(ShouldShieldTarget(true, false, 50, 20));
     // Rage non-tank (DPS warrior) at 50 %: shields as usual.
-    CHECK(ShouldShieldTarget(false, true, true, 50, 20));
+    CHECK(ShouldShieldTarget(false, true, 50, 20));
     // Stance/form counts as tank even when the talent role does not.
     CHECK(!TankForShield(false, false, false, false));
     CHECK(TankForShield(true, false, false, false));
@@ -39,17 +38,14 @@ int main()
     CHECK(!TankForShield(false, true, true, false));
     CHECK(!TankForShield(false, true, false, true));
     CHECK(TankForShield(true, true, true, false));
-    // Defensive-Stance rage tank in combat above critical: shield refused.
-    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, true, 50, 20));
+    // Defensive-Stance rage tank above critical: shield refused.
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, 50, 20));
     // Explicit DPS in Defensive Stance: shields as usual.
-    CHECK(ShouldShieldTarget(TankForShield(false, true, true, false), true, true, 50, 20));
-    // Between chained pulls the tank's own combat flag drops while the
-    // healer is still in combat: the rage-tank rule still holds.
-    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 65, 20));
-    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 66, 20));
-    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 20, 20));
-    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, false), 66, 20));
-    CHECK(TankEngagedForShield(true, false));
+    CHECK(ShouldShieldTarget(TankForShield(false, true, true, false), true, 50, 20));
+    // A bear without Feral talents above critical: refused.
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, false, true), true, 66, 20));
+    // A stance tank below critical: the save lands.
+    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, 19, 20));
 
     std::cout << "All shield-target policy tests passed.\n";
     return 0;
