@@ -5,6 +5,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/GroupMembers.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "Pet.h"
@@ -206,7 +207,7 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     if (!HasCarrierKillFirstRow(fight.rows))
     {
-        coverLatch_ = ShadeCoverLatch(); // the curse is over: the cover latch ends with it
+        SetShadeCoverLatch(bot, ShadeCoverLatch()); // the curse is over: the cover latch ends with it
         return false;
     }
 
@@ -293,17 +294,43 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
     in.otherHealers = otherHealerCount;
     in.manaPct = AI_VALUE2(uint8, "mana", "self target");
     in.dispelNowPending = CarrierDispelNowPending(ai, bot, fight.rows);
-    // The healer cover (AiPlayerbot.DungeonRunShadeHealerCover): the pick already ranks a Shade on a healer within 30 yd
-    // of this bot and on its floor first, so the cover holds when the pick is one, or is the Shade this bot pulled off a
-    // healer (the latch).
-    if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)
+    // The healer cover (AiPlayerbot.DungeonRunShadeHealerCover), the off-tank's only: the pick already ranks a Shade on
+    // a healer within 30 yd of this bot and on its floor first, and keeps the Shade this off-tank pulled off a healer
+    // (the latch, read by FindBossCarrierStrikePick before the general pick), so the cover holds when the pick is one.
+    if (sPlayerbotAIConfig.dungeonRunShadeHealerCover && role == CarrierStrikeRole::OffTank)
     {
         bool const inCoverReach = shade && bot->GetDistance(shade) <= kShadeCoverReachYd &&
             ShadeCoverSameFloor(bot->GetPositionZ() - shade->GetPositionZ());
-        bool const latched = ShadeCoverLatchHolds(coverLatch_, shade ? shade->GetObjectGuid().GetRawValue() : 0,
+        ShadeCoverLatch latch = GetShadeCoverLatch(bot);
+        bool const latched = ShadeCoverLatchHolds(latch, shade ? shade->GetObjectGuid().GetRawValue() : 0,
             in.cursed, shade && ShadeOnGroupHealer(bot, shade), shadeVictim == bot, WorldTimer::getMSTime());
-        in.shadeCover = latched && inCoverReach;
+        SetShadeCoverLatch(bot, latch);
+        // On a threat_successor fight only while leaving cannot change the successor: this off-tank's threat on that
+        // boss is above 0 and at least half the highest tank's (kThreatCapOffTankAwayShare, the KeepsAway line).
+        bool threatOk = !in.threatSuccessor;
+        if (in.threatSuccessor)
+            for (Unit* unit : fight.units)
+            {
+                if (!unit || !sServerFacade.IsAlive(unit))
+                    continue;
+                bool successorBoss = false;
+                for (const BossTacticRow* row : fight.rows)
+                    if (row->kind == BossTacticKind::ThreatSuccessor && row->bossEntry == unit->GetEntry())
+                        successorBoss = true;
+                if (!successorBoss)
+                    continue;
+                float const own = sServerFacade.GetThreatManager(unit).getThreat(bot);
+                float highest = own;
+                for (Player* tank : tankRoles.tanks)
+                    if (tank)
+                        highest = std::max(highest, sServerFacade.GetThreatManager(unit).getThreat(tank));
+                threatOk = ShadeCoverThreatAllows(own, highest, kThreatCapOffTankAwayShare);
+                break;
+            }
+        in.shadeCover = latched && inCoverReach && threatOk;
     }
+    else if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)
+        SetShadeCoverLatch(bot, ShadeCoverLatch()); // only an off-tank latches
     in.lowestCoverPct = lowestCoverPct;
 
     CarrierStrikeVerdict const verdict =

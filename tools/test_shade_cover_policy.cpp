@@ -2,6 +2,7 @@
 // healers):
 //   g++ -std=c++17 -Wall -Wextra tools/test_shade_cover_policy.cpp -o /tmp/test_shade_cover_policy && /tmp/test_shade_cover_policy
 #include "../ai/playerbot/BossTacticsPolicy.h"
+#include "../ai/playerbot/ThreatCapPolicy.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -433,6 +434,71 @@ static void TestGuardWord()
     CHECK(ShadeCoverMissReason(f, kShadeCoverReachYd) == ShadeCoverMiss::ThreatGate);
 }
 
+// Codex round 2: the off-tank pulled its Shade (victim = self, no healer tier any more) and a nearer Shade on a damage
+// dealer stands beside it. The general pick takes the nearer one; resolving the latch first keeps the pulled Shade, and
+// the latch holds on it. Without the latch-first resolve the latch saw the other guid and ended.
+static void latched_shade_survives_a_nearer_shade()
+{
+    std::uint64_t const pulled = 0xF130003A8A000010ull;
+    std::uint64_t const nearer = 0xF130003A8A000011ull;
+    std::vector<BossTacticRow> rows{KillFirst(kShade, 0, kDelusions)};
+    std::vector<TacticCandidate> c{Shade(8.0f, false), Shade(3.0f, false)}; // [0] pulled, on the off-tank; [1] nearer
+    std::uint64_t const guids[2] = {pulled, nearer};
+    int const general = PickCarrierOverride(Active(rows), c, kCarrierHoldReachYd, true);
+    CHECK(general == 1); // the general pick replaces the pulled Shade
+
+    ShadeCoverLatch latch;
+    CHECK(ShadeCoverLatchHolds(latch, pulled, true, true, false, 1000)); // taken off the priest
+    ShadeCoverLatchedShade s;
+    s.found = true;
+    s.carrierEntry = true;
+    s.alive = true;
+    s.attackable = true;
+    s.distanceYd = 8.0f;
+    s.onSelf = true;
+    std::uint64_t const pick = ShadeCoverResolvePick(latch, true, s, guids[general], 4000);
+    CHECK(pick == pulled);
+    CHECK(ShadeCoverLatchHolds(latch, pick, true, false, true, 4000)); // the cover holds on it
+    // What the general pick alone did: another guid ends the latch.
+    ShadeCoverLatch lost;
+    CHECK(ShadeCoverLatchHolds(lost, pulled, true, true, false, 1000));
+    CHECK(!ShadeCoverLatchHolds(lost, guids[general], true, false, false, 4000));
+
+    // Each fact ends the precedence and the general pick stands.
+    auto const general_if = [&](ShadeCoverLatchedShade f, bool cursed, std::uint32_t now)
+    { return ShadeCoverResolvePick(latch, cursed, f, nearer, now) == nearer; };
+    CHECK(general_if(s, false, 4000));                        // the curse ended
+    CHECK(general_if(s, true, 1000 + kShadeCoverLatchMs));     // the 15 s window closed
+    { ShadeCoverLatchedShade f = s; f.alive = false;       CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.found = false;       CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.attackable = false;  CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.carrierEntry = false; CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.onSelf = false;      CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.distanceYd = 31.0f;  CHECK(general_if(f, true, 4000)); }
+    { ShadeCoverLatchedShade f = s; f.dropYd = 12.0f;      CHECK(general_if(f, true, 4000)); }
+    ShadeCoverLatch none;
+    CHECK(ShadeCoverResolvePick(none, true, s, nearer, 4000) == nearer);
+}
+
+// Opus round 2 (R2-1): the off-tank was Hexed and holds 30 % of the main tank's Jin'do threat; it is cursed and a Shade
+// eats a healer. Leaving would drop it off the successor list (KeepsAway keeps a cursed tank only at half the top
+// tank's threat), so the cover does not move it: it stays on Jin'do as the successor reference.
+static void cover_refused_when_offtank_threat_below_half()
+{
+    CHECK(!ShadeCoverThreatAllows(300.0f, 1000.0f, kThreatCapOffTankAwayShare));
+    CHECK(!ShadeCoverThreatAllows(0.0f, 0.0f, kThreatCapOffTankAwayShare));       // no threat at all
+    CHECK(ShadeCoverThreatAllows(500.0f, 1000.0f, kThreatCapOffTankAwayShare));    // the line itself
+    CHECK(ShadeCoverThreatAllows(1000.0f, 1000.0f, kThreatCapOffTankAwayShare));   // the top tank
+    // The trigger: the cover is the pick's tier and the threat line together.
+    std::vector<TacticCandidate> c{Shade(15.0f, true)};
+    CarrierStrikeInput in = FreeOffTank();
+    in.shadeCover = ShadeCoverTier(c[0], true) && ShadeCoverThreatAllows(300.0f, 1000.0f, kThreatCapOffTankAwayShare);
+    CHECK(!in.shadeCover);
+    CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::ThreatSuccessor);
+    in.shadeCover = ShadeCoverTier(c[0], true) && ShadeCoverThreatAllows(600.0f, 1000.0f, kThreatCapOffTankAwayShare);
+    CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike);
+}
+
 int main()
 {
     TestCoverRowAsksCursedDpsAndFreeOffTank();
@@ -452,6 +518,8 @@ int main()
     TestLogBookDeadOnce();
     TestLogBookCapPrunesOldest();
     TestGuardWord();
+    latched_shade_survives_a_nearer_shade();
+    cover_refused_when_offtank_threat_below_half();
     std::cout << "shade cover policy: ok\n";
     return 0;
 }

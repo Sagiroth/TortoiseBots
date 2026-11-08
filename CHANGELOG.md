@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank stays on a Shade it pulled off a healer, its own low health still keeps it home, and it is never sent at a Shade in the troll pit; the BossTacticsShadeCover row gains the guard word and writes dead once.
 - New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it and on its floor ahead of other Shades.
 - New: Jin'do log row BossTacticsShadeCover names each cursed damage dealer or free off-tank that leaves a Shade on a healer alone, and why (dead, charmed, other_shade, out_of_range, threat_gate, on_boss, other_target, no_target).

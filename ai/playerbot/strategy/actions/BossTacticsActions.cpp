@@ -3913,10 +3913,76 @@ Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
     return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
 }
 
+// The off-tank's healer-cover latch, per bot (AiPlayerbot.DungeonRunShadeHealerCover). The strike trigger updates it
+// (ShadeCoverLatchHolds) and the strike pick reads it first, so the trigger and the action agree on the Shade. An empty
+// latch drops its entry; past kShadeCoverLatchMaxEntries the expired latches go.
+constexpr std::size_t kShadeCoverLatchMaxEntries = 256;
+std::mutex g_shadeCoverLatchMutex;
+std::unordered_map<uint64, ShadeCoverLatch> g_shadeCoverLatch;
+
+ShadeCoverLatch ai::GetShadeCoverLatch(Player* bot)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLatchMutex);
+    auto const it = g_shadeCoverLatch.find(bot->GetObjectGuid().GetRawValue());
+    return it == g_shadeCoverLatch.end() ? ShadeCoverLatch() : it->second;
+}
+
+void ai::SetShadeCoverLatch(Player* bot, const ShadeCoverLatch& latch)
+{
+    uint64 const key = bot->GetObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_shadeCoverLatchMutex);
+    if (latch.shade == 0)
+    {
+        g_shadeCoverLatch.erase(key);
+        return;
+    }
+    if (g_shadeCoverLatch.size() >= kShadeCoverLatchMaxEntries && g_shadeCoverLatch.find(key) == g_shadeCoverLatch.end())
+    {
+        uint32 const nowMs = WorldTimer::getMSTime();
+        for (auto it = g_shadeCoverLatch.begin(); it != g_shadeCoverLatch.end();)
+        {
+            if (nowMs - it->second.sinceMs >= kShadeCoverLatchMs)
+                it = g_shadeCoverLatch.erase(it);
+            else
+                ++it;
+        }
+    }
+    g_shadeCoverLatch[key] = latch;
+}
+
+// The latched Shade, while it keeps the pick (ShadeCoverKeepsLatched), else null.
+static Unit* LatchedCoverShade(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    ShadeCoverLatch const latch = GetShadeCoverLatch(bot);
+    if (latch.shade == 0)
+        return nullptr;
+    Unit* const unit = ai->GetUnit(ObjectGuid(latch.shade));
+    ShadeCoverLatchedShade facts;
+    facts.found = unit && unit->IsInWorld();
+    if (facts.found)
+    {
+        facts.carrierEntry = IsCarrierRowEntry(fight, unit->GetEntry());
+        facts.alive = sServerFacade.IsAlive(unit);
+        facts.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
+        facts.distanceYd = bot->GetDistance(unit);
+        facts.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
+        facts.onSelf = unit->GetVictim() == bot;
+    }
+    // The fight scan drops the gated row for a bot without the curse: an open carrier row means it carries it.
+    uint64 const pick = ShadeCoverResolvePick(latch, HasCarrierKillFirstRow(fight.rows), facts, 0,
+        WorldTimer::getMSTime());
+    return pick != 0 ? unit : nullptr;
+}
+
 Unit* ai::FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     if (!ai || !bot)
         return nullptr;
+    // The healer cover's latch first: the Shade an off-tank pulled off a healer stays its pick while it is on the
+    // off-tank, before the general pick could hand it a nearer Shade.
+    if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)
+        if (Unit* const latched = LatchedCoverShade(ai, bot, fight))
+            return latched;
     return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
 }
 

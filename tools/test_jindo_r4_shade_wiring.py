@@ -108,22 +108,52 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)", trigger)
         self.assertIn("bot->GetDistance(shade) <= kShadeCoverReachYd &&", trigger)
         self.assertIn("ShadeCoverSameFloor(bot->GetPositionZ() - shade->GetPositionZ())", trigger)
-        self.assertIn("ShadeCoverLatchHolds(coverLatch_, shade ? shade->GetObjectGuid().GetRawValue() : 0,", trigger)
+        self.assertIn("ShadeCoverLatchHolds(latch, shade ? shade->GetObjectGuid().GetRawValue() : 0,", trigger)
+        self.assertIn("SetShadeCoverLatch(bot, latch);", trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunShadeHealerCover && role == CarrierStrikeRole::OffTank", trigger)
         self.assertIn("in.cursed, shade && ShadeOnGroupHealer(bot, shade), shadeVictim == bot,", trigger)
-        self.assertIn("in.shadeCover = latched && inCoverReach;", trigger)
+        self.assertIn("in.shadeCover = latched && inCoverReach && threatOk;", trigger)
         self.assertLess(trigger.index("in.shadeCover ="), trigger.index("CarrierStrikeAllowed(in,"))
         # The shade the cover reads is the strike's own pick.
         self.assertIn("Unit* const shade = FindBossCarrierStrikePick(ai, bot, fight);", trigger)
         self.assertLess(trigger.index("Unit* const shade = FindBossCarrierStrikePick"), trigger.index("in.shadeCover ="))
-        # The curse over: the latch ends.
-        self.assertIn("coverLatch_ = ShadeCoverLatch();", trigger)
+        # The curse over: the latch ends, on the trigger's early return for a bot with no carrier row.
+        early = member(trigger, "if (!HasCarrierKillFirstRow(fight.rows))", "return false;")
+        self.assertIn("SetShadeCoverLatch(bot, ShadeCoverLatch());", early)
+
+    def test_the_latch_is_resolved_before_the_general_pick(self):
+        pick = member(ACTIONS, "Unit* ai::FindBossCarrierStrikePick(", "\n}\n")
+        self.assertIn("if (Unit* const latched = LatchedCoverShade(ai, bot, fight))", pick)
+        self.assertLess(pick.index("LatchedCoverShade(ai, bot, fight)"),
+                        pick.index("PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier"))
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)", pick)
+        latched = member(ACTIONS, "static Unit* LatchedCoverShade(", "\n}\n")
+        for needle in ("facts.carrierEntry = IsCarrierRowEntry(fight, unit->GetEntry());",
+                       "facts.alive = sServerFacade.IsAlive(unit);",
+                       "facts.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);",
+                       "facts.dropYd = bot->GetPositionZ() - unit->GetPositionZ();",
+                       "facts.onSelf = unit->GetVictim() == bot;",
+                       "ShadeCoverResolvePick(latch, HasCarrierKillFirstRow(fight.rows), facts, 0,"):
+            self.assertIn(needle, latched)
+        # The trigger and the action both read the pick through it.
+        self.assertIn("FindBossCarrierStrikePick(ai, bot, fight)",
+                      member(ACTIONS, "bool BossTacticsCarrierStrikeAction::Execute(", "\n}\n"))
+
+    def test_the_offtank_cover_needs_half_the_top_tank_threat(self):
+        trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
+        self.assertIn("bool threatOk = !in.threatSuccessor;", trigger)
+        self.assertIn("row->kind == BossTacticKind::ThreatSuccessor && row->bossEntry == unit->GetEntry()", trigger)
+        self.assertIn("float const own = sServerFacade.GetThreatManager(unit).getThreat(bot);", trigger)
+        self.assertIn("for (Player* tank : tankRoles.tanks)", trigger)
+        self.assertIn("threatOk = ShadeCoverThreatAllows(own, highest, kThreatCapOffTankAwayShare);", trigger)
+        self.assertIn('#include "playerbot/ThreatCapPolicy.h"', TRIGGERS)
 
     def test_the_cover_line_leaves_out_only_the_victim(self):
         trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
         self.assertIn("uint8 lowestCoverPct = lowestMemberPct;", trigger)
         self.assertIn("if (member == bot || member != shadeVictim)", trigger)
         self.assertIn("in.lowestCoverPct = lowestCoverPct;", trigger)
-        self.assertIn("ShadeCoverLatch coverLatch_;", read("ai/playerbot/strategy/triggers/BossTacticsTriggers.h"))
+        self.assertIn("ShadeCoverLatch GetShadeCoverLatch(Player* bot);", ACTIONS_H)
 
     def test_the_pick_reads_the_height(self):
         self.assertEqual(ACTIONS.count("c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();"), 2)

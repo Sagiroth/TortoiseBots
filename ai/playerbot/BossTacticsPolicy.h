@@ -2946,6 +2946,46 @@ namespace ai
         return onSelf;
     }
 
+    // The latched Shade as the bot reads it before any general pick (Codex round 2): once the Shade is on the off-tank it
+    // loses the healer tier, so a nearer Shade would win the general pick, the latch would see another guid and end, and
+    // the off-tank would go back to the boss. The latched Shade therefore keeps the pick while every fact below holds.
+    struct ShadeCoverLatchedShade
+    {
+        bool found = false;        // the unit resolves and is in the world
+        bool carrierEntry = false; // an open carrier row's entry (the bot still carries the curse for it)
+        bool alive = false;
+        bool attackable = false;   // the pick's own attack check (visible, valid target)
+        float distanceYd = 0.0f;
+        float dropYd = 0.0f;       // bot z - Shade z
+        bool onSelf = false;       // the Shade's victim is the bot
+    };
+
+    inline bool ShadeCoverKeepsLatched(const ShadeCoverLatch& latch, bool cursed, const ShadeCoverLatchedShade& s,
+        std::uint32_t nowMs)
+    {
+        return latch.shade != 0 && cursed && s.found && s.carrierEntry && s.alive && s.attackable && s.onSelf &&
+            s.distanceYd <= kShadeCoverReachYd && ShadeCoverSameFloor(s.dropYd) &&
+            nowMs - latch.sinceMs < kShadeCoverLatchMs;
+    }
+
+    // The strike's pick: the latched Shade while it keeps (ShadeCoverKeepsLatched), else the general carrier pick.
+    inline std::uint64_t ShadeCoverResolvePick(const ShadeCoverLatch& latch, bool cursed,
+        const ShadeCoverLatchedShade& latched, std::uint64_t generalPick, std::uint32_t nowMs)
+    {
+        return ShadeCoverKeepsLatched(latch, cursed, latched, nowMs) ? latch.shade : generalPick;
+    }
+
+    // The off-tank half of the cover only while leaving cannot change the threat successor (Opus round 2, R2-1): the
+    // off-tank's own threat on the threat_successor boss is above 0 and at least `share` of the highest tank's, the line
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway keeps a cursed tank on the successor list by
+    // (kThreatCapOffTankAwayShare, ThreatCapPolicy.h). Below it (a Hex wiped the off-tank) the off-tank stays on the
+    // boss as the successor reference. The caller reads it only on a threat_successor fight, and refuses the cover when
+    // the successor boss is not in its fight list.
+    inline bool ShadeCoverThreatAllows(float ownThreat, float highestTankThreat, float share)
+    {
+        return ownThreat > 0.0f && ownThreat >= highestTankThreat * share;
+    }
+
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
     // With `preferHealerVictim` (the healer cover key) a candidate in the cover tier (ShadeCoverTier) wins over every
     // other one, the nearer of them first; without it the pick is the nearest, exactly as before.

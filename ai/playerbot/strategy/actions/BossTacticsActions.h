@@ -134,6 +134,11 @@ namespace ai
     // AiPlayerbot.DungeonRunCarrierStrike is on; the trigger and the action both go through here.
     Unit* FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // The off-tank's healer-cover latch (AiPlayerbot.DungeonRunShadeHealerCover): the strike trigger updates it, and
+    // FindBossCarrierStrikePick keeps the latched Shade as the pick while ShadeCoverKeepsLatched holds.
+    ShadeCoverLatch GetShadeCoverLatch(Player* bot);
+    void SetShadeCoverLatch(Player* bot, const ShadeCoverLatch& latch);
+
     // Whether this bot carries the aura of an open aura-gated kill_first row right now (a Delusions carrier), whatever
     // its target: such a bot can hurt only the row's unit, so the totem focus never sends it at a totem and counts no
     // volley of it (t1106b). False on a map without rows and for a bot that lacks the aura (the fight scan drops a
