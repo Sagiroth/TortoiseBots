@@ -12,9 +12,9 @@
 
 // Subclass literals mirrored from core ItemPrototype.h (see the policy header).
 static uint32_t const WAXE = 0, WAXE2 = 1, WBOW = 2, WGUN = 3, WMACE = 4, WMACE2 = 5,
-    WPOLE = 6, WSWORD = 7, WSWORD2 = 8, WFIST = 13, WDAG = 15, WXBOW = 18;
+    WPOLE = 6, WSWORD = 7, WSWORD2 = 8, WSTAFF = 10, WFIST = 13, WDAG = 15, WXBOW = 18;
 static uint32_t const WEAPON = 2, ARMOR = 4, MISC = 0, SHIELD = 6, LIBRAM = 7, TOTEM = 8;
-static uint32_t const WAR = 1, PAL = 2, ROGUE = 4, SHAMAN = 7;
+static uint32_t const WAR = 1, PAL = 2, HUNTER = 3, ROGUE = 4, SHAMAN = 7;
 static uint32_t const MH = 15, OH = 16, RH = 17;
 
 using ai::SpecScoresAsNonCaster;
@@ -56,25 +56,33 @@ int main()
     CHECK(SpecWeaponAllowed(PAL, "prot", WEAPON, WAXE, OH, true) == false);
     std::cout << "  [PASS] ping-pong reverse guard: bag 1H never targets the shield slot\n";
 
-    // Damage specs keep their 2H preference (never a shield).
+    // Arms/retribution: 2H weapons (including staves for arms) and 1H stand-in weapons in MH, never off-hand/shield.
     CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WSWORD2, MH, true) == true);
-    CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WSWORD, MH, true) == false);
+    CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WSTAFF, MH, true) == true);
+    CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WSWORD, MH, true) == true);
+    CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WDAG, MH, true) == true);
+    CHECK(SpecWeaponAllowed(WAR, "arms", WEAPON, WSWORD, OH, true) == false);
+    CHECK(SpecWeaponAllowed(WAR, "arms", ARMOR, SHIELD, OH, true) == false);
     CHECK(SpecWeaponAllowed(PAL, "retrib", WEAPON, WSWORD2, MH, true) == true);
-    CHECK(SpecWeaponAllowed(PAL, "retrib", WEAPON, WSWORD, MH, true) == false);
+    CHECK(SpecWeaponAllowed(PAL, "retrib", WEAPON, WSWORD, MH, true) == true);
+    CHECK(SpecWeaponAllowed(PAL, "retrib", WEAPON, WMACE, MH, true) == true);
+    CHECK(SpecWeaponAllowed(PAL, "retrib", WEAPON, WSWORD, OH, true) == false);
     CHECK(SpecWeaponAllowed(PAL, "retrib", ARMOR, SHIELD, OH, true) == false);
-    std::cout << "  [PASS] arms/retribution stay 2H-only\n";
+    std::cout << "  [PASS] arms/retribution 2H + 1H stand-in in MH, never off-hand\n";
 
-    // Fury: 1H pair once Dual Wield is learned, 2H stand-in before that.
+    // Fury: 1H pair once Dual Wield is learned, 2H stand-in (including staff) before that.
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSWORD, MH, true) == true);
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSWORD2, MH, true) == false);
+    CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSTAFF, MH, true) == false);
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSWORD, OH, true) == true);
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSWORD2, OH, true) == false);
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSWORD2, MH, false) == true);
     CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WPOLE, MH, false) == true);
+    CHECK(SpecWeaponAllowed(WAR, "fury", WEAPON, WSTAFF, MH, false) == true);
     std::cout << "  [PASS] fury dual-wields from Dual Wield, 2H stand-in before\n";
 
     // Shaman tank: slow 1H main hand (axe/mace/fist - no daggers, no 2H),
-    // shield off hand, totem ranged. Other shaman specs stay fail-open.
+    // shield off hand, totem ranged.
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", WEAPON, WAXE, MH, true) == true);
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", WEAPON, WMACE, MH, true) == true);
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", WEAPON, WFIST, MH, true) == true);
@@ -86,9 +94,38 @@ int main()
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", WEAPON, WAXE, OH, true) == false);
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", ARMOR, TOTEM, RH, true) == true);
     CHECK(SpecWeaponAllowed(SHAMAN, "shamantank", ARMOR, LIBRAM, RH, true) == false);
-    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WAXE2, MH, true) == true);
     CHECK(SpecWeaponAllowed(SHAMAN, "resto", ARMOR, SHIELD, OH, true) == true);
     std::cout << "  [PASS] shaman tank takes slow 1H + shield + totem\n";
+
+    // Shaman enhance: 2H (mace2, axe2, staff) + 1H stand-in (axe, mace, dagger, fist), shield off-hand, no off-hand weapons.
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WAXE2, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WMACE2, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WSTAFF, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WAXE, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WMACE, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WDAG, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WFIST, MH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WSWORD, MH, true) == false);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", ARMOR, SHIELD, OH, true) == true);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WAXE, OH, true) == false);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", WEAPON, WDAG, OH, true) == false);
+    CHECK(SpecWeaponAllowed(SHAMAN, "enhance", ARMOR, TOTEM, RH, true) == true);
+    std::cout << "  [PASS] shaman enhance takes 2H/1H stand-in + shield, no off-hand weapons\n";
+
+    // Hunter: weapons in MH; OH gated on canDualWield.
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WBOW, RH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WSTAFF, MH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WPOLE, MH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WSWORD2, MH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WSWORD, MH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WSWORD, OH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WAXE, OH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WDAG, OH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WFIST, OH, true) == true);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WMACE, OH, true) == false);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WSWORD, OH, false) == false);
+    CHECK(SpecWeaponAllowed(HUNTER, "beast", WEAPON, WDAG, OH, false) == false);
+    std::cout << "  [PASS] hunter dual wields off-hand weapons only with canDualWield\n";
 
     // Scoring class: melee specs on mana classes score physical gear like a
     // non-caster (the hire-kit root cause: spec 16 missing here zeroed every
