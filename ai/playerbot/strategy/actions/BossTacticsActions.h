@@ -657,6 +657,7 @@ namespace ai
         bool walkout = false;     // the walk-out task (SeekWalkoutPolicy.h): out to shoot `source` once, then back
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
         std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
+        std::uint32_t walkoutGen = 0;        // the task's start generation: the puller's own writes match it (WalkoutTaskIs)
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         bool walkToSpot = false;
         bool holdSwing = false;

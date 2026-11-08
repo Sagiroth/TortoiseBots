@@ -1017,6 +1017,10 @@ namespace ai
         std::uint64_t meetSon = 0;
         std::uint32_t meetMs = 0;
         std::uint64_t meetPuller = 0;
+        // Every WalkoutStart bumps `startGen` (ABA): a replacement task with the same puller and start ms is still told
+        // apart from the one a stale reader saw (WalkoutSnapshotCurrent, WalkoutTaskIs). Same name and meaning as
+        // fix/hakkar-meet-r4's.
+        std::uint32_t startGen = 0;
     };
 
     inline void WalkoutMeetClear(SeekWalkoutState& s)
@@ -1060,6 +1064,28 @@ namespace ai
     inline bool WalkoutReturning(const SeekWalkoutState& s, std::uint32_t nowMs)
     {
         return s.returner != 0 && nowMs - s.returnStartMs < kSeekWalkoutReturnMs;
+    }
+
+    // Whether the live record still runs the task a reader's snapshot saw: the same puller, start ms and start generation.
+    // Every compare-and-mutate of a reader's snapshot (the shot, the end, the no-shot and no-stand aborts) reads it, so an
+    // old snapshot never shoots, finishes or aborts a replacement with the same puller and the same start ms.
+    inline bool WalkoutSnapshotCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.puller == snap.puller && live.startMs == snap.startMs && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record's walk back is the one a reader's snapshot saw: the same returner of the same task's
+    // generation (a new task's walk back, even by the same bot, is never closed by an old snapshot).
+    inline bool WalkoutReturnCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.returner == snap.returner && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record runs `puller`'s task of generation `gen` (the puller's own action writes: its moves, its
+    // stand, its pull cast, its cast-fail abort; `gen` is the task's SeekTankTask::walkoutGen).
+    inline bool WalkoutTaskIs(const SeekWalkoutState& live, std::uint64_t puller, std::uint32_t gen)
+    {
+        return WalkoutActive(live) && live.puller == puller && live.startGen == gen;
     }
 
     // A task or its walk back holds the fight's one slot.
@@ -1141,6 +1167,7 @@ namespace ai
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
         s.walkedAt.emplace_back(son, cycleNo);
+        ++s.startGen;
     }
 
     // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,

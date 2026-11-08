@@ -1884,6 +1884,52 @@ static void TestWalkoutStandSightZ()
     CHECK(Near(WalkoutStandEyeZ(false, 50.0f, 1.8f), 52.0f));
 }
 
+
+static void TestWalkoutStartGenStopsStaleWrites()
+{
+    // A reader snapshots a task; another read ends it and a replacement starts with the same puller in the same ms.
+    // Without the generation the old snapshot matched it and could mark it shot, finish it or abort it.
+    SeekWalkoutState live;
+    WalkoutStart(live, 7, 100, 5000, 1);
+    const std::uint32_t firstGen = live.startGen;
+    CHECK(firstGen == 1);
+    const SeekWalkoutState snap = live; // the stale reader's copy
+    WalkoutAbortUnspent(live, 5000);
+    live.returner = 0; // its walk back done
+    WalkoutStart(live, 7, 101, 5000, 1); // the replacement: same puller, same start ms
+    CHECK(live.puller == snap.puller && live.startMs == snap.startMs);
+    CHECK(live.startGen == firstGen + 1);
+    // Named failing case: the old snapshot is not current, so none of its writes go through.
+    CHECK(WalkoutSnapshotCurrent(live, snap) == false);
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutNoteShot(live);
+    CHECK(!live.shot);
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutFinish(live, WalkoutEnd::Timeout, 30000);
+    CHECK(WalkoutActive(live));
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutAbortUnspent(live, 30000);
+    CHECK(WalkoutActive(live) && live.son == 101);
+    // A fresh snapshot of the replacement is current.
+    const SeekWalkoutState fresh = live;
+    CHECK(WalkoutSnapshotCurrent(live, fresh));
+    // The puller's own action writes carry the task's generation.
+    CHECK(WalkoutTaskIs(live, 7, live.startGen));
+    CHECK(!WalkoutTaskIs(live, 7, firstGen)); // the old task's action
+    CHECK(!WalkoutTaskIs(live, 8, live.startGen));
+    // The walk back: an old snapshot's returner never closes a new task's walk back by the same bot.
+    SeekWalkoutState back = live;
+    WalkoutFinish(back, WalkoutEnd::Timeout, 31000);
+    const SeekWalkoutState backSnap = back;
+    CHECK(WalkoutReturnCurrent(back, backSnap));
+    SeekWalkoutState backOld = backSnap;
+    backOld.startGen = firstGen;
+    CHECK(!WalkoutReturnCurrent(back, backOld));
+    // No task: the action-side match fails.
+    SeekWalkoutState none;
+    CHECK(!WalkoutTaskIs(none, 0, 0));
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1941,6 +1987,7 @@ int main()
     TestWalkoutFaceCastWithoutRules();
     TestWalkoutMoveRefusalCounts();
     TestWalkoutStandSightZ();
+    TestWalkoutStartGenStopsStaleWrites();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

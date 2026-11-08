@@ -63,12 +63,12 @@ class WalkoutFocusWiring(unittest.TestCase):
         walk = walkout_branch()
         wait = walk.index("if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),")
         self.assertLess(wait, walk.index("bot->InterruptNonMeleeSpells(false);"))
-        self.assertLess(wait, walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd);"))
+        self.assertLess(wait, walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd, task.walkoutGen);"))
         self.assertIn("task.source->IsInCombat()))\n                {\n"
                       "                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);\n"
                       "                    return true;", walk)
-        self.assertIn("if (pullCast && focusOn)\n                    NoteSeekWalkoutPullCast(bot);", walk)
-        note = body(ACTIONS, "void NoteSeekWalkoutPullCast(Player* bot)")
+        self.assertIn("if (pullCast && focusOn)\n                    NoteSeekWalkoutPullCast(bot, task.walkoutGen);", walk)
+        note = body(ACTIONS, "void NoteSeekWalkoutPullCast(Player* bot, std::uint32_t gen)")
         self.assertIn("it->second.state.pullCastMs = WorldTimer::getMSTime();", note)
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", note)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -237,12 +237,13 @@ class WalkoutInShotClockWiring(unittest.TestCase):
         note = walk.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))\n"
                           "                NoteSeekWalkoutInShot(bot, WalkoutInShotPosition(sonYd <= range, bot->IsWithinLOSInMap(task.source),")
         self.assertIn("bot->GetPositionZ() >= kSeekWalkoutMinStandZ,\n"
-                      "                                                                 sServerFacade.isMoving(bot)));", walk)
+                      "                                                                 sServerFacade.isMoving(bot)),\n"
+                      "                                      task.walkoutGen);", walk)
         # Read on every outbound tick, before the in-shot branch can return.
         self.assertLess(note, walk.index("const bool inFront = sServerFacade.isInFront("))
-        fn = body(ACTIONS, "void NoteSeekWalkoutInShot(Player* bot, bool inShot)")
+        fn = body(ACTIONS, "void NoteSeekWalkoutInShot(Player* bot, bool inShot, std::uint32_t gen)")
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", fn)
-        self.assertIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", fn)
+        self.assertIn("!WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen)", fn)
         self.assertIn("WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());", fn)
 
     def test_the_stall_reads_the_in_shot_clock_under_the_flag(self):
@@ -281,7 +282,7 @@ class WalkoutStandLogWiring(unittest.TestCase):
         for word in ("Wait", "Face", "CastWait", "CheckFail", "Cast", "CastRefused", "InPos", "Out"):
             self.assertIn("WalkoutStandBranch::" + word, walk)
         # The check-fail row goes out before the abort clears the record it is keyed by.
-        self.assertLess(walk.index("WalkoutStandBranch::CheckFail"), walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd);"))
+        self.assertLess(walk.index("WalkoutStandBranch::CheckFail"), walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd, task.walkoutGen);"))
 
     def test_the_castrefused_row_follows_the_cast_spell_call(self):
         walk = walkout_branch()
@@ -328,6 +329,39 @@ class WalkoutAllNewFlagsOff(unittest.TestCase):
         self.assertEqual(walk.count("ClaimSeekWalkoutCastRefusedRow(bot)"), 1)
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(")
         self.assertEqual(pick.count("c.combatEngine ="), 1)
+
+
+
+class WalkoutStartGenGuards(unittest.TestCase):
+    """Every compare-and-mutate of a walk-out task compares the start generation (SeekWalkoutState::startGen)."""
+
+    def test_the_readers_snapshot_guards_compare_the_generation(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        # The no-shot abort, the shot/end write-back and the no-stand re-plan: all three by the whole snapshot.
+        self.assertEqual(update.count("!WalkoutSnapshotCurrent(it->second.state, state)"), 3)
+        self.assertNotIn("it->second.state.startMs != state.startMs", update)
+        self.assertIn("WalkoutReturnCurrent(it->second.state, state)", update)
+        self.assertNotIn("it->second.state.returner == state.returner", update)
+
+    def test_the_pullers_own_writes_match_its_task_generation(self):
+        for sig in ("void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd, std::uint32_t gen)",
+                    "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason,",
+                    "void NoteSeekWalkoutAtStand(Player* bot, std::uint32_t gen)",
+                    "void NoteSeekWalkoutInShot(Player* bot, bool inShot, std::uint32_t gen)",
+                    "void NoteSeekWalkoutPullCast(Player* bot, std::uint32_t gen)"):
+            fn = body(ACTIONS, sig)
+            self.assertIn("WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen)", fn, sig)
+            self.assertNotIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", fn, sig)
+        walk = walkout_branch()
+        self.assertEqual(walk.count("task.walkoutGen"), 5)
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("out.walkoutGen = state.startGen;", update)
+        find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
+        self.assertIn("task.walkoutGen = state.walkoutGen;", find)
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        start = policy[policy.index("inline void WalkoutStart(SeekWalkoutState& s"):]
+        start = start[:start.index("\n    }\n")]
+        self.assertTrue(start.rstrip().endswith("++s.startGen;"))
 
 
 if __name__ == "__main__":
