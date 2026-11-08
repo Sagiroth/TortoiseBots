@@ -258,6 +258,74 @@ int main()
         CHECK(PickSeekNearestTake(true, 1, 2, false, false, {}) == -1);
     }
 
+    // The nearest take's reach (DungeonRunSeekNearestTakeReach, walk 57 F4). Named failing case: tanks[1] 14 yd from a
+    // walked Son on a non-tank, the receiver 18 yd from it, the reach key on -> tanks[1] takes. Before the reach the
+    // 8 yd rule left it alone (and with the key off it still does).
+    CHECK(SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, /*reach*/true, /*meetLost*/false,
+                             /*ref*/false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, false, false, false));
+    CHECK(kSeekNearestTakeReachYd == 20.0f);
+    CHECK(kSeekNearestTakeReachRecvYd == 15.0f);
+    CHECK(kSeekNearestTakeMeetLostMs == 10000u);
+    // The 20 yd edge (mutation 20 -> 8: the failing case and this fail): 20 takes, 21 holds back.
+    CHECK(SeekNearestTakerIs(1, 2, 18.0f, true, 20.0f, true, false, false, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 21.0f, true, false, false, true, false, false));
+    // Holds back as Hakkar's victim, holding a Son, or as the threat-cap reference (mutation: drop the reference guard
+    // and the last one fails).
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, true, false, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, true, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, true, false, true));
+    // Its own taunt not ready: no reach take either.
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, false, false, false, true, false, false));
+    // The receiver within 15 yd keeps the Son (15 is not "more than 15")...
+    CHECK(!SeekNearestTakerIs(1, 2, 15.0f, true, 14.0f, true, false, false, true, false, false));
+    CHECK(SeekNearestTakerIs(1, 2, 15.5f, true, 14.0f, true, false, false, true, false, false));
+    // ...unless the Son's meet was just lost: meetLost alone lets tanks[1] take at 18 yd with the receiver at 6 yd.
+    CHECK(SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, false, false));
+    // The reference guard is the reach's only: the 8 yd rule still takes (today's behaviour, not narrowed).
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, false, true, false, true));
+    // Only tanks[1]: the main tank and a fourth tank never reach.
+    CHECK(!SeekNearestTakerIs(0, 2, 18.0f, true, 14.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(3, 2, 18.0f, true, 14.0f, true, false, false, true, true, false));
+    // Flag off (reach false) keeps today's 8 yd rule exactly: the near rule's answer for every case above.
+    {
+        const float ys[] = {1.0f, 4.0f, 8.0f, 8.5f, 14.0f, 18.0f, 21.0f};
+        for (float r : ys)
+            for (float m : ys)
+                for (int b = 0; b < 16; ++b)
+                    CHECK(SeekNearestTakerIs(1, 2, r, b & 1, m, b & 2, b & 4, b & 8, false, true, false) ==
+                          SeekNearestTakerNear(1, 2, r, b & 1, m, b & 2, b & 4, b & 8));
+    }
+    // The pick says when only the reach took (the row's `src=nearest_reach`), and passes the reference through.
+    {
+        SeekNearestTakeCand c;
+        c.victimNonTank = true;
+        c.victimInside = true;
+        c.selfYd = 14.0f;
+        c.receiverYd = 18.0f;
+        c.receiverTauntReady = true;
+        c.selfTauntReady = true;
+        bool viaReach = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == -1);
+        CHECK(!viaReach);
+        c.reachKey = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == 0);
+        CHECK(viaReach);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, true, &viaReach) == -1);
+        CHECK(!viaReach);
+        CHECK(PickSeekNearestTake(false, 1, 2, false, false, {c}, false, &viaReach) == -1);
+        // A Son the 8 yd rule takes is `nearest`, not `nearest_reach`, even with the key on.
+        c.selfYd = 4.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == 0);
+        CHECK(!viaReach);
+        // The nearest Son wins whichever rule takes it.
+        SeekNearestTakeCand far = c;
+        far.selfYd = 16.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {far, c}, false, &viaReach) == 1);
+        CHECK(!viaReach);
+    }
+
     // SeekTankTauntReadyNow: the taunt-after guards, a known taunt, its own spell cooldown, its stance or form.
     // A warrior in Defensive Stance with Taunt off cooldown, on the global cooldown only (a Sunder a moment ago): ready.
     // The GCD is no input at all: the spell's own cooldown is what counts.

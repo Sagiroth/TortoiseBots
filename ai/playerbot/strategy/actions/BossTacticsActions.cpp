@@ -2304,6 +2304,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 auto const it = g_walkouts.find(instanceId);
                 cleared = it != g_walkouts.end() &&
                     CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
+                // A `receiver_victim` close counts as a lost meet for the nearest take's reach.
+                if (cleared && !takenBy)
+                    WalkoutNoteMeetLost(it->second.state.lostMeets, lost, state.meetSon, nowMs,
+                                        kSeekNearestTakeMeetLostMs);
             }
             const std::uint64_t guid = state.meetSon;
             if (cleared && takenBy)
@@ -2925,12 +2929,32 @@ bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& i
 }
 
 // Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
-// follows. The receiver, the Son and `meetMs` tell this meet from a later one.
-bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
+// follows. The receiver, the Son and `meetMs` tell this meet from a later one. A counted close word (`reason`,
+// WalkoutMeetLostCounts) records the Son as a lost meet for the nearest take's reach.
+bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs,
+                   const char* reason)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
-    return it != g_walkouts.end() && CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs);
+    if (it == g_walkouts.end() || !CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs))
+        return false;
+    WalkoutNoteMeetLost(it->second.state.lostMeets, reason, son, WorldTimer::getMSTime(), kSeekNearestTakeMeetLostMs);
+    return true;
+}
+
+// The nearest take's reach read (g_walkoutMutex, DungeonRunSeekNearestTakeReach): the instance's walked Sons and its
+// recent lost meets (WalkoutNoteMeetLost). Both empty with no record.
+void SeekWalkoutReachRead(std::uint32_t instanceId, std::vector<std::uint64_t>& walked,
+                          std::vector<std::pair<std::uint64_t, std::uint32_t>>& lostMeets)
+{
+    walked.clear();
+    lostMeets.clear();
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return;
+    walked = it->second.state.walkedSons;
+    lostMeets = it->second.state.lostMeets;
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -8331,13 +8355,43 @@ bool SeekTankTauntReady(Player* tank)
                                  SeekTauntFormOk(tank->GetClass(), defensiveStance, bearForm));
 }
 
+// Whether `bot` is the damage dealers' threat-cap reference on `boss` while the main tank holds it
+// (ThreatCapIsReferenceTank): the cap's own tank list, read as ThreatValue::GetTankThreat reads it (the raid's tank
+// order, a dead or creature-charmed tank left out). A boss without a `threat_successor` row has no off-tank reference.
+bool SeekTankIsThreatReference(const RaidTankRoles& roles, Unit* boss, Player* bot)
+{
+    if (!boss || !bot || !ThreatSuccessorTarget(boss))
+        return false;
+    std::vector<ThreatCapTank> tanks;
+    tanks.reserve(roles.tanks.size());
+    int selfPos = -1;
+    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+    {
+        Player* const player = roles.tanks[index];
+        if (!player || !player->IsInWorld() || !sServerFacade.IsAlive(player))
+            continue;
+        ObjectGuid const charmer = player->GetCharmerGuid();
+        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+            continue;
+        ThreatCapTank tank{boss->GetThreatManager().getThreat(player), index >= 1,
+            ThreatCapOnBoss(player->GetVictim() == boss, player->HasAura(kJindoHexSpellId)),
+            boss->GetVictim() == player};
+        if (player == bot)
+            selfPos = static_cast<int>(tanks.size());
+        tanks.push_back(tank);
+    }
+    return ThreatCapIsReferenceTank(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+}
+
 // The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
 // 3 s healer clock, the nearest of them (PickSeekNearestTake); null when the receiver can take it itself or this tank
 // cannot. Only Sons the fight's non-tank clock knows (it already leaves out the open meet's walkers), not the open
 // meet's Son, and only with the victim inside the live anchor's raid circle plus 2 yd. No live anchor: null, and the
 // 3 s rule stands.
-Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state,
+                          bool& viaReach)
 {
+    viaReach = false;
     if (!state.row || roles.tanks.size() < 3 || state.nonTankSince.empty())
         return nullptr;
     const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
@@ -8349,6 +8403,15 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     const bool receiverUp = receiver && receiver->IsInWorld() && sServerFacade.IsAlive(receiver);
     const bool selfIsBossVictim = state.boss && state.boss->GetVictim() == bot;
     const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+    // The reach (DungeonRunSeekNearestTakeReach, walk 57 F4): the walk-out record's walked Sons and lost meets, and
+    // whether this tank is the damage dealers' threat-cap reference while the main tank holds the boss.
+    const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::vector<std::uint64_t> walked;
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+    if (reachOn)
+        SeekWalkoutReachRead(bot->GetInstanceId(), walked, lostMeets);
+    const bool selfIsReference = reachOn && SeekTankIsThreatReference(roles, state.boss, bot);
     std::vector<Unit*> units;
     std::vector<SeekNearestTakeCand> cands;
     for (const auto& entry : state.nonTankSince)
@@ -8363,6 +8426,12 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         c.victimInside = victim && InsideAnchor(raid, victim->GetPositionX(), victim->GetPositionY());
         c.selfYd = bot->GetDistance(son);
         c.receiverYd = receiverUp ? receiver->GetDistance(son) : std::numeric_limits<float>::max();
+        if (reachOn)
+        {
+            c.meetLost = WalkoutMeetLostWithin(lostMeets, entry.first, nowMs, kSeekNearestTakeMeetLostMs);
+            // A walked Son: walked this cycle, or its meet just lost (a Son that joined by itself is not the reach's).
+            c.reachKey = c.meetLost || std::find(walked.begin(), walked.end(), entry.first) != walked.end();
+        }
         if (SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
         {
             // Readiness is read only for an eligible Son (it no longer depends on the Son: no cast check on it).
@@ -8373,7 +8442,7 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         cands.push_back(c);
     }
     const int pick = PickSeekNearestTake(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
-                                         selfIsBossVictim, selfHoldsSon, cands);
+                                         selfIsBossVictim, selfHoldsSon, cands, selfIsReference, &viaReach);
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
 
@@ -8485,7 +8554,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     SeekMeetPrePlaceTask(bot, state.row, task);
                     return task;
                 }
-                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))
+                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs, "peeled"))
                     LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,
                                     bot->GetDistance(son));
                 task.row = nullptr;
@@ -8633,15 +8702,17 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     if (healerTaker)
     {
         // The nearest take: a Son on a non-tank that the receiver cannot taunt now (too far, or its taunt on cooldown)
-        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once.
+        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once. With
+        // DungeonRunSeekNearestTakeReach a walked Son is also taken from 20 yd (`src=nearest_reach`).
         if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
         {
-            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state))
+            bool viaReach = false;
+            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state, viaReach))
             {
                 task.valid = true;
                 task.source = nearestSon;
                 task.take = true;
-                task.takeSrc = "nearest";
+                task.takeSrc = viaReach ? "nearest_reach" : "nearest";
                 return task;
             }
         }

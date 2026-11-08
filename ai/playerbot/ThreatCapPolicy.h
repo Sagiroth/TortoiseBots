@@ -339,4 +339,20 @@ namespace ai
     {
         return ThreatCapPickReference(tanks, successorCap, notHolder).threat;
     }
+
+    // Whether the tank at `selfPos` in `tanks` (the cap's own tank list) is the damage dealers' threat-cap reference
+    // while the main tank holds the boss: the successor pick (ThreatCapPickReference, successorCap on) names an
+    // off-tank, the main tank is the holder, and this off-tank carries the picked threat. The nearest take's reach
+    // (DungeonRunSeekNearestTakeReach) holds such a tank back: its walk to a Son would drop the cap. Two off-tanks
+    // with the very same threat both read as the reference (the safe side). A bad `selfPos` is no reference.
+    inline bool ThreatCapIsReferenceTank(const std::vector<ThreatCapTank>& tanks, int selfPos, bool notHolder = false)
+    {
+        if (selfPos < 0 || static_cast<std::size_t>(selfPos) >= tanks.size())
+            return false;
+        const ThreatCapTank& self = tanks[static_cast<std::size_t>(selfPos)];
+        if (!self.offTank)
+            return false;
+        const ThreatCapPick pick = ThreatCapPickReference(tanks, true, notHolder);
+        return pick.holder == ThreatCapPick::Holder::Main && pick.offTank && self.threat == pick.threat;
+    }
 }

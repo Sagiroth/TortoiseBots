@@ -124,6 +124,7 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0 src=receiver
 | :--- | :--- |
 | `meet` | The pulled Son's receiver takes it on arrival (`DungeonRunSeekSonMeet`). |
 | `nearest` | The first off-tank's nearest take (`DungeonRunSeekNearestTake`). |
+| `nearest_reach` | The first off-tank's nearest take that only the 20 yd reach let through (`DungeonRunSeekNearestTakeReach`). |
 | `healer_clock` | The 3 s healer clock: the first off-tank (three tanks) or the pickup tank (two tanks) takes a Son that sat on a non-tank. |
 | `receiver` | The third tank (the receiver) takes a fighting Son near the spot. |
 | `pickup` | With two tanks, the first off-tank takes a fighting Son near the spot. |

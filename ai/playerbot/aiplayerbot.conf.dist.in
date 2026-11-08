@@ -1126,6 +1126,13 @@ AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
 # Off (or no live anchor) keeps the 3 s healer clock.
 AiPlayerbot.DungeonRunSeekNearestTake = 0
 
+# The nearest take's reach for Hakkar's Sons (recommended on; needs DungeonRunSeekNearestTake): the first off-tank also
+# takes a walked Son on a non-tank (its victim inside the raid circle, plus 2 yd) from up to 20 yd when the receiving
+# third tank is more than 15 yd from it, or that Son's meet closed as peeled or receiver_victim in the last 10 s. Never
+# while the first off-tank is Hakkar's victim, holds a Son, or is the damage dealers' threat-cap reference while the
+# main tank holds Hakkar. The take row says src=nearest_reach. Off keeps the 8 yd nearest take.
+AiPlayerbot.DungeonRunSeekNearestTakeReach = 0
+
 # The meet's pre-place for Hakkar's Sons (recommended on; needs DungeonRunSeekSonMeet): when a walk-out starts, the
 # third tank walks to a point 2 yd inside the tanks' circle edge (23 yd) on the line from Hakkar's anchor toward the
 # puller's stand and holds there (its rotation keeps the tick), so the puller's way back and the Son's chase end at a

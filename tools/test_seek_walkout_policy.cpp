@@ -2275,6 +2275,41 @@ static void TestMeetPrePlaceLifecycle()
     CHECK(!WalkoutPrePlaceLive(v));
 }
 
+// The lost-meet record the nearest take's reach reads (DungeonRunSeekNearestTakeReach, walk 57 F4): `peeled` and
+// `receiver_victim` count, other close words do not; the record is pruned past its window and keeps one row per Son.
+static void TestWalkoutMeetLostRecord()
+{
+    CHECK(WalkoutMeetLostCounts("peeled"));
+    CHECK(WalkoutMeetLostCounts("receiver_victim"));
+    CHECK(!WalkoutMeetLostCounts("timeout"));
+    CHECK(!WalkoutMeetLostCounts("son_dead"));
+    CHECK(!WalkoutMeetLostCounts("receiver_charmed"));
+    CHECK(!WalkoutMeetLostCounts(nullptr));
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lost;
+    WalkoutNoteMeetLost(lost, "timeout", 7, 1000, 10000);
+    CHECK(lost.empty());
+    WalkoutNoteMeetLost(lost, "peeled", 7, 1000, 10000);
+    CHECK(WalkoutMeetLostWithin(lost, 7, 1000, 10000));
+    CHECK(WalkoutMeetLostWithin(lost, 7, 10999, 10000));
+    CHECK(!WalkoutMeetLostWithin(lost, 7, 11000, 10000));
+    CHECK(!WalkoutMeetLostWithin(lost, 8, 1000, 10000));
+    // The same Son again: one row, the new time.
+    WalkoutNoteMeetLost(lost, "receiver_victim", 7, 5000, 10000);
+    CHECK(lost.size() == 1);
+    CHECK(WalkoutMeetLostWithin(lost, 7, 14999, 10000));
+    // A later loss prunes the stale row.
+    WalkoutNoteMeetLost(lost, "peeled", 9, 15000, 10000);
+    CHECK(lost.size() == 1);
+    CHECK(lost[0].first == 9);
+    // The clock wrap: the unsigned difference still holds.
+    lost.clear();
+    WalkoutNoteMeetLost(lost, "peeled", 3, 0xFFFFF000u, 10000);
+    CHECK(WalkoutMeetLostWithin(lost, 3, 0x00000100u, 10000));
+    // A new state starts with no record.
+    SeekWalkoutState s;
+    CHECK(s.lostMeets.empty());
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -2362,6 +2397,7 @@ int main()
     TestMeetPrePlaceTankPastThePointIsStillPicked();
     TestMeetPrePlaceHoldAtThePoint();
     TestMeetPrePlaceReviewCases();
+    TestWalkoutMeetLostRecord();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

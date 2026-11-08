@@ -116,7 +116,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);", wait)
         self.assertIn("task.valid = false;", wait)
         # Anyone else's Son closes the meet as `peeled` and falls through to today's take branches.
-        self.assertIn("SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs)", wait)
+        self.assertIn('SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs, "peeled")', wait)
         self.assertIn('LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,', wait)
         self.assertLess(wait.index("task.valid = false;"), wait.index('"peeled"'))
         self.assertLess(wait.index('"peeled"'), wait.index("task.row = nullptr;"))
@@ -137,10 +137,16 @@ class SeekSonMeetWiring(unittest.TestCase):
         # Every LogSeekMeetLost call in the file is the cleared branch or the receiver's peeled close.
         self.assertEqual(2, ACTIONS.count("LogSeekMeetLost(ai,") - 0)
         pick = tank_pick()
-        self.assertIn("if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))\n"
+        self.assertIn('if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs, "peeled"))\n'
                       "                    LogSeekMeetLost(", pick)
         helper = body(ACTIONS, "bool SeekMeetClose(")
         self.assertIn("CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs)", helper)
+        # A won close records a counted loss for the nearest take's reach (walk 57 F4); a lost race records nothing.
+        self.assertLess(helper.index("CloseWalkoutMeetIf("), helper.index("WalkoutNoteMeetLost("))
+        self.assertIn("WalkoutNoteMeetLost(it->second.state.lostMeets, reason, son, WorldTimer::getMSTime(),"
+                      " kSeekNearestTakeMeetLostMs);", helper)
+        self.assertIn("if (cleared && !takenBy)\n                    WalkoutNoteMeetLost(it->second.state.lostMeets, lost,"
+                      " state.meetSon, nowMs,", end)
         # The policy compares the receiver, the Son and the shot time before it clears.
         policy = inline_body(POLICY, "inline bool WalkoutMeetCloseIf(")
         for term in ("s.meetReceiver != receiver", "s.meetSon != son", "s.meetMs != meetMs"):

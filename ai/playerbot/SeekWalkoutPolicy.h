@@ -1032,7 +1032,44 @@ namespace ai
         bool prePlaceMeet = false;
         std::uint32_t prePlaceMeetMs = 0;
         float prePlaceX = 0.0f, prePlaceY = 0.0f;
+        // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
+        // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
     };
+
+    // Whether a meet's close word counts as lost for the nearest take's reach: the Son was peeled onto someone else, or
+    // the receiver became the boss's victim. Other closes (son_dead, receiver_dead, receiver_charmed, receiver_busy,
+    // timeout, a take) do not.
+    inline bool WalkoutMeetLostCounts(const char* reason)
+    {
+        return reason && (std::strcmp(reason, "peeled") == 0 || std::strcmp(reason, "receiver_victim") == 0);
+    }
+
+    // Records a lost meet's Son (its close word counted, WalkoutMeetLostCounts), dropping every record `keepMs` or older
+    // and an older record of the same Son, so the list stays short.
+    inline void WalkoutNoteMeetLost(std::vector<std::pair<std::uint64_t, std::uint32_t>>& lost, const char* reason,
+                                    std::uint64_t son, std::uint32_t nowMs, std::uint32_t keepMs)
+    {
+        if (son == 0 || !WalkoutMeetLostCounts(reason))
+            return;
+        lost.erase(std::remove_if(lost.begin(), lost.end(),
+                                  [&](const std::pair<std::uint64_t, std::uint32_t>& e)
+                                  { return e.first == son || nowMs - e.second >= keepMs; }),
+                   lost.end());
+        lost.emplace_back(son, nowMs);
+    }
+
+    // Whether `son`'s meet was lost (WalkoutNoteMeetLost) less than `windowMs` ago.
+    inline bool WalkoutMeetLostWithin(const std::vector<std::pair<std::uint64_t, std::uint32_t>>& lost,
+                                      std::uint64_t son, std::uint32_t nowMs, std::uint32_t windowMs)
+    {
+        for (const auto& e : lost)
+        {
+            if (e.first == son && nowMs - e.second < windowMs)
+                return true;
+        }
+        return false;
+    }
 
     inline void WalkoutMeetClear(SeekWalkoutState& s)
     {

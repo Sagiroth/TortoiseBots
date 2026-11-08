@@ -86,6 +86,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandLog`](#aiplayerbotdungeonrunseekwalkoutstandlog) | `0` | `1` (diagnostic, safe on for test walks): one `seek pull: walk-out stand` row a second while the Hakkar walk-out puller walks out, and a `castrefused` row for every refused pull cast. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandSight`](#aiplayerbotdungeonrunseekwalkoutstandsight) | `0` | `1` (recommended): the Hakkar walk-out's stand search tests sight the way the bot does, and a refused move on the stand re-plans it instead of aborting. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
+| [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -1042,6 +1043,24 @@ Whether the first off-tank takes a Son of Hakkar off a non-tank at once when its
 - the first off-tank is within 8 yd of the Son with its taunt ready, is not Hakkar's victim and holds no Son.
 
 "Taunt ready" is an explicit read with the taunt-after pick's own guards: in control (not stunned, feared, confused, hexed or charmed), not silenced or pacified, a taunt known (Taunt, Growl, or Turtle's Hand of Reckoning for a paladin), that spell's own cooldown ready, a warrior in Defensive Stance and a druid in Bear Form or Dire Bear Form. The global cooldown alone does not make a tank "not ready", and range is the 8 yd test. With the key on, the take also casts that known taunt, so a paladin taunts with Hand of Reckoning. A human (non-bot) tank always reads as not ready, so a human receiver never holds the first off-tank back. The main tank never takes. While the key is on, the receiver also leaves a fighting Son whose victim is the first off-tank, so it does not walk over and taunt back a Son the first off-tank just took; a Son on the main tank or any other tank is still the receiver's to take. Otherwise the receiver keeps its take and the 3 s rule still applies. The take row is the usual `seek take: ... reason=<word>`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekNearestTakeReach`
+Whether the first off-tank reaches a walked Son of Hakkar on a non-tank from up to 20 yd, not only 8 yd. Recommended on.
+**Default:** `0` · **Values:** `0` off (the 8 yd nearest take only, as before), `1` on (needs `DungeonRunSeekNearestTake` and the live `anchor` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Reach:** in walk 57 the identified Son kills were mostly walked Sons whose meet was peeled (1.02 a fight) or that were met and then sat on a non-tank (0.69 a fight), while the 8 yd nearest take fired only 20 times in 58 fights. With the key on, on top of the 8 yd rule, the first off-tank (tanks[1]) takes a Son at once when all of these hold:
+- the nearest take's own Son rules hold (on a non-tank, not the open meet's Son, its victim inside the raid circle plus 2 yd);
+- the Son is a walked one: the walk-out walked it this cycle, or its meet was just lost;
+- the receiver (tanks[2]) is more than 15 yd from the Son, or the Son's meet closed as `peeled` or `receiver_victim` in the last 10 s;
+- the first off-tank is within 20 yd of the Son (the take's Attack closes the gap) with its taunt ready, is not Hakkar's victim and holds no Son;
+- the first off-tank is not the damage dealers' threat-cap reference while the main tank holds Hakkar (the `threat_successor` pick names it): its walk would drop the cap.
+
+The take row says `src=nearest_reach` when only the reach let the take through (`src=nearest` when the 8 yd rule did).
 
 </details>
 

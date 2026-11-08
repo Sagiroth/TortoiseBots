@@ -31,14 +31,16 @@ class SeekTakeSrcWiring(unittest.TestCase):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         # One word per `task.take = true;`.
         self.assertEqual(fn.count("task.take = true;"), fn.count("task.takeSrc = "))
-        for word in ('"meet"', '"nearest"', '"healer_clock"', '"pull_join"'):
+        for word in ('"meet"', '"healer_clock"', '"pull_join"'):
             self.assertIn("task.takeSrc = " + word + ";", fn)
+        # The nearest take names the reach when only the reach took it (walk 57 F4: `src=nearest_reach`).
+        self.assertIn('task.takeSrc = viaReach ? "nearest_reach" : "nearest";', fn)
         self.assertIn('task.takeSrc = thirdTank ? "receiver" : "pickup";', fn)
         # The meet's word sits with the meet's take, the nearest's with the nearest's.
         meet = fn[fn.index("task.meet = true;"):]
         self.assertTrue(meet.startswith('task.meet = true;\n                    task.takeSrc = "meet";'))
         nearest = fn[fn.index("task.source = nearestSon;"):]
-        self.assertLess(nearest.index('task.takeSrc = "nearest";'), nearest.index("return task;"))
+        self.assertLess(nearest.index('task.takeSrc = viaReach ? "nearest_reach" : "nearest";'), nearest.index("return task;"))
 
     def test_the_edge_take_adds_its_suffix(self):
         fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
@@ -50,7 +52,7 @@ class SeekTakeSrcWiring(unittest.TestCase):
 
     def test_the_field_is_documented(self):
         self.assertIn("meet=<0\\|1> src=<word>", ROWS)
-        for word in ("`nearest`", "`healer_clock`", "`receiver`", "`meet`", "`pickup`", "`pull_join`", "`+edge`"):
+        for word in ("`nearest`", "`nearest_reach`", "`healer_clock`", "`receiver`", "`meet`", "`pickup`", "`pull_join`", "`+edge`"):
             self.assertIn(word, ROWS)
 
 

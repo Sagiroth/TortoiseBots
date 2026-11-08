@@ -155,6 +155,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunSeekWalkoutStandLog = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandLog", false);
     dungeonRunSeekWalkoutStandSight = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandSight", false);
     dungeonRunSeekNearestTake = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekNearestTake", false);
+    dungeonRunSeekNearestTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekNearestTakeReach", false);
     dungeonRunSeekMeetPrePlace = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlace", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);

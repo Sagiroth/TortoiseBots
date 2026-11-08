@@ -34,7 +34,7 @@ class SeekNearestTakeWiring(unittest.TestCase):
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
         healer = find[find.index("    if (healerTaker)\n    {"):]
         gate = healer.index("if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)")
-        call = healer.index("FindSeekNearestTake(ai, bot, roles, state)")
+        call = healer.index("FindSeekNearestTake(ai, bot, roles, state, viaReach)")
         old = healer.index("if (state.healerSon)")
         self.assertLess(gate, call)
         self.assertLess(call, old)
@@ -43,12 +43,12 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("task.source = state.healerSon;", healer[old:])
         # The boss-victim stand-down still runs before any take.
         self.assertLess(find.index("!SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot)"),
-                        find.index("FindSeekNearestTake(ai, bot, roles, state)"))
+                        find.index("FindSeekNearestTake(ai, bot, roles, state, viaReach)"))
 
     def test_the_helper_reads_the_policy(self):
         fn = body(ACTIONS, "Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
         self.assertIn("const int pick = PickSeekNearestTake(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,", fn)
-        self.assertIn("selfIsBossVictim, selfHoldsSon, cands);", fn)
+        self.assertIn("selfIsBossVictim, selfHoldsSon, cands, selfIsReference, &viaReach);", fn)
         self.assertIn("SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside)", fn)
         self.assertIn("c.openMeetSon = state.meetOpen && entry.first == state.meetSon;", fn)
         self.assertIn("c.selfYd = bot->GetDistance(son);", fn)
@@ -64,6 +64,34 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("c.selfTauntReady = SeekTankTauntReady(bot);", loop)
         # No anchor: no pick, the 3 s rule stands.
         self.assertIn("if (!anchorRow)\n        return nullptr;", fn)
+
+    def test_the_reach_flag_defaults_off(self):
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekNearestTakeReach", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekNearestTakeReach = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekNearestTakeReach = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekNearestTakeReach`", SETTINGS)
+
+    def test_the_reach_feeds_the_pick(self):
+        # Walk 57 F4: the reach's inputs are read only with its key, per Son, and the reference guard is the cap's own.
+        fn = body(ACTIONS, "Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
+        self.assertIn("const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;", fn)
+        self.assertIn("if (reachOn)\n        SeekWalkoutReachRead(bot->GetInstanceId(), walked, lostMeets);", fn)
+        self.assertIn("const bool selfIsReference = reachOn && SeekTankIsThreatReference(roles, state.boss, bot);", fn)
+        loop = fn[fn.index("for (const auto& entry : state.nonTankSince)"):fn.index("const int pick =")]
+        self.assertIn("c.meetLost = WalkoutMeetLostWithin(lostMeets, entry.first, nowMs, kSeekNearestTakeMeetLostMs);",
+                      loop)
+        self.assertIn("c.reachKey = c.meetLost || std::find(walked.begin(), walked.end(), entry.first) != walked.end();",
+                      loop)
+        self.assertIn("viaReach = false;", fn[:fn.index("if (!state.row")])
+        ref = body(ACTIONS, "bool SeekTankIsThreatReference(const RaidTankRoles& roles, Unit* boss, Player* bot)")
+        self.assertIn("if (!boss || !bot || !ThreatSuccessorTarget(boss))\n        return false;", ref)
+        self.assertIn("return ThreatCapIsReferenceTank(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);",
+                      ref)
+        self.assertIn("boss->GetVictim() == player};", ref)
+        read = body(ACTIONS, "void SeekWalkoutReachRead(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", read)
+        self.assertIn("walked = it->second.state.walkedSons;", read)
+        self.assertIn("lostMeets = it->second.state.lostMeets;", read)
 
     def test_taunt_readiness_reuses_the_taunt_after_guards(self):
         ready = body(ACTIONS, "bool SeekTankTauntReady(Player* tank)")

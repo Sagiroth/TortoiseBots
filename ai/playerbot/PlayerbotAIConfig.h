@@ -697,6 +697,12 @@ public:
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
     // takes. Off, the 3 s rule stands as before (default off, recommended on).
     bool dungeonRunSeekNearestTake = false;
+    // The nearest take's reach (Hakkar's Sons, walk 57 F4; needs dungeonRunSeekNearestTake): on, the first off-tank
+    // also takes a walked Son on a non-tank from up to 20 yd when the receiver is more than 15 yd from it or that Son's
+    // meet closed as peeled or receiver_victim in the last 10 s; never while it is Hakkar's victim, holds a Son, or is
+    // the damage dealers' threat-cap reference while the main tank holds Hakkar. The take row says src=nearest_reach.
+    // Off, the 8 yd nearest take stands as before (default off, recommended on).
+    bool dungeonRunSeekNearestTakeReach = false;
     // The meet's pre-place (Hakkar's Sons): on, when a walk-out starts the third tank (alive, not charmed, not Hakkar's
     // victim, holding no Son, inside the tanks' circle) walks to a point 2 yd inside the tanks' circle edge on the line
     // from the anchor's centre toward the puller's stand and holds there for the meet. It ends when that meet closes,

@@ -2,6 +2,7 @@
 
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank stays on a Shade it pulled off a healer, its own low health still keeps it home, and it is never sent at a Shade in the troll pit; the BossTacticsShadeCover row gains the guard word and writes dead once.
+- Changed: the first off-tank also takes a walked Son of Hakkar off a non-tank from up to 20 yd when the receiving tank is more than 15 yd away or the Son's meet was just lost, unless it is the damage dealers' threat reference (`DungeonRunSeekNearestTakeReach`).
 - New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it and on its floor ahead of other Shades.
 - New: Jin'do log row BossTacticsShadeCover names each cursed damage dealer or free off-tank that leaves a Shade on a healer alone, and why (dead, charmed, other_shade, out_of_range, threat_gate, on_boss, other_target, no_target).
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorKeepsAway (default 0), the threat successor pick keeps a tank cursed by Delusions of Jin'do as on the boss while it holds at least half the top tank's threat, so the damage dealers' cap no longer falls back to the holding tank.

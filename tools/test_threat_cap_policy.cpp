@@ -459,6 +459,27 @@ int main()
         CHECK(SuccessorWhiteStopNow(latch, true, false, 95, false, SuccessorWhiteOnTarget(true, true, false, false)));
     }
 
+    // ThreatCapIsReferenceTank (the nearest take's reach guard, walk 57 F4): the off-tank whose threat the successor
+    // pick uses while the main tank holds the boss.
+    {
+        // Main tank holds (holdsBoss), tanks[1] on the boss with 600, tanks[2] away with 200: tanks[1] is the reference.
+        const std::vector<ThreatCapTank> tanks = {{1000.0f, false, true, true}, {600.0f, true, true, false},
+                                                  {200.0f, true, false, false}};
+        CHECK(ThreatCapIsReferenceTank(tanks, 1));
+        CHECK(!ThreatCapIsReferenceTank(tanks, 2));
+        CHECK(!ThreatCapIsReferenceTank(tanks, 0));   // the main tank is never "the off-tank reference"
+        CHECK(!ThreatCapIsReferenceTank(tanks, -1));  // not on the list
+        CHECK(!ThreatCapIsReferenceTank(tanks, 3));
+        // An off-tank holds the boss: no main-tank hold, no reference for the reach guard.
+        const std::vector<ThreatCapTank> offHolds = {{1000.0f, false, true, false}, {600.0f, true, true, true}};
+        CHECK(!ThreatCapIsReferenceTank(offHolds, 1));
+        // The off-tank below the away floor (no off-tank on the boss, under half the top): the cap is the main tank's.
+        const std::vector<ThreatCapTank> low = {{1000.0f, false, true, true}, {400.0f, true, false, false}};
+        CHECK(!ThreatCapIsReferenceTank(low, 1));
+        // With the not-holder pick, the highest off-tank on the boss that is not the holder.
+        CHECK(ThreatCapIsReferenceTank(tanks, 1, true));
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }
