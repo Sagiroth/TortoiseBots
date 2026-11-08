@@ -28,6 +28,25 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.21.0 (2026-11-08)
+
+### Groups & Dungeons
+- Bots now roll Need on daggers for rogues, plus rings, necklaces, trinkets, shields and caster off-hands that suit their spec. [#1558](https://github.com/Sagiroth/TortoiseBots/pull/1558)
+- Cloaks no longer count as cloth, so plate and mail wearers can roll Need on a cloak upgrade. [#1558](https://github.com/Sagiroth/TortoiseBots/pull/1558)
+- A bot now rolls Greed on an upgrade when someone in the group plays the spec the item is made for. [#1559](https://github.com/Sagiroth/TortoiseBots/pull/1559)
+- That courtesy now also looks at bot groupmates, not just real players. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+- A bot that already owns a unique item no longer stops the rest of the group from rolling on it. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+- Upgrades are compared without enchant bonuses, so a strong enchant no longer hides a clearly better item. [#1560](https://github.com/Sagiroth/TortoiseBots/pull/1560)
+
+### Classes & Combat
+- Priests no longer shield a rage tank above 20% health, in combat or out of it. [#1557](https://github.com/Sagiroth/TortoiseBots/pull/1557)
+- The same rule now holds when the tank is a warrior levelling in Arms or Fury, or a druid without tank talents. [#1557](https://github.com/Sagiroth/TortoiseBots/pull/1557)
+
+### Behind the scenes
+- The startup log no longer fills with about twenty old database warnings. [#1562](https://github.com/Sagiroth/TortoiseBots/pull/1562)
+
+---
+
 ## v1.20.4 (2026-11-07)
 
 ### Guilds & Banks
