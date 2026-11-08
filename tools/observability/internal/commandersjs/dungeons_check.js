@@ -149,3 +149,16 @@ assert.strictEqual(threats[0].bot.name, "Tank");
 const targets = CmdView.botTargetLines(bind.bots, bind.mobs);
 assert.strictEqual(targets.length, 1);
 assert.strictEqual(targets[0].mob.id, "900");
+
+// ---- the commander whose fights belong to a run: found by a member guid, by name; demo, pseudo and stale bindings are not asked
+{
+  const run = { key: "409:14", members: [{ name: "Tank", guid: 10 }, { name: "Healy", guid: 11 }] };
+  const bd = (commander, guids, over) => Object.assign({ commander, online: true, bots: guids.map((g) => ({ guid: g, name: "b" + g })) }, over || {});
+  assert.strictEqual(D.fightCommander(run, [bd("Zed", [10, 12]), bd("Alpha", [11])]), "Alpha", "the first by name among the bindings that hold a member");
+  assert.strictEqual(D.fightCommander(run, [bd("Zed", [99]), bd("Alpha", [98])]), null, "no member guid, no commander");
+  assert.strictEqual(D.fightCommander(run, [bd("Alpha", [10], { demo: true })]), null, "a demo binding is ignored");
+  assert.strictEqual(D.fightCommander(run, [bd("Alpha", [10], { online: false }), bd("Beta", [10])]), "Beta", "a stale binding (its commander offline) is ignored");
+  assert.strictEqual(D.fightCommander(run, [bd("Alpha", [10], { dungeon: true }), bd("Raid#4", [10], { observed: true })]), null, "pseudo-bindings are ignored");
+  assert.strictEqual(D.fightCommander(null, [bd("Alpha", [10])]), null);
+  assert.strictEqual(D.fightCommander(run, null), null);
+}

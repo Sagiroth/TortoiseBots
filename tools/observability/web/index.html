@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=22">
+  <link rel="stylesheet" href="/static/css/app.css?v=23">
   <link rel="stylesheet" href="/static/css/underperf.css?v=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
@@ -553,6 +553,7 @@
           <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one dungeon appear as one run per map. Update the module to tell copies apart.</p>
         </div>
         <!-- The list of runs -->
+        <div id="dgn-live" class="fd-livegrid" hidden></div>
         <div id="dgn-list" class="card"></div>
         <!-- The live view of one run: back link, header and the Commanders map card -->
         <div id="dgn-view" style="display: none;">
@@ -575,6 +576,7 @@
           <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one raid appear as one run per map. Update the module to tell copies apart.</p>
         </div>
         <!-- The list of runs -->
+        <div id="raid-live" class="fd-livegrid" hidden></div>
         <div id="raid-list" class="card"></div>
         <!-- The live view of one group: back link, header and the Commanders map card -->
         <div id="raid-view" style="display: none;">
@@ -872,7 +874,7 @@
 
 <script src="/static/js/refresh.js?v=1"></script>
 <script src="/static/js/commanders.js?v=8"></script>
-<script src="/static/js/dungeons.js?v=2"></script>
+<script src="/static/js/dungeons.js?v=3"></script>
 <script src="/static/js/raids.js?v=1"></script>
 <script src="/static/js/agentmaps.js?v=1"></script>
 <script src="/static/js/maplayers.js?v=7"></script>
@@ -889,11 +891,12 @@
 <script src="/static/js/demo.js?v=2"></script>
 <script src="/static/js/glide.js?v=1"></script>
 <script src="/static/js/readycheck.js?v=1"></script>
-<script src="/static/js/live.js?v=1"></script>
+<script src="/static/js/live.js?v=2"></script>
+<script src="/static/js/fdlive.js?v=1"></script>
 <script src="/static/js/fighthistory.js?v=1"></script>
 <script src="/static/js/coverage.js?v=1"></script>
 <script src="/static/js/trash.js?v=1"></script>
 <script src="/static/js/underperf.js?v=2"></script>
-<script src="/static/js/app.js?v=41"></script>
+<script src="/static/js/app.js?v=42"></script>
 </body>
 </html>

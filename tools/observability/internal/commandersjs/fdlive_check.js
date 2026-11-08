@@ -1,0 +1,222 @@
+"use strict";
+// Run by commandersjs_test.go under node: FdLive (web/static/js/fdlive.js), the pure state of one live fight view: the event
+// cursor (frames, duplicates, gaps, resets, catch-up), the bounded buffers, the sampled aura rows, the follow range, the fight
+// clock, the synthetic fight object, the hand-over match and the catch-up rate limit.
+const assert = require("assert");
+const F = require(require("path").resolve(process.argv[2]));
+
+const KEY = "Gbmage\u00007\u000055-6";
+const ev = (i) => ({ k: "cast", t: i * 100, n: "Boss", s: "Spell" + i, id: "1" });
+const frame = (from, n, extra) => Object.assign({
+  key: KEY, from, cur: from + n, commander: "Gbmage",
+  fight: { start_ms: 1000000, boss: 11502, boss_name: "Magmadar", fight_ms: 5000 },
+  events: Array.from({ length: n }, (_, p) => ev(from + p)),
+}, extra || {});
+const NOW = 2000000;
+
+// ---- frames 0-3, 3-5: cur 5 and 5 events; a repeat is a dup; a frame past the cursor is a gap and appends nothing
+{
+  const st = F.create("Gbmage");
+  assert.strictEqual(F.applyEventsFrame(st, frame(0, 3), NOW), "ok");
+  assert.strictEqual(F.applyEventsFrame(st, frame(3, 2), NOW), "ok");
+  assert.strictEqual(st.cur, 5);
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4]);
+  assert.strictEqual(st.events[2].t, 200, "a stored event carries its t");
+  assert.strictEqual(st.bossName, "Magmadar");
+  assert.strictEqual(st.startMs, 1000000);
+  const v = st.version;
+  assert.strictEqual(F.applyEventsFrame(st, frame(3, 2), NOW), "dup", "a repeat");
+  assert.strictEqual(st.version, v, "a dup changes nothing");
+  assert.strictEqual(F.applyEventsFrame(st, frame(7, 2), NOW), "gap", "events 5 and 6 were missed");
+  assert.strictEqual(st.events.length, 5, "a gap appends nothing");
+  assert.strictEqual(st.cur, 5);
+  assert.ok(st.gap && F.needCatchUp(st, NOW), "a gap asks for a catch-up");
+  // the catch-up returns 5 and 6; the frame 7-9 then follows in order: 9 events
+  F.applyCatchUp(st, { key: KEY, cur: 7, gap: false, events: [{ i: 5, e: ev(5) }, { i: 6, e: ev(6) }], start_ms: 1000000, fight_ms: 6000, boss: 11502, boss_name: "Magmadar" }, NOW);
+  assert.strictEqual(F.applyEventsFrame(st, frame(7, 2), NOW), "ok");
+  assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2, 3, 4, 5, 6, 7, 8], "nine events in order");
+  assert.strictEqual(st.cur, 9);
+  assert.strictEqual(F.applyEventsFrame(st, { from: 0, cur: 1, events: [ev(0)] }, NOW), "dup", "an old daemon's frame has no key: ignored");
+}
+
+// ---- a frame of another fight resets; mid-fight it asks for a catch-up from 0
+{
+  const st = F.create("Gbmage");
+  F.applyEventsFrame(st, frame(0, 3), NOW);
+  F.applySample(st, { bots: [{ guid: 1, hp: 5, max_hp: 10 }] }, NOW);
+  const other = "Gbmage\u00007\u000055-7";
+  assert.strictEqual(F.applyEventsFrame(st, frame(4, 2, { key: other }), NOW), "reset");
+  assert.strictEqual(st.key, other);
+  assert.deepStrictEqual([st.events.length, st.samples.length, st.cur], [0, 0, 0], "the old fight is gone");
+  assert.ok(F.needCatchUp(st, NOW), "the caller catches up from 0");
+  assert.strictEqual(F.applyEventsFrame(st, frame(0, 2, { key: "Gbmage\u00007\u000055-8" }), NOW), "ok", "a new fight's first frame resets and appends");
+  assert.strictEqual(st.events.length, 2);
+  // a catch-up of yet another key resets first
+  F.applyCatchUp(st, { key: KEY, cur: 1, events: [{ i: 0, e: ev(0) }] }, NOW);
+  assert.strictEqual(st.key, KEY);
+  assert.strictEqual(st.events.length, 1);
+}
+
+// ---- EVENTS_MAX + 10: the oldest are dropped
+{
+  const st = F.create("Gbmage");
+  const n = F.EVENTS_MAX + 10;
+  F.applyEventsFrame(st, frame(0, n), NOW);
+  assert.strictEqual(st.events.length, F.EVENTS_MAX);
+  assert.strictEqual(st.events[0].i, 10, "the first ten went");
+  assert.strictEqual(st.cur, n);
+}
+
+// ---- the end event
+{
+  const st = F.create("Gbmage");
+  F.applyEventsFrame(st, frame(0, 1), NOW);
+  const f = frame(1, 1);
+  f.events = [{ k: "end", t: 9000, o: "kill", dur: 9000, kept: true }];
+  F.applyEventsFrame(st, f, NOW);
+  assert.ok(st.ended && st.outcome === "kill" && !st.unkept);
+  assert.strictEqual(F.nowFightMs(st, NOW + 60000), 9000, "frozen once ended");
+  const st2 = F.create("Gbmage");
+  const g = frame(0, 1);
+  g.events = [{ k: "end", t: 100, o: "end", dur: 100, kept: false }];
+  F.applyEventsFrame(st2, g, NOW);
+  assert.ok(st2.ended && st2.unkept, "a fight too short to keep says so");
+}
+
+// ---- samples, aura rows
+const T0 = 1000000;
+const bind = (t, db, extra) => Object.assign({
+  commander: "Gbmage", ts_ms: t,
+  bots: [{ guid: 1, name: "Tank", role: "tank", hp: 50, max_hp: 100, alive: true, db: db.map((id) => ({ id, n: "Aura" + id })) }],
+  mobs: [{ id: "99", entry: 11502, hp: 80, victim: "1" }],
+  combat: { win_s: 10, bots: [{ g: 1, dps: 120, hps: 40 }] },
+}, extra || {});
+{
+  const st = F.create("Gbmage");
+  assert.ok(F.applySample(st, bind(T0 + 2000, [24321]), T0 + 2000));
+  assert.ok(F.applySample(st, bind(T0 + 4000, [24321]), T0 + 4000));
+  assert.ok(F.applySample(st, bind(T0 + 6000, []), T0 + 6000));
+  assert.ok(!F.applySample(st, bind(T0 + 6000, []), T0 + 6000), "a sample not newer than the last is skipped");
+  assert.deepStrictEqual(F.auraRowsFrom(st.samples, T0), [[2000, 1, 24321, 1], [6000, 1, 24321, -1]]);
+  st.startMs = T0;
+  assert.deepStrictEqual(F.auraRows(st), [[2000, 1, 24321, 1], [6000, 1, 24321, -1]]);
+  assert.strictEqual(st.auraNames[24321], "Aura24321", "the debuff names are kept (the track has ids only)");
+  const s = st.samples[0];
+  assert.deepStrictEqual(s.bots[1], { hp: 50, a: 1, dps: 120, hps: 40, db: [24321] });
+  assert.deepStrictEqual(s.mobs, [{ id: "99", e: 11502, hp: 80, v: "1" }]);
+  assert.strictEqual(s.w, 10);
+  // an aura present before the start has no application row, and its removal row goes with it
+  const rows = F.auraRowsFrom(st.samples, T0 + 3000);
+  assert.deepStrictEqual(rows, [], "nothing applied after the start, no orphan removal");
+  // a bot missing from a sample keeps its state
+  const keep = [{ t: T0 + 1000, bots: { 1: { db: [5] } } }, { t: T0 + 2000, bots: {} }, { t: T0 + 3000, bots: { 1: { db: [] } } }];
+  assert.deepStrictEqual(F.auraRowsFrom(keep, T0), [[1000, 1, 5, 1], [3000, 1, 5, -1]]);
+  // the cap
+  const big = F.create("Gbmage");
+  for (let i = 1; i <= F.SAMPLES_MAX + 5; i++) F.applySample(big, bind(T0 + i * 2000, []), T0 + i * 2000);
+  assert.strictEqual(big.samples.length, F.SAMPLES_MAX);
+  assert.strictEqual(big.samples[0].t, T0 + 6 * 2000);
+  assert.strictEqual(F.bossHp(Object.assign(big, { boss: 11502 })), 80);
+  assert.strictEqual(F.bossHp(Object.assign(big, { boss: 1 })), null);
+}
+
+// ---- the x=1 track: merged by time, no duplicate second, sorted, bots read from the nine-element rows
+{
+  const st = F.create("Gbmage");
+  F.applySample(st, bind(T0 + 6500, []), T0 + 6500);
+  const json = { frames: [
+    { t: 1006, w: 10, bots: [[1, 1, 2, 40, 1, 249, 99, 11, []]], mobs: [] },
+    { t: 1002, w: 10, bots: [[1, 1, 2, 60, 1, 249, 77, 5, [24321]]], mobs: [{ id: "99", e: 11502, hp: 90, v: 1 }] },
+    { t: 1004, bots: [[1, 1, 2, 70, 0, 249]], mobs: [] },
+  ] };
+  assert.strictEqual(F.applyTrackX(st, json), 2, "the second the stream already has is not added twice");
+  assert.deepStrictEqual(st.samples.map((s) => s.t), [1002000, 1004000, T0 + 6500]);
+  assert.deepStrictEqual(st.samples[0].bots[1], { hp: 60, a: 1, dps: 77, hps: 5, db: [24321] });
+  assert.deepStrictEqual(st.samples[0].mobs, [{ id: "99", e: 11502, hp: 90, v: "1" }]);
+  assert.deepStrictEqual(st.samples[1].bots[1], { hp: 70, a: 0, dps: 0, hps: 0, db: [] });
+}
+
+// ---- positions
+{
+  const st = F.create("Gbmage");
+  assert.ok(F.applyPos(st, { ts_ms: 1, bots: [{ g: 1, x: 2, y: 3, hp: 50, mhp: 100, a: 1 }], mobs: [{ id: "9", x: 4, y: 5, hp: 60 }] }));
+  assert.deepStrictEqual(st.pos[0], { t: 1, bots: [[1, 2, 3, 50, 1]], mobs: [["9", 4, 5, 60]] });
+  assert.ok(!F.applyPos(st, { ts_ms: 1, bots: [], mobs: [] }), "not newer");
+  for (let i = 2; i <= F.POS_MAX + 10; i++) F.applyPos(st, { ts_ms: i, bots: [], mobs: [] });
+  assert.strictEqual(st.pos.length, F.POS_MAX);
+}
+
+// ---- the clock and the range
+{
+  const st = F.create("Gbmage");
+  assert.strictEqual(F.nowFightMs(st, NOW), 0, "no header, no clock");
+  F.applyEventsFrame(st, frame(0, 1, { fight: { start_ms: T0, fight_ms: 90000, boss: 1, boss_name: "B" } }), NOW);
+  assert.strictEqual(F.nowFightMs(st, NOW), 90000);
+  assert.strictEqual(F.nowFightMs(st, NOW + 3000), 93000);
+  assert.strictEqual(F.nowFightMs(st, NOW + 600000), 100000, "the browser's clock runs on for CLOCK_SLACK_MS only");
+  assert.deepStrictEqual(F.range(st, NOW, 60), { from: 30000, to: 90000 });
+  assert.deepStrictEqual(F.range(st, NOW, 120), { from: 0, to: 90000 });
+  assert.strictEqual(F.range(st, NOW, 0), null, "whole fight");
+  assert.deepStrictEqual(F.WINDOWS, [30, 60, 120, 300, 0]);
+  assert.strictEqual(F.DEFAULT_WINDOW, 60);
+}
+
+// ---- the synthetic fight object
+{
+  const st = F.create("Gbmage");
+  const f = frame(0, 0);
+  f.events = [
+    { k: "start", t: 0 }, { k: "engage", t: 10, e: 1, n: "Trash" }, ev(1),
+    { k: "death", t: 5000, n: "Tanky", by: "Magmadar", x: 1.5, y: 2.5 },
+    { k: "interrupt", t: 5100, n: "Kicker", s: "Pummel" },
+  ];
+  f.cur = 5;
+  F.applyEventsFrame(st, f, NOW);
+  F.applySample(st, bind(T0 + 2000, [24321]), T0 + 2000);
+  const b = { bots: [{ guid: 1, name: "Tank", role: "tank", hp: 1 }] };
+  const fo = F.fight(st, b, NOW);
+  assert.strictEqual(fo.live, true);
+  assert.strictEqual(fo.key, KEY);
+  assert.strictEqual(fo.id, "55-6");
+  assert.strictEqual(fo.outcome, "live");
+  assert.strictEqual(fo.aura_src, "sampled");
+  assert.deepStrictEqual(fo.log.map((e) => e.k), ["cast", "death", "interrupt"], "log kinds only");
+  assert.deepStrictEqual(fo.deaths, [{ name: "Tanky", t_ms: 5000, x: 1.5, y: 2.5, killer: "Magmadar", hits: [] }]);
+  assert.deepStrictEqual(fo.bots, [{ name: "Tank", guid: 1, role: "tank" }]);
+  assert.strictEqual(fo.start, 1000);
+  assert.strictEqual(fo.boss_name, "Magmadar");
+  assert.strictEqual(fo.dur_ms, 5000);
+  assert.strictEqual(fo.log_dropped, 0);
+  assert.strictEqual(F.fight(st, b, NOW + 100), fo, "memoised within the second");
+  assert.notStrictEqual(F.fight(st, b, NOW + 1500), fo, "and rebuilt on the next");
+  st.gap = true; st.version++;
+  assert.strictEqual(F.fight(st, b, NOW).log_dropped, 1);
+}
+
+// ---- hand-over
+{
+  const st = F.create("Gbmage");
+  assert.strictEqual(F.handoff(st, { key: KEY }), false, "no fight yet");
+  st.key = KEY;
+  assert.ok(F.handoff(st, { key: KEY }), "by key");
+  assert.ok(F.handoff(st, { key: "raid#4\u00007\u000055-6" }), "by id and session when the key's commander differs");
+  assert.ok(!F.handoff(st, { key: "Gbmage\u00007\u000055-7" }), "another fight");
+  assert.ok(!F.handoff(st, { key: "Gbmage\u00008\u000055-6" }), "another session");
+  assert.ok(!F.handoff(st, null));
+}
+
+// ---- the catch-up rate limit
+{
+  const st = F.create("Gbmage");
+  assert.ok(F.needCatchUp(st, 100000), "a fresh view with nothing asks once");
+  F.markCatchUp(st, 100000);
+  assert.ok(!F.needCatchUp(st, 100000 + F.CATCHUP_MIN_MS - 1), "not twice within 5 s");
+  assert.ok(F.needCatchUp(st, 100000 + F.CATCHUP_MIN_MS));
+  F.applyCatchUp(st, { key: KEY, cur: 2, events: [{ i: 0, e: ev(0) }, { i: 1, e: ev(1) }] }, 200000);
+  assert.ok(!F.needCatchUp(st, 300000), "events held and no gap: nothing to ask");
+  st.wantCatchUp = true;
+  assert.ok(!F.needCatchUp(st, 200000 + 100), "a gap waits for the limit");
+  assert.ok(F.needCatchUp(st, 200000 + F.CATCHUP_MIN_MS));
+}
+
+console.log("fdlive_check.js ok");

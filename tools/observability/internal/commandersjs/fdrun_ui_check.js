@@ -133,6 +133,6 @@ assert.ok(!/(AM|PM)/i.test(clock), "no 12 h marker: " + clock);
 assert.ok(grab("fdRunHtml").includes("cmdClock(d.tS)"), "the run strip's death titles use it");
 assert.ok(grab("cmdClock").includes("hourCycle: 'h23'"), "the hour cycle is pinned, not the browser's");
 assert.ok(grab("fdRunStop").includes("clearTimeout("), "stopping the run clears the pending step");
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 10, "no new setInterval but the live stream's fallback poll and the live views' 1 s repaint (FdLive.TICK_MS)");
 
 console.log("fight debugger run timeline ok");

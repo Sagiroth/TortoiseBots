@@ -342,6 +342,19 @@ func TestLiveViewJS(t *testing.T) {
 	runCheck(t, "live_check.js", "../../web/static/js/live.js")
 }
 
+// TestFdLiveJS runs fdlive_check.js: the live fight view's pure state (the event cursor with its frames, duplicates, gaps, resets and
+// catch-up, the bounded buffers, the sampled aura rows, the follow range, the fight clock, the synthetic fight object, the
+// hand-over match and the catch-up rate limit).
+func TestFdLiveJS(t *testing.T) {
+	runCheck(t, "fdlive_check.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFdLiveUIJS runs fdlive_ui_check.js: the live fight view's wiring in app.js (the tile's escaped markup and link, the window
+// labels, the hand-over's filed-row match, the live hash segment, and the stream handlers feeding the live view before any gate).
+func TestFdLiveUIJS(t *testing.T) {
+	runCheck(t, "fdlive_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {

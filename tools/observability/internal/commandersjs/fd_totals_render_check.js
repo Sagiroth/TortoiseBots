@@ -29,7 +29,7 @@ function take(name) {
 
 const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock", "cmdPlanName", "cmdPlanFor",
   "cmdBossTable", "cmdBossPanels", "cmdPaintBosses", "cmdLiveBossPanels", "cmdFightBossPanels", "cmdTrashBlockHtml",
-  "fdState", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
+  "fdState", "fdLiveState", "fdLiveTimelineHtml", "fdLiveFiledRow", "fdLiveClock", "fdLiveWinLabel", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
   "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
   "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdTotalsSession", "fdTotalsLoad",
   "fdTotalChipsHtml", "fdTotalsSegHtml", "fdRunStartText", "fdTotalTitleHtml",
@@ -84,6 +84,7 @@ const fetchStub = (url) => {
 const ctx = {
   console, setTimeout, clearTimeout, Date, Math, JSON,
   FightDebug: require(path.join(dir, "fightdebug.js")),
+  FdLive: require(path.join(dir, "fdlive.js")),
   FdTabs: require(path.join(dir, "fdtabs.js")),
   FightReplay: require(path.join(dir, "fightreplay.js")),
   AggroLanes: require(path.join(dir, "aggrolanes.js")),
@@ -99,6 +100,7 @@ vm.runInContext([
   "var cmdPageMode = () => 'debug';",
   "var cmdPageHash = () => {};",
   "var fdPage = { open: null };",
+  "var fdLive = {}, fdLivePaintBar = () => {}, fdLiveCatchUp = () => {}, fdLiveTickSync = () => {};",
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });

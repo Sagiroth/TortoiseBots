@@ -37,6 +37,7 @@ Object.assign(ctx, {
   cmdLiveEvents: {}, CMD_LIVE_EVENT_MAX: 12,
   cmdLivePaintEvents: () => {}, cmdLiveFightChanged: () => {}, cmdLiveError: () => {},
   fetchCommanders: () => {}, cmdFightsCache: {}, cmdLiveMergeBinding: () => {}, applyCommanders: () => {},
+  fdLive: {}, FdLive: require(path.join(dir, "fdlive.js")), fdLiveEvents: () => {}, fdLiveHandoff: () => {}, fdLiveResync: () => {},
 });
 const handlers = ctx.cmdLiveHandlers();
 // the server's clock is unrelated to the page's: 500 ms of game time arrived 900 ms apart

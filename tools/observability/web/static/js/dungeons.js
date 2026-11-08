@@ -143,9 +143,23 @@
     return bind;
   }
 
+  // The commander whose fights belong to a run: the first, by name, of the standing bindings that has a bot whose guid is one
+  // of the run's members. A demo binding, a dungeon or observed pseudo-binding and one whose commander is offline (its
+  // report is a leftover) are not asked. null when none matches.
+  function fightCommander(run, bindings) {
+    const guids = {};
+    ((run && run.members) || []).forEach((m) => { if (m && m.guid != null) guids[m.guid] = true; });
+    const names = (Array.isArray(bindings) ? bindings : [])
+      .filter((b) => b && typeof b.commander === "string" && b.commander && !b.demo && !b.dungeon && !b.observed && b.online !== false
+        && (b.bots || []).some((bot) => bot && bot.guid != null && guids[bot.guid]))
+      .map((b) => b.commander)
+      .sort();
+    return names.length ? names[0] : null;
+  }
+
   const DgnView = {
     RAID_MIN_MEMBERS, RAID_GROUP_SIZE,
-    roleKey, roleLabel, copyLabels, runState, seenText, powerOf, memberRows, memberGroups, bindOf,
+    roleKey, roleLabel, copyLabels, runState, seenText, powerOf, memberRows, memberGroups, bindOf, fightCommander,
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = DgnView;
