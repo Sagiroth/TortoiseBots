@@ -434,6 +434,12 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier, RollVote* f
         break;
     }
 
+    // Gear the bot will wear once it levels up is still an upgrade for it.
+    bool const futureUpgrade = needVote != ROLL_NEED && usage != ItemUsage::ITEM_USAGE_FORCE_GREED &&
+        ItemUsageValue::IsFutureUpgrade(itemQualifier, bot);
+    if (futureUpgrade)
+        needVote = ROLL_NEED;
+
     // special case for bad equip
     if (usage == ItemUsage::ITEM_USAGE_BAD_EQUIP)
     {
@@ -544,7 +550,9 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier, RollVote* f
 
     std::string reason = "because it can not be looted.";
     if (canLoot)
-        reason = ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, bot);
+        reason = futureUpgrade && itemQualifier.GetProto() ?
+            "as a future upgrade (requires level " + std::to_string(itemQualifier.GetProto()->RequiredLevel) + ")." :
+            ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, bot);
 
     if (AI_VALUE2(bool, "manual bool", "roll feedback"))
     {
@@ -806,7 +814,7 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
                 continue;
 
             ItemUsage memberUsage = memberAi->GetAiObjectContext()->GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->Get();
-            if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP)
+            if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP && !ItemUsageValue::IsFutureUpgrade(itemQualifier, member))
                 continue;
 
             ai::ItemStatFamily memberFamily = sRandomItemMgr.GetSpecStatFamily(memberSpecId);

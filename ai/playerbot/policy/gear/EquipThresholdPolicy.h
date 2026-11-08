@@ -27,4 +27,13 @@ namespace ai
     {
         return float(newWeight) > float(oldWeight) * threshold;
     }
+
+    // A piece the bot only lacks the level for is kept (and NEEDed in a roll)
+    // as a future upgrade while it is at most this many levels away.
+    constexpr std::uint32_t kFutureUpgradeLevels = 10;
+
+    inline bool FutureUpgradeLevelOk(std::uint32_t botLevel, std::uint32_t requiredLevel)
+    {
+        return requiredLevel > botLevel && requiredLevel <= botLevel + kFutureUpgradeLevels;
+    }
 }
