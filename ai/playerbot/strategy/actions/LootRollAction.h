@@ -79,7 +79,7 @@ namespace ai
         bool RealPlayerMayNeed(ObjectGuid lootGuid, ItemQualifier& itemQualifier, ObjectGuid seenVoter, uint8 seenVote);
         bool ShouldWaitForPlayers(ObjectGuid lootGuid, uint32 slot);
         bool AllRealRollersVoted(ObjectGuid lootGuid, uint32 slot);
-        Player* FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier);
+        Player* FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier, ObjectGuid seenVoter = ObjectGuid(), uint8 seenVote = ROLL_NOT_VALID);
     };
 
     class LootRollAction : public RollAction

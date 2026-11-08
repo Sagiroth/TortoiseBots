@@ -200,13 +200,16 @@ namespace ai
     // Does member fit the item better than the rolling bot?
     // 1. A member fits better when the item's primary stat is that member's spec primary stat and NOT the rolling bot's.
     // 2. Tie-break for weapons when both share the primary stat: a class whose damage comes from the weapon itself beats a stat-stick user.
-    // 3. For a real player member: spec is unknown, so check if player's class includes the family, with the same weapon tie-break.
+    // 3. For another BOT member: it only counts if the item is also spec-legal and an upgrade for that bot (memberWantsItem is true).
+    // 4. For a real player member: spec is unknown, so check if player's class includes the family, with the same weapon tie-break.
+    //    Once their vote is known and is Greed or Pass (memberWantsItem is false), they no longer block.
     inline bool MemberFitsBetter(
         ItemStatFamily botFamily, uint32_t botClass, std::string_view botSpecName,
         ItemStatFamily memberFamily, uint32_t memberClass, std::string_view memberSpecName,
-        ItemStatFamily itemFamily, bool isWeapon, bool isRangedWeapon, bool isMemberRealPlayer)
+        ItemStatFamily itemFamily, bool isWeapon, bool isRangedWeapon, bool isMemberRealPlayer,
+        bool memberWantsItem = true)
     {
-        if (itemFamily == ItemStatFamily::None)
+        if (itemFamily == ItemStatFamily::None || !memberWantsItem)
             return false;
 
         if (isMemberRealPlayer)

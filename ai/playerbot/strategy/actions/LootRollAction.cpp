@@ -65,16 +65,7 @@ namespace
                 break;
             case ITEM_MOD_INTELLECT:
             case ITEM_MOD_SPIRIT:
-            case ITEM_MOD_HIT_SPELL_RATING:
-            case ITEM_MOD_CRIT_SPELL_RATING:
-            case ITEM_MOD_HASTE_SPELL_RATING:
                 summary.spell += val;
-                break;
-            case ITEM_MOD_DEFENSE_SKILL_RATING:
-            case ITEM_MOD_DODGE_RATING:
-            case ITEM_MOD_PARRY_RATING:
-            case ITEM_MOD_BLOCK_RATING:
-                summary.tank += val;
                 break;
             case ITEM_MOD_STAMINA:
                 summary.stamina += val;
@@ -750,7 +741,7 @@ bool RollAction::AllRealRollersVoted(ObjectGuid lootGuid, uint32 slot)
 }
 
 // Issue Package E: find a group member whose spec fits the item better than this bot.
-Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier)
+Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier, ObjectGuid seenVoter, uint8 seenVote)
 {
     Group* group = bot->GetGroup();
     Map* map = bot->GetMap();
@@ -812,7 +803,7 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
                 !sRandomItemMgr.ShouldEquipWeaponForSpec(member, member->GetClass(), memberSpecId, itemProto, member->CanDualWield()))
                 continue;
 
-            ItemUsage memberUsage = memberAi->GetAiObjectContext()->GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->GetValue();
+            ItemUsage memberUsage = memberAi->GetAiObjectContext()->GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->Get();
             if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP)
                 continue;
 
@@ -830,6 +821,28 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
         else
         {
             if (item && !item->AllowedForPlayer(member, lootTarget))
+                continue;
+
+            // Addendum: once their vote is known and it is GREED or PASS, they no longer block.
+            bool voteSeen = false;
+            ai::LootRollVote knownVote = ai::LootRollVote::Pass;
+            if (!seenVoter.IsEmpty() && member->GetObjectGuid() == seenVoter && seenVote < MAX_ROLL_FROM_CLIENT)
+            {
+                voteSeen = true;
+                knownVote = (ai::LootRollVote)seenVote;
+            }
+            else
+            {
+                LootVoteMap seenVotes = AI_VALUE(LootVoteMap, "seen need rolls");
+                auto itr = seenVotes.find({ lootGuid, slot, member->GetObjectGuid() });
+                if (itr != seenVotes.end())
+                {
+                    voteSeen = true;
+                    knownVote = (ai::LootRollVote)itr->second;
+                }
+            }
+
+            if (voteSeen && (knownVote == ai::LootRollVote::Greed || knownVote == ai::LootRollVote::Pass))
                 continue;
 
             if (ai::MemberFitsBetter(botFamily, bot->GetClass(), botSpecName,
@@ -891,7 +904,7 @@ bool RollAction::RollWithEtiquette(ObjectGuid lootGuid, uint32 slot, ObjectGuid 
         // Issue Package E: check if another group member fits the item better.
         if (!forcedNeed)
         {
-            Player* betterMember = FindBetterFittingMember(lootGuid, slot, itemQualifier);
+            Player* betterMember = FindBetterFittingMember(lootGuid, slot, itemQualifier, seenVoter, seenVote);
             if (betterMember)
             {
                 vote = ROLL_GREED;

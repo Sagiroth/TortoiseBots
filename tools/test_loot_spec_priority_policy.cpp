@@ -326,6 +326,38 @@ int main()
         std::cout << "  [PASS] Ranged weapon tie-break: Hunter beats Rogue/Warrior\n";
     }
 
+    // 13. Owner addendum: priority only blocks when the priority member actually wants the item
+    {
+        // Item: Agility item (dagger or leather/ring) that warrior could use as an upgrade
+        ItemStatFamily agiStat = ItemStatFamily::Agility;
+
+        // Rogue bot present, but item is NOT an upgrade for that rogue (memberWantsItem = false):
+        // Warrior is NOT blocked -> MemberFitsBetter returns false -> warrior may NEED
+        CHECK(MemberFitsBetter(ItemStatFamily::Strength, SPEC_PRIORITY_CLASS_WARRIOR, "arms",
+                               ItemStatFamily::Agility, SPEC_PRIORITY_CLASS_ROGUE, "combat",
+                               agiStat, true, false, false, false) == false);
+
+        // Rogue bot present and item IS an upgrade for that rogue (memberWantsItem = true):
+        // Warrior IS blocked -> MemberFitsBetter returns true -> warrior steps down to GREED
+        CHECK(MemberFitsBetter(ItemStatFamily::Strength, SPEC_PRIORITY_CLASS_WARRIOR, "arms",
+                               ItemStatFamily::Agility, SPEC_PRIORITY_CLASS_ROGUE, "combat",
+                               agiStat, true, false, false, true) == true);
+
+        // Real player Rogue greeded or passed (memberWantsItem = false):
+        // Warrior is NOT blocked -> MemberFitsBetter returns false -> warrior may NEED
+        CHECK(MemberFitsBetter(ItemStatFamily::Strength, SPEC_PRIORITY_CLASS_WARRIOR, "arms",
+                               ItemStatFamily::None, SPEC_PRIORITY_CLASS_ROGUE, "",
+                               agiStat, true, false, true, false) == false);
+
+        // Real player Rogue hasn't voted yet or wants it (memberWantsItem = true):
+        // Warrior IS blocked -> MemberFitsBetter returns true -> warrior steps down to GREED
+        CHECK(MemberFitsBetter(ItemStatFamily::Strength, SPEC_PRIORITY_CLASS_WARRIOR, "arms",
+                               ItemStatFamily::None, SPEC_PRIORITY_CLASS_ROGUE, "",
+                               agiStat, true, false, true, true) == true);
+
+        std::cout << "  [PASS] Owner addendum: unwanting member does not block\n";
+    }
+
     std::cout << "All TortoiseBots loot spec priority policy tests passed successfully!\n";
     return 0;
 }
