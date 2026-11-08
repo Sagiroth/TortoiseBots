@@ -792,11 +792,13 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
         if (lootTarget && !member->IsWithinLootXPDist(lootTarget))
             continue;
 
-        if (member->CanUseItem(itemProto) != EQUIP_ERR_OK)
-            continue;
-
         PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
         bool isMemberBot = memberAi && !memberAi->IsRealPlayer();
+
+        // A bot that only lacks the level still counts: it wants it as a future upgrade.
+        if (member->CanUseItem(itemProto) != EQUIP_ERR_OK &&
+            !(isMemberBot && ItemUsageValue::IsFutureUpgrade(itemQualifier, member)))
+            continue;
 
         if (isMemberBot)
         {
