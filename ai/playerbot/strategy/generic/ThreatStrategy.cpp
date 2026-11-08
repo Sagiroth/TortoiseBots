@@ -123,10 +123,14 @@ float ThreatMultiplier::GetValue(Action* action)
 }
 
 // The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger stops the swing and the auto-repeat
-// itself in the trigger pass and is never active, so the node queues nothing. Key off: it returns at its first line.
+// itself in the trigger pass and is never active, so its handler is never queued. The handler is a no-op at
+// ACTION_PASSTROUGH only so the node's first relevance is 100: Engine::ProcessTriggers(minimal) checks just the nodes at
+// 100 or more, and an empty node (-1) was skipped on every minimal tick, letting a swing run on past the line. Key off:
+// the trigger returns at its first line.
 void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode("successor white cap", NextAction::array(0, NULL)));
+    triggers.push_back(new TriggerNode("successor white cap",
+        NextAction::array(0, new NextAction("successor white cap noop", ACTION_PASSTROUGH), NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)

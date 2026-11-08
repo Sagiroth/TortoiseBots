@@ -76,6 +76,14 @@ namespace ai
         }
     };
 
+    // Whether the bot's white damage runs on the successor target itself: a melee swing whose victim is that target, or an
+    // auto-repeat (wand Shoot, Auto Shot) aimed at it. A swing an action moved onto a Shade, an add or a totem is left
+    // alone: the latch reads the threat on the successor, not on that unit.
+    inline bool SuccessorWhiteOnTarget(bool meleeAttacking, bool victimIsTarget, bool autoRepeat, bool autoRepeatOnTarget)
+    {
+        return (meleeAttacking && victimIsTarget) || (autoRepeat && autoRepeatOnTarget);
+    }
+
     // The trigger's step (SuccessorWhiteCapTrigger::IsActive), run in the engine's trigger pass at the start of every
     // decision cycle: advance the latch and say whether the bot's running white damage must be stopped right now. The
     // trigger stops it on the spot instead of queueing an action, so no higher-relevance action picked in the same cycle

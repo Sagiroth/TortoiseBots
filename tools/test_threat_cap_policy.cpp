@@ -445,6 +445,20 @@ int main()
         CHECK(!plain[1].onBoss);
     }
 
+    // successor_white_leaves_a_swing_on_an_add (Strict): the latch holds on Jin'do, but an action moved the bot's swing
+    // onto a Shade or an add: that swing is not white damage on the successor and is not stopped. On the boss it is.
+    {
+        CHECK(!SuccessorWhiteOnTarget(true, false, false, false));  // swinging at an add
+        CHECK(!SuccessorWhiteOnTarget(false, false, true, false));  // shooting an add
+        CHECK(!SuccessorWhiteOnTarget(false, true, false, false));  // victim set, not swinging
+        CHECK(SuccessorWhiteOnTarget(true, true, false, false));
+        CHECK(SuccessorWhiteOnTarget(false, false, true, true));
+        SuccessorWhiteLatch latch;
+        CHECK(!SuccessorWhiteStopNow(latch, true, false, 95, false, SuccessorWhiteOnTarget(true, false, false, false)));
+        CHECK(latch.stopped);                                        // the latch still holds for the boss
+        CHECK(SuccessorWhiteStopNow(latch, true, false, 95, false, SuccessorWhiteOnTarget(true, true, false, false)));
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

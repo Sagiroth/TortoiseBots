@@ -91,9 +91,44 @@ class ThreatSuccessorStrict(unittest.TestCase):
         self.assertNotIn("return true", trigger)
         self.assertNotIn('"stop auto attack"', AI_TREE)
         self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
-        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
-        self.assertIn('new TriggerNode("successor white cap", NextAction::array(0, NULL))', triggers)
+        self.assertIn("SuccessorWhiteOnTarget(bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING), bot->GetVictim() == target,", trigger)
+        self.assertIn("repeating && autoRepeat->m_targets.getUnitTarget() == target);", trigger)
         self.assertIn("return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;", THREAT_POLICY)
+
+    def test_the_trigger_is_checked_on_minimal_ticks(self):
+        # successor_white_cap_runs_in_minimal_cycles (failed with the empty node, first relevance -1): a model of
+        # Engine::ProcessTriggers(minimal=true) built from the live sources. The engine skips a node whose first handler's
+        # relevance is under 100 on a minimal tick; the node's first handler must therefore be at 100 or more.
+        import re
+        engine = (ROOT / "ai/playerbot/strategy/Engine.cpp").read_text()
+        process = body(engine, "void Engine::ProcessTriggers(bool minimal)")
+        gate = re.search(r"if \(minimal && node->getFirstRelevance\(\) < (\d+)\)\n\s+continue;", process)
+        self.assertIsNotNone(gate)
+        threshold = int(gate.group(1))
+        self.assertLess(process.index("getFirstRelevance()"), process.index("trigger->Check()"))
+        trigger_cpp = (ROOT / "ai/playerbot/strategy/Trigger.cpp").read_text()
+        self.assertIn("return handlers[0] ? handlers[0]->getRelevance() : -1;", trigger_cpp)
+        strategy_h = (ROOT / "ai/playerbot/strategy/Strategy.h").read_text()
+        priorities = {name: int(value) for name, value in re.findall(r"(ACTION_[A-Z_]+) = (\d+)", strategy_h)}
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        node = re.search(r'new TriggerNode\("successor white cap",\s*NextAction::array\(0, new NextAction\("([^"]+)", '
+                         r'(ACTION_[A-Z_]+)(?: \+ (\d+))?\), NULL\)\)', triggers)
+        self.assertIsNotNone(node, "the node needs a first handler, or its relevance is -1")
+        relevance = priorities[node.group(2)] + int(node.group(3) or 0)
+
+        def checked(minimal, first_relevance):
+            return not (minimal and first_relevance < threshold)
+
+        self.assertFalse(checked(True, -1))           # the old empty node: skipped on a minimal tick
+        self.assertTrue(checked(True, relevance))     # now checked on a minimal tick
+        self.assertTrue(checked(False, relevance))
+        # The handler can never take an action slot: the trigger never fires, and the action is never useful.
+        self.assertEqual(node.group(1), "successor white cap noop")
+        actions_h = (ROOT / "ai/playerbot/strategy/actions/GenericActions.h").read_text()
+        noop = actions_h[actions_h.index("class SuccessorWhiteCapNoopAction"):]
+        noop = noop[:noop.index("};")]
+        self.assertIn("virtual bool isUseful() override { return false; }", noop)
+        self.assertIn('creators["successor white cap noop"]', (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
 
     def test_the_threat_cap_row_carries_the_white_field_under_the_key(self):
         values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()

@@ -1133,7 +1133,8 @@ AiPlayerbot.DungeonRunCureIgnoresThreat = 0
 #     reference keeps attacking while its threat projects under the tank's in 5 s, so it rides just under a slowly
 #     climbing non-holding tank (walk 56: every Hex that went to a damage dealer found it at 1.00x the successor or more);
 # (b) white damage stops at 92 % of the reference: the running melee swing and auto-repeat (wand Shoot, Auto Shot) were
-#     never vetoed once started. The stop happens in the trigger pass of the same decision cycle. Melee and wand start
+#     never vetoed once started. The stop happens in the trigger pass of the same decision cycle (minimal ticks
+#     included), and only for a swing or shot on the successor itself, not one moved onto a Shade or an add. Melee and wand start
 #     again under 85 %; a hunter's Auto Shot under 80 %, because its restart is a single-target action the 80 % veto still
 #     gates. While the reference is 0 (a tank just Hexed) white damage is never stopped; the specials stay held as before.
 #     Specials keep the 80 % line. Tanks are never stopped. DoT ticks already on the boss cannot be stopped.
@@ -1150,7 +1151,9 @@ AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
 # hold every damage dealer for the whole curse). A charmed tank is still left out. Walk 56: a cursed main tank on a Shade
 # dropped out of the pick and the reference fell back to the holder. It acts through the not-holder pick
 # (AiPlayerbot.DungeonRunThreatSuccessorNotHolder): with that key off it changes practically nothing, since a cursed
-# off-tank at half the highest tank or more already passes the old away floor. Recommended on. `.reload config` reads it.
+# off-tank at half the highest tank or more already passes the old away floor. Known limit: a cursed tank at half the
+# holder's threat or more holds the damage dealers at its line until the holder doubles it (walk 57 splits those rows,
+# ref=offtank holder=main offtank_target=Shade of Jin'do white=held, out of the damage guard). Recommended on. `.reload config` reads it.
 # 0 - off: a cursed tank that is not hitting the boss drops out of the pick (Default)
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0

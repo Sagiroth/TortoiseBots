@@ -825,8 +825,11 @@ bool SuccessorWhiteCapTrigger::IsActive()
         ai->SuccessorWhiteCap().Update(false, false, 0);
         return false;
     }
+    // Only white damage on the successor itself is stopped: a swing or shot an action put on a Shade or an add is left alone.
     Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
-    const bool whiteRunning = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) || (autoRepeat && autoRepeat->m_spellInfo);
+    const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
+    const bool whiteRunning = SuccessorWhiteOnTarget(bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING), bot->GetVictim() == target,
+        repeating, repeating && autoRepeat->m_targets.getUnitTarget() == target);
     const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;
     if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),
             AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning))

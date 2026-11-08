@@ -133,6 +133,7 @@ namespace ai
             creators["idle wander"] = [](PlayerbotAI* ai) { return new IdleWanderAction(ai); };
             creators["attack"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
             creators["melee"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
+            creators["successor white cap noop"] = [](PlayerbotAI* ai) { return new SuccessorWhiteCapNoopAction(ai); };
             creators["switch to melee"] = [](PlayerbotAI* ai) { return new SwitchToMeleeAction(ai); };
             creators["switch to ranged"] = [](PlayerbotAI* ai) { return new SwitchToRangedAction(ai); };
             creators["reach spell"] = [](PlayerbotAI* ai) { return new ReachSpellAction(ai); };
