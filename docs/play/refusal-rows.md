@@ -72,6 +72,24 @@ navmesh path is the costliest question the walk-out asks; the members the loop c
 `away`, `no_ai` and `hunter_only`. There is no line-of-sight or busy code: the sight test is the stand's
 (`FindSeekWalkoutStand`), not the pick's.
 
+## The take's reason codes
+
+An off-tank's take of a Son of Hakkar (`LogSeekTake`) says what it did about the taunt this tick. `taunt` is the cast
+going out; the other three are refusal codes (the take did not taunt this tick):
+
+```
+seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
+```
+
+| Code | Meaning |
+| :--- | :--- |
+| `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. |
+| `no_taunt` | The tank's class has no taunt (a paladin in 1.12, a shaman, a hunter, ...). |
+| `attack` | The tank has a taunt but cannot cast it now (cooldown, range, silenced), so only the attack order goes out. |
+| `taunt` | Not a refusal: the taunt (Taunt or Growl) is cast this tick. |
+
+`meet=1` marks a take from the pulled Son's meet (`DungeonRunSeekSonMeet`); every other take is `meet=0`.
+
 ## Rows
 
 The rows are grouped by event source. `BossTacticsActions.cpp` is `ai/playerbot/strategy/actions/BossTacticsActions.cpp`.
@@ -99,7 +117,7 @@ ref survives line drift.
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
-| 18 | seek take | `seek take: <name> -> <son> victim=<name>` | LogSeekTake | not a refusal (the off-tank takes the Son) | document |
+| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's four words (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
 
 ### Other boss-tactics rows
 
@@ -130,6 +148,51 @@ ref survives line drift.
 | 41 | `BossTacticsBurnMana` | `spell=<id>,boss_mana_pct=<pct>` | LogBurnMana | not a refusal (the cast went out) | document |
 | 42 | `BossTacticsRangedOnly` | `subject=<entry>,gap=%.1f` | ai::LogBossRangedOnly | not a refusal (the hold is active) | document |
 | 43 | `BossTacticsThreatCap` | `threat cap: ref=<main\|offtank> <threat> offtank_target=<name\|none>` | LogThreatCap (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the reference a cap is measured against) | document |
+
+### The pulled Son's meet (event `BossTacticsSonMeet`)
+
+One row per event per meet (the wait row is throttled to one per receiver and 5 s), from `UpdateSeekWalkout` and the
+receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live.
+
+| # | Row | Row text / info1 shape | Emit | Reason today | This branch |
+| ---: | :--- | :--- | :--- | :--- | :--- |
+| 43a | meet | `son=%u,event=meet,receiver=<name>,tank_idx=%d,receiver_yd=%.1f,due_in=%u` | UpdateSeekWalkout | not a refusal (a receiver was picked) | document |
+| 43b | no meet | `son=%u,event=no_meet,reason=<code>:<n>\|...,tanks=%d` | UpdateSeekWalkout | no (no tank could wait, and why) | added |
+| 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
+| 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
+| 43e | wait | `son=%u,event=wait,reason=receiver_wait,victim=<name\|none>,son_yd=%.1f,after_ms=%u` | FindBossSeekTank | yes: the receiver took no other Son this tick, it waits for the walker's | added |
+
+The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
+index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`
+already drops dead tanks), `charmed`, `victim` (the boss's current victim), `busy` (a living Son already has it as its
+victim, the fight's whole Son set) and `outside` (it stands outside the tanks' circle). `none` means no tank was
+rejected other than the main tank. `taken` logs once per meet, then the meet is cleared.
+
+The lost row's words, read per reason (the meet is cleared at the first one that applies):
+
+| Word | Meaning |
+| :--- | :--- |
+| `son_dead` | The meet's Son is dead or gone. This includes a Son burned before any tank took it (the forced burn kills it on arrival). |
+| `receiver_dead` | The receiver died or left the world. |
+| `receiver_charmed` | The receiver is charmed (Cause Insanity 24327 or any charm). The puller walks to the circle edge again. |
+| `receiver_victim` | The receiver became Hakkar's victim. The puller walks to the circle edge again. |
+| `receiver_busy` | The receiver already holds another Son (and the meet Son is not on a tank yet). The puller walks to the circle edge again. |
+| `peeled` | The receiver was waiting and the Son's victim became someone other than the puller, the returner or nobody (a damage dealer or a healer peeled it). The normal take branches handle the Son. |
+| `timeout` | 20 s after the shot with no take. |
+
+The wait row's `receiver_wait` is the receiver's refusal to take another Son, pull or drag while the Son's victim is the
+puller, the returner or nobody (`MeetReceiverShouldWait`); the receiver itself runs its normal tank AI, and the puller
+follows its live position.
+
+### Cause Insanity (event `BossTacticsCharm`)
+
+One row per charm, from `ReadSeekFight`: a group-wide aura scan at most every 500 ms looks for Cause Insanity 24327,
+and the row is built 1500 ms after the charmed player is first seen (Hakkar has turned to his next victim by then,
+median 1.05 s after the cast). `charmed=<role>:<class>,victim=<role>:<class>,ot1=<threat>,ot2=<threat>,top=<role>:<class>:<threat>|...`
+(up to five threat entries, the charmed player left out; `ot1`/`ot2` are the second and third tanks' threat, or -1
+when absent), and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
+**Not a refusal:** it is a measurement of the threat successor's margin for the Cause Insanity work, and it carries no
+`reason=`.
 
 ### Healer
 
@@ -199,3 +262,11 @@ branch:
 - `tools/test_seek_walkout_wiring.py` pins the glue: the scan's tally is passed to the pick, the no-puller row passes the
   text as info2 with its info1 literal unchanged, the pick adds no game-state read (its member counters, the post-loop
   `WalkoutRejectOf` pass and the `no_path` add included), and `ForgetSeekWalkout`'s two callers name `repull` and `evade`.
+- `tools/test_seek_meet_wiring.py` pins the meet's rows (`BossTacticsSonMeet`'s five events and the no-meet counts), the
+  meet's flag, receiver branch, wait/`peeled` close and per-update revalidation, the take row's `reason=`/`meet=`, and
+  the Cause Insanity row's 500 ms scan (same world, map and instance only) and 1500 ms wait;
+  `tools/test_seek_walkout_policy.cpp` pins `MeetRefusalWhy`, `PickMeetReceiver`, `MeetRefusalCounts`,
+  `MeetReceiverShouldWait`, `MeetReceiverLostWhy` and `WalkoutMeetCloseIf` (two readers on one snapshot: one close wins, and
+  only the winner logs the `taken`/`lost`/`peeled` row); `tools/test_seek_fight_state_policy.cpp` pins the charm edge
+  (the same player charmed twice with a gap logs two rows); `tools/test_seek_aura_policy.cpp` pins all eight
+  `SeekTakeReasonWord` inputs.

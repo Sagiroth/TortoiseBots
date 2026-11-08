@@ -298,7 +298,43 @@ namespace ai
         int siphonUndosed = 0;
         int siphonLateDosed = 0;        // the +3 s read, kept beside it
         int siphonLateUndosed = 0;
+        // The Cause Insanity measurement: the charmed guid this fight last saw, when it was first seen, whether its
+        // row is out, and when the group-wide aura scan last ran. Cleared with the fight.
+        std::uint64_t charmGuid = 0;
+        std::uint32_t charmSeenMs = 0;
+        bool charmLogged = false;
+        std::uint32_t charmScanMs = 0;
     };
+
+    // Cause Insanity's scan result for one fight: a charmed guid that differs from the last one starts its clock (seen
+    // now, row not out); a scan that finds nobody charmed forgets the last one, so the same player charmed again later
+    // logs a new row.
+    inline void SeekCharmScan(SeekCycleRecord& record, std::uint64_t charmed, std::uint32_t nowMs)
+    {
+        if (charmed == 0)
+        {
+            record.charmGuid = 0;
+            record.charmSeenMs = 0;
+            record.charmLogged = false;
+        }
+        else if (charmed != record.charmGuid)
+        {
+            record.charmGuid = charmed;
+            record.charmSeenMs = nowMs;
+            record.charmLogged = false;
+        }
+    }
+
+    // The charm row is due once, kSeekCharmWaitMs after the charm was first seen (Hakkar has picked his next victim 1.05 s
+    // after the cast, median). Marks it logged when due.
+    constexpr std::uint32_t kSeekCharmWaitMs = 1500;
+    inline bool SeekCharmRowDue(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        if (record.charmGuid == 0 || record.charmLogged || nowMs - record.charmSeenMs < kSeekCharmWaitMs)
+            return false;
+        record.charmLogged = true;
+        return true;
+    }
 
     // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside
     // it. The second read settles a heal the first cannot explain and must never erase the first; the +9 s read (the

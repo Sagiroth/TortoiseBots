@@ -1062,6 +1062,11 @@ AiPlayerbot.DungeonRunSeekAura = 0
 # old one-walk-out-per-cycle rule (needs DungeonRunSeekAura and the rows).
 AiPlayerbot.DungeonRunSeekPullCycle = 0
 
+# A pulled Son of Hakkar meets a tank (needs DungeonRunSeekPullCycle and a seek_pull row): the walk back ends where a
+# waiting off-tank stands, the Son lands on that tank and is taunted on arrival, so it does not chase the ranged raid.
+# Off keeps the walk back at the tanks' circle edge.
+AiPlayerbot.DungeonRunSeekSonMeet = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

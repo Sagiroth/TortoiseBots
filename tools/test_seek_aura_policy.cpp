@@ -566,6 +566,16 @@ int main()
         CHECK(SeekReachYd(50.0f, 36.0f, true, anchorYd) > kSeekFallbackYd);
     }
 
+    // The take row's reason (walk 53): all eight inputs of the chase refusal, a taunt's presence and its cast.
+    CHECK(std::string(SeekTakeReasonWord(false, false, false)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, false, true)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, true, false)) == "attack");
+    CHECK(std::string(SeekTakeReasonWord(false, true, true)) == "taunt");
+    CHECK(std::string(SeekTakeReasonWord(true, false, false)) == "chase_refused");
+    CHECK(std::string(SeekTakeReasonWord(true, false, true)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(true, true, false)) == "chase_refused");
+    CHECK(std::string(SeekTakeReasonWord(true, true, true)) == "taunt");
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

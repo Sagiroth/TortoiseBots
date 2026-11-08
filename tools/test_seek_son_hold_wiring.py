@@ -49,9 +49,9 @@ class SeekSonHoldWiring(unittest.TestCase):
         take = fn[fn.index("if (task.take)"):fn.index("if (task.pull)")]
         # A Son on a non-tank stands where the raid stands: inside the everyone circle (30 yd), past the tanks' (25).
         self.assertIn("BossAnchorRefusesChase(ai, bot, task.source, true)", take)
-        self.assertIn("LogSeekTake(ai, bot, task.source)", take)
-        log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)")
-        self.assertIn('"seek take: %s -> %u victim=%s"', log)
+        self.assertIn("LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(", take)
+        log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet)")
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d"', log)
         refuse = body(ACTIONS, "bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)")
         self.assertIn("AnchorCircleOf(*row, false)", refuse)
 
@@ -59,7 +59,7 @@ class SeekSonHoldWiring(unittest.TestCase):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs, rules)", update)
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
-        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out)", read)
+        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, fightSons, out)", read)
 
 
 class SeekSonHoldReview(unittest.TestCase):
@@ -170,9 +170,10 @@ class SeekSonRowReview(unittest.TestCase):
 
     def test_every_son_id_is_the_guid_low(self):
         # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
-        # a raw guid is a different number.
+        # a raw guid is a different number. Exactly 7 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
+        # no_meet, taken, lost and wait events; a new one must be counted here, in the exact guid form.
         ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
-        self.assertEqual(len(ids), 2)
+        self.assertEqual(len(ids), 7)
         for match in ids:
             call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
             self.assertIn("ObjectGuid(guid).GetCounter()", call)

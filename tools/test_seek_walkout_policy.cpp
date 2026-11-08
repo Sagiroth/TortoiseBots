@@ -263,6 +263,186 @@ static void TestShotAndBackPoints()
     CHECK(Near(x, 100.0f) && Near(y, 100.0f));
 }
 
+static void TestPulledSonMeetsReceiver()
+{
+    // Walk-53 geometry: the tanks' circle around Hakkar's spawn, the puller returning from the south-east, and the
+    // seek spot B where the raid gathers. The old walk back ends 11.3 yd from B: more than the receiver's take reach,
+    // so the Son that chased the puller landed on the ranged raid instead of on a tank.
+    BossAnchorCircle tank;
+    tank.x = -11787.4f;
+    tank.y = -1649.34f;
+    tank.z = 54.1f;
+    tank.radius = 25.0f;
+    const float pullerX = -11760.0f;
+    const float pullerY = -1690.0f;
+    const float receiverX = -11787.4f;
+    const float receiverY = -1664.3f;
+    float oldX = 0.0f, oldY = 0.0f;
+    WalkoutBackPoint(tank, pullerX, pullerY, oldX, oldY);
+    const float oldToReceiver = std::sqrt((oldX - receiverX) * (oldX - receiverX) +
+                                          (oldY - receiverY) * (oldY - receiverY));
+    CHECK(oldToReceiver > kSeekMeetTakeYd);
+    // The meet's back point is the receiver's own point (inside the circle, so the clamp is the identity)...
+    float meetX = 0.0f, meetY = 0.0f;
+    WalkoutMeetBackPoint(true, receiverX, receiverY, tank, pullerX, pullerY, meetX, meetY);
+    CHECK(Near(meetX, receiverX) && Near(meetY, receiverY));
+    // ... and the arrival is measured against it: not arrived at the old edge, arrived 1.9 yd from the receiver.
+    CHECK(!WalkoutMeetArrived(true, meetX, meetY, tank, oldX, oldY));
+    CHECK(WalkoutMeetArrived(true, meetX, meetY, tank, receiverX + 1.9f, receiverY));
+    // A receiver outside the circle is clamped onto it (30 yd out -> the circle's 20 yd walk-back reach).
+    float clampX = 0.0f, clampY = 0.0f;
+    WalkoutMeetBackPoint(true, tank.x + 30.0f, tank.y, tank, pullerX, pullerY, clampX, clampY);
+    CHECK(Near(clampX, tank.x + 20.0f) && Near(clampY, tank.y));
+    // Flag off: both functions are the old ones, for three points.
+    const std::pair<float, float> points[] = {{pullerX, pullerY}, {tank.x, tank.y}, {-11820.0f, -1640.0f}};
+    for (const std::pair<float, float>& p : points)
+    {
+        float wantX = 0.0f, wantY = 0.0f, gotX = 0.0f, gotY = 0.0f;
+        WalkoutBackPoint(tank, p.first, p.second, wantX, wantY);
+        WalkoutMeetBackPoint(false, receiverX, receiverY, tank, p.first, p.second, gotX, gotY);
+        CHECK(Near(gotX, wantX) && Near(gotY, wantY));
+        CHECK(WalkoutMeetArrived(false, 0.0f, 0.0f, tank, p.first, p.second) ==
+              WalkoutBackArrived(tank, p.first, p.second));
+    }
+
+    // The receiver pick: the third tank first, then the second off-tank, never the main tank.
+    const auto usable = []
+    {
+        MeetCandidate c;
+        c.alive = true;
+        c.inside = true;
+        return c;
+    };
+    std::vector<MeetCandidate> tanks;
+    tanks = {usable(), usable(), usable()};
+    CHECK(PickMeetReceiver(tanks) == 2);
+    MeetCandidate dead = usable();
+    dead.alive = false;
+    tanks = {usable(), usable(), dead};
+    CHECK(PickMeetReceiver(tanks) == 1);
+    MeetCandidate busy = usable();
+    busy.holdsSon = true;
+    MeetCandidate victim = usable();
+    victim.bossVictim = true;
+    tanks = {usable(), busy, victim};
+    CHECK(PickMeetReceiver(tanks) == -1);
+    tanks = {usable(), dead, dead};
+    CHECK(PickMeetReceiver(tanks) == -1);
+    tanks = {usable(), usable()};
+    CHECK(PickMeetReceiver(tanks) == 1);
+    tanks = {usable()};
+    CHECK(PickMeetReceiver(tanks) == -1);
+    tanks.clear();
+    CHECK(PickMeetReceiver(tanks) == -1);
+
+    // Each refusal word alone, and the first failing test's word when several fail.
+    CHECK(MeetRefusalWhy(usable()) == nullptr);
+    MeetCandidate c = usable();
+    c.charmed = true;
+    CHECK(std::string(MeetRefusalWhy(c)) == "charmed");
+    c = usable();
+    c.bossVictim = true;
+    CHECK(std::string(MeetRefusalWhy(c)) == "victim");
+    c = usable();
+    c.holdsSon = true;
+    CHECK(std::string(MeetRefusalWhy(c)) == "busy");
+    c = usable();
+    c.inside = false;
+    CHECK(std::string(MeetRefusalWhy(c)) == "outside");
+    c = usable();
+    c.alive = false;
+    c.inside = false;
+    CHECK(std::string(MeetRefusalWhy(c)) == "dead");
+    c = usable();
+    c.bossVictim = true;
+    c.holdsSon = true;
+    CHECK(std::string(MeetRefusalWhy(c)) == "victim");
+
+    tanks = {usable(), dead, busy};
+    CHECK(MeetRefusalCounts(tanks) == "dead:1|busy:1");
+    tanks = {usable()};
+    CHECK(MeetRefusalCounts(tanks) == "none");
+
+    // The receiver takes the Son within 8 yd or when it is already on it; the meet is over at 20 s.
+    CHECK(SeekMeetTakeDue(8.0f, false));
+    CHECK(!SeekMeetTakeDue(8.01f, false));
+    CHECK(SeekMeetTakeDue(30.0f, true));
+    CHECK(!SeekMeetOpen(0, 0, 0));
+    CHECK(SeekMeetOpen(7, 1000, 20999));
+    CHECK(!SeekMeetOpen(7, 1000, 21000));
+
+    // The meet outlives the task's back, and only WalkoutMeetClear drops it.
+    SeekWalkoutState s;
+    s.puller = 11;
+    s.son = 22;
+    s.startMs = 100;
+    s.shot = true;
+    s.meetReceiver = 33;
+    s.meetSon = 22;
+    s.meetMs = 500;
+    s.meetPuller = 11;
+    WalkoutFinish(s, WalkoutEnd::Back, 600);
+    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetPuller == 11);
+    WalkoutReturnDone(s);
+    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetPuller == 11);
+    WalkoutMeetClear(s);
+    CHECK(s.meetReceiver == 0 && s.meetSon == 0 && s.meetMs == 0 && s.meetPuller == 0);
+}
+
+// Every reading bot holds its own copy of the meet; only the caller whose copy still matches the shared meet clears it
+// and logs the terminal row. Two readers on the same snapshot: exactly one close returns true.
+static void TestMeetCloseIsWonByOneReader()
+{
+    SeekWalkoutState shared;
+    shared.meetReceiver = 33;
+    shared.meetSon = 22;
+    shared.meetMs = 500;
+    shared.meetPuller = 11;
+    const SeekWalkoutState readerA = shared; // both readers copied the meet before either closed it
+    const SeekWalkoutState readerB = shared;
+    int wins = 0;
+    wins += WalkoutMeetCloseIf(shared, readerA.meetReceiver, readerA.meetSon, readerA.meetMs) ? 1 : 0;
+    wins += WalkoutMeetCloseIf(shared, readerB.meetReceiver, readerB.meetSon, readerB.meetMs) ? 1 : 0;
+    CHECK(wins == 1);
+    CHECK(shared.meetReceiver == 0 && shared.meetSon == 0 && shared.meetMs == 0 && shared.meetPuller == 0);
+    // A stale copy never closes a later meet: another receiver, another Son or another shot time.
+    shared.meetReceiver = 34;
+    shared.meetSon = 23;
+    shared.meetMs = 900;
+    CHECK(!WalkoutMeetCloseIf(shared, 33, 22, 500));
+    CHECK(!WalkoutMeetCloseIf(shared, 34, 22, 900)); // same receiver and time, another Son
+    CHECK(!WalkoutMeetCloseIf(shared, 34, 23, 500)); // same receiver and Son, another shot time
+    CHECK(!WalkoutMeetCloseIf(shared, 0, 23, 900));  // no receiver named
+    CHECK(shared.meetReceiver == 34);
+    CHECK(WalkoutMeetCloseIf(shared, 34, 23, 900));
+}
+
+// The receiver waits only while the Son's victim is the walk-out puller, the returner or nobody; a Son on anyone else
+// (a DPS or a healer peeled it) ends the wait and the meet closes as `peeled`.
+static void TestMeetReceiverWaitsOnlyForTheWalker()
+{
+    const std::uint64_t puller = 11, returner = 12, dps = 77, healer = 88;
+    CHECK(MeetReceiverShouldWait(puller, puller, 0));    // the puller has it: wait
+    CHECK(MeetReceiverShouldWait(returner, 0, returner)); // the returner has it: wait
+    CHECK(MeetReceiverShouldWait(0, puller, returner));   // nobody has it yet: wait
+    CHECK(MeetReceiverShouldWait(0, 0, 0));
+    CHECK(!MeetReceiverShouldWait(dps, puller, 0));       // another DPS peeled it: no wait
+    CHECK(!MeetReceiverShouldWait(healer, puller, returner));
+    CHECK(!MeetReceiverShouldWait(dps, 0, 0));            // no walker named: a victim is nobody's walker
+}
+
+// The receiver is revalidated every update: charmed, Hakkar's victim, or already holding another Son ends the meet.
+static void TestMeetReceiverLostWhy()
+{
+    CHECK(MeetReceiverLostWhy(false, false, false) == nullptr);
+    CHECK(std::string(MeetReceiverLostWhy(true, false, false)) == "receiver_charmed");
+    CHECK(std::string(MeetReceiverLostWhy(false, true, false)) == "receiver_victim");
+    CHECK(std::string(MeetReceiverLostWhy(false, false, true)) == "receiver_busy");
+    // The first failing test wins: charmed, then victim, then busy.
+    CHECK(std::string(MeetReceiverLostWhy(true, true, true)) == "receiver_charmed");
+    CHECK(std::string(MeetReceiverLostWhy(false, true, true)) == "receiver_victim");
+}
+
 static void TestShotSpellPerClass()
 {
     // Hunter: Auto Shot 75; mage, warlock, priest: the wand's Shoot 5019; druid: Wrath 5176; shaman: Lightning Bolt
@@ -1089,6 +1269,10 @@ int main()
     TestExemptOnlyWhileActive();
     TestEndsAndLimits();
     TestShotAndBackPoints();
+    TestPulledSonMeetsReceiver();
+    TestMeetReceiverWaitsOnlyForTheWalker();
+    TestMeetReceiverLostWhy();
+    TestMeetCloseIsWonByOneReader();
     TestShotSpellPerClass();
     TestPullerUsable();
     TestCastFailAbortUnspends();

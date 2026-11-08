@@ -404,6 +404,20 @@ namespace ai
         return !isBossVictim;
     }
 
+    // Why a take this tick did or did not taunt: `chase_refused` (the Son stands outside the anchor and this class
+    // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
+    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes.
+    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt)
+    {
+        if (chaseRefused && !canTaunt)
+            return "chase_refused";
+        if (!hasTaunt)
+            return "no_taunt";
+        if (canTaunt)
+            return "taunt";
+        return "attack";
+    }
+
     // Who pulls an unengaged Son this read: exactly one actor. The third off-tank while three tanks live and it is not
     // the boss's victim (SeekTankTakeAllowed stands its whole task down then); otherwise the ranged fallback (two tanks,
     // the third off-tank the victim, or the anchored shot that leaves the tanks no Son to walk to).
