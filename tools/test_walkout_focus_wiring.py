@@ -107,12 +107,12 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertIn('"seek pull: walk-out preempted action=%s"', fn)
         read = body(ACTIONS, "bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& in,")
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", read)
-        self.assertIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", read)
-        self.assertIn("shot = it->second.state.shot;", read)
+        self.assertIn("WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());", read)
+        self.assertIn("shot = record->state.shot;", read)
         self.assertIn("in.recordedPuller = true;", read)
         self.assertIn("in.sinceStartMs = nowMs - startMs;", read)
-        self.assertIn("if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(it->second.preemptLogStartMs, startMs))", read)
-        self.assertIn("it->second.preemptLogStartMs = startMs;", read)
+        self.assertIn("if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(record->preemptLogStartMs, startMs))", read)
+        self.assertIn("record->preemptLogStartMs = startMs;", read)
 
     def test_no_lock_off_the_seek_map_or_without_a_running_task(self):
         fn = body(ACTIONS, "float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)")
@@ -150,7 +150,9 @@ class WalkoutHoldCombatWiring(unittest.TestCase):
 
     def test_combat_end_reads_the_live_puller_after_the_pull_check(self):
         fn = body(TRIGGERS, "bool CombatEndTrigger::IsActive()")
-        hold = fn.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat && ai::IsLiveWalkoutPuller(bot))\n"
+        hold = fn.index("if (ai::WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,\n"
+                        "                                    sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus) &&\n"
+                        "            ai::IsLiveWalkoutPuller(bot))\n"
                         "            return false;")
         # After the pull check, before every other veto and before the stale-order clear (which would AttackStop).
         self.assertLess(fn.index("strategy->HasTarget()"), hold)
@@ -160,28 +162,32 @@ class WalkoutHoldCombatWiring(unittest.TestCase):
         self.assertIn('#include "playerbot/strategy/actions/BossTacticsActions.h"', TRIGGERS)
         self.assertIn("bool IsLiveWalkoutPuller(Player* bot);", ACTIONS_H)
 
-    def test_the_live_puller_read_is_the_focus_read_and_the_pure_rule(self):
+    def test_the_live_puller_read_is_the_record_match_and_the_pure_rule(self):
         fn = body(ACTIONS, "bool ai::IsLiveWalkoutPuller(Player* bot)")
         fast = fn.index("g_walkoutsRunning.load(std::memory_order_relaxed) == 0")
         seek = fn.index("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())")
-        read = fn.index("SeekWalkoutFocusRead(bot, WorldTimer::getMSTime(), in, std::string(), preemptRow);")
+        read = fn.index("WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());")
         self.assertLess(fast, seek)
         self.assertLess(seek, read)
-        self.assertIn("in.alive = sServerFacade.IsAlive(bot);", fn)
-        self.assertIn("in.charmed = !bot->GetCharmerGuid().IsEmpty();", fn)
-        self.assertIn("return WalkoutHoldsCombat(true, in.recordedPuller, in.alive, in.charmed, in.sinceStartMs, in.shot);",
-                      fn)
-        # flagOn is left false so the read never claims the preempted row.
-        self.assertNotIn("in.flagOn = true;", fn)
-        # Two raids in different instances: the record is the bot's own instance's, and it must name this bot.
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", fn)
+        self.assertIn("bossGuid = record->bossGuid;", fn)
+        # The boss: alive, in combat, not evading (review L2).
+        self.assertIn("bot->GetMap()->GetCreature(ObjectGuid(bossGuid))", fn)
+        self.assertIn("bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),\n"
+                      "                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());", fn)
+        self.assertIn("return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,\n"
+                      "                              shot, bossFighting);", fn)
+        # The boss lookup runs after the lock is released.
+        self.assertLess(fn.index("bossGuid = record->bossGuid;"), fn.index("GetCreature(ObjectGuid(bossGuid))"))
+        # The focus read shares the same record match (another instance's record never matches; behaviour-tested in
+        # TestWalkoutPullerRecordPerInstance).
         focus = body(ACTIONS, "bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& in,")
-        self.assertIn("g_walkouts.find(bot->GetInstanceId())", focus)
-        self.assertIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", focus)
-        self.assertIn("!WalkoutActive(it->second.state)", focus)
+        self.assertIn("WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());", focus)
 
     def test_the_pick_reads_the_combat_engine_under_the_flag(self):
         fn = body(ACTIONS, "Player* FindSeekWalkoutPuller(")
-        gate = fn.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat)\n"
+        gate = fn.index("if (WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,\n"
+                        "                                sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus))\n"
                         "            c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),")
         self.assertIn('memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));', fn)
         self.assertNotIn("BOT_STATE_NON_COMBAT", fn)
@@ -302,7 +308,7 @@ class WalkoutAllNewFlagsOff(unittest.TestCase):
     def test_every_live_puller_read_sits_behind_its_flag(self):
         trig = body(TRIGGERS, "bool CombatEndTrigger::IsActive()")
         self.assertEqual(trig.count("ai::IsLiveWalkoutPuller(bot)"), 1)
-        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat && ai::IsLiveWalkoutPuller(bot)", trig)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus) &&\n            ai::IsLiveWalkoutPuller(bot)", trig)
         face = body(PLAYERBOT_AI, "void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)")
         self.assertEqual(face.count("ai::IsLiveWalkoutPuller(bot)"), 1)
         self.assertIn("faceCastOn && ai::IsLiveWalkoutPuller(bot)", face)
@@ -315,7 +321,10 @@ class WalkoutAllNewFlagsOff(unittest.TestCase):
         self.assertEqual(walk.count("NoteSeekWalkoutInShot("), 1)
         self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))\n"
                       "                NoteSeekWalkoutInShot(", walk)
-        self.assertEqual(walk.count("ai->ClearLastCastCheckFail();"), 1)
+        # Two clears, both under the flag: before the final cast check (review L6) and before CastSpell.
+        self.assertEqual(walk.count("ai->ClearLastCastCheckFail();"), 2)
+        self.assertIn("if (standLog)\n                    ai->ClearLastCastCheckFail();\n"
+                      "                if (!*spell || !ai->CanCastSpell(spell, task.source))", walk)
         self.assertEqual(walk.count("ClaimSeekWalkoutCastRefusedRow(bot)"), 1)
         pick = body(ACTIONS, "Player* FindSeekWalkoutPuller(")
         self.assertEqual(pick.count("c.combatEngine ="), 1)

@@ -4,6 +4,7 @@
 #include "playerbot/policy/combat/CombatIdlePolicy.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/SeekWalkoutPolicy.h"
 #include "BotStateTriggers.h"
 
 using namespace ai;
@@ -87,7 +88,10 @@ bool CombatEndTrigger::IsActive()
         // The Hakkar walk-out puller stays in combat while its task runs unshot (DungeonRunSeekWalkoutHoldCombat):
         // the walk-out is a combat-engine action, and on the non-combat engine `follow`, food or drink walked the
         // puller off its stand (walk 56). The hold ends with the task: the shot, the 25 s, an abort, death or charm.
-        if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat && ai::IsLiveWalkoutPuller(bot))
+        // It needs DungeonRunSeekWalkoutFocus, which keeps the held puller's other combat actions from running.
+        if (ai::WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,
+                                    sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus) &&
+            ai::IsLiveWalkoutPuller(bot))
             return false;
 
         // A held order vetoes combat end only while it is a real fight. A

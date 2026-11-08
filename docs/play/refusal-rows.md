@@ -76,8 +76,9 @@ navmesh path is the costliest question the walk-out asks; the members the loop c
 ## The walk-out stand row's words
 
 `DungeonRunSeekWalkoutStandLog` (diagnostic) writes the stand row once a second while the walk-out puller walks out
-unshot. `state=` is the puller's AI engine (`c` combat, `n` non-combat); the walk-out runs only on the combat engine, so a
-gap in the rows with no `branch=` at all is a tick that did not run. `tick_ms=` is the time since the walk-out's previous
+unshot. `state=` is the puller's AI engine (`c` combat, `n` non-combat), but `state=n` cannot appear: the row is written
+only from the walk-out action, which runs only on the combat engine. A missing row (a gap with no `branch=` at all) is the
+signal that the tick did not run. `tick_ms=` is the time since the walk-out's previous
 tick (0 on its first).
 
 | `branch=` | Meaning |

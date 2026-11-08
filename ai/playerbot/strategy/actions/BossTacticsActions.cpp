@@ -2027,7 +2027,8 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         // DungeonRunSeekWalkoutHoldCombat: the walk-out is a combat-engine action, so a bot on the non-combat engine (or
         // one eating or drinking) is never sent (walk 56: three of five shot=0 timeouts were picked mid-meal). The bot's
         // own engine is read, not its pet's combat. Off, the field stays true.
-        if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat)
+        if (WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,
+                                sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus))
             c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),
                 memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));
         c.inside = rules.platformPick
@@ -2759,17 +2760,18 @@ bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& i
     if (g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
         return false;
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
-    auto const it = g_walkouts.find(bot->GetInstanceId());
-    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
-        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+    // The bot's own instance's record naming it as the running task's puller (another instance's never matches).
+    WalkoutRecord* const record =
+        WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+    if (!record)
         return false;
-    shot = it->second.state.shot;
-    startMs = it->second.state.startMs;
+    shot = record->state.shot;
+    startMs = record->state.startMs;
     in.recordedPuller = true;
     in.sinceStartMs = nowMs - startMs;
-    if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(it->second.preemptLogStartMs, startMs))
+    if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(record->preemptLogStartMs, startMs))
     {
-        it->second.preemptLogStartMs = startMs;
+        record->preemptLogStartMs = startMs;
         preemptRow = true;
     }
     return true;
@@ -4063,14 +4065,28 @@ bool ai::IsLiveWalkoutPuller(Player* bot)
         return false;
     if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
         return false;
-    // The focus's own record read (the instance's record, this bot its puller); flagOn stays false, so the read claims
-    // no `walk-out preempted` row.
-    WalkoutFocusInput in;
-    in.alive = sServerFacade.IsAlive(bot);
-    in.charmed = !bot->GetCharmerGuid().IsEmpty();
-    bool preemptRow = false;
-    SeekWalkoutFocusRead(bot, WorldTimer::getMSTime(), in, std::string(), preemptRow);
-    return WalkoutHoldsCombat(true, in.recordedPuller, in.alive, in.charmed, in.sinceStartMs, in.shot);
+    // The focus's record read (WalkoutPullerRecordIn: the bot's own instance, a running task, this bot its puller),
+    // plus the record's boss.
+    bool shot = false;
+    std::uint32_t sinceStartMs = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        const WalkoutRecord* const record =
+            WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+        if (!record)
+            return false;
+        shot = record->state.shot;
+        sinceStartMs = WorldTimer::getMSTime() - record->state.startMs;
+        bossGuid = record->bossGuid;
+    }
+    // The fight still runs (review L2): the boss read the way the record's sweep reads it, plus its evade, so a wipe,
+    // an evade or a kill ends the hold at once.
+    Creature* const boss = bossGuid != 0 && bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),
+                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());
+    return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,
+                              shot, bossFighting);
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
@@ -8062,6 +8078,9 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 // DungeonRunSeekWalkoutStandLog (diagnostic): the attempted cast's id and the refusal's reason.
                 const bool standLog = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog;
                 const std::uint32_t spellId = standLog && *spell ? AI_VALUE2(uint32, "spell id", spell) : 0;
+                // The Arcane Shot probe above may have noted its own refusal: the check_<n> below names this check's.
+                if (standLog)
+                    ai->ClearLastCastCheckFail();
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
                     // Logged before the abort, which clears the record the row is keyed by.

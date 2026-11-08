@@ -198,10 +198,27 @@ namespace ai
     // or drink walked them off the stand). `combat end` does not fire while this holds: the flag on, the bot the live
     // puller (WalkoutFocusPullerLive: recorded, alive, not charmed, inside the 25 s) and the shot not landed. The walk
     // back is not held, and the hold ends with the task however it ends (shot, timeout, abort, death, charm).
+    //
+    // `bossFighting` (review L2): the record's boss is alive, in combat and not evading (WalkoutBossFighting), so a wipe,
+    // an evade or a kill ends the hold at once instead of at the 25 s.
     inline bool WalkoutHoldsCombat(bool flagOn, bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs,
-                                   bool shot)
+                                   bool shot, bool bossFighting = true)
     {
-        return flagOn && WalkoutFocusPullerLive(recordedPuller, alive, charmed, sinceStartMs) && !shot;
+        return flagOn && bossFighting && WalkoutFocusPullerLive(recordedPuller, alive, charmed, sinceStartMs) && !shot;
+    }
+
+    // The hold's flag (review L1): HoldCombat needs the walk-out focus, which keeps the held puller's other combat
+    // actions (a Hakkar target pick, the rotation) from running; without it nothing is held.
+    inline bool WalkoutHoldCombatOn(bool holdCombatFlag, bool focusFlag)
+    {
+        return holdCombatFlag && focusFlag;
+    }
+
+    // The walk-out's boss still fights: found, alive, in combat and not evading (the record's sweep drops a boss that is
+    // dead or out of combat; an evading one is added here).
+    inline bool WalkoutBossFighting(bool found, bool alive, bool inCombat, bool evading)
+    {
+        return found && alive && inCombat && !evading;
     }
 
     // Whether a pick candidate's AI can run the walk-out at all (DungeonRunSeekWalkoutHoldCombat): the walk-out is a
@@ -974,6 +991,7 @@ namespace ai
         // task, and the previous read's time when that read was in shot position (0: it was not).
         std::uint32_t inShotMs = 0;
         std::uint32_t lastInShotMs = 0;
+        std::uint32_t firstInShotMs = 0; // the task's first in-shot read (the backstop's start; 0: none yet)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -1024,6 +1042,19 @@ namespace ai
     inline bool WalkoutActive(const SeekWalkoutState& s)
     {
         return s.puller != 0;
+    }
+
+    // The running task's record for this bot in its own instance: the instance's record, a task running, this bot its
+    // puller; nullptr otherwise (another instance's record never matches). `Records` maps an instance id to a record
+    // with a `state` (SeekWalkoutState).
+    template <typename Records>
+    auto WalkoutPullerRecordIn(Records& records, std::uint32_t instanceId, std::uint64_t bot)
+        -> decltype(&records.begin()->second)
+    {
+        auto const it = records.find(instanceId);
+        if (it == records.end() || !WalkoutActive(it->second.state) || it->second.state.puller != bot)
+            return nullptr;
+        return &it->second;
     }
 
     inline bool WalkoutReturning(const SeekWalkoutState& s, std::uint32_t nowMs)
@@ -1105,6 +1136,7 @@ namespace ai
         s.pullCastMs = 0;
         s.inShotMs = 0;
         s.lastInShotMs = 0;
+        s.firstInShotMs = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
@@ -1224,6 +1256,7 @@ namespace ai
             s.atStandSinceMs = 0;
             s.inShotMs = 0;
             s.lastInShotMs = 0;
+            s.firstInShotMs = 0;
         }
     }
 
@@ -1252,28 +1285,39 @@ namespace ai
         return inRange && los && onStandFloor && !moving;
     }
 
-    // One read's step is capped, so a stalled tick (or a read after a gap) never counts more than this.
-    constexpr std::uint32_t kSeekWalkoutInShotStepMs = 250;
+    // One gap between two in-shot reads counts in full up to this (the GCD's 1.5 s fail-with-delay plus the react
+    // delay); the cap only guards against a clock jump (review M1: a 250 ms cap turned slow ticks into 25 s timeouts).
+    constexpr std::uint32_t kSeekWalkoutInShotStepMs = 2000;
+    // The wall-time backstop: this long after the puller first stood in shot position this task the no-shot abort is
+    // due whatever the count (a walk-out tick that stops running counts nothing).
+    constexpr std::uint32_t kSeekWalkoutInShotBackstopMs = 12000;
 
-    // One read of the puller's position: in shot position, the time since the previous read counts when that read was
-    // in shot position too (at most kSeekWalkoutInShotStepMs); out of it, nothing counts and the next in-shot read
-    // starts a new stretch. Only a running, unshot task counts.
+    // One read of the puller's position: in shot position, the gap since the previous read counts when that read was in
+    // shot position too (at most kSeekWalkoutInShotStepMs), and the first in-shot read of the task starts the backstop;
+    // out of it, nothing counts and the next in-shot read starts a new stretch. Only a running, unshot task counts.
     inline void WalkoutNoteInShot(SeekWalkoutState& s, bool inShot, std::uint32_t nowMs)
     {
         if (!WalkoutActive(s) || s.shot)
             return;
+        std::uint32_t const stamp = nowMs == 0 ? 1 : nowMs;
         if (inShot && s.lastInShotMs != 0)
             s.inShotMs += std::min<std::uint32_t>(nowMs - s.lastInShotMs, kSeekWalkoutInShotStepMs);
-        s.lastInShotMs = inShot ? (nowMs == 0 ? 1 : nowMs) : 0;
+        if (inShot && s.firstInShotMs == 0)
+            s.firstInShotMs = stamp;
+        s.lastInShotMs = inShot ? stamp : 0;
     }
 
-    // Whether the 6 s no-shot stall is due: with the in-shot clock, kSeekWalkoutShotStallMs of time in shot position;
-    // without it, WalkoutShotStalled's wall time since the arrival at the stand.
+    // Whether the 6 s no-shot stall is due: with the in-shot clock, kSeekWalkoutShotStallMs of time in shot position, or
+    // kSeekWalkoutInShotBackstopMs since the task's first in-shot read; without it, WalkoutShotStalled's wall time since
+    // the arrival at the stand.
     inline bool WalkoutStallDue(const SeekWalkoutState& s, std::uint32_t nowMs, bool inShotClock)
     {
         if (!inShotClock)
             return WalkoutShotStalled(s, nowMs);
-        return WalkoutActive(s) && !s.shot && s.inShotMs >= kSeekWalkoutShotStallMs;
+        if (!WalkoutActive(s) || s.shot)
+            return false;
+        return s.inShotMs >= kSeekWalkoutShotStallMs ||
+            (s.firstInShotMs != 0 && nowMs - s.firstInShotMs >= kSeekWalkoutInShotBackstopMs);
     }
 
     enum class WalkoutEnd : std::uint8_t

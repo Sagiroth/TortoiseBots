@@ -1621,14 +1621,14 @@ static void TestWalkoutStallCountsOnlyInShot()
         WalkoutNoteInShot(w, true, t);
     CHECK(w.inShotMs == 6000);
     CHECK(WalkoutStallDue(w, 12000, true));
-    // Alternating 1 s reads: each gap is capped at 250 ms, and a read after an out-of-shot read counts nothing.
+    // Alternating 1 s reads: a read after an out-of-shot read counts nothing.
     SeekWalkoutState a;
     WalkoutStart(a, 7, 100, 0, 1);
     for (int i = 0; i < 12; ++i)
         WalkoutNoteInShot(a, i % 2 == 1, 1000u * static_cast<std::uint32_t>(i + 1));
     CHECK(a.inShotMs == 0);
     CHECK(!WalkoutStallDue(a, 13000, true));
-    // A stalled tick counts at most the cap.
+    // A stalled tick counts at most the cap (2 s).
     SeekWalkoutState g;
     WalkoutStart(g, 7, 100, 0, 1);
     WalkoutNoteInShot(g, true, 1000);
@@ -1728,6 +1728,113 @@ static void TestWalkoutFlagsOffKeepToday()
     CHECK(WalkoutEligible(c)); // combatEngine stays true unless the glue fills it under the flag
 }
 
+
+static void TestWalkoutStallFullGapsAndBackstop()
+{
+    // Review M1: the full gap between two in-shot reads counts (capped at 2 s), so slow ticks still abort at ~6 s of
+    // in-shot time, well inside the 25 s task.
+    for (std::uint32_t step : {500u, 1000u, 1500u})
+    {
+        SeekWalkoutState s;
+        WalkoutStart(s, 7, 100, 0, 1);
+        const std::uint32_t t0 = 1000;
+        std::uint32_t t = t0;
+        for (; t < t0 + kSeekWalkoutShotStallMs; t += step)
+        {
+            WalkoutNoteInShot(s, true, t);
+            CHECK(!WalkoutStallDue(s, t, true));
+        }
+        WalkoutNoteInShot(s, true, t); // t == t0 + 6000 for every step above
+        CHECK(t == t0 + kSeekWalkoutShotStallMs);
+        CHECK(s.inShotMs == kSeekWalkoutShotStallMs);
+        CHECK(WalkoutStallDue(s, t, true));
+    }
+    // A gap after a clock jump counts at most the cap.
+    SeekWalkoutState j;
+    WalkoutStart(j, 7, 100, 0, 1);
+    WalkoutNoteInShot(j, true, 1000);
+    WalkoutNoteInShot(j, true, 9000);
+    CHECK(j.inShotMs == kSeekWalkoutInShotStepMs);
+    // A silent gap: in shot at 1.0 and 1.1 s, then no reads for 8 s (the walk-out tick stopped running). The backstop
+    // aborts 12 s after the first in-shot read whatever the count.
+    SeekWalkoutState g;
+    WalkoutStart(g, 7, 100, 0, 1);
+    WalkoutNoteInShot(g, true, 1000);
+    WalkoutNoteInShot(g, true, 1100);
+    CHECK(g.firstInShotMs == 1000);
+    CHECK(!WalkoutStallDue(g, 9100, true));
+    WalkoutNoteInShot(g, true, 9100); // the read after the 8 s silence adds only the cap
+    CHECK(g.inShotMs == 100 + kSeekWalkoutInShotStepMs);
+    CHECK(!WalkoutStallDue(g, 1000 + kSeekWalkoutInShotBackstopMs - 1, true));
+    CHECK(WalkoutStallDue(g, 1000 + kSeekWalkoutInShotBackstopMs, true));
+    // The backstop needs an in-shot read this task: a puller never in shot position never stalls on it.
+    SeekWalkoutState n;
+    WalkoutStart(n, 7, 100, 0, 1);
+    WalkoutNoteInShot(n, false, 1000);
+    CHECK(n.firstInShotMs == 0);
+    CHECK(!WalkoutStallDue(n, 20000, true));
+    // The shot and a new task clear the backstop.
+    WalkoutNoteShot(g);
+    CHECK(g.firstInShotMs == 0 && !WalkoutStallDue(g, 20000, true));
+    WalkoutFinish(g, WalkoutEnd::Back, 21000);
+    WalkoutStart(g, 8, 101, 30000, 2);
+    CHECK(g.firstInShotMs == 0 && g.inShotMs == 0);
+}
+
+static void TestWalkoutHoldNeedsFocusAndAFight()
+{
+    // Review L1: HoldCombat holds only with the walk-out focus on.
+    CHECK(!WalkoutHoldCombatOn(true, false)); // Focus off, HoldCombat on: no hold
+    CHECK(WalkoutHoldCombatOn(true, true));
+    CHECK(!WalkoutHoldCombatOn(false, true));
+    CHECK(!WalkoutHoldsCombat(WalkoutHoldCombatOn(true, false), true, true, false, 1000, false));
+    // Review L2: the boss dead, evading, out of combat or gone ends the hold.
+    CHECK(WalkoutBossFighting(true, true, true, false));
+    CHECK(!WalkoutBossFighting(true, false, true, false)); // dead
+    CHECK(!WalkoutBossFighting(true, true, true, true));   // evading
+    CHECK(!WalkoutBossFighting(true, true, false, false)); // out of combat (a wipe)
+    CHECK(!WalkoutBossFighting(false, true, true, false)); // not found
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, false, true, false)));
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, true, true, true)));
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, true, true, false)));
+}
+
+namespace
+{
+    struct TestWalkoutRecord
+    {
+        SeekWalkoutState state;
+    };
+}
+
+static void TestWalkoutPullerRecordPerInstance()
+{
+    // Two raids in two instances: each record names only its own puller, looked up by the bot's own instance.
+    std::unordered_map<std::uint32_t, TestWalkoutRecord> records;
+    WalkoutStart(records[1].state, 7, 100, 1000, 1);
+    WalkoutStart(records[2].state, 9, 200, 1000, 1);
+    CHECK(WalkoutPullerRecordIn(records, 1, 7) == &records[1]);
+    CHECK(WalkoutPullerRecordIn(records, 2, 9) == &records[2]);
+    CHECK(WalkoutPullerRecordIn(records, 2, 7) == nullptr); // instance 2's record never holds instance 1's puller
+    CHECK(WalkoutPullerRecordIn(records, 1, 9) == nullptr);
+    CHECK(WalkoutPullerRecordIn(records, 3, 7) == nullptr); // no record at all
+    WalkoutFinish(records[1].state, WalkoutEnd::Timeout, 26000);
+    CHECK(WalkoutPullerRecordIn(records, 1, 7) == nullptr); // the task ended (its walk back holds nothing)
+    CHECK(WalkoutPullerRecordIn(records, 2, 9) == &records[2]);
+    const auto& constRecords = records;
+    CHECK(WalkoutPullerRecordIn(constRecords, 2, 9) == &records[2]);
+}
+
+static void TestWalkoutFaceCastWithoutRules()
+{
+    // FaceCast on with no seek_pull row (rulesOn false): stop, forced turn and cast in the same tick (documented).
+    const WalkoutFaceStep step = WalkoutFaceThenCast(true, true, false, false);
+    CHECK(step.stop && step.face && step.force && !step.returnAfterFace);
+    // Off, without the rules row nothing turns, as before.
+    const WalkoutFaceStep off = WalkoutFaceThenCast(false, true, false, false);
+    CHECK(!off.stop && !off.face && !off.force && !off.returnAfterFace);
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1779,6 +1886,10 @@ int main()
     TestWalkoutStandRowDue();
     TestWalkoutStandRowText();
     TestWalkoutFlagsOffKeepToday();
+    TestWalkoutStallFullGapsAndBackstop();
+    TestWalkoutHoldNeedsFocusAndAFight();
+    TestWalkoutPullerRecordPerInstance();
+    TestWalkoutFaceCastWithoutRules();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

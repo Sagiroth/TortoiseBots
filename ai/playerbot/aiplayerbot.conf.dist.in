@@ -1083,13 +1083,15 @@ AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 # The walk-out keeps its puller in combat (Hakkar's seek pull, recommended on): while the live walk-out puller's shot
 # has not landed, "combat end" does not fire for it, so the non-combat engine's follow, food or drink cannot walk it off
 # its stand; the walk back is not held. The pick also skips a bot whose AI is off the combat engine, or that is eating
-# or drinking. Off keeps the old behaviour.
+# or drinking. Needs AiPlayerbot.DungeonRunSeekWalkoutFocus = 1 (without it nothing is held); the hold also ends when
+# Hakkar dies, leaves combat or evades. Off keeps the old behaviour.
 AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 
 # The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son
 # with an instant turn and casts in the same tick, and the bot's own per-update facing no longer turns the live, unshot
 # puller back to Hakkar; the 6 s no-shot clock counts only the time in shot position (range, sight, the stand's floor,
-# not moving). Off keeps the turn on one tick and the cast on the next (with DungeonRunSeekWalkoutFocus) and the
+# not moving; each gap between in-shot reads in full, at most 2 s), with a 12 s wall-time backstop from the first
+# in-shot read. Off keeps the turn on one tick and the cast on the next (with DungeonRunSeekWalkoutFocus) and the
 # wall-time clock.
 AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0
 

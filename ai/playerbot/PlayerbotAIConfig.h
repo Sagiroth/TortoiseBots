@@ -669,7 +669,8 @@ public:
     // and it turns and casts in one tick as before (default off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
     // The walk-out keeps its puller in combat (Hakkar's seek pull): on, `combat end` does not fire for the live,
-    // unshot walk-out puller, and the pick skips a bot whose AI is off the combat engine or that eats or drinks; off,
+    // unshot walk-out puller while Hakkar fights, and the pick skips a bot whose AI is off the combat engine or that eats
+    // or drinks; it needs dungeonRunSeekWalkoutFocus (without it nothing is held); off,
     // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
     bool dungeonRunSeekWalkoutHoldCombat = false;
     // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the

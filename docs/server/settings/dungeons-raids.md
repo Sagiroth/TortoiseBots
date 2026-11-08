@@ -80,7 +80,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller's combat actions are held until its shot lands (not below 40 % health; reaction actions still run), it turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
-| [`AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`](#aiplayerbotdungeonrunseekwalkoutholdcombat) | `0` | `1` (recommended): the live, unshot Hakkar walk-out puller stays on the combat engine, and the pick skips a bot off the combat engine or eating or drinking. |
+| [`AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`](#aiplayerbotdungeonrunseekwalkoutholdcombat) | `0` | `1` (recommended, needs `DungeonRunSeekWalkoutFocus`): the live, unshot Hakkar walk-out puller stays on the combat engine while Hakkar fights, and the pick skips a bot off the combat engine or eating or drinking. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFaceCast`](#aiplayerbotdungeonrunseekwalkoutfacecast) | `0` | `1` (recommended): the Hakkar walk-out puller turns to the Son and casts in one tick, its per-update facing no longer turns it back to Hakkar, and the 6 s no-shot clock counts only the time in shot position. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandLog`](#aiplayerbotdungeonrunseekwalkoutstandlog) | `0` | `1` (diagnostic, safe on for test walks): one `seek pull: walk-out stand` row a second while the Hakkar walk-out puller walks out, and a `castrefused` row for every refused pull cast. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
@@ -950,13 +950,14 @@ Whether the Hakkar walk-out puller keeps to its walk-out until its shot lands. R
 
 ### `AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`
 Whether the Hakkar walk-out puller stays in combat until its shot lands. Recommended on.
-**Default:** `0` · **Values:** `0` off (the puller may drop to the non-combat engine mid-task, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+**Default:** `0` · **Values:** `0` off (the puller may drop to the non-combat engine mid-task, as before), `1` on (needs `AiPlayerbot.DungeonRunSeekWalkoutFocus`: without it nothing is held) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
 **Hold combat:** walk 56 lost 5 of its 6 `timeout shot=0` walk-outs to the puller's own AI leaving the combat engine inside the task: the walk-out is a combat-engine action, so on the non-combat engine nothing ran it and `follow`, food or drink walked the puller off its stand until the 25 s ran out. With the key on:
-- `combat end` does not fire while the bot is the live, unshot walk-out puller: recorded as the instance's puller, alive, not charmed, inside the task's 25 s, the shot not landed. The hold ends with the task however it ends (shot, timeout, abort, death, charm); the walk back is not held.
+- It needs `AiPlayerbot.DungeonRunSeekWalkoutFocus` on as well: the focus keeps the held puller's other combat actions (a target pick on Hakkar, its rotation) from running. With the focus off nothing is held and the pick is unchanged.
+- `combat end` does not fire while the bot is the live, unshot walk-out puller: recorded as the instance's puller, alive, not charmed, inside the task's 25 s, the shot not landed, and Hakkar alive, in combat and not evading. The hold ends with the task however it ends (shot, timeout, abort, death, charm) and with the fight (a wipe, an evade or a kill); the walk back is not held.
 - The pick skips a candidate whose AI is not on the combat engine, or that is eating or drinking (`no_combat` in the no-puller row). The bot's own engine is read, never its pet's combat.
 - Only the instance's own record is read, so two raids in different instances never hold each other's bots; with no task running the check costs no lock.
 
@@ -972,7 +973,12 @@ Whether the Hakkar walk-out puller turns to its Son and casts in the same tick. 
 **Face and cast:** walk 56 had 8 of its 11 no-shot aborts stopped in range and sight of the Son but not facing it. The bot's own per-update facing (`PlayerbotAI::UpdateFaceTarget`, every 500 ms) turns a stopped bot in combat to its current target, Hakkar, and it runs before the walk-out, so the walk-out's turn on one tick was undone before its cast on the next. With the key on:
 - At the stand the puller stops, turns to the Son with the instant forced turn (an orientation set plus a heartbeat, not a spline) and casts in the same tick.
 - `UpdateFaceTarget` leaves the live, unshot walk-out puller's facing alone. Every other bot, and the puller once its shot landed (the walk back), is turned as before.
-- The 6 s `no shot` clock (a `seek_pull` row's stall rule) counts only the time the puller is in shot position: the Son in shot range and sight, the puller on the stand's floor (z 46.5 or higher) and not moving. Each read adds the time since the previous in-shot read, at most 250 ms. Walk 56's Sons patrolled out of sight under the ledge while the wall-time clock ran; the 25 s task timeout still bounds the walk-out.
+- The 6 s `no shot` clock (a `seek_pull` row's stall rule) counts only the time the puller is in shot position: the Son in shot range and sight, the puller on the stand's floor (z 46.5 or higher) and not moving. Walk 56's Sons patrolled out of sight under the ledge while the wall-time clock ran.
+  - Each read of the puller's own walk-out tick adds the whole gap since the previous read when both were in shot position, at most 2 s a gap (the cast's 1.5 s retry delay plus the react delay; the cap only guards against a clock jump), so slow ticks still abort at about 6 s of in-shot time.
+  - A wall-time backstop: 12 s after the puller first stood in shot position in this task, the `no shot` abort is due whatever the count, so a walk-out tick that stops running still aborts. The 25 s task timeout bounds the walk-out as before.
+- With the key on, the stop and the forced turn apply to any walk-out, even one without a `seek_pull` row (off, the turn needs the row). Only Hakkar has a walk-out today.
+- After the stop, a spline that has not finished yet may rewrite the orientation on the next unit update; the cast in the same tick runs first, and the pull shots are instant or auto-repeat.
+- The stand's floor (z 46.5) is a Hakkar value (above his 45.8 evade line). It already gates the stand and the pick, and it moves into the row data before a second `seek_pull` boss is added.
 
 </details>
 

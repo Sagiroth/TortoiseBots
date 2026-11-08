@@ -1,9 +1,9 @@
 # Changelog
 
 - New: a diagnostic stand row a second and a castrefused row for Hakkar's walk-out puller, so a missing pull shot shows its branch and refusal reason (`DungeonRunSeekWalkoutStandLog`).
-- Fixed: Hakkar's walk-out no longer aborts as `no shot` while its Son patrols out of sight: the 6 s clock counts only the time in shot position (`DungeonRunSeekWalkoutFaceCast`).
+- Fixed: Hakkar's walk-out no longer aborts as `no shot` while its Son patrols out of sight: the 6 s clock counts only the time in shot position, with a 12 s backstop (`DungeonRunSeekWalkoutFaceCast`).
 - Fixed: Hakkar's walk-out puller turns to its Son and shoots in the same tick, and its own facing no longer swings it back to Hakkar first (`DungeonRunSeekWalkoutFaceCast`).
-- Fixed: Hakkar's walk-out puller no longer drops out of combat mid-task and walks back unshot, and no bot is picked mid-meal or off the combat engine (`DungeonRunSeekWalkoutHoldCombat`).
+- Fixed: Hakkar's walk-out puller no longer drops out of combat mid-task and walks back unshot, and no bot is picked mid-meal or off the combat engine (`DungeonRunSeekWalkoutHoldCombat`, with `DungeonRunSeekWalkoutFocus`).
 - Fixed: a Son of Hakkar on a healer or damage dealer is taunted at once by the nearest free off-tank when the receiving tank cannot reach it, instead of after 3 s (`DungeonRunSeekNearestTake`).
 - Fixed: Hakkar's walk-out puller no longer loses its pull shot to follow or step-out: with `DungeonRunSeekWalkoutFocus` its other combat actions wait until the shot lands (not below 40 % health), it turns to the Son before it casts, and a hunter opens with Arcane Shot.
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
