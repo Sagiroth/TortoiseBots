@@ -685,7 +685,7 @@ public:
     // kill-first row says which check kept every grid hit out of the pick. Off, the pick stays as before (default off).
     bool dungeonRunCarrierScan = false;
     // Shade healer cover (walk 56 F3): a cursed off-tank that does not hold the boss takes a Shade of Jin'do attacking a
-    // healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd ahead of other Shades. Off = as before.
+    // healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it, on its floor, first. Off = as before.
     bool dungeonRunShadeHealerCover = false;
     // Carrier hold: a Delusions carrier standing on its Shade keeps it ("not dps target active" stays quiet for it, so
     // "dps assist" no longer pulls it to Jin'do), and the kill-first trigger checks every second. Off = as before.

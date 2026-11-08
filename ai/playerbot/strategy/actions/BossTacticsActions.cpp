@@ -3952,6 +3952,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
         // The attackers path sets the victim's role itself: a Shade found here is in `seen`, so the grid pass below
         // never reaches it (a Shade eating a healer would rank as one eating a damage dealer).
         c.victimHealer = ShadeOnGroupHealer(bot, unit);
+        c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
         index.emplace(unit->GetObjectGuid().GetRawValue(), candidates.size());
         candidates.push_back(c);
         units.push_back(unit);
@@ -3992,6 +3993,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                 c.distance = bot->GetDistance(unit);
                 c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
                 c.victimHealer = hit.victimHealer;
+                c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
                 index.emplace(hit.guid, candidates.size());
                 candidates.push_back(c);
                 units.push_back(unit);
@@ -4796,44 +4798,27 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
 // The Shade cover row (walk 56 F3, no flag): a Shade of Jin'do on a healer of the group, and a cursed damage dealer or
 // a cursed off-tank that does not hold the boss that is not on it. A Delusions carrier runs the pass (only a carrier sees
 // the Shades) over the whole group, and the row is logged under the member it names, so a dead or charmed carrier gets
-// its row too. One record per (member, Shade) in a bounded map: a miss is logged once it lasts kShadeCoverGraceMs, then
-// at most once per kShadeCoverLogGapMs (ShadeCoverLogDue); a member on the Shade drops its record.
-//   info1 = "reason=<dead|charmed|other_shade|out_of_range|threat_gate|on_boss|other_target|no_target>,role=<dps|offtank>"
+// its row too. One record per (member, Shade) in a bounded map (ShadeCoverLogBook): a miss is logged once it lasts
+// kShadeCoverGraceMs, then at most once per kShadeCoverLogGapMs (ShadeCoverLogDue), a `dead` row once per pair; a member
+// on the Shade drops its record.
+//   info1 = "reason=<dead|charmed|other_shade|out_of_range|threat_gate|guard|on_boss|other_target|no_target>,
+//            role=<dps|offtank>"
 //   info2 = "shade=<entry>:<guid low>,healer=<name>,dist=<yd>,target=<entry>:<guid low>|none"
 std::mutex g_shadeCoverLogMutex;
-std::map<std::pair<uint64, uint64>, ShadeCoverLogRecord> g_shadeCoverLog;
+ShadeCoverLogBook g_shadeCoverLog;
 
-// Note the (member, Shade) state at `nowMs` (`miss`: the member is not on the Shade); true when a miss row is due.
-static bool ShadeCoverMissDue(uint64 member, uint64 shade, bool miss, uint32 nowMs)
+// Note the (member, Shade) state at `nowMs` (`miss`: the member is not on the Shade); true when a row is due.
+static bool ShadeCoverMissDue(uint64 member, uint64 shade, bool miss, bool dead, uint32 nowMs)
 {
     std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
-    auto const key = std::make_pair(member, shade);
-    if (!miss)
-    {
-        g_shadeCoverLog.erase(key);
-        return false;
-    }
-    if (g_shadeCoverLog.size() >= kShadeCoverMaxEntries && g_shadeCoverLog.find(key) == g_shadeCoverLog.end())
-    {
-        for (auto it = g_shadeCoverLog.begin(); it != g_shadeCoverLog.end();)
-        {
-            if (ShadeSeenExpired(it->second.lastSeenMs, nowMs))
-                it = g_shadeCoverLog.erase(it);
-            else
-                ++it;
-        }
-        if (g_shadeCoverLog.size() >= kShadeCoverMaxEntries)
-            g_shadeCoverLog.clear();
-    }
-    return ShadeCoverLogDue(g_shadeCoverLog[key], nowMs);
+    return g_shadeCoverLog.Note(member, shade, miss, dead, nowMs);
 }
 
-// Whether a miss is running for the pair: a member that died while missing the Shade is still asked about it.
+// Whether a miss is running for the pair: a member that died while missing the Shade gets its one `dead` row.
 static bool ShadeCoverMissOpen(uint64 member, uint64 shade, uint32 nowMs)
 {
     std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
-    auto const it = g_shadeCoverLog.find(std::make_pair(member, shade));
-    return it != g_shadeCoverLog.end() && it->second.open && !ShadeSeenExpired(it->second.lastSeenMs, nowMs);
+    return g_shadeCoverLog.MissOpen(member, shade, nowMs);
 }
 
 void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -4886,6 +4871,8 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
         return false;
     };
     Player* const mainTank = GetRaidTankRoles(ai).MainTank();
+    std::uint8_t const mainTankPct = mainTank ? static_cast<std::uint8_t>(mainTank->GetHealthPercent()) : 0;
+    std::uint8_t const lowHealthPct = static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth);
     bool const successor = HasThreatSuccessorRow(fight.rows);
     // The off-tank's half of the healer cover rides the carrier strike.
     bool const coverOn = sPlayerbotAIConfig.dungeonRunShadeHealerCover && sPlayerbotAIConfig.dungeonRunCarrierStrike;
@@ -4916,7 +4903,8 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
         for (Unit* shade : shades)
         {
             uint64 const shadeKey = shade->GetObjectGuid().GetRawValue();
-            // The curse drops at death: a member that was missing this Shade when it died is still asked once more.
+            // The curse drops at death: a member that was missing this Shade when it died is still asked, and gets one
+            // `dead` row per Shade (ShadeCoverLogBook).
             bool const asked = ShadeCoverAsks(role, cursed, holdsBoss) ||
                 (!member->IsAlive() && role != CarrierStrikeRole::MainTank &&
                  ShadeCoverMissOpen(memberKey, shadeKey, nowMs));
@@ -4926,13 +4914,17 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
             facts.alive = member->IsAlive();
             facts.charmed = !member->GetCharmerGuid().IsEmpty();
             facts.distanceYd = member->GetDistance(shade);
+            facts.dropYd = member->GetPositionZ() - shade->GetPositionZ();
             facts.threatGate = ShadeCoverThreatGate(role, successor, coverOn);
+            facts.guard = ShadeCoverOffTankGuard(role, coverOn, mainTankPct,
+                static_cast<std::uint8_t>(member->GetHealthPercent()), lowHealthPct);
             facts.onThisShade = target == shade;
             facts.onOtherShade = target && target != shade && target->GetEntry() == entry;
             facts.onBoss = isFightBoss(target);
             facts.hasTarget = target != nullptr;
             ShadeCoverMiss const miss = ShadeCoverMissReason(facts, kShadeCoverReachYd);
-            if (!ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, nowMs))
+            if (!ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, miss == ShadeCoverMiss::Dead,
+                    nowMs))
                 continue;
             Unit* const victim = shade->GetVictim();
             char info1[64];

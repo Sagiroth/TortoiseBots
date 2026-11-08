@@ -68,11 +68,10 @@ class ShadeCoverRow(unittest.TestCase):
     def test_logged_under_the_member_and_throttled(self):
         body = self.body()
         self.assertIn('sPlayerbotAIConfig.logEvent(memberAi, "BossTacticsShadeCover", info1, info2);', body)
-        self.assertIn("ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, nowMs)", body)
+        self.assertIn("ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, miss == ShadeCoverMiss::Dead,", body)
         due = member(ACTIONS, "static bool ShadeCoverMissDue(", "\n}\n")
-        self.assertIn("kShadeCoverMaxEntries", due)
-        self.assertIn("ShadeCoverLogDue(g_shadeCoverLog[key], nowMs)", due)
-        self.assertIn("g_shadeCoverLog.erase(key);", due)
+        self.assertIn("std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);", due)
+        self.assertIn("ShadeCoverLogBook g_shadeCoverLog;", ACTIONS)
 
     def test_the_pick_shares_the_victim_read(self):
         self.assertIn("c.victimHealer = ShadeOnGroupHealer(bot, unit);", ACTIONS)
@@ -81,7 +80,7 @@ class ShadeCoverRow(unittest.TestCase):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
         self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 4)[1:3]))
-        for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "on_boss", "other_target",
+        for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
 
@@ -106,9 +105,29 @@ class ShadeHealerCover(unittest.TestCase):
 
     def test_the_strike_trigger_feeds_the_cover(self):
         trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
-        self.assertIn("in.shadeCover = sPlayerbotAIConfig.dungeonRunShadeHealerCover && shade && ShadeOnGroupHealer(bot, shade) &&", trigger)
-        self.assertIn("bot->GetDistance(shade) <= kShadeCoverReachYd;", trigger)
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)", trigger)
+        self.assertIn("bot->GetDistance(shade) <= kShadeCoverReachYd &&", trigger)
+        self.assertIn("ShadeCoverSameFloor(bot->GetPositionZ() - shade->GetPositionZ())", trigger)
+        self.assertIn("ShadeCoverLatchHolds(coverLatch_, shade ? shade->GetObjectGuid().GetRawValue() : 0,", trigger)
+        self.assertIn("in.cursed, shade && ShadeOnGroupHealer(bot, shade), shadeVictim == bot,", trigger)
+        self.assertIn("in.shadeCover = latched && inCoverReach;", trigger)
         self.assertLess(trigger.index("in.shadeCover ="), trigger.index("CarrierStrikeAllowed(in,"))
+        # The shade the cover reads is the strike's own pick.
+        self.assertIn("Unit* const shade = FindBossCarrierStrikePick(ai, bot, fight);", trigger)
+        self.assertLess(trigger.index("Unit* const shade = FindBossCarrierStrikePick"), trigger.index("in.shadeCover ="))
+        # The curse over: the latch ends.
+        self.assertIn("coverLatch_ = ShadeCoverLatch();", trigger)
+
+    def test_the_cover_line_leaves_out_only_the_victim(self):
+        trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
+        self.assertIn("uint8 lowestCoverPct = lowestMemberPct;", trigger)
+        self.assertIn("if (member == bot || member != shadeVictim)", trigger)
+        self.assertIn("in.lowestCoverPct = lowestCoverPct;", trigger)
+        self.assertIn("ShadeCoverLatch coverLatch_;", read("ai/playerbot/strategy/triggers/BossTacticsTriggers.h"))
+
+    def test_the_pick_reads_the_height(self):
+        self.assertEqual(ACTIONS.count("c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();"), 2)
+        trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
         # The main tank is still its own role, and the strike key still gates the whole node.
         self.assertIn("role = tankRoles.BotIsMainTank() ? CarrierStrikeRole::MainTank : CarrierStrikeRole::OffTank;", trigger)
         self.assertIn("if (!sPlayerbotAIConfig.dungeonRunCarrierStrike)", trigger)
@@ -124,6 +143,10 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn(
             "sPlayerbotAIConfig.dungeonRunShadeHealerCover && sPlayerbotAIConfig.dungeonRunCarrierStrike", body)
         self.assertIn("ShadeCoverThreatGate(role, successor, coverOn)", body)
+        self.assertIn("facts.guard = ShadeCoverOffTankGuard(role, coverOn, mainTankPct,", body)
+        self.assertIn("facts.dropYd = member->GetPositionZ() - shade->GetPositionZ();", body)
+        self.assertIn("miss == ShadeCoverMiss::Dead", body)
+        self.assertIn("g_shadeCoverLog.Note(member, shade, miss, dead, nowMs)", ACTIONS)
 
 
 if __name__ == "__main__":

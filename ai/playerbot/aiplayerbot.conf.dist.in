@@ -1093,10 +1093,11 @@ AiPlayerbot.DungeonRunCarrierScan = 0
 
 # Shade healer cover at Jin'do (recommended on). A Shade copies the boss's threat list, where heal threat is top, so it
 # walks to a healer, and an uncursed healer cannot hurt it. With the key on a cursed off-tank that does not hold the boss
-# takes a Shade attacking a healer within 30 yd, even on a threat_successor fight, through the carrier strike (needs
-# AiPlayerbot.DungeonRunCarrierStrike; the main-tank line still holds it, the lowest-member line does not); a cursed DPS
-# carrier under the run's own order ranks a Shade on a healer within 30 yd ahead of a nearer Shade (a free DPS already
-# does). The main tank never leaves the boss, an off-tank holding it stays, and a cursed healer keeps its own guards.
+# takes a Shade attacking a healer within 30 yd of it and on its floor (not in the troll pit), even on a threat_successor
+# fight, through the carrier strike (needs AiPlayerbot.DungeonRunCarrierStrike), and keeps it while the Shade is on the
+# off-tank itself (up to 15 s); the main-tank line and its own health still hold it, the eaten healer's health does
+# not. Pair it with AiPlayerbot.DungeonRunThreatSuccessorKeepsAway. A cursed DPS carrier under the run's own order ranks
+# a Shade on a healer within 30 yd of it ahead of a nearer Shade (a free DPS already does). The main tank never leaves the boss, an off-tank holding it stays, and a cursed healer keeps its own guards.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
 # 0 - off: today's pick and strike (Default)
 # 1 - on

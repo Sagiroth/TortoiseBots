@@ -205,7 +205,10 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
     if (!HasCarrierKillFirstRow(fight.rows))
+    {
+        coverLatch_ = ShadeCoverLatch(); // the curse is over: the cover latch ends with it
         return false;
+    }
 
     const BossTacticRow* carrierRow = nullptr;
     for (const BossTacticRow* row : fight.rows)
@@ -242,8 +245,11 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
             break;
     }
 
-    // The lowest member in the heal rows' own reach (twice the heal range), this bot included.
+    // The lowest member in the heal rows' own reach (twice the heal range), this bot included. The cover's line leaves
+    // out only the Shade's victim (the healer it eats), never this bot.
+    Unit* const shadeVictim = shade ? shade->GetVictim() : nullptr;
     uint8 lowestMemberPct = static_cast<uint8>(bot->GetHealthPercent());
+    uint8 lowestCoverPct = lowestMemberPct;
     std::vector<CarrierHealer> otherHealers;
     float const reach = 2.0f * (bot->InBattleGround() ? sPlayerbotAIConfig.healDistanceBg : ai->GetRange("heal"));
     Group* const group = bot->GetGroup();
@@ -255,7 +261,11 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
                 continue;
             float const distanceYd = sServerFacade.getDistance2d(bot, member);
             if (member->IsAlive() && distanceYd <= reach)
+            {
                 lowestMemberPct = std::min(lowestMemberPct, static_cast<uint8>(member->GetHealthPercent()));
+                if (member == bot || member != shadeVictim)
+                    lowestCoverPct = std::min(lowestCoverPct, static_cast<uint8>(member->GetHealthPercent()));
+            }
             if (member == bot || !PlayerbotAI::IsHeal(member))
                 continue;
             CarrierHealer healer;
@@ -284,9 +294,17 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
     in.manaPct = AI_VALUE2(uint8, "mana", "self target");
     in.dispelNowPending = CarrierDispelNowPending(ai, bot, fight.rows);
     // The healer cover (AiPlayerbot.DungeonRunShadeHealerCover): the pick already ranks a Shade on a healer within 30 yd
-    // first, so the cover holds when the pick is one.
-    in.shadeCover = sPlayerbotAIConfig.dungeonRunShadeHealerCover && shade && ShadeOnGroupHealer(bot, shade) &&
-        bot->GetDistance(shade) <= kShadeCoverReachYd;
+    // of this bot and on its floor first, so the cover holds when the pick is one, or is the Shade this bot pulled off a
+    // healer (the latch).
+    if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)
+    {
+        bool const inCoverReach = shade && bot->GetDistance(shade) <= kShadeCoverReachYd &&
+            ShadeCoverSameFloor(bot->GetPositionZ() - shade->GetPositionZ());
+        bool const latched = ShadeCoverLatchHolds(coverLatch_, shade ? shade->GetObjectGuid().GetRawValue() : 0,
+            in.cursed, shade && ShadeOnGroupHealer(bot, shade), shadeVictim == bot, WorldTimer::getMSTime());
+        in.shadeCover = latched && inCoverReach;
+    }
+    in.lowestCoverPct = lowestCoverPct;
 
     CarrierStrikeVerdict const verdict =
         CarrierStrikeAllowed(in, static_cast<uint8>(sPlayerbotAIConfig.lowHealth));

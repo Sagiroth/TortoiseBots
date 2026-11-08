@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -2567,6 +2568,7 @@ namespace ai
         float distance = 0.0f;
         bool pickable = false;  // alive, attackable, reachable by the caller's rules
         bool victimHealer = false; // its victim is a healer of the bot's group (a Shade of Jin'do on a healer)
+        float dropYd = 0.0f;       // signed height of the bot against the candidate (bot z - candidate z)
     };
 
     // A candidate the attackers path and the grid read both found keeps one entry; a victim that is a healer on either
@@ -2730,8 +2732,12 @@ namespace ai
         std::uint8_t manaPct;
         bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
         // AiPlayerbot.DungeonRunShadeHealerCover is on and the bot's pick is a Shade on a healer of ours within
-        // kShadeCoverReachYd: a free off-tank takes it even on a threat_successor fight (false = today's rules).
+        // kShadeCoverReachYd of the bot and on its floor, or one it pulled off a healer (ShadeCoverLatch): a free
+        // off-tank takes it even on a threat_successor fight (false = today's rules).
         bool shadeCover = false;
+        // Under the cover: the lowest living member within 2x heal range other than the Shade's victim, the bot's own
+        // health always counted. 0 (the default) refuses, so a caller that forgets it keeps the off-tank home.
+        std::uint8_t lowestCoverPct = 0;
     };
 
     // The carrier's own guards that no config key carries; the lowest-member line is the live AiPlayerbot.LowHealth the
@@ -2775,8 +2781,9 @@ namespace ai
         }
         if (in.role == CarrierStrikeRole::OffTank)
         {
-            // Under the cover the low member is usually the healer the Shade is eating: killing the Shade is the rescue.
-            if (!offTankCover && in.lowestMemberPct < lowHealthPct)
+            // Under the cover the low member is usually the healer the Shade is eating: killing the Shade is the rescue,
+            // so only that victim is left out of the line; the off-tank's own health and everyone else's still count.
+            if ((offTankCover ? in.lowestCoverPct : in.lowestMemberPct) < lowHealthPct)
                 return CarrierStrikeVerdict::GuardLowMember;
             if (in.tankPct < kCarrierStrikeTankPct)
                 return CarrierStrikeVerdict::GuardTank;
@@ -2890,9 +2897,53 @@ namespace ai
     constexpr float kShadeCoverReachYd = 30.0f;
 
     // Whether a carrier candidate ranks in the healer-cover tier: its victim is a healer of ours, within the cover reach.
+    // Whether a Shade is on the bot's floor: the troll pit sits ~12 yd under the boss's floor (kCarrierPitDropYd, the
+    // line the carrier strike's healer count uses), and a melee carrier sent down there cannot get back for a long time.
+    inline bool ShadeCoverSameFloor(float dropYd)
+    {
+        return std::fabs(dropYd) <= kCarrierPitDropYd;
+    }
+
     inline bool ShadeCoverTier(const TacticCandidate& c, bool preferHealerVictim)
     {
-        return preferHealerVictim && c.victimHealer && c.distance <= kShadeCoverReachYd;
+        return preferHealerVictim && c.victimHealer && c.distance <= kShadeCoverReachYd &&
+            ShadeCoverSameFloor(c.dropYd);
+    }
+
+    // The off-tank's cover latch (M1): a cursed off-tank that takes a Shade off a healer soon pulls it onto itself, and
+    // the Shade's victim then is no healer any more. The latch keeps the cover for that off-tank while the Shade's
+    // victim is the off-tank itself, until the Shade dies (the pick no longer names it), the bot loses the curse, or
+    // kShadeCoverLatchMs pass since the Shade was last on a healer.
+    constexpr std::uint32_t kShadeCoverLatchMs = 15000;
+
+    struct ShadeCoverLatch
+    {
+        std::uint64_t shade = 0; // 0: no latch
+        std::uint32_t sinceMs = 0; // the last time the latched Shade was seen on a healer
+    };
+
+    // `shade`: the bot's pick (0 when none); `onHealer`: its victim is a healer of ours; `onSelf`: its victim is the bot.
+    // Distance and floor are the caller's (the cover needs both whatever the latch says). True when the cover holds.
+    inline bool ShadeCoverLatchHolds(ShadeCoverLatch& latch, std::uint64_t shade, bool cursed, bool onHealer,
+        bool onSelf, std::uint32_t nowMs)
+    {
+        if (!cursed || shade == 0)
+        {
+            latch = ShadeCoverLatch();
+            return false;
+        }
+        if (onHealer)
+        {
+            latch.shade = shade;
+            latch.sinceMs = nowMs;
+            return true;
+        }
+        if (latch.shade != shade || nowMs - latch.sinceMs >= kShadeCoverLatchMs)
+        {
+            latch = ShadeCoverLatch();
+            return false;
+        }
+        return onSelf;
     }
 
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
@@ -2950,6 +3001,7 @@ namespace ai
         OtherShade,  // already on another Shade
         OutOfRange,  // further than kShadeCoverReachYd from this Shade
         ThreatGate,  // an off-tank on a threat_successor fight: the carrier strike keeps it on the boss
+        Guard,       // an off-tank the carrier strike's guards hold back (the main tank under 60 %, its own low health)
         OnBoss,      // on a boss of the fight
         OtherTarget, // on anything else (a ward, a totem, a troll)
         NoTarget,
@@ -2960,7 +3012,9 @@ namespace ai
         bool alive = true;
         bool charmed = false;
         float distanceYd = 0.0f; // carrier to the Shade
+        float dropYd = 0.0f;     // carrier z - Shade z
         bool threatGate = false; // the off-tank's successor rule holds it (ShadeCoverThreatGate)
+        bool guard = false;      // an off-tank a carrier-strike guard holds back (ShadeCoverOffTankGuard)
         bool onThisShade = false;
         bool onOtherShade = false;
         bool onBoss = false;
@@ -2979,10 +3033,12 @@ namespace ai
             return ShadeCoverMiss::Charmed;
         if (f.onOtherShade)
             return ShadeCoverMiss::OtherShade;
-        if (f.distanceYd > reachYd)
+        if (f.distanceYd > reachYd || !ShadeCoverSameFloor(f.dropYd))
             return ShadeCoverMiss::OutOfRange;
         if (f.threatGate)
             return ShadeCoverMiss::ThreatGate;
+        if (f.guard)
+            return ShadeCoverMiss::Guard;
         if (f.onBoss)
             return ShadeCoverMiss::OnBoss;
         if (f.hasTarget)
@@ -3000,6 +3056,7 @@ namespace ai
             case ShadeCoverMiss::OtherShade:  return "other_shade";
             case ShadeCoverMiss::OutOfRange:  return "out_of_range";
             case ShadeCoverMiss::ThreatGate:  return "threat_gate";
+            case ShadeCoverMiss::Guard:       return "guard";
             case ShadeCoverMiss::OnBoss:      return "on_boss";
             case ShadeCoverMiss::OtherTarget: return "other_target";
             case ShadeCoverMiss::NoTarget:    return "no_target";
@@ -3013,6 +3070,15 @@ namespace ai
     inline bool ShadeCoverThreatGate(CarrierStrikeRole role, bool threatSuccessor, bool coverOn = false)
     {
         return role == CarrierStrikeRole::OffTank && threatSuccessor && !coverOn;
+    }
+
+    // The guards the row can read for another member: with the cover on, the carrier strike still holds an off-tank back
+    // while the main tank is under kCarrierStrikeTankPct or its own health is under the low-health line.
+    inline bool ShadeCoverOffTankGuard(CarrierStrikeRole role, bool coverOn, std::uint8_t mainTankPct,
+        std::uint8_t ownPct, std::uint8_t lowHealthPct)
+    {
+        return role == CarrierStrikeRole::OffTank && coverOn &&
+            (mainTankPct < kCarrierStrikeTankPct || ownPct < lowHealthPct);
     }
 
     // One record per (carrier, Shade). A miss is logged only once it has lasted kShadeCoverGraceMs (a carrier turning
@@ -3029,6 +3095,7 @@ namespace ai
         std::uint32_t lastLogMs = 0;
         bool open = false;   // a miss is running
         bool logged = false; // lastLogMs is set
+        bool deadLogged = false; // the member's `dead` row is written: one per (member, Shade)
     };
 
     // Note a miss at `nowMs`; true when the row is due. The unsigned subtractions survive the 32-bit clock wrap.
@@ -3048,6 +3115,75 @@ namespace ai
         record.lastLogMs = nowMs;
         return true;
     }
+
+    // Every (member, Shade) record of the cover row, bounded at kShadeCoverMaxEntries. Not thread-safe: the caller locks.
+    class ShadeCoverLogBook
+    {
+    public:
+        using Key = std::pair<std::uint64_t, std::uint64_t>;
+
+        // Note the pair at `nowMs`: `miss` (the member is not on the Shade) and `dead` (the member is dead). A member on
+        // the Shade drops its record. True when a row is due; a dead member's row is due once per pair.
+        bool Note(std::uint64_t member, std::uint64_t shade, bool miss, bool dead, std::uint32_t nowMs)
+        {
+            Key const key(member, shade);
+            if (!miss)
+            {
+                records_.erase(key);
+                return false;
+            }
+            if (records_.find(key) == records_.end() && records_.size() >= kShadeCoverMaxEntries)
+                Prune(nowMs);
+            ShadeCoverLogRecord& record = records_[key];
+            if (dead && record.deadLogged)
+            {
+                record.lastSeenMs = nowMs;
+                return false;
+            }
+            if (!ShadeCoverLogDue(record, nowMs))
+                return false;
+            if (dead)
+                record.deadLogged = true;
+            return true;
+        }
+
+        // A miss is running for the pair: a member that died while missing the Shade is still asked (its `dead` row).
+        bool MissOpen(std::uint64_t member, std::uint64_t shade, std::uint32_t nowMs) const
+        {
+            auto const it = records_.find(Key(member, shade));
+            return it != records_.end() && it->second.open && !ShadeSeenExpired(it->second.lastSeenMs, nowMs);
+        }
+
+        std::size_t Size() const { return records_.size(); }
+        bool Has(std::uint64_t member, std::uint64_t shade) const { return records_.count(Key(member, shade)) != 0; }
+
+    private:
+        // At the cap: drop every record not noted for kShadeSeenGraceMs; when that frees nothing, drop the oldest
+        // quarter by last note, so the live misses keep their grace and gap.
+        void Prune(std::uint32_t nowMs)
+        {
+            for (auto it = records_.begin(); it != records_.end();)
+            {
+                if (ShadeSeenExpired(it->second.lastSeenMs, nowMs))
+                    it = records_.erase(it);
+                else
+                    ++it;
+            }
+            if (records_.size() < kShadeCoverMaxEntries)
+                return;
+            std::vector<std::pair<std::uint32_t, Key>> byAge;
+            byAge.reserve(records_.size());
+            for (auto const& entry : records_)
+                byAge.push_back(std::make_pair(nowMs - entry.second.lastSeenMs, entry.first));
+            std::size_t const drop = std::max<std::size_t>(1, records_.size() / 4);
+            std::nth_element(byAge.begin(), byAge.begin() + (drop - 1), byAge.end(),
+                [](auto const& a, auto const& b) { return a.first > b.first; });
+            for (std::size_t i = 0; i < drop; ++i)
+                records_.erase(byAge[i].second);
+        }
+
+        std::map<Key, ShadeCoverLogRecord> records_;
+    };
 
     // --- carrier scan (walk 53) ------------------------------------------------------------------------------------
     // A Delusions carrier the attackers list never showed a Shade: the Shade is summoned on a carrier and only its

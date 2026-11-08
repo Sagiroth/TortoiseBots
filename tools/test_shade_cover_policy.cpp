@@ -131,6 +131,7 @@ static CarrierStrikeInput FreeOffTank()
     in.manaPct = 60;
     in.dispelNowPending = false;
     in.shadeCover = false;
+    in.lowestCoverPct = 72;
     return in;
 }
 
@@ -146,8 +147,9 @@ static void cursed_offtank_takes_shade_on_healer()
     in.shadeCover = ShadeCoverTier(c[pick], true); // what the trigger reads: the pick's victim is a healer, within 30 yd
     CHECK(in.shadeCover);
     CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike);
-    // Under the cover the lowest-member line does not hold it (the low member is usually the eaten healer) ...
+    // Under the cover the eaten healer is left out of the lowest-member line (the low member is usually that healer) ...
     in.lowestMemberPct = 20;
+    in.lowestCoverPct = 72;
     CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike);
     // ... the main-tank line still does.
     in.tankPct = 59;
@@ -268,6 +270,169 @@ static void TestCoverRowThrottle()
     CHECK(kShadeCoverMaxEntries > 0);
 }
 
+// M1: the off-tank pulled the Shade onto itself (victim = self). Without the latch the cover dropped at once and the
+// verdict went back to ThreatSuccessor; with it the strike goes on until the Shade dies, the curse ends or 15 s pass.
+static void cover_holds_after_offtank_pulls_shade()
+{
+    ShadeCoverLatch latch;
+    std::uint64_t const shade = 0xF130003A8A000001ull;
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, true, false, 1000));    // on the priest: taken
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, false, true, 3000));    // pulled onto the off-tank: still covered
+    CarrierStrikeInput in = FreeOffTank();
+    in.shadeCover = true;
+    CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike);
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, false, true, 15999));   // 14.999 s after the healer
+    CHECK(!ShadeCoverLatchHolds(latch, shade, true, false, true, 16000));  // 15 s: over
+    CHECK(latch.shade == 0);
+    // Back on a healer: a fresh latch, and the window restarts from that sight.
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, true, false, 20000));
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, false, true, 34000));
+    // The Shade's victim is a damage dealer: no cover, latch or not.
+    CHECK(!ShadeCoverLatchHolds(latch, shade, true, false, false, 34500));
+    // The curse ends: the latch goes with it.
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, true, false, 40000));
+    CHECK(!ShadeCoverLatchHolds(latch, shade, false, false, true, 41000));
+    CHECK(!ShadeCoverLatchHolds(latch, shade, true, false, true, 42000));
+    // The Shade dies (the pick no longer names it): the latch ends.
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, true, false, 50000));
+    CHECK(!ShadeCoverLatchHolds(latch, 0, true, false, false, 51000));
+    CHECK(!ShadeCoverLatchHolds(latch, shade, true, false, true, 52000));
+    // Another Shade on the off-tank was never latched.
+    CHECK(ShadeCoverLatchHolds(latch, shade, true, true, false, 60000));
+    CHECK(!ShadeCoverLatchHolds(latch, shade + 1, true, false, true, 61000));
+}
+
+// M2: the eaten healer is the only one left out; the off-tank at 25 % does not leave Jin'do.
+static void cover_keeps_own_low_health_guard()
+{
+    CarrierStrikeInput in = FreeOffTank();
+    in.shadeCover = true;
+    in.lowestMemberPct = 25; // the off-tank itself
+    in.lowestCoverPct = 25;  // ... still counted under the cover
+    CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember);
+    // Another member low (not the Shade's victim): held too.
+    in.lowestMemberPct = 30;
+    in.lowestCoverPct = 30;
+    CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember);
+    // A caller that never filled the cover line keeps the off-tank home.
+    CarrierStrikeInput unfilled;
+    unfilled = FreeOffTank();
+    unfilled.shadeCover = true;
+    unfilled.lowestCoverPct = 0;
+    CHECK(CarrierStrikeAllowed(unfilled, 50) == CarrierStrikeVerdict::GuardLowMember);
+}
+
+// M3: a Shade 12 yd below in the troll pit is no cover pick, whatever its victim.
+static void TestPitShadeIsNotCovered()
+{
+    std::vector<BossTacticRow> rows{KillFirst(kShade, 0, kDelusions)};
+    std::vector<TacticCandidate> c{Shade(8.0f, false), Shade(14.0f, true)};
+    c[1].dropYd = 12.0f; // the bot stands 12 yd above it
+    CHECK(!ShadeCoverTier(c[1], true));
+    CHECK(PickCarrierOverride(Active(rows), c, kCarrierHoldReachYd, true) == 0);
+    c[1].dropYd = -12.0f; // the bot in the pit, the Shade up on the room floor
+    CHECK(PickCarrierOverride(Active(rows), c, kCarrierHoldReachYd, true) == 0);
+    c[1].dropYd = 5.5f;   // a step or a slope: same floor
+    CHECK(PickCarrierOverride(Active(rows), c, kCarrierHoldReachYd, true) == 1);
+    CHECK(!ShadeCoverSameFloor(12.0f));
+    CHECK(ShadeCoverSameFloor(kCarrierPitDropYd));
+    // The row calls a pit Shade out of range.
+    ShadeCoverFacts f;
+    f.distanceYd = 14.0f;
+    f.dropYd = 12.0f;
+    f.onBoss = true;
+    f.hasTarget = true;
+    CHECK(ShadeCoverMissReason(f, kShadeCoverReachYd) == ShadeCoverMiss::OutOfRange);
+}
+
+// A tie at equal distance with the key on: two healer Shades keep the first one (the old tie-break); a healer Shade
+// against a plain one at the same distance wins.
+static void TestEqualDistanceTie()
+{
+    std::vector<BossTacticRow> rows{KillFirst(kShade, 0, kDelusions)};
+    std::vector<TacticCandidate> both{Shade(10.0f, true), Shade(10.0f, true)};
+    CHECK(PickCarrierOverride(Active(rows), both, kCarrierHoldReachYd, true) == 0);
+    std::vector<TacticCandidate> mixed{Shade(10.0f, false), Shade(10.0f, true)};
+    CHECK(PickCarrierOverride(Active(rows), mixed, kCarrierHoldReachYd, true) == 1);
+    CHECK(PickCarrierOverride(Active(rows), mixed, kCarrierHoldReachYd, false) == 0);
+    // A healer Shade at 31-40 yd against a plain one at 10: the nearer, as before.
+    std::vector<TacticCandidate> far{Shade(10.0f, false), Shade(36.0f, true)};
+    CHECK(PickCarrierOverride(Active(rows), far, kCarrierHoldReachYd, true) == 0);
+}
+
+// L2: a member that died while missing the Shade gets one `dead` row per Shade, not one every 5 s.
+static void TestLogBookDeadOnce()
+{
+    ShadeCoverLogBook book;
+    CHECK(!book.Note(1, 7, true, false, 1000));
+    CHECK(book.Note(1, 7, true, false, 3000));      // the miss row after the grace
+    CHECK(book.MissOpen(1, 7, 3500));
+    CHECK(!book.Note(1, 7, true, true, 4000));      // died: inside the 5 s gap
+    int deadRows = 0;
+    for (std::uint32_t t = 5000; t <= 70000; t += 1000)
+        deadRows += book.Note(1, 7, true, true, t) ? 1 : 0;
+    CHECK(deadRows == 1);
+    CHECK(book.MissOpen(1, 7, 70500));
+    // On the Shade: the record is dropped.
+    CHECK(!book.Note(2, 7, true, false, 1000));
+    CHECK(book.Has(2, 7));
+    CHECK(!book.Note(2, 7, false, false, 1500));
+    CHECK(!book.Has(2, 7));
+    CHECK(!book.MissOpen(2, 7, 1600));
+}
+
+// L3: at the cap the book drops stale records first, then the oldest quarter; it never clears the live misses.
+static void TestLogBookCapPrunesOldest()
+{
+    ShadeCoverLogBook book;
+    std::uint32_t const now = 100000;
+    // Fill to the cap, all live; the first ones noted earliest.
+    for (std::uint64_t i = 0; i < kShadeCoverMaxEntries; ++i)
+        book.Note(i, 1, true, false, now - 2000 + static_cast<std::uint32_t>(i)); // within the 3 s seen grace
+    CHECK(book.Size() == kShadeCoverMaxEntries);
+    book.Note(9999, 1, true, false, now);
+    CHECK(book.Size() <= kShadeCoverMaxEntries);
+    CHECK(book.Size() > kShadeCoverMaxEntries / 2); // not cleared
+    CHECK(book.Has(9999, 1));
+    CHECK(!book.Has(0, 1));                                     // the oldest went
+    CHECK(book.Has(kShadeCoverMaxEntries - 1, 1));             // the youngest stayed
+    // Stale records go first: a full book of stale records leaves only the new one.
+    ShadeCoverLogBook stale;
+    for (std::uint64_t i = 0; i < kShadeCoverMaxEntries; ++i)
+        stale.Note(i, 2, true, false, 1000);
+    stale.Note(9999, 2, true, false, 1000 + 10000);
+    CHECK(stale.Size() == 1);
+    // A live record keeps its grace and gap across a prune: its row is not due again inside 5 s.
+    ShadeCoverLogBook keep;
+    keep.Note(5000, 3, true, false, now - 2500);
+    CHECK(keep.Note(5000, 3, true, false, now - 500)); // its row
+    for (std::uint64_t i = 0; i + 1 < kShadeCoverMaxEntries; ++i)
+        keep.Note(i, 3, true, false, now - 2000 + static_cast<std::uint32_t>(i)); // all older than keep's last note
+    CHECK(keep.Size() == kShadeCoverMaxEntries);
+    keep.Note(9998, 3, true, false, now);
+    CHECK(keep.Has(5000, 3));
+    CHECK(!keep.Note(5000, 3, true, false, now + 100)); // its 5 s gap survived the prune
+}
+
+// L6: an off-tank the carrier strike's guards hold back is named `guard`, not `on_boss`.
+static void TestGuardWord()
+{
+    CHECK(ShadeCoverOffTankGuard(CarrierStrikeRole::OffTank, true, 59, 80, 50));  // main tank under 60 %
+    CHECK(ShadeCoverOffTankGuard(CarrierStrikeRole::OffTank, true, 80, 40, 50));  // own health under LowHealth
+    CHECK(!ShadeCoverOffTankGuard(CarrierStrikeRole::OffTank, true, 80, 80, 50));
+    CHECK(!ShadeCoverOffTankGuard(CarrierStrikeRole::OffTank, false, 10, 10, 50)); // cover off: threat_gate's case
+    CHECK(!ShadeCoverOffTankGuard(CarrierStrikeRole::Dps, true, 10, 10, 50));
+    ShadeCoverFacts f;
+    f.distanceYd = 10.0f;
+    f.onBoss = true;
+    f.hasTarget = true;
+    f.guard = true;
+    CHECK(ShadeCoverMissReason(f, kShadeCoverReachYd) == ShadeCoverMiss::Guard);
+    CHECK(std::strcmp(ShadeCoverMissWord(ShadeCoverMiss::Guard), "guard") == 0);
+    f.threatGate = true; // the successor rule comes first
+    CHECK(ShadeCoverMissReason(f, kShadeCoverReachYd) == ShadeCoverMiss::ThreatGate);
+}
+
 int main()
 {
     TestCoverRowAsksCursedDpsAndFreeOffTank();
@@ -280,6 +445,13 @@ int main()
     TestFlagOffKeepsTodaysPick();
     TestTwoShadesHealerFirst();
     TestCursedHealerKeepsItsGuards();
+    cover_holds_after_offtank_pulls_shade();
+    cover_keeps_own_low_health_guard();
+    TestPitShadeIsNotCovered();
+    TestEqualDistanceTie();
+    TestLogBookDeadOnce();
+    TestLogBookCapPrunesOldest();
+    TestGuardWord();
     std::cout << "shade cover policy: ok\n";
     return 0;
 }

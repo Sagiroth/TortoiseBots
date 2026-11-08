@@ -71,6 +71,11 @@ namespace ai
     public:
         BossTacticsCarrierStrikeTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics carrier strike", 1) {}
         bool IsActive() override;
+
+    private:
+        // The healer cover's latch for this bot (AiPlayerbot.DungeonRunShadeHealerCover): the Shade it took off a healer
+        // stays covered while it is the Shade's victim (ShadeCoverLatchHolds).
+        ShadeCoverLatch coverLatch_;
     };
 
     // This DPS bot's current target is a boss entry a hold_kill row holds (its blocker still lives).
