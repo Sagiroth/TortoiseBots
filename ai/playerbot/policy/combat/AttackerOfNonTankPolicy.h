@@ -28,10 +28,11 @@ namespace ai
 
     // Whether the scan leaves a unit out before it is a candidate at all: with the taunt gate on, a unit that needs an
     // aura to be damaged (requiredAura != 0, the Shade of Jin'do) is no pick for either user of the value, the tank's
-    // taunt or the warrior gap closer's Charge: a bot without the aura cannot hurt it. Off, no unit is left out.
-    inline bool AttackerOfNonTankSkipsUnit(bool tauntGateOn, std::uint32_t requiredAura)
+    // taunt or the warrior gap closer's Charge, unless THIS bot has the aura: a cursed tank can hurt the Shade, so it
+    // keeps it as a target. Off, no unit is left out.
+    inline bool AttackerOfNonTankSkipsUnit(bool tauntGateOn, std::uint32_t requiredAura, bool botHasAura)
     {
-        return tauntGateOn && requiredAura != 0;
+        return tauntGateOn && requiredAura != 0 && !botHasAura;
     }
 
     // A candidate is tauntable when a group member needs it off them; the

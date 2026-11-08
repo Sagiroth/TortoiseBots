@@ -174,14 +174,16 @@ class JindoR1Wiring(unittest.TestCase):
         self.assertIn('MELEE_ACTION(CastChallengingShoutAction, "challenging shout");', WARRIOR)
 
     def test_the_attacker_value_skips_needs_aura_units_for_both_users(self):
-        self.assertIn("        if (AttackerOfNonTankSkipsUnit(sPlayerbotAIConfig.dungeonRunTauntGate,\n"
-                      "                GetBossTactics().RequiredAura(bot->GetMapId(), unit->GetEntry())))\n"
+        self.assertIn("std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), "
+                      "unit->GetEntry());", NON_TANK_VALUE)
+        # The bot's own aura is passed: a cursed tank can hurt the Shade, so the Shade stays its target.
+        self.assertIn("        if (AttackerOfNonTankSkipsUnit(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura,\n"
+                      "                requiredAura != 0 && bot->HasAura(requiredAura)))\n"
                       "            continue;", NON_TANK_VALUE)
-        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), unit->GetEntry())", NON_TANK_VALUE)
         # The skip comes before the unit becomes a candidate.
         self.assertLess(NON_TANK_VALUE.index("AttackerOfNonTankSkipsUnit("),
                         NON_TANK_VALUE.index("candidates.push_back(candidate)"))
-        self.assertIn("return tauntGateOn && requiredAura != 0;", NON_TANK_POLICY)
+        self.assertIn("return tauntGateOn && requiredAura != 0 && !botHasAura;", NON_TANK_POLICY)
         self.assertNotIn("tauntRefused", NON_TANK_POLICY)
         self.assertNotIn("tauntRefused", NON_TANK_VALUE)
 
