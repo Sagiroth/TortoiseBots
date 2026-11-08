@@ -10,6 +10,7 @@
 #include "../../../runtime/policy/hire/HireLootPolicy.h"
 #include "../../../../runtime/AltBotService.h"
 #include "../../../../runtime/AltBotPolicy.h"
+#include "playerbot/GroupMembers.h"
 #include "Group/Group.h"
 #include "Maps/Map.h"
 using namespace ai;
@@ -774,7 +775,8 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
     Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
     LootItem* item = (loot && slot < loot->items.size()) ? &loot->items[slot] : nullptr;
 
-    for (Player* member : ai->GetPlayersInGroup())
+    // Every member, bots included: GetPlayersInGroup() lists real players only.
+    for (Player* member : LiveGroupMembers(group))
     {
         if (member == bot || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
             continue;
