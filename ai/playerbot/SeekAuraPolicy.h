@@ -245,6 +245,16 @@ namespace ai
         return seenAlive && ticks && holds;
     }
 
+    // The meet Son stays held for the damage dealers while the meet is open and no tank has it (DungeonRunSeekSonMeet).
+    // Walk 54: 57 of 58 meet Sons were released 2-6 s after the shot at 98 % hp, 33-50 yd out, because the puller
+    // counted as a non-tank on the 5 s clock (and the late-engaged burn forced the rest); the damage dealers then
+    // peeled the Son off the puller before the receiver could act. Checked first, so no clock, cap or burn releases it.
+    // `meetOpen` is false with the flag off.
+    inline bool SeekMeetHoldsSon(bool meetOpen, bool sonIsMeetSon, bool sonVictimIsTank)
+    {
+        return meetOpen && sonIsMeetSon && !sonVictimIsTank;
+    }
+
     // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the
     // hold itself and `Dosed` the hold once every seeker already carries the poison (nothing a kill buys) — both still
     // hold the Son; `Cap20`, `NonTank` and `SelectedBurn` are the release paths.
@@ -406,11 +416,12 @@ namespace ai
 
     // Why a take this tick did or did not taunt: `chase_refused` (the Son stands outside the anchor and this class
     // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
-    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes.
-    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt)
+    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
+    // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
+    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt, bool edgeFar = false)
     {
         if (chaseRefused && !canTaunt)
-            return "chase_refused";
+            return edgeFar ? "edge_far" : "chase_refused";
         if (!hasTaunt)
             return "no_taunt";
         if (canTaunt)

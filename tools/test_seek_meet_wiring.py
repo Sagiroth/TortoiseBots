@@ -117,7 +117,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("task.valid = false;", wait)
         # Anyone else's Son closes the meet as `peeled` and falls through to today's take branches.
         self.assertIn("SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs)", wait)
-        self.assertIn('LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);', wait)
+        self.assertIn('LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,', wait)
         self.assertLess(wait.index("task.valid = false;"), wait.index('"peeled"'))
         self.assertLess(wait.index('"peeled"'), wait.index("task.row = nullptr;"))
         self.assertIn("event=wait,reason=receiver_wait", ACTIONS)
@@ -173,7 +173,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         take = execute()
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
-        self.assertIn("gateRefused ? \"taunt_gated\" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt),",
+        self.assertIn("gateRefused ? \"taunt_gated\" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),",
                       take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
         # The taunt gate is read BEFORE the row is written (the row used to say `taunt` for a refused cast), once,
@@ -199,6 +199,107 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", fn)
         self.assertIn('"son=%u,event=lost,reason=%s,after_ms=%u"', ACTIONS)
         self.assertNotIn("meetTakenLogged", ACTIONS)
+
+
+class MeetHoldWiring(unittest.TestCase):
+    """Walk 54, fix A: the meet Son stays held until a tank has it (tools/test_seek_aura_policy.cpp pins the rule)."""
+
+    def read(self):
+        return body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+
+    def test_the_meet_is_read_under_the_flag_and_the_seek_pull_row(self):
+        read = self.read()
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), row))", read)
+        self.assertIn("SeekMeetOpen(meetReceiver, meetMs, nowMs))", read)
+        self.assertIn("out.meetOpen = true;", read)
+        self.assertIn("SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);", read)
+
+    def test_the_puller_and_returner_do_not_count_on_the_non_tank_clocks(self):
+        read = self.read()
+        loop = read[read.index("seenSons.reserve(fightSons.size());"):read.index("Creature* latched =")]
+        self.assertIn("if (out.meetOpen && seen.guid == out.meetSon && victim &&", loop)
+        self.assertIn("SeekMeetWalkerHasSon(victim->GetObjectGuid().GetRawValue(), meetPuller, meetReturner))", loop)
+        clear = loop[loop.index("SeekMeetWalkerHasSon("):]
+        self.assertIn("seen.victimTank = false;", clear)
+        self.assertIn("seen.victimNonTank = false;", clear)
+        # The exclusion follows the role read, so it overrides it.
+        self.assertLess(loop.index("seen.victimNonTank = victim && !seen.victimTank;"),
+                        loop.index("SeekMeetWalkerHasSon("))
+        # The clock reads seenSons after that.
+        self.assertLess(read.index("SeekMeetWalkerHasSon("), read.index("SeekHealerClockTick(record.healerHeldSince"))
+
+    def test_no_forced_burn_while_the_meet_son_is_off_a_tank(self):
+        read = self.read()
+        self.assertIn("if (out.meetOpen && pickedSon && pickedSon->GetObjectGuid().GetRawValue() == out.meetSon)", read)
+        self.assertIn("meetKeepsSon = !(pickedVictim && PlayerbotAI::IsTank(pickedVictim));", read)
+        self.assertIn("if (SeekLateEngagedBurnWithin(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs, lateLeadMs) &&\n"
+                      "        !meetKeepsSon)\n        out.forceBurn = true;", read)
+
+    def test_the_hold_checks_the_meet_first(self):
+        unit = body(ACTIONS, "bool SeekMeetHoldsUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("return SeekMeetHoldsSon(state.meetOpen, unit->GetObjectGuid().GetRawValue() == state.meetSon,", unit)
+        self.assertIn("victim && PlayerbotAI::IsTank(victim));", unit)
+        holds = body(ACTIONS, "bool SeekHoldsUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("if (SeekMeetHoldsUnit(state, unit))\n        return true;", holds)
+        self.assertLess(holds.index("SeekMeetHoldsUnit(state, unit)"), holds.index("SeekHoldDecision("))
+        why = body(ACTIONS, "SeekHoldWhy SeekHoldWhyOfUnit(const SeekFight& state, Unit* unit)")
+        self.assertIn("if (SeekMeetHoldsUnit(state, unit))\n        return SeekHoldWhy::Held;", why)
+        self.assertLess(why.index("SeekMeetHoldsUnit(state, unit)"), why.index("SeekHoldWhyOf("))
+
+    def test_the_policy_rule(self):
+        policy = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
+        self.assertIn("return meetOpen && sonIsMeetSon && !sonVictimIsTank;", policy)
+
+
+class TakeEdgeWiring(unittest.TestCase):
+    """Walk 54, fix C: the take edge (tools/test_seek_walkout_policy.cpp pins the rule)."""
+
+    def test_the_flag_is_read_as_off(self):
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekTakeEdge", false)', CONFIG)
+        self.assertIn("dungeonRunSeekTakeEdge = config.GetBoolDefault", CONFIG)
+        self.assertIn("bool dungeonRunSeekTakeEdge = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekTakeEdge = 0", TEMPLATE)
+
+    def test_the_take_lets_a_son_at_the_edge_through_only_with_the_flag(self):
+        take = execute()
+        take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
+        base = take.index("bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);")
+        edge = take.index("if (chaseRefused && sPlayerbotAIConfig.dungeonRunSeekTakeEdge)")
+        self.assertLess(base, edge)
+        self.assertLess(edge, take.index("const bool canTaunt"))
+        block = take[edge:take.index("const bool canTaunt")]
+        self.assertIn("SeekTakeEdgeCheck(AnchorCircleOf(*anchorRow, false),", block)
+        self.assertIn("chaseRefused = edge != SeekTakeEdge::Allowed;", block)
+        self.assertIn("edgeFar = edge == SeekTakeEdge::Far;", block)
+        # The raid circle (not the tanks'), and the victim's position, never the Son's, is the second point.
+        self.assertIn("sonVictim ? sonVictim->GetPositionX() : 0.0f", block)
+        self.assertIn("sonVictim != nullptr", block)
+        # The Attack() path is reached only after the bounded check: it needs !chaseRefused, which the check set, and
+        # no Attack() call sits anywhere before the check in the take.
+        self.assertNotIn("Attack(bot,", take[:edge])
+        after = take[take.index("const bool canTaunt"):]
+        self.assertIn("if (!chaseRefused && AI_VALUE(Unit*, \"current target\") != task.source)\n        {\n"
+                      "            if (Attack(bot, task.source) && !canTaunt)", after)
+        self.assertEqual(1, take.count("Attack(bot, task.source)"))
+        self.assertLess(take.index("edgeFar = edge == SeekTakeEdge::Far;"), take.index("Attack(bot, task.source)"))
+
+    def test_the_bounds_are_the_policys(self):
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn("constexpr float kSeekTakeEdgeMaxPastYd = 8.0f;", policy)
+        self.assertIn("constexpr float kSeekTakeEdgeOnVictimYd = 10.0f;", policy)
+        self.assertIn("sonFromCentre <= raid.radius + kSeekTakeEdgeMaxPastYd", policy)
+        self.assertIn("<= kSeekTakeEdgeOnVictimYd", policy)
+
+
+class PeeledRowWiring(unittest.TestCase):
+    def test_the_peeled_row_names_the_victim(self):
+        self.assertIn('",victim=%u,victim_role=%s,son_yd=%.1f"', ACTIONS)
+        fn = body(ACTIONS, "void LogSeekMeetLost(PlayerbotAI* ai, std::uint64_t guid, const char* reason,")
+        self.assertIn('PlayerbotAI::IsHeal(player) ? "healer" : "dps"', fn)
+        self.assertIn('"tank"', fn)
+        self.assertIn("peeler->GetGUIDLow(),\n                 role, sonYd);", fn)
+        for word in ("`victim=<guid low>`", "`victim_role=", "`son_yd="):
+            self.assertIn(word, DOC)
 
 
 class CauseInsanityRowWiring(unittest.TestCase):
@@ -255,7 +356,7 @@ class CauseInsanityRowWiring(unittest.TestCase):
 class RefusalDocWiring(unittest.TestCase):
     def test_every_new_word_is_documented(self):
         for word in ("dead", "charmed", "victim", "busy", "outside", "none", "son_dead", "receiver_dead",
-                     "timeout", "chase_refused", "no_taunt", "attack", "taunt", "taunt_gated", "peeled", "receiver_charmed",
+                     "timeout", "chase_refused", "edge_far", "no_taunt", "attack", "taunt", "taunt_gated", "peeled", "receiver_charmed",
                      "receiver_victim", "receiver_busy", "receiver_wait"):
             self.assertIn("`%s`" % word, DOC, word)
 

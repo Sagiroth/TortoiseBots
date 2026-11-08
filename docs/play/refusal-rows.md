@@ -83,7 +83,8 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
 
 | Code | Meaning |
 | :--- | :--- |
-| `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. |
+| `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. With `DungeonRunSeekTakeEdge` on a Son outside the circle is still chased when its victim stands inside the raid circle (plus 2 yd), the Son's z is 46.5 or higher, the Son is within 8 yd of the circle and within 10 yd of that victim; the word then only comes for a Son whose victim is outside the circle or that stands below the platform. |
+| `edge_far` | `DungeonRunSeekTakeEdge` is on, the Son's victim is inside the raid circle and the Son is on the platform, but the Son stands more than 8 yd past the circle or more than 10 yd from that victim, so the take does not chase it (`Attack` would walk the tank off the platform). Only distance failed; counted with `chase_refused` as a refusal. |
 | `no_taunt` | The tank's class has no taunt (a paladin in 1.12, a shaman, a hunter, ...). |
 | `attack` | The tank has a taunt but cannot cast it now (cooldown, range, silenced), so only the attack order goes out. |
 | `taunt_gated` | The tank could cast the taunt, but `AiPlayerbot.DungeonRunTauntGate` refused it at this Son (a taunt-immune creature, or a needs_aura subject at a bot that lacks the aura); the gate's own `BossTacticsTauntGate` row says which. |
@@ -118,7 +119,7 @@ ref survives line drift.
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
-| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's four words (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
+| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
 
 ### Other boss-tactics rows
 
@@ -161,7 +162,7 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 | 43a | meet | `son=%u,event=meet,receiver=<name>,tank_idx=%d,receiver_yd=%.1f,due_in=%u` | UpdateSeekWalkout | not a refusal (a receiver was picked) | document |
 | 43b | no meet | `son=%u,event=no_meet,reason=<code>:<n>\|...,tanks=%d` | UpdateSeekWalkout | no (no tank could wait, and why) | added |
 | 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
-| 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
+| 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` (`peeled` adds `,victim=%u,victim_role=<tank\|healer\|dps\|pet>,son_yd=%.1f`) | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
 | 43e | wait | `son=%u,event=wait,reason=receiver_wait,victim=<name\|none>,son_yd=%.1f,after_ms=%u` | FindBossSeekTank | yes: the receiver took no other Son this tick, it waits for the walker's | added |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
@@ -179,8 +180,13 @@ The lost row's words, read per reason (the meet is cleared at the first one that
 | `receiver_charmed` | The receiver is charmed (Cause Insanity 24327 or any charm). The puller walks to the circle edge again. |
 | `receiver_victim` | The receiver became Hakkar's victim. The puller walks to the circle edge again. |
 | `receiver_busy` | The receiver already holds another Son (and the meet Son is not on a tank yet). The puller walks to the circle edge again. |
-| `peeled` | The receiver was waiting and the Son's victim became someone other than the puller, the returner or nobody (a damage dealer or a healer peeled it). The normal take branches handle the Son. |
+| `peeled` | The receiver was waiting and the Son's victim became someone other than the puller, the returner or nobody (a damage dealer or a healer peeled it). The normal take branches handle the Son. The row names who took it: `victim=<guid low>`, `victim_role=<tank\|healer\|dps\|pet>` and `son_yd=<yd from the receiver to the Son>`. |
 | `timeout` | 20 s after the shot with no take. |
+
+With `DungeonRunSeekSonMeet` the meet's Son is also held for the damage dealers while the meet is open and no tank has
+it (`SeekMeetHoldsSon`, checked first in the hold rule): the 5 s non-tank release, the 20 s cap and the late-engaged
+forced burn do not apply to it, and its puller and returner count on neither non-tank clock (the 3 s healer take and the
+5 s release). Once a tank has it the meet closes (`taken`) and today's hold rule applies.
 
 The wait row's `receiver_wait` is the receiver's refusal to take another Son, pull or drag while the Son's victim is the
 puller, the returner or nobody (`MeetReceiverShouldWait`); the receiver itself runs its normal tank AI, and the puller
@@ -271,4 +277,10 @@ branch:
   `MeetReceiverShouldWait`, `MeetReceiverLostWhy` and `WalkoutMeetCloseIf` (two readers on one snapshot: one close wins, and
   only the winner logs the `taken`/`lost`/`peeled` row); `tools/test_seek_fight_state_policy.cpp` pins the charm edge
   (the same player charmed twice with a gap logs two rows); `tools/test_seek_aura_policy.cpp` pins all eight
-  `SeekTakeReasonWord` inputs.
+  `SeekTakeReasonWord` inputs and `SeekMeetHoldsSon` (the meet Son on its puller is held even with a 6 s non-tank clock and
+  a forced burn; a Son on a tank is released as before; a closed meet or another Son changes nothing);
+  `tools/test_seek_walkout_policy.cpp` also pins `WalkoutMeetArrived` (within 8 yd of the receiver, or at the old
+  circle-edge point) and `SeekTakeEdgeVerdict` / `SeekTakeEdgeCheck` (a Son at 34 yd and 4 yd from its inside victim
+  is taken; a victim at 40 yd, a Son at z 45, a Son at 50 yd, or a Son at 36 yd but 15 yd from its victim is refused, the
+  last two as `edge_far`; the boundaries at circle + 8 yd and 10 yd from the victim); `tools/test_seek_meet_wiring.py` pins the `peeled` row's
+  `victim=`, `victim_role=` and `son_yd=` fields.

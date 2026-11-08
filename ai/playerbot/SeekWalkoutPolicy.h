@@ -53,7 +53,6 @@ namespace ai
     // edge. The Son that chased the puller lands on that tank instead of on the ranged raid. Taunt and Growl are melee
     // range, so the puller has to bring the Son within the receiver's reach: the receiver takes it once it is this
     // close (Attack closes the last yards to the taunt's melee range), and the puller stops this close to the receiver.
-    constexpr float kSeekMeetArriveYd = 2.0f;       // the puller stops this close to the receiver
     constexpr float kSeekMeetTakeYd = 8.0f;         // the receiver takes the Son once it is this close
     constexpr std::uint32_t kSeekMeetMaxMs = 20000; // the meet is over 20 s after the shot (walk 52: start to back
                                                     // median 18 s, p90 23 s, and the shot lands mid-task)
@@ -559,8 +558,10 @@ namespace ai
             WalkoutBackPoint(tank, botX, botY, x, y);
     }
 
-    // Whether the puller has arrived: at the circle's edge without a meet, within kSeekMeetArriveYd of the clamped
-    // receiver point with one.
+    // Whether the puller has arrived: at the circle's edge without a meet; with one, within kSeekMeetTakeYd of the
+    // clamped receiver point (the receiver takes the Son from there) OR at the old circle-edge point, whichever comes
+    // first. Walk 54: a 2 yd stop at a receiver that keeps moving timed 17 walk-outs out with the shot landed (4 in
+    // walk 53), the puller back inside the circle 7-21 yd from the receiver.
     inline bool WalkoutMeetArrived(bool hasMeet, float px, float py, const BossAnchorCircle& tank, float botX,
                                    float botY)
     {
@@ -568,7 +569,70 @@ namespace ai
             return WalkoutBackArrived(tank, botX, botY);
         float const dx = botX - px;
         float const dy = botY - py;
-        return std::sqrt(dx * dx + dy * dy) <= kSeekMeetArriveYd;
+        return std::sqrt(dx * dx + dy * dy) <= kSeekMeetTakeYd || WalkoutBackArrived(tank, botX, botY);
+    }
+
+    // The take edge (DungeonRunSeekTakeEdge). The bots a Son hits stand clamped on the raid circle's edge, so the Son
+    // stands at 31-45 yd and the old take (refuse any Son outside the raid circle) refused 56 % of its rows.
+    // The victim may stand this far past the raid circle and still count as inside it.
+    constexpr float kSeekTakeEdgeSlackYd = 2.0f;
+
+    // The exemption is bounded (Codex round 1): Attack() walks to melee, so a Son far past the circle, or one that
+    // is not really on its inside victim, must not be chased (it leads the tank off the platform, under Hakkar's evade
+    // line). The Son must stand within kSeekTakeEdgeMaxPastYd of the raid circle (walk 54: p75 was 45 yd from the
+    // spawn with the circle at 30; 38 covers most real cases) AND within kSeekTakeEdgeOnVictimYd of that victim.
+    constexpr float kSeekTakeEdgeMaxPastYd = 8.0f;
+    constexpr float kSeekTakeEdgeOnVictimYd = 10.0f;
+
+    // What the take edge decides for a Son: `Allowed` (take it, as today for a Son inside the circle), `Refused` (today's
+    // `chase_refused`) or `Far` (the victim is inside and the floor is the platform's, but the Son is too far from the
+    // circle or from its victim: logged `edge_far`, and refused like Refused).
+    enum class SeekTakeEdge
+    {
+        Allowed,
+        Refused,
+        Far,
+    };
+
+    // The pure verdict. A Son inside the raid circle is never refused. Outside, it is allowed only when ALL hold: the
+    // Son's victim stands inside the raid circle (plus kSeekTakeEdgeSlackYd), the Son's floor is the platform's (z at
+    // or above kSeekWalkoutMinStandZ, above Hakkar's 45.8 evade line), the Son is within kSeekTakeEdgeMaxPastYd of the
+    // circle (`sonNear`) and within kSeekTakeEdgeOnVictimYd of its victim (`sonOnVictim`). The last two failing alone
+    // is `Far`.
+    inline SeekTakeEdge SeekTakeEdgeVerdict(bool sonInside, bool victimInside, bool sonZOk, bool sonNear,
+                                            bool sonOnVictim)
+    {
+        if (sonInside)
+            return SeekTakeEdge::Allowed;
+        if (!victimInside || !sonZOk)
+            return SeekTakeEdge::Refused;
+        if (!sonNear || !sonOnVictim)
+            return SeekTakeEdge::Far;
+        return SeekTakeEdge::Allowed;
+    }
+
+    // The same with the geometry: `raid` is the raid circle (everyone's, not the tanks'), the Son at (sx, sy, sz), its
+    // victim at (vx, vy) when `hasVictim`. All distances are 2D from the circle's centre, as BossAnchorRefusesChase
+    // measures. The VICTIM's position is measured against the circle plus the slack; the Son's own against the circle
+    // itself, and against radius + kSeekTakeEdgeMaxPastYd for the cap.
+    inline SeekTakeEdge SeekTakeEdgeCheck(const BossAnchorCircle& raid, float sx, float sy, float sz, bool hasVictim,
+                                          float vx, float vy)
+    {
+        BossAnchorCircle wide = raid;
+        wide.radius += kSeekTakeEdgeSlackYd;
+        float const sonFromCentre = BossAnchorDistance2d(raid, sx, sy);
+        float const dvx = sx - vx;
+        float const dvy = sy - vy;
+        return SeekTakeEdgeVerdict(InsideAnchor(raid, sx, sy), hasVictim && InsideAnchor(wide, vx, vy),
+                                   sz >= kSeekWalkoutMinStandZ,
+                                   sonFromCentre <= raid.radius + kSeekTakeEdgeMaxPastYd,
+                                   hasVictim && std::sqrt(dvx * dvx + dvy * dvy) <= kSeekTakeEdgeOnVictimYd);
+    }
+
+    inline bool SeekTakeEdgeRefuses(const BossAnchorCircle& raid, float sx, float sy, float sz, bool hasVictim,
+                                    float vx, float vy)
+    {
+        return SeekTakeEdgeCheck(raid, sx, sy, sz, hasVictim, vx, vy) != SeekTakeEdge::Allowed;
     }
 
     // Whether the receiver takes the pulled Son now: it is on the receiver, or within the take reach (Attack closes
@@ -586,6 +650,13 @@ namespace ai
         if (sonVictim == 0)
             return true;
         return (pullerGuid != 0 && sonVictim == pullerGuid) || (returnerGuid != 0 && sonVictim == returnerGuid);
+    }
+
+    // Whether a Son's victim is the open meet's walker (the puller that brought it, or the returner): such a Son is on
+    // its way to the receiver, not camped on a non-tank, so the non-tank clocks leave it alone.
+    inline bool SeekMeetWalkerHasSon(std::uint64_t victim, std::uint64_t pullerGuid, std::uint64_t returnerGuid)
+    {
+        return victim != 0 && ((pullerGuid != 0 && victim == pullerGuid) || (returnerGuid != 0 && victim == returnerGuid));
     }
 
     // Why the receiver can no longer wait: charmed (Cause Insanity or any charm), Hakkar's victim, or holding another

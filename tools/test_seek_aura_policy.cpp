@@ -575,6 +575,32 @@ int main()
     CHECK(std::string(SeekTakeReasonWord(true, false, true)) == "no_taunt");
     CHECK(std::string(SeekTakeReasonWord(true, true, false)) == "chase_refused");
     CHECK(std::string(SeekTakeReasonWord(true, true, true)) == "taunt");
+    // The bounded take edge's own word, only for a refusal that could not taunt.
+    CHECK(std::string(SeekTakeReasonWord(true, true, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, false, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, true, true, true)) == "taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, true, false, true)) == "attack");
+    CHECK(std::string(SeekTakeReasonWord(false, false, false, true)) == "no_taunt");
+
+    // The open meet's Son stays held until a tank has it (walk 54: released 2-6 s after the shot at 98 % hp, because the
+    // puller counted as a non-tank for 5 s and the late-engaged burn was forced).
+    {
+        // The meet Son on the puller (a non-tank) at 5 s non-tank time and with the forced burn: the hold rule alone
+        // releases it (NonTank), the meet hold keeps it.
+        CHECK(SeekHoldWhyOf(true, true, false, true, 98.0f, 30.0f, 34.0f, 3, 5000, 0) == SeekHoldWhy::NonTank);
+        CHECK(!SeekHoldDecision(true, true, false, true, 98.0f, 30.0f, 34.0f, 3, 5000, 0));
+        CHECK(SeekMeetHoldsSon(true, true, false));
+        // Also the 6 s clock and a Son the selected burn would release (no non-tank time at all).
+        CHECK(!SeekHoldDecision(true, true, true, true, 98.0f, 30.0f, 34.0f, 3, 6000, 0));
+        CHECK(SeekMeetHoldsSon(true, true, false));
+        // A Son on a tank is released as today.
+        CHECK(!SeekMeetHoldsSon(true, true, true));
+        // The meet closed (or the flag off): today's decision.
+        CHECK(!SeekMeetHoldsSon(false, true, false));
+        // Another Son is not the meet's.
+        CHECK(!SeekMeetHoldsSon(true, false, false));
+        CHECK(!SeekMeetHoldsSon(true, false, true));
+    }
 
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
