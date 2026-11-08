@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: a Son of Hakkar on a healer or damage dealer is taunted at once by the nearest free off-tank when the receiving tank cannot reach it, instead of after 3 s (`DungeonRunSeekNearestTake`).
 - Fixed: Hakkar's walk-out puller no longer loses its pull shot to follow or step-out: with `DungeonRunSeekWalkoutFocus` it holds every other action until the shot lands, turns to the Son before it casts, and a hunter opens with Arcane Shot.
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
 

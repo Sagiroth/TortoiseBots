@@ -7418,6 +7418,77 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
     return state.source;
 }
 
+namespace
+{
+// Whether a tank's taunt is ready: Taunt for a warrior, Growl for a druid (1.12 has no paladin taunt), known and off
+// its cooldown. Range is the caller's own test. A dead, absent or non-bot tank has none ready.
+bool SeekTankTauntReady(Player* tank)
+{
+    if (!tank || !tank->IsInWorld() || !sServerFacade.IsAlive(tank))
+        return false;
+    const char* taunt = nullptr;
+    switch (tank->GetClass())
+    {
+        case CLASS_WARRIOR: taunt = "taunt"; break;
+        case CLASS_DRUID: taunt = "growl"; break;
+        default: break;
+    }
+    if (!taunt)
+        return false;
+    PlayerbotAI* const tankAi = PlayerbotAIStorage::Instance().GetAI(tank);
+    if (!tankAi)
+        return false;
+    std::uint32_t const spellId = tankAi->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", taunt)->Get();
+    return spellId && tankAi->HasSpell(spellId) && !tank->HasSpellCooldown(spellId);
+}
+
+// The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
+// 3 s healer clock (SeekNearestTakerIs), the nearest of them; null when the receiver can take it itself or this tank
+// cannot. Only Sons the fight's non-tank clock knows (it already leaves out the open meet's walkers), not the open
+// meet's Son, and only with the victim inside the live anchor's raid circle plus 2 yd.
+Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+{
+    if (!state.row || roles.tanks.size() < 3 || state.nonTankSince.empty())
+        return nullptr;
+    const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+    if (!anchorRow)
+        return nullptr;
+    BossAnchorCircle raid = AnchorCircleOf(*anchorRow, false);
+    raid.radius += kSeekTakeEdgeSlackYd;
+    Player* const receiver = roles.tanks[2];
+    const bool receiverUp = receiver && receiver->IsInWorld() && sServerFacade.IsAlive(receiver);
+    const bool receiverTauntReady = SeekTankTauntReady(receiver);
+    const bool selfTauntReady = SeekTankTauntReady(bot);
+    const bool selfIsBossVictim = state.boss && state.boss->GetVictim() == bot;
+    const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+    Unit* best = nullptr;
+    float bestYd = 0.0f;
+    for (const auto& entry : state.nonTankSince)
+    {
+        Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(entry.first));
+        if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
+            continue;
+        Player* const victim = dynamic_cast<Player*>(son->GetVictim());
+        const bool victimNonTank = victim && !PlayerbotAI::IsTank(victim);
+        const bool meetSon = state.meetOpen && entry.first == state.meetSon;
+        const bool inside = victim && InsideAnchor(raid, victim->GetPositionX(), victim->GetPositionY());
+        if (!SeekNearestTakeSonOk(victimNonTank, meetSon, inside))
+            continue;
+        const float selfYd = bot->GetDistance(son);
+        const float receiverYd = receiverUp ? receiver->GetDistance(son) : std::numeric_limits<float>::max();
+        if (!SeekNearestTakerIs(roles.botIndex, 2, receiverYd, receiverTauntReady, selfYd, selfTauntReady,
+                                selfIsBossVictim, selfHoldsSon))
+            continue;
+        if (!best || selfYd < bestYd)
+        {
+            best = son;
+            bestYd = selfYd;
+        }
+    }
+    return best;
+}
+}
+
 SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
 {
     SeekTankTask task;
@@ -7622,6 +7693,18 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     }
     if (healerTaker)
     {
+        // The nearest take: a Son on a non-tank that the receiver cannot taunt now (too far, or its taunt on cooldown)
+        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once.
+        if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
+        {
+            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state))
+            {
+                task.valid = true;
+                task.source = nearestSon;
+                task.take = true;
+                return task;
+            }
+        }
         // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot.
         if (state.healerSon)
         {

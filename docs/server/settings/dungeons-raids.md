@@ -80,6 +80,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller runs only its walk-out until its shot lands, turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
+| [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -936,6 +937,17 @@ Whether the Hakkar walk-out puller keeps to its walk-out until its shot lands. R
 - Every action except the walk-out (`boss tactics seek tank`) and the pet's dismissal (`boss tactics seek pet`) is held, survival actions such as Feign Death and flee included (the walk-out itself aborts on threat, on becoming Hakkar's victim and on a charm). A dead or charmed puller holds nothing, nor does a record older than the task's 25 s. Once the shot lands the hold lifts, so the walk back is not blocked. The first held action of each walk-out logs `seek pull: walk-out preempted action=<name>` (one row per walk-out).
 - At the stand, a puller that does not face the Son turns this tick and casts on the next one, instead of casting in the same tick as the turn.
 - A hunter opens with Arcane Shot when it can cast it now, else Auto Shot (never a DoT, so never Serpent Sting). Every other class keeps its shot (wand Shoot, Wrath, Lightning Bolt).
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekNearestTake`
+Whether the first off-tank takes a Son of Hakkar off a non-tank at once when its taunt reaches and the receiving tank's does not. Recommended on.
+**Default:** `0` · **Values:** `0` off (the first off-tank takes only after the Son sat 3 s on the non-tank, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Nearest take:** walk 55's Sons on a non-tank were taken almost only by the receiver (the third tank), mostly with `attack` (walking, the taunt out of reach or on cooldown), while 1-3 other tanks stood free a median 12.9 yd away. With the key on, a Son that fights a non-tank, is not the open meet's Son and has its victim inside the raid circle (plus 2 yd) is taken at once, without the 3 s clock, by the first off-tank (tanks[1]) when the receiver is more than 8 yd from the Son or its taunt is on cooldown, and the first off-tank is within 8 yd with its taunt (Taunt, Growl) ready, is not Hakkar's victim and holds no Son. The main tank never takes. Otherwise the receiver keeps its take and the 3 s rule still applies. The take row is the usual `seek take: ... reason=<word>`.
 
 </details>
 

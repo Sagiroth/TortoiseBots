@@ -180,6 +180,37 @@ int main()
     CHECK(SeekTankTakeAllowed(false));
     CHECK(!SeekTankTakeAllowed(true));
 
+    // SeekNearestTakerIs (DungeonRunSeekNearestTake). Failing case before the nearest take: the receiver (tanks[2])
+    // 14 yd from the Son, tanks[1] 4 yd away with its taunt ready -> tanks[1] takes at once. Today nobody but the
+    // receiver takes until the 3 s healer clock.
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, false));
+    // The receiver's taunt on cooldown: tanks[1] takes even with the receiver close.
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, false, 4.0f, true, false, false));
+    // The receiver at 5 yd with its taunt ready keeps the take: tanks[1] does not take, the receiver does.
+    CHECK(!SeekNearestTakerIs(1, 2, 5.0f, true, 4.0f, true, false, false));
+    CHECK(SeekNearestTakerIs(2, 2, 5.0f, true, 4.0f, true, false, false));
+    // The 8 yd edges.
+    CHECK(!SeekNearestTakerIs(1, 2, kSeekNearestTakeYd, true, 4.0f, true, false, false));
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, kSeekNearestTakeYd, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 8.5f, true, false, false));
+    // tanks[1] is Hakkar's victim -> no (mutation: drop the boss-victim test and this fails).
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, true, false));
+    // tanks[1] holds a Son already, or its own taunt is on cooldown -> no.
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, true));
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, false, false, false));
+    // The main tank never takes, however close; a fourth tank is no taker here.
+    CHECK(!SeekNearestTakerIs(0, 2, 14.0f, false, 1.0f, true, false, false));
+    CHECK(!SeekNearestTakerIs(3, 2, 14.0f, false, 1.0f, true, false, false));
+    // A dead receiver is passed as far and not ready: tanks[1] in reach takes.
+    CHECK(SeekNearestTakerIs(1, 2, 1.0e9f, false, 4.0f, true, false, false));
+    // Flag off: the nearest take is never asked, and today's 3 s rule is unchanged.
+    CHECK(!SeekTakeFightingSonOnHealer(2999) && SeekTakeFightingSonOnHealer(3000));
+    // Which Son: on a non-tank, not the open meet's, its victim inside the raid circle (+2 yd).
+    CHECK(SeekNearestTakeSonOk(true, false, true));
+    CHECK(!SeekNearestTakeSonOk(false, false, true));
+    CHECK(!SeekNearestTakeSonOk(true, true, true));
+    CHECK(!SeekNearestTakeSonOk(true, false, false));
+
     // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
     // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.
     {

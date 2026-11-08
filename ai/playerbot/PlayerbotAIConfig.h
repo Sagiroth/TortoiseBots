@@ -668,6 +668,11 @@ public:
     // Shot); off, the puller's other actions may take its ticks and it turns and casts in one tick as before (default
     // off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
+    // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
+    // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
+    // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
+    // takes. Off, the 3 s rule stands as before (default off, recommended on).
+    bool dungeonRunSeekNearestTake = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;
