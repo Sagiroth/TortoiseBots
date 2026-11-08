@@ -4059,6 +4059,87 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
 
 namespace
 {
+// Whether a grid hit's owner is a unit of this fight.
+bool GridOwnerInFight(const BossTacticsFight& fight, std::uint64_t owner)
+{
+    if (!owner)
+        return false;
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetObjectGuid().GetRawValue() == owner)
+            return true;
+    return false;
+}
+
+// The carrier scan's hits: every living unit of an open carrier row's entry within kBossTacticsEngageRange of the bot
+// (the row's own grid read, 1 s cached), with the checks CarrierScanRefuses reads. A unit the fight's list already
+// holds is read again here on purpose: the list held it as unpickable, and the scan asks the core the same questions
+// itself.
+void CollectCarrierScanHits(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight,
+    std::vector<CarrierScanFacts>& facts, std::vector<Unit*>& units)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    std::unordered_set<std::uint64_t> seen;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (!CarrierKillFirstRow(*row))
+            continue;
+        const std::vector<KillFirstGridUnit> grid = AI_VALUE2(std::vector<KillFirstGridUnit>,
+            "kill first grid units", static_cast<int32>(TacticSubjectEntry(*row)));
+        for (const KillFirstGridUnit& hit : grid)
+        {
+            if (!hit.alive || !seen.insert(hit.guid).second)
+                continue;
+            Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive())
+                continue;
+            CarrierScanFacts factsOfHit;
+            factsOfHit.unitFound = true;
+            factsOfHit.gridEligible = KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
+                GridOwnerInFight(fight, hit.owner));
+            factsOfHit.distanceYd = hit.distance;
+            factsOfHit.los = bot->IsWithinLOSInMap(unit);
+            factsOfHit.validAttack = bot->IsValidAttackTarget(unit);
+            facts.push_back(factsOfHit);
+            units.push_back(unit);
+        }
+    }
+}
+
+// Whether `entry` is the subject of an open carrier row.
+bool IsCarrierRowEntry(const BossTacticsFight& fight, std::uint32_t entry)
+{
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row) && TacticSubjectEntry(*row) == entry)
+            return true;
+    return false;
+}
+
+// The row for a scan Shade that took the pick over an ordinary kill_first pick (a ward or a totem in view): one
+// BossTacticsKillFirst row per bot per 5 s, its own throttle (the no-switch row is a different event).
+//   info1 = "reason=scan_over"
+//   info2 = "pick=<entry>:<guid low>,over=<entry>,mode=<carrier|free>"
+constexpr uint32 kCarrierScanOverLogGapMs = 5000;
+std::mutex g_carrierScanOverLogMutex;
+std::unordered_map<uint64, uint32> g_carrierScanOverLog;
+
+void LogCarrierScanOver(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* over, KillFirstPickMode mode)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    {
+        const uint32 nowMs = WorldTimer::getMSTime();
+        std::lock_guard<std::mutex> lock(g_carrierScanOverLogMutex);
+        uint32& last = g_carrierScanOverLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kCarrierScanOverLogGapMs)
+            return;
+        last = nowMs;
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "pick=%u:%u,over=%u,mode=%s", pick->GetEntry(), pick->GetGUIDLow(),
+             over->GetEntry(), mode == KillFirstPickMode::Free ? "free" : "carrier");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=scan_over", info2);
+}
+
 Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
     float carrierReachYd);
 }
@@ -4165,15 +4246,6 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
     // (KillFirstGridEligible).
     if (sPlayerbotAIConfig.dungeonRunKillFirstGrid)
     {
-        auto const ownerInFight = [&fight](std::uint64_t owner)
-        {
-            if (!owner)
-                return false;
-            for (Unit* unit : fight.units)
-                if (unit && unit->GetObjectGuid().GetRawValue() == owner)
-                    return true;
-            return false;
-        };
         std::unordered_set<std::uint32_t> entries;
         for (const BossTacticRow* row : fight.rows)
             if (row->kind == BossTacticKind::KillFirst && row->targetEntry != 0)
@@ -4192,7 +4264,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                     continue;
                 }
                 if (!KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
-                        ownerInFight(hit.owner)) ||
+                        GridOwnerInFight(fight, hit.owner)) ||
                     !seen.insert(hit.guid).second)
                     continue;
                 Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
@@ -4212,7 +4284,32 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
     const int picked = mode == KillFirstPickMode::Carrier
         ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
         : PickKillFirst(fight.rows, candidates);
-    return picked < 0 ? nullptr : units[picked];
+    Unit* const ordinary = picked < 0 ? nullptr : units[picked];
+    // The carrier scan (walk 53): the carrier row's entry read off the grid, and the nearest hit that passes every
+    // check. It runs BEFORE the ordinary pick is accepted, for every mode but None (a player's order is never
+    // overridden): a free DPS takes every open row, so a ward or a totem in view would win the ordinary pick while a
+    // Shade lives, and a carrier is the only one who can kill that Shade (CarrierScanTakesPrecedence). An ordinary pick
+    // that already is a carrier-row Shade stays and the scan is skipped. A second path, never a widened first one:
+    // PickCarrierOverride and the grid pass above stay as they are.
+    bool const isCarrier = HasCarrierKillFirstRow(fight.rows);
+    bool const ordinaryIsCarrierEntry = ordinary && IsCarrierRowEntry(fight, ordinary->GetEntry());
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan && isCarrier && mode != KillFirstPickMode::None &&
+        !ordinaryIsCarrierEntry)
+    {
+        std::vector<CarrierScanFacts> facts;
+        std::vector<Unit*> scanUnits;
+        CollectCarrierScanHits(ai, bot, fight, facts, scanUnits);
+        int const scanned = CarrierScanPick(facts, carrierReachYd);
+        Unit* const scanUnit = scanned >= 0 ? scanUnits[scanned] : nullptr;
+        if (CarrierScanTakesPrecedence(isCarrier, sPlayerbotAIConfig.dungeonRunCarrierScan, mode, scanUnit != nullptr,
+                ordinaryIsCarrierEntry))
+        {
+            if (ordinary && ordinary != scanUnit)
+                LogCarrierScanOver(ai, bot, scanUnit, ordinary, mode);
+            return scanUnit;
+        }
+    }
+    return ordinary;
 }
 }
 
@@ -4815,6 +4912,10 @@ bool BossTacticsDispelSweepAction::Execute(Event& event)
 // for a whole fight.
 //   info1 = "reason=<not_read|not_attackable|beyond_reach|reattack|player_order>"
 //   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,pick=<entry>:<guid low>|none,current=<entry>:<guid low>|none"
+// With AiPlayerbot.DungeonRunCarrierScan on, the reason words come from the scan's tally instead (the row then says
+// which check kept every grid hit out of the pick):
+//   info1 = "reason=<no_unit|ineligible|beyond_reach|no_los|invalid_target|not_pickable|player_order|attack_refused>"
+//   info2 = ...,current=...,codes=<word>:<n>[|<word>:<n>],grid=<hits>,pickable=<0|1>,mode=<carrier|free|none>
 constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;
 std::mutex g_carrierNoSwitchLogMutex;
 std::unordered_map<uint64, uint32> g_carrierNoSwitchLog;
@@ -4828,6 +4929,44 @@ static bool CarrierNoSwitchLogDue(Player* bot)
         return false;
     last = nowMs;
     return true;
+}
+
+// The scan's tally for the row: which check refused each grid hit of the carrier row, whether a player's order
+// closed the pick, and whether any candidate of the entry was pickable at all (the attackers list first, then the
+// grid). Reads the same value the scan pick read (1 s cached), so the row explains exactly what the pick saw.
+static CarrierScanTally CarrierScanTallyOf(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight,
+    std::uint32_t entry)
+{
+    std::vector<CarrierScanFacts> facts;
+    std::vector<Unit*> units;
+    CollectCarrierScanHits(ai, bot, fight, facts, units);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    CarrierScanTally tally;
+    tally.hits = static_cast<int>(facts.size());
+    for (const CarrierScanFacts& hit : facts)
+        ++tally.byCode[static_cast<int>(CarrierScanRefuses(hit, kCarrierHoldReachYd))];
+    ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
+    // The caller only gets here with an open carrier row (entry != 0), so the row is what FindBossKillFirst reads too.
+    KillFirstPickMode const mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
+        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()),
+        true);
+    tally.playerOrder = mode == KillFirstPickMode::None;
+    tally.freeMode = mode == KillFirstPickMode::Free;
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetEntry() == entry && sServerFacade.IsAlive(unit) &&
+            PossibleAttackTargetsValue::IsValid(unit, bot))
+        {
+            tally.pickableSeen = true;
+            break;
+        }
+    if (!tally.pickableSeen)
+        for (Unit* unit : units)
+            if (unit && PossibleAttackTargetsValue::IsValid(unit, bot))
+            {
+                tally.pickableSeen = true;
+                break;
+            }
+    return tally;
 }
 
 void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick,
@@ -4847,6 +4986,10 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         }
     if (!entry)
         return; // the bot carries no gated row: no Shade is its subject
+    // The throttle first: the scan tally reads the grid and asks the core for every hit, which a row that is not due
+    // would only throw away.
+    if (!CarrierNoSwitchLogDue(bot))
+        return;
     Unit* shade = nullptr;
     float shadeYd = -1.0f;
     for (Unit* unit : fight.units)
@@ -4861,7 +5004,29 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         }
     }
     const char* reason = keptReason;
-    if (!reason)
+    char scanText[160];
+    scanText[0] = '\0';
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan)
+    {
+        CarrierScanTally const tally = CarrierScanTallyOf(ai, bot, fight, entry);
+        bool const pickableNow = shade && PossibleAttackTargetsValue::IsValid(shade, bot);
+        if (!reason)
+            reason = CarrierScanWord(tally, shade != nullptr, pickableNow);
+        std::string codes;
+        for (int code = 0; code < 6; ++code)
+        {
+            if (tally.byCode[code] <= 0)
+                continue;
+            if (!codes.empty())
+                codes += '|';
+            codes += CarrierScanReasonWord(static_cast<CarrierScanRefusal>(code));
+            codes += ':';
+            codes += std::to_string(tally.byCode[code]);
+        }
+        snprintf(scanText, sizeof(scanText), ",codes=%s,grid=%d,pickable=%d,mode=%s", codes.c_str(), tally.hits,
+            tally.pickableSeen ? 1 : 0, tally.playerOrder ? "none" : tally.freeMode ? "free" : "carrier");
+    }
+    else if (!reason)
     {
         bool const pickable = shade && PossibleAttackTargetsValue::IsValid(shade, bot);
         switch (CarrierNoSwitchReason(true, shade != nullptr, pickable, shadeYd, kCarrierHoldReachYd))
@@ -4876,8 +5041,6 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 break;
         }
     }
-    if (!CarrierNoSwitchLogDue(bot))
-        return;
     char info1[64];
     snprintf(info1, sizeof(info1), "reason=%s", reason);
     char shadeText[48];
@@ -4895,9 +5058,54 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         snprintf(currentText, sizeof(currentText), "%u:%u", current->GetEntry(), current->GetGUIDLow());
     else
         snprintf(currentText, sizeof(currentText), "none");
-    char info2[192];
-    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s", shadeText, shadeYd, pickText, currentText);
+    char info2[256];
+    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s%s", shadeText, shadeYd, pickText,
+             currentText, scanText);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);
+}
+
+// The taunt gate (AiPlayerbot.DungeonRunTauntGate): a tank never taunts a needs_aura subject (the Shade of Jin'do,
+// which only a carrier can damage and which the core answers with a copy of the boss's threat list) or a creature the
+// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). The gate sits
+// in the taunt actions, not in "attacker of non-tank target": that value also picks the warrior gap closer's Charge,
+// which is no taunt.
+//   info1 = "reason=<needs_aura|taunt_immune>"
+//   info2 = "target=<entry>:<guid low>,spell=<spell>"
+constexpr uint32 kTauntGateLogGapMs = 5000;
+std::mutex g_tauntGateLogMutex;
+std::unordered_map<uint64, uint32> g_tauntGateLog;
+
+static bool TauntGateLogDue(Player* bot)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_tauntGateLogMutex);
+    uint32& last = g_tauntGateLog[bot->GetObjectGuid().GetRawValue()];
+    if (last != 0 && nowMs - last < kTauntGateLogGapMs)
+        return false;
+    last = nowMs;
+    return true;
+}
+
+bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTauntGate)
+        return false;
+    if (!ai || !bot || !target)
+        return false;
+    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,
+        GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry()), TargetTauntImmune(target));
+    if (gate == TauntGate::Allow)
+        return false;
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot))
+    {
+        char info1[32];
+        snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
+        char info2[64];
+        snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
+                 spell ? spell : "none");
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
+    }
+    return true;
 }
 
 // The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
@@ -5017,7 +5225,15 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
         context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
         context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
     }
-    return Attack(bot, pick);
+    if (!Attack(bot, pick))
+    {
+        // A pick that passed every check and the core still refused says so next to the no-switch row (the carrier scan
+        // turns the pick list into one the bot reads itself, so a refusal there is worth a row of its own).
+        if (sPlayerbotAIConfig.dungeonRunCarrierScan)
+            LogCarrierNoSwitch(ai, bot, fight, pick, current, "attack_refused");
+        return false;
+    }
+    return true;
 }
 
 bool BossTacticsCarrierStrikeAction::Execute(Event& event)
@@ -5382,7 +5598,7 @@ bool BossTacticsTankSwapAction::Execute(Event& event)
     if (!task.valid || !task.boss)
         return false;
     const char* const taunt = CastableTaunt(ai, task.boss);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.boss, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.boss)
@@ -7749,7 +7965,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (Attack(bot, task.source) && !canTaunt)
                 return true;
         }
-        if (!canTaunt)
+        if (!canTaunt || TauntRefusedByGate(ai, bot, task.source, taunt))
             return false;
         return ai->CastSpell(taunt, task.source);
     }
@@ -8305,7 +8521,7 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (!task.valid)
         return false;
     const char* const taunt = ClassTauntSpell(bot);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.subject)

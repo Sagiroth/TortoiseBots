@@ -1,7 +1,8 @@
 # Changelog
 
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
-
+- Changed: a Delusions carrier at Jin'do finds its Shade even when its attackers list misses it, and the kill-first row says why it did not switch (AiPlayerbot.DungeonRunCarrierScan).
+- Changed: tanks no longer single-target taunt a Shade of Jin'do or a taunt-immune boss (AiPlayerbot.DungeonRunTauntGate); area taunts are not covered.
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.
 - Changed: the Hakkar Son walk-out picks any ranged bot on the platform even mid-cast, waits for the first Cause Insanity, starts from 80 s, keeps facing the Son, and its rows say why no puller was found.
 - Fixed: priests that know Heal rank 2 or higher stop picking Lesser Heal on their own while they can pay for Heal; orders and low-mana fallbacks still use it.

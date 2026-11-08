@@ -8,6 +8,7 @@
 // distance.
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace ai
@@ -24,6 +25,14 @@ namespace ai
                                            // crowd-controlled yet, no CC cast bar, healer victim
         float distance = 0.0f;            // 2D distance to the tank, the closeness key
     };
+
+    // Whether the scan leaves a unit out before it is a candidate at all: with the taunt gate on, a unit that needs an
+    // aura to be damaged (requiredAura != 0, the Shade of Jin'do) is no pick for either user of the value, the tank's
+    // taunt or the warrior gap closer's Charge: a bot without the aura cannot hurt it. Off, no unit is left out.
+    inline bool AttackerOfNonTankSkipsUnit(bool tauntGateOn, std::uint32_t requiredAura)
+    {
+        return tauntGateOn && requiredAura != 0;
+    }
 
     // A candidate is tauntable when a group member needs it off them; the
     // cast's own spell range (read from the spell, not a constant) and its

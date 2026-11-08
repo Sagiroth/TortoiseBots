@@ -1086,6 +1086,25 @@ AiPlayerbot.DungeonRunCharmYield = 0
 # 1 - on
 AiPlayerbot.DungeonRunCarrierStrike = 0
 
+# A Delusions carrier at Jin'do whose attackers list never showed a Shade finds it by a grid search of the carrier row's
+# entry, and takes the nearest one that is part of the fight, within 40 yd, in line of sight and attackable. The
+# kill-first no-switch row then names the check that kept every grid hit out of the pick (`no_unit`, `ineligible`,
+# `beyond_reach`, `no_los`, `invalid_target`, `not_pickable`) and carries codes=<word>:<n>...,grid=<hits>,pickable=<0|1>.
+# A player's own attack or focus order is never overridden. `.reload config` reads it again with the other
+# AiPlayerbot.DungeonRun* keys.
+# 0 - off: only the attackers list and the kill_first grid pass pick (Default)
+# 1 - on
+AiPlayerbot.DungeonRunCarrierScan = 0
+
+# A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
+# carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). The warrior taunts are gated
+# (Taunt, Mocking Blow, the off-target taunt); Challenging Shout is an area taunt with no single target and is not
+# covered. Each refusal logs BossTacticsTauntGate once per bot per 5 s. `.reload config` reads it again with the other
+# AiPlayerbot.DungeonRun* keys.
+# 0 - off: every taunt goes out as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTauntGate = 0
+
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 

@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <iostream>
 #include <map>
@@ -138,6 +139,168 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     return c;
 }
 
+static CarrierScanFacts ScanHit(bool unitFound, bool eligible, float distanceYd, bool los, bool validAttack)
+{
+    CarrierScanFacts f;
+    f.unitFound = unitFound;
+    f.gridEligible = eligible;
+    f.distanceYd = distanceYd;
+    f.los = los;
+    f.validAttack = validAttack;
+    return f;
+}
+
+// walk 53: a Delusions carrier's attackers list held only Jin'do while a Shade stood beside it (295 of 357 no-switch
+// rows read `not_read`). The carrier override finds nothing there; the grid fallback takes the nearest Shade that
+// passes every check, and leaves the nearer one behind a wall out.
+static void TestCarrierScanTakesGridShadeTheAttackersListMissed()
+{
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    ActiveBossRows active = Active(rows);
+    // The attackers list of that carrier: Jin'do alone, pickable, 5 yd.
+    std::vector<TacticCandidate> candidates{Cand(11380, 5.0f, true)};
+    CHECK(PickCarrierOverride(active, candidates, kCarrierHoldReachYd) == -1);
+
+    // The grid read of the carrier row's entry: a Shade at 12 yd and one at 8 yd without line of sight.
+    std::vector<CarrierScanFacts> hits;
+    hits.push_back(ScanHit(true, true, 12.0f, true, true));
+    hits.push_back(ScanHit(true, true, 8.0f, false, true));
+    CHECK(CarrierScanRefuses(hits[0], kCarrierHoldReachYd) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(hits[1], kCarrierHoldReachYd) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanPick(hits, kCarrierHoldReachYd) == 0);
+}
+
+// Each check alone, then the order the checks run in, then the reach's edge.
+static void TestCarrierScanRefusal()
+{
+    CHECK(CarrierScanRefuses(ScanHit(false, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 10.0f, true, true), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, true), 40.0f) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, false), 40.0f) == CarrierScanRefusal::InvalidTarget);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+
+    CHECK(CarrierScanRefuses(ScanHit(false, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, false, false), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, false), 40.0f) == CarrierScanRefusal::NoLos);
+
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.01f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, -1.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+}
+
+static void TestCarrierScanPick()
+{
+    std::vector<CarrierScanFacts> none;
+    CHECK(CarrierScanPick(none, 40.0f) == -1); // TestCarrierScanPickEmpty
+    std::vector<CarrierScanFacts> refused;
+    refused.push_back(ScanHit(true, false, 5.0f, true, true));
+    refused.push_back(ScanHit(true, true, 45.0f, false, false));
+    CHECK(CarrierScanPick(refused, 40.0f) == -1); // TestCarrierScanPickAllRefused
+    std::vector<CarrierScanFacts> eligible;
+    eligible.push_back(ScanHit(true, true, 22.0f, true, true));
+    eligible.push_back(ScanHit(true, true, 9.0f, true, false));
+    CHECK(CarrierScanPick(eligible, 40.0f) == 0); // the nearer hit refused, the far one alone
+    eligible[1].validAttack = true;
+    CHECK(CarrierScanPick(eligible, 40.0f) == 1); // TestCarrierScanPickNearest
+}
+
+static void TestCarrierScanReasonWord()
+{
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::None), "none") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoUnit), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::Ineligible), "ineligible") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::BeyondReach), "beyond_reach") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoLos), "no_los") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::InvalidTarget), "invalid_target") == 0);
+}
+
+// Codex round 3: a free DPS carrier takes the Shade the scan found over a Powerful Healing Ward in view; every other
+// case keeps the ordinary pick.
+static void TestCarrierScanTakesPrecedence()
+{
+    using M = KillFirstPickMode;
+    // A carrier, the key on, a ward the ordinary pick took, a Shade the scan found: the Shade.
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Free, true, false));
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Carrier, true, false));
+    // Not a carrier: the ward stays (the uncursed raid's job).
+    CHECK(!CarrierScanTakesPrecedence(false, true, M::Free, true, false));
+    // Key off: the ward stays.
+    CHECK(!CarrierScanTakesPrecedence(true, false, M::Free, true, false));
+    // A player's order is never overridden.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::None, true, false));
+    // No Shade found: the ordinary pick stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Free, false, false));
+    // The ordinary pick already is a Shade: it stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Carrier, true, true));
+
+    // The walk shape: the free pick takes a ward (entry 14987) while a carrier row for 14986 is open.
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    rows.push_back(Row(310, 11380, BossTacticKind::KillFirst, 14987));
+    ActiveBossRows active = Active(rows);
+    std::vector<TacticCandidate> candidates{Cand(14987, 10.0f, true)};
+    int const ordinary = PickKillFirst(active, candidates);
+    CHECK(ordinary == 0); // the ward wins the ordinary free pick
+    CHECK(HasCarrierKillFirstRow(active));
+    CHECK(CarrierScanTakesPrecedence(HasCarrierKillFirstRow(active), true, M::Free, true,
+                                     candidates[ordinary].entry == 14986));
+}
+
+// The no-switch row's word from the scan tally: a player's order first, then the most common refusal (the enum order
+// breaks a tie), then why there was no hit at all.
+static void TestCarrierScanWord()
+{
+    // TestCarrierScanWordPlayerOrderWins: the order beats a tally full of refusals.
+    CarrierScanTally ordered;
+    ordered.playerOrder = true;
+    ordered.hits = 2;
+    ordered.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 2;
+    CHECK(std::strcmp(CarrierScanWord(ordered, true, true), "player_order") == 0);
+
+    // TestCarrierScanWordMostCommon and TestCarrierScanWordTieBreak.
+    CarrierScanTally mixed;
+    mixed.hits = 5;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 4; // hits that passed are never the word
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 3;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "no_los") == 0);
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "beyond_reach") == 0); // equal: the earlier code
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::Ineligible)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "ineligible") == 0);
+
+    // TestCarrierScanWordNotPickable: no refused hit, so the unit the fight holds decides.
+    CarrierScanTally empty;
+    CHECK(std::strcmp(CarrierScanWord(empty, false, false), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, false), "not_pickable") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, true), "beyond_reach") == 0);
+    CarrierScanTally passed;
+    passed.hits = 1;
+    passed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(passed, true, true), "not_pickable") == 0);
+}
+
+// A tank never taunts a needs_aura subject (the Shade of Jin'do) or a taunt-immune creature; the key off leaves every
+// taunt as it was.
+static void TestTauntGate()
+{
+    CHECK(TauntGateFor(false, 24306, true) == TauntGate::Allow);      // TestTauntGateOffAllows
+    CHECK(TauntGateFor(true, 24306, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura
+    CHECK(TauntGateFor(true, 0, true) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
+    CHECK(TauntGateFor(true, 24306, true) == TauntGate::NeedsAura);   // the aura is read first
+    CHECK(TauntGateFor(true, 0, false) == TauntGate::Allow);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::Allow), "allow") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::NeedsAura), "needs_aura") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::TauntImmune), "taunt_immune") == 0);
+}
+
 static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
 {
     SoleCandidate c;
@@ -232,6 +395,13 @@ int main()
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
     TestKillFirstReattacksAStalePick();
+    TestCarrierScanTakesGridShadeTheAttackersListMissed();
+    TestCarrierScanRefusal();
+    TestCarrierScanPick();
+    TestCarrierScanReasonWord();
+    TestCarrierScanWord();
+    TestCarrierScanTakesPrecedence();
+    TestTauntGate();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

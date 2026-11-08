@@ -684,6 +684,13 @@ public:
     // pending `now` dispel. The main tank never strikes and an off-tank only while the boss is not on it. Off, the
     // carrier node is never active (default off).
     bool dungeonRunCarrierStrike = false;
+    // The carrier scan: a Delusions carrier whose attackers list never showed a Shade finds it by the grid -- the
+    // nearest living unit of the carrier row's entry that is this fight's, in reach, in sight and attackable -- and the
+    // kill-first row says which check kept every grid hit out of the pick. Off, the pick stays as before (default off).
+    bool dungeonRunCarrierScan = false;
+    // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
+    // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
+    bool dungeonRunTauntGate = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party

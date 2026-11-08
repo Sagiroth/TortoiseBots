@@ -137,7 +137,7 @@ ref survives line drift.
 | 30 | `BossTacticsLinkedWindow` | `first_ms=..,last_ms=..,window_ms=..,inside=%d` | ScanBossLinkedDeath | not a refusal (the window fired) | document |
 | 31 | `BossTacticsFreeze` | `aura=<id>`; info2 `ms=<n>,moved_yd=<d>` | LogFreeze | not a refusal (an episode's end) | document |
 | 32 | `BossTacticsFlee` | `aura=<id>,mode=<away\|to_tank>`; info2 `ally_yd=..,radius=..,walk=<started\|none>` | LogFlee | partly: `walk=none` has no cause (the walk's own path refusal is only known as a bool) | inventory only |
-| 33 | `BossTacticsKillFirst` | `reason=<not_read\|not_attackable\|beyond_reach\|reattack\|player_order>` | ai::LogCarrierNoSwitch | yes: `reason=` | keep |
+| 33 | `BossTacticsKillFirst` | `reason=<not_read\|not_attackable\|beyond_reach\|reattack\|player_order>`; with `AiPlayerbot.DungeonRunCarrierScan` on `<no_unit\|ineligible\|beyond_reach\|no_los\|invalid_target\|not_pickable\|reattack\|player_order\|attack_refused>`, and the not-a-refusal word `scan_over` (info2 `pick=<entry>:<guid low>,over=<entry>,mode=<carrier\|free>`: the scan's Shade took the pick over a ward or totem, one row per bot per 5 s) (`attack_refused`: any carrier pick `Attack()` refuses, the scan's or the ordinary one), and info2 gains `,codes=<word>:<n>[\|<word>:<n>],grid=<hits>,pickable=<0\|1>,mode=<carrier\|free\|none>` after `current=` (`codes=` counts each grid hit by the check that refused it, and `none:<n>` counts hits that passed every check; `mode=none` is a player's order) | ai::LogCarrierNoSwitch | yes: `reason=` | keep |
 | 34 | `BossTacticsCarrierStrike` | `verdict=<strike\|not_carrier\|no_shade\|main_tank\|threat_successor\|holds_boss\|guard_low_member\|guard_tank\|guard_healers\|guard_mana\|guard_dispel>,role=..` | ai::LogCarrierStrike | yes: `verdict=`; the emit's comment omits `threat_successor` | comment fix |
 | 35 | `BossTacticsTankSwap` | `taunt=<guid>,stacks=<n>`; info2 `from=<guid>` | ai::NoteBossTankSwapCast | not a refusal (the swap was cast) | document |
 | 36 | `BossTacticsAvoidCast` | `caster=<e>:<g>,spell=<id>`; info2 `dist=..,radius=..,dest=..,stopped=..,walk=<started\|deferred\|none>` | LogAvoidCast | partly: the site knows whether no spot was found (`count==0`) or every point's `MoveTo` said no, without a new read | inventory only |
@@ -148,6 +148,7 @@ ref survives line drift.
 | 41 | `BossTacticsBurnMana` | `spell=<id>,boss_mana_pct=<pct>` | LogBurnMana | not a refusal (the cast went out) | document |
 | 42 | `BossTacticsRangedOnly` | `subject=<entry>,gap=%.1f` | ai::LogBossRangedOnly | not a refusal (the hold is active) | document |
 | 43 | `BossTacticsThreatCap` | `threat cap: ref=<main\|offtank> <threat> offtank_target=<name\|none>` | LogThreatCap (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the reference a cap is measured against) | document |
+| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune>`; info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
 
 ### The pulled Son's meet (event `BossTacticsSonMeet`)
 
@@ -198,17 +199,17 @@ when absent), and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<
 
 | # | Event | Row text / info1 shape | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 44 | `HealSkip` | `out-of-range` / `line-of-sight` / `no-power` / `casting` / `moving` / `target-invalid` / `not-in-control` / `not-ready` / `not-known` / `cast-check-failed`; info2 `spell=.. result=.. ...` | `HealerDiagnostics::CheckFailed` | yes: the info1 word | keep |
-| 45 | `HealSkip` | `execute-refused` | `HealerDiagnostics::CastAttempt` | no (the execute API returns a bool only) | inventory only |
-| 46 | `HealState` | `snapshot` | `HealerDiagnostics::Sample` | not a refusal (a state sample) | document |
+| 45 | `HealSkip` | `out-of-range` / `line-of-sight` / `no-power` / `casting` / `moving` / `target-invalid` / `not-in-control` / `not-ready` / `not-known` / `cast-check-failed`; info2 `spell=.. result=.. ...` | `HealerDiagnostics::CheckFailed` | yes: the info1 word | keep |
+| 46 | `HealSkip` | `execute-refused` | `HealerDiagnostics::CastAttempt` | no (the execute API returns a bool only) | inventory only |
+| 47 | `HealState` | `snapshot` | `HealerDiagnostics::Sample` | not a refusal (a state sample) | document |
 
 ### Unstuck
 
 | # | Event | Row text / info1 shape | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 47 | `LongStuckFallback` | `graveyard` / `homebind` | `LongStuckFallbackTeleport` | not a refusal (the fallback moved the bot) | document |
-| 48 | `ReachGiveUp` | info1 the target's name; info2 `combat-stuck\|entry=..\|dist=..\|los=..` | `GiveUpCombatStuckTarget` | yes: the `combat-stuck` prefix | keep |
-| 49 | `UnstuckTrip` | info1 the stuck source; info2 the trips swallowed | `UnstuckAction::Execute` | not a refusal (an episode starts) | document |
+| 48 | `LongStuckFallback` | `graveyard` / `homebind` | `LongStuckFallbackTeleport` | not a refusal (the fallback moved the bot) | document |
+| 49 | `ReachGiveUp` | info1 the target's name; info2 `combat-stuck\|entry=..\|dist=..\|los=..` | `GiveUpCombatStuckTarget` | yes: the `combat-stuck` prefix | keep |
+| 50 | `UnstuckTrip` | info1 the stuck source; info2 the trips swallowed | `UnstuckAction::Execute` | not a refusal (an episode starts) | document |
 
 ### Dungeon run notes
 
@@ -218,29 +219,29 @@ because a "why did the run stop" script reads them the same way. `runtime/Dungeo
 
 | # | Row family | Row text | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 50 | walk to the lead refused | `the walk of <bot> to the lead was refused (<answer>)` | `StragglerWalkRefused` | yes: the module's answer | keep |
-| 51 | cmd refused, no point | `cmd <order> refused (<answer>), no reachable point near it either` | `RefusedFromIsland` | yes: the answer | keep |
-| 52 | straggler order refused | `its <order> was refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
-| 53 | retreat refused | `retreat refused (<answer>): fighting` | `OrderRefused` | yes: the answer | keep |
-| 54 | test-speed hold refused | `test speed: the hold for the party was refused (<answer>): walking on` | `OrderRefused` | yes: the answer | keep |
-| 55 | teleport failed | `the teleport of the stranded lead bot failed (<why>)` | `StrandFailed` | yes: the glue's `why` | keep |
-| 56 | island hop not made | `the straight hop off the navmesh island was not made (<answer>)` | `OrderRefused` | yes: the answer | keep |
-| 57 | revive summon refused | `... summoned to it, refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
-| 58 | free-for-all refused | `loot: free-for-all refused (<answer>): looking for another bot to take it` | `OrderRefused` | yes: the answer | keep |
-| 59 | order refused | `<order> refused: <answer>` (and the `: tried again in .. s` / `: the focus is picked again` variants) | `OrderRefused` | yes: the answer | keep |
-| 60 | walk to the body refused | `regroup: the walk to the body was refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
-| 61 | gather refused | `gather refused (<answer>): <sending it once more\|going on without it>` | `OrderRefused` | yes: the answer | keep |
-| 62 | stand point refused | `back to the stand point refused (<answer>): <going on from here\|...>` | `OrderRefused` | yes: the answer | keep |
-| 63 | pull refused | `pull refused (<answer>): that unit is left out` | `OrderRefused` | yes: the answer | keep |
-| 64 | point refused (hop / walk back) | `<point> refused (<answer>) ...` | `OrderRefused` | yes: the answer | keep |
-| 65 | use_item refused | `use_item <entry> refused (<answer>): an earlier item is missing` | `OrderRefused` | yes: the answer | keep |
-| 66 | leg refused | `a leg toward <x> <y> <z> was refused too (<answer>)` | `TooFarLegTaken` | yes: the answer | keep |
-| 67 | move to the plan's point refused | `step <n>: cmd move to the plan's point <p> refused (<answer>)` | `MoveRefusedUnreachable` | yes: the answer | keep |
-| 68 | fight forward refused | `fight forward: not to the pack of step <n> (<refused>)` | `FightForwardTick` | yes: the reason word | keep |
-| 69 | boss gate | `<BossGateNote>; not pulling` | `BossGateTick` | yes: the gate's own note | keep |
-| 70 | party member dead | `<WaitNote>: no pull while a party member is dead` | `PullUnit` | yes: constant | keep |
-| 71 | skipped, not cleared | `<why>: skipped, not cleared (<counts>)` | `StandPullGiveUp`, `FightStep` | yes: the note's own `why` | keep |
-| 72 | skipped step | `skipped step <n>` / `leg <x> skipped: it needs item <id>` | `Skip`, `LegNeedGate` | yes: the step's own reason | keep |
+| 51 | walk to the lead refused | `the walk of <bot> to the lead was refused (<answer>)` | `StragglerWalkRefused` | yes: the module's answer | keep |
+| 52 | cmd refused, no point | `cmd <order> refused (<answer>), no reachable point near it either` | `RefusedFromIsland` | yes: the answer | keep |
+| 53 | straggler order refused | `its <order> was refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
+| 54 | retreat refused | `retreat refused (<answer>): fighting` | `OrderRefused` | yes: the answer | keep |
+| 55 | test-speed hold refused | `test speed: the hold for the party was refused (<answer>): walking on` | `OrderRefused` | yes: the answer | keep |
+| 56 | teleport failed | `the teleport of the stranded lead bot failed (<why>)` | `StrandFailed` | yes: the glue's `why` | keep |
+| 57 | island hop not made | `the straight hop off the navmesh island was not made (<answer>)` | `OrderRefused` | yes: the answer | keep |
+| 58 | revive summon refused | `... summoned to it, refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
+| 59 | free-for-all refused | `loot: free-for-all refused (<answer>): looking for another bot to take it` | `OrderRefused` | yes: the answer | keep |
+| 60 | order refused | `<order> refused: <answer>` (and the `: tried again in .. s` / `: the focus is picked again` variants) | `OrderRefused` | yes: the answer | keep |
+| 61 | walk to the body refused | `regroup: the walk to the body was refused (<answer>)` | `OrderRefused` | yes: the answer | keep |
+| 62 | gather refused | `gather refused (<answer>): <sending it once more\|going on without it>` | `OrderRefused` | yes: the answer | keep |
+| 63 | stand point refused | `back to the stand point refused (<answer>): <going on from here\|...>` | `OrderRefused` | yes: the answer | keep |
+| 64 | pull refused | `pull refused (<answer>): that unit is left out` | `OrderRefused` | yes: the answer | keep |
+| 65 | point refused (hop / walk back) | `<point> refused (<answer>) ...` | `OrderRefused` | yes: the answer | keep |
+| 66 | use_item refused | `use_item <entry> refused (<answer>): an earlier item is missing` | `OrderRefused` | yes: the answer | keep |
+| 67 | leg refused | `a leg toward <x> <y> <z> was refused too (<answer>)` | `TooFarLegTaken` | yes: the answer | keep |
+| 68 | move to the plan's point refused | `step <n>: cmd move to the plan's point <p> refused (<answer>)` | `MoveRefusedUnreachable` | yes: the answer | keep |
+| 69 | fight forward refused | `fight forward: not to the pack of step <n> (<refused>)` | `FightForwardTick` | yes: the reason word | keep |
+| 70 | boss gate | `<BossGateNote>; not pulling` | `BossGateTick` | yes: the gate's own note | keep |
+| 71 | party member dead | `<WaitNote>: no pull while a party member is dead` | `PullUnit` | yes: constant | keep |
+| 72 | skipped, not cleared | `<why>: skipped, not cleared (<counts>)` | `StandPullGiveUp`, `FightStep` | yes: the note's own `why` | keep |
+| 73 | skipped step | `skipped step <n>` / `leg <x> skipped: it needs item <id>` | `Skip`, `LegNeedGate` | yes: the step's own reason | keep |
 
 ## Rows still without a fixed-word reason
 

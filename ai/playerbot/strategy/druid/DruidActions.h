@@ -2,6 +2,7 @@
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/class/BearRagePolicy.h"
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 namespace ai
 {
@@ -601,10 +602,17 @@ namespace ai
         : CastReachTargetSpellAction(ai, "feral charge", 1.5f) {}
     };
 
+    // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+    // inherits this isUseful, and GetTarget() there is the value's pick.
     class CastGrowlAction : public CastSpellAction
     {
     public:
         CastGrowlAction(PlayerbotAI* ai) : CastSpellAction(ai, "growl") {}
+
+        virtual bool isUseful() override
+        {
+            return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "growl");
+        }
     };
 
     // Taunt the mob picked by "attacker of non-tank target"; the cast reads

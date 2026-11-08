@@ -154,6 +154,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRangedOnly = config.GetBoolDefault("AiPlayerbot.DungeonRunRangedOnly", false);
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
     dungeonRunCarrierStrike = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierStrike", false);
+    dungeonRunCarrierScan = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierScan", false);
+    dungeonRunTauntGate = config.GetBoolDefault("AiPlayerbot.DungeonRunTauntGate", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
