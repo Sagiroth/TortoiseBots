@@ -32,6 +32,11 @@ class HunterCarveWiringTest(unittest.TestCase):
         self.assertIn('"AiPlayerbot.HunterCarveInReachOnly", false', CONFIG.read_text())
         self.assertIn("AiPlayerbot.HunterCarveInReachOnly = 0", CONF.read_text())
 
+    def test_shipped_default_is_off(self):
+        # New behaviour flags ship off; flipping this default must be deliberate.
+        self.assertIn('"AiPlayerbot.HunterCarveInReachOnly", false', CONFIG.read_text())
+        self.assertIn("\nAiPlayerbot.HunterCarveInReachOnly = 0\n", CONF.read_text())
+
     def test_row_unchanged(self):
         self.assertIn('NextAction("carve", ACTION_HIGH - 1)', STRATEGY.read_text())
 

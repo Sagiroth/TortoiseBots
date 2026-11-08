@@ -1,6 +1,6 @@
 # Changelog
 
-- Fixed: Survival hunters no longer walk onto a tank-held boss for Carve and step back out every 10 s; Carve is cast only on a target already in melee reach (AiPlayerbot.HunterCarveInReachOnly).
+- New: AiPlayerbot.HunterCarveInReachOnly (default off): Survival hunters only Carve when already in melee reach, so they stop walking into the boss at raids. Recommended on.
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.
 - Changed: the Hakkar Son walk-out picks any ranged bot on the platform even mid-cast, waits for the first Cause Insanity, starts from 80 s, keeps facing the Son, and its rows say why no puller was found.
 - Fixed: priests that know Heal rank 2 or higher stop picking Lesser Heal on their own while they can pay for Heal; orders and low-mana fallbacks still use it.

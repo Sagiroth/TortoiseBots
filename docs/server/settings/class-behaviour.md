@@ -47,7 +47,7 @@ When set to `0`, hybrid bots fight with their spec kit only: healers cast no dam
 </details>
 
 ### `AiPlayerbot.HunterCarveInReachOnly`
-Makes Survival hunters cast Carve only on a target that is already within melee reach, instead of walking onto it. Turn it on so a hunter at a tank-held boss stays at range.
+Makes Survival hunters cast Carve only on a target that is already within melee reach, instead of walking onto it. It is off by default (new behaviour flags ship off) but recommended on: turn it on so a hunter at a tank-held boss stays at range instead of walking in and being carried back out.
 **Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
 
 <details>
