@@ -629,7 +629,9 @@ static void TestWalkoutFaceFirst()
 static void TestWalkoutFocusPullerLive()
 {
     CHECK(WalkoutFocusPullerLive(true, true, false, 0));
-    CHECK(WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs));
+    CHECK(WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs - 1));
+    // At exactly 25 s the anchor's exemption has lapsed (WalkoutExempts uses `<`), and so has the focus.
+    CHECK(!WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs));
     // A puller that died or was charmed mid-walk-out is held by nothing, even before the abort clears the record.
     CHECK(!WalkoutFocusPullerLive(true, false, false, 1000));
     CHECK(!WalkoutFocusPullerLive(true, true, true, 1000));
@@ -638,6 +640,100 @@ static void TestWalkoutFocusPullerLive()
     CHECK(!WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs + 1));
     // Not this bot's walk-out.
     CHECK(!WalkoutFocusPullerLive(false, true, false, 1000));
+}
+
+static WalkoutFocusInput FocusIn(float hpPct = 80.0f)
+{
+    WalkoutFocusInput in;
+    in.flagOn = true;
+    in.recordedPuller = true;
+    in.alive = true;
+    in.charmed = false;
+    in.sinceStartMs = 5000;
+    in.shot = false;
+    in.hpPct = hpPct;
+    return in;
+}
+
+static void TestWalkoutFocusHolds()
+{
+    // The multiplier's whole decision. The live puller at 80 %, no shot, action follow -> held.
+    CHECK(WalkoutFocusHolds(FocusIn(80.0f), "follow"));
+    // Failing case before the survival floor: the puller at 35 %, no shot, a healing potion -> not held (the hold
+    // used to keep potions, healthstones and Mend Pet for the whole unshot task).
+    CHECK(!WalkoutFocusHolds(FocusIn(35.0f), "healing potion"));
+    CHECK(!WalkoutFocusHolds(FocusIn(35.0f), "healthstone"));
+    CHECK(!WalkoutFocusHolds(FocusIn(35.0f), "mend pet"));
+    // The floor's edge: 40 % still holds, just under it lets go.
+    CHECK(WalkoutFocusHolds(FocusIn(kWalkoutFocusFloorPct), "healing potion"));
+    CHECK(!WalkoutFocusHolds(FocusIn(kWalkoutFocusFloorPct - 0.1f), "healing potion"));
+    // The walk-out and the pet's dismissal always run.
+    CHECK(!WalkoutFocusHolds(FocusIn(), "boss tactics seek tank"));
+    CHECK(!WalkoutFocusHolds(FocusIn(), "boss tactics seek pet"));
+    // Dead (mutation: swap alive and charmed inside WalkoutFocusPullerLive and this or the next fails).
+    WalkoutFocusInput dead = FocusIn();
+    dead.alive = false;
+    CHECK(!WalkoutFocusHolds(dead, "release spirit"));
+    WalkoutFocusInput charmed = FocusIn();
+    charmed.charmed = true;
+    CHECK(!WalkoutFocusHolds(charmed, "follow"));
+    // The shot landed: the walk back is not held.
+    WalkoutFocusInput shot = FocusIn();
+    shot.shot = true;
+    CHECK(!WalkoutFocusHolds(shot, "follow"));
+    // A stale record, a record naming another puller (or a walk back: no running task names this bot), the flag off.
+    WalkoutFocusInput stale = FocusIn();
+    stale.sinceStartMs = kSeekWalkoutTimeoutMs;
+    CHECK(!WalkoutFocusHolds(stale, "follow"));
+    WalkoutFocusInput other = FocusIn();
+    other.recordedPuller = false;
+    CHECK(!WalkoutFocusHolds(other, "follow"));
+    WalkoutFocusInput off = FocusIn();
+    off.flagOn = false;
+    CHECK(!WalkoutFocusHolds(off, "follow"));
+}
+
+static void TestWalkoutPullShotInFlight()
+{
+    // Failing case before the in-flight wait: the pull shot cast 1 s ago, the Son not in combat yet -> wait (no second
+    // cast, no "no shot" abort).
+    CHECK(WalkoutPullShotWaits(10000, 11000, false));
+    CHECK(!WalkoutNoShotAbortDue(true, 10000, 11000));
+    // The Son is in combat: the shot landed, nothing to wait for.
+    CHECK(!WalkoutPullShotWaits(10000, 11000, true));
+    // 2 s and later: the shot missed; the stall aborts as before.
+    CHECK(!WalkoutPullShotWaits(10000, 12000, false));
+    CHECK(WalkoutNoShotAbortDue(true, 10000, 12000));
+    // No pull cast this task (the flag off records none): today's stall rule.
+    CHECK(!WalkoutPullShotWaits(0, 1000, false));
+    CHECK(WalkoutNoShotAbortDue(true, 0, 1000));
+    CHECK(!WalkoutNoShotAbortDue(false, 0, 1000));
+    // A new task clears the cast time.
+    SeekWalkoutState s;
+    s.pullCastMs = 5000;
+    WalkoutStart(s, 1, 2, 20000, 1);
+    CHECK(s.pullCastMs == 0);
+    s.pullCastMs = 21000;
+    WalkoutFinish(s, WalkoutEnd::Back, 22000, WalkoutCycleRules());
+    CHECK(s.pullCastMs == 0);
+}
+
+static void TestWalkoutRunningCount()
+{
+    // The focus's fast path counts running tasks only; a walk back is busy but not running.
+    SeekWalkoutState s;
+    WalkoutBusyMarks m = WalkoutMarksOf(s);
+    CHECK(!m.busy && !m.running);
+    WalkoutStart(s, 1, 2, 20000, 1);
+    m = WalkoutMarksOf(s);
+    CHECK(m.busy && m.running);
+    WalkoutFinish(s, WalkoutEnd::Timeout, 45000, WalkoutCycleRules());
+    m = WalkoutMarksOf(s);
+    CHECK(m.busy && !m.running);
+    CHECK(WalkoutCountStep(false, true) == 1);
+    CHECK(WalkoutCountStep(true, false) == -1);
+    CHECK(WalkoutCountStep(true, true) == 0);
+    CHECK(WalkoutCountStep(false, false) == 0);
 }
 
 static void TestPullerUsable()
@@ -1458,6 +1554,9 @@ int main()
     TestWalkoutPullShotSpell();
     TestWalkoutFaceFirst();
     TestWalkoutFocusPullerLive();
+    TestWalkoutFocusHolds();
+    TestWalkoutPullShotInFlight();
+    TestWalkoutRunningCount();
     TestPullerUsable();
     TestCastFailAbortUnspends();
     TestWalkBackAfterAnyEnd();

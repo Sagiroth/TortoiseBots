@@ -114,7 +114,7 @@ ref survives line drift.
 | 11 | no stand | `seek pull: walk-out no stand sons=%d reach=%.0f hunter_pass=%d` | UpdateSeekWalkout | no (not how many Sons, at what reach) | now the scan's counts |
 | 12 | no puller | `seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f` | UpdateSeekWalkout | no (the 20 rejected members are invisible) | now info2 `reason=<code>:<n>\|...,members=<m> top=<threat> low=<threat>`; info1 unchanged |
 | 13 | no son | `seek pull: walk-out no son walked=%d` | UpdateSeekWalkout | yes: every Son near is `walked` this cycle (the count is the reason) | keep |
-| 13a | walk-out preempted | `seek pull: walk-out preempted action=<name>` | BossTacticsWalkoutFocusMultiplier | yes: `action=` names the first action the walk-out focus held (`DungeonRunSeekWalkoutFocus`), one row per walk-out | new |
+| 13a | walk-out preempted | `seek pull: walk-out preempted action=<name>` | BossTacticsWalkoutFocusMultiplier | yes: `action=` names the first combat action the walk-out focus held (`DungeonRunSeekWalkoutFocus`): the action the engine was about to run that tick; one row per walk-out | new |
 | 14 | ranged walk-out start | `seek pull: ranged walk-out <name> -> <son> due=%u try=%d reach=%.0f ray=%.0f` (with a `seek_pull` row also ` tr=%.2f`, the bot's threat over the live top tank's) | UpdateSeekWalkout | not a refusal (the decision to act) | document |
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |

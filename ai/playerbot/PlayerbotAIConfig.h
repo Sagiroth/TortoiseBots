@@ -663,9 +663,9 @@ public:
     // circle when its victim stands inside the circle (plus 2 yd), the Son is on the platform (z >= 46.5), within 8 yd of the
     // circle and within 10 yd of that victim; off, the take refuses every Son outside the circle as before (default off).
     bool dungeonRunSeekTakeEdge = false;
-    // The walk-out focus (Hakkar's seek pull): on, the live walk-out puller holds every other action until its shot
-    // lands, turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can (else Auto
-    // Shot); off, the puller's other actions may take its ticks and it turns and casts in one tick as before (default
+    // The walk-out focus (Hakkar's seek pull): on, the live walk-out puller's combat actions are held until its shot
+    // lands (reaction actions still run; nothing below 40 % health), it turns to the Son one tick before it casts, and
+    // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks and it turns and casts in one tick as before (default
     // off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s

@@ -203,13 +203,83 @@ int main()
     CHECK(!SeekNearestTakerIs(3, 2, 14.0f, false, 1.0f, true, false, false));
     // A dead receiver is passed as far and not ready: tanks[1] in reach takes.
     CHECK(SeekNearestTakerIs(1, 2, 1.0e9f, false, 4.0f, true, false, false));
-    // Flag off: the nearest take is never asked, and today's 3 s rule is unchanged.
-    CHECK(!SeekTakeFightingSonOnHealer(2999) && SeekTakeFightingSonOnHealer(3000));
+    // Flag off: the pick names no Son even for the failing case's Son, so the 3 s healer clock is the only take.
+    {
+        SeekNearestTakeCand c;
+        c.victimNonTank = true;
+        c.victimInside = true;
+        c.selfYd = 4.0f;
+        c.receiverYd = 14.0f;
+        c.receiverTauntReady = true;
+        c.selfTauntReady = true;
+        const std::vector<SeekNearestTakeCand> one = {c};
+        CHECK(PickSeekNearestTake(false, 1, 2, false, false, one) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, one) == 0);
+    }
     // Which Son: on a non-tank, not the open meet's, its victim inside the raid circle (+2 yd).
     CHECK(SeekNearestTakeSonOk(true, false, true));
     CHECK(!SeekNearestTakeSonOk(false, false, true));
     CHECK(!SeekNearestTakeSonOk(true, true, true));
     CHECK(!SeekNearestTakeSonOk(true, false, false));
+
+    // PickSeekNearestTake: the nearest eligible Son this tank takes.
+    {
+        auto cand = [](float selfYd, float receiverYd) {
+            SeekNearestTakeCand c;
+            c.victimNonTank = true;
+            c.victimInside = true;
+            c.selfYd = selfYd;
+            c.receiverYd = receiverYd;
+            c.receiverTauntReady = true;
+            c.selfTauntReady = true;
+            return c;
+        };
+        // Nearest of several (mutation: pick the farthest and this fails).
+        std::vector<SeekNearestTakeCand> sons = {cand(7.0f, 14.0f), cand(3.0f, 15.0f), cand(5.0f, 20.0f)};
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, sons) == 1);
+        // The distances are each tank's own (mutation: pass selfYd as receiverYd and this fails): a Son 3 yd from
+        // tanks[1] but 4 yd from a ready receiver stays the receiver's; the next nearest is taken.
+        sons[1].receiverYd = 4.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, sons) == 2);
+        // The receiver 12 yd away, tanks[1] 10 yd: neither in reach for tanks[1].
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {cand(10.0f, 12.0f)}) == -1);
+        // The open meet's Son, a victim outside the circle, a victim that is a tank: skipped.
+        std::vector<SeekNearestTakeCand> skip = {cand(2.0f, 14.0f), cand(3.0f, 14.0f), cand(4.0f, 14.0f),
+                                                 cand(6.0f, 14.0f)};
+        skip[0].openMeetSon = true;
+        skip[1].victimInside = false;
+        skip[2].victimNonTank = false;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, skip) == 3);
+        // tanks[1] is Hakkar's victim or holds a Son: no pick.
+        CHECK(PickSeekNearestTake(true, 1, 2, true, false, skip) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, true, skip) == -1);
+        // The main tank never picks.
+        CHECK(PickSeekNearestTake(true, 0, 2, false, false, skip) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {}) == -1);
+    }
+
+    // SeekTankTauntReadyNow: the taunt-after guards plus the cast check, and Bear Form for a druid.
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, false, false));
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, true, true));
+    // A stunned or feared receiver (not in control) with its taunt off cooldown is not ready, so tanks[1] takes.
+    CHECK(!SeekTankTauntReadyNow(false, false, true, true, false, false));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(false, false, true, true, false, false), 4.0f, true,
+                             false, false));
+    // Silenced or pacified, no taunt known, the cast check failing on the Son: not ready.
+    CHECK(!SeekTankTauntReadyNow(true, true, true, true, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, false, true, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, false, false, false));
+    // Growl outside Bear Form is not ready: a druid receiver in caster or cat form leaves the take to tanks[1].
+    CHECK(!SeekTankTauntReadyNow(true, false, true, true, true, false));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, true, false), 4.0f, true,
+                             false, false));
+
+    // SeekReceiverSkipsFighting: with the nearest take on, the receiver does not taunt back a Son already on a tank
+    // (tanks[1] just took it). Off, or not the receiver, or the Son on a non-tank: today's pick.
+    CHECK(SeekReceiverSkipsFighting(true, true, true));
+    CHECK(!SeekReceiverSkipsFighting(false, true, true));
+    CHECK(!SeekReceiverSkipsFighting(true, false, true));
+    CHECK(!SeekReceiverSkipsFighting(true, true, false));
 
     // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
     // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.
