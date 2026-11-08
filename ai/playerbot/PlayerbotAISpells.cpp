@@ -761,8 +761,10 @@ bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMa
     if (sPlayerbotAIConfig.spellFacingPrecheck)
     {
         bool const fromBehindOnly = spellInfo->IsFromBehindOnlySpell();
-        bool const targetFacesCaster = target->HasInArc(bot);
-        if (ai::TargetFacingRefuses(spellInfo->Attributes, fromBehindOnly, targetFacesCaster))
+        // Only the two facing rules read the arc; every other spell skips the angle math.
+        bool const facingMatters = fromBehindOnly || spellInfo->Attributes == ai::kTargetMustFaceCasterAttributes;
+        bool const targetFacesCaster = facingMatters && target->HasInArc(bot);
+        if (facingMatters && ai::TargetFacingRefuses(spellInfo->Attributes, fromBehindOnly, targetFacesCaster))
         {
             if (checkResult)
             {

@@ -58,7 +58,11 @@ class SpellFacingPrecheck(unittest.TestCase):
     def test_the_core_inputs(self):
         # The core's own tests: IsFromBehindOnlySpell, and HasInArc on the target with the default arc.
         self.assertIn("bool const fromBehindOnly = spellInfo->IsFromBehindOnlySpell();", UNIT_CHECK)
-        self.assertIn("bool const targetFacesCaster = target->HasInArc(bot);", UNIT_CHECK)
+        # The arc is read only for the two facing rules (no angle math for every other spell).
+        self.assertIn("bool const facingMatters = fromBehindOnly || "
+                      "spellInfo->Attributes == ai::kTargetMustFaceCasterAttributes;", UNIT_CHECK)
+        self.assertIn("bool const targetFacesCaster = facingMatters && target->HasInArc(bot);", UNIT_CHECK)
+        self.assertIn("if (facingMatters && ai::TargetFacingRefuses(", UNIT_CHECK)
         precheck = UNIT_CHECK[UNIT_CHECK.index("if (sPlayerbotAIConfig.spellFacingPrecheck)"):
                               UNIT_CHECK.index("Spell *spell = new Spell(bot, spellInfo, false);")]
         self.assertIn(
@@ -75,6 +79,10 @@ class SpellFacingPrecheck(unittest.TestCase):
         self.assertIn("### `AiPlayerbot.SpellFacingPrecheck`", SETTINGS)
         self.assertIn("(#aiplayerbotspellfacingprecheck)", SETTINGS)
         self.assertIn("SpellFacingPrecheck", CHANGELOG)
+        section = SETTINGS[SETTINGS.index("### `AiPlayerbot.SpellFacingPrecheck`"):]
+        self.assertIn("runs before the core's other cast checks", section)
+        self.assertIn("It can only refuse a cast that the core always refuses on facing", section)
+        self.assertNotIn("Nothing else about casting changes", section)
 
 
 if __name__ == "__main__":
