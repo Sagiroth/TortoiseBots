@@ -740,7 +740,7 @@ bool RollAction::AllRealRollersVoted(ObjectGuid lootGuid, uint32 slot)
     return true;
 }
 
-// Issue Package E: find a group member whose spec fits the item better than this bot.
+// Find a group member whose spec fits the item better than this bot.
 Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier, ObjectGuid seenVoter, uint8 seenVote)
 {
     Group* group = bot->GetGroup();
@@ -823,7 +823,7 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
             if (item && !item->AllowedForPlayer(member, lootTarget))
                 continue;
 
-            // Addendum: once their vote is known and it is GREED or PASS, they no longer block.
+            // A player who already greeded or passed leaves the item to the others.
             bool voteSeen = false;
             ai::LootRollVote knownVote = ai::LootRollVote::Pass;
             if (!seenVoter.IsEmpty() && member->GetObjectGuid() == seenVoter && seenVote < MAX_ROLL_FROM_CLIENT)
@@ -901,7 +901,7 @@ bool RollAction::RollWithEtiquette(ObjectGuid lootGuid, uint32 slot, ObjectGuid 
             return RollOnItemInSlot(vote, lootGuid, slot);
         }
 
-        // Issue Package E: check if another group member fits the item better.
+        // Another group member whose spec the item is made for goes first.
         if (!forcedNeed)
         {
             Player* betterMember = FindBetterFittingMember(lootGuid, slot, itemQualifier, seenVoter, seenVote);
