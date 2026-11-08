@@ -817,6 +817,10 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
             if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP && !ItemUsageValue::IsFutureUpgrade(itemQualifier, member))
                 continue;
 
+            // A member that cannot take it (unique already owned, loot rules) leaves it to the others.
+            if (!StoreLootAction::IsLootAllowed(itemQualifier, memberAi))
+                continue;
+
             ai::ItemStatFamily memberFamily = sRandomItemMgr.GetSpecStatFamily(memberSpecId);
             if (memberFamily == ai::ItemStatFamily::None)
                 memberFamily = ai::GetFallbackClassStatFamily(member->GetClass());
