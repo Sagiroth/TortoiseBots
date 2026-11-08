@@ -736,6 +736,7 @@ namespace ai
                 ai->CastSpell(24355, bot);
                 SetDuration(drinkDuration);
                 bot->RemoveSpellCooldown(pSpellInfo->Id);
+                SET_AI_VALUE(bool, "drink unfinished", true);
 
                 // Eat and drink at the same time
 
@@ -755,7 +756,10 @@ namespace ai
             if (AI_VALUE2(std::list<Item*>, "inventory items", name).empty())
                 return false;
 
-            return UseAction::Execute(event);
+            bool const used = UseAction::Execute(event);
+            if (used)
+                SET_AI_VALUE(bool, "drink unfinished", true);
+            return used;
         }
 
         bool isUseful() override
