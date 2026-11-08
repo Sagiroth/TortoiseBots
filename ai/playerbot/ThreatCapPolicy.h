@@ -32,14 +32,6 @@ namespace ai
         return heal || (partyCure && cureIgnoresThreat);
     }
 
-    // The single-target back-off's answer for one action: 1 (run) when the action is exempt or the bot is under the
-    // high line, 0 (vetoed) over it. The live multiplier has more exits (no group, a commanded yield, Fankriss); this is
-    // the part the exemption decides.
-    inline float ThreatCapBackoffMultiplier(bool exempt, bool highThreat)
-    {
-        return exempt || !highThreat ? 1.0f : 0.0f;
-    }
-
     // The high-threat trigger's projection escape (HighThreatTrigger::IsActive): at or over the high line a damage dealer
     // is let through while its threat, rising at `delta` per second, projects under the reference tank's threat in
     // kHighThreatProjectionSeconds. On a `threat_successor` boss that let the damage dealers ride just under a slowly
@@ -55,28 +47,44 @@ namespace ai
         return delta > 0.0f && current + delta * kHighThreatProjectionSeconds < tank;
     }
 
-    // The white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict): the melee
-    // auto-attack, the wand's Shoot and Auto Shot carry no threat type (or run as the core's auto-repeat), so the 80 %
-    // veto never bound them and a damage dealer kept climbing past the line on white damage alone. They stop at
-    // kSuccessorWhiteStopPct of the reference and resume only under kSuccessorWhiteResumePct, so a read that wobbles
-    // around the stop line does not start and stop the auto-repeat every tick. Specials keep the 80 % line. The lines are
-    // high on purpose: 405801e86 removed a 65 % stop that cost a fifth of the raid's damage; the aim is damage dealers at
-    // 80-92 % of the successor instead of 89-100 %+. DoT ticks already on the boss cannot be stopped.
+    // The white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict). The melee
+    // auto-attack and the wand's Shoot carry no threat type, and every running swing or auto-repeat (Auto Shot included)
+    // keeps going without passing the multiplier again, so the 80 % veto never bound them and a damage dealer kept
+    // climbing past the line on white damage alone. They stop at kSuccessorWhiteStopPct of the reference and may start
+    // again only under kSuccessorWhiteResumePct, so a read that wobbles around the stop line does not start and stop the
+    // auto-repeat every tick. Auto Shot is a SINGLE-threat action, so its restart also waits for the 80 % veto: a hunter
+    // resumes under 80 %, not 85 %. Specials keep the 80 % line. The lines are high on purpose: 405801e86 removed a 65 %
+    // stop that cost a fifth of the raid's damage; the aim is damage dealers at 80-92 % of the successor instead of
+    // 89-100 %+. DoT ticks already on the boss cannot be stopped.
     constexpr std::uint8_t kSuccessorWhiteStopPct = 92;
     constexpr std::uint8_t kSuccessorWhiteResumePct = 85;
 
     // One bot's white-damage stop, kept across ticks. Every read advances it: a tank, or a target without the
-    // `threat_successor` row, clears it, so the next boss starts from the stop line again.
+    // `threat_successor` row, clears it, so the next boss starts from the stop line again. `refZero`: the successor
+    // reference reads exactly 0 (a tank Hex just wiped it; ThreatPctOf then reads 100 % for everyone). White damage is
+    // not stopped then and the latch clears: the 0-reference hold already vetoes the specials, and stopping the white
+    // damage too would cost the whole raid's damage for every Hex window.
     struct SuccessorWhiteLatch
     {
         bool stopped = false;
 
-        bool Update(bool successorTarget, bool isTank, std::uint8_t pct)
+        bool Update(bool successorTarget, bool isTank, std::uint8_t pct, bool refZero = false)
         {
-            stopped = successorTarget && !isTank && pct >= (stopped ? kSuccessorWhiteResumePct : kSuccessorWhiteStopPct);
+            stopped = successorTarget && !isTank && !refZero &&
+                pct >= (stopped ? kSuccessorWhiteResumePct : kSuccessorWhiteStopPct);
             return stopped;
         }
     };
+
+    // The trigger's step (SuccessorWhiteCapTrigger::IsActive), run in the engine's trigger pass at the start of every
+    // decision cycle: advance the latch and say whether the bot's running white damage must be stopped right now. The
+    // trigger stops it on the spot instead of queueing an action, so no higher-relevance action picked in the same cycle
+    // (a heal, a move, an emergency) lets the swing or the auto-repeat run on past the line.
+    inline bool SuccessorWhiteStopNow(SuccessorWhiteLatch& latch, bool successorTarget, bool isTank, std::uint8_t pct,
+                                      bool refZero, bool whiteRunning)
+    {
+        return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;
+    }
 
     // The percentage a damage dealer's threat reads against the reference tank's (ThreatValue::Calculate), saturated to
     // the uint8 the threat values carry. botThreat * 100 / maxThreat above 255 used to wrap (300 % read as 44 %), and
@@ -117,6 +125,7 @@ namespace ai
         bool offTank = false;
         bool onBoss = false; // this tank hits the boss (its victim is the boss); NOT "the boss hits this tank"
         bool holdsBoss = false; // the boss hits this tank (the boss's victim is this tank): it holds the boss right now
+        bool cursed = false; // wears Delusions of Jin'do, marked only under AiPlayerbot.DungeonRunThreatSuccessorKeepsAway
     };
 
     // The off-tank floor, as an absolute amount rather than a share of the highest tank's threat: the reference is
@@ -136,62 +145,33 @@ namespace ai
     // Whether a tank counts as on the boss for the successor pick: it hits the boss, or it wears Jin'do's Hex. A Hexed tank
     // is polymorphed for about 5 s and cannot hit, yet it is the wiped successor: if it dropped out, the pick would fall
     // back to the new holder's own threat for those seconds and the damage dealers could climb to 80 % of it.
-    // With AiPlayerbot.DungeonRunThreatSuccessorKeepsAway (`keepsAway`) a tank wearing Delusions of Jin'do (24306) counts
-    // too: a cursed tank is on its Shade by design and its Jin'do threat stays (walk 56: a cursed main tank on a Shade
-    // dropped out and the reference fell back to the holder). Off, as before.
-    constexpr std::uint32_t kJindoDelusionsSpellId = 24306;
-
-    inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex, bool wearsDelusions = false, bool keepsAway = false)
+    inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)
     {
-        return hitsBoss || wearsHex || (keepsAway && wearsDelusions);
+        return hitsBoss || wearsHex;
     }
 
-    // A tank charmed by the boss's side (Jin'do's Brain Wash) is hostile, and the core zeroes its threat during the charm
-    // and puts back exactly what it had when the charm landed (boss_jindo.cpp:197-236). With
-    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway the successor pick keeps such a tank at that pre-charm threat instead
-    // of dropping it (walk 56: a Brain-Washed main tank dropped out and the reference fell back to the holder). One memo
-    // per (instance, boss, tank): every read while the tank is free refreshes the last free threat; the read that first
-    // sees the charm stores it as the pre-charm threat, and the first free read after clears it. Threat is never
-    // invented: no free read within kCharmThreatFreshMs before the charm, or a pre-charm threat of 0 or less, leaves
-    // the tank off the list as today (a 0 reference would hold every damage dealer for the whole charm).
-    constexpr std::uint32_t kCharmThreatFreshMs = 5000;
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions of Jin'do (24306) stands on its Shade by
+    // design while its Jin'do threat stays (walk 56: a cursed main tank on a Shade dropped out of the pick and the
+    // reference fell back to the holder). The caller marks such a tank `cursed`; it then counts as on the boss, but only
+    // while its threat is above 0 and at least kThreatCapOffTankAwayShare of the highest tank's: Delusions is never cured
+    // and the cursed tank's threat does not climb on its Shade, so a cursed tank with little or no Jin'do threat would
+    // otherwise sit as a 0 reference and hold every damage dealer for the whole curse. Off (no tank marked), nothing changes.
+    // A charmed tank is never kept: the caller leaves it off the list as before.
+    constexpr std::uint32_t kJindoDelusionsSpellId = 24306;
 
-    struct CharmThreatMemo
+    inline bool ThreatCapCursedCountsOnBoss(float threat, float highest)
     {
-        float lastFree = 0.0f;
-        std::uint32_t lastFreeMs = 0;
-        bool haveFree = false;
-        bool inCharm = false;
-        float preCharm = -1.0f;
+        return threat > 0.0f && threat >= highest * kThreatCapOffTankAwayShare;
+    }
 
-        // The threat this tank stands at for the pick: `live` while free, the stored pre-charm threat while charmed, and
-        // < 0 for "leave it off the list" (charmed with no usable pre-charm read).
-        float Read(bool charmed, float live, std::uint32_t nowMs)
-        {
-            if (!charmed)
-            {
-                inCharm = false;
-                preCharm = -1.0f;
-                haveFree = true;
-                lastFree = live;
-                lastFreeMs = nowMs;
-                return live;
-            }
-            if (!inCharm)
-            {
-                inCharm = true;
-                const bool fresh = haveFree && nowMs - lastFreeMs <= kCharmThreatFreshMs;
-                preCharm = fresh && lastFree > 0.0f ? lastFree : -1.0f;
-            }
-            return preCharm;
-        }
-    };
-
-    // The pick's entry for a charmed tank kept by its memo: it holds nothing (the boss is not hitting it) and stands as on
-    // the boss, at its pre-charm threat, so the not-holder pick can keep it as the successor.
-    inline ThreatCapTank ThreatCapCharmedTank(float preCharmThreat, bool offTank)
+    inline void ThreatCapCursedOnBoss(std::vector<ThreatCapTank>& tanks)
     {
-        return ThreatCapTank{preCharmThreat, offTank, true, false};
+        float highest = 0.0f;
+        for (const ThreatCapTank& tank : tanks)
+            highest = std::max(highest, tank.threat);
+        for (ThreatCapTank& tank : tanks)
+            if (tank.cursed && !tank.onBoss && ThreatCapCursedCountsOnBoss(tank.threat, highest))
+                tank.onBoss = true;
     }
 
     // The reference and which kind of tank it is: `offTank` is the `threat_successor` cap standing on an assigned

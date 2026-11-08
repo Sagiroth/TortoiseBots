@@ -294,7 +294,8 @@ namespace ai
     };
 
     // The successor white-damage stop (AiPlayerbot.DungeonRunThreatSuccessorStrict, ThreatCapPolicy.h
-    // SuccessorWhiteLatch): active while this bot's latch says its auto-attack, wand Shoot and Auto Shot stop.
+    // SuccessorWhiteStopNow): stops the bot's swing and auto-repeat itself in the trigger pass while the latch holds, and
+    // is never active (it queues no action).
     class SuccessorWhiteCapTrigger : public Trigger
     {
     public:

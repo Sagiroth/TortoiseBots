@@ -284,25 +284,17 @@ int main()
     // A saturated read still vetoes: the cap sees 255, not the wrapped 44.
     CHECK(ThreatPctSaturated(300.0f, 100.0f) >= kThreatHighLinePct);
 
-    // cure_not_vetoed_at_high_threat (AiPlayerbot.DungeonRunCureIgnoresThreat, fails without the cure exemption): a
-    // healer at 100 % of the reference casts `dispel magic on party` on the Hexed tank. Key on: the cure runs (1.0).
-    // Key off: vetoed as today (0.0). Heals run either way; a nuke is vetoed either way; under the line all run.
-    {
-        const std::uint8_t pct = ThreatPctOf(10000.0f, 10000.0f, true, false);
-        const bool highThreat = pct >= kThreatHighLinePct;
-        CHECK(highThreat);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, true), highThreat) == 1.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, false), highThreat) == 0.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(true, false, false), highThreat) == 1.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(true, false, true), highThreat) == 1.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, true), highThreat) == 0.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, false), highThreat) == 0.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, false), false) == 1.0f);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, false), false) == 1.0f);
-        // A 0 reference on an engaged mob no tank touched reads 100 too: the cure still runs with the key on.
-        CHECK(ThreatPctOf(50.0f, 0.0f, true, false) == 100);
-        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, true), true) == 1.0f);
-    }
+    // cure_not_vetoed_at_high_threat (AiPlayerbot.DungeonRunCureIgnoresThreat, fails without the cure exemption):
+    // ThreatCapExempt is the call ThreatMultiplier::GetValue makes before its high-threat veto (it returns 1.0 when this
+    // is true). A healer at 100 % of the reference casts `dispel magic on party` on the Hexed tank: key on, exempt (the
+    // cure runs); key off, not exempt (vetoed as today). Heals are exempt either way; a nuke never is.
+    CHECK(ThreatPctOf(10000.0f, 10000.0f, true, false) >= kThreatHighLinePct);
+    CHECK(ThreatCapExempt(false, true, true));
+    CHECK(!ThreatCapExempt(false, true, false));
+    CHECK(ThreatCapExempt(true, false, false));
+    CHECK(ThreatCapExempt(true, false, true));
+    CHECK(!ThreatCapExempt(false, false, true));
+    CHECK(!ThreatCapExempt(false, false, false));
 
     // successor_no_projection_escape (AiPlayerbot.DungeonRunThreatSuccessorStrict, fails while the escape stays): a damage
     // dealer at 85 % (8500 of 10000) rising 50/s projects to 8750 in 5 s, under the tank: today it escapes the veto. On a
@@ -345,61 +337,112 @@ int main()
         CHECK(!tank.Update(true, true, 255));
     }
 
-    // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions read):
-    // the main tank wears Delusions and is on its Shade (6000 Jin'do threat, not hitting him); the off-tank holds at
-    // 9000. Key on: the cursed main tank is still on the boss and the reference is its 6000. Key off: today's fallback
-    // to the holder's 9000.
-    CHECK(kJindoDelusionsSpellId == 24306);
-    CHECK(ThreatCapOnBoss(false, false, true, true));
-    CHECK(!ThreatCapOnBoss(false, false, true, false));
-    CHECK(!ThreatCapOnBoss(false, false, false, true));
-    CHECK(ThreatCapOnBoss(true, false, false, false));
-    CHECK(ThreatCapOnBoss(false, true, false, false));
+    // successor_white_free_at_zero_reference (Strict): a tank Hex leaves the successor reference at 0, which reads 100 %
+    // for every damage dealer. The white damage keeps running (the specials stay held by the 0-reference veto), and a
+    // stopped latch clears, so the Hex window costs no white damage.
     {
-        const std::vector<ThreatCapTank> cursedOn = {{6000.0f, false, ThreatCapOnBoss(false, false, true, true), false},
-                                                      {9000.0f, true, ThreatCapOnBoss(true, false, false, true), true}};
-        CHECK(ThreatCapReference(cursedOn, true, true) == 6000.0f);
-        CHECK(!ThreatCapPickReference(cursedOn, true, true).offTank);
-        const std::vector<ThreatCapTank> cursedOff = {{6000.0f, false, ThreatCapOnBoss(false, false, true, false), false},
-                                                       {9000.0f, true, ThreatCapOnBoss(true, false, false, false), true}};
-        CHECK(ThreatCapReference(cursedOff, true, true) == 9000.0f);
+        SuccessorWhiteLatch latch;
+        CHECK(!latch.Update(true, false, ThreatPctOf(500.0f, 0.0f, true, false), true));
+        CHECK(latch.Update(true, false, 95, false));
+        CHECK(!latch.Update(true, false, 100, true));
+        CHECK(!latch.stopped);
+        CHECK(!latch.Update(true, false, 90, false)); // back from the Hex: starts from the 92 % stop line again
     }
 
-    // charmed_tank_keeps_cached_threat: the memo stores the last free read when the charm starts, answers it for the
-    // whole charm (the core zeroes the live threat), and clears it when the charm ends.
-    CHECK(kCharmThreatFreshMs == 5000);
+    // successor_white_stop_wins_the_cycle (Strict): the stop must take effect in the cycle the latch flips, even when a
+    // higher-relevance action is runnable. A small model of the engine's cycle: the trigger pass runs first, then the
+    // highest queued action runs (one per cycle). The old design queued "stop auto attack" at ACTION_HIGH (20); with a
+    // heal at ACTION_EMERGENCY (90) runnable, the heal ran and the swing went on past 92 %. The trigger now stops the
+    // swing itself through SuccessorWhiteStopNow in the trigger pass, so it is stopped whatever runs next.
     {
-        CharmThreatMemo memo;
-        CHECK(memo.Read(false, 4800.0f, 1000) == 4800.0f);
-        CHECK(memo.Read(false, 5000.0f, 1500) == 5000.0f);
-        CHECK(memo.Read(true, 0.0f, 1600) == 5000.0f);   // charm starts: the pre-charm 5000
-        CHECK(memo.Read(true, 0.0f, 9000) == 5000.0f);   // still charmed 7 s later: still 5000
-        CHECK(memo.Read(true, 300.0f, 11000) == 5000.0f);
-        CHECK(memo.Read(false, 4900.0f, 12000) == 4900.0f); // charm over: live, memo cleared
-        CHECK(memo.preCharm < 0.0f && !memo.inCharm);
-        // The next charm stores the newest free read, not the old one.
-        CHECK(memo.Read(false, 7000.0f, 20000) == 7000.0f);
-        CHECK(memo.Read(true, 0.0f, 20100) == 7000.0f);
-        // The pick keeps the charmed main tank at 5000 while the off-tank holds at 9000 (not-holder pick).
-        const std::vector<ThreatCapTank> charmedMain = {ThreatCapCharmedTank(5000.0f, false), {9000.0f, true, true, true}};
-        CHECK(ThreatCapReference(charmedMain, true, true) == 5000.0f);
-        // Key off the caller leaves the charmed tank off the list: today's pick is the holder's 9000.
-        const std::vector<ThreatCapTank> withoutCharmed = {{9000.0f, true, true, true}};
-        CHECK(ThreatCapReference(withoutCharmed, true, true) == 9000.0f);
+        struct Cycle
+        {
+            bool whiteRunning = true;
+            std::string ran;
+            void Run(SuccessorWhiteLatch& latch, std::uint8_t pct, bool queueStopInstead)
+            {
+                std::vector<std::pair<std::string, float>> queue = {{"emergency heal", 90.0f}};
+                if (queueStopInstead)
+                {
+                    if (latch.Update(true, false, pct, false) && whiteRunning)
+                        queue.push_back({"stop auto attack", 20.0f});
+                }
+                else if (SuccessorWhiteStopNow(latch, true, false, pct, false, whiteRunning))
+                    whiteRunning = false;
+                std::pair<std::string, float> best = queue[0];
+                for (const auto& entry : queue)
+                    if (entry.second > best.second)
+                        best = entry;
+                ran = best.first;
+                if (ran == "stop auto attack")
+                    whiteRunning = false;
+            }
+        };
+        SuccessorWhiteLatch oldLatch;
+        Cycle oldCycle;
+        oldCycle.Run(oldLatch, 93, true);
+        CHECK(oldCycle.ran == "emergency heal");
+        CHECK(oldCycle.whiteRunning); // the old queued stop lost the cycle
+
+        SuccessorWhiteLatch latch;
+        Cycle cycle;
+        cycle.Run(latch, 91, false);
+        CHECK(cycle.whiteRunning);    // under the line: nothing stopped
+        cycle.Run(latch, 93, false);
+        CHECK(cycle.ran == "emergency heal");
+        CHECK(!cycle.whiteRunning);   // stopped in the same cycle the heal ran
+        // Restarted by another attack action while still latched: stopped again on the next pass.
+        cycle.whiteRunning = true;
+        cycle.Run(latch, 88, false);
+        CHECK(!cycle.whiteRunning);
+        // Nothing to stop: no stop call, the latch still holds.
+        CHECK(!SuccessorWhiteStopNow(latch, true, false, 88, false, false));
+        CHECK(latch.stopped);
+        // Tanks and a 0 reference never stop.
+        SuccessorWhiteLatch tank;
+        CHECK(!SuccessorWhiteStopNow(tank, true, true, 200, false, true));
+        SuccessorWhiteLatch hexed;
+        CHECK(!SuccessorWhiteStopNow(hexed, true, false, 100, true, true));
     }
-    // Never invented: charmed with no free read, with a stale one, or with a pre-charm 0 reads < 0 (off the list).
+
+    // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions mark):
+    // the main tank wears Delusions and is on its Shade (6000 Jin'do threat, not hitting him); the off-tank holds at
+    // 9000. Key on (the caller marks `cursed` and runs ThreatCapCursedOnBoss): the cursed main tank is on the boss and the
+    // reference is its 6000. Key off (no mark, no call): today's fallback to the holder's 9000.
+    CHECK(kJindoDelusionsSpellId == 24306);
     {
-        CharmThreatMemo none;
-        CHECK(none.Read(true, 0.0f, 1000) < 0.0f);
-        CharmThreatMemo stale;
-        CHECK(stale.Read(false, 5000.0f, 1000) == 5000.0f);
-        CHECK(stale.Read(true, 0.0f, 1000 + kCharmThreatFreshMs + 1) < 0.0f);
-        CharmThreatMemo zero;
-        CHECK(zero.Read(false, 0.0f, 1000) == 0.0f);
-        CHECK(zero.Read(true, 0.0f, 1100) < 0.0f);
-        CharmThreatMemo wrap;
-        CHECK(wrap.Read(false, 5000.0f, 0xFFFFFF00u) == 5000.0f);
-        CHECK(wrap.Read(true, 0.0f, 0x00000400u) == 5000.0f); // clock wrap, 1.28 s later
+        ThreatCapTank cursedMain{6000.0f, false, ThreatCapOnBoss(false, false), false};
+        cursedMain.cursed = true;
+        std::vector<ThreatCapTank> keyOn = {cursedMain, {9000.0f, true, ThreatCapOnBoss(true, false), true}};
+        ThreatCapCursedOnBoss(keyOn);
+        CHECK(keyOn[0].onBoss);
+        CHECK(ThreatCapReference(keyOn, true, true) == 6000.0f);
+        CHECK(!ThreatCapPickReference(keyOn, true, true).offTank);
+        const std::vector<ThreatCapTank> keyOff = {{6000.0f, false, ThreatCapOnBoss(false, false), false},
+                                                   {9000.0f, true, ThreatCapOnBoss(true, false), true}};
+        CHECK(ThreatCapReference(keyOff, true, true) == 9000.0f);
+    }
+    // cursed_tank_without_threat_is_not_successor: a cursed off-tank at 0 (or under half the highest tank) stays off the
+    // boss, so the main tank holding at 9000 stays the reference instead of a 0 that would hold every damage dealer for
+    // the whole curse. At exactly half it counts.
+    CHECK(!ThreatCapCursedCountsOnBoss(0.0f, 9000.0f));
+    CHECK(!ThreatCapCursedCountsOnBoss(4499.0f, 9000.0f));
+    CHECK(ThreatCapCursedCountsOnBoss(4500.0f, 9000.0f));
+    CHECK(!ThreatCapCursedCountsOnBoss(0.0f, 0.0f));
+    {
+        for (float otThreat : {0.0f, 2000.0f})
+        {
+            ThreatCapTank cursedOff{otThreat, true, ThreatCapOnBoss(false, false), false};
+            cursedOff.cursed = true;
+            std::vector<ThreatCapTank> tanks = {{9000.0f, false, ThreatCapOnBoss(true, false), true}, cursedOff};
+            ThreatCapCursedOnBoss(tanks);
+            CHECK(!tanks[1].onBoss);
+            CHECK(ThreatCapReference(tanks, true, true) == 9000.0f);
+        }
+        // An uncursed tank off the boss is never lifted by the call.
+        std::vector<ThreatCapTank> plain = {{9000.0f, false, true, true}, {6000.0f, true, false, false}};
+        ThreatCapCursedOnBoss(plain);
+        CHECK(!plain[1].onBoss);
     }
 
     std::cout << "threat cap policy: all tests passed\n";

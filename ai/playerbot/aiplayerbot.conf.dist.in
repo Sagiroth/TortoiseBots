@@ -1132,23 +1132,26 @@ AiPlayerbot.DungeonRunCureIgnoresThreat = 0
 # (a) the high-threat back-off's 5 s projection escape is off there: today a damage dealer at or over 80 % of the
 #     reference keeps attacking while its threat projects under the tank's in 5 s, so it rides just under a slowly
 #     climbing non-holding tank (walk 56: every Hex that went to a damage dealer found it at 1.00x the successor or more);
-# (b) the melee auto-attack, the wand's Shoot and Auto Shot (never vetoed: they carry no threat type) stop at 92 % of the
-#     reference and resume under 85 %. Specials keep the 80 % line. Tanks are never stopped. DoT ticks already on the
-#     boss cannot be stopped. The 405801e86 commit removed a 65 % white stop that cost a fifth of the raid's damage; the
-#     walk-57 guard is raid damage on Jin'do at 92 % or more of walk 56. Recommended on, together with
-#     AiPlayerbot.DungeonRunThreatSuccessorNotHolder. `.reload config` reads it again with the other DungeonRun* keys.
+# (b) white damage stops at 92 % of the reference: the running melee swing and auto-repeat (wand Shoot, Auto Shot) were
+#     never vetoed once started. The stop happens in the trigger pass of the same decision cycle. Melee and wand start
+#     again under 85 %; a hunter's Auto Shot under 80 %, because its restart is a single-target action the 80 % veto still
+#     gates. While the reference is 0 (a tank just Hexed) white damage is never stopped; the specials stay held as before.
+#     Specials keep the 80 % line. Tanks are never stopped. DoT ticks already on the boss cannot be stopped.
+# The 405801e86 commit removed a 65 % white stop that cost a fifth of the raid's damage; the walk-57 guard is raid damage
+# on Jin'do at 92 % or more of walk 56. The BossTacticsThreatCap row gains `white=held|free ref0=0|1`. Recommended on,
+# together with AiPlayerbot.DungeonRunThreatSuccessorNotHolder. `.reload config` reads it again with the other keys.
 # 0 - off: today's escape and no white stop (Default)
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
 
-# The successor pick on a `threat_successor` boss keeps a tank that is away by design. A tank wearing Delusions of
-# Jin'do (24306) is on its Shade on purpose and keeps its Jin'do threat, so it counts as on the boss like a Hexed one.
-# A tank charmed by the boss's side (Brain Wash) stays on the list at the threat it had right before the charm, which is
-# what the core puts back when the charm ends; with no fresh read before the charm, or a pre-charm threat of 0, it is
-# left out as today. Walk 56: in 12 of 39 off-tank Hexes that went to a damage dealer the reference had fallen back to
-# the holder because the main tank was cursed on a Shade or Brain-Washed. Matters with
-# AiPlayerbot.DungeonRunThreatSuccessorNotHolder on. Recommended on. `.reload config` reads it again.
-# 0 - off: cursed tanks off the boss and charmed tanks drop out of the pick (Default)
+# The successor pick on a `threat_successor` boss keeps a tank cursed by Delusions of Jin'do (24306): it is on its Shade
+# by design and keeps its Jin'do threat, so it counts as on the boss like a Hexed one, but only while that threat is above
+# 0 and at least half the highest tank's (Delusions is never cured; a cursed tank with little threat would otherwise
+# hold every damage dealer for the whole curse). A charmed tank is still left out. Walk 56: a cursed main tank on a Shade
+# dropped out of the pick and the reference fell back to the holder. It acts through the not-holder pick
+# (AiPlayerbot.DungeonRunThreatSuccessorNotHolder): with that key off it changes practically nothing, since a cursed
+# off-tank at half the highest tank or more already passes the old away floor. Recommended on. `.reload config` reads it.
+# 0 - off: a cursed tank that is not hitting the boss drops out of the pick (Default)
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0
 

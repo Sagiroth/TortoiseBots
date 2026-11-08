@@ -77,16 +77,6 @@ struct ThreatValue {
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
-#include <map>
-// The production memo glue (ThreatValues.cpp CharmMemoThreat) keys a CharmThreatMemo by instance, boss and tank and
-// reads the world clock; the stub keys by tank and advances a fake clock 100 ms per read.
-std::map<Player*, ai::CharmThreatMemo> gCharmMemo;
-unsigned gNowMs = 1000;
-float CharmMemoThreat(Unit*, Player* tank, bool charmed, float live)
-{
-    gNowMs += 100;
-    return gCharmMemo[tank].Read(charmed, live, gNowMs);
-}
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
 void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
@@ -158,39 +148,33 @@ int main() {
 
 
     @unittest.skipUnless(shutil.which("g++"), "g++ unavailable")
-    def test_keeps_away_holds_a_charmed_main_tank_at_its_pre_charm_threat(self):
-        # AiPlayerbot.DungeonRunThreatSuccessorKeepsAway with the not-holder pick: the off-tank holds Jin'do, the main
-        # tank (5000, hitting the boss) is Brain-Washed and the core zeroes its threat. Key off: the charmed tank drops
-        # out and the reference falls back to the holder's 9000. Key on: it stays at its pre-charm 5000; once the charm
-        # ends the live threat is read again.
+    def test_charmed_holder_does_not_lift_cap(self):
+        # charmed_holder_does_not_lift_cap: AiPlayerbot.DungeonRunThreatSuccessorKeepsAway keeps no charmed tank. The main
+        # tank held the boss at 10000 and is charmed (Cause Insanity / Brain Wash); the off-tank at 4000 now holds. With the
+        # keep-away and not-holder keys on, the reference stays the off-tank's 4000: a charmed tank's old threat must never
+        # lift the cap above what the boss can turn to (walk 41 on Hakkar).
         self._compile_and_run(r"""
 int main() {
     Player bot, main, off;
-    main.tank = true; main.assigned = true; main.threat = 5000;
-    off.assigned = true; off.threat = 9000;
+    main.tank = true; main.assigned = true; main.threat = 10000;
+    off.assigned = true; off.threat = 4000;
     Group group{{&bot, &main, &off}}; bot.group = &group;
     PlayerbotAI ai{&bot};
     Unit enemy;
-    main.victim = &enemy; off.victim = &enemy; enemy.victim = &off;
+    main.victim = &enemy; off.victim = &enemy; enemy.victim = &main;
     gThreatSuccessor = true;
-    sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = true;
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // free main tank: the non-holder
-    main.threat = 0; main.charmer = Guid{false, false};
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 9000);     // key off: dropped, fallback to the holder
-    main.charmer = Guid{};
     sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = true;
-    main.threat = 5000;
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // free read stores 5000
-    main.threat = 0; main.charmer = Guid{false, false};
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // charmed: the pre-charm threat
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // still charmed
-    main.charmer = Guid{}; main.threat = 4800;
-    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4800);     // charm over: live again
-    sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = false;
-    sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = false;
+    for (int notHolder = 0; notHolder < 2; ++notHolder)
+    {
+        sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = notHolder == 1;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);  // free, holding main tank: the off-tank is the successor
+        main.charmer = Guid{false, false}; enemy.victim = &off;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) <= 4000);  // charmed: skipped, never its old 10000
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);
+        main.charmer = Guid{}; enemy.victim = &main;
+    }
 }
 """)
-
 
 if __name__ == "__main__":
     unittest.main()

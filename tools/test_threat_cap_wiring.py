@@ -77,24 +77,38 @@ class ThreatSuccessorStrict(unittest.TestCase):
             "if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))", trigger)
         self.assertNotIn("newThreat < tankThreat", trigger)
 
-    def test_the_white_stop_trigger_is_keyed_and_registered(self):
+    def test_the_white_stop_trigger_stops_in_the_trigger_pass(self):
         trigger = body(TRIGGERS, "bool SuccessorWhiteCapTrigger::IsActive()")
         self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;", trigger)
-        self.assertIn("ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, \"threat\", \"current target\"))", trigger)
-        self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
-        self.assertIn('creators["stop auto attack"]', (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
-        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
-        self.assertIn('"successor white cap"', triggers)
-        self.assertIn('new NextAction("stop auto attack", ACTION_HIGH)', triggers)
-        stop = body((ROOT / "ai/playerbot/strategy/actions/GenericActions.cpp").read_text(),
-                    "bool StopAutoAttackAction::Execute(Event& event)")
+        self.assertIn('const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;', trigger)
+        self.assertIn("if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),", trigger)
+        stop = trigger[trigger.index("if (SuccessorWhiteStopNow("):]
         self.assertIn("bot->AttackStop();", stop)
         self.assertIn("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);", stop)
+        # The stop is never a queued action that a higher action could beat: the trigger is never active, no stop
+        # action exists, and the node queues nothing.
+        self.assertTrue(trigger.rstrip().endswith("return false;"))
+        self.assertNotIn("return true", trigger)
+        self.assertNotIn('"stop auto attack"', AI_TREE)
+        self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        self.assertIn('new TriggerNode("successor white cap", NextAction::array(0, NULL))', triggers)
+        self.assertIn("return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;", THREAT_POLICY)
+
+    def test_the_threat_cap_row_carries_the_white_field_under_the_key(self):
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        log = body(values, "void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit* offTankTarget)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict)", log)
+        self.assertIn("holder=%s white=%s ref0=%d", log)
+        self.assertIn('ai->SuccessorWhiteCap().stopped ? "held" : "free"', log)
+        self.assertIn("pick.threat == 0.0f ? 1 : 0", log)
+        self.assertIn("if (last != 0 && nowMs - last < kThreatCapLogGapMs)", log)
 
     def test_the_multiplier_holds_white_damage_behind_the_key(self):
         multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
         self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))", multiplier)
         self.assertIn("ai->SuccessorWhiteCap().Update(false, false, 0);", multiplier)
+        self.assertIn('AI_VALUE2(float, "tank threat", "current target") == 0.0f))', multiplier)
         # The latch runs before the old ACTION_THREAT_NONE exemption, or a wand/melee restart would slip through.
         self.assertLess(multiplier.index("AutoAttackAction(action)"),
                         multiplier.index("action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE"))
@@ -182,18 +196,21 @@ class ThreatSuccessorKeepsAway(unittest.TestCase):
         self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway", false)', CONFIG_CPP)
         self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0", CONF)
 
-    def test_the_pick_reads_delusions_and_the_charm_memo_behind_the_key(self):
+    def test_the_pick_marks_cursed_tanks_behind_the_key(self):
         tank = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
         self.assertIn("const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;", tank)
-        self.assertIn("if (charmed && !keepsAway)\n            continue;", tank)
-        self.assertIn("threat = CharmMemoThreat(target, player, charmed, threat);", tank)
-        self.assertIn("tanks.push_back(ThreatCapCharmedTank(threat, index >= 1));", tank)
-        self.assertIn("keepsAway && ai->HasAura(kJindoDelusionsSpellId, player), keepsAway)", tank)
+        self.assertIn("tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);", tank)
+        self.assertIn("if (keepsAway)\n        ThreatCapCursedOnBoss(tanks);", tank)
+        self.assertLess(tank.index("ThreatCapCursedOnBoss(tanks);"), tank.index("ThreatCapPickReference("))
         self.assertIn("constexpr std::uint32_t kJindoDelusionsSpellId = 24306;", THREAT_POLICY)
-        memo = body(self.VALUES, "float CharmMemoThreat(Unit* boss, Player* tank, bool charmed, float live)")
-        self.assertIn("entry.memo.Read(charmed, live, nowMs)", memo)
-        self.assertIn("boss->GetInstanceId()", memo)
-        self.assertIn("g_charmMemo.erase(it)", memo)
+        self.assertIn("return threat > 0.0f && threat >= highest * kThreatCapOffTankAwayShare;", THREAT_POLICY)
+
+    def test_a_charmed_tank_is_still_skipped(self):
+        # The charm half was dropped (round-1 review): a charmed tank's old threat would lift the cap on Hakkar.
+        tank = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("if (!charmer.IsEmpty() && !charmer.IsPlayer())\n            continue;", tank)
+        self.assertNotIn("CharmThreat" + "Memo", AI_TREE)
+        self.assertNotIn("CharmMemo" + "Threat", AI_TREE)
 
     def test_docs_and_changelog(self):
         self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway`", SETTINGS)

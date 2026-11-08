@@ -35,15 +35,17 @@ float ThreatMultiplier::GetValue(Action* action)
         return 1.0f;
 
     // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the auto-attack, the wand's Shoot and
-    // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never). The row
-    // decides before the percentage is read; a target without it clears the latch. Key off: the old exemption below.
+    // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never; a 0 reference
+    // never stops them). The row decides before the percentage is read; a target without it clears the latch. Auto Shot
+    // is SINGLE-threat, so the 80 % veto below still gates its restart. Key off: the old exemption below.
     if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))
     {
         Unit* const target = AI_VALUE(Unit*, "current target");
         if (!ThreatSuccessorTarget(target))
             ai->SuccessorWhiteCap().Update(false, false, 0);
         else if (ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot),
-                     AI_VALUE2(uint8, "threat", "current target")))
+                     AI_VALUE2(uint8, "threat", "current target"),
+                     AI_VALUE2(float, "tank threat", "current target") == 0.0f))
             return 0.0f;
     }
 
@@ -120,12 +122,11 @@ float ThreatMultiplier::GetValue(Action* action)
     return 1.0f;
 }
 
-// The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger is never active with the key off.
+// The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger stops the swing and the auto-repeat
+// itself in the trigger pass and is never active, so the node queues nothing. Key off: it returns at its first line.
 void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode(
-        "successor white cap",
-        NextAction::array(0, new NextAction("stop auto attack", ACTION_HIGH), NULL)));
+    triggers.push_back(new TriggerNode("successor white cap", NextAction::array(0, NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)
