@@ -21,7 +21,7 @@ vm.createContext(ctx);
 vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3, FD_LIVE_TILES = 6, FD_LIVE_FETCH_MS = 10000, FD_LIVE_TRACK_EDGE = 4;", grab("esc"), grab("fdLiveClock"), grab("fdLiveWinLabel"), grab("fdLiveHpOf"), grab("fdLiveNumsText"), grab("fdLiveTileHtml"), grab("fdLiveTilePatch"), grab("fdLiveGridSync"),
   grab("fdLiveFiledRow"), grab("fdFightHash"), grab("fdLiveTimelineHtml"), grab("fdLiveHandoff"), grab("fdLiveReconcile"), grab("fdLiveResync"), grab("fdLiveDrop"),
   grab("raidLiveGroups"), grab("raidLiveKeys"), grab("dgnLiveGroups"), grab("dgnLiveKeys"), grab("cmdLiveNames"), grab("fdLiveDebugKey"),
-  grab("fdLiveCanon"), grab("fdLiveState"), grab("fdLiveStatesFor"), grab("fdLiveFetch"), grab("fdLiveCatchUp"), grab("fdLiveHandoffAll"), grab("fdLiveTileOf")].join("\n"), ctx);
+  grab("fdLiveCanon"), grab("fdLiveState"), grab("fdLiveStatesFor"), grab("fdLiveJson"), grab("fdLiveCatchUp"), grab("fdLiveHandoffAll"), grab("fdLiveTileOf")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the tile escapes everything the game server names and links to the live view of its key
@@ -244,6 +244,29 @@ assert.deepStrictEqual(Array.from(tileU.events), ["needs a bound commander"], "t
   timers.forEach((f) => f());
   await settle();
   assert.strictEqual(h.busy, false, "the timeout freed the view");
+
+  // (r3) a body that stalls after the headers is bounded too: fetch, status and json() sit under one timer
+  let aborts = 0;
+  ctx.AbortController = class extends AbortController { abort() { aborts++; super.abort(); } };
+  ctx.jsonOrThrow = (r) => r.json(); // the page's own: the body is read through it
+  ctx.fetch = () => Promise.resolve({ status: 200, ok: true, json: () => new Promise(() => {}) });
+  ctx.fdLive = {}; ctx.fdLiveReconciling = {}; ctx.cmdFd = {};
+  const hb = run("fdLiveState('Gbmage')");
+  FdLive.applyEventsFrame(hb, { key: KEY, from: 0, cur: 1, events: [{ k: "cast", t: 1 }], fight: { start_ms: 1000, fight_ms: 10 } }, 5);
+  hb.wantCatchUp = true; hb.lastCatchUp = 0;
+  timers.length = 0;
+  run("fdLiveCatchUp('Gbmage'); fdLiveReconcile('Gbmage')");
+  assert.strictEqual(hb.busy, true, "the catch-up waits on the body");
+  assert.strictEqual(ctx.fdLiveReconciling.Gbmage, true, "and so does the lookup");
+  await settle();
+  assert.strictEqual(hb.busy, true, "a stalled body does not free them by itself");
+  for (let round = 0; round < 3; round++) { // the events request, then the track's, each under its own timer
+    timers.splice(0).forEach((f) => f());
+    await settle();
+  }
+  assert.strictEqual(hb.busy, false, "the timer freed the catch-up");
+  assert.strictEqual(ctx.fdLiveReconciling.Gbmage, undefined, "and the lookup's guard");
+  assert.ok(aborts >= 2, "both requests were aborted: " + aborts);
 
   // L3: the pick left `live` when the window closed (the state is gone with it); the late `fight` frame still hands over by the card's liveKey
   ctx.fdLive = {};

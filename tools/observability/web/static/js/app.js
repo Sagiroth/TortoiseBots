@@ -6360,6 +6360,8 @@
     return found;
   }
 
+  // st.cmd is resolved once, when the state is made: a raid alias that is re-bound to another commander keeps the old one until its
+  // state is dropped (the view leaves the screen or hands over), which is soon after any re-bind in practice.
   function fdLiveState(key) {
     if (!fdLive[key]) {
       fdLive[key] = FdLive.create(key);
@@ -6373,18 +6375,19 @@
     return Object.keys(fdLive).map(k => fdLive[k]).filter(st => st.cmd === commander);
   }
 
-  // A fetch that gives up after FD_LIVE_FETCH_MS (and aborts the request when the browser can), so a hung request never keeps a
-  // view's catch-up in flight for good.
-  function fdLiveFetch(url) {
+  // One bounded JSON request: the fetch, the status check and the body's json() all sit under a single timer
+  // (FD_LIVE_FETCH_MS) and one AbortController, so neither a stalled connection nor a stalled body keeps a view's catch-up or
+  // lookup in flight for good. The timer is cleared only in finally. Resolves { missing, json }: a 404 is { missing: true }, any
+  // other failure (status, timeout, bad body) rejects.
+  function fdLiveJson(url) {
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     let timer = 0;
     const limit = new Promise((resolve, reject) => {
       timer = setTimeout(() => { if (ctl) ctl.abort(); reject(new Error('timeout')); }, FD_LIVE_FETCH_MS);
     });
-    const req = fetch(url, ctl ? { credentials: 'same-origin', signal: ctl.signal } : { credentials: 'same-origin' });
-    const clear = () => clearTimeout(timer);
-    req.then(clear, clear);
-    return Promise.race([req, limit]);
+    const work = fetch(url, ctl ? { credentials: 'same-origin', signal: ctl.signal } : { credentials: 'same-origin' })
+      .then(r => (r.status === 404 ? { missing: true, json: null } : Promise.resolve(jsonOrThrow(r)).then(json => ({ missing: false, json }))));
+    return Promise.race([work, limit]).finally(() => clearTimeout(timer));
   }
 
   function fdLiveDrop(key) {
@@ -6504,9 +6507,9 @@
     if (!key || !cmd || fdLiveReconciling[name]) return;
     fdLiveReconciling[name] = true;
     const gen = st ? st.gen : 0;
-    fdLiveFetch('/api/v1/combat/fights?commander=' + encodeURIComponent(cmd) + '&limit=50')
-      .then(jsonOrThrow)
-      .then(list => {
+    fdLiveJson('/api/v1/combat/fights?commander=' + encodeURIComponent(cmd) + '&limit=50')
+      .then(res => {
+        const list = res.json;
         if (st && (fdLive[name] !== st || st.gen !== gen)) return; // the view moved on to another fight meanwhile
         const row = (Array.isArray(list) ? list : []).find(r => r && r.key === key && !r.live);
         if (!row) return;
@@ -6546,20 +6549,20 @@
       st.trackFor = st.key;
       const to = Math.ceil(Date.now() / 1000) + 1;
       const from = Math.max(Math.floor(st.startMs / 1000) - FD_LIVE_TRACK_EDGE, to - 1800);
-      return fdLiveFetch('/api/v1/commanders/track?commander=' + encodeURIComponent(st.cmd) + '&from=' + from + '&to=' + to + '&x=1')
-        .then(jsonOrThrow).then(json => { if (mine() && st.gen === tok.gen) FdLive.applyTrackX(st, json); }).catch(() => {});
+      return fdLiveJson('/api/v1/commanders/track?commander=' + encodeURIComponent(st.cmd) + '&from=' + from + '&to=' + to + '&x=1')
+        .then(res => { if (mine() && st.gen === tok.gen && res.json) FdLive.applyTrackX(st, res.json); }).catch(() => {});
     };
     let p = Promise.resolve();
     if (wantEvents) {
       const tok = FdLive.token(st);
       FdLive.markCatchUp(st, now);
-      p = fdLiveFetch('/api/v1/combat/live?commander=' + encodeURIComponent(st.cmd) + '&since=' + st.cur + (st.key ? '&key=' + encodeURIComponent(st.key) : ''))
-        .then(r => {
-          if (r.status === 404) {
+      p = fdLiveJson('/api/v1/combat/live?commander=' + encodeURIComponent(st.cmd) + '&since=' + st.cur + (st.key ? '&key=' + encodeURIComponent(st.key) : ''))
+        .then(res => {
+          if (res.missing) {
             if (mine() && FdLive.accepts(st, tok, null)) { st.noLive = true; if (st.key) fdLiveReconcile(key); }
             return null;
           }
-          return jsonOrThrow(r);
+          return res.json;
         })
         .then(d => { if (d && mine() && FdLive.accepts(st, tok, d)) { st.noLive = false; FdLive.applyCatchUp(st, d, Date.now()); } })
         .catch(() => {});
