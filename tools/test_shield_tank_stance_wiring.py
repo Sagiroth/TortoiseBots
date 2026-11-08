@@ -66,6 +66,15 @@ class ShieldTankStanceWiringTest(unittest.TestCase):
         )
         self.assertNotIn("GetPlayerForcedRole", body)
 
+    def test_guard_uses_group_combat_helper(self):
+        # The rage-tank rule also holds between chained pulls: the call feeds
+        # ShouldShieldTarget the helper over the target's and the healer's
+        # combat, not the target's flag alone.
+        body = shield_body()
+        self.assertIn(
+            "TankEngagedForShield(target->IsInCombat(), bot->IsInCombat())", body
+        )
+
 
 class ExplicitNonTankRoleWiringTest(unittest.TestCase):
     def test_helper_declared_next_to_istank(self):
