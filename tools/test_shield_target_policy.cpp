@@ -20,15 +20,16 @@ int main()
     std::cout << "Starting TortoiseBots shield-target policy tests...\n";
 
     // Rage tank above critical: shield refused (eats rage).
-    CHECK(!ShouldShieldTarget(true, true, 50, 20));
+    // Rage tank above critical: shield refused, in or out of combat (the rule has no combat input; the wiring test pins that the guard reads none).
+    CHECK(!ShouldShieldTarget(true, true, 50.0f, 20.0f));
     // Rage tank at/below critical: the save wins.
-    CHECK(ShouldShieldTarget(true, true, 20, 20));
-    // Rage tank out of combat above critical: refused too (a 30 s shield cast between pulls eats the next pull's opening hits).
-    CHECK(!ShouldShieldTarget(true, true, 50, 20));
+    CHECK(ShouldShieldTarget(true, true, 20.0f, 20.0f));
+    // 20.5 % is above critical: no truncation to 20.
+    CHECK(!ShouldShieldTarget(true, true, 20.5f, 20.0f));
     // Mana tank (paladin) at 50 %: shields as usual.
-    CHECK(ShouldShieldTarget(true, false, 50, 20));
+    CHECK(ShouldShieldTarget(true, false, 50.0f, 20.0f));
     // Rage non-tank (DPS warrior) at 50 %: shields as usual.
-    CHECK(ShouldShieldTarget(false, true, 50, 20));
+    CHECK(ShouldShieldTarget(false, true, 50.0f, 20.0f));
     // Stance/form counts as tank even when the talent role does not.
     CHECK(!TankForShield(false, false, false, false));
     CHECK(TankForShield(true, false, false, false));
@@ -39,13 +40,13 @@ int main()
     CHECK(!TankForShield(false, true, false, true));
     CHECK(TankForShield(true, true, true, false));
     // Defensive-Stance rage tank above critical: shield refused.
-    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, 50, 20));
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, 50.0f, 20.0f));
     // Explicit DPS in Defensive Stance: shields as usual.
-    CHECK(ShouldShieldTarget(TankForShield(false, true, true, false), true, 50, 20));
+    CHECK(ShouldShieldTarget(TankForShield(false, true, true, false), true, 50.0f, 20.0f));
     // A bear without Feral talents above critical: refused.
-    CHECK(!ShouldShieldTarget(TankForShield(false, false, false, true), true, 66, 20));
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, false, true), true, 66.0f, 20.0f));
     // A stance tank below critical: the save lands.
-    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, 19, 20));
+    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, 19.0f, 20.0f));
 
     std::cout << "All shield-target policy tests passed.\n";
     return 0;

@@ -5,7 +5,7 @@
 - Changed: with AiPlayerbot.DungeonRunTauntGate on, the main tank holding Jin'do no longer taunts a Shade (reason holding_boss), and each taunt-gate refusal word is logged once per bot per 5 s.
 - Changed: a Delusions carrier at Jin'do finds its Shade even when its attackers list misses it, and the kill-first row says why it did not switch (AiPlayerbot.DungeonRunCarrierScan).
 - Changed: tanks no longer single-target taunt a Shade of Jin'do or a taunt-immune boss (AiPlayerbot.DungeonRunTauntGate); area taunts are not covered.
-- Fixed: a priest no longer shields a warrior in Defensive Stance or a druid in Bear Form above critical health, in or out of combat, even when that tank is a player without Protection or Feral talents; an assigned non-tank role wins over the stance (#1553).
+- Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
 - New: AiPlayerbot.HunterCarveInReachOnly (default off): Survival hunters only Carve when already in melee reach, so they stop walking into the boss at raids. Recommended on.
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.
 - Changed: the Hakkar Son walk-out picks any ranged bot on the platform even mid-cast, waits for the first Cause Insanity, starts from 80 s, keeps facing the Son, and its rows say why no puller was found.
