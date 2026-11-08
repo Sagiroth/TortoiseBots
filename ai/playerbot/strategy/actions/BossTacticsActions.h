@@ -585,8 +585,9 @@ namespace ai
     };
     // The walk-out focus (DungeonRunSeekWalkoutFocus): while this bot is the live walk-out puller, at or above 40 %
     // health, and its shot has not landed, every combat-engine action but the walk-out ("boss tactics seek tank") and
-    // the pet's dismissal ("boss tactics seek pet") is held (WalkoutFocusHolds; reaction actions still run), so "follow", "hunter step out" or "wait for attack" no longer take the puller's ticks at the
-    // stand (WalkoutFocusBlocks). One `seek pull: walk-out preempted action=<name>` row per walk-out.
+    // the pet's dismissal ("boss tactics seek pet") is held (WalkoutFocusHolds; reaction actions still run), so
+    // "follow", "hunter step out" or "wait for attack" no longer take the puller's ticks at the stand. One
+    // `seek pull: walk-out preempted action=<name>` row per walk-out.
     class BossTacticsWalkoutFocusMultiplier : public Multiplier
     {
     public:

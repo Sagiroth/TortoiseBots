@@ -14,6 +14,7 @@ CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 
 
 def body(text, signature):
@@ -59,31 +60,51 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("Player* const receiver = roles.tanks[2];", fn)
         # Readiness is per Son, inside the loop.
         loop = fn[fn.index("for (const auto& entry : state.nonTankSince)"):fn.index("const int pick =")]
-        self.assertIn("c.receiverTauntReady = receiverUp && SeekTankTauntReady(receiver, son);", loop)
-        self.assertIn("c.selfTauntReady = SeekTankTauntReady(bot, son);", loop)
+        self.assertIn("c.receiverTauntReady = receiverUp && SeekTankTauntReady(receiver);", loop)
+        self.assertIn("c.selfTauntReady = SeekTankTauntReady(bot);", loop)
         # No anchor: no pick, the 3 s rule stands.
         self.assertIn("if (!anchorRow)\n        return nullptr;", fn)
 
     def test_taunt_readiness_reuses_the_taunt_after_guards(self):
-        ready = body(ACTIONS, "bool SeekTankTauntReady(Player* tank, Unit* son)")
+        ready = body(ACTIONS, "bool SeekTankTauntReady(Player* tank)")
         self.assertIn("TankTauntGuards(tank, inControl, silenced);", ready)
-        self.assertIn("tankAi->CanCastSpell(taunt, son, 0, nullptr, true)", ready)
+        # An explicit read, not the full cast check: the GCD is not "not ready", nothing is written into the tank's AI.
+        self.assertNotIn("CanCastSpell", ready)
+        self.assertIn("const char* const taunt = KnownTaunt(tankAi);", ready)
+        self.assertIn("const bool spellCooldownReady = spellId && !tank->HasSpellCooldown(spellId);", ready)
+        self.assertIn('tankAi->HasAura("defensive stance", tank)', ready)
+        self.assertIn("SeekTauntFormOk(tank->GetClass(), defensiveStance, bearForm)", ready)
         self.assertIn('tankAi->HasAura("bear form", tank) || tankAi->HasAura("dire bear form", tank)', ready)
-        self.assertIn("return SeekTankTauntReadyNow(inControl, silenced, tankAi->HasSpell(taunt), castable, druid, bearForm);",
-                      ready)
+        self.assertIn("return SeekTankTauntReadyNow(inControl, silenced, taunt != nullptr, spellCooldownReady,", ready)
         # A human tank has no AI: not ready.
-        self.assertIn("if (!taunt || !tankAi)\n        return false;", ready)
+        self.assertIn("if (!tankAi)\n        return false;", ready)
         guards = body(ACTIONS, "void TankTauntGuards(Player* tank, bool& inControl, bool& silenced)")
         self.assertIn("UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL", guards)
         self.assertIn("UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED", guards)
         taunt_after = body(ACTIONS, "BossTauntAfter ai::FindBossTauntAfter(")
         self.assertIn("TankTauntGuards(tank, inControl, silenced);", taunt_after)
 
-    def test_the_receiver_does_not_retaunt_a_son_on_a_tank(self):
+    def test_the_receiver_leaves_only_a_son_on_the_first_off_tank(self):
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
-        self.assertIn("if (!SeekReceiverSkipsFighting(sPlayerbotAIConfig.dungeonRunSeekNearestTake, thirdTank,\n"
-                      "                                           candidateVictim && PlayerbotAI::IsTank(candidateVictim)))\n"
+        self.assertIn("if (candidateVictim && roles.tanks[i] == candidateVictim)\n"
+                      "                    victimTankIdx = static_cast<int>(i);", find)
+        self.assertIn("if (!SeekReceiverSkipsFighting(sPlayerbotAIConfig.dungeonRunSeekNearestTake, thirdTank, victimTankIdx))\n"
                       "                fighting = candidate;", find)
+        self.assertIn("return flagOn && isReceiver && victimTankIdx == 1;", POLICY)
+
+    def test_the_take_casts_the_known_taunt_with_the_flag(self):
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = fn[fn.index("if (task.take)"):fn.index("if (task.pull)")]
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)\n        {", take)
+        self.assertIn("taunt = KnownTaunt(ai);", take)
+        # Flag off: today's warrior/druid switch.
+        self.assertIn('case CLASS_WARRIOR: taunt = "taunt"; break;', take)
+        self.assertIn("return ai->CastSpell(taunt, task.source);", take)
+        known = body(ACTIONS, "const char* KnownTaunt(PlayerbotAI* ai)")
+        self.assertIn('"hand of reckoning"', known)
+        # KnownTaunt's own comment sits above it again.
+        self.assertIn("// trainer taunt 51303; Righteous Defense is TBC and no 1.12 spell). Null when it knows none.\n"
+                      "const char* KnownTaunt(PlayerbotAI* ai)", ACTIONS)
 
 
 if __name__ == "__main__":

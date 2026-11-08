@@ -1083,7 +1083,7 @@ AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
 # victim inside the live anchor's raid circle, plus 2 yd, and not the open meet's Son) at once when the receiving third
 # tank is more than 8 yd from it or its taunt is not ready, and the first off-tank is within 8 yd with its taunt ready,
-# is not Hakkar's victim and holds no Son; the receiver then leaves a Son already on a tank. The main tank never takes.
+# is not Hakkar's victim and holds no Son; the receiver then leaves a Son on the first off-tank. The main tank never takes.
 # Off (or no live anchor) keeps the 3 s healer clock.
 AiPlayerbot.DungeonRunSeekNearestTake = 0
 

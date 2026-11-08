@@ -665,8 +665,8 @@ public:
     bool dungeonRunSeekTakeEdge = false;
     // The walk-out focus (Hakkar's seek pull): on, the live walk-out puller's combat actions are held until its shot
     // lands (reaction actions still run; nothing below 40 % health), it turns to the Son one tick before it casts, and
-    // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks and it turns and casts in one tick as before (default
-    // off, recommended on).
+    // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks
+    // and it turns and casts in one tick as before (default off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the

@@ -5346,8 +5346,6 @@ Unit* HeldSwapBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
     return nullptr;
 }
 
-// The tank's taunt this bot knows, first learned wins: Taunt (warrior), Growl (druid), Hand of Reckoning (Turtle's
-// trainer taunt 51303; Righteous Defense is TBC and no 1.12 spell). Null when it knows none.
 // A tank's control and silence for a taunt (the taunt-after pick and the nearest take read the same): in control (no
 // stun, fear, confuse, hex or charm) and silenced or pacified.
 void TankTauntGuards(Player* tank, bool& inControl, bool& silenced)
@@ -5357,6 +5355,8 @@ void TankTauntGuards(Player* tank, bool& inControl, bool& silenced)
     silenced = tank && (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
 }
 
+// The tank's taunt this bot knows, first learned wins: Taunt (warrior), Growl (druid), Hand of Reckoning (Turtle's
+// trainer taunt 51303; Righteous Defense is TBC and no 1.12 spell). Null when it knows none.
 const char* KnownTaunt(PlayerbotAI* ai)
 {
     static const char* const kTaunts[] = { "taunt", "growl", "hand of reckoning" };
@@ -7448,31 +7448,29 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
 
 namespace
 {
-// Whether a tank's taunt is ready for this Son now (SeekTankTauntReadyNow): Taunt for a warrior, Growl for a druid in
-// (Dire) Bear Form (1.12 has no paladin taunt), with the taunt-after pick's own guards (TankTauntGuards) and the bot's
-// CanCastSpell on the Son, range ignored (the nearest take's 8 yd test is the range; Attack closes the last yards). A
-// dead, absent or human (non-bot) tank reads as not ready.
-bool SeekTankTauntReady(Player* tank, Unit* son)
+// Whether a tank's taunt is ready now (SeekTankTauntReadyNow): the taunt-after pick's guards (TankTauntGuards), its
+// known taunt (KnownTaunt: Taunt, Growl or Turtle's Hand of Reckoning), that spell's own cooldown ready, and its stance
+// or form (Defensive Stance for Taunt, Bear or Dire Bear Form for Growl). An explicit read, not the full cast check:
+// the global cooldown does not count as "not ready", and nothing is written into the tank's AI. Range is the nearest
+// take's 8 yd test. A dead, absent or human (non-bot) tank reads as not ready.
+bool SeekTankTauntReady(Player* tank)
 {
-    if (!tank || !son || !tank->IsInWorld() || !sServerFacade.IsAlive(tank))
+    if (!tank || !tank->IsInWorld() || !sServerFacade.IsAlive(tank))
         return false;
-    const char* taunt = nullptr;
-    switch (tank->GetClass())
-    {
-        case CLASS_WARRIOR: taunt = "taunt"; break;
-        case CLASS_DRUID: taunt = "growl"; break;
-        default: break;
-    }
     PlayerbotAI* const tankAi = PlayerbotAIStorage::Instance().GetAI(tank);
-    if (!taunt || !tankAi)
+    if (!tankAi)
         return false;
+    const char* const taunt = KnownTaunt(tankAi);
     bool inControl = false;
     bool silenced = false;
     TankTauntGuards(tank, inControl, silenced);
-    const bool druid = tank->GetClass() == CLASS_DRUID;
-    const bool bearForm = druid && (tankAi->HasAura("bear form", tank) || tankAi->HasAura("dire bear form", tank));
-    const bool castable = tankAi->CanCastSpell(taunt, son, 0, nullptr, true);
-    return SeekTankTauntReadyNow(inControl, silenced, tankAi->HasSpell(taunt), castable, druid, bearForm);
+    std::uint32_t const spellId =
+        taunt ? tankAi->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", taunt)->Get() : 0;
+    const bool spellCooldownReady = spellId && !tank->HasSpellCooldown(spellId);
+    const bool defensiveStance = tankAi->HasAura("defensive stance", tank);
+    const bool bearForm = tankAi->HasAura("bear form", tank) || tankAi->HasAura("dire bear form", tank);
+    return SeekTankTauntReadyNow(inControl, silenced, taunt != nullptr, spellCooldownReady,
+                                 SeekTauntFormOk(tank->GetClass(), defensiveStance, bearForm));
 }
 
 // The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
@@ -7509,9 +7507,9 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         c.receiverYd = receiverUp ? receiver->GetDistance(son) : std::numeric_limits<float>::max();
         if (SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
         {
-            // Readiness is per Son (the cast check is on it), and read only for an eligible one.
-            c.receiverTauntReady = receiverUp && SeekTankTauntReady(receiver, son);
-            c.selfTauntReady = SeekTankTauntReady(bot, son);
+            // Readiness is read only for an eligible Son (it no longer depends on the Son: no cast check on it).
+            c.receiverTauntReady = receiverUp && SeekTankTauntReady(receiver);
+            c.selfTauntReady = SeekTankTauntReady(bot);
         }
         units.push_back(son);
         cands.push_back(c);
@@ -7678,9 +7676,15 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         else if (candidate->IsInCombat() && !fighting)
         {
             // With the nearest take on, the receiver leaves a Son already on a tank (the first off-tank just took it).
-            Player* const candidateVictim = dynamic_cast<Player*>(candidate->GetVictim());
-            if (!SeekReceiverSkipsFighting(sPlayerbotAIConfig.dungeonRunSeekNearestTake, thirdTank,
-                                           candidateVictim && PlayerbotAI::IsTank(candidateVictim)))
+            // Only a Son on the first off-tank is left; one on the main tank or any other tank is still taken.
+            Unit* const candidateVictim = candidate->GetVictim();
+            int victimTankIdx = -1;
+            for (std::size_t i = 0; i < roles.tanks.size(); ++i)
+            {
+                if (candidateVictim && roles.tanks[i] == candidateVictim)
+                    victimTankIdx = static_cast<int>(i);
+            }
+            if (!SeekReceiverSkipsFighting(sPlayerbotAIConfig.dungeonRunSeekNearestTake, thirdTank, victimTankIdx))
                 fighting = candidate;
         }
     }
@@ -7994,11 +7998,20 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // Class-correct taunt (the Gluth swap's list: 1.12 has no paladin taunt). Attack() sticks even when the taunt
         // itself cannot fire yet (cooldown, range).
         const char* taunt = nullptr;
-        switch (bot->GetClass())
+        if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
         {
-            case CLASS_WARRIOR: taunt = "taunt"; break;
-            case CLASS_DRUID: taunt = "growl"; break;
-            default: break;
+            // With the nearest take on, the take casts the taunt the readiness read counts (KnownTaunt), so a paladin's
+            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do.
+            taunt = KnownTaunt(ai);
+        }
+        else
+        {
+            switch (bot->GetClass())
+            {
+                case CLASS_WARRIOR: taunt = "taunt"; break;
+                case CLASS_DRUID: taunt = "growl"; break;
+                default: break;
+            }
         }
         // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
         // it stands, and the Son comes in to it.

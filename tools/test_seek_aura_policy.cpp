@@ -258,28 +258,50 @@ int main()
         CHECK(PickSeekNearestTake(true, 1, 2, false, false, {}) == -1);
     }
 
-    // SeekTankTauntReadyNow: the taunt-after guards plus the cast check, and Bear Form for a druid.
-    CHECK(SeekTankTauntReadyNow(true, false, true, true, false, false));
-    CHECK(SeekTankTauntReadyNow(true, false, true, true, true, true));
+    // SeekTankTauntReadyNow: the taunt-after guards, a known taunt, its own spell cooldown, its stance or form.
+    // A warrior in Defensive Stance with Taunt off cooldown, on the global cooldown only (a Sunder a moment ago): ready.
+    // The GCD is no input at all: the spell's own cooldown is what counts.
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, true, false)));
+    // A druid in Bear Form: ready.
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, true)));
     // A stunned or feared receiver (not in control) with its taunt off cooldown is not ready, so tanks[1] takes.
-    CHECK(!SeekTankTauntReadyNow(false, false, true, true, false, false));
-    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(false, false, true, true, false, false), 4.0f, true,
+    CHECK(!SeekTankTauntReadyNow(false, false, true, true, true));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(false, false, true, true, true), 4.0f, true,
                              false, false));
-    // Silenced or pacified, no taunt known, the cast check failing on the Son: not ready.
-    CHECK(!SeekTankTauntReadyNow(true, true, true, true, false, false));
-    CHECK(!SeekTankTauntReadyNow(true, false, false, true, false, false));
-    CHECK(!SeekTankTauntReadyNow(true, false, true, false, false, false));
+    // Silenced or pacified, no taunt known, the taunt's own cooldown running: not ready.
+    CHECK(!SeekTankTauntReadyNow(true, true, true, true, true));
+    CHECK(!SeekTankTauntReadyNow(true, false, false, true, true));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, false, true));
+    // A warrior out of Defensive Stance (Battle or Berserker) is not ready: Taunt needs the stance.
+    CHECK(!SeekTauntFormOk(1, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, false, false)));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, false, false)),
+                             4.0f, true, false, false));
     // Growl outside Bear Form is not ready: a druid receiver in caster or cat form leaves the take to tanks[1].
-    CHECK(!SeekTankTauntReadyNow(true, false, true, true, true, false));
-    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, true, false), 4.0f, true,
-                             false, false));
+    CHECK(!SeekTauntFormOk(11, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, false)));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, false)),
+                             4.0f, true, false, false));
+    // A paladin with Hand of Reckoning (KnownTaunt) has a taunt and needs no form: ready, so a close paladin receiver
+    // keeps its take; a paladin without it has no taunt and is not ready.
+    CHECK(SeekTauntFormOk(2, false, false));
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(2, false, false)));
+    CHECK(!SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(2, false, false)),
+                              4.0f, true, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, false, true, SeekTauntFormOk(2, false, false)));
 
-    // SeekReceiverSkipsFighting: with the nearest take on, the receiver does not taunt back a Son already on a tank
-    // (tanks[1] just took it). Off, or not the receiver, or the Son on a non-tank: today's pick.
-    CHECK(SeekReceiverSkipsFighting(true, true, true));
-    CHECK(!SeekReceiverSkipsFighting(false, true, true));
-    CHECK(!SeekReceiverSkipsFighting(true, false, true));
-    CHECK(!SeekReceiverSkipsFighting(true, true, false));
+    // SeekReceiverSkipsFighting: with the nearest take on, the receiver leaves only a Son on the first off-tank (index
+    // 1, which just took it). Failing case before round 2: a Son on the main tank (index 0) -> not skipped; the round-1
+    // skip left every Son on any tank, and nobody took a Son off the main tank. (Mutation: skip on any tank index >= 0
+    // and this fails.)
+    CHECK(!SeekReceiverSkipsFighting(true, true, 0));
+    CHECK(SeekReceiverSkipsFighting(true, true, 1));
+    CHECK(!SeekReceiverSkipsFighting(true, true, 2)); // the receiver itself (its own Son is the onTank branch)
+    CHECK(!SeekReceiverSkipsFighting(true, true, 3)); // a fourth tank
+    CHECK(!SeekReceiverSkipsFighting(true, true, -1)); // a non-tank victim
+    // Off, or not the receiver: today's pick.
+    CHECK(!SeekReceiverSkipsFighting(false, true, 1));
+    CHECK(!SeekReceiverSkipsFighting(true, false, 1));
 
     // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
     // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.

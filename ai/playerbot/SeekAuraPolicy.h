@@ -439,13 +439,26 @@ namespace ai
         return receiverCannot && selfCan;
     }
 
-    // Whether a tank's taunt is ready for one Son now: the taunt-after pick's own guards (TauntAfterTankCanHold in
-    // BossTacticsPolicy.h: in control, not silenced or pacified, a taunt known, CanCastSpell on the Son), and a druid only
-    // in Bear Form or Dire Bear Form (Growl needs it). Range is the caller's 8 yd test (the take's Attack closes it).
-    inline bool SeekTankTauntReadyNow(bool inControl, bool silencedOrPacified, bool hasTaunt, bool castable,
-                                      bool druid, bool bearForm)
+    // The stance or form a tank's taunt needs (by class id): a warrior's Taunt needs Defensive Stance, a druid's Growl
+    // Bear Form or Dire Bear Form; a paladin's Hand of Reckoning (Turtle) needs none.
+    inline bool SeekTauntFormOk(std::uint8_t classId, bool defensiveStance, bool bearForm)
     {
-        return inControl && !silencedOrPacified && hasTaunt && castable && (!druid || bearForm);
+        switch (classId)
+        {
+            case 1: return defensiveStance;
+            case 11: return bearForm;
+            default: return true;
+        }
+    }
+
+    // Whether a tank's taunt is ready now: the taunt-after pick's own guards (TankTauntGuards: in control, not
+    // silenced or pacified), a taunt known (KnownTaunt), the taunt's own spell cooldown ready, and its stance or form
+    // held (SeekTauntFormOk). Not the full cast check: the global cooldown alone (a warrior's Sunder a moment ago) is
+    // not "not ready", and range is the caller's 8 yd test (the take's Attack closes it).
+    inline bool SeekTankTauntReadyNow(bool inControl, bool silencedOrPacified, bool hasTaunt, bool spellCooldownReady,
+                                      bool formOk)
+    {
+        return inControl && !silencedOrPacified && hasTaunt && spellCooldownReady && formOk;
     }
 
     // One Son the nearest take judges: its eligibility (SeekNearestTakeSonOk's inputs), both tanks' distances to it,
@@ -484,11 +497,12 @@ namespace ai
     }
 
     // The receiver's own pick of a fighting Son near the spot (the third tank's `fighting`): with the nearest take on it
-    // skips a Son already on a tank, so it does not walk over and taunt back a Son the first off-tank just took. Flag
-    // off: today's pick (any fighting Son not on itself).
-    inline bool SeekReceiverSkipsFighting(bool flagOn, bool isReceiver, bool victimIsTank)
+    // skips only a Son whose victim is the first off-tank (`victimTankIdx` 1, the nearest taker that just took it), so
+    // it does not walk over and taunt it back. A Son on the main tank (0), on any other tank or on a non-tank (-1) is
+    // still the receiver's. Flag off: today's pick (any fighting Son not on itself).
+    inline bool SeekReceiverSkipsFighting(bool flagOn, bool isReceiver, int victimTankIdx)
     {
-        return flagOn && isReceiver && victimIsTank;
+        return flagOn && isReceiver && victimTankIdx == 1;
     }
 
     // Whether an off-tank may take a Son, drag one or walk a pull at all: never while it is the boss's victim (after
