@@ -266,6 +266,7 @@ branch:
   meet's flag, receiver branch, wait/`peeled` close and per-update revalidation, the take row's `reason=`/`meet=`, and
   the Cause Insanity row's 500 ms scan (same world, map and instance only) and 1500 ms wait;
   `tools/test_seek_walkout_policy.cpp` pins `MeetRefusalWhy`, `PickMeetReceiver`, `MeetRefusalCounts`,
-  `MeetReceiverShouldWait` and `MeetReceiverLostWhy`; `tools/test_seek_fight_state_policy.cpp` pins the charm edge
+  `MeetReceiverShouldWait`, `MeetReceiverLostWhy` and `WalkoutMeetCloseIf` (two readers on one snapshot: one close wins, and
+  only the winner logs the `taken`/`lost`/`peeled` row); `tools/test_seek_fight_state_policy.cpp` pins the charm edge
   (the same player charmed twice with a gap logs two rows); `tools/test_seek_aura_policy.cpp` pins all eight
   `SeekTakeReasonWord` inputs.

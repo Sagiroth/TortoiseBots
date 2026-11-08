@@ -389,6 +389,34 @@ static void TestPulledSonMeetsReceiver()
     CHECK(s.meetReceiver == 0 && s.meetSon == 0 && s.meetMs == 0 && s.meetPuller == 0);
 }
 
+// Every reading bot holds its own copy of the meet; only the caller whose copy still matches the shared meet clears it
+// and logs the terminal row. Two readers on the same snapshot: exactly one close returns true.
+static void TestMeetCloseIsWonByOneReader()
+{
+    SeekWalkoutState shared;
+    shared.meetReceiver = 33;
+    shared.meetSon = 22;
+    shared.meetMs = 500;
+    shared.meetPuller = 11;
+    const SeekWalkoutState readerA = shared; // both readers copied the meet before either closed it
+    const SeekWalkoutState readerB = shared;
+    int wins = 0;
+    wins += WalkoutMeetCloseIf(shared, readerA.meetReceiver, readerA.meetSon, readerA.meetMs) ? 1 : 0;
+    wins += WalkoutMeetCloseIf(shared, readerB.meetReceiver, readerB.meetSon, readerB.meetMs) ? 1 : 0;
+    CHECK(wins == 1);
+    CHECK(shared.meetReceiver == 0 && shared.meetSon == 0 && shared.meetMs == 0 && shared.meetPuller == 0);
+    // A stale copy never closes a later meet: another receiver, another Son or another shot time.
+    shared.meetReceiver = 34;
+    shared.meetSon = 23;
+    shared.meetMs = 900;
+    CHECK(!WalkoutMeetCloseIf(shared, 33, 22, 500));
+    CHECK(!WalkoutMeetCloseIf(shared, 34, 22, 900)); // same receiver and time, another Son
+    CHECK(!WalkoutMeetCloseIf(shared, 34, 23, 500)); // same receiver and Son, another shot time
+    CHECK(!WalkoutMeetCloseIf(shared, 0, 23, 900));  // no receiver named
+    CHECK(shared.meetReceiver == 34);
+    CHECK(WalkoutMeetCloseIf(shared, 34, 23, 900));
+}
+
 // The receiver waits only while the Son's victim is the walk-out puller, the returner or nobody; a Son on anyone else
 // (a DPS or a healer peeled it) ends the wait and the meet closes as `peeled`.
 static void TestMeetReceiverWaitsOnlyForTheWalker()
@@ -1244,6 +1272,7 @@ int main()
     TestPulledSonMeetsReceiver();
     TestMeetReceiverWaitsOnlyForTheWalker();
     TestMeetReceiverLostWhy();
+    TestMeetCloseIsWonByOneReader();
     TestShotSpellPerClass();
     TestPullerUsable();
     TestCastFailAbortUnspends();

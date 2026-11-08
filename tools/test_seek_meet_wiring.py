@@ -17,6 +17,7 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 DOC = (ROOT / "docs/play/refusal-rows.md").read_text()
+POLICY = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
 FIGHT_STATE = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 
 
@@ -115,12 +116,35 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);", wait)
         self.assertIn("task.valid = false;", wait)
         # Anyone else's Son closes the meet as `peeled` and falls through to today's take branches.
-        self.assertIn("SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetMs)", wait)
+        self.assertIn("SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs)", wait)
         self.assertIn('LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);', wait)
         self.assertLess(wait.index("task.valid = false;"), wait.index('"peeled"'))
         self.assertLess(wait.index('"peeled"'), wait.index("task.row = nullptr;"))
         self.assertIn("event=wait,reason=receiver_wait", ACTIONS)
         self.assertIn("g_seekMeetWaitLog[bot->GetObjectGuid().GetRawValue()]", ACTIONS)
+
+    def test_every_terminal_meet_row_sits_behind_the_winning_close(self):
+        # Each reader holds its own copy of the meet; only the caller whose compare-and-clear returns true logs the
+        # taken / lost / peeled row, so a stale reader cannot log a duplicate or a contradicting end.
+        fn = update()
+        end = fn[:fn.index("if (WalkoutActive(state))")]
+        self.assertIn("cleared = it != g_walkouts.end() &&", end)
+        gate = end.index("if (cleared && takenBy)")
+        self.assertLess(end.index("WalkoutMeetCloseIf("), gate)
+        self.assertLess(gate, end.index('event=taken'))
+        self.assertLess(end.index("else if (cleared)"), end.index("LogSeekMeetLost(ai, guid, lost,"))
+        self.assertEqual(1, end.count("LogSeekMeetLost("))
+        # Every LogSeekMeetLost call in the file is the cleared branch or the receiver's peeled close.
+        self.assertEqual(2, ACTIONS.count("LogSeekMeetLost(ai,") - 0)
+        pick = tank_pick()
+        self.assertIn("if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))\n"
+                      "                    LogSeekMeetLost(", pick)
+        helper = body(ACTIONS, "bool SeekMeetClose(")
+        self.assertIn("WalkoutMeetCloseIf(it->second.state, receiver, son, meetMs)", helper)
+        # The policy compares the receiver, the Son and the shot time before it clears.
+        policy = inline_body(POLICY, "inline bool WalkoutMeetCloseIf(")
+        for term in ("s.meetReceiver != receiver", "s.meetSon != son", "s.meetMs != meetMs"):
+            self.assertIn(term, policy)
 
     def test_the_receiver_is_revalidated_every_update(self):
         fn = update()
@@ -132,7 +156,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("PlayerHoldsFightSon(fightSons, row.targetEntry, meetReceiver,", meet)
         self.assertIn("LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);", meet)
         # The loss clears the meet, so the puller walks to the circle edge again.
-        self.assertIn("WalkoutMeetClear(it->second.state);", meet)
+        self.assertIn("WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", meet)
 
     def test_holds_son_scans_the_fight_sons(self):
         fn = update()
@@ -167,7 +191,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         fn = update()
         for word in ('lost = "son_dead";', 'lost = "receiver_dead";', 'lost = "timeout";'):
             self.assertIn(word, fn)
-        self.assertIn("WalkoutMeetClear(it->second.state);", fn)
+        self.assertIn("WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", fn)
         self.assertIn('"son=%u,event=lost,reason=%s,after_ms=%u"', ACTIONS)
         self.assertNotIn("meetTakenLogged", ACTIONS)
 

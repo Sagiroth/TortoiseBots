@@ -661,6 +661,18 @@ namespace ai
         s.meetPuller = 0;
     }
 
+    // The shared meet's compare-and-clear: every reading bot holds a local copy of the meet and may find it over, but
+    // only the caller whose copy still matches the shared one (same receiver, same Son, same shot time) clears it, and
+    // only that caller logs the terminal row. A stale copy, or a meet already cleared or replaced, returns false.
+    inline bool WalkoutMeetCloseIf(SeekWalkoutState& s, std::uint64_t receiver, std::uint64_t son,
+                                   std::uint32_t meetMs)
+    {
+        if (receiver == 0 || s.meetReceiver != receiver || s.meetSon != son || s.meetMs != meetMs)
+            return false;
+        WalkoutMeetClear(s);
+        return true;
+    }
+
     inline bool WalkoutActive(const SeekWalkoutState& s)
     {
         return s.puller != 0;

@@ -2057,15 +2057,17 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         if (lost || takenBy)
         {
+            // Every reader holds its own copy of the meet: only the one whose compare-and-clear succeeds logs the
+            // terminal row, so a stale reader cannot log a duplicate or a contradicting end.
+            bool cleared = false;
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
-                if (it != g_walkouts.end() && it->second.state.meetReceiver == state.meetReceiver &&
-                    it->second.state.meetMs == state.meetMs)
-                    WalkoutMeetClear(it->second.state);
+                cleared = it != g_walkouts.end() &&
+                    WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
             }
             const std::uint64_t guid = state.meetSon;
-            if (takenBy)
+            if (cleared && takenBy)
             {
                 char info1[192];
                 snprintf(info1, sizeof(info1), "son=%u,event=taken,receiver=%s,by=%s,after_ms=%u",
@@ -2073,7 +2075,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                          takenBy->GetName(), nowMs - state.meetMs);
                 LogSeekMeet(ai, info1);
             }
-            else
+            else if (cleared)
                 LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);
             WalkoutMeetClear(state);
         }
@@ -2599,15 +2601,12 @@ void SeekMeetWalkers(std::uint32_t instanceId, std::uint64_t& puller, std::uint6
 }
 
 // Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
-// follows. `meetMs` tells this meet from a later one.
-bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint32_t meetMs)
+// follows. The receiver, the Son and `meetMs` tell this meet from a later one.
+bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
-    if (it == g_walkouts.end() || it->second.state.meetReceiver != receiver || it->second.state.meetMs != meetMs)
-        return false;
-    WalkoutMeetClear(it->second.state);
-    return true;
+    return it != g_walkouts.end() && WalkoutMeetCloseIf(it->second.state, receiver, son, meetMs);
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -7376,7 +7375,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     task.valid = false;
                     return task;
                 }
-                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetMs))
+                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))
                     LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);
                 task.row = nullptr;
             }
