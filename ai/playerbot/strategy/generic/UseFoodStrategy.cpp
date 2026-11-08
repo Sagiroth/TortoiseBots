@@ -49,4 +49,7 @@ void UseFoodStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "high mana",
         NextAction::array(0, new NextAction("drink", 6.0f), NULL)));
+    triggers.push_back(new TriggerNode(
+        "resume drink",
+        NextAction::array(0, new NextAction("drink", 6.0f), NULL)));
 }

@@ -360,7 +360,14 @@ bool PlayerbotAIConfig::Initialize()
     randomGearTabards = config.GetBoolDefault("AiPlayerbot.RandomGearTabards", false);
     randomGearTabardsChance = config.GetFloatDefault("AiPlayerbot.RandomGearTabardsChance", 0.1f);
     randomGearTabardsReplaceGuild = config.GetBoolDefault("AiPlayerbot.RandomGearTabardsReplaceGuild", false);
-    LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomGearBlacklist", "10,163,19972,58260,21524,21525,7"), randomGearBlacklist);
+    {
+        std::string gearBlacklist = config.GetStringDefault("AiPlayerbot.RandomGearBlacklist", "10,163,19972,58260,21524,21525,7");
+        // Older templates shipped this line empty; kept in a server's config
+        // it would silently drop the default bans. "0" blocks nothing.
+        if (gearBlacklist.find_first_not_of(" \t\"") == std::string::npos)
+            gearBlacklist = "10,163,19972,58260,21524,21525,7";
+        LoadList<std::list<uint32> >(gearBlacklist, randomGearBlacklist);
+    }
     LoadList<std::list<uint32> >(config.GetStringDefault("AiPlayerbot.RandomGearWhitelist", ""), randomGearWhitelist);
     randomGearProgression = config.GetBoolDefault("AiPlayerbot.RandomGearProgression", true);
     randomGearLoweringChance = config.GetFloatDefault("AiPlayerbot.RandomGearLoweringChance", 0.15f);
