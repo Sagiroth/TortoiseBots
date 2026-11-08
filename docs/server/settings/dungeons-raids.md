@@ -972,10 +972,18 @@ Whether the receiving third tank walks to the puller's way back when a Hakkar wa
 
 **Pre-place:** in walk 56 the receiver stood a median 47.5 yd from the puller when the shot landed, so the Son spent 5-10 s on the hunter among the healers before a tank reached it, and 8 of 21 peels were the puller dying. With the key on:
 - when the walk-out starts, the third tank (tanks[2]) is pre-placed if it is alive, not charmed, not Hakkar's victim, holds no Son and stands inside the tanks' circle; otherwise there is no pre-place and nothing changes;
-- it walks to the tanks' circle edge (the anchor's tank radius, 25 yd for Hakkar, never past it) on the line from the anchor's centre toward the puller's stand, and waits there (within 4 yd its own tank AI keeps the tick);
+- it walks to a point 2 yd inside the tanks' circle edge (23 yd for Hakkar's 25 yd tank radius) on the line from the anchor's centre toward the puller's stand, so a small step past it still counts as inside the circle at the shot; a point whose floor is off the platform's level (the anchor clamp's own floor read) gives no pre-place and a `event=preplace_end,reason=floor` row;
+- within 4 yd of the point it holds there until the meet starts (then while it waits for the Son) or the pre-place ends: a walk its tank AI starts is stopped, and otherwise the tick goes to its rotation, so it keeps attacking Hakkar and keeps its threat but does not walk off the point;
+- a Son that already fights near the spot (on a healer or anyone else) comes first: tanks[2] takes it as today and leaves the point. That is deliberate: a Son on a healer outranks the pre-place. If tanks[2] still holds that Son at the shot, the meet's pick refuses it as `busy`, falls back to the second off-tank as today, and the pre-place ends;
 - the meet's receiver pick at the shot is today's (the third tank first), so the pre-placed tank is normally the receiver; the puller's walk back then ends at it as before;
 - the pre-place ends when its meet closes, when the task ends without a meet for it, when another tank is picked at the shot, or when the tank dies, is charmed or becomes Hakkar's victim;
 - a `BossTacticsSonMeet` row `event=preplace` names the tank, its distance to the puller and to the point when the task starts; the shot's `event=meet` row keeps `receiver_yd=` (the receiver's distance to the puller at the shot).
+- a new walk-out that starts while an older pre-placed meet is still open replaces the pre-place: the old meet runs on under today's rules (its receiver waits and takes without the hold), and the tank may be pre-placed again at the new task's point. The start scan refuses a start while any Son fights near the anchor, so this is rare.
+
+Known limits (not fixed):
+- the point is set from the stand at the start and does not follow the stand's re-plan while the Son patrols (the puller's walk back still ends at the receiver's live position, only longer);
+- while it is pre-placed, the third tank's own pull of a Son that wanders into the tanks' reach waits until the pre-place ends;
+- a point on the north half of the circle stands up to 40 yd from the gather spot, so a Son fighting at the spot is a longer run for tanks[2] (the first off-tank's nearest take and healer clock still cover a Son on a non-tank).
 
 </details>
 

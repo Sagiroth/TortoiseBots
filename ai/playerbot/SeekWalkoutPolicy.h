@@ -881,19 +881,51 @@ namespace ai
     // key on, the receiver walks to the tanks' circle edge on the puller's way back when the walk-out starts, and waits
     // there for the meet. The meet, its receiver pick at the shot and the back point are unchanged.
 
-    // The pre-place point: the tank circle's edge (its radius, no further: the anchor's own clamp point) on the ray from
-    // the circle's centre toward the stand. A stand inside the circle gives the same edge point on its ray. False
-    // (no point) for a stand on the centre itself, which has no ray.
+    // The pre-place point sits this far inside the tank circle's edge (review round 1): a point on the radius itself
+    // left a tank a few tenths past it after any unclamped step, and the shot's pick then refused it as `outside`.
+    constexpr float kSeekMeetPrePlaceInsetYd = 2.0f;
+    // The pre-placed tank walks to its point while farther than this; within it the task holds it there.
+    constexpr float kSeekMeetPrePlaceArriveYd = 4.0f;
+
+    // The pre-place point: kSeekMeetPrePlaceInsetYd inside the tank circle's edge (23 yd for Hakkar's 25) on the ray from
+    // the circle's centre toward the stand. A stand inside the circle gives the same point on its ray. False (no point)
+    // for a stand on the centre itself, which has no ray, or a circle too small for the inset.
     inline bool WalkoutMeetPrePlacePoint(const BossAnchorCircle& tank, float standX, float standY, float& x, float& y)
     {
         float const dx = standX - tank.x;
         float const dy = standY - tank.y;
         float const d = std::sqrt(dx * dx + dy * dy);
-        if (d < 0.01f || tank.radius <= 0.0f)
+        float const reach = tank.radius - kSeekMeetPrePlaceInsetYd;
+        if (d < 0.01f || reach <= 0.0f)
             return false;
-        x = tank.x + dx / d * tank.radius;
-        y = tank.y + dy / d * tank.radius;
+        x = tank.x + dx / d * reach;
+        y = tank.y + dy / d * reach;
         return true;
+    }
+
+    // The pre-placed tank's step this tick (review round 1, the gather's `atSpot` pattern): farther than
+    // kSeekMeetPrePlaceArriveYd it walks to the point; at the point the task stays valid and holds it there: a tank
+    // that is moving is stopped (the tick is taken), a standing one leaves the tick to its rotation (the action returns
+    // false), so it keeps attacking and its threat but never walks off the point.
+    enum class MeetPrePlaceStep : std::uint8_t
+    {
+        Walk = 0,
+        HoldStop = 1,
+        HoldFree = 2,
+    };
+
+    inline MeetPrePlaceStep MeetPrePlaceStepFor(float toPointYd, bool moving)
+    {
+        if (toPointYd > kSeekMeetPrePlaceArriveYd)
+            return MeetPrePlaceStep::Walk;
+        return moving ? MeetPrePlaceStep::HoldStop : MeetPrePlaceStep::HoldFree;
+    }
+
+    // Whether the hold's step takes the tick (the action returns true): the walk and the stop do; a standing tank's hold
+    // does not, so the rotation runs.
+    inline bool MeetPrePlaceStepConsumesTick(MeetPrePlaceStep step)
+    {
+        return step != MeetPrePlaceStep::HoldFree;
     }
 
     // Whether this tank may be pre-placed: alive, not charmed, not Hakkar's victim, holding no Son and inside the tanks'
@@ -939,6 +971,18 @@ namespace ai
         s.prePlaceStartMs = s.startMs;
         s.prePlaceX = x;
         s.prePlaceY = y;
+    }
+
+    // The live check's compare-and-clear (EndLostWalkoutPrePlace): only the pre-place the reader saw (the same tank,
+    // puller and task start) is cleared. A stale reader whose record a new task has replaced clears nothing (false).
+    inline bool WalkoutPrePlaceClearIf(SeekWalkoutState& s, std::uint64_t receiver, std::uint64_t puller,
+                                       std::uint32_t startMs)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlacePuller != puller ||
+            s.prePlaceStartMs != startMs)
+            return false;
+        WalkoutPrePlaceClear(s);
+        return true;
     }
 
     // The shot landed and the meet's pick ran: a meet with the pre-placed receiver carries the pre-place on until it

@@ -43,13 +43,20 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         fn = update()
         start = fn[fn.index("const std::uint64_t sonGuid = scan.son->GetObjectGuid().GetRawValue();"):]
         self.assertIn("Player* const prePlaceTank = meetOn && sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace\n"
-                      "        ? PickWalkoutPrePlace(ai, boss, fightSons, row.targetEntry, tank, scan.x, scan.y, prePlaceX,"
-                      " prePlaceY)\n        : nullptr;", start)
+                      "        ? PickWalkoutPrePlace(ai, map, boss, fightSons, row.targetEntry, tank, scan.x, scan.y, prePlaceX,"
+                      " prePlaceY,\n                              prePlaceFloorRefused)\n        : nullptr;", start)
+        # A point off the platform's level: no pre-place, one `reason=floor` row.
+        self.assertIn("else if (prePlaceFloorRefused)", start)
+        self.assertIn('prePlaceFloorRefused->GetName(), "floor");', start)
         # Recorded under the lock, right after the task starts, for that task.
         self.assertLess(start.index("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);"),
                         start.index("WalkoutPrePlaceSet(record.state, prePlaceTank ?"))
         self.assertIn('"son=%u,event=preplace,receiver=%s,receiver_yd=%.1f,point_yd=%.1f"', start)
-        helper = body(ACTIONS, "Player* PickWalkoutPrePlace(PlayerbotAI* ai, Unit* boss,")
+        helper = body(ACTIONS, "Player* PickWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss,")
+        # The point's floor is read as the anchor clamp reads it.
+        self.assertIn("float const floor = map ? map->GetHeight(x, y, tank.z + 5.0f) : INVALID_HEIGHT;", helper)
+        self.assertIn("if (!AnchorFloorOk(tank, floor > INVALID_HEIGHT, floor))", helper)
+        self.assertLess(helper.index("WalkoutMeetPrePlacePoint("), helper.index("AnchorFloorOk("))
         self.assertIn("int const pick = PickMeetPrePlaceReceiver(tanks);", helper)
         self.assertIn("WalkoutMeetPrePlacePoint(tank, standX, standY, x, y)", helper)
         # The victim, charm and Son checks feed the pick.
@@ -70,15 +77,22 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         lost = body(ACTIONS, "void EndLostWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss,")
         self.assertIn("if (MeetPrePlaceKeeps(alive, charmed, victim))\n        return;", lost)
         self.assertIn("bool const victim = alive && boss->GetVictim() == receiver;", lost)
-        self.assertIn("WalkoutPrePlaceClear(it->second.state);", lost)
+        # The stale-reader guard: a compare-and-clear on the tank, puller and task start the reader saw.
+        self.assertIn("WalkoutPrePlaceClearIf(it->second.state, state.prePlaceReceiver, state.prePlacePuller,\n"
+                      "                                   state.prePlaceStartMs);", lost)
+        self.assertNotIn("WalkoutPrePlaceClear(it->second.state);", lost)
         self.assertIn('"son=%u,event=preplace_end,receiver=%s,reason=%s"', lost)
 
     def test_the_receivers_pre_shot_task_is_walk_to_spot_to_the_point(self):
         helper = body(ACTIONS, "bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)")
         self.assertIn("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row ||", helper)
         self.assertIn("SeekMeetPrePlaceFor(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), x, y)", helper)
-        self.assertIn("task.walkToSpot = true;\n    task.x = x;\n    task.y = y;", helper)
-        self.assertIn("if (bot->GetDistance2d(x, y) <= kSeekTankArriveYd)", helper)
+        self.assertIn("task.valid = true;\n    task.x = x;\n    task.y = y;", helper)
+        self.assertIn("const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false) == MeetPrePlaceStep::Walk;",
+                      helper)
+        self.assertIn("task.walkToSpot = walk;\n    task.prePlaceHold = !walk;", helper)
+        # At the point the task stays valid (no `task.valid = false` in the helper).
+        self.assertNotIn("task.valid = false;", helper)
         accessor = body(ACTIONS, "bool SeekMeetPrePlaceFor(std::uint32_t instanceId, std::uint64_t bot, float& x, float& y)")
         self.assertIn("!WalkoutPrePlaceLive(it->second.state)", accessor)
         fn = tank_pick()
@@ -94,9 +108,32 @@ class SeekMeetPrePlaceWiring(unittest.TestCase):
         self.assertLess(fn.index("!SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))\n        return task;"),
                         fn.index("if (thirdTank && SeekMeetPrePlaceTask("))
 
+    def test_the_hold_stops_a_walk_and_frees_the_rotation(self):
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        hold = fn[fn.index("if (task.prePlaceHold)"):fn.index("if (task.take)")]
+        self.assertIn("const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving);", hold)
+        self.assertIn("if (step == MeetPrePlaceStep::HoldStop)\n            ai->StopMoving();", hold)
+        self.assertIn("return MeetPrePlaceStepConsumesTick(step);", hold)
+        # No cast stop and no attack stop: the rotation and the threat go on.
+        self.assertNotIn("CastStop", hold)
+        self.assertNotIn("AttackStop", hold)
+        self.assertNotIn("InterruptNonMeleeSpells", hold)
+
     def test_the_rows_are_documented(self):
         self.assertIn("event=preplace,receiver=<name>,receiver_yd=%.1f,point_yd=%.1f", ROWS)
         self.assertIn("event=preplace_end", ROWS)
+        self.assertIn("receiver_victim\\|floor>", ROWS)
+
+    def test_precedence_and_limits_are_documented(self):
+        boss = (ROOT / "docs/play/boss-tactics.md").read_text()
+        for doc in (SETTINGS, boss):
+            self.assertIn("comes first", doc)
+            self.assertIn("2 yd inside the tanks' circle edge", doc)
+        self.assertIn("does not follow the stand's re-plan", SETTINGS)
+        self.assertIn("own pull of a Son that wanders into the tanks' reach waits", SETTINGS)
+        self.assertIn("up to 40 yd from the gather spot", SETTINGS)
+        self.assertIn("replaces the pre-place", SETTINGS)
+        self.assertIn("the tank dies, is charmed or becomes Hakkar's\n    // victim", CONFIG_H)
         self.assertIn("receiver_yd=%.1f", ROWS)
 
 

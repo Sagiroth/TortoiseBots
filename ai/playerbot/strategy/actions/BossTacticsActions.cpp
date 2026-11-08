@@ -2000,11 +2000,15 @@ bool PlayerHoldsFightSon(const std::vector<Unit*>& fightSons, std::uint32_t sonE
 }
 
 // The meet's pre-place at the walk-out's start (DungeonRunSeekMeetPrePlace, walk 56 F2): the raid's third tank, when
-// today's receiver rules let it wait (PickMeetPrePlaceReceiver), and its point on the tanks' circle edge toward the
-// stand (WalkoutMeetPrePlacePoint). Null: no pre-place, today's behaviour.
-Player* PickWalkoutPrePlace(PlayerbotAI* ai, Unit* boss, const std::vector<Unit*>& fightSons, std::uint32_t sonEntry,
-                            const BossAnchorCircle& tank, float standX, float standY, float& x, float& y)
+// today's receiver rules let it wait (PickMeetPrePlaceReceiver), and its point inside the tanks' circle edge toward the
+// stand (WalkoutMeetPrePlacePoint). The point's floor is read as the anchor clamp reads it (AnchorFloorOk): a point off
+// the platform's level gives no pre-place, and `floorRefused` names the tank for the `reason=floor` row. Null: no
+// pre-place, today's behaviour.
+Player* PickWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss, const std::vector<Unit*>& fightSons,
+                            std::uint32_t sonEntry, const BossAnchorCircle& tank, float standX, float standY, float& x,
+                            float& y, Player*& floorRefused)
 {
+    floorRefused = nullptr;
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     std::vector<MeetCandidate> tanks;
     tanks.reserve(roles.tanks.size());
@@ -2024,6 +2028,12 @@ Player* PickWalkoutPrePlace(PlayerbotAI* ai, Unit* boss, const std::vector<Unit*
         return nullptr;
     if (!WalkoutMeetPrePlacePoint(tank, standX, standY, x, y))
         return nullptr;
+    float const floor = map ? map->GetHeight(x, y, tank.z + 5.0f) : INVALID_HEIGHT;
+    if (!AnchorFloorOk(tank, floor > INVALID_HEIGHT, floor))
+    {
+        floorRefused = roles.tanks[static_cast<std::size_t>(pick)];
+        return nullptr;
+    }
     return roles.tanks[static_cast<std::size_t>(pick)];
 }
 
@@ -2043,13 +2053,9 @@ void EndLostWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss, std::uint32_t
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         auto const it = g_walkouts.find(instanceId);
-        if (it != g_walkouts.end() && it->second.state.prePlaceReceiver == state.prePlaceReceiver &&
-            it->second.state.prePlaceStartMs == state.prePlaceStartMs &&
-            it->second.state.prePlacePuller == state.prePlacePuller)
-        {
-            WalkoutPrePlaceClear(it->second.state);
-            ended = true;
-        }
+        ended = it != g_walkouts.end() &&
+            WalkoutPrePlaceClearIf(it->second.state, state.prePlaceReceiver, state.prePlacePuller,
+                                   state.prePlaceStartMs);
     }
     if (!ended)
         return;
@@ -2637,8 +2643,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     const std::uint64_t sonGuid = scan.son->GetObjectGuid().GetRawValue();
     // The meet's pre-place: the third tank walks to the circle's edge on this task's way back now, not at the shot.
     float prePlaceX = 0.0f, prePlaceY = 0.0f;
+    Player* prePlaceFloorRefused = nullptr;
     Player* const prePlaceTank = meetOn && sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace
-        ? PickWalkoutPrePlace(ai, boss, fightSons, row.targetEntry, tank, scan.x, scan.y, prePlaceX, prePlaceY)
+        ? PickWalkoutPrePlace(ai, map, boss, fightSons, row.targetEntry, tank, scan.x, scan.y, prePlaceX, prePlaceY,
+                              prePlaceFloorRefused)
         : nullptr;
     int starts = 0;
     {
@@ -2678,6 +2686,14 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         snprintf(info2, sizeof(info2), "son=%u,event=preplace,receiver=%s,receiver_yd=%.1f,point_yd=%.1f",
                  ObjectGuid(guid).GetCounter(), prePlaceTank->GetName(), bot->GetDistance(prePlaceTank),
                  prePlaceTank->GetDistance2d(prePlaceX, prePlaceY));
+        LogSeekMeet(ai, info2);
+    }
+    else if (prePlaceFloorRefused)
+    {
+        const std::uint64_t guid = sonGuid;
+        char info2[128];
+        snprintf(info2, sizeof(info2), "son=%u,event=preplace_end,receiver=%s,reason=%s",
+                 ObjectGuid(guid).GetCounter(), prePlaceFloorRefused->GetName(), "floor");
         LogSeekMeet(ai, info2);
     }
     out.walkout = true;
@@ -7618,8 +7634,9 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
 }
 
 // The pre-placed receiver's walk (DungeonRunSeekMeetPrePlace, walk 56 F2): true while a live pre-place names this bot.
-// More than kSeekTankArriveYd from its point, the task walks it there (walkToSpot); at the point the task stays invalid,
-// so its own tank AI keeps the tick while it waits for the meet. False: no pre-place, the task is untouched.
+// More than kSeekMeetPrePlaceArriveYd from its point, the task walks it there (walkToSpot); at the point the task stays
+// valid and holds it (prePlaceHold: Execute stops a walk and otherwise leaves the tick to the rotation), until the meet
+// starts or the pre-place ends. False: no pre-place, the task is untouched.
 bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)
 {
     float x = 0.0f, y = 0.0f;
@@ -7631,17 +7648,13 @@ bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& t
     task.take = false;
     task.pull = false;
     task.holdSwing = false;
-    if (bot->GetDistance2d(x, y) <= kSeekTankArriveYd)
-    {
-        task.valid = false;
-        task.walkToSpot = false;
-        return true;
-    }
     task.valid = true;
-    task.walkToSpot = true;
     task.x = x;
     task.y = y;
     task.z = row->spotZ;
+    const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false) == MeetPrePlaceStep::Walk;
+    task.walkToSpot = walk;
+    task.prePlaceHold = !walk;
     return true;
 }
 }
@@ -8126,6 +8139,17 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         lastY = y;
         hasLast = true;
         return true;
+    }
+    if (task.prePlaceHold)
+    {
+        // The pre-placed tank at its point: a walk (its tank AI's chase) is stopped, and a standing tank leaves the tick to
+        // its rotation, so it keeps attacking and its threat but stays on the point (MeetPrePlaceStepFor).
+        hasLast = false;
+        const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
+        const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving);
+        if (step == MeetPrePlaceStep::HoldStop)
+            ai->StopMoving();
+        return MeetPrePlaceStepConsumesTick(step);
     }
     if (task.take)
     {
