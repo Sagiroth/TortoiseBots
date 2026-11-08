@@ -3856,6 +3856,18 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
     float carrierReachYd);
 }
 
+bool ai::ShadeOnGroupHealer(Player* bot, Unit* unit)
+{
+    if (!bot || !unit)
+        return false;
+    Unit* const victim = unit->GetVictim();
+    Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    Group* const group = bot->GetGroup();
+    return victimPlayer && dynamic_cast<Player*>(victim) &&
+        (victimPlayer == bot || (group && group->IsMember(victimPlayer->GetObjectGuid()))) &&
+        PlayerbotAI::IsHeal(victimPlayer);
+}
+
 Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
     if (fight.rows.empty())
@@ -3939,14 +3951,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
         c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
         // The attackers path sets the victim's role itself: a Shade found here is in `seen`, so the grid pass below
         // never reaches it (a Shade eating a healer would rank as one eating a damage dealer).
-        {
-            Unit* const victim = unit->GetVictim();
-            Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-            Group* const group = bot->GetGroup();
-            c.victimHealer = victimPlayer && dynamic_cast<Player*>(victim) &&
-                (victimPlayer == bot || (group && group->IsMember(victimPlayer->GetObjectGuid()))) &&
-                PlayerbotAI::IsHeal(victimPlayer);
-        }
+        c.victimHealer = ShadeOnGroupHealer(bot, unit);
         index.emplace(unit->GetObjectGuid().GetRawValue(), candidates.size());
         candidates.push_back(c);
         units.push_back(unit);
@@ -4784,6 +4789,162 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s%s", shadeText, shadeYd, pickText,
              currentText, scanText);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);
+}
+
+// The Shade cover row (walk 56 F3, no flag): a Shade of Jin'do on a healer of the group, and a cursed damage dealer or
+// a cursed off-tank that does not hold the boss that is not on it. A Delusions carrier runs the pass (only a carrier sees
+// the Shades) over the whole group, and the row is logged under the member it names, so a dead or charmed carrier gets
+// its row too. One record per (member, Shade) in a bounded map: a miss is logged once it lasts kShadeCoverGraceMs, then
+// at most once per kShadeCoverLogGapMs (ShadeCoverLogDue); a member on the Shade drops its record.
+//   info1 = "reason=<dead|charmed|other_shade|out_of_range|threat_gate|on_boss|other_target|no_target>,role=<dps|offtank>"
+//   info2 = "shade=<entry>:<guid low>,healer=<name>,dist=<yd>,target=<entry>:<guid low>|none"
+std::mutex g_shadeCoverLogMutex;
+std::map<std::pair<uint64, uint64>, ShadeCoverLogRecord> g_shadeCoverLog;
+
+// Note the (member, Shade) state at `nowMs` (`miss`: the member is not on the Shade); true when a miss row is due.
+static bool ShadeCoverMissDue(uint64 member, uint64 shade, bool miss, uint32 nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
+    auto const key = std::make_pair(member, shade);
+    if (!miss)
+    {
+        g_shadeCoverLog.erase(key);
+        return false;
+    }
+    if (g_shadeCoverLog.size() >= kShadeCoverMaxEntries && g_shadeCoverLog.find(key) == g_shadeCoverLog.end())
+    {
+        for (auto it = g_shadeCoverLog.begin(); it != g_shadeCoverLog.end();)
+        {
+            if (ShadeSeenExpired(it->second.lastSeenMs, nowMs))
+                it = g_shadeCoverLog.erase(it);
+            else
+                ++it;
+        }
+        if (g_shadeCoverLog.size() >= kShadeCoverMaxEntries)
+            g_shadeCoverLog.clear();
+    }
+    return ShadeCoverLogDue(g_shadeCoverLog[key], nowMs);
+}
+
+// Whether a miss is running for the pair: a member that died while missing the Shade is still asked about it.
+static bool ShadeCoverMissOpen(uint64 member, uint64 shade, uint32 nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
+    auto const it = g_shadeCoverLog.find(std::make_pair(member, shade));
+    return it != g_shadeCoverLog.end() && it->second.open && !ShadeSeenExpired(it->second.lastSeenMs, nowMs);
+}
+
+void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    std::uint32_t entry = 0;
+    std::uint32_t aura = 0;
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row))
+        {
+            entry = TacticSubjectEntry(*row);
+            aura = row->botAura;
+            break;
+        }
+    if (!entry)
+        return; // only a carrier sees the Shades
+    Group* const group = bot->GetGroup();
+    if (!group)
+        return;
+    // The Shades on a healer of ours this carrier sees: the fight's units, then the kill-first grid read of the entry.
+    std::vector<Unit*> shades;
+    std::unordered_set<std::uint64_t> seen;
+    auto const consider = [&](Unit* unit)
+    {
+        if (!unit || !unit->IsInWorld() || !sServerFacade.IsAlive(unit) || unit->GetEntry() != entry ||
+            shades.size() >= kShadeSeenMaxPerPass || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
+            return;
+        if (ShadeOnGroupHealer(bot, unit))
+            shades.push_back(unit);
+    };
+    for (Unit* unit : fight.units)
+        consider(unit);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::vector<KillFirstGridUnit> grid =
+        AI_VALUE2(std::vector<KillFirstGridUnit>, "kill first grid units", static_cast<int32>(entry));
+    for (const KillFirstGridUnit& hit : grid)
+        if (hit.alive && hit.victimHealer)
+            consider(ai->GetUnit(ObjectGuid(hit.guid)));
+    if (shades.empty())
+        return;
+
+    auto const isFightBoss = [&](Unit* unit)
+    {
+        if (!unit)
+            return false;
+        for (const BossTacticRow* row : fight.rows)
+            if (row->bossEntry == unit->GetEntry())
+                return true;
+        return false;
+    };
+    Player* const mainTank = GetRaidTankRoles(ai).MainTank();
+    bool const successor = HasThreatSuccessorRow(fight.rows);
+    uint32 const nowMs = WorldTimer::getMSTime();
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+            member->GetInstanceId() != bot->GetInstanceId())
+            continue;
+        PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAi || PlayerbotAI::IsHeal(member))
+            continue; // a player's choices are its own; a healer keeps its carrier-strike guards
+        CarrierStrikeRole role = CarrierStrikeRole::Dps;
+        if (PlayerbotAI::IsTank(member))
+            role = member == mainTank ? CarrierStrikeRole::MainTank : CarrierStrikeRole::OffTank;
+        bool holdsBoss = false;
+        for (Unit* unit : fight.units)
+            if (unit && unit->GetVictim() == member && isFightBoss(unit))
+            {
+                holdsBoss = true;
+                break;
+            }
+        Unit* target = member->GetVictim();
+        if (!target && !member->GetSelectionGuid().IsEmpty())
+            target = ai->GetUnit(member->GetSelectionGuid());
+        uint64 const memberKey = member->GetObjectGuid().GetRawValue();
+        bool const cursed = member->HasAura(aura);
+        for (Unit* shade : shades)
+        {
+            uint64 const shadeKey = shade->GetObjectGuid().GetRawValue();
+            // The curse drops at death: a member that was missing this Shade when it died is still asked once more.
+            bool const asked = ShadeCoverAsks(role, cursed, holdsBoss) ||
+                (!member->IsAlive() && role != CarrierStrikeRole::MainTank &&
+                 ShadeCoverMissOpen(memberKey, shadeKey, nowMs));
+            if (!asked)
+                continue;
+            ShadeCoverFacts facts;
+            facts.alive = member->IsAlive();
+            facts.charmed = !member->GetCharmerGuid().IsEmpty();
+            facts.distanceYd = member->GetDistance(shade);
+            facts.threatGate = ShadeCoverThreatGate(role, successor);
+            facts.onThisShade = target == shade;
+            facts.onOtherShade = target && target != shade && target->GetEntry() == entry;
+            facts.onBoss = isFightBoss(target);
+            facts.hasTarget = target != nullptr;
+            ShadeCoverMiss const miss = ShadeCoverMissReason(facts, kShadeCoverReachYd);
+            if (!ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, nowMs))
+                continue;
+            Unit* const victim = shade->GetVictim();
+            char info1[64];
+            snprintf(info1, sizeof(info1), "reason=%s,role=%s", ShadeCoverMissWord(miss),
+                     role == CarrierStrikeRole::OffTank ? "offtank" : "dps");
+            char targetText[48];
+            if (target)
+                snprintf(targetText, sizeof(targetText), "%u:%u", target->GetEntry(), target->GetGUIDLow());
+            else
+                snprintf(targetText, sizeof(targetText), "none");
+            char info2[160];
+            snprintf(info2, sizeof(info2), "shade=%u:%u,healer=%s,dist=%.1f,target=%s", shade->GetEntry(),
+                     shade->GetGUIDLow(), victim ? victim->GetName() : "none", facts.distanceYd, targetText);
+            sPlayerbotAIConfig.logEvent(memberAi, "BossTacticsShadeCover", info1, info2);
+        }
+    }
 }
 
 // The taunt gate (AiPlayerbot.DungeonRunTauntGate): a tank never taunts a needs_aura subject (the Shade of Jin'do,

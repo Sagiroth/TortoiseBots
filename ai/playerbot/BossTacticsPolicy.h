@@ -2900,6 +2900,129 @@ namespace ai
         return best;
     }
 
+    // --- Shade cover (walk 56 F3) -----------------------------------------------------------------------------------
+    // A Shade of Jin'do copies the boss's threat list, where heal threat is top, so it walks to a healer: 50 of 59
+    // Shade-killed healers in walk 56 were not cursed and cannot hurt it. Only a Delusions carrier can. The cover row
+    // (BossTacticsShadeCover) names each carrier that is asked to cover such a healer and is not on the Shade, and why.
+    constexpr float kShadeCoverReachYd = 30.0f;
+
+    // Who the row asks about: a cursed damage dealer, or a cursed off-tank that does not hold the boss. A healer keeps its
+    // own carrier-strike guards, the main tank never leaves the boss, and an uncursed bot cannot hit a Shade at all.
+    inline bool ShadeCoverAsks(CarrierStrikeRole role, bool cursed, bool holdsBoss)
+    {
+        if (!cursed)
+            return false;
+        if (role == CarrierStrikeRole::Dps)
+            return true;
+        return role == CarrierStrikeRole::OffTank && !holdsBoss;
+    }
+
+    enum class ShadeCoverMiss : std::uint8_t
+    {
+        None,        // the carrier is on this Shade
+        Dead,
+        Charmed,     // a charmer owns its AI (the Brain Wash Totem)
+        OtherShade,  // already on another Shade
+        OutOfRange,  // further than kShadeCoverReachYd from this Shade
+        ThreatGate,  // an off-tank on a threat_successor fight: the carrier strike keeps it on the boss
+        OnBoss,      // on a boss of the fight
+        OtherTarget, // on anything else (a ward, a totem, a troll)
+        NoTarget,
+    };
+
+    struct ShadeCoverFacts
+    {
+        bool alive = true;
+        bool charmed = false;
+        float distanceYd = 0.0f; // carrier to the Shade
+        bool threatGate = false; // the off-tank's successor rule holds it (ShadeCoverThreatGate)
+        bool onThisShade = false;
+        bool onOtherShade = false;
+        bool onBoss = false;
+        bool hasTarget = false;
+    };
+
+    // The first word that fits: a dead or charmed carrier cannot act at all; one already busy on another Shade is not
+    // idle, whatever its range; then range, the successor rule, and what it is hitting instead.
+    inline ShadeCoverMiss ShadeCoverMissReason(const ShadeCoverFacts& f, float reachYd)
+    {
+        if (!f.alive)
+            return ShadeCoverMiss::Dead;
+        if (f.onThisShade)
+            return ShadeCoverMiss::None;
+        if (f.charmed)
+            return ShadeCoverMiss::Charmed;
+        if (f.onOtherShade)
+            return ShadeCoverMiss::OtherShade;
+        if (f.distanceYd > reachYd)
+            return ShadeCoverMiss::OutOfRange;
+        if (f.threatGate)
+            return ShadeCoverMiss::ThreatGate;
+        if (f.onBoss)
+            return ShadeCoverMiss::OnBoss;
+        if (f.hasTarget)
+            return ShadeCoverMiss::OtherTarget;
+        return ShadeCoverMiss::NoTarget;
+    }
+
+    inline const char* ShadeCoverMissWord(ShadeCoverMiss miss)
+    {
+        switch (miss)
+        {
+            case ShadeCoverMiss::None:        return "none";
+            case ShadeCoverMiss::Dead:        return "dead";
+            case ShadeCoverMiss::Charmed:     return "charmed";
+            case ShadeCoverMiss::OtherShade:  return "other_shade";
+            case ShadeCoverMiss::OutOfRange:  return "out_of_range";
+            case ShadeCoverMiss::ThreatGate:  return "threat_gate";
+            case ShadeCoverMiss::OnBoss:      return "on_boss";
+            case ShadeCoverMiss::OtherTarget: return "other_target";
+            case ShadeCoverMiss::NoTarget:    return "no_target";
+        }
+        return "none";
+    }
+
+    // The off-tank's successor rule as the cover row reads it: on a threat_successor fight the carrier strike keeps a
+    // free off-tank on the boss (CarrierStrikeAllowed's ThreatSuccessor verdict).
+    inline bool ShadeCoverThreatGate(CarrierStrikeRole role, bool threatSuccessor)
+    {
+        return role == CarrierStrikeRole::OffTank && threatSuccessor;
+    }
+
+    // One record per (carrier, Shade). A miss is logged only once it has lasted kShadeCoverGraceMs (a carrier turning
+    // onto the Shade this second is no miss), then at most once per kShadeCoverLogGapMs. A record not noted for
+    // kShadeSeenGraceMs starts a new miss.
+    constexpr std::uint32_t kShadeCoverGraceMs = 2000;
+    constexpr std::uint32_t kShadeCoverLogGapMs = 5000;
+    constexpr std::size_t kShadeCoverMaxEntries = 512;
+
+    struct ShadeCoverLogRecord
+    {
+        std::uint32_t firstMissMs = 0;
+        std::uint32_t lastSeenMs = 0;
+        std::uint32_t lastLogMs = 0;
+        bool open = false;   // a miss is running
+        bool logged = false; // lastLogMs is set
+    };
+
+    // Note a miss at `nowMs`; true when the row is due. The unsigned subtractions survive the 32-bit clock wrap.
+    inline bool ShadeCoverLogDue(ShadeCoverLogRecord& record, std::uint32_t nowMs)
+    {
+        if (!record.open || ShadeSeenExpired(record.lastSeenMs, nowMs))
+        {
+            record.open = true;
+            record.firstMissMs = nowMs;
+        }
+        record.lastSeenMs = nowMs;
+        if (nowMs - record.firstMissMs < kShadeCoverGraceMs)
+            return false;
+        if (record.logged && nowMs - record.lastLogMs < kShadeCoverLogGapMs)
+            return false;
+        record.logged = true;
+        record.lastLogMs = nowMs;
+        return true;
+    }
+
     // --- carrier scan (walk 53) ------------------------------------------------------------------------------------
     // A Delusions carrier the attackers list never showed a Shade: the Shade is summoned on a carrier and only its
     // carrier can see it, so both the carrier override and the kill_first grid pass found nothing while one stood

@@ -181,6 +181,8 @@ bool BossTacticsKillFirstTrigger::IsActive()
     if (!Ready(ai, bot))
         return false;
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    // The Shade cover row (walk 56 F3): a carrier names the cursed bots that leave a Shade on a healer alone.
+    LogShadeCover(ai, bot, fight);
     Unit* pick = FindBossKillFirst(ai, bot, fight);
     if (!pick)
     {
