@@ -39,7 +39,10 @@ namespace ai
             // A shield eats the hits a rage tank lives on (absorbed hits
             // give no rage), so above the critical band the rows fall
             // through to direct heals; the critical rows keep the shield.
-            if (target && !ShouldShieldTarget(target->IsPlayer() && ai->IsTank((Player*)target, false),
+            if (target && !ShouldShieldTarget(TankForShield(target->IsPlayer() && ai->IsTank((Player*)target, false),
+                target->IsPlayer() && PlayerbotAI::HasExplicitNonTankRole((Player*)target),
+                target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_WARRIOR && ai->HasAura(71, target),
+                target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_DRUID && (ai->HasAura(5487, target) || ai->HasAura(9634, target))),
                 target->GetPowerType() == POWER_RAGE, target->IsInCombat(),
                 (unsigned)target->GetHealthPercent(), sPlayerbotAIConfig.criticalHealth))
                 return false;

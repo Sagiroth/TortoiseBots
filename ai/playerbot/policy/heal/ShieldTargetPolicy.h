@@ -12,6 +12,17 @@
 
 namespace ai
 {
+    // A levelling warrior tanking in Arms/Fury or a druid tanking without
+    // Feral talents reads as DPS to the talent-role check, but the stance
+    // or form says tank all the same. Count either as a tank for the shield
+    // gate so the priest does not eat the rage they are tanking on. An
+    // explicitly assigned non-tank role wins over the stance: an ordered
+    // DPS in Defensive Stance or Bear Form is still a DPS.
+    inline bool TankForShield(bool roleTank, bool explicitNonTankRole, bool warriorInDefensiveStance, bool druidInBearForm)
+    {
+        return roleTank || (!explicitNonTankRole && (warriorInDefensiveStance || druidInBearForm));
+    }
+
     // A shield eats the hits a rage tank lives on; keep it for the save.
     inline bool ShouldShieldTarget(bool targetIsTank, bool targetUsesRage, bool targetInCombat,
                                    unsigned targetHealthPct, unsigned criticalHealthPct)
