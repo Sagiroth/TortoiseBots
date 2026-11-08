@@ -37,12 +37,14 @@ namespace ai
     // kHighThreatProjectionSeconds. On a `threat_successor` boss that let the damage dealers ride just under a slowly
     // climbing non-holding tank (walk 56: every tank-inherited Hex had the top damage dealer at 0.89-0.99 of the
     // successor, every DPS-inherited one at 1.00 or more). With AiPlayerbot.DungeonRunThreatSuccessorStrict on there is
-    // no escape on such a boss; everywhere else, and with the key off, today's escape.
+    // no escape on a boss whose `threat_successor` row carries `strict` (StrictSuccessorTarget); everywhere else, a plain
+    // successor row included, and with the key off, today's escape.
     constexpr float kHighThreatProjectionSeconds = 5.0f;
 
     // Whether the strict successor line applies to a target: the key is on AND the target's `threat_successor` row carries
     // the mode word `strict` (BossTacticTable::HasStrictThreatSuccessor). Strict was built for Jin'do's Hex; on Hakkar it
-    // held the damage dealers' white damage while he healed back (walk 57: 0 kills in 26 fights), so the boss data opts in
+    // held the damage dealers' white damage while he healed back (walk 57: 0/58 kills, against 4/41 in walk 56; Strict cost
+    // about 13 of the 18 points the damage on him fell), so the boss data opts in
     // per row, never a boss constant. A successor row without the word keeps the plain cap with the key on or off: the
     // projection escape, no white-damage latch, the old multiplier exemption. The one gate of the whole Strict path (the
     // escape, the white-stop trigger, the multiplier hold).
@@ -58,7 +60,8 @@ namespace ai
         return delta > 0.0f && current + delta * kHighThreatProjectionSeconds < tank;
     }
 
-    // The white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict). The melee
+    // The white-damage stop on a boss whose `threat_successor` row carries `strict` (AiPlayerbot.DungeonRunThreatSuccessorStrict,
+    // StrictSuccessorTarget). The melee
     // auto-attack and the wand's Shoot carry no threat type, and every running swing or auto-repeat (Auto Shot included)
     // keeps going without passing the multiplier again, so the 80 % veto never bound them and a damage dealer kept
     // climbing past the line on white damage alone. They stop at kSuccessorWhiteStopPct of the reference and may start
@@ -70,8 +73,8 @@ namespace ai
     constexpr std::uint8_t kSuccessorWhiteStopPct = 92;
     constexpr std::uint8_t kSuccessorWhiteResumePct = 85;
 
-    // One bot's white-damage stop, kept across ticks. Every read advances it: a tank, or a target without the
-    // `threat_successor` row, clears it, so the next boss starts from the stop line again. `refZero`: the successor
+    // One bot's white-damage stop, kept across ticks. Every read advances it: a tank, or a target without a
+    // `threat_successor` row carrying `strict` (a plain successor row included), clears it, so the next boss starts from the stop line again. `refZero`: the successor
     // reference reads exactly 0 (a tank Hex just wiped it; ThreatPctOf then reads 100 % for everyone). White damage is
     // not stopped then and the latch clears: the 0-reference hold already vetoes the specials, and stopping the white
     // damage too would cost the whole raid's damage for every Hex window.

@@ -1299,6 +1299,40 @@ class BossTacticsSql(unittest.TestCase):
                        dict(row, hp_min=20), dict(row, bot_aura=24306), dict(row, spot_x=1.0)):
             self.assertIsNotNone(new_kind_problem(broken), broken)
 
+    def test_strict_opt_in_rollback_restores_the_plain_row(self):
+        # Codex r5: a binary from before `strict` refuses Jin'do's migrated row and loses his whole successor cap. The
+        # rollback script (outside data/sql, so the updater never runs it) must leave the row exactly as 20261106120000
+        # wrote it. Replay every migration, then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261108220000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the strict opt-in rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        key = (309, 11380, "threat_successor", 0, 0)
+
+        def live(paths):
+            return {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows(paths)}
+
+        before = [path for path in migration_paths() if os.path.basename(path) < "20261108220000_world.sql"]
+        plain = live(before)[key]
+        migrated = live(migration_paths())[key]
+        rolled = live(migration_paths() + [rollback])[key]
+        self.assertEqual("", plain["tactic_mode"])
+        self.assertEqual("strict", migrated["tactic_mode"])
+        self.assertEqual("", rolled["tactic_mode"])
+        self.assertEqual(plain, rolled)
+        # An older binary's loader (a threat_successor row takes no mode word) accepts the rolled-back row again.
+        self.assertEqual("", rolled["tactic_mode"])
+        self.assertIsNone(new_kind_problem(rolled))
+        self.assertEqual("", live(migration_paths() + [rollback])[(309, 14834, "threat_successor", 0, 0)]["tactic_mode"])
+        with open(rollback, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertNotRegex(text, r"(?m)^(?:INSERT|DELETE|ALTER|DROP)\b")
+        # The comment goes back to the one 20261106120000 inserted (the replay does not track comments).
+        comment = ("'Jindo: taunt-immune (immunity_flags 6) and Hex wipes the tank threat; the damage dealers keep below "
+                   "the off-tank so it inherits him'")
+        with open(os.path.join(ROOT, "data/sql/world/20261106120000_world.sql"), encoding="utf-8") as handle:
+            self.assertIn(comment + ");", handle.read())
+        self.assertIn("`comment` = " + comment + "\n", text)
+
     def test_threat_successor_row_shape_refused(self):
         cap = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="threat_successor")
         self.assertIsNone(new_kind_problem(cap))
@@ -1309,7 +1343,7 @@ class BossTacticsSql(unittest.TestCase):
 
     def test_strict_successor_opt_in_is_jindo_only(self):
         # 20261108220000 (t1106m): AiPlayerbot.DungeonRunThreatSuccessorStrict needs the row's `strict` word. Jin'do's
-        # threat_successor row carries it; Hakkar's stays plain (walk 57: strict held his damage dealers, 0 kills in 26).
+        # threat_successor row carries it; Hakkar's stays plain (walk 57: 0/58 kills on Hakkar, against 4/41).
         name = "20261108220000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the strict opt-in migration is missing")

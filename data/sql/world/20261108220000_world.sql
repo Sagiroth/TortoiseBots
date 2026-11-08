@@ -3,9 +3,15 @@
 --   threat_successor  tactic_mode '' -> 'strict' on Jin'do's row (20261106120000). AiPlayerbot.DungeonRunThreatSuccessorStrict
 --                     (no 5 s projection escape, the 92/85 % white-damage stop) now applies only to a boss whose
 --                     threat_successor row carries `strict`. It was built for Jin'do's Hex. Walk 57 (t1106l) ran it on
---                     Hakkar too, through his plain row: 15 % of his threat-cap rows had white=held, the damage dealers
---                     lost 17 % (1174 vs 1420 dps) and he healed back faster than the raid hurt him (0 kills in 26 fights).
+--                     Hakkar too, through his plain row: 15 % of his threat-cap rows had white=held, Hakkar kills fell
+--                     from 4/41 (walk 56) to 0/58, and Strict cost about 13 of the 18 points the damage dealers' damage
+--                     on him fell.
 -- Hakkar's threat_successor row (20261105210000) stays plain: the off-tank cap, no strict line.
+--
+-- Rollback: a binary from before this change refuses a threat_successor row with a mode word, so on this database it would
+-- drop Jin'do's whole successor cap, not only the strict line. Before starting an older binary, run
+-- tools/sql/rollback/20261108220000_world.rollback.sql (outside data/sql, so the migration runner never applies it): it
+-- puts the row's tactic_mode back to empty and restores its comment.
 --
 -- Idempotent: one UPDATE on the one exact Jin'do threat_successor key; re-running it sets the same values. Never edit this
 -- file once applied; add a newer migration.

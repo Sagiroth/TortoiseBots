@@ -695,7 +695,8 @@ public:
     // party member) skip the damage threat back-off the way heals do, so a healer high on its own target's threat still
     // cures Jin'do's Hex on the tank. Off = as before (the cure is vetoed at the high-threat line).
     bool dungeonRunCureIgnoresThreat = false;
-    // A successor line that holds: on a `threat_successor` boss the high-threat trigger's 5 s projection escape is off
+    // A successor line that holds: on a boss whose `threat_successor` row carries `strict` (a plain row keeps today's
+    // behaviour) the high-threat trigger's 5 s projection escape is off
     // (a damage dealer at or over 80 % is vetoed even while it projects under the tank), and the melee swing and the
     // auto-repeat (wand Shoot, Auto Shot) are stopped in the trigger pass at 92 % of the reference; melee and wand start
     // again under 85 %, Auto Shot under 80 % (its SINGLE veto). A 0 reference (a tank Hex) never stops them

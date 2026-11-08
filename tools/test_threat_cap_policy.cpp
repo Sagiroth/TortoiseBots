@@ -344,6 +344,17 @@ int main()
         }
     }
 
+    // latch_clears_on_a_plain_row (r5 review): the latch holds on a strict-row target, the bot moves to a target whose
+    // successor row is plain (Jin'do, then Hakkar), and the latch clears at the first read, even at 95 %.
+    {
+        SuccessorWhiteLatch latch;
+        CHECK(latch.Update(StrictSuccessorTarget(true, true), false, 95));   // held on the strict row
+        CHECK(latch.stopped);
+        CHECK(!latch.Update(StrictSuccessorTarget(true, false), false, 95)); // the plain row clears it
+        CHECK(!latch.stopped);
+        CHECK(!SuccessorWhiteStopNow(latch, StrictSuccessorTarget(true, false), false, 95, false, true));
+    }
+
     // successor_white_stops_at_92_resumes_under_85: the white-damage latch on a successor target.
     CHECK(kSuccessorWhiteStopPct == 92);
     CHECK(kSuccessorWhiteResumePct == 85);
