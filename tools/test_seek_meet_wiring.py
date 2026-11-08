@@ -130,7 +130,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         end = fn[:fn.index("if (WalkoutActive(state))")]
         self.assertIn("cleared = it != g_walkouts.end() &&", end)
         gate = end.index("if (cleared && takenBy)")
-        self.assertLess(end.index("WalkoutMeetCloseIf("), gate)
+        self.assertLess(end.index("CloseWalkoutMeetIf("), gate)
         self.assertLess(gate, end.index('event=taken'))
         self.assertLess(end.index("else if (cleared)"), end.index("LogSeekMeetLost(ai, guid, lost,"))
         self.assertEqual(1, end.count("LogSeekMeetLost("))
@@ -140,7 +140,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))\n"
                       "                    LogSeekMeetLost(", pick)
         helper = body(ACTIONS, "bool SeekMeetClose(")
-        self.assertIn("WalkoutMeetCloseIf(it->second.state, receiver, son, meetMs)", helper)
+        self.assertIn("CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs)", helper)
         # The policy compares the receiver, the Son and the shot time before it clears.
         policy = inline_body(POLICY, "inline bool WalkoutMeetCloseIf(")
         for term in ("s.meetReceiver != receiver", "s.meetSon != son", "s.meetMs != meetMs"):
@@ -156,7 +156,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("PlayerHoldsFightSon(fightSons, row.targetEntry, meetReceiver,", meet)
         self.assertIn("LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);", meet)
         # The loss clears the meet, so the puller walks to the circle edge again.
-        self.assertIn("WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", meet)
+        self.assertIn("CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", meet)
 
     def test_holds_son_scans_the_fight_sons(self):
         fn = update()
@@ -191,7 +191,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         fn = update()
         for word in ('lost = "son_dead";', 'lost = "receiver_dead";', 'lost = "timeout";'):
             self.assertIn(word, fn)
-        self.assertIn("WalkoutMeetCloseIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", fn)
+        self.assertIn("CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);", fn)
         self.assertIn('"son=%u,event=lost,reason=%s,after_ms=%u"', ACTIONS)
         self.assertNotIn("meetTakenLogged", ACTIONS)
 
