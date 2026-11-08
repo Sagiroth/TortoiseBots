@@ -109,8 +109,9 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(html.includes('<span class="fd-au-name r-tank">A</span><span class="fd-au-pct">≥ 30 %</span>'), "bot A: a minimum (30 s known up): " + html);
   assert.ok(html.includes('<span class="fd-au-name r-dps">B</span><span class="fd-au-pct">—</span>'), "a bot with no kept row: a dash, not 0 %");
   assert.ok(html.includes('<span class="fd-au-name">Raid</span><span class="fd-au-pct">≥ '), "the raid row is a minimum too");
-  assert.ok(html.includes("<td>0 / 4 (4 ?)</td>"), "the cast at 10 s, before T0: nobody provably had it, four unknown: " + html);
-  assert.ok(html.includes("<td>0 / 3 (1 ?)</td>"), "the cast at 35 s: D is dead, A and C are known not to have it, B (no kept row) stays unknown");
+  const casts = html.slice(html.indexOf("At each Zap"), html.indexOf("Each cycle"));
+  assert.ok(casts.includes("<td>0 / 4 (4 ?)</td>"), "the cast at 10 s, before T0: nobody provably had it, four unknown: " + casts);
+  assert.ok(casts.includes("<td>0 / 3 (1 ?)</td>"), "the cast at 35 s: D is dead, A and C are known not to have it, B (no kept row) stays unknown");
   const cycle = html.slice(html.indexOf("Each cycle"));
   assert.ok(cycle.includes("≥ ") && !/<td>\d+ %<\/td>/.test(cycle), "every cycle's uptime is a minimum or a dash: " + cycle);
   const dh = draw(f, { key: "k", sid: POISON, marker: "deaths" });
