@@ -76,6 +76,14 @@ namespace ai
     // tank holds the boss, so the old share of the highest tank's threat applies.
     constexpr float kThreatCapOffTankAwayShare = 0.5f;
 
+    // Whether a tank counts as on the boss for the successor pick: it hits the boss, or it wears Jin'do's Hex. A Hexed tank
+    // is polymorphed for about 5 s and cannot hit, yet it is the wiped successor: if it dropped out, the pick would fall
+    // back to the new holder's own threat for those seconds and the damage dealers could climb to 80 % of it.
+    inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)
+    {
+        return hitsBoss || wearsHex;
+    }
+
     // The reference and which kind of tank it is: `offTank` is the `threat_successor` cap standing on an assigned
     // off-tank, false when the highest tank is the reference.
     struct ThreatCapPick

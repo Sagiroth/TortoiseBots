@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <unordered_map>
 
@@ -120,7 +121,8 @@ constexpr std::size_t kHexLogMaxEntries = 256;
 constexpr std::size_t kHexScanMaxBosses = 64;
 std::mutex g_hexLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_hexLog;
-std::unordered_map<std::uint64_t, std::uint32_t> g_hexScan;
+// Keyed by (instance id, boss guid): two Zul'Gurub instances never share a scan slot.
+std::map<std::pair<std::uint32_t, std::uint64_t>, std::uint32_t> g_hexScan;
 
 void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Group* group)
 {
@@ -129,7 +131,7 @@ void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Gro
     const std::uint32_t nowMs = WorldTimer::getMSTime();
     {
         std::lock_guard<std::mutex> lock(g_hexLogMutex);
-        std::uint32_t& lastScan = g_hexScan[boss->GetObjectGuid().GetRawValue()];
+        std::uint32_t& lastScan = g_hexScan[std::make_pair(static_cast<std::uint32_t>(boss->GetInstanceId()), boss->GetObjectGuid().GetRawValue())];
         if (!HexScanDue(lastScan, nowMs))
             return;
         lastScan = nowMs;
@@ -283,8 +285,10 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         if (!charmer.IsEmpty() && !charmer.IsPlayer())
             continue;
         // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
+        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
         tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
-            player->GetVictim() == target, target->GetVictim() == player});
+            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
+            target->GetVictim() == player});
     }
 
     const ThreatCapPick pick = ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);

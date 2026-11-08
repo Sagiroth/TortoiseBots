@@ -221,6 +221,22 @@ int main()
     CHECK(HexSnapshotDue(1000, 1000 + 20000));
     CHECK(HexSnapshotDue(0xFFFFFF00u, 0x00004000u)); // clock wrap
 
+    // hexed_main_tank_stays_the_reference (fails when the Hex read is dropped): the off-tank holds Jin'do, the main tank
+    // wears the Hex (polymorphed, not hitting) with its threat wiped to 300. It still counts as on the boss, so the
+    // reference is the main tank's 300, not the new holder's 6000 the damage dealers could climb to 80 % of.
+    CHECK(ThreatCapOnBoss(true, false));
+    CHECK(ThreatCapOnBoss(false, true));
+    CHECK(!ThreatCapOnBoss(false, false));
+    {
+        const std::vector<ThreatCapTank> hexedMain = {{300.0f, false, ThreatCapOnBoss(false, true), false},
+                                                       {6000.0f, true, ThreatCapOnBoss(true, false), true}};
+        CHECK(ThreatCapReference(hexedMain, true, true) == 300.0f);
+        CHECK(!ThreatCapPickReference(hexedMain, true, true).offTank);
+        // The same tank neither hitting nor Hexed (held on a Shade): not on the boss, today's pick.
+        const std::vector<ThreatCapTank> awayMain = {{300.0f, false, ThreatCapOnBoss(false, false), false},
+                                                      {6000.0f, true, ThreatCapOnBoss(true, false), true}};
+        CHECK(ThreatCapReference(awayMain, true, true) == 6000.0f);
+    }
     // hexed_dps_that_is_no_longer_the_victim_still_logs (fails with the victim-only probe, which finds no wearer): the
     // scan hands the helper every member that carries the Hex; a DPS (tank index -1) with no earlier row is picked and
     // reads holder=dps whatever the boss's victim is now (the helper has no victim input at all).

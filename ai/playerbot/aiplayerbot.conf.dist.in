@@ -1113,7 +1113,7 @@ AiPlayerbot.DungeonRunCarrierHold = 0
 # attacks) are held until it rebuilds past them. That scales with the fight's threat and can last tens of seconds; the
 # damage dealers keep working on adds (Shades, pit trolls, totems) meanwhile. Rogue Vanish and priest Fade on threat read a
 # 0 reference as "the tank holds nothing" and stay quiet then. Recommended on, to be judged from the ThreatCap and Hex
-# rows of the next walk. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# rows of the next walk. A tank wearing Jin'do's Hex counts as on the boss; hunter pets cower against a 0 reference too. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
 # 0 - off: today's reference (Default)
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorNotHolder = 0

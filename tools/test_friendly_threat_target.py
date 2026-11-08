@@ -46,6 +46,7 @@ struct PlayerbotAI {
     Player* GetBot() const { return bot; }
     bool IsSafe(Player* p) const { return p->safe; }
     bool IsTank(Player* p) const { return p->tank; }
+    bool HasAura(unsigned, Player*) const { return false; }
 };
 struct ThreatManager { float getThreat(Player* p) const { return p->threat; } };
 struct RaidTankRoles { std::vector<Player*> tanks; };

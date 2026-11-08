@@ -45,13 +45,25 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
     def test_holds_boss_reads_the_bosses_victim(self):
         # onBoss stays "this tank hits the boss"; holdsBoss is the other way round: the boss hits this tank.
         build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
-        self.assertIn("player->GetVictim() == target, target->GetVictim() == player", build)
+        self.assertIn("player->GetVictim() == target", build)
+        self.assertIn("target->GetVictim() == player", build)
 
     def test_only_a_non_holder_on_the_boss_is_the_successor(self):
         branch = member(POLICY, "if (notHolder)", "return pick;\n            }")
         self.assertIn("if (tank.holdsBoss || !tank.onBoss)", branch)
         self.assertIn("pick.threat = best->threat;", branch)
         self.assertNotIn("floor", branch)
+
+    def test_a_hexed_tank_counts_as_on_the_boss(self):
+        build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
+        self.assertIn("ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player))", build)
+        self.assertIn("inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)", POLICY)
+
+    def test_the_hex_scan_throttle_is_per_instance_and_boss(self):
+        self.assertIn("std::map<std::pair<std::uint32_t, std::uint64_t>, std::uint32_t> g_hexScan;", VALUES)
+        log = member(VALUES, "void LogHexSnapshot(", "\n}\n")
+        self.assertIn("g_hexScan[std::make_pair(static_cast<std::uint32_t>(boss->GetInstanceId()), "
+                      "boss->GetObjectGuid().GetRawValue())]", log)
 
     def test_a_zero_reference_holds_the_damage_dealers(self):
         calc = member(VALUES, "uint8 ThreatValue::Calculate(Unit* target)", "\n}\n")
@@ -76,6 +88,10 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
     def test_the_row_carries_the_holder(self):
         self.assertIn("holder=%s", VALUES)
         self.assertIn("ThreatCapHolderWord(pick.holder)", VALUES)
+
+    def test_the_pet_cower_side_effect_is_documented(self):
+        self.assertIn("ShouldPetCower", DOCS)
+        self.assertIn("ShouldPetCower", DOCS_RUNS)
 
     def test_docs_and_changelog(self):
         self.assertIn("DungeonRunThreatSuccessorNotHolder", DOCS)
