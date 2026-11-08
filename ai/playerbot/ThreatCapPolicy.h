@@ -112,14 +112,6 @@ namespace ai
         return stops;
     }
 
-    // The bot's target right after the melee white stop: the core's AttackStop clears the target guid (walk 57: held
-    // melee had no target 37 % of the time, 16 % free). With AiPlayerbot.DungeonRunThreatSuccessorKeepTarget on, the
-    // trigger sets the successor back (`stoppedTarget`, a raw guid); off, the target stays cleared (0).
-    inline std::uint64_t SuccessorStopTargetAfter(bool keepKey, std::uint64_t stoppedTarget)
-    {
-        return keepKey ? stoppedTarget : 0;
-    }
-
     // The trigger's step (SuccessorWhiteCapTrigger::IsActive), run in the engine's trigger pass at the start of every
     // decision cycle: advance the latch and say whether the bot's running white damage must be stopped right now. The
     // trigger stops it on the spot instead of queueing an action, so no higher-relevance action picked in the same cycle

@@ -93,7 +93,7 @@ class ThreatSuccessorStrict(unittest.TestCase):
         self.assertIn("const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;",
                       trigger)
         self.assertIn("meleeOnSuccessor, autoRepeatOnSuccessor);", trigger)
-        self.assertIn("    if (stops.melee)\n    {\n        bot->AttackStop();\n", trigger)
+        self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)
         self.assertIn("    if (stops.autoRepeat)\n        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);\n", trigger)
         self.assertEqual(1, trigger.count("bot->AttackStop();"))
         self.assertEqual(1, trigger.count("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);"))
@@ -166,24 +166,6 @@ class ThreatSuccessorStrict(unittest.TestCase):
                         multiplier.index("action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE"))
         self.assertIn("kSuccessorWhiteStopPct = 92;", THREAT_POLICY)
         self.assertIn("kSuccessorWhiteResumePct = 85;", THREAT_POLICY)
-
-    def test_the_melee_stop_restores_the_target_behind_its_key(self):
-        # AiPlayerbot.DungeonRunThreatSuccessorKeepTarget: the core's AttackStop clears the target guid, so the restore
-        # must follow the AttackStop, inside the melee branch, through the helper and behind the key.
-        self.assertIn("bool dungeonRunThreatSuccessorKeepTarget = false;", CONFIG_H)
-        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepTarget", false)', CONFIG_CPP)
-        self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorKeepTarget = 0", CONF)
-        self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorKeepTarget`", SETTINGS)
-        self.assertIn("DungeonRunThreatSuccessorKeepTarget", CHANGELOG)
-        self.assertIn("DungeonRunThreatSuccessorKeepTarget", DOC)
-        trigger = body(TRIGGERS, "bool SuccessorWhiteCapTrigger::IsActive()")
-        melee = trigger[trigger.index("    if (stops.melee)\n"):trigger.index("    if (stops.autoRepeat)")]
-        self.assertLess(melee.index("bot->AttackStop();"), melee.index("bot->SetTargetGuid(ObjectGuid(keep));"))
-        self.assertIn("SuccessorStopTargetAfter(sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepTarget,", melee)
-        self.assertIn("target->GetObjectGuid().GetRawValue());", melee)
-        self.assertIn("if (keep != 0)", melee)
-        self.assertEqual(1, trigger.count("SetTargetGuid"))
-        self.assertIn("return keepKey ? stoppedTarget : 0;", THREAT_POLICY)
 
     def test_the_row_opt_in_reads_the_strict_table(self):
         # t1106m: the scope is the boss data's `strict` word, never a boss id in the code.

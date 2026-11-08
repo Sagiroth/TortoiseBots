@@ -705,10 +705,6 @@ public:
     // Hexed one, while its threat is above 0 and at least half the highest tank's (ThreatCapPolicy.h
     // ThreatCapCursedOnBoss). A charmed tank is still skipped. Off = as before.
     bool dungeonRunThreatSuccessorKeepsAway = false;
-    // The strict white stop's melee AttackStop clears the bot's target (the core's AttackStop resets the target guid);
-    // with this on the trigger puts the successor back as the bot's target right after the stop, so the specials go on
-    // under the 80 % veto (ThreatCapPolicy.h SuccessorStopTargetAfter). Off = as before (the target is left cleared).
-    bool dungeonRunThreatSuccessorKeepTarget = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;

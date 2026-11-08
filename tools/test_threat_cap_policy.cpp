@@ -460,16 +460,6 @@ int main()
         CHECK(step.melee && !step.autoRepeat);
     }
 
-    // successor_stop_keeps_the_target (AiPlayerbot.DungeonRunThreatSuccessorKeepTarget, fails while the stop leaves the
-    // target cleared): AttackStop clears the target guid; with the key on the target after the stop is the boss's guid,
-    // off it stays 0 as today.
-    {
-        const std::uint64_t boss = 0xF130002C74000123ull;
-        CHECK(SuccessorStopTargetAfter(true, boss) == boss);
-        CHECK(SuccessorStopTargetAfter(false, boss) == 0);
-        CHECK(SuccessorStopTargetAfter(true, 0) == 0);
-    }
-
     // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions mark):
     // the main tank wears Delusions and is on its Shade (6000 Jin'do threat, not hitting him); the off-tank holds at
     // 9000. Key on (the caller marks `cursed` and runs ThreatCapCursedOnBoss): the cursed main tank is on the boss and the
