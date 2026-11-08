@@ -28,6 +28,17 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.22.1 (2026-11-08)
+
+### Classes & Combat
+- Warlocks now keep a single soulstone on the group instead of handing one to nearly everyone. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+
+### Bots & Companions
+- Bots whose drink was interrupted now start drinking again instead of waiting for the next fight. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+- Servers using an older settings template now block the listed gear items, so hired bots no longer turn up wearing the Lucky Top Hat. [#1564](https://github.com/Sagiroth/TortoiseBots/pull/1564)
+
+---
+
 ## v1.22.0 (2026-11-08)
 
 ### Addon & Updates
