@@ -119,7 +119,7 @@ ref survives line drift.
 | 30 | `BossTacticsLinkedWindow` | `first_ms=..,last_ms=..,window_ms=..,inside=%d` | ScanBossLinkedDeath | not a refusal (the window fired) | document |
 | 31 | `BossTacticsFreeze` | `aura=<id>`; info2 `ms=<n>,moved_yd=<d>` | LogFreeze | not a refusal (an episode's end) | document |
 | 32 | `BossTacticsFlee` | `aura=<id>,mode=<away\|to_tank>`; info2 `ally_yd=..,radius=..,walk=<started\|none>` | LogFlee | partly: `walk=none` has no cause (the walk's own path refusal is only known as a bool) | inventory only |
-| 33 | `BossTacticsKillFirst` | `reason=<not_read\|not_attackable\|beyond_reach\|reattack\|player_order>` | ai::LogCarrierNoSwitch | yes: `reason=` | keep |
+| 33 | `BossTacticsKillFirst` | `reason=<not_read\|not_attackable\|beyond_reach\|reattack\|player_order>`; with `AiPlayerbot.DungeonRunCarrierScan` on also `<no_unit\|ineligible\|beyond_reach\|no_los\|invalid_target\|not_pickable\|player_order\|attack_refused>`, and info2 gains `,codes=<word>:<n>[\|<word>:<n>],grid=<hits>,pickable=<0\|1>` after `current=` | ai::LogCarrierNoSwitch | yes: `reason=` | keep |
 | 34 | `BossTacticsCarrierStrike` | `verdict=<strike\|not_carrier\|no_shade\|main_tank\|threat_successor\|holds_boss\|guard_low_member\|guard_tank\|guard_healers\|guard_mana\|guard_dispel>,role=..` | ai::LogCarrierStrike | yes: `verdict=`; the emit's comment omits `threat_successor` | comment fix |
 | 35 | `BossTacticsTankSwap` | `taunt=<guid>,stacks=<n>`; info2 `from=<guid>` | ai::NoteBossTankSwapCast | not a refusal (the swap was cast) | document |
 | 36 | `BossTacticsAvoidCast` | `caster=<e>:<g>,spell=<id>`; info2 `dist=..,radius=..,dest=..,stopped=..,walk=<started\|deferred\|none>` | LogAvoidCast | partly: the site knows whether no spot was found (`count==0`) or every point's `MoveTo` said no, without a new read | inventory only |
@@ -130,14 +130,15 @@ ref survives line drift.
 | 41 | `BossTacticsBurnMana` | `spell=<id>,boss_mana_pct=<pct>` | LogBurnMana | not a refusal (the cast went out) | document |
 | 42 | `BossTacticsRangedOnly` | `subject=<entry>,gap=%.1f` | ai::LogBossRangedOnly | not a refusal (the hold is active) | document |
 | 43 | `BossTacticsThreatCap` | `threat cap: ref=<main\|offtank> <threat> offtank_target=<name\|none>` | LogThreatCap (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the reference a cap is measured against) | document |
+| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune>`; info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
 
 ### Healer
 
 | # | Event | Row text / info1 shape | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 44 | `HealSkip` | `out-of-range` / `line-of-sight` / `no-power` / `casting` / `moving` / `target-invalid` / `not-in-control` / `not-ready` / `not-known` / `cast-check-failed`; info2 `spell=.. result=.. ...` | `HealerDiagnostics::CheckFailed` | yes: the info1 word | keep |
-| 45 | `HealSkip` | `execute-refused` | `HealerDiagnostics::CastAttempt` | no (the execute API returns a bool only) | inventory only |
-| 46 | `HealState` | `snapshot` | `HealerDiagnostics::Sample` | not a refusal (a state sample) | document |
+| 45 | `HealSkip` | `out-of-range` / `line-of-sight` / `no-power` / `casting` / `moving` / `target-invalid` / `not-in-control` / `not-ready` / `not-known` / `cast-check-failed`; info2 `spell=.. result=.. ...` | `HealerDiagnostics::CheckFailed` | yes: the info1 word | keep |
+| 46 | `HealSkip` | `execute-refused` | `HealerDiagnostics::CastAttempt` | no (the execute API returns a bool only) | inventory only |
+| 47 | `HealState` | `snapshot` | `HealerDiagnostics::Sample` | not a refusal (a state sample) | document |
 
 ### Unstuck
 

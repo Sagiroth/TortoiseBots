@@ -22,6 +22,8 @@ namespace ai
         bool heldCcMark = false;          // a group CC mark the party leaves alone (CcGuard)
         bool heldMarkTauntAllowed = false; // CcHeldMarkTauntAllowed: tank Taunt only, not
                                            // crowd-controlled yet, no CC cast bar, healer victim
+        bool tauntRefused = false;        // TauntGateFor refused it: a needs_aura subject (the Shade
+                                          // of Jin'do) or a taunt-immune creature
         float distance = 0.0f;            // 2D distance to the tank, the closeness key
     };
 
@@ -33,7 +35,7 @@ namespace ai
     // on its own.
     inline bool AttackerOfNonTankUsable(AttackerOfNonTankCandidate const& candidate)
     {
-        return candidate.victimIsGroupPlayer && !candidate.victimIsTank &&
+        return candidate.victimIsGroupPlayer && !candidate.victimIsTank && !candidate.tauntRefused &&
             (!candidate.heldCcMark || (candidate.heldMarkTauntAllowed && candidate.victimIsHealer));
     }
 

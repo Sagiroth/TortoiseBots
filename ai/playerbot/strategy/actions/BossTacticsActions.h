@@ -147,6 +147,11 @@ namespace ai
     void LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick, Unit* current,
         const char* keptReason = nullptr);
 
+    // The taunt gate (AiPlayerbot.DungeonRunTauntGate): whether a taunt at `target` must not go out, because it is a
+    // needs_aura subject (a Shade of Jin'do, which only a carrier may damage) or a taunt-immune creature. Logs one
+    // BossTacticsTauntGate row per bot per 5 s while it refuses. `spell` is the taunt being tried, for the row.
+    bool TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell);
+
     // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
     // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
     // A no-op without bot_events.csv.

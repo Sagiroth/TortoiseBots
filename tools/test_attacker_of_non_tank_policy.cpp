@@ -107,6 +107,23 @@ int main()
         CHECK(AttackerOfNonTankPick(candidates) == 1);
     }
 
+    // A subject the taunt gate refuses (a Shade of Jin'do a cursed tank could damage, a taunt-immune boss) is no pick
+    // while another attacker still is; with the gate off the same list picks the Shade (today's rule).
+    // TestTauntRefusedCandidateSkipped.
+    {
+        AttackerOfNonTankCandidate shade = Mob(5.0f, true);
+        shade.tauntRefused = true;
+        AttackerOfNonTankCandidate slave = Mob(20.0f, false);
+        std::vector<AttackerOfNonTankCandidate> candidates = { shade, slave };
+        CHECK(AttackerOfNonTankPick(candidates) == 1);
+    }
+    {
+        AttackerOfNonTankCandidate shade = Mob(5.0f, true);
+        AttackerOfNonTankCandidate slave = Mob(20.0f, false);
+        std::vector<AttackerOfNonTankCandidate> candidates = { shade, slave };
+        CHECK(AttackerOfNonTankPick(candidates) == 0);
+    }
+
     // Empty scan / nothing fighting: no pick.
     {
         std::vector<AttackerOfNonTankCandidate> candidates;

@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <iostream>
 #include <map>
@@ -138,6 +139,100 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     return c;
 }
 
+static CarrierScanFacts ScanHit(bool unitFound, bool eligible, float distanceYd, bool los, bool validAttack)
+{
+    CarrierScanFacts f;
+    f.unitFound = unitFound;
+    f.gridEligible = eligible;
+    f.distanceYd = distanceYd;
+    f.los = los;
+    f.validAttack = validAttack;
+    return f;
+}
+
+// walk 53: a Delusions carrier's attackers list held only Jin'do while a Shade stood beside it (295 of 357 no-switch
+// rows read `not_read`). The carrier override finds nothing there; the grid fallback takes the nearest Shade that
+// passes every check, and leaves the nearer one behind a wall out.
+static void TestCarrierScanTakesGridShadeTheAttackersListMissed()
+{
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    ActiveBossRows active = Active(rows);
+    // The attackers list of that carrier: Jin'do alone, pickable, 5 yd.
+    std::vector<TacticCandidate> candidates{Cand(11380, 5.0f, true)};
+    CHECK(PickCarrierOverride(active, candidates, kCarrierHoldReachYd) == -1);
+
+    // The grid read of the carrier row's entry: a Shade at 12 yd and one at 8 yd without line of sight.
+    std::vector<CarrierScanFacts> hits;
+    hits.push_back(ScanHit(true, true, 12.0f, true, true));
+    hits.push_back(ScanHit(true, true, 8.0f, false, true));
+    CHECK(CarrierScanRefuses(hits[0], kCarrierHoldReachYd) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(hits[1], kCarrierHoldReachYd) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanPick(hits, kCarrierHoldReachYd) == 0);
+}
+
+// Each check alone, then the order the checks run in, then the reach's edge.
+static void TestCarrierScanRefusal()
+{
+    CHECK(CarrierScanRefuses(ScanHit(false, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 10.0f, true, true), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, true), 40.0f) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, false), 40.0f) == CarrierScanRefusal::InvalidTarget);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+
+    CHECK(CarrierScanRefuses(ScanHit(false, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, false, false), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, false), 40.0f) == CarrierScanRefusal::NoLos);
+
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.01f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, -1.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+}
+
+static void TestCarrierScanPick()
+{
+    std::vector<CarrierScanFacts> none;
+    CHECK(CarrierScanPick(none, 40.0f) == -1); // TestCarrierScanPickEmpty
+    std::vector<CarrierScanFacts> refused;
+    refused.push_back(ScanHit(true, false, 5.0f, true, true));
+    refused.push_back(ScanHit(true, true, 45.0f, false, false));
+    CHECK(CarrierScanPick(refused, 40.0f) == -1); // TestCarrierScanPickAllRefused
+    std::vector<CarrierScanFacts> eligible;
+    eligible.push_back(ScanHit(true, true, 22.0f, true, true));
+    eligible.push_back(ScanHit(true, true, 9.0f, true, false));
+    CHECK(CarrierScanPick(eligible, 40.0f) == 0); // the nearer hit refused, the far one alone
+    eligible[1].validAttack = true;
+    CHECK(CarrierScanPick(eligible, 40.0f) == 1); // TestCarrierScanPickNearest
+}
+
+static void TestCarrierScanReasonWord()
+{
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::None), "none") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoUnit), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::Ineligible), "ineligible") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::BeyondReach), "beyond_reach") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoLos), "no_los") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::InvalidTarget), "invalid_target") == 0);
+}
+
+// A tank never taunts a needs_aura subject (the Shade of Jin'do) or a taunt-immune creature; the key off leaves every
+// taunt as it was.
+static void TestTauntGate()
+{
+    CHECK(TauntGateFor(false, 24306, true) == TauntGate::Allow);      // TestTauntGateOffAllows
+    CHECK(TauntGateFor(true, 24306, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura
+    CHECK(TauntGateFor(true, 0, true) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
+    CHECK(TauntGateFor(true, 24306, true) == TauntGate::NeedsAura);   // the aura is read first
+    CHECK(TauntGateFor(true, 0, false) == TauntGate::Allow);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::Allow), "allow") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::NeedsAura), "needs_aura") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::TauntImmune), "taunt_immune") == 0);
+}
+
 static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
 {
     SoleCandidate c;
@@ -232,6 +327,11 @@ int main()
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
     TestKillFirstReattacksAStalePick();
+    TestCarrierScanTakesGridShadeTheAttackersListMissed();
+    TestCarrierScanRefusal();
+    TestCarrierScanPick();
+    TestCarrierScanReasonWord();
+    TestTauntGate();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

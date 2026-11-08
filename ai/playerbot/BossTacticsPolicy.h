@@ -2880,6 +2880,113 @@ namespace ai
         return best;
     }
 
+    // --- carrier scan (walk 53) ------------------------------------------------------------------------------------
+    // A Delusions carrier the attackers list never showed a Shade: the Shade is summoned on a carrier and only its
+    // carrier can see it, so both the carrier override and the kill_first grid pass found nothing while one stood
+    // beside the bot (2,127 of 3,276 Shade-frames, 65 %, had no cursed bot on the Shade). The scan reads the carrier
+    // row's entry off the grid itself; this says which check kept every hit out of the pick.
+    enum class CarrierScanRefusal : std::uint8_t
+    {
+        None,
+        NoUnit,
+        Ineligible,
+        BeyondReach,
+        NoLos,
+        InvalidTarget,
+    };
+
+    struct CarrierScanFacts
+    {
+        bool unitFound = false;    // a living unit of the carrier row's entry from the grid read
+        bool gridEligible = false; // KillFirstGridEligible(alive, evading, victimOurs, weHoldIt, ownerInFight)
+        float distanceYd = -1.0f;  // bot to unit
+        bool los = false;          // bot->IsWithinLOSInMap(unit)
+        bool validAttack = false;  // bot->IsValidAttackTarget(unit)
+    };
+
+    // The first check that fails gives the verdict; its order is the order a carrier would walk them in: is there a
+    // unit of the entry at all, is it this fight's, is it in reach, can the bot see it, may it attack it.
+    inline CarrierScanRefusal CarrierScanRefuses(const CarrierScanFacts& f, float reachYd)
+    {
+        if (!f.unitFound)
+            return CarrierScanRefusal::NoUnit;
+        if (!f.gridEligible)
+            return CarrierScanRefusal::Ineligible;
+        if (f.distanceYd < 0.0f || f.distanceYd > reachYd)
+            return CarrierScanRefusal::BeyondReach;
+        if (!f.los)
+            return CarrierScanRefusal::NoLos;
+        if (!f.validAttack)
+            return CarrierScanRefusal::InvalidTarget;
+        return CarrierScanRefusal::None;
+    }
+
+    // Index of the nearest hit that passes every check, else -1.
+    inline int CarrierScanPick(const std::vector<CarrierScanFacts>& hits, float reachYd)
+    {
+        int best = -1;
+        for (std::size_t i = 0; i < hits.size(); ++i)
+        {
+            if (CarrierScanRefuses(hits[i], reachYd) != CarrierScanRefusal::None)
+                continue;
+            if (best < 0 || hits[i].distanceYd < hits[best].distanceYd)
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    inline const char* CarrierScanReasonWord(CarrierScanRefusal refusal)
+    {
+        switch (refusal)
+        {
+            case CarrierScanRefusal::None:          return "none";
+            case CarrierScanRefusal::NoUnit:        return "no_unit";
+            case CarrierScanRefusal::Ineligible:    return "ineligible";
+            case CarrierScanRefusal::BeyondReach:   return "beyond_reach";
+            case CarrierScanRefusal::NoLos:         return "no_los";
+            case CarrierScanRefusal::InvalidTarget: return "invalid_target";
+        }
+        return "none";
+    }
+
+    // What the no-switch row says about the scan: how many grid hits the carrier entry had, which check refused each,
+    // whether a player's order closed the pick, and whether any candidate of the entry was pickable at all.
+    struct CarrierScanTally
+    {
+        int hits = 0;
+        int byCode[6] = {};
+        bool playerOrder = false;
+        bool pickableSeen = false;
+    };
+
+    // --- taunt gate ------------------------------------------------------------------------------------------------
+    // A tank never taunts a subject it must not hold: a needs_aura entry (the Shade of Jin'do, which only a carrier can
+    // damage and which copies the boss's threat list onto a healer) or a creature the core marks immune to taunts
+    // (Jin'do). Key off, every taunt passes as before.
+    enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune };
+
+    inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool tauntImmune)
+    {
+        if (!keyOn)
+            return TauntGate::Allow;
+        if (requiredAura != 0)
+            return TauntGate::NeedsAura;
+        if (tauntImmune)
+            return TauntGate::TauntImmune;
+        return TauntGate::Allow;
+    }
+
+    inline const char* TauntGateWord(TauntGate gate)
+    {
+        switch (gate)
+        {
+            case TauntGate::Allow:       return "allow";
+            case TauntGate::NeedsAura:   return "needs_aura";
+            case TauntGate::TauntImmune: return "taunt_immune";
+        }
+        return "allow";
+    }
+
     // tank_ignore (t1105h J2): a tank leaves a unit alone (no guard pick, no engage, no taunt, no tank target) while one
     // of the bosses whose row names its entry (`bosses`, BossTacticTable::TankIgnoreBosses) fights. The damage dealers
     // keep it: it is only the tanks' pick that is closed.
