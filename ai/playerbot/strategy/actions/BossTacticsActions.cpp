@@ -3877,9 +3877,10 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
         ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
         : PickKillFirst(fight.rows, candidates);
     // The fallback a Delusions carrier gets when its attackers list never showed a Shade (walk 53): the carrier row's
-    // entry read off the grid, and the nearest hit that passes every check. A second path, never a widened first one:
-    // PickCarrierOverride and the grid pass above stay as they are.
-    if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode == KillFirstPickMode::Carrier && picked < 0)
+    // entry read off the grid, and the nearest hit that passes every check. It runs for every mode but None (a player's
+    // order is never overridden): a free DPS carrying the aura needs its Shade as much as one under the run's order.
+    // A second path, never a widened first one: PickCarrierOverride and the grid pass above stay as they are.
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode != KillFirstPickMode::None && picked < 0)
     {
         std::vector<CarrierScanFacts> facts;
         std::vector<Unit*> scanUnits;
@@ -4494,7 +4495,7 @@ bool BossTacticsDispelSweepAction::Execute(Event& event)
 // With AiPlayerbot.DungeonRunCarrierScan on, the reason words come from the scan's tally instead (the row then says
 // which check kept every grid hit out of the pick):
 //   info1 = "reason=<no_unit|ineligible|beyond_reach|no_los|invalid_target|not_pickable|player_order|attack_refused>"
-//   info2 = ...,current=...,codes=<word>:<n>[|<word>:<n>],grid=<hits>,pickable=<0|1>
+//   info2 = ...,current=...,codes=<word>:<n>[|<word>:<n>],grid=<hits>,pickable=<0|1>,mode=<carrier|free|none>
 constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;
 std::mutex g_carrierNoSwitchLogMutex;
 std::unordered_map<uint64, uint32> g_carrierNoSwitchLog;
@@ -4526,9 +4527,11 @@ static CarrierScanTally CarrierScanTallyOf(PlayerbotAI* ai, Player* bot, const B
         ++tally.byCode[static_cast<int>(CarrierScanRefuses(hit, kCarrierHoldReachYd))];
     ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
     // The caller only gets here with an open carrier row (entry != 0), so the row is what FindBossKillFirst reads too.
-    tally.playerOrder = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
+    KillFirstPickMode const mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
         OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()),
-        true) == KillFirstPickMode::None;
+        true);
+    tally.playerOrder = mode == KillFirstPickMode::None;
+    tally.freeMode = mode == KillFirstPickMode::Free;
     for (Unit* unit : fight.units)
         if (unit && unit->GetEntry() == entry && sServerFacade.IsAlive(unit) &&
             PossibleAttackTargetsValue::IsValid(unit, bot))
@@ -4544,31 +4547,6 @@ static CarrierScanTally CarrierScanTallyOf(PlayerbotAI* ai, Player* bot, const B
                 break;
             }
     return tally;
-}
-
-// The row's word from the scan: a player's order first (it is never overridden), then the most common refusal among
-// the grid hits (the enum order breaks a tie), then why there was no hit at all. The None code counts hits that passed
-// every check, so it is never the word: a hit the scan could take and the pick did not is the pick's own rule saying
-// no. A Shade that is pickable, in the fight and still out of the pick can only be out of the reach (a pickable one
-// in reach is the pick).
-static const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, bool pickable)
-{
-    if (tally.playerOrder)
-        return "player_order";
-    int best = -1;
-    for (int code = static_cast<int>(CarrierScanRefusal::NoUnit);
-         code <= static_cast<int>(CarrierScanRefusal::InvalidTarget); ++code)
-        if (tally.byCode[code] > 0 && (best < 0 || tally.byCode[code] > tally.byCode[best]))
-            best = code;
-    if (best >= 0)
-        return CarrierScanReasonWord(static_cast<CarrierScanRefusal>(best));
-    if (tally.hits > 0)
-        return "not_pickable";
-    if (!shadeInFight)
-        return "no_unit";
-    if (!pickable)
-        return "not_pickable";
-    return CarrierScanReasonWord(CarrierScanRefusal::BeyondReach);
 }
 
 void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick,
@@ -4588,6 +4566,10 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         }
     if (!entry)
         return; // the bot carries no gated row: no Shade is its subject
+    // The throttle first: the scan tally reads the grid and asks the core for every hit, which a row that is not due
+    // would only throw away.
+    if (!CarrierNoSwitchLogDue(bot))
+        return;
     Unit* shade = nullptr;
     float shadeYd = -1.0f;
     for (Unit* unit : fight.units)
@@ -4621,8 +4603,8 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
             codes += ':';
             codes += std::to_string(tally.byCode[code]);
         }
-        snprintf(scanText, sizeof(scanText), ",codes=%s,grid=%d,pickable=%d", codes.c_str(), tally.hits,
-            tally.pickableSeen ? 1 : 0);
+        snprintf(scanText, sizeof(scanText), ",codes=%s,grid=%d,pickable=%d,mode=%s", codes.c_str(), tally.hits,
+            tally.pickableSeen ? 1 : 0, tally.playerOrder ? "none" : tally.freeMode ? "free" : "carrier");
     }
     else if (!reason)
     {
@@ -4639,8 +4621,6 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 break;
         }
     }
-    if (!CarrierNoSwitchLogDue(bot))
-        return;
     char info1[64];
     snprintf(info1, sizeof(info1), "reason=%s", reason);
     char shadeText[48];
@@ -4688,6 +4668,8 @@ static bool TauntGateLogDue(Player* bot)
 
 bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
 {
+    if (!sPlayerbotAIConfig.dungeonRunTauntGate)
+        return false;
     if (!ai || !bot || !target)
         return false;
     TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,
@@ -5196,7 +5178,7 @@ bool BossTacticsTankSwapAction::Execute(Event& event)
     if (!task.valid || !task.boss)
         return false;
     const char* const taunt = CastableTaunt(ai, task.boss);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.boss, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.boss)
@@ -7499,7 +7481,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (Attack(bot, task.source) && (!taunt || !ai->CanCastSpell(taunt, task.source)))
                 return true;
         }
-        if (!taunt || !ai->CanCastSpell(taunt, task.source))
+        if (!taunt || !ai->CanCastSpell(taunt, task.source) || TauntRefusedByGate(ai, bot, task.source, taunt))
             return false;
         return ai->CastSpell(taunt, task.source);
     }
@@ -8055,7 +8037,7 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (!task.valid)
         return false;
     const char* const taunt = ClassTauntSpell(bot);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.subject)

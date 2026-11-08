@@ -219,6 +219,40 @@ static void TestCarrierScanReasonWord()
     CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::InvalidTarget), "invalid_target") == 0);
 }
 
+// The no-switch row's word from the scan tally: a player's order first, then the most common refusal (the enum order
+// breaks a tie), then why there was no hit at all.
+static void TestCarrierScanWord()
+{
+    // TestCarrierScanWordPlayerOrderWins: the order beats a tally full of refusals.
+    CarrierScanTally ordered;
+    ordered.playerOrder = true;
+    ordered.hits = 2;
+    ordered.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 2;
+    CHECK(std::strcmp(CarrierScanWord(ordered, true, true), "player_order") == 0);
+
+    // TestCarrierScanWordMostCommon and TestCarrierScanWordTieBreak.
+    CarrierScanTally mixed;
+    mixed.hits = 5;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 4; // hits that passed are never the word
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 3;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "no_los") == 0);
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "beyond_reach") == 0); // equal: the earlier code
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::Ineligible)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "ineligible") == 0);
+
+    // TestCarrierScanWordNotPickable: no refused hit, so the unit the fight holds decides.
+    CarrierScanTally empty;
+    CHECK(std::strcmp(CarrierScanWord(empty, false, false), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, false), "not_pickable") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, true), "beyond_reach") == 0);
+    CarrierScanTally passed;
+    passed.hits = 1;
+    passed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(passed, true, true), "not_pickable") == 0);
+}
+
 // A tank never taunts a needs_aura subject (the Shade of Jin'do) or a taunt-immune creature; the key off leaves every
 // taunt as it was.
 static void TestTauntGate()
@@ -331,6 +365,7 @@ int main()
     TestCarrierScanRefusal();
     TestCarrierScanPick();
     TestCarrierScanReasonWord();
+    TestCarrierScanWord();
     TestTauntGate();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and

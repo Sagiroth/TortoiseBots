@@ -2822,9 +2822,10 @@ namespace ai
     }
 
     // How far the carrier turns on its subject, under an explicit attack order or free (t1106b): the hold reach for
-    // every bot, melee or ranged. A Delusions carrier can hurt only the Shade its curse names, and the Shades are
-    // summoned on one carrier and walk off to a healer: a 15/30 yd first override left half of the cursed DPS on Jin'do
-    // with a Shade beside them, and only one carrier on a Shade takes ~17 s while a new one comes every 7-8 s.
+    // every bot, melee or ranged. Any Delusions carrier can see and damage any Shade (the curse is the only gate, not
+    // which carrier the Shade was summoned on), and the Shades are summoned on one carrier and walk off to a healer: a
+    // 15/30 yd first override left half of the cursed DPS on Jin'do with a Shade beside them, and only one carrier on a
+    // Shade takes ~17 s while a new one comes every 7-8 s.
     // Distances are GetDistance's, bounding radii already off.
     constexpr float kCarrierHoldReachYd = kBossTacticsEngageRange;
 
@@ -2956,8 +2957,34 @@ namespace ai
         int hits = 0;
         int byCode[6] = {};
         bool playerOrder = false;
+        bool freeMode = false; // the pick mode was Free (no order at all) rather than Carrier (the run's own order)
         bool pickableSeen = false;
     };
+
+    // The row's word from the scan: a player's order first (it is never overridden), then the most common refusal among
+    // the grid hits (the enum order breaks a tie; the None code counts hits that passed every check and is never the
+    // word), then why there was no hit at all: no hit and no unit in the fight is no_unit, no hit and an unpickable
+    // unit is not_pickable. A hit the scan could take that the pick did not is the pick's own rule saying no
+    // (not_pickable). A pickable unit in the fight with no grid hit can only be out of the reach.
+    inline const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, bool pickable)
+    {
+        if (tally.playerOrder)
+            return "player_order";
+        int best = -1;
+        for (int code = static_cast<int>(CarrierScanRefusal::NoUnit);
+             code <= static_cast<int>(CarrierScanRefusal::InvalidTarget); ++code)
+            if (tally.byCode[code] > 0 && (best < 0 || tally.byCode[code] > tally.byCode[best]))
+                best = code;
+        if (best >= 0)
+            return CarrierScanReasonWord(static_cast<CarrierScanRefusal>(best));
+        if (tally.hits > 0)
+            return "not_pickable";
+        if (!shadeInFight)
+            return "no_unit";
+        if (!pickable)
+            return "not_pickable";
+        return CarrierScanReasonWord(CarrierScanRefusal::BeyondReach);
+    }
 
     // --- taunt gate ------------------------------------------------------------------------------------------------
     // A tank never taunts a subject it must not hold: a needs_aura entry (the Shade of Jin'do, which only a carrier can

@@ -107,21 +107,25 @@ int main()
         CHECK(AttackerOfNonTankPick(candidates) == 1);
     }
 
-    // A subject the taunt gate refuses (a Shade of Jin'do a cursed tank could damage, a taunt-immune boss) is no pick
-    // while another attacker still is; with the gate off the same list picks the Shade (today's rule).
-    // TestTauntRefusedCandidateSkipped.
+    // The taunt gate drops a needs_aura unit from the scan (AttackerOfNonTankSkipsUnit) for both users of the value:
+    // a Shade of Jin'do on a healer plus a Voodoo Slave on a DPS picks the Slave with the gate on, the Shade (today's
+    // rule) with it off. TestShadeSkippedWithGateOn.
     {
-        AttackerOfNonTankCandidate shade = Mob(5.0f, true);
-        shade.tauntRefused = true;
-        AttackerOfNonTankCandidate slave = Mob(20.0f, false);
-        std::vector<AttackerOfNonTankCandidate> candidates = { shade, slave };
-        CHECK(AttackerOfNonTankPick(candidates) == 1);
-    }
-    {
-        AttackerOfNonTankCandidate shade = Mob(5.0f, true);
-        AttackerOfNonTankCandidate slave = Mob(20.0f, false);
-        std::vector<AttackerOfNonTankCandidate> candidates = { shade, slave };
-        CHECK(AttackerOfNonTankPick(candidates) == 0);
+        constexpr std::uint32_t kDelusions = 24306;
+        struct Seen { AttackerOfNonTankCandidate candidate; std::uint32_t requiredAura; };
+        std::vector<Seen> seen = { { Mob(5.0f, true), kDelusions }, { Mob(20.0f, false), 0 } };
+        for (bool gateOn : { true, false })
+        {
+            std::vector<AttackerOfNonTankCandidate> candidates;
+            for (const Seen& s : seen)
+                if (!AttackerOfNonTankSkipsUnit(gateOn, s.requiredAura))
+                    candidates.push_back(s.candidate);
+            std::size_t const pick = AttackerOfNonTankPick(candidates);
+            CHECK(pick < candidates.size());
+            CHECK(candidates[pick].victimIsHealer == !gateOn); // gate on: the Slave (DPS victim); off: the Shade
+        }
+        CHECK(!AttackerOfNonTankSkipsUnit(true, 0));  // an ordinary unit stays
+        CHECK(!AttackerOfNonTankSkipsUnit(false, kDelusions));
     }
 
     // Empty scan / nothing fighting: no pick.

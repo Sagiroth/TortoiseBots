@@ -451,7 +451,17 @@ namespace ai
                 !TauntRefusedByGate(ai, bot, GetTarget(), "taunt");
         }
     };
-    SNARE_ACTION(CastTauntOnSnareTargetAction, "taunt");
+    // The snare-target taunt: the same gate as the taunt row.
+    class CastTauntOnSnareTargetAction : public CastSnareSpellAction
+    {
+    public:
+        CastTauntOnSnareTargetAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "taunt") {}
+
+        virtual bool isUseful() override
+        {
+            return CastSnareSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "taunt");
+        }
+    };
 
     // Taunt the mob picked by "attacker of non-tank target"; the cast reads
     // its real range from the spell and the reach prerequisite walks the

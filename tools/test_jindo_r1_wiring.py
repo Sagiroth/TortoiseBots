@@ -2,8 +2,8 @@
 and the taunt gate (a tank never taunts a Shade of Jin'do or a taunt-immune creature).
 
 The rules themselves are unit-tested in tools/test_boss_tactics_policy.cpp (CarrierScanRefuses, CarrierScanPick,
-CarrierScanReasonWord, TauntGateFor, TauntGateWord) and tools/test_attacker_of_non_tank_policy.cpp
-(AttackerOfNonTankUsable's tauntRefused). These pins only prove the live code calls them, behind their keys, and that
+CarrierScanReasonWord, CarrierScanWord, TauntGateFor, TauntGateWord) and tools/test_attacker_of_non_tank_policy.cpp
+(AttackerOfNonTankSkipsUnit). These pins only prove the live code calls them, behind their keys, and that
 both keys ship off.
 """
 import os
@@ -21,6 +21,11 @@ ACTIONS = read("ai/playerbot/strategy/actions/BossTacticsActions.cpp")
 POLICY = read("ai/playerbot/BossTacticsPolicy.h")
 TRIGGERS = read("ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp")
 WARRIOR = read("ai/playerbot/strategy/warrior/WarriorActions.h")
+DRUID = read("ai/playerbot/strategy/druid/DruidActions.h")
+PALADIN = read("ai/playerbot/strategy/paladin/PaladinActions.h")
+SHAMAN = read("ai/playerbot/strategy/shaman/ShamanActions.h")
+NON_TANK_VALUE = read("ai/playerbot/strategy/values/AttackerOfNonTankTargetValue.cpp")
+NON_TANK_POLICY = read("ai/playerbot/policy/combat/AttackerOfNonTankPolicy.h")
 CONFIG_H = read("ai/playerbot/PlayerbotAIConfig.h")
 CONFIG_CPP = read("ai/playerbot/PlayerbotAIConfig.cpp")
 CONF = read("ai/playerbot/aiplayerbot.conf.dist.in")
@@ -41,12 +46,13 @@ class JindoR1Wiring(unittest.TestCase):
             self.assertIn(f'config.GetBoolDefault("AiPlayerbot.{key}", false)', CONFIG_CPP)
             self.assertIn(f"AiPlayerbot.{key} = 0", CONF)
 
-    def test_the_scan_runs_only_for_the_carrier_mode_behind_its_key(self):
+    def test_the_scan_runs_for_every_mode_but_none_behind_its_key(self):
         body = member(ACTIONS, "float carrierReachYd)\n{", "\n}\n")
-        # The gate: the key, the carrier mode and no pick at all. A player's order never gets here (mode None returns
-        # at the top), and a free DPS keeps the ordinary pick.
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode == KillFirstPickMode::Carrier && "
+        # The gate: the key, any mode but None and no pick at all. A player's order is mode None (and returns at the
+        # top), so it is never overridden; a free DPS carrying the aura scans like one under the run's order.
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode != KillFirstPickMode::None && "
                       "picked < 0)", body)
+        self.assertNotIn("dungeonRunCarrierScan && mode == KillFirstPickMode::Carrier", body)
         self.assertIn("int const scanned = CarrierScanPick(facts, carrierReachYd);", body)
         self.assertIn("return scanUnits[scanned];", body)
         self.assertLess(body.index("mode == KillFirstPickMode::None"),
@@ -73,14 +79,27 @@ class JindoR1Wiring(unittest.TestCase):
         self.assertLess(body.index("if (sPlayerbotAIConfig.dungeonRunCarrierScan)"),
                         body.index("CarrierScanReasonWord("))
         self.assertIn('",codes=', body)
+        # The one place scanText is filled sits inside the key's block, before the old-words branch: the flag-off row
+        # never gains `,codes=` (byte-identical info2).
+        self.assertEqual(body.count("snprintf(scanText"), 1)
+        self.assertEqual(body.count("scanText"), 5)  # declared, cleared, filled (twice on that line), appended to info2
+        self.assertIn("scanText[0] = '\\0';", body)
+        flag_block = member(body, "if (sPlayerbotAIConfig.dungeonRunCarrierScan)", "    else if (!reason)")
+        self.assertIn("snprintf(scanText", flag_block)
+        self.assertIn(",mode=%s", flag_block)
+        self.assertNotIn("scanText", member(body, "    else if (!reason)", "    char info1[64];"))
+        self.assertIn("currentText, scanText);", body)
+        # The log throttle comes before any scan work (the tally reads the grid and asks the core for every hit).
+        self.assertLess(body.index("CarrierNoSwitchLogDue(bot)"), body.index("CarrierScanTallyOf("))
         self.assertIn('snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s%s"', body)
         self.assertIn("char info2[256];", body)
         self.assertIn('case CarrierNoSwitch::NoShade:       reason = "not_read"; break;', body)
         self.assertIn('reason = "player_order";', body)
         # The word rule itself: a player's order, then the most common refusal, then no hit at all.
-        words = member(ACTIONS, "static const char* CarrierScanWord(", "\n}\n")
+        words = member(POLICY, "inline const char* CarrierScanWord(", "\n    }\n")
         self.assertIn('return "player_order";', words)
         self.assertIn("return CarrierScanReasonWord(static_cast<CarrierScanRefusal>(best));", words)
+        self.assertIn("CarrierScanWord(tally, shade != nullptr, pickableNow)", body)
         self.assertIn('return "no_unit";', words)
         self.assertIn('return "not_pickable";', words)
         self.assertIn("CarrierScanRefusal::BeyondReach", words)
@@ -91,6 +110,9 @@ class JindoR1Wiring(unittest.TestCase):
         # The gate sits in the taunt actions, not in "attacker of non-tank target": that value also feeds the warrior
         # gap closer's Charge (WarriorGapCloser.cpp), which is no taunt.
         gate = member(ACTIONS, "bool ai::TauntRefusedByGate(", "\n}\n")
+        # The key is read first: with it off the gate does no lookup at all.
+        self.assertTrue(gate.split("{", 1)[1].lstrip().startswith(
+            "if (!sPlayerbotAIConfig.dungeonRunTauntGate)\n        return false;"))
         self.assertIn("TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,", gate)
         self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry()), "
                       "TargetTauntImmune(target))", gate)
@@ -99,16 +121,46 @@ class JindoR1Wiring(unittest.TestCase):
         self.assertIn('snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s"', gate)
         self.assertIn("constexpr uint32 kTauntGateLogGapMs = 5000;", ACTIONS)
 
-    def test_the_three_warrior_taunt_actions_gate(self):
+    def test_every_single_target_taunt_is_gated(self):
         for cls, spell in (("class CastMockingBlowAction", '"mocking blow"'),
-                           ("class CastTauntAction", '"taunt"')):
+                           ("class CastTauntAction", '"taunt"'),
+                           ("class CastTauntOnSnareTargetAction", '"taunt"')):
             body = member(WARRIOR, cls, "};")
-            self.assertIn(f"TauntRefusedByGate(ai, bot, GetTarget(), {spell})", body)
+            self.assertIn(f"!TauntRefusedByGate(ai, bot, GetTarget(), {spell})", body)
         body = member(WARRIOR, "class CastTauntOnAttackerAction", "};")
         self.assertIn('TauntRefusedByGate(ai, bot, GetTarget(), "taunt")', body)
         self.assertIn("CastSnareSpellAction::isUseful()", body)
-        # Challenging Shout is an area taunt with no single target: a documented limit, not gated.
+        # The druid, paladin and shaman taunts. The on-attacker actions derive from these and inherit the gate.
+        for text, cls, spell, derived in (
+                (DRUID, "class CastGrowlAction", '"growl"', "class CastGrowlOnAttackerAction : public CastGrowlAction"),
+                (PALADIN, "class CastHandOfReckoningAction", '"hand of reckoning"',
+                 "class CastHandOfReckoningOnAttackerAction : public CastHandOfReckoningAction"),
+                (SHAMAN, "class CastEarthshakerSlamAction", '"earthshaker slam"',
+                 "class CastEarthshakerSlamOnAttackerAction : public CastEarthshakerSlamAction")):
+            body = member(text, cls, "};")
+            self.assertIn(f"!TauntRefusedByGate(ai, bot, GetTarget(), {spell})", body)
+            self.assertIn("virtual bool isUseful() override", body)
+            self.assertIn(derived, text)
+            self.assertNotIn("isUseful", member(text, derived, "};"))
+        # The boss actions that cast a class taunt themselves: the swap, the seek take, the taunt-after window.
+        self.assertIn("if (!taunt || TauntRefusedByGate(ai, bot, task.boss, taunt))", ACTIONS)
+        self.assertIn("!ai->CanCastSpell(taunt, task.source) || TauntRefusedByGate(ai, bot, task.source, taunt)",
+                      ACTIONS)
+        self.assertIn("if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))", ACTIONS)
+        # Challenging Shout and Challenging Roar are area taunts with no single target: a documented limit, not gated.
         self.assertIn('MELEE_ACTION(CastChallengingShoutAction, "challenging shout");', WARRIOR)
+
+    def test_the_attacker_value_skips_needs_aura_units_for_both_users(self):
+        self.assertIn("        if (AttackerOfNonTankSkipsUnit(sPlayerbotAIConfig.dungeonRunTauntGate,\n"
+                      "                GetBossTactics().RequiredAura(bot->GetMapId(), unit->GetEntry())))\n"
+                      "            continue;", NON_TANK_VALUE)
+        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), unit->GetEntry())", NON_TANK_VALUE)
+        # The skip comes before the unit becomes a candidate.
+        self.assertLess(NON_TANK_VALUE.index("AttackerOfNonTankSkipsUnit("),
+                        NON_TANK_VALUE.index("candidates.push_back(candidate)"))
+        self.assertIn("return tauntGateOn && requiredAura != 0;", NON_TANK_POLICY)
+        self.assertNotIn("tauntRefused", NON_TANK_POLICY)
+        self.assertNotIn("tauntRefused", NON_TANK_VALUE)
 
     def test_the_scan_policy_is_pure(self):
         for name in ("enum class CarrierScanRefusal : std::uint8_t",
@@ -117,6 +169,8 @@ class JindoR1Wiring(unittest.TestCase):
                      "inline CarrierScanRefusal CarrierScanRefuses(const CarrierScanFacts& f, float reachYd)",
                      "inline int CarrierScanPick(const std::vector<CarrierScanFacts>& hits, float reachYd)",
                      "inline const char* CarrierScanReasonWord(CarrierScanRefusal refusal)",
+                     "inline const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, "
+                     "bool pickable)",
                      "enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune };",
                      "inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool tauntImmune)",
                      "inline const char* TauntGateWord(TauntGate gate)"):
