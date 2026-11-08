@@ -157,7 +157,10 @@ class RaidConfigWiringTest(unittest.TestCase):
         self.assertIn("f.raid.offTanksAlive.push_back(member.name);", code)
         # With the lead bot dead the anchor the attackers are read around is one of the boss fight's off-tanks, then
         # one of the trash fight's, then any living bot on its map.
-        anchor = body(code, "Player* RaidGuardAnchor(Player* lead,", "\n}\n")
+        # (RaidGuardAnchor's fallback, RaidGuardFallbackAnchor; it also serves a charmed lead under
+        # AiPlayerbot.DungeonRunFactJudgeCharmedLead, pinned in test_fact_judge_charmed_lead_wiring.py.)
+        self.assertIn("return RaidGuardFallbackAnchor(lead, bots, f, keyOn);", body(code, "Player* RaidGuardAnchor(Player* lead,", "\n}\n"))
+        anchor = body(code, "static Player* RaidGuardFallbackAnchor(Player* lead,", "\n}\n")
         # ... but first, with the lead bot dead, the member the fight is around (an off-tank in combat, else a member
         # with attackers: DungeonRun::DeadLeadGuardAnchor), never the first off-tank in the list: an idle one far off
         # hid the loose mobs. The first-in-list loops stay as the fallback when nobody fights.

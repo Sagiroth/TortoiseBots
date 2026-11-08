@@ -9,8 +9,12 @@ runtime/DungeonRunPolicy.h (RunFactJudgeReplacesLead) and tested in tools/test_d
 
 - ReadKillFirst: the kill_first friendliness test and the owner's engagement (fact.ownerEngaged);
 - ReadCcBreakFacts: the crowd-control hold friendliness test;
-- HandleCommanderOrder: the order's judge (ResolveOrderTarget refused the run's totem focus as "friendly");
-- CommanderFocus: the totem focus' selection owner (TotemFocusBot).
+- ReadEngagedUnits -> ReadEngagedWith: the engaged units' friendliness (empty, the fight read stale, for a whole charm);
+- RaidGuardAnchor: the raid guard's anchor (a charmed lead blinded the guard and the raid healer guard);
+- HandleCommanderOrder: the order's judge (ResolveOrderTarget refused the run's totem focus as "friendly"), and with
+  the key on a dead lead's judge is a fit (uncharmed) bot through RunJudge.
+
+The totem focus' selection owner stays the lead (AttackMyTargetAction judges friendliness by the acting bot).
 
 Run: python3 -m unittest tools/test_fact_judge_charmed_lead_wiring.py
 """
@@ -57,10 +61,12 @@ class Helper(unittest.TestCase):
         self.assertIn("    TestRunFactJudgeKeepsTheLeadOtherwise();\n", POLICY_TEST)
 
     def test_every_helper_call_is_a_named_site(self):
-        # Four sites: the kill_first read, the CC-hold read, the order judge and the totem focus owner. A new call
-        # must be added to a named test below and to this count.
-        self.assertEqual(COMMANDS.count(HELPER), 4)
-        self.assertEqual(len(helper_calls(COMMANDS)), 4)
+        # Five sites: the kill_first read, the CC-hold read, the engaged-units read, the raid guard anchor and the order
+        # judge. A new call must be added to a named test below and to this count.
+        self.assertEqual(COMMANDS.count(HELPER), 5)
+        self.assertEqual(len(helper_calls(COMMANDS)), 4)  # RaidGuardAnchor passes keyOn/leadCharmed locals
+        self.assertEqual(len(re.findall(r"RunFactJudgeReplacesLead\(keyOn, leadCharmed, other != nullptr\)", COMMANDS)),
+            1)
 
 
 class Sites(unittest.TestCase):
@@ -82,29 +88,71 @@ class Sites(unittest.TestCase):
         self.assertIn("!unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, factLead) ||", text)
         self.assertEqual(set(FRIENDLY.findall(text)), {"factLead"})
 
+    def test_read_engaged_units(self):
+        text = body("void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots, TortoiseBots::DungeonRun::Facts& f)")
+        self.assertEqual(helper_calls(text), [("lead", "judge")])
+        self.assertIn("judge != nullptr) ? judge : lead;", text)
+        self.assertEqual(text.count("ReadEngagedWith(lead, judge, factLead, "), 2)
+        with_ = body("void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
+        self.assertIn("if (!other || !other->IsAlive() || sServerFacade.IsFriendlyTo(other, factLead) ||", with_)
+        self.assertEqual(set(FRIENDLY.findall(with_)), {"factLead"})
+        # The per-member read keeps the lead (out of this key's scope); every caller names its fact lead.
+        member = body("void ReadMemberEngaged(Player* lead, Player* judge, Player* bot,")
+        self.assertEqual(member.count("ReadEngagedWith(lead, judge, lead, "), 2)
+        self.assertEqual(COMMANDS.count("ReadEngagedWith("), 5)  # the definition and four calls
+
+    def test_raid_guard_anchor(self):
+        text = body("Player* RaidGuardAnchor(Player* lead, std::vector<Player*> const& bots, "
+            "TortoiseBots::DungeonRun::Facts const& f)")
+        self.assertIn("bool const keyOn = sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead;", text)
+        self.assertIn("Player* const other = keyOn && leadCharmed ? RaidGuardFallbackAnchor(lead, bots, f, true) : nullptr;",
+            text)
+        self.assertIn("return TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(keyOn, leadCharmed, other != nullptr) ? "
+            "other : lead;", text)
+        # A dead lead: the old fallback, which skips charmed bots only with the key on.
+        self.assertIn("return RaidGuardFallbackAnchor(lead, bots, f, keyOn);", text)
+        fallback = body("static Player* RaidGuardFallbackAnchor(Player* lead, std::vector<Player*> const& bots,")
+        self.assertIn("!(skipCharmed && bot->IsCharmed());", fallback)
+        self.assertEqual(fallback.count("fit(bot)"), 4)
+
     def test_order_judge(self):
         text = body("bool HandleCommanderOrder(ChatHandler* handler, char const* args)")
         self.assertEqual(helper_calls(text), [("order.lead", "charmJudge")])
-        i = text.index("order.judge = order.lead;")
-        j = text.index("Player* const charmJudge = RunJudge(order.lead, order.bots);")
-        k = text.index("order.judge = charmJudge;")
-        self.assertLess(i, j)
-        self.assertLess(j, k)
+        # Key off, a dead lead: the first living bot, byte for byte as before.
+        self.assertIn("""    order.judge = order.lead;
+""", text)
+        self.assertIn("""    if (!order.lead->IsAlive() && !charmJudgeOn)
+        for (Player* bot : order.bots)
+            if (bot->IsAlive() && bot->IsInWorld() && bot->GetMap() == order.lead->GetMap())
+            {
+                order.judge = bot;
+                break;
+            }
+""", text)
+        # Key on, a dead lead: a fit (uncharmed) bot through RunJudge, never a charmed one.
+        self.assertIn("""    if (!order.lead->IsAlive() && charmJudgeOn)
+    {""", text)
+        self.assertIn("if (Player* const fitJudge = RunJudge(order.lead, order.bots))", text)
+        # The charmed-lead swap runs only for a living lead (a dead lead is not "charmed" in the helper's sense).
+        alive = text.index("    if (order.lead->IsAlive())\n    {\n        Player* const charmJudge = RunJudge(order.lead, "
+            "order.bots);")
+        self.assertLess(text.index("order.judge = order.lead;"), alive)
+        self.assertLess(alive, text.index("order.judge = charmJudge;"))
         # The order's target check reads the judge, so a charmed lead no longer refuses the totem as friendly.
         resolve = body("static Unit* ResolveOrderTarget(ChatHandler* handler, std::string const& intent,")
         self.assertIn("facts.friendly = sServerFacade.IsFriendlyTo(unit, order.judge);", resolve)
+        # RunJudgeFit never takes a charmed bot (the judge the key relies on).
+        fit = body("bool RunJudgeFit(Player* lead, Player* bot)")
+        self.assertIn("bot->IsCharmed())\n        return false;", fit)
 
-    def test_totem_focus_owner(self):
+    def test_totem_focus_owner_stays_the_lead(self):
         text = body("static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Unit* target,")
-        self.assertEqual(helper_calls(text), [("order.lead", "charmJudge")])
-        self.assertIn("Player* totemOwner = order.lead;", text)
-        self.assertIn("totemOwner = charmJudge;", text)
-        calls = re.findall(r"TotemFocusBot\(ai, bot, ([A-Za-z_.]+),", text)
-        self.assertEqual(calls, ["totemOwner"])  # never the raw lead
+        self.assertNotIn("RunFactJudgeReplacesLead", text)
+        self.assertEqual(re.findall(r"TotemFocusBot\(ai, bot, ([A-Za-z_.]+),", text), ["order.lead"])
 
     def test_run_judge_declared_before_use(self):
-        self.assertLess(COMMANDS.index("Player* RunJudge(Player* lead, std::vector<Player*> const& bots); //"),
-            COMMANDS.index("static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order"))
+        self.assertLess(COMMANDS.index("Player* RunJudge(Player*, std::vector<Player*> const&);"),
+            COMMANDS.index("bool HandleCommanderOrder(ChatHandler* handler, char const* args)"))
 
 
 class Key(unittest.TestCase):
