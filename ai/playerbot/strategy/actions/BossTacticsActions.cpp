@@ -1761,6 +1761,17 @@ void NoteSeekWalkoutAtStand(Player* bot)
     WalkoutNoteAtStand(it->second.state, nowMs);
 }
 
+// One read of the puller's shot position for the in-shot stall clock (DungeonRunSeekWalkoutFaceCast,
+// WalkoutNoteInShot).
+void NoteSeekWalkoutInShot(Player* bot, bool inShot)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return;
+    WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());
+}
+
 // The walk-out focus's pull cast went out now (the shot-in-flight wait, WalkoutPullShotInFlight).
 void NoteSeekWalkoutPullCast(Player* bot)
 {
@@ -2137,7 +2148,9 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // A shot that does not come: the puller has stood at its stand 6 s unshot (a blocked sight line, a cast the
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
         // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
-        if (rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs))
+        // With DungeonRunSeekWalkoutFaceCast the clock counts only the time in shot position (WalkoutStallDue).
+        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);
+        if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))
         {
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
@@ -7896,6 +7909,12 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                  (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
                   bot->IsWithinLOSInMap(task.source))))
                 NoteSeekWalkoutAtStand(bot);
+            // DungeonRunSeekWalkoutFaceCast: the no-shot clock counts only the time in shot position (range, sight,
+            // the stand's floor, not moving), so a Son that patrols out of sight under the ledge does not run it.
+            if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))
+                NoteSeekWalkoutInShot(bot, WalkoutInShotPosition(sonYd <= range, bot->IsWithinLOSInMap(task.source),
+                                                                 bot->GetPositionZ() >= kSeekWalkoutMinStandZ,
+                                                                 sServerFacade.isMoving(bot)));
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;

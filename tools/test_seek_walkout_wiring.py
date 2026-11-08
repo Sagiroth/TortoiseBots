@@ -327,8 +327,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
 
     def test_a_stalled_shot_aborts_unspent(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs)", update)
-        stall = update[update.index("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs)"):]
+        self.assertIn("rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs)", update)
+        stall = update[update.index("rules.shotStall && WalkoutNoShotAbortDue(stallDue"):]
         self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules)", stall)
         self.assertIn("WalkoutExclude(it->second.state, state.puller, nowMs)", stall)
         self.assertIn('LogSeekWalkoutAbort(ai, "no shot"', stall)

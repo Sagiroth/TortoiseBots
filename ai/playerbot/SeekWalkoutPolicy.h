@@ -869,6 +869,10 @@ namespace ai
         std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
         std::uint32_t atStandSinceMs = 0; // the puller stood at its stand since then, unshot (0: not yet)
         std::uint32_t pullCastMs = 0;     // the walk-out focus's pull cast went out then (0: not this task)
+        // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast): the time the puller has stood in shot position this
+        // task, and the previous read's time when that read was in shot position (0: it was not).
+        std::uint32_t inShotMs = 0;
+        std::uint32_t lastInShotMs = 0;
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -998,6 +1002,8 @@ namespace ai
         s.noStandSinceMs = 0;
         s.atStandSinceMs = 0;
         s.pullCastMs = 0;
+        s.inShotMs = 0;
+        s.lastInShotMs = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
@@ -1115,6 +1121,8 @@ namespace ai
         {
             s.shot = true;
             s.atStandSinceMs = 0;
+            s.inShotMs = 0;
+            s.lastInShotMs = 0;
         }
     }
 
@@ -1134,6 +1142,38 @@ namespace ai
             nowMs - s.atStandSinceMs >= kSeekWalkoutShotStallMs;
     }
 
+    // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast, walk 56: the Sons patrol under the ledge, out of sight or
+    // range for seconds, and the wall-time clock aborted pullers that had stood in shot position only part of the 6 s).
+    // In shot position: the Son in shot range and sight, the puller on the stand's floor (z >= kSeekWalkoutMinStandZ)
+    // and not moving.
+    inline bool WalkoutInShotPosition(bool inRange, bool los, bool onStandFloor, bool moving)
+    {
+        return inRange && los && onStandFloor && !moving;
+    }
+
+    // One read's step is capped, so a stalled tick (or a read after a gap) never counts more than this.
+    constexpr std::uint32_t kSeekWalkoutInShotStepMs = 250;
+
+    // One read of the puller's position: in shot position, the time since the previous read counts when that read was
+    // in shot position too (at most kSeekWalkoutInShotStepMs); out of it, nothing counts and the next in-shot read
+    // starts a new stretch. Only a running, unshot task counts.
+    inline void WalkoutNoteInShot(SeekWalkoutState& s, bool inShot, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s) || s.shot)
+            return;
+        if (inShot && s.lastInShotMs != 0)
+            s.inShotMs += std::min<std::uint32_t>(nowMs - s.lastInShotMs, kSeekWalkoutInShotStepMs);
+        s.lastInShotMs = inShot ? (nowMs == 0 ? 1 : nowMs) : 0;
+    }
+
+    // Whether the 6 s no-shot stall is due: with the in-shot clock, kSeekWalkoutShotStallMs of time in shot position;
+    // without it, WalkoutShotStalled's wall time since the arrival at the stand.
+    inline bool WalkoutStallDue(const SeekWalkoutState& s, std::uint32_t nowMs, bool inShotClock)
+    {
+        if (!inShotClock)
+            return WalkoutShotStalled(s, nowMs);
+        return WalkoutActive(s) && !s.shot && s.inShotMs >= kSeekWalkoutShotStallMs;
+    }
 
     enum class WalkoutEnd : std::uint8_t
     {

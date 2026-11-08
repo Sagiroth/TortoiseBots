@@ -68,7 +68,7 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertIn("it->second.state.pullCastMs = WorldTimer::getMSTime();", note)
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", note)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("if (rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs))",
+        self.assertIn("if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))",
                       update)
         self.assertIn("out.walkoutPullCastMs = state.pullCastMs;", update)
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
@@ -216,6 +216,30 @@ class WalkoutFaceCastWiring(unittest.TestCase):
         self.assertIn('#include "playerbot/SeekWalkoutPolicy.h"', PLAYERBOT_AI)
         # The delay reset still runs on every path.
         self.assertIn("faceTargetUpdateDelay = minimal ? sPlayerbotAIConfig.reactDelay * 10 : sPlayerbotAIConfig.reactDelay * 5;", fn)
+
+
+
+class WalkoutInShotClockWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutFaceCast (walk 56 fix 3): the no-shot clock counts only the time in shot position."""
+
+    def test_the_stand_branch_notes_the_shot_position_under_the_flag(self):
+        walk = walkout_branch()
+        note = walk.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))\n"
+                          "                NoteSeekWalkoutInShot(bot, WalkoutInShotPosition(sonYd <= range, bot->IsWithinLOSInMap(task.source),")
+        self.assertIn("bot->GetPositionZ() >= kSeekWalkoutMinStandZ,\n"
+                      "                                                                 sServerFacade.isMoving(bot)));", walk)
+        # Read on every outbound tick, before the in-shot branch can return.
+        self.assertLess(note, walk.index("const bool inFront = sServerFacade.isInFront("))
+        fn = body(ACTIONS, "void NoteSeekWalkoutInShot(Player* bot, bool inShot)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", fn)
+        self.assertIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", fn)
+        self.assertIn("WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());", fn)
+
+    def test_the_stall_reads_the_in_shot_clock_under_the_flag(self):
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);",
+                      update)
+        self.assertNotIn("WalkoutShotStalled(", update)
 
 
 if __name__ == "__main__":

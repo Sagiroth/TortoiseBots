@@ -1592,6 +1592,66 @@ static void TestWalkoutFaceTargetYields()
     CHECK(WalkoutFaceTargetYields(true, WalkoutHoldsCombat(true, true, true, false, 3000, false)));
 }
 
+
+static void TestWalkoutStallCountsOnlyInShot()
+{
+    // Named failing case: 3 s in shot position at 6 s wall time is no stall with the in-shot clock; the wall clock is.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteAtStand(s, 1000);
+    s.inShotMs = 3000;
+    CHECK(WalkoutStallDue(s, 7000, true) == false);
+    CHECK(WalkoutStallDue(s, 7000, false) == true); // the flag off keeps WalkoutShotStalled's wall time
+
+    // The spec's walk: the Son out of sight 5 s, then in sight 2 s (100 ms reads): no abort at 7 s.
+    SeekWalkoutState w;
+    WalkoutStart(w, 7, 100, 1000, 1);
+    std::uint32_t t = 1000;
+    WalkoutNoteAtStand(w, t);
+    for (; t < 6000; t += 100)
+        WalkoutNoteInShot(w, WalkoutInShotPosition(true, false, true, false), t); // out of sight
+    CHECK(w.inShotMs == 0);
+    for (; t <= 8000; t += 100)
+        WalkoutNoteInShot(w, WalkoutInShotPosition(true, true, true, false), t);
+    CHECK(w.inShotMs == 2000);
+    CHECK(!WalkoutStallDue(w, 8000, true));
+    CHECK(WalkoutStallDue(w, 8000, false)); // the old clock would have aborted it
+    // 6 s in shot position in all: stalled.
+    for (; t <= 12000; t += 100)
+        WalkoutNoteInShot(w, true, t);
+    CHECK(w.inShotMs == 6000);
+    CHECK(WalkoutStallDue(w, 12000, true));
+    // Alternating 1 s reads: each gap is capped at 250 ms, and a read after an out-of-shot read counts nothing.
+    SeekWalkoutState a;
+    WalkoutStart(a, 7, 100, 0, 1);
+    for (int i = 0; i < 12; ++i)
+        WalkoutNoteInShot(a, i % 2 == 1, 1000u * static_cast<std::uint32_t>(i + 1));
+    CHECK(a.inShotMs == 0);
+    CHECK(!WalkoutStallDue(a, 13000, true));
+    // A stalled tick counts at most the cap.
+    SeekWalkoutState g;
+    WalkoutStart(g, 7, 100, 0, 1);
+    WalkoutNoteInShot(g, true, 1000);
+    WalkoutNoteInShot(g, true, 4000);
+    CHECK(g.inShotMs == kSeekWalkoutInShotStepMs);
+    // Each input of the shot position counts.
+    CHECK(WalkoutInShotPosition(true, true, true, false));
+    CHECK(!WalkoutInShotPosition(false, true, true, false));
+    CHECK(!WalkoutInShotPosition(true, false, true, false));
+    CHECK(!WalkoutInShotPosition(true, true, false, false));
+    CHECK(!WalkoutInShotPosition(true, true, true, true)); // moving
+    // The shot clears the clock, and a new task starts it at 0.
+    WalkoutNoteShot(w);
+    CHECK(w.inShotMs == 0 && !WalkoutStallDue(w, 20000, true));
+    WalkoutNoteInShot(w, true, 20100); // shot: nothing counts
+    CHECK(w.inShotMs == 0);
+    SeekWalkoutState n = g;
+    WalkoutFinish(n, WalkoutEnd::Timeout, 30000);
+    WalkoutNoteInShot(n, true, 30100); // no task
+    WalkoutStart(n, 8, 101, 40000, 2);
+    CHECK(n.inShotMs == 0 && n.lastInShotMs == 0);
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1639,6 +1699,7 @@ int main()
     TestWalkoutEligibleNeedsCombatEngine();
     TestWalkoutFaceThenCast();
     TestWalkoutFaceTargetYields();
+    TestWalkoutStallCountsOnlyInShot();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

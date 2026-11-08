@@ -1088,7 +1088,9 @@ AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 
 # The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son
 # with an instant turn and casts in the same tick, and the bot's own per-update facing no longer turns the live, unshot
-# puller back to Hakkar. Off keeps the turn on one tick and the cast on the next (with DungeonRunSeekWalkoutFocus).
+# puller back to Hakkar; the 6 s no-shot clock counts only the time in shot position (range, sight, the stand's floor,
+# not moving). Off keeps the turn on one tick and the cast on the next (with DungeonRunSeekWalkoutFocus) and the
+# wall-time clock.
 AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0
 
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
