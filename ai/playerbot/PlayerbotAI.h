@@ -464,6 +464,7 @@ public:
     void ReInitCurrentEngine();
     void Reset(bool full = false);
     static bool IsTank(Player* player, bool inGroup = true);
+    static bool HasExplicitNonTankRole(Player* player);
     static bool IsHeal(Player* player, bool inGroup = true);
     bool IsRanged(Player* player, bool inGroup = true);
     bool IsMelee(Player* player, bool inGroup = true);
