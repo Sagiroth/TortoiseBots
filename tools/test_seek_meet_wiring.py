@@ -17,12 +17,19 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 DOC = (ROOT / "docs/play/refusal-rows.md").read_text()
+FIGHT_STATE = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 
 
 def body(text, signature):
     start = text.index(signature)
     end = text.index("\n}\n", start)
     return text[start:end]
+
+
+def inline_body(text, signature):
+    """A namespace-level inline function of a header (its body closes at the 4-space brace)."""
+    start = text.index(signature)
+    return text[start:text.index("\n    }\n", start)]
 
 
 def update():
@@ -100,9 +107,42 @@ class SeekSonMeetWiring(unittest.TestCase):
         meet = fn.index("SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs)")
         self.assertLess(meet, fn.index("if (!thirdTank && !pickupTank && !healerTaker && state.walkout)"))
         self.assertLess(meet, fn.index("if (thirdTank || pickupTank)\n"))
-        # The wait is a dead end: no other Son, pull or drag during the meet.
-        wait = fn[fn.index("Waiting: no other Son, pull or drag during the meet"):]
+        # The wait is a dead end for the walker's Son only: no other Son, pull or drag while the Son's victim is the
+        # puller, the returner or nobody.
+        wait = fn[fn.index("Waiting is for the walker's Son only"):]
+        self.assertIn("SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);", wait)
+        self.assertIn("MeetReceiverShouldWait(sonVictim ? sonVictim->GetObjectGuid().GetRawValue() : 0, meetPuller,", wait)
+        self.assertIn("LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);", wait)
         self.assertIn("task.valid = false;", wait)
+        # Anyone else's Son closes the meet as `peeled` and falls through to today's take branches.
+        self.assertIn("SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetMs)", wait)
+        self.assertIn('LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);', wait)
+        self.assertLess(wait.index("task.valid = false;"), wait.index('"peeled"'))
+        self.assertLess(wait.index('"peeled"'), wait.index("task.row = nullptr;"))
+        self.assertIn("event=wait,reason=receiver_wait", ACTIONS)
+        self.assertIn("g_seekMeetWaitLog[bot->GetObjectGuid().GetRawValue()]", ACTIONS)
+
+    def test_the_receiver_is_revalidated_every_update(self):
+        fn = update()
+        end = fn.index("if (WalkoutActive(state))")
+        meet = fn[:end]
+        self.assertIn("MeetReceiverLostWhy(!meetReceiver->GetCharmerGuid().IsEmpty() ||", meet)
+        self.assertIn("meetReceiver->HasAura(kHakkarCauseInsanitySpell),", meet)
+        self.assertIn("boss->GetVictim() == meetReceiver,", meet)
+        self.assertIn("PlayerHoldsFightSon(fightSons, row.targetEntry, meetReceiver,", meet)
+        self.assertIn("LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);", meet)
+        # The loss clears the meet, so the puller walks to the circle edge again.
+        self.assertIn("WalkoutMeetClear(it->second.state);", meet)
+
+    def test_holds_son_scans_the_fight_sons(self):
+        fn = update()
+        self.assertIn("candidate.holdsSon = PlayerHoldsFightSon(fightSons, row.targetEntry, member, 0);", fn)
+        helper = body(ACTIONS, "bool PlayerHoldsFightSon(")
+        self.assertIn("son->GetVictim() == member", helper)
+        self.assertIn("sServerFacade.IsAlive(son)", helper)
+        # The fight Sons (with the sole-candidate grid search) are built before the walk-out reads them.
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertLess(read.index("std::vector<Unit*> fightSons = out.sons;"), read.index("UpdateSeekWalkout(ai,"))
 
     def test_the_take_row_says_why(self):
         self.assertIn("seek take: %s -> %u victim=%s reason=%s meet=%d", ACTIONS)
@@ -118,7 +158,8 @@ class SeekSonMeetWiring(unittest.TestCase):
         for row in ('"son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u"',
                     '"son=%u,event=no_meet,reason=%s,tanks=%d"',
                     '"son=%u,event=taken,receiver=%s,by=%s,after_ms=%u"',
-                    '"son=%u,event=lost,reason=%s,after_ms=%u"'):
+                    '"son=%u,event=lost,reason=%s,after_ms=%u"',
+                    '"son=%u,event=wait,reason=receiver_wait,victim=%s,son_yd=%.1f,after_ms=%u"'):
             self.assertIn(row, ACTIONS)
         self.assertIn('"BossTacticsSonMeet"', ACTIONS)
         self.assertIn("LogSeekMeet(ai, meetRow.c_str());", ACTIONS)
@@ -127,6 +168,8 @@ class SeekSonMeetWiring(unittest.TestCase):
         for word in ('lost = "son_dead";', 'lost = "receiver_dead";', 'lost = "timeout";'):
             self.assertIn(word, fn)
         self.assertIn("WalkoutMeetClear(it->second.state);", fn)
+        self.assertIn('"son=%u,event=lost,reason=%s,after_ms=%u"', ACTIONS)
+        self.assertNotIn("meetTakenLogged", ACTIONS)
 
 
 class CauseInsanityRowWiring(unittest.TestCase):
@@ -144,15 +187,33 @@ class CauseInsanityRowWiring(unittest.TestCase):
         read = self.read()
         self.assertIn("nowMs - record.charmScanMs >= 500", read)
         self.assertIn("HasAura(kHakkarCauseInsanitySpell)", read)
-        self.assertIn("nowMs - record.charmSeenMs >= 1500", read)
-        self.assertIn("record.charmLogged = true;", read)
         self.assertIn("charmRowGuid = record.charmGuid;", read)
-        # The wait sits between the sighting's record and the row's emission.
-        seen = read.index("record.charmSeenMs = nowMs;")
-        wait = read.index("nowMs - record.charmSeenMs >= 1500")
+        # The 1.5 s wait and the one-row latch are the policy's (SeekCharmRowDue), pinned in its own test.
+        self.assertIn("constexpr std::uint32_t kSeekCharmWaitMs = 1500;", FIGHT_STATE)
+        self.assertIn("nowMs - record.charmSeenMs < kSeekCharmWaitMs", FIGHT_STATE)
+        self.assertIn("record.charmLogged = true;", FIGHT_STATE)
+        # The scan records the sighting, then the wait gates the row.
+        scan = read.index("SeekCharmScan(record, charmed, nowMs);")
+        due = read.index("if (SeekCharmRowDue(record, nowMs))")
         emit = read.index("charmRowGuid = record.charmGuid;")
-        self.assertLess(seen, wait)
-        self.assertLess(wait, emit)
+        self.assertLess(scan, due)
+        self.assertLess(due, emit)
+
+    def test_a_scan_with_nobody_charmed_forgets_the_last_guid(self):
+        read = self.read()
+        self.assertIn("SeekCharmScan(record, charmed, nowMs);", read)
+        edge = inline_body(FIGHT_STATE, "inline void SeekCharmScan(")
+        self.assertIn("if (charmed == 0)", edge)
+        for reset in ("record.charmGuid = 0;", "record.charmSeenMs = 0;", "record.charmLogged = false;"):
+            self.assertIn(reset, edge[:edge.index("else if")])
+
+    def test_the_scan_only_judges_members_in_the_bots_world_map_and_instance(self):
+        read = self.read()
+        scan = read[read.index("nowMs - record.charmScanMs >= 500"):read.index("SeekCharmScan(record, charmed, nowMs);")]
+        self.assertIn("!member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||", scan)
+        self.assertIn("member->GetInstanceId() != bot->GetInstanceId()", scan)
+        self.assertLess(scan.index("member->GetInstanceId() != bot->GetInstanceId()"),
+                        scan.index("member->HasAura(kHakkarCauseInsanitySpell)"))
 
     def test_the_top_is_bounded_and_leaves_the_charmed_player_out(self):
         self.assertIn("i < 5", ACTIONS)
@@ -165,7 +226,8 @@ class CauseInsanityRowWiring(unittest.TestCase):
 class RefusalDocWiring(unittest.TestCase):
     def test_every_new_word_is_documented(self):
         for word in ("dead", "charmed", "victim", "busy", "outside", "none", "son_dead", "receiver_dead",
-                     "timeout", "chase_refused", "no_taunt", "attack", "taunt"):
+                     "timeout", "chase_refused", "no_taunt", "attack", "taunt", "peeled", "receiver_charmed",
+                     "receiver_victim", "receiver_busy", "receiver_wait"):
             self.assertIn("`%s`" % word, DOC, word)
 
 

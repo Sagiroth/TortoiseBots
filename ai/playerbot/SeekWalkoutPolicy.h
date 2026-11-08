@@ -578,6 +578,29 @@ namespace ai
         return sonOnReceiver || sonToReceiverYd <= kSeekMeetTakeYd;
     }
 
+    // Whether the receiver keeps waiting for the Son: only while the Son's victim is the walk-out puller, the returner or
+    // nobody (0). A Son on anyone else (a DPS or a healer peeled it) is the take branches' business, and the meet closes
+    // as `peeled`.
+    inline bool MeetReceiverShouldWait(std::uint64_t sonVictim, std::uint64_t pullerGuid, std::uint64_t returnerGuid)
+    {
+        if (sonVictim == 0)
+            return true;
+        return (pullerGuid != 0 && sonVictim == pullerGuid) || (returnerGuid != 0 && sonVictim == returnerGuid);
+    }
+
+    // Why the receiver can no longer wait: charmed (Cause Insanity or any charm), Hakkar's victim, or holding another
+    // Son. Null when it still can. The meet closes with this code and the puller falls back to the circle-edge point.
+    inline const char* MeetReceiverLostWhy(bool charmed, bool bossVictim, bool holdsOtherSon)
+    {
+        if (charmed)
+            return "receiver_charmed";
+        if (bossVictim)
+            return "receiver_victim";
+        if (holdsOtherSon)
+            return "receiver_busy";
+        return nullptr;
+    }
+
     // Whether the meet still runs: a receiver is named and the shot landed less than kSeekMeetMaxMs ago.
     inline bool SeekMeetOpen(std::uint64_t receiver, std::uint32_t meetMs, std::uint32_t nowMs)
     {
@@ -623,11 +646,11 @@ namespace ai
         std::uint64_t returner = 0;
         std::uint32_t returnStartMs = 0;
         // The pulled Son's meet with the tank that waits at the walk's end: the receiver, the Son, when the shot landed
-        // and whether its take was logged. WalkoutFinish and WalkoutReturnDone leave them: the meet outlives `back`.
+        // and the puller that brought it. WalkoutFinish and WalkoutReturnDone leave them: the meet outlives `back`.
         std::uint64_t meetReceiver = 0;
         std::uint64_t meetSon = 0;
         std::uint32_t meetMs = 0;
-        bool meetTakenLogged = false;
+        std::uint64_t meetPuller = 0;
     };
 
     inline void WalkoutMeetClear(SeekWalkoutState& s)
@@ -635,7 +658,7 @@ namespace ai
         s.meetReceiver = 0;
         s.meetSon = 0;
         s.meetMs = 0;
-        s.meetTakenLogged = false;
+        s.meetPuller = 0;
     }
 
     inline bool WalkoutActive(const SeekWalkoutState& s)

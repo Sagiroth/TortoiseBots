@@ -59,7 +59,7 @@ class SeekSonHoldWiring(unittest.TestCase):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs, rules)", update)
         read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
-        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out)", read)
+        self.assertIn("UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, fightSons, out)", read)
 
 
 class SeekSonHoldReview(unittest.TestCase):
@@ -170,13 +170,13 @@ class SeekSonRowReview(unittest.TestCase):
 
     def test_every_son_id_is_the_guid_low(self):
         # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
-        # a raw guid is a different number. Every row with a `son=` id, the meet's four events included.
+        # a raw guid is a different number. Exactly 7 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
+        # no_meet, taken, lost and wait events; a new one must be counted here, in the exact guid form.
         ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
-        self.assertGreaterEqual(len(ids), 2)
+        self.assertEqual(len(ids), 7)
         for match in ids:
             call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
-            self.assertIn("ObjectGuid(", call)
-            self.assertIn(".GetCounter()", call)
+            self.assertIn("ObjectGuid(guid).GetCounter()", call)
 
     def test_one_release_row_per_hold_record(self):
         tick = guard_body(ACTIONS, "void TickSeekHoldClock(")

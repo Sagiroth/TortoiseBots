@@ -512,6 +512,30 @@ int main()
         CHECK(SeekDeathCandidates({}, {1, 2}, {}).empty());
     }
 
+    // Cause Insanity's edge: a new charmed guid starts its clock and its row is due once, 1.5 s later. A scan that finds
+    // nobody charmed forgets the guid, so the same player charmed again after a gap logs a new row.
+    {
+        SeekCycleRecord record;
+        SeekCharmScan(record, 0, 1000);
+        CHECK(record.charmGuid == 0 && !SeekCharmRowDue(record, 9000));
+        SeekCharmScan(record, 42, 2000);
+        CHECK(record.charmGuid == 42 && record.charmSeenMs == 2000 && !record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 3499)); // not before the 1.5 s wait
+        CHECK(SeekCharmRowDue(record, 3500));
+        CHECK(!SeekCharmRowDue(record, 3600)); // one row per charm
+        SeekCharmScan(record, 42, 4000);       // still charmed: the same charm, no new clock
+        CHECK(record.charmSeenMs == 2000 && record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 9000));
+        SeekCharmScan(record, 0, 5000);        // the gap: nobody charmed
+        CHECK(record.charmGuid == 0 && record.charmSeenMs == 0 && !record.charmLogged);
+        SeekCharmScan(record, 42, 8000);       // the same player charmed again
+        CHECK(record.charmGuid == 42 && record.charmSeenMs == 8000 && !record.charmLogged);
+        CHECK(!SeekCharmRowDue(record, 9499));
+        CHECK(SeekCharmRowDue(record, 9500));  // a new row
+        SeekCharmScan(record, 43, 10000);      // another player charmed with no gap: a new clock too
+        CHECK(record.charmGuid == 43 && record.charmSeenMs == 10000 && !record.charmLogged);
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

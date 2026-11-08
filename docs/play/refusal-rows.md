@@ -151,20 +151,38 @@ ref survives line drift.
 
 ### The pulled Son's meet (event `BossTacticsSonMeet`)
 
-One row per event per meet, from `UpdateSeekWalkout` when `DungeonRunSeekSonMeet` and a `seek_pull` row are live.
+One row per event per meet (the wait row is throttled to one per receiver and 5 s), from `UpdateSeekWalkout` and the
+receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live.
 
 | # | Row | Row text / info1 shape | Emit | Reason today | This branch |
 | ---: | :--- | :--- | :--- | :--- | :--- |
 | 43a | meet | `son=%u,event=meet,receiver=<name>,tank_idx=%d,receiver_yd=%.1f,due_in=%u` | UpdateSeekWalkout | not a refusal (a receiver was picked) | document |
 | 43b | no meet | `son=%u,event=no_meet,reason=<code>:<n>\|...,tanks=%d` | UpdateSeekWalkout | no (no tank could wait, and why) | added |
 | 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
-| 43d | lost | `son=%u,event=lost,reason=<son_dead\|receiver_dead\|timeout>,after_ms=%u` | UpdateSeekWalkout | yes: the lost word | added |
+| 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
+| 43e | wait | `son=%u,event=wait,reason=receiver_wait,victim=<name\|none>,son_yd=%.1f,after_ms=%u` | FindBossSeekTank | yes: the receiver took no other Son this tick, it waits for the walker's | added |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
-index 0, never waits): `dead` (not alive or in the world), `charmed`, `victim` (the boss's current victim), `busy` (a
-living Son already has it as its victim) and `outside` (it stands outside the tanks' circle). `none` means no tank was
-rejected other than the main tank. The lost row's words are `son_dead`, `receiver_dead` and `timeout` (20 s after the
-shot). `taken` logs once per meet, then the meet is cleared.
+index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`
+already drops dead tanks), `charmed`, `victim` (the boss's current victim), `busy` (a living Son already has it as its
+victim, the fight's whole Son set) and `outside` (it stands outside the tanks' circle). `none` means no tank was
+rejected other than the main tank. `taken` logs once per meet, then the meet is cleared.
+
+The lost row's words, read per reason (the meet is cleared at the first one that applies):
+
+| Word | Meaning |
+| :--- | :--- |
+| `son_dead` | The meet's Son is dead or gone. This includes a Son burned before any tank took it (the forced burn kills it on arrival). |
+| `receiver_dead` | The receiver died or left the world. |
+| `receiver_charmed` | The receiver is charmed (Cause Insanity 24327 or any charm). The puller walks to the circle edge again. |
+| `receiver_victim` | The receiver became Hakkar's victim. The puller walks to the circle edge again. |
+| `receiver_busy` | The receiver already holds another Son (and the meet Son is not on a tank yet). The puller walks to the circle edge again. |
+| `peeled` | The receiver was waiting and the Son's victim became someone other than the puller, the returner or nobody (a damage dealer or a healer peeled it). The normal take branches handle the Son. |
+| `timeout` | 20 s after the shot with no take. |
+
+The wait row's `receiver_wait` is the receiver's refusal to take another Son, pull or drag while the Son's victim is the
+puller, the returner or nobody (`MeetReceiverShouldWait`); the receiver itself runs its normal tank AI, and the puller
+follows its live position.
 
 ### Cause Insanity (event `BossTacticsCharm`)
 
@@ -244,7 +262,10 @@ branch:
 - `tools/test_seek_walkout_wiring.py` pins the glue: the scan's tally is passed to the pick, the no-puller row passes the
   text as info2 with its info1 literal unchanged, the pick adds no game-state read (its member counters, the post-loop
   `WalkoutRejectOf` pass and the `no_path` add included), and `ForgetSeekWalkout`'s two callers name `repull` and `evade`.
-- `tools/test_seek_meet_wiring.py` pins the meet's rows (`BossTacticsSonMeet`'s four events and the no-meet counts), the
-  meet's flag and receiver branch, the take row's `reason=`/`meet=`, and the Cause Insanity row's 500 ms scan and 1500 ms
-  wait; `tools/test_seek_walkout_policy.cpp` pins `MeetRefusalWhy`, `PickMeetReceiver` and `MeetRefusalCounts`, and
-  `tools/test_seek_aura_policy.cpp` pins all eight `SeekTakeReasonWord` inputs.
+- `tools/test_seek_meet_wiring.py` pins the meet's rows (`BossTacticsSonMeet`'s five events and the no-meet counts), the
+  meet's flag, receiver branch, wait/`peeled` close and per-update revalidation, the take row's `reason=`/`meet=`, and
+  the Cause Insanity row's 500 ms scan (same world, map and instance only) and 1500 ms wait;
+  `tools/test_seek_walkout_policy.cpp` pins `MeetRefusalWhy`, `PickMeetReceiver`, `MeetRefusalCounts`,
+  `MeetReceiverShouldWait` and `MeetReceiverLostWhy`; `tools/test_seek_fight_state_policy.cpp` pins the charm edge
+  (the same player charmed twice with a gap logs two rows); `tools/test_seek_aura_policy.cpp` pins all eight
+  `SeekTakeReasonWord` inputs.

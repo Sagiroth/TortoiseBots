@@ -380,13 +380,39 @@ static void TestPulledSonMeetsReceiver()
     s.meetReceiver = 33;
     s.meetSon = 22;
     s.meetMs = 500;
-    s.meetTakenLogged = true;
+    s.meetPuller = 11;
     WalkoutFinish(s, WalkoutEnd::Back, 600);
-    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetTakenLogged);
+    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetPuller == 11);
     WalkoutReturnDone(s);
-    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetTakenLogged);
+    CHECK(s.meetReceiver == 33 && s.meetSon == 22 && s.meetMs == 500 && s.meetPuller == 11);
     WalkoutMeetClear(s);
-    CHECK(s.meetReceiver == 0 && s.meetSon == 0 && s.meetMs == 0 && !s.meetTakenLogged);
+    CHECK(s.meetReceiver == 0 && s.meetSon == 0 && s.meetMs == 0 && s.meetPuller == 0);
+}
+
+// The receiver waits only while the Son's victim is the walk-out puller, the returner or nobody; a Son on anyone else
+// (a DPS or a healer peeled it) ends the wait and the meet closes as `peeled`.
+static void TestMeetReceiverWaitsOnlyForTheWalker()
+{
+    const std::uint64_t puller = 11, returner = 12, dps = 77, healer = 88;
+    CHECK(MeetReceiverShouldWait(puller, puller, 0));    // the puller has it: wait
+    CHECK(MeetReceiverShouldWait(returner, 0, returner)); // the returner has it: wait
+    CHECK(MeetReceiverShouldWait(0, puller, returner));   // nobody has it yet: wait
+    CHECK(MeetReceiverShouldWait(0, 0, 0));
+    CHECK(!MeetReceiverShouldWait(dps, puller, 0));       // another DPS peeled it: no wait
+    CHECK(!MeetReceiverShouldWait(healer, puller, returner));
+    CHECK(!MeetReceiverShouldWait(dps, 0, 0));            // no walker named: a victim is nobody's walker
+}
+
+// The receiver is revalidated every update: charmed, Hakkar's victim, or already holding another Son ends the meet.
+static void TestMeetReceiverLostWhy()
+{
+    CHECK(MeetReceiverLostWhy(false, false, false) == nullptr);
+    CHECK(std::string(MeetReceiverLostWhy(true, false, false)) == "receiver_charmed");
+    CHECK(std::string(MeetReceiverLostWhy(false, true, false)) == "receiver_victim");
+    CHECK(std::string(MeetReceiverLostWhy(false, false, true)) == "receiver_busy");
+    // The first failing test wins: charmed, then victim, then busy.
+    CHECK(std::string(MeetReceiverLostWhy(true, true, true)) == "receiver_charmed");
+    CHECK(std::string(MeetReceiverLostWhy(false, true, true)) == "receiver_victim");
 }
 
 static void TestShotSpellPerClass()
@@ -1216,6 +1242,8 @@ int main()
     TestEndsAndLimits();
     TestShotAndBackPoints();
     TestPulledSonMeetsReceiver();
+    TestMeetReceiverWaitsOnlyForTheWalker();
+    TestMeetReceiverLostWhy();
     TestShotSpellPerClass();
     TestPullerUsable();
     TestCastFailAbortUnspends();

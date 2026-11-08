@@ -14,7 +14,7 @@
 --   (SeekLateEngagedBurnWithin), and the forced burn also marks the gather ready (SeekGatherReady), so the hold
 --   percent and the 8 s gather wait drop out. No C++ change: the row's existing kill lead is the whole fix.
 --
---   Documented limit: the forced burn skips the 4 yd gather, so the cloud lands where the waiting off-tank holds the
+--   Documented limit: the forced burn skips the 4 yd gather, so the cloud lands where the receiving off-tank takes the
 --   Son, inside the tanks' circle; the walk measures raid_in_cloud as its guardrail.
 --
 -- Idempotent: the DELETE names one exact (map, boss, kind, target, spell, health band) key, and this file's own row is

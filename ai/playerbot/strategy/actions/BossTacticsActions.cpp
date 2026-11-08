@@ -1033,6 +1033,8 @@ std::unordered_map<std::uint64_t, std::uint32_t> g_seekLog;
 // The pull rows' own throttle, so a pull that keeps walking does not swallow the seek rows' 5 s window.
 std::mutex g_seekPullLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
+// The meet receiver's wait row has its own throttle (the take row on the same tank must not lose its window to it).
+std::unordered_map<std::uint64_t, std::uint32_t> g_seekMeetWaitLog;
 // The walk-out task, one per map instance (Hakkar's fight), shared by every bot's read; the active count lets the
 // anchor's exemption check skip the lock while no task runs.
 const std::uint32_t kHakkarCauseInsanitySpell = 24327;
@@ -1083,6 +1085,8 @@ void SweepSeekRecords(std::uint32_t nowMs)
         std::lock_guard<std::mutex> pullLock(g_seekPullLogMutex);
         for (auto it = g_seekPullLog.begin(); it != g_seekPullLog.end();)
             it = nowMs - it->second > kSeekRecordIdleMs ? g_seekPullLog.erase(it) : std::next(it);
+        for (auto it = g_seekMeetWaitLog.begin(); it != g_seekMeetWaitLog.end();)
+            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekMeetWaitLog.erase(it) : std::next(it);
     }
 }
 
@@ -1436,6 +1440,38 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bo
 void LogSeekMeet(PlayerbotAI* ai, const char* info1)
 {
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSonMeet", info1, "");
+}
+
+// The meet's end without a take: `reason` is one of son_dead, receiver_dead, receiver_charmed, receiver_victim,
+// receiver_busy, peeled, timeout (docs/play/refusal-rows.md), `afterMs` the time since the shot.
+void LogSeekMeetLost(PlayerbotAI* ai, std::uint64_t guid, const char* reason, std::uint32_t afterMs)
+{
+    char info1[192];
+    snprintf(info1, sizeof(info1), "son=%u,event=lost,reason=%s,after_ms=%u", ObjectGuid(guid).GetCounter(), reason,
+             afterMs);
+    LogSeekMeet(ai, info1);
+}
+
+// The receiver's wait row (event=wait, reason=receiver_wait): one per receiver and 5 s, on the meet wait's own throttle.
+// `victim` is the Son's victim (the puller, the returner or none).
+void LogSeekMeetWait(PlayerbotAI* ai, Player* bot, Unit* son, Unit* victim, std::uint32_t meetMs)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        std::uint32_t& last = g_seekMeetWaitLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kSeekLogGapMs)
+            return;
+        last = nowMs;
+    }
+    const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+    char info1[192];
+    snprintf(info1, sizeof(info1), "son=%u,event=wait,reason=receiver_wait,victim=%s,son_yd=%.1f,after_ms=%u",
+             ObjectGuid(guid).GetCounter(), victim ? victim->GetName() : "none", bot->GetDistance(son),
+             nowMs - meetMs);
+    LogSeekMeet(ai, info1);
 }
 
 // The ranged puller's shot from inside a live boss anchor at a Son outside it: the pull rows' throttle, as the skip.
@@ -1914,8 +1950,25 @@ bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)
         GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry) != nullptr;
 }
 
+// Whether `member` is the victim of a living Son of the fight other than `exceptSon` (0: any). The Sons are the fight's
+// whole set (the group's attackers, the source walk's Sons and the sole-candidate grid search).
+bool PlayerHoldsFightSon(const std::vector<Unit*>& fightSons, std::uint32_t sonEntry, Player* member,
+                         std::uint64_t exceptSon)
+{
+    if (!member)
+        return false;
+    for (Unit* son : fightSons)
+    {
+        if (son && son->GetEntry() == sonEntry && sServerFacade.IsAlive(son) && son->GetVictim() == member &&
+            (exceptSon == 0 || son->GetObjectGuid().GetRawValue() != exceptSon))
+            return true;
+    }
+    return false;
+}
+
 void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss, std::uint32_t cycleNo,
-                       std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, SeekFight& out)
+                       std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, const std::vector<Unit*>& fightSons,
+                       SeekFight& out)
 {
     const std::uint32_t instanceId = bot->GetInstanceId();
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
@@ -1973,8 +2026,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     }
     if (state.meetReceiver != 0)
     {
-        // The meet ends when the Son dies or leaves, the receiver dies or leaves, the Son's victim is any player tank
-        // (its take, logged once), or the 20 s clock runs out. Every read checks it, whether a task runs or not.
+        // The meet ends when the Son dies or leaves, the receiver dies or leaves, the receiver can no longer wait
+        // (charmed, Hakkar's victim, or holding another Son), the Son's victim is any player tank (its take, logged
+        // once), or the 20 s clock runs out. Every read checks it, whether a task runs or not. After a loss the puller
+        // walks to the circle edge again (no open meet).
         Creature* const meetSon = state.meetSon ? map->GetCreature(ObjectGuid(state.meetSon)) : nullptr;
         Player* const meetReceiver = map->GetPlayer(ObjectGuid(state.meetReceiver));
         const char* lost = nullptr;
@@ -1986,10 +2041,19 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         else
         {
             Player* const victim = dynamic_cast<Player*>(meetSon->GetVictim());
-            if (!state.meetTakenLogged && victim && PlayerbotAI::IsTank(victim))
-                takenBy = victim;
-            else if (!SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs))
-                lost = "timeout";
+            const bool sonOnTank = victim && PlayerbotAI::IsTank(victim);
+            lost = MeetReceiverLostWhy(!meetReceiver->GetCharmerGuid().IsEmpty() ||
+                                           meetReceiver->HasAura(kHakkarCauseInsanitySpell),
+                                       boss->GetVictim() == meetReceiver,
+                                       !sonOnTank && PlayerHoldsFightSon(fightSons, row.targetEntry, meetReceiver,
+                                                                         state.meetSon));
+            if (!lost)
+            {
+                if (sonOnTank)
+                    takenBy = victim;
+                else if (!SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs))
+                    lost = "timeout";
+            }
         }
         if (lost || takenBy)
         {
@@ -1998,25 +2062,20 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 auto const it = g_walkouts.find(instanceId);
                 if (it != g_walkouts.end() && it->second.state.meetReceiver == state.meetReceiver &&
                     it->second.state.meetMs == state.meetMs)
-                {
-                    if (takenBy)
-                        it->second.state.meetTakenLogged = true;
                     WalkoutMeetClear(it->second.state);
-                }
             }
-            char info1[192];
+            const std::uint64_t guid = state.meetSon;
             if (takenBy)
+            {
+                char info1[192];
                 snprintf(info1, sizeof(info1), "son=%u,event=taken,receiver=%s,by=%s,after_ms=%u",
-                         ObjectGuid(state.meetSon).GetCounter(), meetReceiver ? meetReceiver->GetName() : "none",
+                         ObjectGuid(guid).GetCounter(), meetReceiver ? meetReceiver->GetName() : "none",
                          takenBy->GetName(), nowMs - state.meetMs);
+                LogSeekMeet(ai, info1);
+            }
             else
-                snprintf(info1, sizeof(info1), "son=%u,event=lost,reason=%s,after_ms=%u",
-                         ObjectGuid(state.meetSon).GetCounter(), lost, nowMs - state.meetMs);
-            LogSeekMeet(ai, info1);
-            state.meetReceiver = 0;
-            state.meetSon = 0;
-            state.meetMs = 0;
-            state.meetTakenLogged = false;
+                LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);
+            WalkoutMeetClear(state);
         }
     }
     if (WalkoutActive(state))
@@ -2117,47 +2176,35 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         candidate.alive = member && member->IsInWorld() && sServerFacade.IsAlive(member);
                         candidate.charmed = member && !member->GetCharmerGuid().IsEmpty();
                         candidate.bossVictim = member && boss->GetVictim() == member;
-                        candidate.holdsSon = false;
-                        if (member)
-                        {
-                            for (Unit* fightSon : out.sons)
-                            {
-                                if (fightSon && fightSon->GetEntry() == row.targetEntry &&
-                                    sServerFacade.IsAlive(fightSon) && fightSon->GetVictim() == member)
-                                {
-                                    candidate.holdsSon = true;
-                                    break;
-                                }
-                            }
-                        }
+                        candidate.holdsSon = PlayerHoldsFightSon(fightSons, row.targetEntry, member, 0);
                         candidate.inside = member && InsideAnchor(tank, member->GetPositionX(),
                                                                   member->GetPositionY());
                         tanks.push_back(candidate);
                     }
                     int const pick = PickMeetReceiver(tanks);
-                    std::uint64_t const meetSonGuid = it->second.state.son;
+                    std::uint64_t const guid = it->second.state.son;
                     char info1[224];
                     if (pick >= 0 && static_cast<std::size_t>(pick) < meetRoles.tanks.size() &&
                         meetRoles.tanks[static_cast<std::size_t>(pick)])
                     {
                         Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
                         it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
-                        it->second.state.meetSon = meetSonGuid;
+                        it->second.state.meetSon = guid;
                         it->second.state.meetMs = nowMs;
-                        it->second.state.meetTakenLogged = false;
+                        it->second.state.meetPuller = it->second.state.puller;
                         state.meetReceiver = it->second.state.meetReceiver;
-                        state.meetSon = meetSonGuid;
+                        state.meetSon = guid;
                         state.meetMs = nowMs;
-                        state.meetTakenLogged = false;
+                        state.meetPuller = it->second.state.puller;
                         snprintf(info1, sizeof(info1),
                                  "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u",
-                                 ObjectGuid(meetSonGuid).GetCounter(), receiver->GetName(), pick,
+                                 ObjectGuid(guid).GetCounter(), receiver->GetName(), pick,
                                  puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000);
                     }
                     else
                     {
                         snprintf(info1, sizeof(info1), "son=%u,event=no_meet,reason=%s,tanks=%d",
-                                 ObjectGuid(meetSonGuid).GetCounter(), MeetRefusalCounts(tanks).c_str(),
+                                 ObjectGuid(guid).GetCounter(), MeetRefusalCounts(tanks).c_str(),
                                  static_cast<int>(tanks.size()));
                     }
                     meetRow = info1;
@@ -2535,6 +2582,32 @@ bool SeekMeetSnapshot(std::uint32_t instanceId, std::uint64_t& receiver, std::ui
     son = it->second.state.meetSon;
     meetMs = it->second.state.meetMs;
     return receiver != 0;
+}
+
+// The walkers of the open meet (g_walkoutMutex): the puller that brought the Son and the returner (0: none). The
+// receiver waits only while the Son's victim is one of them or nobody (MeetReceiverShouldWait).
+void SeekMeetWalkers(std::uint32_t instanceId, std::uint64_t& puller, std::uint64_t& returner)
+{
+    puller = 0;
+    returner = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return;
+    puller = it->second.state.meetPuller;
+    returner = it->second.state.returner;
+}
+
+// Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
+// follows. `meetMs` tells this meet from a later one.
+bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint32_t meetMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end() || it->second.state.meetReceiver != receiver || it->second.state.meetMs != meetMs)
+        return false;
+    WalkoutMeetClear(it->second.state);
+    return true;
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -2922,17 +2995,13 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             }
         }
     }
-    // The walk-out pull, when nothing else can bring a Son (UpdateSeekWalkout).
-    // Fewer than two tanks leave nobody to take the Son it brings.
-    const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
-        LiveBossAnchorRow(ai, bot);
-    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out);
     // A Son camped on a non-tank: the first off-tank's own take once the non-tank has had it for kSeekHealerTakeMs,
     // whatever the third off-tank does (it had those seconds). The fight record times it (the take must not
-    // flip with every read, and the healer gets its 8 s first). The Sons it judges are the fight-wide set, never
-    // fight.units alone: under "focus rti targets" that list collapses to the raid mark, so a Son on a healer would
-    // never be seen. They are the group's attackers and the source walk's Sons (out.sons) plus the "sole kill
-    // candidates" grid search of the entry (the living Sons that fight within kHoldKillRangeYd of the bot).
+    // flip with every read, and the healer gets its 8 s first). The Sons it judges (and the walk-out's meet judges
+    // for a tank holding a Son) are the fight-wide set, never fight.units alone: under "focus rti targets" that list
+    // collapses to the raid mark, so a Son on a healer would never be seen. They are the group's attackers and the
+    // source walk's Sons (out.sons) plus the "sole kill candidates" grid search of the entry (the living Sons that
+    // fight within kHoldKillRangeYd of the bot).
     std::vector<Unit*> fightSons = out.sons;
     for (const SoleCandidate& candidate : SoleKillCandidates(ai, row->targetEntry))
     {
@@ -2941,6 +3010,11 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             std::find(fightSons.begin(), fightSons.end(), static_cast<Unit*>(creature)) == fightSons.end())
             fightSons.push_back(creature);
     }
+    // The walk-out pull, when nothing else can bring a Son (UpdateSeekWalkout).
+    // Fewer than two tanks leave nobody to take the Son it brings.
+    const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
+        LiveBossAnchorRow(ai, bot);
+    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, fightSons, out);
     std::vector<SeekSonSeen> seenSons;
     seenSons.reserve(fightSons.size());
     for (Unit* unit : fightSons)
@@ -3039,8 +3113,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.nonTankSince = record.healerHeldSince;
         TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);
         // Cause Insanity's successor: one group-wide aura scan per fight per 500 ms (the lock makes one reading bot the
-        // scanner). A new charmed guid starts its 1.5 s clock; Hakkar has turned to his next victim by then (median
-        // 1.05 s after the cast).
+        // scanner), over the members in this bot's world, map and instance only. A new charmed guid starts its 1.5 s
+        // clock (Hakkar has turned to his next victim by then, median 1.05 s after the cast); a scan that finds nobody
+        // charmed forgets the last guid, so the same player charmed again logs a new row (SeekCharmScan).
         if (nowMs - record.charmScanMs >= 500)
         {
             record.charmScanMs = nowMs;
@@ -3049,25 +3124,20 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             {
                 for (Player* member : LiveGroupMembers(group))
                 {
-                    if (member && member->HasAura(kHakkarCauseInsanitySpell))
+                    if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+                        member->GetInstanceId() != bot->GetInstanceId())
+                        continue;
+                    if (member->HasAura(kHakkarCauseInsanitySpell))
                     {
                         charmed = member->GetObjectGuid().GetRawValue();
                         break;
                     }
                 }
             }
-            if (charmed != 0 && charmed != record.charmGuid)
-            {
-                record.charmGuid = charmed;
-                record.charmSeenMs = nowMs;
-                record.charmLogged = false;
-            }
+            SeekCharmScan(record, charmed, nowMs);
         }
-        if (record.charmGuid != 0 && !record.charmLogged && nowMs - record.charmSeenMs >= 1500)
-        {
-            record.charmLogged = true;
+        if (SeekCharmRowDue(record, nowMs))
             charmRowGuid = record.charmGuid;
-        }
     }
     // The hold and death rows were built under the lock; logEvent runs without it.
     for (const SeekLogRow& row : seekRows)
@@ -7256,8 +7326,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
-    // The pulled Son's meet: this tank waits where the walker is heading and takes the Son on arrival, before any other
-    // Son, pull or drag takes its tick.
+    // The pulled Son's meet: this tank keeps its normal tank AI, the puller follows its live position, and it takes the
+    // Son on arrival, before any other Son, pull or drag takes its tick.
     if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), state.row) &&
         SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))
     {
@@ -7291,9 +7361,24 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     task.meet = true;
                     return task;
                 }
-                // Waiting: no other Son, pull or drag during the meet, so the tank stands where the puller is walking.
-                task.valid = false;
-                return task;
+                // Waiting is for the walker's Son only: while its victim is the puller, the returner or nobody, no other
+                // Son, pull or drag takes this tick (the tank is not moved off by a task; the puller follows it). A Son
+                // on anyone else (a DPS or a healer peeled it) closes the meet as `peeled` and goes to today's take
+                // branches.
+                std::uint64_t meetPuller = 0;
+                std::uint64_t meetReturner = 0;
+                SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);
+                Unit* const sonVictim = son->GetVictim();
+                if (MeetReceiverShouldWait(sonVictim ? sonVictim->GetObjectGuid().GetRawValue() : 0, meetPuller,
+                                           meetReturner))
+                {
+                    LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);
+                    task.valid = false;
+                    return task;
+                }
+                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetMs))
+                    LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);
+                task.row = nullptr;
             }
         }
     }
