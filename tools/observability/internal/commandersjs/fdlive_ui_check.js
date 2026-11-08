@@ -21,7 +21,7 @@ vm.createContext(ctx);
 vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3, FD_LIVE_TILES = 6, FD_LIVE_FETCH_MS = 10000, FD_LIVE_TRACK_EDGE = 4;", grab("esc"), grab("fdLiveClock"), grab("fdLiveWinLabel"), grab("fdLiveHpOf"), grab("fdLiveNumsText"), grab("fdLiveTileHtml"), grab("fdLiveTilePatch"), grab("fdLiveGridSync"),
   grab("fdLiveFiledRow"), grab("fdFightHash"), grab("fdLiveTimelineHtml"), grab("fdLiveHandoff"), grab("fdLiveReconcile"), grab("fdLiveResync"), grab("fdLiveDrop"),
   grab("raidLiveGroups"), grab("raidLiveKeys"), grab("dgnLiveGroups"), grab("dgnLiveKeys"), grab("cmdLiveNames"), grab("fdLiveDebugKey"),
-  grab("fdLiveCanon"), grab("fdLiveState"), grab("fdLiveStatesFor"), grab("fdLiveJson"), grab("fdLiveCatchUp"), grab("fdLiveHandoffAll"), grab("fdLiveTileOf")].join("\n"), ctx);
+  grab("fdLiveCanon"), grab("fdLiveState"), grab("fdLiveStatesFor"), grab("fdLiveJson"), grab("fdLiveCatchUp"), grab("fdLiveHandoffAll"), grab("fdLiveTileOf"), grab("fdAuCarry")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the tile escapes everything the game server names and links to the live view of its key
@@ -198,7 +198,7 @@ assert.deepStrictEqual(Array.from(tileU.events), ["needs a bound commander"], "t
   assert.strictEqual(st.cmd, "Gbmage");
   assert.deepStrictEqual(Array.from(run("fdLiveStatesFor('Gbmage')")).map((x) => x.commander), ["raid#7"], "the commander's frames reach the alias view");
   FdLive.applyEventsFrame(st, { key: KEY, from: 0, cur: 1, events: [{ k: "cast", t: 1 }], fight: { start_ms: 1000, fight_ms: 10 } }, 5);
-  const fd = { sel: "live", userSel: false, liveKey: KEY, death: null };
+  const fd = { sel: "live", userSel: false, liveKey: KEY, death: null, au: { key: "live", sid: 24321, marker: null, userSid: true, userMark: true } };
   ctx.cmdFd = { "raid#7": fd };
   st.wantCatchUp = true; // a resync
   run("fdLiveResync()");
@@ -214,6 +214,7 @@ assert.deepStrictEqual(Array.from(tileU.events), ["needs a bound commander"], "t
   await settle();
   assert.strictEqual(fd.sel, KEY, "the alias view handed over to the filed fight");
   assert.ok(fd.userSel && fd.liveKey === null, "and forgot its live key");
+  assert.strictEqual(fd.au.key, KEY, "the Auras pick moved to the filed fight's key with the view");
   assert.ok(!ctx.fdLive["raid#7"], "the live state is dropped");
   assert.ok(calls.includes("load") && calls.includes("render") && calls.includes("hash"));
   // (N2) with the live key gone a resync asks nothing

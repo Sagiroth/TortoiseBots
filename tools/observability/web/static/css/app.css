@@ -3289,6 +3289,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .fd-raid,
 .cmd-card.fd-on .fd-checks,
 .cmd-card.fd-on .fd-timeline,
+.cmd-card.fd-on .fd-auras,
 .cmd-card.fd-on .fd-t,
 .cmd-card.fd-on .cmd-mapbox {
   min-width: 0;
@@ -3298,6 +3299,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   background: var(--bg-card);
 }
 .cmd-card.fd-on .fd-timeline { padding-top: 10px; }
+.cmd-card.fd-on .fd-auras { padding-top: 10px; }
 
 /* The page's own tiles and boxes belong to Live; every card in the debugger drops them. */
 #tab-commanders.cmd-debug-only > .kpi-row,
@@ -3347,7 +3349,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
@@ -3452,6 +3454,25 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-death { cursor: pointer; }
 
 .fd-timeline { min-width: 0; }
+/* The Auras panel: one row per bot (name | uptime | bar); the boss-cast lines cross every row from one overlay. */
+.fd-auras { min-width: 0; }
+.fd-aubody, .fd-auslot, .fd-aurest { min-width: 0; }
+.fd-au-raid { font-weight: 600; }
+.fd-auctl { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.fd-au-note { margin: 0 0 6px; }
+.fd-au-strip { position: relative; margin-bottom: 8px; }
+.fd-au-row { display: grid; grid-template-columns: 140px 48px 1fr; gap: 8px; align-items: center; min-height: 18px; }
+.fd-au-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-au-pct { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-au-bar { position: relative; display: block; height: 10px; background: var(--border-color); border-radius: 2px; }
+.fd-au-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-yellow); border-radius: 2px; }
+.fd-au-on { position: absolute; top: 0; bottom: 0; min-width: 1px; background: var(--accent-yellow); }
+.fd-au-death { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-red); }
+.fd-au-marks { position: absolute; top: 0; bottom: 0; left: 204px; right: 0; pointer-events: none; }
+.fd-au-mark { position: absolute; top: 0; bottom: 0; width: 6px; margin-left: -3px; cursor: pointer; pointer-events: auto; background: linear-gradient(var(--text-muted), var(--text-muted)) center / 1px 100% no-repeat; }
+.fd-au-table { margin: 6px 0; }
+.fd-au-table caption { text-align: left; color: var(--text-muted); font-size: 0.72rem; padding-bottom: 2px; }
+.fd-au-focus { margin: 6px 0 0; color: var(--text-muted); font-size: 0.78rem; }
 .fd-tl { position: relative; height: 64px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
 .fd-tick { position: absolute; top: 0; bottom: 0; padding: 2px 0 0 3px; border-left: 1px solid var(--border-color); font-size: 0.6rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .fd-hit { position: absolute; bottom: 0; width: 3px; background: color-mix(in srgb, var(--fd-fail) 70%, transparent); pointer-events: none; }

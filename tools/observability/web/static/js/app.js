@@ -6605,6 +6605,11 @@
     fdLivePaintBar(card, fd, st);
     const lf = st.key ? FdLive.fight(st, bind, Date.now()) : null;
     fdSet(card.querySelector('.fd-tl'), fdLiveTimelineHtml(st, lf));
+    fdAurasSync(card, fd, 'live', lf, fdAuLiveOpts(st)); // only the panel's body is repainted, not the card
+  }
+
+  function fdAuLiveOpts(st) {
+    return { names: st ? st.auraNames : null, unbound: !!st && st.cmd === null };
   }
 
   // The hand-over: the fight a live view shows was filed. Its view becomes the filed fight's, in place (the existing detail
@@ -6617,6 +6622,7 @@
     const kept = !!(fd && fd.liveKey && fd.liveKey === summary.key && !fd.userSel);
     if (!(st && FdLive.handoff(st, summary)) && !kept && !(fd && fd.sel === 'live' && fd.liveKey === summary.key)) return;
     if (fd && (fd.sel === 'live' || kept)) {
+      fdAuCarry(fd, 'live', summary.key);
       fd.sel = summary.key;
       fd.userSel = true;
       fd.death = null;
@@ -8591,6 +8597,7 @@
           </div>
           <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
           <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+          <section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
         </div>
         <p class="fd-nofight" hidden></p>
         <section class="fd-bosses" aria-label="Boss abilities" hidden><div class="fd-bosslist"></div></section>
@@ -8724,6 +8731,18 @@
         const w = Number(e.target.value);
         fd.liveWin = FdLive.WINDOWS.indexOf(w) >= 0 ? w : FdLive.DEFAULT_WINDOW;
         if (fdLive[key]) fdLivePaintBar(card, fd, fdLive[key]);
+        return;
+      }
+      if (e.target && e.target.matches && e.target.matches('[data-fd-ausid], [data-fd-aumark]')) {
+        // The Auras panel's two picks: the aura and the marker. A pick the reader made stays; the rest follows the fight.
+        if (e.target.matches('[data-fd-ausid]')) {
+          const sid = Number(e.target.value);
+          if (isFinite(sid) && e.target.value !== '') { fd.au.sid = sid; fd.au.userSid = true; }
+        } else {
+          fd.au.marker = fdAuMarkParse(e.target.value);
+          fd.au.userMark = true;
+        }
+        fdRender(key);
         return;
       }
       if (e.target && e.target.matches && e.target.matches('[data-fd-showall]')) {
@@ -8976,7 +8995,7 @@
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
-    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = !debug; });
+    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-auras, .fd-roles').forEach(el => { el.hidden = !debug; });
     cmdPlaceLiveStrip(card, debug);
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
@@ -9103,7 +9122,7 @@
   }
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, au: { key: null, sid: null, marker: null, userSid: false, userMark: false }, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -9117,7 +9136,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -9605,7 +9624,7 @@
       // screen with its one-line note until the next fight.
       const filed = fdLiveFiledRow(fd, list);
       const short = fdLive[bind.commander] && fdLive[bind.commander].unkept;
-      if (filed) { fd.sel = filed.key; fd.userSel = true; fd.liveKey = null; }
+      if (filed) { fdAuCarry(fd, 'live', filed.key); fd.sel = filed.key; fd.userSel = true; fd.liveKey = null; }
       else if (!short) { fd.sel = null; fd.userSel = false; }
     }
     if (!fd.userSel) {
@@ -9684,7 +9703,7 @@
     const noWin = !!emptyNote;
     const noWinEl = card.querySelector('.fd-nofight');
     if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
-    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-roles').forEach(el => { el.hidden = noWin; });
+    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-auras, .fd-roles').forEach(el => { el.hidden = noWin; });
     // A read-only history card has no live party and no run of its own: the raid frames and the run strip would only be empty.
     if (bind.history) {
       card.querySelectorAll('.fd-runtl, .fd-raid').forEach(el => { el.hidden = true; });
@@ -9798,6 +9817,9 @@
     fdSet(card.querySelector('.fd-tl'), selLive ? fdLiveTimelineHtml(liveSt, liveFight)
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
+    // The Auras panel: the live fight's sampled rows, or the filed fight's own (else the track's sampled ones).
+    if (selLive) fdAurasSync(card, fd, 'live', liveFight, fdAuLiveOpts(liveSt));
+    else fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending: !!fight && track === 'loading' });
     // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
     // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
     if (fight) {
@@ -10457,6 +10479,180 @@
     return html;
   }
 
+  // ---- The Auras panel (FightAuras, web/static/js/fightauras.js): uptime of one watched aura per bot, with the boss's casts (or the
+  // deaths) marked on it. It reads the fight's `auras` rows: the module's watched-aura changes for a filed fight, or the rows
+  // FdLive rebuilds from the 2 s boss-debuff samples (aura_src "sampled") for a running one and for a filed fight without rows.
+
+  const FD_AU_NAMES_MAX = 8; // bots named at one marker before "+N"
+  const fdAuMemo = new WeakMap();
+
+  // The intervals of one fight object, worked out once per object (a filed fight's detail, the track fallback's copy, or the live
+  // fight FdLive memoises per tick).
+  function fdAuIv(fight) {
+    let iv = fdAuMemo.get(fight);
+    if (!iv) { iv = FightAuras.intervals(fight); fdAuMemo.set(fight, iv); }
+    return iv;
+  }
+
+  // A filed fight without aura rows (no AiPlayerbot.CombatTimeline, or a spell the watch list lacked) takes the rows from the
+  // track's boss-debuff samples (x=1). The fight is never changed: the answer is a copy, made once per track.
+  function fdAuraFight(fight, track, commander) {
+    if (!fight || (Array.isArray(fight.auras) && fight.auras.length)) return fight;
+    if (!track || track === 'loading' || !track.raw) return fight;
+    if (!track.auFight || track.auFight.src !== fight) {
+      const st = FdLive.create(commander);
+      FdLive.applyTrackX(st, track.raw);
+      const seen = st.samples.some(s => Object.keys(s.bots).some(g => s.bots[g].db.length));
+      const rows = seen ? FdLive.auraRowsFrom(st.samples, (Number(fight.start) || 0) * 1000) : [];
+      track.auFight = { src: fight, out: rows.length ? Object.assign({}, fight, { auras: rows, aura_src: 'sampled' }) : fight };
+    }
+    return track.auFight.out;
+  }
+
+  // The panel's pick for this fight key: what the reader chose stays, the rest follows the fight (the boss preset, else the first
+  // aura seen), so a live view that has seen no debuff yet picks one when it does.
+  function fdAuState(fd, key, fight, iv) {
+    if (!fd.au || fd.au.key !== key) fd.au = { key, sid: null, marker: null, userSid: false, userMark: false };
+    const au = fd.au, d = FightAuras.defaults(fight, iv);
+    if (!au.userSid) au.sid = d.sid;
+    if (!au.userMark) au.marker = d.marker;
+    return au;
+  }
+
+  // A pick that moves to another key with the view (a live fight that was filed): the reader's choices carry over.
+  function fdAuCarry(fd, from, to) {
+    if (fd && fd.au && fd.au.key === from) fd.au.key = to;
+  }
+
+  function fdAuMarkVal(m) {
+    return m === 'deaths' ? 'deaths' : m && typeof m === 'object' ? (m.sid != null ? 'sid:' + m.sid : 'name:' + (m.name || '')) : 'none';
+  }
+
+  function fdAuMarkParse(v) {
+    v = String(v == null ? '' : v);
+    if (v === 'deaths') return 'deaths';
+    if (v.indexOf('sid:') === 0 && isFinite(Number(v.slice(4)))) return { sid: Number(v.slice(4)) };
+    if (v.indexOf('name:') === 0 && v.length > 5) return { name: v.slice(5) };
+    return null;
+  }
+
+  function fdAuPct(p) {
+    return Math.round(Number(p) || 0) + ' %';
+  }
+
+  // The two selects: the aura and the marker. Built apart from the strip so an open list is not rebuilt every second.
+  function fdAurasControlsHtml(fight, iv, au, opts) {
+    const names = opts && opts.names;
+    const sids = iv.sids.slice();
+    if (au.sid != null && sids.indexOf(au.sid) < 0) sids.push(au.sid);
+    sids.sort((a, b) => a - b);
+    const sidOpts = sids.map(s => `<option value="${esc(s)}"${s === au.sid ? ' selected' : ''}>${esc(FightAuras.auraName(s, names))}</option>`).join('');
+    const cur = fdAuMarkVal(au.marker);
+    const choices = FightAuras.castChoices(fight).map(c => ({ v: c.sid != null ? 'sid:' + c.sid : 'name:' + c.name, name: c.name }));
+    if (cur !== 'none' && cur !== 'deaths' && !choices.some(c => c.v === cur)) choices.push({ v: cur, name: au.marker.name || FightAuras.auraName(au.marker.sid, names) });
+    const markOpts = [{ v: 'none', name: 'No marker' }, { v: 'deaths', name: 'Deaths (did the victim have it)' }].concat(choices)
+      .map(c => `<option value="${esc(c.v)}"${c.v === cur ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    return `<div class="fd-auctl"><label>Aura <select data-fd-ausid aria-label="Aura"${sids.length ? '' : ' disabled'}>${sidOpts}</select></label>`
+      + ` <label>Mark <select data-fd-aumark aria-label="Marker">${markOpts}</select></label></div>`;
+  }
+
+  // The strip, the marker and cycle tables, the applications and the boss's whole-fight debuffs, as one string (every name escaped).
+  function fdAurasRestHtml(fight, iv, au, opts) {
+    const names = opts && opts.names, range = (opts && opts.range) || null;
+    const rows = Array.isArray(fight.auras) ? fight.auras : [];
+    const dur = Math.max(0, Number(fight.dur_ms) || 0);
+    let html = '';
+    if (fight.aura_src === 'sampled') {
+      html += `<p class="empty-hint fd-au-note">${fight.live
+        ? "Sampled every 2 s from the bots' boss debuffs (up to 4 per bot). The exact rows replace this when the fight ends."
+        : "This fight has no aura rows; sampled every 2 s from the bots' boss debuffs (up to 4 per bot)."}</p>`;
+    }
+    if (iv.capped) html += '<p class="empty-hint fd-au-note">The earliest aura changes of this fight may be missing (the module keeps the newest 1000).</p>';
+    if (!rows.length) {
+      html += `<p class="empty-hint">${fight.aura_src === 'sampled' ? 'No boss debuff has been seen on a bot yet.'
+        : opts && opts.pending ? 'Loading the aura data…'
+        : "No watched aura changed in this fight. Only the auras in the server's watch list are recorded."}</p>`;
+    } else if (au.sid != null) {
+      const sid = au.sid, up = FightAuras.uptime(iv, sid, fight, range), spans = FightAuras.aliveSpans(fight);
+      const marks = FightAuras.markers(fight, au.marker);
+      const pctOf = t => (dur > 0 ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0).toFixed(2);
+      const by = (iv.bySid && iv.bySid[sid]) || {};
+      html += `<div class="fd-au-strip"><div class="fd-au-row fd-au-raid"><span class="fd-au-name">Raid</span><span class="fd-au-pct">${esc(fdAuPct(up.raid.pct))}</span>`
+        + `<span class="fd-au-bar"><i class="fd-au-fill" style="width:${Math.max(0, Math.min(100, up.raid.pct)).toFixed(2)}%"></i></span></div>`;
+      up.bots.forEach(b => {
+        const on = (by[b.guid] || []).map(([f, t]) => `<i class="fd-au-on" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
+        const died = spans[b.guid] && spans[b.guid][1] < dur ? `<i class="fd-au-death" style="left:${pctOf(spans[b.guid][1])}%"></i>` : '';
+        html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct))}</span><span class="fd-au-bar">${on}${died}</span></div>`;
+      });
+      html += '<div class="fd-au-marks">' + marks.map(m => {
+        const label = m.label + ' at ' + fdLiveClock(m.t);
+        return `<i class="fd-au-mark" data-fd-bosscast="${esc(m.t)}" style="left:${pctOf(m.t)}%" title="${esc(label)}"></i>`;
+      }).join('') + '</div></div>';
+      if (marks.length) {
+        const at = FightAuras.atMarkers(iv, sid, fight, marks);
+        if (au.marker === 'deaths') {
+          html += '<table class="data-table fd-au-table"><caption>At each death</caption><thead><tr><th>Time</th><th>Victim</th><th>Had it</th></tr></thead><tbody>'
+            + at.map(a => `<tr><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${esc(a.label)}</td><td>${a.on ? 'yes' : 'no'}</td></tr>`).join('') + '</tbody></table>';
+        } else {
+          const label = marks[0].label;
+          html += `<table class="data-table fd-au-table"><caption>At each ${esc(label)}</caption><thead><tr><th>#</th><th>Time</th><th>Had it</th><th>Who</th></tr></thead><tbody>`
+            + at.map((a, k) => {
+              const who = a.names.slice(0, FD_AU_NAMES_MAX).map(esc).join(', ') + (a.names.length > FD_AU_NAMES_MAX ? ' +' + (a.names.length - FD_AU_NAMES_MAX) : '');
+              return `<tr><td>${k + 1}</td><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${a.on} / ${a.alive}</td><td>${who}</td></tr>`;
+            }).join('') + '</tbody></table>';
+          html += '<table class="data-table fd-au-table"><caption>Each cycle</caption><thead><tr><th>#</th><th>From &ndash; to</th><th>Raid uptime</th><th>Had it at the cast</th><th>Deaths</th></tr></thead><tbody>'
+            + FightAuras.cycles(iv, sid, fight, marks).map(c => `<tr><td>${esc(c.i)}</td><td class="mono">${esc(fdLiveClock(c.from) + ' - ' + fdLiveClock(c.to))}</td><td>${esc(fdAuPct(c.raidPct))}</td>`
+              + `<td>${c.on == null ? '' : c.on + ' / ' + c.alive}</td><td>${c.deaths.map(d => esc(d.name)).join(', ')}</td></tr>`).join('') + '</tbody></table>';
+        }
+      }
+      const apps = FightAuras.applications(iv, sid, fight);
+      if (apps.length) {
+        html += '<table class="data-table fd-au-table"><caption>Each application</caption><thead><tr><th>Bot</th><th>Times</th><th>Median</th><th>Longest</th></tr></thead><tbody>'
+          + apps.map(a => `<tr><td>${esc(a.name)}</td><td>${a.n}</td><td>${(a.medianMs / 1000).toFixed(1)} s</td><td>${(a.longestMs / 1000).toFixed(1)} s</td></tr>`).join('') + '</tbody></table>';
+      }
+    }
+    if (fight.debuffs) {
+      const bars = Fights.debuffBars(fight).filter(b => b.pct > 0);
+      if (bars.length) html += '<p class="fd-au-focus">On the boss, whole fight (sampled once a second): ' + bars.map(b => `${esc(b.key)} ${esc(Math.round(b.pct))} %`).join(' &middot; ') + '</p>';
+    }
+    return html;
+  }
+
+  // opts: { names (the live view's learned aura names), range ({from,to} fight ms or null), unbound (a live view with no commander) }
+  function fdAurasParts(fight, iv, au, opts) {
+    if (opts && opts.unbound) return { ctl: '', rest: '<p class="empty-hint">Live aura data needs a bound commander.</p>' };
+    return { ctl: fdAurasControlsHtml(fight, iv, au, opts), rest: fdAurasRestHtml(fight, iv, au, opts) };
+  }
+
+  function fdAurasHtml(fight, iv, au, opts) {
+    const p = fdAurasParts(fight, iv, au, opts);
+    return p.ctl + p.rest;
+  }
+
+  // Draws the panel into its section: the selects in their own slot (rebuilt only when their options change), the rest each time.
+  function fdAurasPaint(card, parts) {
+    const body = card.querySelector('.fd-aubody');
+    if (!body) return;
+    let ctl = body.querySelector('.fd-auslot'), rest = body.querySelector('.fd-aurest');
+    if (!ctl || !rest) {
+      body.innerHTML = '<div class="fd-auslot"></div><div class="fd-aurest"></div>';
+      ctl = body.querySelector('.fd-auslot');
+      rest = body.querySelector('.fd-aurest');
+    }
+    fdSet(ctl, parts.ctl);
+    fdSet(rest, parts.rest);
+  }
+
+  // One paint of the Auras panel for the card's picked fight (key: fd.sel); no fight hides the section.
+  function fdAurasSync(card, fd, key, fight, opts) {
+    const sec = card.querySelector('.fd-auras');
+    if (!sec) return;
+    sec.hidden = !fight;
+    if (!fight) return;
+    const iv = fdAuIv(fight);
+    fdAurasPaint(card, fdAurasParts(fight, iv, fdAuState(fd, key, fight, iv), opts));
+  }
+
   function fdRecapHtml(recaps, selDeath) {
     const list = recaps || [];
     const r = list[selDeath] || list[0];
@@ -10692,7 +10888,7 @@
     if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
     fd.tracks[key] = 'loading';
     const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
-    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to, { credentials: 'same-origin' })
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to + '&x=1', { credentials: 'same-origin' })
       .then(r => (r.ok ? r.json() : null))
       .then(json => {
         if (json && Array.isArray(json.frames)) { fd.tracks[key] = { raw: json, prep: FightReplay.prep(json) }; return; }

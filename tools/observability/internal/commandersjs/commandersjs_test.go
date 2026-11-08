@@ -355,6 +355,19 @@ func TestFdLiveUIJS(t *testing.T) {
 	runCheck(t, "fdlive_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFightAurasJS runs fightauras_check.js: the Auras panel's pure logic (intervals from aura rows, alive spans, raid and per-bot
+// uptime, boss-cast and death markers, who had the aura at each cast, cycles, applications, the boss presets, aura names, and the
+// rows FdLive rebuilds from the 2 s boss-debuff samples).
+func TestFightAurasJS(t *testing.T) {
+	runCheck(t, "fightauras_check.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFightAurasUIJS runs fightauras_ui_check.js: the Auras panel's markup and wiring in app.js (a bar per interval, the cast markers,
+// escaped names, the hints, the live and fallback sampled rows, the pick kept through the hand-over, x=1 on the replay's track request).
+func TestFightAurasUIJS(t *testing.T) {
+	runCheck(t, "fightauras_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {
