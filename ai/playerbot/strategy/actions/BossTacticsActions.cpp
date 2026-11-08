@@ -7915,10 +7915,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                     AbortSeekWalkoutUnspent(ai, bot, sonYd);
                     return false;
                 }
-                const bool cast = ai->CastSpell(spell, task.source);
-                if (cast && focusOn)
+                const bool pullCast = ai->CastSpell(spell, task.source);
+                if (pullCast && focusOn)
                     NoteSeekWalkoutPullCast(bot);
-                return cast;
+                return pullCast;
             }
             // The stand the platform search found (never the Son's own height, down the slope).
             x = task.x;

@@ -47,7 +47,7 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertLess(turn, face)
         self.assertLess(face, walk.index("WalkoutCurrentCast(bot, task.source"))
         self.assertLess(face, walk.index("return ai->CastSpell(spell, task.source);") if "return ai->CastSpell(spell, task.source);" in walk
-                        else walk.index("const bool cast = ai->CastSpell(spell, task.source);"))
+                        else walk.index("const bool pullCast = ai->CastSpell(spell, task.source);"))
         self.assertLess(face, walk.index("bot->InterruptNonMeleeSpells(false);"))
         self.assertIn("const bool faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);", walk)
         self.assertIn("const bool focusOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus;", walk)
@@ -58,7 +58,7 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertLess(wait, walk.index("bot->InterruptNonMeleeSpells(false);"))
         self.assertLess(wait, walk.index("AbortSeekWalkoutUnspent(ai, bot, sonYd);"))
         self.assertIn("task.source->IsInCombat()))\n                    return true;", walk)
-        self.assertIn("if (cast && focusOn)\n                    NoteSeekWalkoutPullCast(bot);", walk)
+        self.assertIn("if (pullCast && focusOn)\n                    NoteSeekWalkoutPullCast(bot);", walk)
         note = body(ACTIONS, "void NoteSeekWalkoutPullCast(Player* bot)")
         self.assertIn("it->second.state.pullCastMs = WorldTimer::getMSTime();", note)
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", note)
