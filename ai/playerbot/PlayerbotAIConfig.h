@@ -618,6 +618,10 @@ public:
     // heals do, so a damage dealer at the 80 % high-threat line still stops a cast. Earth Shock and Death Coil interrupt
     // rows stay gated. Off = as before (the interrupt is vetoed at the high line).
     bool interruptIgnoresThreat = false;
+    // PlayerbotAI::CanCastSpell refuses a unit-target cast the target's facing makes impossible (Gouge from behind,
+    // Backstab from the front) before it probes the core's CheckCast, which broadcasts a spell failure on every probe.
+    // Off = as before (the probe runs, and a Gouge from behind reads as castable and fails in the real cast).
+    bool spellFacingPrecheck = false;
     // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
     uint32 fankrissSwapStacks = 5;
     // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).

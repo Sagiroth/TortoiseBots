@@ -33,6 +33,7 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.ShareTargets`](#aiplayerbotsharetargets) | `1` (built in) | Reuses nearby friendly bots' attacker lists for coordinated defense. |
 | [`AiPlayerbot.GlobalCooldown`](#aiplayerbotglobalcooldown) | `1500` | Pacing delay in milliseconds enforced between rapid spell casts. |
 | [`AiPlayerbot.InterruptIgnoresThreat`](#aiplayerbotinterruptignoresthreat) | `0` | Pure interrupts (Kick, Pummel, Counterspell...) skip the threat back-off like heals. Recommended on. |
+| [`AiPlayerbot.SpellFacingPrecheck`](#aiplayerbotspellfacingprecheck) | `0` | Bots skip casts the target's facing makes impossible (Gouge from behind, Backstab from the front) without probing them. Recommended on. |
 | [`AiPlayerbot.RangedPull`](#aiplayerbotrangedpull) | `1` | Enables automatic ranged openings for commanded tank pulls. |
 | [`AiPlayerbot.RangedPullMeleeApproach`](#aiplayerbotrangedpullmeleeapproach) | `20` | Walk-in approach threshold in yards before tank pulls open from range. |
 | [`AiPlayerbot.PullDpsJoinDelay`](#aiplayerbotpulldpsjoindelay) | `10` | Seconds party DPS wait after a tank pull before joining combat. |
@@ -248,6 +249,17 @@ Whether pure interrupts skip the damage threat back-off, the way heals already d
 <summary>How it works in detail</summary>
 
 A bot with the `threat` strategy in a group backs off single-target spell actions while its threat on the target reads at or above 80 % of the tank's (`ThreatMultiplier`, the `high threat` trigger); melee swings and heals are exempt. Interrupt rows are single-target spell actions too, so a damage dealer over the line let every enemy cast finish: in the Tortoise Trials Kick test a rogue stood idle at full energy in 21 of 50 interruptible-cast windows and kicked 0.42 of them (target 0.6). With the key on, every `CastInterruptSpellAction` whose `IgnoresThreatCap()` is true is exempt like a heal (`ThreatCapExempt`): Kick, Pummel, Shield Bash, Bash, Counterspell and Silence. The Earth Shock and Death Coil interrupt rows are real nukes and keep the back-off, and the `... on enemy healer` rows are unchanged. The AoE back-off is not touched. Range, line of sight and cooldowns still stop an interrupt.
+
+</details>
+
+### `AiPlayerbot.SpellFacingPrecheck`
+Whether bots refuse a cast the target's facing makes impossible before they ask the core about it. Recommended on.
+**Default:** `0` · **Values:** `0` off (the cast check probes the core as before), `1` on (Gouge from behind and from-behind-only spells such as Backstab from the front are refused first) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+The core refuses two casts because of where the target faces: a from-behind-only spell while the target has the caster in its front arc (`SPELL_FAILED_NOT_BEHIND`), and Gouge (spell attributes exactly `0x150010`) while it does not (`SPELL_FAILED_NOT_INFRONT`). No turn of the caster fixes either. The bot's cast check (`PlayerbotAI::CanCastSpell`) used to find out by probing the core's cast check, which sends a spell failure to every client nearby on each probe, and it read the Gouge answer as castable, so a rogue on the `behind` strategy tried Gouge about 20 times a second and none landed (Tortoise Trials Kick test: 0 Gouges in 4 reps, 338 failures in one). With the key on the bot runs the same two tests itself first (`TargetFacingRefuses`) and refuses the cast without the probe, so the engine moves on to its next action in the same tick. Nothing else about casting changes.
 
 </details>
 

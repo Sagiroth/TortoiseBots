@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby.
 - New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off like heals, so a damage dealer at the high-threat line still interrupts a cast.
 - Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.

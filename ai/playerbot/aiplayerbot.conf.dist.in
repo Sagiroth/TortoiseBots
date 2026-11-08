@@ -1144,6 +1144,16 @@ AiPlayerbot.DungeonRunRaidHealerGuard = 0
 # 1 - on
 AiPlayerbot.InterruptIgnoresThreat = 0
 
+# A bot does not probe a cast the target's facing makes impossible: Gouge (the target must face the caster) from behind,
+# or a from-behind-only spell such as Backstab from the front. The core refuses both in its cast check, broadcasts a
+# spell failure to everyone nearby each time it is asked, and the bot read a Gouge from behind as castable: a rogue on
+# the behind strategy probed Gouge about 20 times a second, and no Gouge ever landed (Tortoise Trials DPS-ROG-KICK).
+# With 1 the bot refuses such a cast before the probe and the engine picks its next action in the same tick.
+# Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
+# 0 - off: the probe runs as before (Default)
+# 1 - on
+AiPlayerbot.SpellFacingPrecheck = 0
+
 # A raid binding's healer seats (.bot commander bind <LeadBot> raid, only read with AiPlayerbot.DungeonRunRaid = 1):
 # with 1 the seats go by class instead of member order. The raid seats take a group healer first (priest, then druid,
 # then shaman, then any other healer); the raid keeps at least a third of its healers, rounded up, and the tanks take
