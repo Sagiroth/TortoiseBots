@@ -73,6 +73,9 @@ namespace ai
         virtual ItemUsage Calculate() override;
 
         static ItemUsage QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot);
+        // Gear the bot can use once it levels up (within kFutureUpgradeLevels)
+        // and that would then beat what it wears: kept, and NEEDed in rolls.
+        static bool IsFutureUpgrade(ItemQualifier& itemQualifier, Player* bot);
         // Equipment slots an item may legitimately occupy, primary first.
         // Core FindEquipSlot(NULL_SLOT, swap=true) only ever reports slots[0]
         // once every eligible slot is full, so a ring/trinket pair or a

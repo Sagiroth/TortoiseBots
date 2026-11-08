@@ -44,6 +44,9 @@ bool LootStrategyValue::CanLoot(ItemQualifier& itemQualifier, PlayerbotAI* ai)
     {
         if (strategy == "equip" && usage == ItemUsage::ITEM_USAGE_EQUIP)
             return true;
+        if (strategy == "equip" && usage == ItemUsage::ITEM_USAGE_KEEP &&
+            ItemUsageValue::IsFutureUpgrade(itemQualifier, ai->GetBot()))
+            return true;
         if (strategy == "quest" && usage == ItemUsage::ITEM_USAGE_QUEST)
             return true;
         if (strategy == "skill" && usage == ItemUsage::ITEM_USAGE_SKILL)

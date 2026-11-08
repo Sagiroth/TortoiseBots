@@ -10,6 +10,7 @@
 #include "../../../runtime/policy/hire/HireLootPolicy.h"
 #include "../../../../runtime/AltBotService.h"
 #include "../../../../runtime/AltBotPolicy.h"
+#include "playerbot/GroupMembers.h"
 #include "Group/Group.h"
 #include "Maps/Map.h"
 using namespace ai;
@@ -433,6 +434,12 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier, RollVote* f
         break;
     }
 
+    // Gear the bot will wear once it levels up is still an upgrade for it.
+    bool const futureUpgrade = needVote != ROLL_NEED && usage != ItemUsage::ITEM_USAGE_FORCE_GREED &&
+        ItemUsageValue::IsFutureUpgrade(itemQualifier, bot);
+    if (futureUpgrade)
+        needVote = ROLL_NEED;
+
     // special case for bad equip
     if (usage == ItemUsage::ITEM_USAGE_BAD_EQUIP)
     {
@@ -543,7 +550,9 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier, RollVote* f
 
     std::string reason = "because it can not be looted.";
     if (canLoot)
-        reason = ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, bot);
+        reason = futureUpgrade && itemQualifier.GetProto() ?
+            "as a future upgrade (requires level " + std::to_string(itemQualifier.GetProto()->RequiredLevel) + ")." :
+            ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, bot);
 
     if (AI_VALUE2(bool, "manual bool", "roll feedback"))
     {
@@ -774,7 +783,8 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
     Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
     LootItem* item = (loot && slot < loot->items.size()) ? &loot->items[slot] : nullptr;
 
-    for (Player* member : ai->GetPlayersInGroup())
+    // Every member, bots included: GetPlayersInGroup() lists real players only.
+    for (Player* member : LiveGroupMembers(group))
     {
         if (member == bot || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
             continue;
@@ -782,11 +792,13 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
         if (lootTarget && !member->IsWithinLootXPDist(lootTarget))
             continue;
 
-        if (member->CanUseItem(itemProto) != EQUIP_ERR_OK)
-            continue;
-
         PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
         bool isMemberBot = memberAi && !memberAi->IsRealPlayer();
+
+        // A bot that only lacks the level still counts: it wants it as a future upgrade.
+        if (member->CanUseItem(itemProto) != EQUIP_ERR_OK &&
+            !(isMemberBot && ItemUsageValue::IsFutureUpgrade(itemQualifier, member)))
+            continue;
 
         if (isMemberBot)
         {
@@ -804,7 +816,11 @@ Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, It
                 continue;
 
             ItemUsage memberUsage = memberAi->GetAiObjectContext()->GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->Get();
-            if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP)
+            if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP && !ItemUsageValue::IsFutureUpgrade(itemQualifier, member))
+                continue;
+
+            // A member that cannot take it (unique already owned, loot rules) leaves it to the others.
+            if (!StoreLootAction::IsLootAllowed(itemQualifier, memberAi))
                 continue;
 
             ai::ItemStatFamily memberFamily = sRandomItemMgr.GetSpecStatFamily(memberSpecId);
