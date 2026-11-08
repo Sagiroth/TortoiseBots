@@ -56,8 +56,9 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
 
     def test_a_hexed_tank_counts_as_on_the_boss(self):
         build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
-        self.assertIn("ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player))", build)
-        self.assertIn("inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)", POLICY)
+        # The Delusions read of AiPlayerbot.DungeonRunThreatSuccessorKeepsAway follows the Hex read (tools/test_threat_cap_wiring.py).
+        self.assertIn("ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player),", build)
+        self.assertIn("inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex, bool wearsDelusions = false, bool keepsAway = false)", POLICY)
 
     def test_the_hex_scan_throttle_is_per_instance_and_boss(self):
         self.assertIn("std::map<std::pair<std::uint32_t, std::uint64_t>, std::uint32_t> g_hexScan;", VALUES)

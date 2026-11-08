@@ -296,6 +296,15 @@ Behind `AiPlayerbot.DungeonRunThreatSuccessorStrict` (default `0`, recommended o
 
 The 65 % white stop removed in 405801e86 cost a fifth of the raid's damage; this one keeps the damage dealers between 80 % and 92 % of the successor. The guard for walk 57: raid damage per second on Jin'do at 92 % of walk 56 or more. The aims: top damage dealer / successor at a tank Hex, median, at most 0.90 (walk 56: about 1.05); Hexes on a tank holder that go to a damage dealer at most 35 % (66 of 91; off-tank holder 76 %); pure-overtake time with Jin'do on a damage dealer at most 80 s (227 s).
 
+#### Tanks away by design stay in the pick
+
+Behind `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway` (default `0`, recommended on with the not-holder key): the successor pick keeps two kinds of tank it used to drop, so the reference no longer falls back to the holder's own threat (walk 56: 12 of 39 off-tank Hexes that went to a damage dealer had `ref=offtank holder=off` before the Hex, against 1 of 10 that went to a tank).
+
+- **A cursed tank.** A tank wearing Delusions of Jin'do (24306) stands on its Shade by design and keeps its Jin'do threat. It counts as on the boss, as a Hexed tank already does (`ThreatCapOnBoss`).
+- **A charmed tank.** A tank charmed by the boss's side (Brain Wash) stays on the list at the threat it had right before the charm, as a non-holder on the boss: the core zeroes its threat during the charm and puts exactly that back afterwards (boss_jindo.cpp:197-236). The value is the last read while the tank was free, kept per instance, boss and tank (`CharmThreatMemo`), stored when the charm starts and cleared when it ends. No threat is invented: with no free read in the 5 s before the charm, or a pre-charm threat of 0, the tank is left out as today.
+
+Not covered: a main tank that stays idle after a charm (`select new target` / `reach spell` loops) is tank targeting, not the threat pick. Measure in walk 57: pre-Hex `ref=offtank holder=off` rows in off-holder windows at most 5 % (walk 56: 20 %), off-holder Hexes with `mt_threat` 0 at most 3 (10 of 47).
+
 ### Reaction and Hex rows
 
 Two log rows make the Jin'do fight measurable on the server clock (no flag; they cost nothing without `bot_events.csv`):

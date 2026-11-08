@@ -172,5 +172,34 @@ class CureIgnoresThreat(unittest.TestCase):
         self.assertIn("DungeonRunCureIgnoresThreat", CHANGELOG)
 
 
+class ThreatSuccessorKeepsAway(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: cursed and charmed tanks stay in the successor pick."""
+
+    VALUES = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatSuccessorKeepsAway = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0", CONF)
+
+    def test_the_pick_reads_delusions_and_the_charm_memo_behind_the_key(self):
+        tank = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;", tank)
+        self.assertIn("if (charmed && !keepsAway)\n            continue;", tank)
+        self.assertIn("threat = CharmMemoThreat(target, player, charmed, threat);", tank)
+        self.assertIn("tanks.push_back(ThreatCapCharmedTank(threat, index >= 1));", tank)
+        self.assertIn("keepsAway && ai->HasAura(kJindoDelusionsSpellId, player), keepsAway)", tank)
+        self.assertIn("constexpr std::uint32_t kJindoDelusionsSpellId = 24306;", THREAT_POLICY)
+        memo = body(self.VALUES, "float CharmMemoThreat(Unit* boss, Player* tank, bool charmed, float live)")
+        self.assertIn("entry.memo.Read(charmed, live, nowMs)", memo)
+        self.assertIn("boss->GetInstanceId()", memo)
+        self.assertIn("g_charmMemo.erase(it)", memo)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway`", SETTINGS)
+        self.assertIn("DungeonRunThreatSuccessorKeepsAway", DOC)
+        self.assertIn("DungeonRunThreatSuccessorKeepsAway", CHANGELOG)
+
+
 if __name__ == "__main__":
     unittest.main()

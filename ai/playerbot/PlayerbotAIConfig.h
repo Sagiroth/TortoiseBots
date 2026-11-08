@@ -700,6 +700,10 @@ public:
     // Shoot and Auto Shot stop at 92 % of the reference and resume under 85 % (ThreatCapPolicy.h SuccessorWhiteLatch).
     // Off = as before.
     bool dungeonRunThreatSuccessorStrict = false;
+    // The successor pick keeps a tank that is away from the boss by design: a tank wearing Delusions of Jin'do (24306, on
+    // its Shade) counts as on the boss like a Hexed one, and a tank charmed by a creature (Brain Wash) stays on the list
+    // at the threat it had right before the charm (ThreatCapPolicy.h CharmThreatMemo). Off = as before.
+    bool dungeonRunThreatSuccessorKeepsAway = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;

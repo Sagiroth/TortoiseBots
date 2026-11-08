@@ -948,6 +948,17 @@ The high-threat back-off vetoes a damage dealer's single-target attacks at 80 % 
 
 </details>
 
+### `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway`
+Whether the successor pick on a boss with a `threat_successor` row keeps a tank that is away from the boss by design: a tank cursed by Delusions of Jin'do, or one Brain-Washed. Recommended on, together with `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`.
+**Default:** `0` · **Values:** `0` off (a cursed tank that is not hitting the boss and a charmed tank drop out of the pick), `1` on (a tank wearing Delusions 24306 counts as on the boss; a tank charmed by a creature stays at the threat it had right before the charm) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+With `AiPlayerbot.DungeonRunThreatSuccessorNotHolder` the reference is the highest tank that hits the boss and is not the one it is hitting. In walk 56 that pick lost the main tank in 12 of the 39 off-tank Hexes that went to a damage dealer (against 1 of 10 that went to a tank), so the reference fell back to the holder's own threat and the damage dealers climbed to 80 % of it. Two causes are handled here. A main tank wearing Delusions (24306) stands on its Shade by design while its Jin'do threat stays: with the key on it counts as on the boss, as a Hexed tank already does (`ThreatCapOnBoss`). A tank charmed by the boss's side (Brain Wash) is hostile and the core zeroes its threat during the charm, then puts back exactly what it had when the charm landed (boss_jindo.cpp:197-236): with the key on it stays on the list at that pre-charm threat, as a non-holder on the boss. The pre-charm threat is the last read while the tank was free, kept per instance, boss and tank (`CharmThreatMemo`), stored when the charm starts and cleared when it ends. No threat is invented: with no free read in the 5 s before the charm, or a pre-charm threat of 0, the tank is left out as today. A main tank that stays idle after the charm (the `select new target` and `reach spell` loops of walk 56) is a tank-targeting question this key does not touch. Walk-57 measures: pre-Hex `ref=offtank holder=off` rows in off-holder windows from 132 of 661 (20 %) to 5 % or less; off-holder Hexes with `mt_threat` 0 from 10 of 47 to 3 or fewer.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

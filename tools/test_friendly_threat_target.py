@@ -71,12 +71,22 @@ struct Facade {
     ThreatManager GetThreatManager(Unit*) const { return {}; }
 } sServerFacade;
 std::vector<Player*> LiveGroupMembers(Group* g) { return g->members; }
-struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; } sPlayerbotAIConfig;
+struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; bool dungeonRunThreatSuccessorKeepsAway = false; } sPlayerbotAIConfig;
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
+#include <map>
+// The production memo glue (ThreatValues.cpp CharmMemoThreat) keys a CharmThreatMemo by instance, boss and tank and
+// reads the world clock; the stub keys by tank and advances a fake clock 100 ms per read.
+std::map<Player*, ai::CharmThreatMemo> gCharmMemo;
+unsigned gNowMs = 1000;
+float CharmMemoThreat(Unit*, Player* tank, bool charmed, float live)
+{
+    gNowMs += 100;
+    return gCharmMemo[tank].Read(charmed, live, gNowMs);
+}
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
 void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
@@ -143,6 +153,41 @@ int main() {
     assert(ThreatValue::GetTankThreat(&ai, &enemy) == 600);
     gThreatSuccessor = false;
     assert(ThreatValue::GetTankThreat(&ai, &enemy) == 1500);  // the old loop counts the charmed tank at 0 too
+}
+""")
+
+
+    @unittest.skipUnless(shutil.which("g++"), "g++ unavailable")
+    def test_keeps_away_holds_a_charmed_main_tank_at_its_pre_charm_threat(self):
+        # AiPlayerbot.DungeonRunThreatSuccessorKeepsAway with the not-holder pick: the off-tank holds Jin'do, the main
+        # tank (5000, hitting the boss) is Brain-Washed and the core zeroes its threat. Key off: the charmed tank drops
+        # out and the reference falls back to the holder's 9000. Key on: it stays at its pre-charm 5000; once the charm
+        # ends the live threat is read again.
+        self._compile_and_run(r"""
+int main() {
+    Player bot, main, off;
+    main.tank = true; main.assigned = true; main.threat = 5000;
+    off.assigned = true; off.threat = 9000;
+    Group group{{&bot, &main, &off}}; bot.group = &group;
+    PlayerbotAI ai{&bot};
+    Unit enemy;
+    main.victim = &enemy; off.victim = &enemy; enemy.victim = &off;
+    gThreatSuccessor = true;
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = true;
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // free main tank: the non-holder
+    main.threat = 0; main.charmer = Guid{false, false};
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 9000);     // key off: dropped, fallback to the holder
+    main.charmer = Guid{};
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = true;
+    main.threat = 5000;
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // free read stores 5000
+    main.threat = 0; main.charmer = Guid{false, false};
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // charmed: the pre-charm threat
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 5000);     // still charmed
+    main.charmer = Guid{}; main.threat = 4800;
+    assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4800);     // charm over: live again
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = false;
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = false;
 }
 """)
 

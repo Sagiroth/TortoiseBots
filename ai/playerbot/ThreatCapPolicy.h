@@ -136,9 +136,62 @@ namespace ai
     // Whether a tank counts as on the boss for the successor pick: it hits the boss, or it wears Jin'do's Hex. A Hexed tank
     // is polymorphed for about 5 s and cannot hit, yet it is the wiped successor: if it dropped out, the pick would fall
     // back to the new holder's own threat for those seconds and the damage dealers could climb to 80 % of it.
-    inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)
+    // With AiPlayerbot.DungeonRunThreatSuccessorKeepsAway (`keepsAway`) a tank wearing Delusions of Jin'do (24306) counts
+    // too: a cursed tank is on its Shade by design and its Jin'do threat stays (walk 56: a cursed main tank on a Shade
+    // dropped out and the reference fell back to the holder). Off, as before.
+    constexpr std::uint32_t kJindoDelusionsSpellId = 24306;
+
+    inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex, bool wearsDelusions = false, bool keepsAway = false)
     {
-        return hitsBoss || wearsHex;
+        return hitsBoss || wearsHex || (keepsAway && wearsDelusions);
+    }
+
+    // A tank charmed by the boss's side (Jin'do's Brain Wash) is hostile, and the core zeroes its threat during the charm
+    // and puts back exactly what it had when the charm landed (boss_jindo.cpp:197-236). With
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway the successor pick keeps such a tank at that pre-charm threat instead
+    // of dropping it (walk 56: a Brain-Washed main tank dropped out and the reference fell back to the holder). One memo
+    // per (instance, boss, tank): every read while the tank is free refreshes the last free threat; the read that first
+    // sees the charm stores it as the pre-charm threat, and the first free read after clears it. Threat is never
+    // invented: no free read within kCharmThreatFreshMs before the charm, or a pre-charm threat of 0 or less, leaves
+    // the tank off the list as today (a 0 reference would hold every damage dealer for the whole charm).
+    constexpr std::uint32_t kCharmThreatFreshMs = 5000;
+
+    struct CharmThreatMemo
+    {
+        float lastFree = 0.0f;
+        std::uint32_t lastFreeMs = 0;
+        bool haveFree = false;
+        bool inCharm = false;
+        float preCharm = -1.0f;
+
+        // The threat this tank stands at for the pick: `live` while free, the stored pre-charm threat while charmed, and
+        // < 0 for "leave it off the list" (charmed with no usable pre-charm read).
+        float Read(bool charmed, float live, std::uint32_t nowMs)
+        {
+            if (!charmed)
+            {
+                inCharm = false;
+                preCharm = -1.0f;
+                haveFree = true;
+                lastFree = live;
+                lastFreeMs = nowMs;
+                return live;
+            }
+            if (!inCharm)
+            {
+                inCharm = true;
+                const bool fresh = haveFree && nowMs - lastFreeMs <= kCharmThreatFreshMs;
+                preCharm = fresh && lastFree > 0.0f ? lastFree : -1.0f;
+            }
+            return preCharm;
+        }
+    };
+
+    // The pick's entry for a charmed tank kept by its memo: it holds nothing (the boss is not hitting it) and stands as on
+    // the boss, at its pre-charm threat, so the not-holder pick can keep it as the successor.
+    inline ThreatCapTank ThreatCapCharmedTank(float preCharmThreat, bool offTank)
+    {
+        return ThreatCapTank{preCharmThreat, offTank, true, false};
     }
 
     // The reference and which kind of tank it is: `offTank` is the `threat_successor` cap standing on an assigned

@@ -1141,6 +1141,17 @@ AiPlayerbot.DungeonRunCureIgnoresThreat = 0
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
 
+# The successor pick on a `threat_successor` boss keeps a tank that is away by design. A tank wearing Delusions of
+# Jin'do (24306) is on its Shade on purpose and keeps its Jin'do threat, so it counts as on the boss like a Hexed one.
+# A tank charmed by the boss's side (Brain Wash) stays on the list at the threat it had right before the charm, which is
+# what the core puts back when the charm ends; with no fresh read before the charm, or a pre-charm threat of 0, it is
+# left out as today. Walk 56: in 12 of 39 off-tank Hexes that went to a damage dealer the reference had fallen back to
+# the holder because the main tank was cursed on a Shade or Brain-Washed. Matters with
+# AiPlayerbot.DungeonRunThreatSuccessorNotHolder on. Recommended on. `.reload config` reads it again.
+# 0 - off: cursed tanks off the boss and charmed tanks drop out of the pick (Default)
+# 1 - on
+AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed

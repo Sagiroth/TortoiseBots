@@ -345,6 +345,63 @@ int main()
         CHECK(!tank.Update(true, true, 255));
     }
 
+    // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions read):
+    // the main tank wears Delusions and is on its Shade (6000 Jin'do threat, not hitting him); the off-tank holds at
+    // 9000. Key on: the cursed main tank is still on the boss and the reference is its 6000. Key off: today's fallback
+    // to the holder's 9000.
+    CHECK(kJindoDelusionsSpellId == 24306);
+    CHECK(ThreatCapOnBoss(false, false, true, true));
+    CHECK(!ThreatCapOnBoss(false, false, true, false));
+    CHECK(!ThreatCapOnBoss(false, false, false, true));
+    CHECK(ThreatCapOnBoss(true, false, false, false));
+    CHECK(ThreatCapOnBoss(false, true, false, false));
+    {
+        const std::vector<ThreatCapTank> cursedOn = {{6000.0f, false, ThreatCapOnBoss(false, false, true, true), false},
+                                                      {9000.0f, true, ThreatCapOnBoss(true, false, false, true), true}};
+        CHECK(ThreatCapReference(cursedOn, true, true) == 6000.0f);
+        CHECK(!ThreatCapPickReference(cursedOn, true, true).offTank);
+        const std::vector<ThreatCapTank> cursedOff = {{6000.0f, false, ThreatCapOnBoss(false, false, true, false), false},
+                                                       {9000.0f, true, ThreatCapOnBoss(true, false, false, false), true}};
+        CHECK(ThreatCapReference(cursedOff, true, true) == 9000.0f);
+    }
+
+    // charmed_tank_keeps_cached_threat: the memo stores the last free read when the charm starts, answers it for the
+    // whole charm (the core zeroes the live threat), and clears it when the charm ends.
+    CHECK(kCharmThreatFreshMs == 5000);
+    {
+        CharmThreatMemo memo;
+        CHECK(memo.Read(false, 4800.0f, 1000) == 4800.0f);
+        CHECK(memo.Read(false, 5000.0f, 1500) == 5000.0f);
+        CHECK(memo.Read(true, 0.0f, 1600) == 5000.0f);   // charm starts: the pre-charm 5000
+        CHECK(memo.Read(true, 0.0f, 9000) == 5000.0f);   // still charmed 7 s later: still 5000
+        CHECK(memo.Read(true, 300.0f, 11000) == 5000.0f);
+        CHECK(memo.Read(false, 4900.0f, 12000) == 4900.0f); // charm over: live, memo cleared
+        CHECK(memo.preCharm < 0.0f && !memo.inCharm);
+        // The next charm stores the newest free read, not the old one.
+        CHECK(memo.Read(false, 7000.0f, 20000) == 7000.0f);
+        CHECK(memo.Read(true, 0.0f, 20100) == 7000.0f);
+        // The pick keeps the charmed main tank at 5000 while the off-tank holds at 9000 (not-holder pick).
+        const std::vector<ThreatCapTank> charmedMain = {ThreatCapCharmedTank(5000.0f, false), {9000.0f, true, true, true}};
+        CHECK(ThreatCapReference(charmedMain, true, true) == 5000.0f);
+        // Key off the caller leaves the charmed tank off the list: today's pick is the holder's 9000.
+        const std::vector<ThreatCapTank> withoutCharmed = {{9000.0f, true, true, true}};
+        CHECK(ThreatCapReference(withoutCharmed, true, true) == 9000.0f);
+    }
+    // Never invented: charmed with no free read, with a stale one, or with a pre-charm 0 reads < 0 (off the list).
+    {
+        CharmThreatMemo none;
+        CHECK(none.Read(true, 0.0f, 1000) < 0.0f);
+        CharmThreatMemo stale;
+        CHECK(stale.Read(false, 5000.0f, 1000) == 5000.0f);
+        CHECK(stale.Read(true, 0.0f, 1000 + kCharmThreatFreshMs + 1) < 0.0f);
+        CharmThreatMemo zero;
+        CHECK(zero.Read(false, 0.0f, 1000) == 0.0f);
+        CHECK(zero.Read(true, 0.0f, 1100) < 0.0f);
+        CharmThreatMemo wrap;
+        CHECK(wrap.Read(false, 5000.0f, 0xFFFFFF00u) == 5000.0f);
+        CHECK(wrap.Read(true, 0.0f, 0x00000400u) == 5000.0f); // clock wrap, 1.28 s later
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

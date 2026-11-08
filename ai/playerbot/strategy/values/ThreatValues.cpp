@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <iterator>
 #include <map>
+#include <tuple>
 #include <mutex>
 #include <unordered_map>
 
@@ -217,6 +218,41 @@ void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Gro
 }
 }
 
+namespace
+{
+// AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: one CharmThreatMemo per (instance id, boss guid, tank guid), so a tank
+// charmed by the boss's side keeps the threat it had right before the charm as the successor reference
+// (ThreatCapPolicy.h). Only GetTankThreat on a `threat_successor` target touches it, and only with the key on. Pruned like
+// g_hexLog: past kCharmMemoMaxEntries the entries untouched for kCharmMemoStaleMs are dropped.
+constexpr std::size_t kCharmMemoMaxEntries = 256;
+constexpr std::uint32_t kCharmMemoStaleMs = 120000;
+struct CharmMemoEntry
+{
+    CharmThreatMemo memo;
+    std::uint32_t touchedMs = 0;
+};
+std::mutex g_charmMemoMutex;
+std::map<std::tuple<std::uint32_t, std::uint64_t, std::uint64_t>, CharmMemoEntry> g_charmMemo;
+
+// The threat the successor pick uses for `tank` on `boss`: `live` while free, the pre-charm threat while charmed by a
+// creature, < 0 for "leave it off the list".
+float CharmMemoThreat(Unit* boss, Player* tank, bool charmed, float live)
+{
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_charmMemoMutex);
+    CharmMemoEntry& entry = g_charmMemo[std::make_tuple(static_cast<std::uint32_t>(boss->GetInstanceId()),
+        boss->GetObjectGuid().GetRawValue(), tank->GetObjectGuid().GetRawValue())];
+    entry.touchedMs = nowMs;
+    const float threat = entry.memo.Read(charmed, live, nowMs);
+    if (g_charmMemo.size() > kCharmMemoMaxEntries)
+    {
+        for (auto it = g_charmMemo.begin(); it != g_charmMemo.end();)
+            it = nowMs - it->second.touchedMs > kCharmMemoStaleMs ? g_charmMemo.erase(it) : std::next(it);
+    }
+    return threat;
+}
+}
+
 float ThreatValue::GetThreat(Player* player, Unit* target)
 {
     if (!target || target->GetMapId() != player->GetMapId())
@@ -272,7 +308,10 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     }
 
     // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
-    // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
+    // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor; with
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway it stays at the threat it had right before the charm (the core puts
+    // exactly that back), and a tank wearing Delusions (on its Shade by design) counts as on the boss.
+    const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     std::vector<ThreatCapTank> tanks;
     tanks.reserve(roles.tanks.size());
@@ -282,12 +321,26 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
             continue;
         ObjectGuid const charmer = player->GetCharmerGuid();
-        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+        const bool charmed = !charmer.IsEmpty() && !charmer.IsPlayer();
+        if (charmed && !keepsAway)
             continue;
+        float threat = sServerFacade.GetThreatManager(target).getThreat(player);
+        if (keepsAway)
+        {
+            threat = CharmMemoThreat(target, player, charmed, threat);
+            if (charmed)
+            {
+                if (threat > 0.0f)
+                    tanks.push_back(ThreatCapCharmedTank(threat, index >= 1));
+                continue;
+            }
+        }
         // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
-        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
-        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
-            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
+        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss); so is
+        // one wearing Delusions with the keeps-away key on.
+        tanks.push_back(ThreatCapTank{threat, index >= 1,
+            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player),
+                            keepsAway && ai->HasAura(kJindoDelusionsSpellId, player), keepsAway),
             target->GetVictim() == player});
     }
 
