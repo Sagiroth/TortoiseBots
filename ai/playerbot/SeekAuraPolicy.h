@@ -255,6 +255,17 @@ namespace ai
         return meetOpen && sonIsMeetSon && !sonVictimIsTank;
     }
 
+    // Healers leave the open meet's puller and returner alone (DungeonRunSeekMeetNoHeal). Walk 55: 24 of 27 meets ended
+    // with the Son peeled onto a healer, because a heal on the puller adds threat on every mob that has the puller on
+    // its list (heal threat x0.5 split over Hakkar and the Son, a 1-1.5k heal about 250-375 on the Son against the one
+    // Auto Shot the puller holds). So while the meet is open a heal target that is the puller or returner is skipped,
+    // unless it is below kSeekMeetHealFloorPct hp (then the heal wins over the threat). `flagOn` is the key.
+    constexpr float kSeekMeetHealFloorPct = 40.0f;
+    inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPullerOrReturner, float hpPct)
+    {
+        return flagOn && meetOpen && isPullerOrReturner && hpPct >= kSeekMeetHealFloorPct;
+    }
+
     // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the
     // hold itself and `Dosed` the hold once every seeker already carries the poison (nothing a kill buys) — both still
     // hold the Son; `Cap20`, `NonTank` and `SelectedBurn` are the release paths.

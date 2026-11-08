@@ -602,6 +602,31 @@ int main()
         CHECK(!SeekMeetHoldsSon(true, false, true));
     }
 
+    // Healers skip the open meet's puller and returner as heal targets (DungeonRunSeekMeetNoHeal, walk 55: 24 of 27
+    // meets were peeled onto a healer by heal threat).
+    {
+        // Failing case: the meet is open and the puller stands at 60 % hp -> held. Before the change nothing held it.
+        CHECK(SeekMeetHealHeld(true, true, true, 60.0f));
+        // The returner is held the same way (the caller passes isPullerOrReturner for either).
+        CHECK(SeekMeetHealHeld(true, true, true, 100.0f));
+        // Under the floor the heal wins over the threat; at the floor it is still held (below, not at or below).
+        CHECK(kSeekMeetHealFloorPct == 40.0f);
+        CHECK(!SeekMeetHealHeld(true, true, true, 35.0f));
+        CHECK(!SeekMeetHealHeld(true, true, true, 39.9f));
+        CHECK(SeekMeetHealHeld(true, true, true, 40.0f));
+        // The meet closed lifts the hold.
+        CHECK(!SeekMeetHealHeld(true, false, true, 60.0f));
+        // Any other member is healed as ever.
+        CHECK(!SeekMeetHealHeld(true, true, false, 60.0f));
+        CHECK(!SeekMeetHealHeld(true, true, false, 10.0f));
+        // Flag off is today's behaviour whatever the rest says.
+        CHECK(!SeekMeetHealHeld(false, true, true, 60.0f));
+        CHECK(!SeekMeetHealHeld(false, true, true, 100.0f));
+        CHECK(!SeekMeetHealHeld(false, false, false, 0.0f));
+        // The query's early exit: key on, meet and walker assumed, then only hp decides (no lookup under the floor).
+        CHECK(!SeekMeetHealHeld(true, true, true, 0.0f));
+    }
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

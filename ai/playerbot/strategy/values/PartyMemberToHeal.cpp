@@ -5,6 +5,7 @@
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/policy/raid/FankrissRaidPolicy.h"
 #include "playerbot/strategy/actions/PatchwerkSafety.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
@@ -236,6 +237,12 @@ Unit* PartyMemberToHeal::Calculate()
     auto addTarget = [&](Unit* target, bool tank, bool pet)
     {
         if (!Check(target))
+            return;
+        // DungeonRunSeekMeetNoHeal: while the pulled Son's meet is open, the puller and returner are not heal targets
+        // (a heal on them adds threat on the Son and peels it onto the healer) unless they are under 40 % hp. One
+        // check for every pick through this value (HoTs and Power Word: Shield included); off, it returns at once.
+        if (SeekMeetWalkerHealHeld(bot->GetInstanceId(), target->GetObjectGuid().GetRawValue(),
+                target->GetHealthPercent()))
             return;
         // Issue #904: in combat an ally this healer cannot reach from where it
         // stands and another healer covers is that healer's to heal. Dropping it
