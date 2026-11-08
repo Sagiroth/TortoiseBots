@@ -570,12 +570,13 @@ class WalkoutStandSightWiring(unittest.TestCase):
         fn = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
         self.assertIn("bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;", fn)
         self.assertIn("WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight())", fn)
-        self.assertIn("WalkoutStandSightZ(standSight, son->GetPositionZ()), true);", fn)
+        self.assertIn("WalkoutStandSightZ(standSight, son->GetPositionZ(), son->GetCollisionHeight()), true);", fn)
         self.assertNotIn("son->GetPositionZ() + 2.0f", fn)
 
     def test_note_move_calls_the_refusal_rule(self):
         fn = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason,")
-        self.assertIn("WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd);", fn)
+        self.assertIn("WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd,\n"
+                      "                                     it->second.state.freeReplans);", fn)
         self.assertIn("abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());", fn)
         self.assertNotIn("WalkoutNoteMove(it->second.state, moved)", fn)
         walk = walkout_branch()

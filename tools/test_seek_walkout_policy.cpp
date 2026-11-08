@@ -1878,8 +1878,16 @@ static void TestWalkoutMoveRefusalCounts()
 
 static void TestWalkoutStandSightZ()
 {
-    CHECK(Near(WalkoutStandSightZ(true, 30.0f), 31.0f));  // the core's GetLosCheckPosition: z + 1
-    CHECK(Near(WalkoutStandSightZ(false, 30.0f), 32.0f)); // flag off: z + 2, as before
+    CHECK(Near(WalkoutStandSightZ(true, 30.0f, 1.0f), 31.0f));  // the Son's own collision height
+    CHECK(Near(WalkoutStandSightZ(false, 30.0f, 2.6f), 32.0f)); // flag off: z + 2, as before
+    // A Son whose collision height is not 1.0: the search's two endpoints equal the live check's
+    // (IsWithinLOSAtPosition: the bot's z + its collision height; Unit::GetLosCheckPosition: the Son's z + its own).
+    const float botZ = 50.0f, botH = 1.3f, sonZ = 34.0f, sonH = 2.6f;
+    const float liveEye = botZ + botH;
+    const float liveTarget = sonZ + sonH;
+    CHECK(Near(WalkoutStandEyeZ(true, botZ, botH), liveEye));
+    CHECK(Near(WalkoutStandSightZ(true, sonZ, sonH), liveTarget));
+    CHECK(!Near(WalkoutStandSightZ(true, sonZ, sonH), sonZ + 1.0f)); // not the base WorldObject's z + 1
     CHECK(Near(WalkoutStandEyeZ(true, 50.0f, 1.8f), 51.8f)); // the bot's collision height
     CHECK(Near(WalkoutStandEyeZ(false, 50.0f, 1.8f), 52.0f));
 }
@@ -1928,6 +1936,46 @@ static void TestWalkoutStartGenStopsStaleWrites()
     // No task: the action-side match fails.
     SeekWalkoutState none;
     CHECK(!WalkoutTaskIs(none, 0, 0));
+}
+
+
+static void TestWalkoutFreeReplansAreCapped()
+{
+    // Review R2-L2: three free re-plans at the stand, then refusals there count again and three abort.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    std::uint32_t t = 1100;
+    for (int i = 0; i < kSeekWalkoutFreeReplansMax; ++i, t += 100)
+    {
+        CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t));
+        CHECK(WalkoutReplanDue(s, t));
+    }
+    CHECK(s.freeReplans == kSeekWalkoutFreeReplansMax);
+    CHECK(s.moveFails == 0);
+    CHECK(WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans)); // the cap reached: it counts
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    CHECK(WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    // A new task starts with its free re-plans again.
+    WalkoutStart(s, 8, 101, 40000, 2);
+    CHECK(s.freeReplans == 0);
+}
+
+static void TestWalkoutStartTickWritesMatch()
+{
+    // Review R2-M1: the start tick hands the puller the new task's generation, so its own writes that tick go through.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    const std::uint32_t outGen = s.startGen; // what the start branch now copies into out.walkoutGen
+    CHECK(WalkoutTaskIs(s, 7, outGen));
+    CHECK(!WalkoutTaskIs(s, 7, 0)); // the old start tick's gen 0 was rejected
+    // The start tick's own at-stand note and move are accepted under the guard.
+    if (WalkoutTaskIs(s, 7, outGen))
+        WalkoutNoteAtStand(s, 1000);
+    CHECK(s.atStandSinceMs == 1000);
+    if (WalkoutTaskIs(s, 7, outGen))
+        WalkoutNoteOutboundMove(s, false, true, 1000);
+    CHECK(s.moveFails == 1);
 }
 
 int main()
@@ -1988,6 +2036,8 @@ int main()
     TestWalkoutMoveRefusalCounts();
     TestWalkoutStandSightZ();
     TestWalkoutStartGenStopsStaleWrites();
+    TestWalkoutFreeReplansAreCapped();
+    TestWalkoutStartTickWritesMatch();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

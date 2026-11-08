@@ -1731,7 +1731,8 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
         if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
             return;
         bool const counts =
-            WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd);
+            WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd,
+                                     it->second.state.freeReplans);
         abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());
         if (!moved)
         {
@@ -1919,12 +1920,14 @@ bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, flo
         float const dz = son->GetPositionZ() - floor;
         float const toSon = std::sqrt(dx * dx + dy * dy + dz * dz);
         // DungeonRunSeekWalkoutStandSight: aim the way the bot's own sight test does (its collision height to the
-        // Son's z + 1, IsWithinLOSInMap), so a stand that passes here passes at the stand too. Off: floor + 2 to z + 2.
+        // Son's z + the Son's collision height, IsWithinLOSInMap -> Unit::GetLosCheckPosition), so a stand that passes
+        // here passes at the stand too. Off: floor + 2 to z + 2. The start scan runs with the reading bot's eye height
+        // (the puller is picked afterwards); the puller's own re-plan corrects it within 1 s.
         bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;
         bool const sight = found && toSon <= rangeYd &&
             map->isInLineOfSight(px, py, WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight()),
                                  son->GetPositionX(), son->GetPositionY(),
-                                 WalkoutStandSightZ(standSight, son->GetPositionZ()), true);
+                                 WalkoutStandSightZ(standSight, son->GetPositionZ(), son->GetCollisionHeight()), true);
         if (!WalkoutStandOk(found, floor, toSon, rangeYd, sight))
             return false;
         x = px;
@@ -2700,6 +2703,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         record.state.standZ = scan.z;
         starts = record.state.cycleStarts;
         NoteWalkoutBusy(before, record.state);
+        // The new task's generation: the puller's own writes on this start tick match it (WalkoutTaskIs).
+        out.walkoutGen = record.state.startGen;
     }
     char info1[192];
     if (rules.perCycleWalked)

@@ -1102,9 +1102,9 @@ AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0
 AiPlayerbot.DungeonRunSeekWalkoutStandLog = 0
 
 # The walk-out stand's sight (Hakkar's seek pull, recommended on): the stand search tests sight the way the bot itself
-# does (its collision height to the Son's z + 1), so the puller is not sent to a stand it cannot shoot from, and a
-# refused move within 3 yd of the stand re-plans the stand instead of counting toward the three refusals that abort the
-# walk-out ("move failed"). Off keeps floor + 2 to the Son's z + 2 and counts every refusal.
+# does (its collision height to the Son's z + the Son's collision height), so the puller is not sent to a stand it
+# cannot shoot from, and a refused move within 3 yd of the stand re-plans the stand instead of counting toward the three
+# refusals that abort the walk-out ("move failed"), up to 3 times a walk-out. Off keeps floor + 2 to the Son's z + 2 and counts every refusal.
 AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
 
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its

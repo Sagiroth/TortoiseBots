@@ -1004,9 +1004,10 @@ Whether the Hakkar walk-out's stand search tests sight the way the bot does. Rec
 <details>
 <summary>How it works in detail</summary>
 
-**Stand sight:** 12 of walk 56's 13 `walk-out abort move failed` rows were pullers already standing on their stand (`len` 0.6 yd or less, `why=dispatch-short` or `arrived-recalc`). The stand search tested sight from the floor + 2 yd to the Son's z + 2, but the bot's own test (`IsWithinLOSInMap`) aims from its z + its collision height to the Son's z + 1; the Sons stand 11-18 yd below the ledge, so the lip blocked the lower line. Out of shot position on its own stand, the puller asked to move 0.5 yd, the mover refused, and three refusals aborted the walk-out. With the key on:
-- The stand search aims from the floor + the bot's collision height to the Son's z + 1, the core's own sight heights.
-- A refused outbound move within 3 yd of the stand does not count toward the three refusals; the stand is re-planned at once instead (the 5 s no-stand abort still bounds it). Real path failures farther out still count.
+**Stand sight:** 12 of walk 56's 13 `walk-out abort move failed` rows were pullers already standing on their stand (`len` 0.6 yd or less, `why=dispatch-short` or `arrived-recalc`). The stand search tested sight from the floor + 2 yd to the Son's z + 2, but the bot's own test (`IsWithinLOSInMap`) aims from its z + its collision height to the Son's z + the Son's collision height (`Unit::GetLosCheckPosition`); the Sons stand 11-18 yd below the ledge, so the lip could block the bot's line at a stand the search had passed. Out of shot position on its own stand, the puller asked to move 0.5 yd, the mover refused, and three refusals aborted the walk-out. With the key on:
+- The stand search aims from the floor + the bot's collision height to the Son's z + the Son's own collision height, the core's own sight heights for two units.
+- The start scan plans the first stand with the eye height of whichever raid bot reads first (the puller is picked afterwards); the puller's own re-plan corrects it within 1 s.
+- A refused outbound move within 3 yd of the stand does not count toward the three refusals; the stand is re-planned at once instead. A task gets 3 such free re-plans; after that refusals at the stand count again, so a stand the re-plan keeps finding still ends in `move failed` and frees the Son. Real path failures farther out always count.
 
 </details>
 

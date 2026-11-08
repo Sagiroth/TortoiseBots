@@ -992,6 +992,7 @@ namespace ai
         std::uint32_t inShotMs = 0;
         std::uint32_t lastInShotMs = 0;
         std::uint32_t firstInShotMs = 0; // the task's first in-shot read (the backstop's start; 0: none yet)
+        int freeReplans = 0; // refusals at the stand that re-planned instead of counting (DungeonRunSeekWalkoutStandSight)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -1163,6 +1164,7 @@ namespace ai
         s.inShotMs = 0;
         s.lastInShotMs = 0;
         s.firstInShotMs = 0;
+        s.freeReplans = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
@@ -1181,11 +1183,12 @@ namespace ai
 
     // The stand's sight (DungeonRunSeekWalkoutStandSight, walk 56: 12 of 13 `abort move failed` rows stood on their
     // stand, len <= 0.6, refused): the stand search aimed from floor + 2 at the Son's z + 2, the bot's own test
-    // (IsWithinLOSInMap -> GetLosCheckPosition) aims from its z + collision height at the Son's z + 1, so the ledge's lip
-    // blocked the bot's line at a stand the search had passed. With the flag on the search aims the core's way.
-    inline float WalkoutStandSightZ(bool flagOn, float sonZ)
+    // (IsWithinLOSInMap -> Unit::GetLosCheckPosition, IsWithinLOSAtPosition) aims from its z + its collision height at
+    // the Son's z + the Son's collision height, so the ledge's lip could block the bot's line at a stand the search had
+    // passed. With the flag on the search aims the core's way, with both units' own heights.
+    inline float WalkoutStandSightZ(bool flagOn, float sonZ, float sonCollisionHeight)
     {
-        return sonZ + (flagOn ? 1.0f : 2.0f);
+        return sonZ + (flagOn ? sonCollisionHeight : 2.0f);
     }
 
     // The stand search's eye: the floor plus the bot's collision height with the flag on, plus 2 off.
@@ -1194,14 +1197,19 @@ namespace ai
         return floorZ + (flagOn ? collisionHeight : 2.0f);
     }
 
+    // A task re-plans this many times for free on refusals at its stand; after that they count again (review R2-L2), so
+    // a stand the re-plan keeps finding still ends in the `move failed` abort and frees the Son.
+    constexpr int kSeekWalkoutFreeReplansMax = 3;
+
     // Whether a refused outbound move counts toward kSeekWalkoutMoveFails: with the flag on a refusal within
     // kSeekWalkoutStandArriveYd of the stand is the bot standing on a stand it cannot shoot from, not a path failure; it
-    // re-plans the stand instead (WalkoutNoteOutboundMove). A move that went out never counts.
-    inline bool WalkoutMoveRefusalCounts(bool flagOn, bool moved, float standYd)
+    // re-plans the stand instead (WalkoutNoteOutboundMove), up to kSeekWalkoutFreeReplansMax a task (`freeUsed`). A move
+    // that went out never counts.
+    inline bool WalkoutMoveRefusalCounts(bool flagOn, bool moved, float standYd, int freeUsed = 0)
     {
         if (moved)
             return false;
-        return !(flagOn && standYd <= kSeekWalkoutStandArriveYd);
+        return !(flagOn && standYd <= kSeekWalkoutStandArriveYd && freeUsed < kSeekWalkoutFreeReplansMax);
     }
 
     // One outbound move of the task with the stand-sight rule: a refusal that does not count (WalkoutMoveRefusalCounts)
@@ -1213,6 +1221,7 @@ namespace ai
         {
             s.lastMoveOk = false;
             s.standMs = nowMs - kSeekWalkoutReplanMs;
+            ++s.freeReplans;
             return false;
         }
         return WalkoutNoteMove(s, moved);

@@ -356,6 +356,10 @@ class WalkoutStartGenGuards(unittest.TestCase):
         self.assertEqual(walk.count("task.walkoutGen"), 5)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("out.walkoutGen = state.startGen;", update)
+        # The start branch hands over the new task's generation inside the start lock (review R2-M1).
+        start = update[update.index("WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);"):]
+        gen = start.index("out.walkoutGen = record.state.startGen;")
+        self.assertLess(gen, start.index("\n    }\n"))  # before the lock's scope closes
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
         self.assertIn("task.walkoutGen = state.walkoutGen;", find)
         policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
