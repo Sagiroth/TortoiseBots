@@ -3732,6 +3732,41 @@ void CollectCarrierScanHits(PlayerbotAI* ai, Player* bot, const BossTacticsFight
     }
 }
 
+// Whether `entry` is the subject of an open carrier row.
+bool IsCarrierRowEntry(const BossTacticsFight& fight, std::uint32_t entry)
+{
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row) && TacticSubjectEntry(*row) == entry)
+            return true;
+    return false;
+}
+
+// The row for a scan Shade that took the pick over an ordinary kill_first pick (a ward or a totem in view): one
+// BossTacticsKillFirst row per bot per 5 s, its own throttle (the no-switch row is a different event).
+//   info1 = "reason=scan_over"
+//   info2 = "pick=<entry>:<guid low>,over=<entry>,mode=<carrier|free>"
+constexpr uint32 kCarrierScanOverLogGapMs = 5000;
+std::mutex g_carrierScanOverLogMutex;
+std::unordered_map<uint64, uint32> g_carrierScanOverLog;
+
+void LogCarrierScanOver(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* over, KillFirstPickMode mode)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    {
+        const uint32 nowMs = WorldTimer::getMSTime();
+        std::lock_guard<std::mutex> lock(g_carrierScanOverLogMutex);
+        uint32& last = g_carrierScanOverLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kCarrierScanOverLogGapMs)
+            return;
+        last = nowMs;
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "pick=%u:%u,over=%u,mode=%s", pick->GetEntry(), pick->GetGUIDLow(),
+             over->GetEntry(), mode == KillFirstPickMode::Free ? "free" : "carrier");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=scan_over", info2);
+}
+
 Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
     float carrierReachYd);
 }
@@ -3876,20 +3911,32 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
     const int picked = mode == KillFirstPickMode::Carrier
         ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
         : PickKillFirst(fight.rows, candidates);
-    // The fallback a Delusions carrier gets when its attackers list never showed a Shade (walk 53): the carrier row's
-    // entry read off the grid, and the nearest hit that passes every check. It runs for every mode but None (a player's
-    // order is never overridden): a free DPS carrying the aura needs its Shade as much as one under the run's order.
-    // A second path, never a widened first one: PickCarrierOverride and the grid pass above stay as they are.
-    if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode != KillFirstPickMode::None && picked < 0)
+    Unit* const ordinary = picked < 0 ? nullptr : units[picked];
+    // The carrier scan (walk 53): the carrier row's entry read off the grid, and the nearest hit that passes every
+    // check. It runs BEFORE the ordinary pick is accepted, for every mode but None (a player's order is never
+    // overridden): a free DPS takes every open row, so a ward or a totem in view would win the ordinary pick while a
+    // Shade lives, and a carrier is the only one who can kill that Shade (CarrierScanTakesPrecedence). An ordinary pick
+    // that already is a carrier-row Shade stays and the scan is skipped. A second path, never a widened first one:
+    // PickCarrierOverride and the grid pass above stay as they are.
+    bool const isCarrier = HasCarrierKillFirstRow(fight.rows);
+    bool const ordinaryIsCarrierEntry = ordinary && IsCarrierRowEntry(fight, ordinary->GetEntry());
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan && isCarrier && mode != KillFirstPickMode::None &&
+        !ordinaryIsCarrierEntry)
     {
         std::vector<CarrierScanFacts> facts;
         std::vector<Unit*> scanUnits;
         CollectCarrierScanHits(ai, bot, fight, facts, scanUnits);
         int const scanned = CarrierScanPick(facts, carrierReachYd);
-        if (scanned >= 0)
-            return scanUnits[scanned];
+        Unit* const scanUnit = scanned >= 0 ? scanUnits[scanned] : nullptr;
+        if (CarrierScanTakesPrecedence(isCarrier, sPlayerbotAIConfig.dungeonRunCarrierScan, mode, scanUnit != nullptr,
+                ordinaryIsCarrierEntry))
+        {
+            if (ordinary && ordinary != scanUnit)
+                LogCarrierScanOver(ai, bot, scanUnit, ordinary, mode);
+            return scanUnit;
+        }
     }
-    return picked < 0 ? nullptr : units[picked];
+    return ordinary;
 }
 }
 

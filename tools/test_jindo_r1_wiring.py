@@ -48,21 +48,44 @@ class JindoR1Wiring(unittest.TestCase):
 
     def test_the_scan_runs_for_every_mode_but_none_behind_its_key(self):
         body = member(ACTIONS, "float carrierReachYd)\n{", "\n}\n")
-        # The gate: the key, any mode but None and no pick at all. A player's order is mode None (and returns at the
-        # top), so it is never overridden; a free DPS carrying the aura scans like one under the run's order.
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunCarrierScan && mode != KillFirstPickMode::None && "
-                      "picked < 0)", body)
+        # The scan runs BEFORE the ordinary pick is accepted, for every mode but None: a free DPS takes every open row, so
+        # a ward or a totem in view would win the ordinary pick while a Shade lives (Codex, round 3). It is no longer
+        # gated on "no ordinary pick at all".
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunCarrierScan && isCarrier && mode != KillFirstPickMode::None &&\n"
+                      "        !ordinaryIsCarrierEntry)", body)
+        self.assertNotIn("picked < 0)\n    {", body)
         self.assertNotIn("dungeonRunCarrierScan && mode == KillFirstPickMode::Carrier", body)
+        self.assertIn("bool const isCarrier = HasCarrierKillFirstRow(fight.rows);", body)
         self.assertIn("int const scanned = CarrierScanPick(facts, carrierReachYd);", body)
-        self.assertIn("return scanUnits[scanned];", body)
+        # The one decision is the policy's, fed the carrier flag, the key, the mode and the scan's result, and the scan's
+        # Shade is what returns when it wins; otherwise the ordinary pick is returned last.
+        self.assertIn("if (CarrierScanTakesPrecedence(isCarrier, sPlayerbotAIConfig.dungeonRunCarrierScan, mode, "
+                      "scanUnit != nullptr,\n                ordinaryIsCarrierEntry))", body)
+        self.assertIn("return scanUnit;", body)
+        self.assertTrue(body.rstrip().endswith("return ordinary;"))
+        self.assertLess(body.index(": PickKillFirst(fight.rows, candidates);"),
+                        body.index("CarrierScanTakesPrecedence("))
+        self.assertLess(body.index("CarrierScanTakesPrecedence("), body.index("return scanUnit;"))
+        self.assertLess(body.index("return scanUnit;"), body.rindex("return ordinary;"))
         self.assertLess(body.index("mode == KillFirstPickMode::None"),
                         body.index("sPlayerbotAIConfig.dungeonRunCarrierScan"))
+        # A scan Shade that replaces an ordinary pick logs the over= row.
+        self.assertIn("LogCarrierScanOver(ai, bot, scanUnit, ordinary, mode);", body)
+        over = member(ACTIONS, "void LogCarrierScanOver(", "\n}\n")
+        self.assertIn('"pick=%u:%u,over=%u,mode=%s"', over)
+        self.assertIn('"BossTacticsKillFirst", "reason=scan_over", info2', over)
         # The fallback reads the same grid value the kill_first grid pass reads, through one shared owner test
         # (GridOwnerInFight, which the pass above also uses).
         self.assertIn("CollectCarrierScanHits(ai, bot, fight, facts, scanUnits);", body)
         self.assertIn("GridOwnerInFight(fight, hit.owner)", body)
         self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd)", body)
         self.assertIn(": PickKillFirst(fight.rows, candidates);", body)
+
+    def test_the_precedence_policy_is_pure(self):
+        self.assertIn("inline bool CarrierScanTakesPrecedence(bool isCarrier, bool keyOn, KillFirstPickMode mode, "
+                      "bool scanFound,", POLICY)
+        self.assertIn("return keyOn && isCarrier && mode != KillFirstPickMode::None && scanFound && "
+                      "!ordinaryIsCarrierEntry;", POLICY)
 
     def test_the_scan_facts_read_the_checks_the_policy_names(self):
         scan = member(ACTIONS, "void CollectCarrierScanHits(", "\n}\n")

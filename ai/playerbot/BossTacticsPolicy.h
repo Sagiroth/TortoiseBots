@@ -2961,6 +2961,19 @@ namespace ai
         bool pickableSeen = false;
     };
 
+    // Whether the scan's Shade replaces the ordinary kill_first pick (Codex, round 3). A free DPS takes every open row
+    // (PickKillFirst), so a Powerful Healing Ward or a Brain Wash Totem in view wins the ordinary pick while a Shade
+    // lives, and a carrier is the only one who can kill that Shade (the uncursed raid leaves the ward and totem to
+    // nobody else). With the key on, a carrier (an open carrier row: the fight scan drops it for a bot without the
+    // aura) in any mode but None (a player's order is never overridden) takes the scan's Shade over the ordinary pick;
+    // no Shade found keeps the ordinary pick. An ordinary pick that already is a carrier-row entry (the carrier
+    // override's own Shade) stays: it is a Shade, and its ranking (a healer's Shade first) is the override's.
+    inline bool CarrierScanTakesPrecedence(bool isCarrier, bool keyOn, KillFirstPickMode mode, bool scanFound,
+                                           bool ordinaryIsCarrierEntry)
+    {
+        return keyOn && isCarrier && mode != KillFirstPickMode::None && scanFound && !ordinaryIsCarrierEntry;
+    }
+
     // The row's word from the scan: a player's order first (it is never overridden), then the most common refusal among
     // the grid hits (the enum order breaks a tie; the None code counts hits that passed every check and is never the
     // word), then why there was no hit at all: no hit and no unit in the fight is no_unit, no hit and an unpickable

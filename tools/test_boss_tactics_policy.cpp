@@ -219,6 +219,40 @@ static void TestCarrierScanReasonWord()
     CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::InvalidTarget), "invalid_target") == 0);
 }
 
+// Codex round 3: a free DPS carrier takes the Shade the scan found over a Powerful Healing Ward in view; every other
+// case keeps the ordinary pick.
+static void TestCarrierScanTakesPrecedence()
+{
+    using M = KillFirstPickMode;
+    // A carrier, the key on, a ward the ordinary pick took, a Shade the scan found: the Shade.
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Free, true, false));
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Carrier, true, false));
+    // Not a carrier: the ward stays (the uncursed raid's job).
+    CHECK(!CarrierScanTakesPrecedence(false, true, M::Free, true, false));
+    // Key off: the ward stays.
+    CHECK(!CarrierScanTakesPrecedence(true, false, M::Free, true, false));
+    // A player's order is never overridden.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::None, true, false));
+    // No Shade found: the ordinary pick stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Free, false, false));
+    // The ordinary pick already is a Shade: it stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Carrier, true, true));
+
+    // The walk shape: the free pick takes a ward (entry 14987) while a carrier row for 14986 is open.
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    rows.push_back(Row(310, 11380, BossTacticKind::KillFirst, 14987));
+    ActiveBossRows active = Active(rows);
+    std::vector<TacticCandidate> candidates{Cand(14987, 10.0f, true)};
+    int const ordinary = PickKillFirst(active, candidates);
+    CHECK(ordinary == 0); // the ward wins the ordinary free pick
+    CHECK(HasCarrierKillFirstRow(active));
+    CHECK(CarrierScanTakesPrecedence(HasCarrierKillFirstRow(active), true, M::Free, true,
+                                     candidates[ordinary].entry == 14986));
+}
+
 // The no-switch row's word from the scan tally: a player's order first, then the most common refusal (the enum order
 // breaks a tie), then why there was no hit at all.
 static void TestCarrierScanWord()
@@ -366,6 +400,7 @@ int main()
     TestCarrierScanPick();
     TestCarrierScanReasonWord();
     TestCarrierScanWord();
+    TestCarrierScanTakesPrecedence();
     TestTauntGate();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
