@@ -1138,6 +1138,23 @@ AiPlayerbot.DungeonRunCarrierScan = 0
 # 1 - on
 AiPlayerbot.DungeonRunCarrierHold = 0
 
+# The threat successor is the tank that does NOT hold the boss. On a boss with a `threat_successor` row (Hakkar, Jin'do)
+# the damage dealers are capped at 80 % of a reference tank's threat. Today the reference is the highest off-tank that
+# is hitting the boss, even when that off-tank is the one the boss is hitting: the damage dealers then cap against the
+# holder and the main tank, whose threat an earlier Hex wiped, sits below them (walk 55: after a Hex on the holding
+# off-tank a damage dealer inherited Jin'do 39 times out of 40). With the key on the reference is the real threat of the
+# highest tank (main or off) that is hitting the boss and is NOT the one the boss is hitting; a tank on a Son (Hakkar's
+# off-tanks), held on a Shade or away from the boss does not count, and with no such tank the old pick stands exactly.
+# Only bosses with a `threat_successor` row change, and only while a non-holding tank is on the boss.
+# Side effect: after a Hex on either tank the wiped tank is the reference at about 0, so the damage dealers (single-target
+# attacks) are held until it rebuilds past them. That scales with the fight's threat and can last tens of seconds; the
+# damage dealers keep working on adds (Shades, pit trolls, totems) meanwhile. Rogue Vanish and priest Fade on threat read a
+# 0 reference as "the tank holds nothing" and stay quiet then. Recommended on, to be judged from the ThreatCap and Hex
+# rows of the next walk. A tank wearing Jin'do's Hex counts as on the boss; hunter pets cower against a 0 reference too. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: today's reference (Default)
+# 1 - on
+AiPlayerbot.DungeonRunThreatSuccessorNotHolder = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed

@@ -118,6 +118,27 @@ static void TestCarrierNoSwitchReasonAndDirectOnly()
     CHECK(!AuraGatedDirectOnlyDamage(true, 0));
 }
 
+// t1106k F3 a: the kill-first switch row's since_ms is the server-clock time from this bot's first sight of the Shade
+// to the switch. Unknown first sight reads 0 (the row never invents a delay), and the 32-bit clock wrap is safe.
+static void TestCarrierSwitchSinceMs()
+{
+    CHECK(CarrierSwitchSinceMs(1000, 2300) == 1300);
+    CHECK(CarrierSwitchSinceMs(1000, 1000) == 0);
+    CHECK(CarrierSwitchSinceMs(0, 5000) == 0);
+    CHECK(CarrierSwitchSinceMs(0xFFFFFF00u, 0x00000100u) == 0x200u); // the clock wrapped between sight and switch
+}
+
+// t1106k R3 L3: a Shade missed by one pass (or two) keeps its first-sight record; it goes only after kShadeSeenGraceMs.
+static void TestShadeSeenGrace()
+{
+    CHECK(kShadeSeenGraceMs == 3000);
+    CHECK(!ShadeSeenExpired(10000, 10000));
+    CHECK(!ShadeSeenExpired(10000, 11000));  // one missed 1 s pass: kept (the old code erased here)
+    CHECK(!ShadeSeenExpired(10000, 13000));
+    CHECK(ShadeSeenExpired(10000, 13001));
+    CHECK(!ShadeSeenExpired(0xFFFFFF00u, 0x00000100u)); // clock wrap
+}
+
 // t1106b round 2: "current target" can already name the pick while the live victim is another unit (or none), and the
 // old current-target-only test left the trigger off for the rest of the fight. The trigger must fire and the action
 // must re-attack the pick, not only log.
@@ -478,6 +499,8 @@ int main()
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
+    TestCarrierSwitchSinceMs();
+    TestShadeSeenGrace();
     TestKillFirstReattacksAStalePick();
     TestCarrierScanTakesGridShadeTheAttackersListMissed();
     TestCarrierScanRefusal();

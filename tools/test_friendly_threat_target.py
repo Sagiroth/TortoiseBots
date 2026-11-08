@@ -46,6 +46,7 @@ struct PlayerbotAI {
     Player* GetBot() const { return bot; }
     bool IsSafe(Player* p) const { return p->safe; }
     bool IsTank(Player* p) const { return p->tank; }
+    bool HasAura(unsigned, Player*) const { return false; }
 };
 struct ThreatManager { float getThreat(Player* p) const { return p->threat; } };
 struct RaidTankRoles { std::vector<Player*> tanks; };
@@ -70,6 +71,7 @@ struct Facade {
     ThreatManager GetThreatManager(Unit*) const { return {}; }
 } sServerFacade;
 std::vector<Player*> LiveGroupMembers(Group* g) { return g->members; }
+struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; } sPlayerbotAIConfig;
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
@@ -77,6 +79,7 @@ struct ThreatValue {
 #include "ThreatCapPolicy.h"
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
+void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
 namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
 using namespace ai;
 """

@@ -993,6 +993,19 @@ Whether the boss tactics keep their `swap_on_aura` rows: the tanks of the row's 
 Whether a Delusions carrier standing on its Shade of Jin'do keeps it: the "not dps target active" trigger stays quiet for it, so "dps assist" no longer pulls it to the boss, and the kill-first trigger checks every second.
 **Default:** `0` · **Values:** `0` off (today's rules), `1` on (needs `AiPlayerbot.DungeonRunAuraTactics` for the needs_aura rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
+### `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`
+Whether, on a boss with a `threat_successor` row (Hakkar, Jin'do), the damage dealers are capped against a tank the boss is **not** hitting. Recommended on.
+**Default:** `0` · **Values:** `0` off (the reference is the highest off-tank that hits the boss, even when the boss is hitting it), `1` on (the reference is the real threat of the highest main tank or off-tank that is hitting the boss and is not the one it is hitting; with no such tank, the old pick stands exactly) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+With the off-tank holding Jin'do the old reference was the holder's own threat, so the damage dealers were allowed up to 80 % of it while the main tank (whose threat a Hex wiped) sat below them; after a Hex on the holder a damage dealer inherited Jin'do 39 times out of 40 in walk 55. With the key on the cap stands at the other tank's threat, so the boss falls to a tank. Only a tank that is hitting the boss counts: a Hakkar off-tank on a Son, a Jin'do tank held on its Shade or down in the pit is no successor, while a tank wearing Jin'do's Hex counts as on the boss (it cannot hit while polymorphed), and when none qualifies (or only the holder is on the boss) the old rules run unchanged, including the half-share rule for away off-tanks. The key changes only bosses with a `threat_successor` row, and only while a non-holding tank is on the boss.
+
+The price: after a Hex on **either** tank the wiped tank has about 0 threat and becomes the reference, and the damage dealers' single-target attacks are held (the 80 % line) until that tank has rebuilt past them. That takes as long as the fight's threat needs, tens of seconds is possible, and a second Hex on the new holder before then still hands the boss to a damage dealer; the damage dealers keep working on adds (Shades, pit trolls, totems) meanwhile. Rogue Vanish and priest Fade on threat read a 0 reference as "the tank holds nothing" and stay quiet, and hunter pets cower (`ShouldPetCower`) against it too, so pets are held during the stall as well. Each `BossTacticsThreatCap` row carries `holder=<main|off|none>` (the tank the boss is hitting) so the next walk can measure the stall.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

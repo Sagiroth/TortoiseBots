@@ -62,7 +62,8 @@ class ThreatValueSaturation(unittest.TestCase):
         # and the cap lets the attack through where the margin matters most.
         values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
         calc = body(values, "uint8 ThreatValue::Calculate(Unit* target)")
-        self.assertIn("return ThreatPctSaturated(botThreat, maxThreat);", calc)
+        self.assertIn("return ThreatPctOf(botThreat, maxThreat, target->IsInCombat(), fleeing);", calc)
+        self.assertIn("return ThreatPctSaturated(botThreat, maxThreat);", THREAT_POLICY)
         self.assertNotIn("botThreat * 100 / maxThreat", values)
         self.assertIn("inline std::uint8_t ThreatPctSaturated(float botThreat, float maxThreat)", THREAT_POLICY)
 
