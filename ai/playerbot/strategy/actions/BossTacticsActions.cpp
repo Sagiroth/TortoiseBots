@@ -3767,6 +3767,71 @@ void LogCarrierScanOver(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* over, Ki
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=scan_over", info2);
 }
 
+// The switch row (F3 a): when a carrier turns onto a Shade, one BossTacticsKillFirst row per bot per Shade says how long
+// its pick had known that Shade, so the walk can measure the reaction on the server clock instead of from 2 s frames.
+//   info1 = "reason=switch"
+//   info2 = "pick=<entry>:<guid low>,from=<entry|0>,since_ms=<ms since this bot's pick first saw the Shade>"
+// First sight is kept per (bot, Shade) in a bounded map. Every pick pass syncs it (SyncShadesSeen): a Shade that is no
+// longer among the fight's living units (dead, gone) and every entry of a bot that carries no open carrier row (the curse
+// ended, the fight is over) is erased. A pass with no Shade and an empty map costs one relaxed atomic load: no lock,
+// no allocation. The map is cleared outright past kShadeSeenMaxEntries (40 bots x a handful of Shades is well under it).
+constexpr std::size_t kShadeSeenMaxEntries = 512;
+constexpr std::size_t kShadeSeenMaxPerPass = 16;
+struct ShadeSeen
+{
+    uint32 firstMs = 0;
+    bool logged = false;
+};
+std::mutex g_shadeSeenMutex;
+std::map<std::pair<uint64, uint64>, ShadeSeen> g_shadeSeen;
+std::atomic<std::size_t> g_shadeSeenCount{0};
+
+void SyncShadesSeen(Player* bot, const uint64* shades, std::size_t count)
+{
+    if (count == 0 && g_shadeSeenCount.load(std::memory_order_relaxed) == 0)
+        return;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 botKey = bot->GetObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_shadeSeenMutex);
+    auto it = g_shadeSeen.lower_bound(std::make_pair(botKey, uint64(0)));
+    while (it != g_shadeSeen.end() && it->first.first == botKey)
+    {
+        if (std::find(shades, shades + count, it->first.second) == shades + count)
+            it = g_shadeSeen.erase(it);
+        else
+            ++it;
+    }
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        auto const inserted = g_shadeSeen.emplace(std::make_pair(botKey, shades[i]), ShadeSeen());
+        if (inserted.second)
+            inserted.first->second.firstMs = nowMs;
+    }
+    if (g_shadeSeen.size() > kShadeSeenMaxEntries)
+        g_shadeSeen.clear();
+    g_shadeSeenCount.store(g_shadeSeen.size(), std::memory_order_relaxed);
+}
+
+void LogCarrierSwitch(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* from)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    uint32 sinceMs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_shadeSeenMutex);
+        auto const known = g_shadeSeen.find(std::make_pair(bot->GetObjectGuid().GetRawValue(),
+                                                            pick->GetObjectGuid().GetRawValue()));
+        if (known == g_shadeSeen.end() || known->second.logged)
+            return;
+        known->second.logged = true;
+        sinceMs = CarrierSwitchSinceMs(known->second.firstMs, WorldTimer::getMSTime());
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "pick=%u:%u,from=%u,since_ms=%u", pick->GetEntry(), pick->GetGUIDLow(),
+             from ? from->GetEntry() : 0u, sinceMs);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=switch", info2);
+}
+
 Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
     float carrierReachYd);
 }
@@ -3907,6 +3972,16 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                 units.push_back(unit);
             }
         }
+    }
+    // First sight of each living Shade of an open carrier row, for the switch row (SyncShadesSeen).
+    {
+        uint64 shadeGuids[kShadeSeenMaxPerPass];
+        std::size_t shadeCount = 0;
+        if (HasCarrierKillFirstRow(fight.rows))
+            for (std::size_t i = 0; i < units.size() && shadeCount < kShadeSeenMaxPerPass; ++i)
+                if (sServerFacade.IsAlive(units[i]) && IsCarrierRowEntry(fight, candidates[i].entry))
+                    shadeGuids[shadeCount++] = units[i]->GetObjectGuid().GetRawValue();
+        SyncShadesSeen(bot, shadeGuids, shadeCount);
     }
     const int picked = mode == KillFirstPickMode::Carrier
         ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
@@ -4878,6 +4953,9 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
             LogCarrierNoSwitch(ai, bot, fight, pick, current, "attack_refused");
         return false;
     }
+    // A carrier that turned onto a needs_aura Shade says how long it had known it (one row per bot per Shade).
+    if (IsCarrierRowEntry(fight, pick->GetEntry()))
+        LogCarrierSwitch(ai, bot, pick, current);
     return true;
 }
 

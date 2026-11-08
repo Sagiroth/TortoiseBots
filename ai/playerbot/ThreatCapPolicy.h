@@ -147,6 +147,37 @@ namespace ai
         return pick;
     }
 
+    // The Hex snapshot row (BossTacticsHex, ThreatValues.cpp LogHexSnapshot): Jin'do's Hex (17172) lands on the boss's
+    // current victim and wipes its threat. The row names who wore it (the main tank, an off-tank or a damage dealer) and
+    // the threat of both tanks and the top damage dealer right after, so a walk can see who the boss turned to and why.
+    // One row per Hex: the same member does not log again inside kHexSnapshotGapMs (the Hex lasts 5 s, Jin'do recasts
+    // no sooner than 20 s).
+    constexpr std::uint32_t kJindoHexSpellId = 17172;
+    constexpr std::uint32_t kHexSnapshotGapMs = 8000;
+
+    enum class HexHolder { None, Main, Off, Dps };
+
+    // `tankIndex`: the member's place in the raid's tank order (0 main tank, 1.. off-tanks), -1 for anyone else.
+    // `hexed`: the member wears the Hex. None: nobody does.
+    inline HexHolder HexHolderOf(bool hexed, int tankIndex)
+    {
+        if (!hexed)
+            return HexHolder::None;
+        return tankIndex == 0 ? HexHolder::Main : tankIndex > 0 ? HexHolder::Off : HexHolder::Dps;
+    }
+
+    inline const char* HexHolderWord(HexHolder holder)
+    {
+        return holder == HexHolder::Main ? "main" : holder == HexHolder::Off ? "off"
+             : holder == HexHolder::Dps ? "dps" : "none";
+    }
+
+    // `lastMs` 0: this member never logged a Hex. The unsigned subtraction survives the 32-bit clock wrap.
+    inline bool HexSnapshotDue(std::uint32_t lastMs, std::uint32_t nowMs)
+    {
+        return lastMs == 0 || nowMs - lastMs >= kHexSnapshotGapMs;
+    }
+
     inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap, bool notHolder = false)
     {
         return ThreatCapPickReference(tanks, successorCap, notHolder).threat;

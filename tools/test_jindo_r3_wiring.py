@@ -17,6 +17,8 @@ def read(path):
         return handle.read()
 
 
+ACTIONS = read("ai/playerbot/strategy/actions/BossTacticsActions.cpp")
+BOSS_POLICY = read("ai/playerbot/BossTacticsPolicy.h")
 VALUES = read("ai/playerbot/strategy/values/ThreatValues.cpp")
 POLICY = read("ai/playerbot/ThreatCapPolicy.h")
 CONFIG_H = read("ai/playerbot/PlayerbotAIConfig.h")
@@ -68,6 +70,66 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
         self.assertIn("DungeonRunThreatSuccessorNotHolder", DOCS_RUNS)
         self.assertIn("holder=<main\\|off\\|none>", DOCS_ROWS)
         self.assertIn("DungeonRunThreatSuccessorNotHolder", CHANGELOG)
+
+
+class KillFirstSwitchRow(unittest.TestCase):
+    def test_the_helper_is_pure_and_used(self):
+        self.assertIn("inline std::uint32_t CarrierSwitchSinceMs(std::uint32_t firstSeenMs, std::uint32_t nowMs)",
+                      BOSS_POLICY)
+        log = member(ACTIONS, "void LogCarrierSwitch(", "\n}\n")
+        self.assertIn("CarrierSwitchSinceMs(known->second.firstMs, WorldTimer::getMSTime())", log)
+        self.assertIn('"reason=switch"', log)
+        self.assertIn("pick=%u:%u,from=%u,since_ms=%u", log)
+
+    def test_one_row_per_bot_and_shade(self):
+        log = member(ACTIONS, "void LogCarrierSwitch(", "\n}\n")
+        self.assertIn("known->second.logged", log)
+        self.assertIn("std::map<std::pair<uint64, uint64>, ShadeSeen> g_shadeSeen;", ACTIONS)
+
+    def test_the_action_logs_after_a_successful_attack_on_a_carrier_row_shade(self):
+        action = member(ACTIONS, "bool BossTacticsKillFirstAction::Execute(Event& event)", "\n}\n")
+        attack = action.index("if (!Attack(bot, pick))")
+        row = action.index("LogCarrierSwitch(ai, bot, pick, current);")
+        self.assertGreater(row, attack)
+        self.assertIn("if (IsCarrierRowEntry(fight, pick->GetEntry()))", action[attack:row])
+
+    def test_the_pick_syncs_first_sight_and_idles_for_free(self):
+        pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, "
+                      "KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")
+        self.assertIn("SyncShadesSeen(bot, shadeGuids, shadeCount);", pick)
+        sync = member(ACTIONS, "void SyncShadesSeen(", "\n}\n")
+        # No Shade and an empty map: one atomic load, before the clock read, the lock or any container work.
+        self.assertLess(sync.index("g_shadeSeenCount.load(std::memory_order_relaxed) == 0"), sync.index("lock_guard"))
+        self.assertIn("it = g_shadeSeen.erase(it);", sync)
+        self.assertIn("kShadeSeenMaxEntries", sync)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("reason=switch", DOCS)
+        self.assertIn("since_ms", DOCS)
+        self.assertIn("reason=switch", DOCS_ROWS)
+
+
+class HexSnapshotRow(unittest.TestCase):
+    def test_the_snapshot_is_taken_on_the_world_thread_read_of_the_boss_threat(self):
+        tank_threat = member(VALUES, "float ThreatValue::GetTankThreat(", "\n}\n")
+        self.assertIn("LogHexSnapshot(ai, target, roles, group);", tank_threat)
+
+    def test_the_row_fields(self):
+        log = member(VALUES, "void LogHexSnapshot(", "\n}\n")
+        self.assertIn('"holder=%s ot_threat=%.0f mt_threat=%.0f top_dps=%s:%.0f"', log)
+        self.assertIn('"BossTacticsHex"', log)
+        self.assertIn("ai->HasAura(kJindoHexSpellId, tank)", log)
+        self.assertIn("HexSnapshotDue(last, nowMs)", log)
+        self.assertIn("sPlayerbotAIConfig.hasLog(\"bot_events.csv\")", log)
+
+    def test_no_flag_gates_the_row(self):
+        log = member(VALUES, "void LogHexSnapshot(", "\n}\n")
+        self.assertNotIn("sPlayerbotAIConfig.dungeonRun", log)
+
+    def test_docs(self):
+        self.assertIn("BossTacticsHex", DOCS)
+        self.assertIn("BossTacticsHex", DOCS_ROWS)
+        self.assertIn("top_dps", DOCS)
 
 
 if __name__ == "__main__":

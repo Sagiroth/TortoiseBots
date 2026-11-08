@@ -78,6 +78,7 @@ struct ThreatValue {
 #include "ThreatCapPolicy.h"
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
+void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
 namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
 using namespace ai;
 """

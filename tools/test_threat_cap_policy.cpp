@@ -160,6 +160,25 @@ int main()
     // No tanks at all: still -1, the caller's "no reference".
     CHECK(ThreatCapReference({}, true, true) == -1.0f);
 
+    // HexSnapshot (BossTacticsHex row): who wore Jin'do's Hex, and one row per Hex.
+    CHECK(kJindoHexSpellId == 17172);
+    CHECK(HexHolderOf(true, 0) == HexHolder::Main);
+    CHECK(HexHolderOf(true, 1) == HexHolder::Off);
+    CHECK(HexHolderOf(true, 2) == HexHolder::Off);
+    CHECK(HexHolderOf(true, -1) == HexHolder::Dps);
+    CHECK(HexHolderOf(false, 0) == HexHolder::None);
+    CHECK(std::string(HexHolderWord(HexHolder::Main)) == "main");
+    CHECK(std::string(HexHolderWord(HexHolder::Off)) == "off");
+    CHECK(std::string(HexHolderWord(HexHolder::Dps)) == "dps");
+    CHECK(std::string(HexHolderWord(HexHolder::None)) == "none");
+    // One row per Hex: the first logs, a re-read 5 s later (the Hex still up) does not, the next Hex 20 s on does.
+    CHECK(HexSnapshotDue(0, 1000));
+    CHECK(!HexSnapshotDue(1000, 1000 + 5000));
+    CHECK(!HexSnapshotDue(1000, 1000 + kHexSnapshotGapMs - 1));
+    CHECK(HexSnapshotDue(1000, 1000 + kHexSnapshotGapMs));
+    CHECK(HexSnapshotDue(1000, 1000 + 20000));
+    CHECK(HexSnapshotDue(0xFFFFFF00u, 0x00004000u)); // clock wrap
+
     // ThreatHighLineIsEightyEverywhere: every target vetoes at 80 % of the reference tank, successor bosses included.
     CHECK(kThreatHighLinePct == 80);
 
