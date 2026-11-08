@@ -49,6 +49,15 @@ namespace ai
     constexpr float kSeekWalkoutStandArriveYd = 3.0f;       // at the stand is this close to it
     constexpr float kSeekWalkoutPlatformYd = 60.0f;         // the ranged platform: this close to the anchor's centre
 
+    // The pulled Son meets a tank (walk 53): the walk back ends where a waiting off-tank stands, not at the circle's
+    // edge. The Son that chased the puller lands on that tank instead of on the ranged raid. Taunt and Growl are melee
+    // range, so the puller has to bring the Son within the receiver's reach: the receiver takes it once it is this
+    // close (Attack closes the last yards to the taunt's melee range), and the puller stops this close to the receiver.
+    constexpr float kSeekMeetArriveYd = 2.0f;       // the puller stops this close to the receiver
+    constexpr float kSeekMeetTakeYd = 8.0f;         // the receiver takes the Son once it is this close
+    constexpr std::uint32_t kSeekMeetMaxMs = 20000; // the meet is over 20 s after the shot (walk 52: start to back
+                                                    // median 18 s, p90 23 s, and the shot lands mid-task)
+
     // A seek_pull row's rules (walk 51): every Son is walked once per cycle, up to `maxPerCycle` walk-outs start a
     // cycle, each with `firstStartMinMs` left at the least, a failed one reopens the cycle, a shot that stalls at the
     // stand aborts, the pick compares with the live top tank and the stand search fans out and reaches a hunter's
@@ -467,6 +476,114 @@ namespace ai
             std::max(0.0f, tank.radius - kSeekWalkoutBackInsetYd) + kSeekWalkoutBackSlackYd;
     }
 
+    // One raid tank as a meet receiver: alive and in the world, not charmed, not the boss's victim, not holding a Son
+    // already, and inside the tanks' circle (the walk back ends there).
+    struct MeetCandidate
+    {
+        bool alive = false;
+        bool charmed = false;
+        bool bossVictim = false;
+        bool holdsSon = false;
+        bool inside = false;
+    };
+
+    // Why this tank cannot wait for the pulled Son: the first failing test in the order below, or null when it can.
+    inline const char* MeetRefusalWhy(const MeetCandidate& c)
+    {
+        if (!c.alive)
+            return "dead";
+        if (c.charmed)
+            return "charmed";
+        if (c.bossVictim)
+            return "victim";
+        if (c.holdsSon)
+            return "busy";
+        if (!c.inside)
+            return "outside";
+        return nullptr;
+    }
+
+    // The tank that waits for the pulled Son: the raid's third tank (index 2), else the second off-tank (index 1), and
+    // never the main tank at index 0, which holds the boss. -1: no tank can wait.
+    inline int PickMeetReceiver(const std::vector<MeetCandidate>& tanks)
+    {
+        if (tanks.size() > 2 && MeetRefusalWhy(tanks[2]) == nullptr)
+            return 2;
+        if (tanks.size() > 1 && MeetRefusalWhy(tanks[1]) == nullptr)
+            return 1;
+        return -1;
+    }
+
+    // The per-code refusal counts over indices 1..n-1 in MeetRefusalWhy's order, e.g. `dead:1|busy:1`; `none` when no
+    // candidate failed.
+    inline std::string MeetRefusalCounts(const std::vector<MeetCandidate>& tanks)
+    {
+        static const char* const kCodes[] = {"dead", "charmed", "victim", "busy", "outside"};
+        int counts[5] = {0, 0, 0, 0, 0};
+        for (std::size_t i = 1; i < tanks.size(); ++i)
+        {
+            const char* const why = MeetRefusalWhy(tanks[i]);
+            if (!why)
+                continue;
+            for (int code = 0; code < 5; ++code)
+            {
+                if (std::strcmp(why, kCodes[code]) == 0)
+                {
+                    ++counts[code];
+                    break;
+                }
+            }
+        }
+        std::string out;
+        for (int code = 0; code < 5; ++code)
+        {
+            if (counts[code] == 0)
+                continue;
+            if (!out.empty())
+                out += "|";
+            out += kCodes[code];
+            out += ":";
+            out += std::to_string(counts[code]);
+        }
+        return out.empty() ? std::string("none") : out;
+    }
+
+    // Where the walk back ends: the tanks' circle edge without a meet, the waiting receiver's live position (clamped
+    // into that circle) with one.
+    inline void WalkoutMeetBackPoint(bool hasMeet, float rx, float ry, const BossAnchorCircle& tank, float botX,
+                                     float botY, float& x, float& y)
+    {
+        if (hasMeet)
+            WalkoutBackPoint(tank, rx, ry, x, y);
+        else
+            WalkoutBackPoint(tank, botX, botY, x, y);
+    }
+
+    // Whether the puller has arrived: at the circle's edge without a meet, within kSeekMeetArriveYd of the clamped
+    // receiver point with one.
+    inline bool WalkoutMeetArrived(bool hasMeet, float px, float py, const BossAnchorCircle& tank, float botX,
+                                   float botY)
+    {
+        if (!hasMeet)
+            return WalkoutBackArrived(tank, botX, botY);
+        float const dx = botX - px;
+        float const dy = botY - py;
+        return std::sqrt(dx * dx + dy * dy) <= kSeekMeetArriveYd;
+    }
+
+    // Whether the receiver takes the pulled Son now: it is on the receiver, or within the take reach (Attack closes
+    // the last yards to the taunt's melee range).
+    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver)
+    {
+        return sonOnReceiver || sonToReceiverYd <= kSeekMeetTakeYd;
+    }
+
+    // Whether the meet still runs: a receiver is named and the shot landed less than kSeekMeetMaxMs ago.
+    inline bool SeekMeetOpen(std::uint64_t receiver, std::uint32_t meetMs, std::uint32_t nowMs)
+    {
+        return receiver != 0 && nowMs - meetMs < kSeekMeetMaxMs;
+    }
+
     // The fight's one walk-out task (per map instance): its puller and Son, the start, whether the shot landed (the Son
     // joined the fight), the seek cycle it spent and every Son already walked to.
     struct SeekWalkoutState
@@ -505,7 +622,21 @@ namespace ai
         // The walk back after a timeout or an abort: that puller, exempt until it is inside or kSeekWalkoutReturnMs.
         std::uint64_t returner = 0;
         std::uint32_t returnStartMs = 0;
+        // The pulled Son's meet with the tank that waits at the walk's end: the receiver, the Son, when the shot landed
+        // and whether its take was logged. WalkoutFinish and WalkoutReturnDone leave them: the meet outlives `back`.
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSon = 0;
+        std::uint32_t meetMs = 0;
+        bool meetTakenLogged = false;
     };
+
+    inline void WalkoutMeetClear(SeekWalkoutState& s)
+    {
+        s.meetReceiver = 0;
+        s.meetSon = 0;
+        s.meetMs = 0;
+        s.meetTakenLogged = false;
+    }
 
     inline bool WalkoutActive(const SeekWalkoutState& s)
     {

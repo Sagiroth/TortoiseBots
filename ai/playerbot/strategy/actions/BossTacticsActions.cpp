@@ -1410,8 +1410,9 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: skip anchor", "");
 }
 
-// One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes and the Son's victim.
-void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)
+// One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
+// why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet.
+void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
         return;
@@ -1424,10 +1425,17 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)
         last = nowMs;
     }
     Unit* const victim = son->GetVictim();
-    char info1[160];
-    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s", bot->GetName(), son->GetGUIDLow(),
-             victim ? victim->GetName() : "none");
+    char info1[192];
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d", bot->GetName(),
+             son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// One `BossTacticsSonMeet` row (the pulled Son's meet with a tank): built by its caller, logged here without a
+// throttle, because one meet is one event.
+void LogSeekMeet(PlayerbotAI* ai, const char* info1)
+{
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSonMeet", info1, "");
 }
 
 // The ranged puller's shot from inside a live boss anchor at a Son outside it: the pull rows' throttle, as the skip.
@@ -1898,6 +1906,14 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
     return nullptr;
 }
 
+// Whether this fight runs a seek_pull row with the flag on: the walk-out's own clock (the arrival note, the facing)
+// reads the row's rules.
+bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)
+{
+    return sPlayerbotAIConfig.dungeonRunSeekPullCycle && seekRow &&
+        GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry) != nullptr;
+}
+
 void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss, std::uint32_t cycleNo,
                        std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, SeekFight& out)
 {
@@ -1919,6 +1935,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 GetBossTactics().SeekPullRow(bot->GetMapId(), row.bossEntry, row.targetEntry))
             rules = WalkoutRulesFromRow(pull->priority, pull->windowSec, row.windowSec);
     }
+    const bool meetOn = SeekPullRulesOn(bot->GetMapId(), &row) && sPlayerbotAIConfig.dungeonRunSeekSonMeet;
     SeekWalkoutState state;
     bool scanFresh = false;
     bool scanBlocked = true;
@@ -1952,6 +1969,54 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             scanStandZ = it->second.scanStandZ;
             scanReachYd = it->second.scanReachYd;
             scanRayDeg = it->second.scanRayDeg;
+        }
+    }
+    if (state.meetReceiver != 0)
+    {
+        // The meet ends when the Son dies or leaves, the receiver dies or leaves, the Son's victim is any player tank
+        // (its take, logged once), or the 20 s clock runs out. Every read checks it, whether a task runs or not.
+        Creature* const meetSon = state.meetSon ? map->GetCreature(ObjectGuid(state.meetSon)) : nullptr;
+        Player* const meetReceiver = map->GetPlayer(ObjectGuid(state.meetReceiver));
+        const char* lost = nullptr;
+        Player* takenBy = nullptr;
+        if (!meetSon || !meetSon->IsInWorld() || !sServerFacade.IsAlive(meetSon))
+            lost = "son_dead";
+        else if (!meetReceiver || !meetReceiver->IsInWorld() || !sServerFacade.IsAlive(meetReceiver))
+            lost = "receiver_dead";
+        else
+        {
+            Player* const victim = dynamic_cast<Player*>(meetSon->GetVictim());
+            if (!state.meetTakenLogged && victim && PlayerbotAI::IsTank(victim))
+                takenBy = victim;
+            else if (!SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs))
+                lost = "timeout";
+        }
+        if (lost || takenBy)
+        {
+            {
+                std::lock_guard<std::mutex> lock(g_walkoutMutex);
+                auto const it = g_walkouts.find(instanceId);
+                if (it != g_walkouts.end() && it->second.state.meetReceiver == state.meetReceiver &&
+                    it->second.state.meetMs == state.meetMs)
+                {
+                    if (takenBy)
+                        it->second.state.meetTakenLogged = true;
+                    WalkoutMeetClear(it->second.state);
+                }
+            }
+            char info1[192];
+            if (takenBy)
+                snprintf(info1, sizeof(info1), "son=%u,event=taken,receiver=%s,by=%s,after_ms=%u",
+                         ObjectGuid(state.meetSon).GetCounter(), meetReceiver ? meetReceiver->GetName() : "none",
+                         takenBy->GetName(), nowMs - state.meetMs);
+            else
+                snprintf(info1, sizeof(info1), "son=%u,event=lost,reason=%s,after_ms=%u",
+                         ObjectGuid(state.meetSon).GetCounter(), lost, nowMs - state.meetMs);
+            LogSeekMeet(ai, info1);
+            state.meetReceiver = 0;
+            state.meetSon = 0;
+            state.meetMs = 0;
+            state.meetTakenLogged = false;
         }
     }
     if (WalkoutActive(state))
@@ -2011,9 +2076,25 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
             return;
         }
-        bool const backInside = puller && WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
+        bool backInside = false;
+        if (puller)
+        {
+            Player* const meetReceiver = state.meetReceiver != 0
+                ? map->GetPlayer(ObjectGuid(state.meetReceiver)) : nullptr;
+            if (meetOn && SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs) && meetReceiver &&
+                meetReceiver->IsInWorld())
+            {
+                float px = 0.0f, py = 0.0f;
+                WalkoutMeetBackPoint(true, meetReceiver->GetPositionX(), meetReceiver->GetPositionY(), tank,
+                                     puller->GetPositionX(), puller->GetPositionY(), px, py);
+                backInside = WalkoutMeetArrived(true, px, py, tank, puller->GetPositionX(), puller->GetPositionY());
+            }
+            else
+                backInside = WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
+        }
         WalkoutEnd const end = WalkoutCheck(state, nowMs, pullerOk, sonOk, backInside);
         bool reopened = false;
+        std::string meetRow;
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
@@ -2021,7 +2102,67 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 it->second.state.startMs != state.startMs)
                 return; // another read closed or replaced it
             if (shotNow)
+            {
+                bool const firstShot = !it->second.state.shot;
                 WalkoutNoteShot(it->second.state);
+                // The shot lands once: the Son now chases this puller, so one of the raid's tanks goes to meet it.
+                if (firstShot && meetOn)
+                {
+                    const RaidTankRoles meetRoles = GetRaidTankRoles(ai);
+                    std::vector<MeetCandidate> tanks;
+                    tanks.reserve(meetRoles.tanks.size());
+                    for (Player* member : meetRoles.tanks)
+                    {
+                        MeetCandidate candidate;
+                        candidate.alive = member && member->IsInWorld() && sServerFacade.IsAlive(member);
+                        candidate.charmed = member && !member->GetCharmerGuid().IsEmpty();
+                        candidate.bossVictim = member && boss->GetVictim() == member;
+                        candidate.holdsSon = false;
+                        if (member)
+                        {
+                            for (Unit* fightSon : out.sons)
+                            {
+                                if (fightSon && fightSon->GetEntry() == row.targetEntry &&
+                                    sServerFacade.IsAlive(fightSon) && fightSon->GetVictim() == member)
+                                {
+                                    candidate.holdsSon = true;
+                                    break;
+                                }
+                            }
+                        }
+                        candidate.inside = member && InsideAnchor(tank, member->GetPositionX(),
+                                                                  member->GetPositionY());
+                        tanks.push_back(candidate);
+                    }
+                    int const pick = PickMeetReceiver(tanks);
+                    std::uint64_t const meetSonGuid = it->second.state.son;
+                    char info1[224];
+                    if (pick >= 0 && static_cast<std::size_t>(pick) < meetRoles.tanks.size() &&
+                        meetRoles.tanks[static_cast<std::size_t>(pick)])
+                    {
+                        Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
+                        it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
+                        it->second.state.meetSon = meetSonGuid;
+                        it->second.state.meetMs = nowMs;
+                        it->second.state.meetTakenLogged = false;
+                        state.meetReceiver = it->second.state.meetReceiver;
+                        state.meetSon = meetSonGuid;
+                        state.meetMs = nowMs;
+                        state.meetTakenLogged = false;
+                        snprintf(info1, sizeof(info1),
+                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u",
+                                 ObjectGuid(meetSonGuid).GetCounter(), receiver->GetName(), pick,
+                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000);
+                    }
+                    else
+                    {
+                        snprintf(info1, sizeof(info1), "son=%u,event=no_meet,reason=%s,tanks=%d",
+                                 ObjectGuid(meetSonGuid).GetCounter(), MeetRefusalCounts(tanks).c_str(),
+                                 static_cast<int>(tanks.size()));
+                    }
+                    meetRow = info1;
+                }
+            }
             if (end != WalkoutEnd::None)
             {
                 bool const before = WalkoutBusy(it->second.state);
@@ -2039,6 +2180,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 NoteWalkoutBusy(before, it->second.state);
             }
         }
+        if (!meetRow.empty())
+            LogSeekMeet(ai, meetRow.c_str());
         if (end == WalkoutEnd::Abort)
         {
             LogSeekWalkoutAbort(ai, problem ? problem : "son gone", puller && son ? puller->GetDistance(son) : -1.0f,
@@ -2116,8 +2259,24 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         // The walk back after a timeout or an abort: over once the puller is inside, gone, or the 15 s are up.
         Player* const returner = map->GetPlayer(ObjectGuid(state.returner));
-        bool const done = !returner || !sServerFacade.IsAlive(returner) || !WalkoutReturning(state, nowMs) ||
-            WalkoutBackArrived(tank, returner->GetPositionX(), returner->GetPositionY());
+        bool arrived = false;
+        if (returner && sServerFacade.IsAlive(returner))
+        {
+            Player* const meetReceiver = state.meetReceiver != 0
+                ? map->GetPlayer(ObjectGuid(state.meetReceiver)) : nullptr;
+            if (meetOn && SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs) && meetReceiver &&
+                meetReceiver->IsInWorld())
+            {
+                float px = 0.0f, py = 0.0f;
+                WalkoutMeetBackPoint(true, meetReceiver->GetPositionX(), meetReceiver->GetPositionY(), tank,
+                                     returner->GetPositionX(), returner->GetPositionY(), px, py);
+                arrived = WalkoutMeetArrived(true, px, py, tank, returner->GetPositionX(),
+                                             returner->GetPositionY());
+            }
+            else
+                arrived = WalkoutBackArrived(tank, returner->GetPositionX(), returner->GetPositionY());
+        }
+        bool const done = !returner || !sServerFacade.IsAlive(returner) || !WalkoutReturning(state, nowMs) || arrived;
         if (done)
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
@@ -2364,6 +2523,20 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     out.shotZ = scan.z;
 }
 
+// The meet this map instance's fight has open (g_walkoutMutex): the receiver, the Son and the shot's time. False when
+// no receiver is named. The callers check SeekMeetOpen and resolve the units themselves.
+bool SeekMeetSnapshot(std::uint32_t instanceId, std::uint64_t& receiver, std::uint64_t& son, std::uint32_t& meetMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return false;
+    receiver = it->second.state.meetReceiver;
+    son = it->second.state.meetSon;
+    meetMs = it->second.state.meetMs;
+    return receiver != 0;
+}
+
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
 // file, and the fight record's lock is never held across that I/O.
 struct SeekLogRow
@@ -2376,6 +2549,9 @@ struct SeekLogRow
 // Defined after SeekHoldsUnit (the hold clock reads it); ReadSeekFight calls it under the record lock.
 void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
                        std::uint32_t nowMs, std::vector<SeekLogRow>& rows);
+
+// Defined after the Son rows (it reads the boss's threat list); ReadSeekFight hands it a charm after the 1.5 s wait.
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles);
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
@@ -2410,6 +2586,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint64_t gatherGuid = 0;
     std::uint64_t pullGuid = 0;
     std::uint32_t pullStartMs = 0;
+    std::uint64_t charmRowGuid = 0;
     std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
@@ -2861,10 +3038,42 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
         out.nonTankSince = record.healerHeldSince;
         TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);
+        // Cause Insanity's successor: one group-wide aura scan per fight per 500 ms (the lock makes one reading bot the
+        // scanner). A new charmed guid starts its 1.5 s clock; Hakkar has turned to his next victim by then (median
+        // 1.05 s after the cast).
+        if (nowMs - record.charmScanMs >= 500)
+        {
+            record.charmScanMs = nowMs;
+            std::uint64_t charmed = 0;
+            if (Group* const group = bot->GetGroup())
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (member && member->HasAura(kHakkarCauseInsanitySpell))
+                    {
+                        charmed = member->GetObjectGuid().GetRawValue();
+                        break;
+                    }
+                }
+            }
+            if (charmed != 0 && charmed != record.charmGuid)
+            {
+                record.charmGuid = charmed;
+                record.charmSeenMs = nowMs;
+                record.charmLogged = false;
+            }
+        }
+        if (record.charmGuid != 0 && !record.charmLogged && nowMs - record.charmSeenMs >= 1500)
+        {
+            record.charmLogged = true;
+            charmRowGuid = record.charmGuid;
+        }
     }
     // The hold and death rows were built under the lock; logEvent runs without it.
     for (const SeekLogRow& row : seekRows)
         sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);
+    if (charmRowGuid != 0)
+        LogSeekCharm(ai, bot, boss, charmRowGuid, roles);
     if (healerTakeGuid)
     {
         // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
@@ -3088,6 +3297,101 @@ void PushSonDeathRow(std::vector<SeekLogRow>& rows, Player* bot, const SeekFight
              ObjectGuid(guid).GetCounter(), phase, raidInCloud, raidAlive, static_cast<unsigned>(heldMs));
     rows.push_back(SeekLogRow{"BossTacticsSonDeath", info1, info2});
     record.sonDeathLogged.insert(guid);
+}
+
+// A unit's role and class in the Cause Insanity row: tank, healer, dps, pet or other, and the class word lowercase.
+const char* CharmRoleWord(Unit* unit)
+{
+    if (!unit)
+        return "other";
+    if (dynamic_cast<Pet*>(unit))
+        return "pet";
+    Player* const player = dynamic_cast<Player*>(unit);
+    if (!player)
+        return "other";
+    if (PlayerbotAI::IsTank(player))
+        return "tank";
+    if (PlayerbotAI::IsHeal(player))
+        return "healer";
+    if (IsBattleDps(player))
+        return "dps";
+    return "other";
+}
+
+const char* CharmClassWord(Unit* unit)
+{
+    Player* const player = dynamic_cast<Player*>(unit);
+    if (!player)
+        return "other";
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return "warrior";
+        case CLASS_PALADIN: return "paladin";
+        case CLASS_HUNTER: return "hunter";
+        case CLASS_ROGUE: return "rogue";
+        case CLASS_PRIEST: return "priest";
+        case CLASS_SHAMAN: return "shaman";
+        case CLASS_MAGE: return "mage";
+        case CLASS_WARLOCK: return "warlock";
+        case CLASS_DRUID: return "druid";
+        default: return "other";
+    }
+}
+
+// The Cause Insanity row, built once per charm after its 1.5 s wait: the charmed player, Hakkar's new victim, the two
+// off-tanks' threat on him and the five highest threat entries (the charmed player left out). Logged without the
+// fight's lock; it measures who the threat cap had to hold back, so the next brief can read the margin.
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles)
+{
+    if (!ai || !bot || !boss)
+        return;
+    Player* const charmed = bot->GetMap()->GetPlayer(ObjectGuid(charmedGuid));
+    if (!charmed)
+        return;
+    struct CharmThreat
+    {
+        float threat;
+        Unit* unit;
+    };
+    std::vector<CharmThreat> ranked;
+    for (HostileReference const* ref : boss->GetThreatManager().getThreatList())
+    {
+        Unit* const unit = ref ? ref->getTarget() : nullptr;
+        if (!unit || unit->GetObjectGuid().GetRawValue() == charmedGuid)
+            continue;
+        ranked.push_back(CharmThreat{ref->getThreat(), unit});
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const CharmThreat& a, const CharmThreat& b)
+    {
+        return a.threat != b.threat ? a.threat > b.threat : a.unit < b.unit;
+    });
+    char top[256];
+    top[0] = '\0';
+    std::size_t used = 0;
+    for (std::size_t i = 0; i < ranked.size() && i < 5; ++i)
+    {
+        char entry[96];
+        int const n = snprintf(entry, sizeof(entry), "%s%s:%s:%.0f", i == 0 ? "" : "|",
+                               CharmRoleWord(ranked[i].unit), CharmClassWord(ranked[i].unit), ranked[i].threat);
+        if (n <= 0 || used + static_cast<std::size_t>(n) >= sizeof(top))
+            break;
+        std::memcpy(top + used, entry, static_cast<std::size_t>(n));
+        used += static_cast<std::size_t>(n);
+        top[used] = '\0';
+    }
+    Unit* const victim = boss->GetVictim();
+    float const ot1 = roles.tanks.size() > 1 && roles.tanks[1]
+        ? boss->GetThreatManager().getThreat(roles.tanks[1]) : -1.0f;
+    float const ot2 = roles.tanks.size() > 2 && roles.tanks[2]
+        ? boss->GetThreatManager().getThreat(roles.tanks[2]) : -1.0f;
+    char info1[512];
+    snprintf(info1, sizeof(info1), "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s",
+             CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
+             ot1, ot2, top);
+    char info2[160];
+    snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
+             CharmRoleWord(victim), CharmClassWord(victim));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsCharm", info1, info2);
 }
 
 // The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
@@ -6952,6 +7256,47 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
+    // The pulled Son's meet: this tank waits where the walker is heading and takes the Son on arrival, before any other
+    // Son, pull or drag takes its tick.
+    if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), state.row) &&
+        SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))
+    {
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSon = 0;
+        std::uint32_t meetMs = 0;
+        if (SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs) &&
+            meetReceiver == bot->GetObjectGuid().GetRawValue() &&
+            SeekMeetOpen(meetReceiver, meetMs, WorldTimer::getMSTime()))
+        {
+            Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(meetSon));
+            if (son && son->GetEntry() == state.row->targetEntry && sServerFacade.IsAlive(son))
+            {
+                task.row = state.row;
+                if (son->GetVictim() == bot)
+                {
+                    // On the receiver already: today's own-source branch drags it back to the spot and holds it.
+                    task.valid = true;
+                    task.source = son;
+                    task.holdSwing = SeekTankSwingHeld(state.windowOpen, son->GetHealthPercent(),
+                                                       static_cast<float>(state.row->priority));
+                    if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
+                        task.walkToSpot = true;
+                    return task;
+                }
+                if (SeekMeetTakeDue(bot->GetDistance(son), false))
+                {
+                    task.valid = true;
+                    task.source = son;
+                    task.take = true;
+                    task.meet = true;
+                    return task;
+                }
+                // Waiting: no other Son, pull or drag during the meet, so the tank stands where the puller is walking.
+                task.valid = false;
+                return task;
+            }
+        }
+    }
     if (!thirdTank && !pickupTank && !healerTaker && state.walkout)
     {
         // The walk-out task the state runs for this bot: out to the Son and one shot, then back.
@@ -7160,14 +7505,6 @@ bool TauntAuraGated(Player* bot, Unit* subject)
     std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), subject->GetEntry());
     return AuraGateRefuses(true, requiredAura, requiredAura != 0 && bot->HasAura(requiredAura));
 }
-
-// Whether this fight runs a seek_pull row with the flag on: the walk-out's own clock (the arrival note, the facing)
-// reads the row's rules.
-bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)
-{
-    return sPlayerbotAIConfig.dungeonRunSeekPullCycle && seekRow &&
-        GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry) != nullptr;
-}
 }
 
 bool BossTacticsSeekTankAction::Execute(Event& event)
@@ -7240,13 +7577,28 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         else
         {
             // Back (shot, or the walk back after a timeout or an abort): nothing is attacked on the way.
-            if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
-                bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-            bot->AttackStop();
             BossAnchorCircle tank;
             if (!task.row || !BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, true, tank))
                 return false;
-            WalkoutBackPoint(tank, bot->GetPositionX(), bot->GetPositionY(), x, y);
+            // With the meet on, the walk ends at the waiting receiver instead of the circle's edge, so the Son that
+            // follows lands on that tank. Without an open meet or a live receiver the old point stands.
+            std::uint64_t meetReceiver = 0;
+            std::uint64_t meetSon = 0;
+            std::uint32_t meetMs = 0;
+            Player* const receiver = sPlayerbotAIConfig.dungeonRunSeekSonMeet &&
+                    SeekPullRulesOn(bot->GetMapId(), task.row) &&
+                    SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs) &&
+                    SeekMeetOpen(meetReceiver, meetMs, WorldTimer::getMSTime())
+                ? bot->GetMap()->GetPlayer(ObjectGuid(meetReceiver)) : nullptr;
+            const bool meetBack = receiver && receiver->IsInWorld();
+            if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+                bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            bot->AttackStop();
+            if (meetBack)
+                WalkoutMeetBackPoint(true, receiver->GetPositionX(), receiver->GetPositionY(), tank,
+                                     bot->GetPositionX(), bot->GetPositionY(), x, y);
+            else
+                WalkoutBackPoint(tank, bot->GetPositionX(), bot->GetPositionY(), x, y);
             z = tank.z;
         }
         bot->UpdateGroundPositionZ(x, y, z);
@@ -7300,7 +7652,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // it stands, and the Son comes in to it.
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
         const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
-        LogSeekTake(ai, bot, task.source);
+        const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
+        LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt), task.meet);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.
@@ -7309,10 +7662,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         }
         if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
-            if (Attack(bot, task.source) && (!taunt || !ai->CanCastSpell(taunt, task.source)))
+            if (Attack(bot, task.source) && !canTaunt)
                 return true;
         }
-        if (!taunt || !ai->CanCastSpell(taunt, task.source))
+        if (!canTaunt)
             return false;
         return ai->CastSpell(taunt, task.source);
     }

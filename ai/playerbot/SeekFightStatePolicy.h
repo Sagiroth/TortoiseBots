@@ -298,6 +298,12 @@ namespace ai
         int siphonUndosed = 0;
         int siphonLateDosed = 0;        // the +3 s read, kept beside it
         int siphonLateUndosed = 0;
+        // The Cause Insanity measurement: the charmed guid this fight last saw, when it was first seen, whether its
+        // row is out, and when the group-wide aura scan last ran. Cleared with the fight.
+        std::uint64_t charmGuid = 0;
+        std::uint32_t charmSeenMs = 0;
+        bool charmLogged = false;
+        std::uint32_t charmScanMs = 0;
     };
 
     // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside

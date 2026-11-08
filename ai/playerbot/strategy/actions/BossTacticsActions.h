@@ -639,6 +639,7 @@ namespace ai
         bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
         bool walkout = false;     // the walk-out task (SeekWalkoutPolicy.h): out to shoot `source` once, then back
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
+        bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

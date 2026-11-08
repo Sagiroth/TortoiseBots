@@ -77,6 +77,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunUseObject`](#aiplayerbotdungeonrunuseobject) | `0` | `1`: the boss tactics keep their `use_object` rows — one claimed bot clicks the boss's game object, and mode `tank_anchor` walks the boss over to it (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunSeekAura`](#aiplayerbotdungeonrunseekaura) | `0` | `1`: the boss tactics keep their `seek_aura` rows — the raid gathers in a dying source's cloud before the boss's cycle spell lands (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunSeekPullCycle`](#aiplayerbotdungeonrunseekpullcycle) | `0` | `1`: the boss tactics keep their `seek_pull` rows — the seek walk-out pulls and kills one source in every cycle, up to the row's walk-outs a cycle (needs `DungeonRunSeekAura` and the rows). |
+| [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -895,6 +896,17 @@ Whether the boss tactics keep their `seek_pull` rows: the seek walk-out pulls an
 <summary>How it works in detail</summary>
 
 **Seek pull:** a `seek_pull` row names the seek source (`target_entry`), the most walk-outs started in one cycle (`priority`, 1-5), the kill lead in seconds (`param`, 10-85) and the last start in seconds (`window_s`, 10-85); it carries no spell, spot, cycle columns, gate or mode word, and the walk-out reads it straight from the table. With the key on and a row for the fight, each source is walked again in every cycle (the walked list is per cycle), up to the row's walk-outs start a cycle while the siphon is at least `window_s` seconds away, a failed walk-out reopens the cycle (a puller-side abort frees its source and leaves that puller out of the picks for 60 s; a no-stand abort, a vanished source and a timeout keep it walked for the cycle), the stand search fans 10 and 20 degrees either side of the source's bearing and falls back to a hunter's reach (hunter only) when nothing fits at a shorter one, a puller that stands at its stand 6 s without landing the shot aborts unspent, and an engaged source is burned from `param` seconds before the siphon. With the key off, or no row for the fight, the walk-out keeps its old rules: one walk-out per cycle, no retry, one fixed stand ray and the 30 s late-engaged lead.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekSonMeet`
+Whether the pulled Son meets a waiting off-tank instead of walking back to the tanks' circle edge with the puller.
+**Default:** `0` · **Values:** `0` off (the walk back ends at the circle's edge, as before), `1` on (needs `AiPlayerbot.DungeonRunSeekPullCycle` and a `seek_pull` row, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Son meet:** when the walk-out's shot lands, the raid's third tank (else the second off-tank, never the main tank) is picked as the receiver if it is alive, uncharmed, not the boss's victim, not already holding a Son and inside the tanks' circle; the choice and its refusals (`BossTacticsSonMeet`, `reason=dead:1|busy:1`) are logged. The puller's walk back then ends within 2 yd of that tank's live position (clamped into the circle) instead of at the circle's edge, and the receiver takes the Son as soon as it is within 8 yd or on it, so the taunt is in melee range; the take row says why it did or did not taunt (`reason=chase_refused|no_taunt|attack|taunt,meet=1`). The meet ends when the Son or the receiver dies or leaves, when the Son's victim is any player tank (`event=taken`), or 20 s after the shot (`event=lost`); until then the receiver takes no other Son, pull or drag, so it stays where the puller is walking.
 
 </details>
 

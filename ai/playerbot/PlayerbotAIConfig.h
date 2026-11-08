@@ -655,6 +655,10 @@ public:
     // The seek_pull boss-tactic kind (a seek_aura source is walked out and killed every cycle, up to the row's
     // walk-outs a cycle): on, the rows load and run; off, the old one-walk-out-per-cycle rules hold (default off).
     bool dungeonRunSeekPullCycle = false;
+    // The pulled Son's meet (a seek_pull row's walk-out, Hakkar): on, the walk back ends where a waiting off-tank
+    // stands, instead of at the tanks' circle edge, so the Son lands on that tank and is taunted on arrival; off, the
+    // walk back is the circle edge as before (default off).
+    bool dungeonRunSeekSonMeet = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

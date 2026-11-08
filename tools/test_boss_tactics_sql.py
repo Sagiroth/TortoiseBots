@@ -685,18 +685,41 @@ class BossTacticsSql(unittest.TestCase):
 
     def test_hakkar_seek_pull_row(self):
         # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
-        # source, priority 3 walk-outs a cycle, param the 45 s kill lead, window_s the 60 s last start.
-        name = "20261107230000_world.sql"
+        # source, priority 3 walk-outs a cycle, window_s the 60 s last start; 20261108100000_world.sql replaces the
+        # 45 s kill lead with 75 s, so the pulled Son is burned on arrival.
+        name = "20261108100000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the seek_pull migration is missing")
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         pull = live.get((309, 14834, "seek_pull", 11357, 0))
         self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
         self.assertEqual(name, pull["file"], "the seek_pull migration owns the row")
-        self.assertEqual((3, 45.0, 60.0, "", 0, 0.0, 0, 100),
+        self.assertEqual((3, 75.0, 60.0, "", 0, 0.0, 0, 100),
                          (pull["priority"], pull["param"], pull["window_s"], pull["tactic_mode"],
                           pull["cycle_spell"], pull["cycle_s"], pull["hp_min"], pull["hp_max"]),
                          "the Hakkar seek_pull row drifted")
+        self.assertIsNone(new_kind_problem(pull))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+
+    def test_hakkar_seek_pull_burns_on_arrival(self):
+        # 20261108100000_world.sql: the 75 s kill lead forces the burn as soon as the pulled Son is engaged
+        # (SeekLateEngagedBurnWithin), and the forced burn marks the gather ready, so the 30 % hold and the 8 s
+        # gather wait drop out. The lead's ceiling: Poisonous Blood lasts 90 s, the siphon strips it only at its own
+        # 8 s aura's end, and the 24320 cloud lasts 3 s, so 79 s is the most a Son killed now can still dose with.
+        name = "20261108100000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the burn-on-arrival migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        pull = live.get((309, 14834, "seek_pull", 11357, 0))
+        self.assertIsNotNone(pull, "the Hakkar seek_pull row is missing")
+        self.assertEqual(75.0, pull["param"], "the kill lead is not 75 s")
+        self.assertLessEqual(pull["param"], 90.0 - 8.0 - 3.0, "the kill lead outlives the poison's 79 s")
+        self.assertEqual((3, 60.0), (pull["priority"], pull["window_s"]))
         self.assertIsNone(new_kind_problem(pull))
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
