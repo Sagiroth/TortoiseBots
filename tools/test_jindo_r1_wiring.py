@@ -167,7 +167,8 @@ class JindoR1Wiring(unittest.TestCase):
             self.assertNotIn("isUseful", member(text, derived, "};"))
         # The boss actions that cast a class taunt themselves: the swap, the seek take, the taunt-after window.
         self.assertIn("if (!taunt || TauntRefusedByGate(ai, bot, task.boss, taunt))", ACTIONS)
-        self.assertIn("!canTaunt || TauntRefusedByGate(ai, bot, task.source, taunt)", ACTIONS)
+        self.assertIn("const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);", ACTIONS)
+        self.assertIn("if (!canTaunt || gateRefused)", ACTIONS)
         self.assertIn("if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))", ACTIONS)
         # Challenging Shout and Challenging Roar are area taunts with no single target: a documented limit, not gated.
         self.assertIn('MELEE_ACTION(CastChallengingShoutAction, "challenging shout");', WARRIOR)

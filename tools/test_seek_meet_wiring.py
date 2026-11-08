@@ -173,9 +173,14 @@ class SeekSonMeetWiring(unittest.TestCase):
         take = execute()
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
-        self.assertIn("LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr,"
-                      " canTaunt), task.meet);", take)
+        self.assertIn("gateRefused ? \"taunt_gated\" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt),",
+                      take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
+        # The taunt gate is read BEFORE the row is written (the row used to say `taunt` for a refused cast), once,
+        # and the same verdict ends the take.
+        self.assertLess(take.index("const bool gateRefused ="), take.index("LogSeekTake("))
+        self.assertEqual(take.count("TauntRefusedByGate("), 1)
+        self.assertIn("if (!canTaunt || gateRefused)", take)
         self.assertIn("bool meet = false;", ACTIONS_H)
 
     def test_the_meet_rows(self):
@@ -250,7 +255,7 @@ class CauseInsanityRowWiring(unittest.TestCase):
 class RefusalDocWiring(unittest.TestCase):
     def test_every_new_word_is_documented(self):
         for word in ("dead", "charmed", "victim", "busy", "outside", "none", "son_dead", "receiver_dead",
-                     "timeout", "chase_refused", "no_taunt", "attack", "taunt", "peeled", "receiver_charmed",
+                     "timeout", "chase_refused", "no_taunt", "attack", "taunt", "taunt_gated", "peeled", "receiver_charmed",
                      "receiver_victim", "receiver_busy", "receiver_wait"):
             self.assertIn("`%s`" % word, DOC, word)
 

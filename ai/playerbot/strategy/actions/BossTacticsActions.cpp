@@ -7953,7 +7953,12 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
         const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
         const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
-        LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt), task.meet);
+        // The taunt gate (a taunt-immune boss, a Shade) is read before the row, so the row never says `taunt` for a
+        // cast that the gate then refuses.
+        const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);
+        LogSeekTake(ai, bot, task.source,
+                    gateRefused ? "taunt_gated" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt),
+                    task.meet);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.
@@ -7965,7 +7970,7 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (Attack(bot, task.source) && !canTaunt)
                 return true;
         }
-        if (!canTaunt || TauntRefusedByGate(ai, bot, task.source, taunt))
+        if (!canTaunt || gateRefused)
             return false;
         return ai->CastSpell(taunt, task.source);
     }

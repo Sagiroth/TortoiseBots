@@ -75,7 +75,7 @@ navmesh path is the costliest question the walk-out asks; the members the loop c
 ## The take's reason codes
 
 An off-tank's take of a Son of Hakkar (`LogSeekTake`) says what it did about the taunt this tick. `taunt` is the cast
-going out; the other three are refusal codes (the take did not taunt this tick):
+going out; the other four are refusal codes (the take did not taunt this tick):
 
 ```
 seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
@@ -86,6 +86,7 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
 | `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. |
 | `no_taunt` | The tank's class has no taunt (a paladin in 1.12, a shaman, a hunter, ...). |
 | `attack` | The tank has a taunt but cannot cast it now (cooldown, range, silenced), so only the attack order goes out. |
+| `taunt_gated` | The tank could cast the taunt, but `AiPlayerbot.DungeonRunTauntGate` refused it at this Son (a taunt-immune creature or a needs_aura subject); the gate's own `BossTacticsTauntGate` row says which. |
 | `taunt` | Not a refusal: the taunt (Taunt or Growl) is cast this tick. |
 
 `meet=1` marks a take from the pulled Son's meet (`DungeonRunSeekSonMeet`); every other take is `meet=0`.
