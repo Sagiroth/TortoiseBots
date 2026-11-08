@@ -1087,6 +1087,13 @@ AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 # Off (or no live anchor) keeps the 3 s healer clock.
 AiPlayerbot.DungeonRunSeekNearestTake = 0
 
+# The meet's pre-place for Hakkar's Sons (recommended on; needs DungeonRunSeekSonMeet): when a walk-out starts, the
+# third tank walks to the tanks' circle edge (25 yd) on the line from Hakkar's anchor toward the puller's stand and
+# waits there, so the puller's way back and the Son's chase end at a tank. Only while that tank is alive, not charmed,
+# not Hakkar's victim and holds no Son; it ends when the meet closes or the task ends without one. Off keeps the
+# receiver where its tank AI stands it.
+AiPlayerbot.DungeonRunSeekMeetPrePlace = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

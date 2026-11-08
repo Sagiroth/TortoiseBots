@@ -828,6 +828,16 @@ namespace ai
         std::uint64_t meetSon = 0;
         std::uint32_t meetMs = 0;
         std::uint64_t meetPuller = 0;
+        // The meet's pre-place (DungeonRunSeekMeetPrePlace, walk 56 F2): the receiver picked when the task started,
+        // the point on the tanks' circle edge it waits at, and the task (puller, start) it belongs to. It hands over to
+        // the meet at the shot (`prePlaceMeetMs` is then that meet's shot time) and ends when that meet closes, when the
+        // task ends without a meet for it, or when a new task starts (WalkoutPrePlaceLive).
+        std::uint64_t prePlaceReceiver = 0;
+        std::uint64_t prePlacePuller = 0;
+        std::uint32_t prePlaceStartMs = 0;
+        bool prePlaceMeet = false;
+        std::uint32_t prePlaceMeetMs = 0;
+        float prePlaceX = 0.0f, prePlaceY = 0.0f;
     };
 
     inline void WalkoutMeetClear(SeekWalkoutState& s)
@@ -864,6 +874,98 @@ namespace ai
     inline bool WalkoutBusy(const SeekWalkoutState& s)
     {
         return WalkoutActive(s) || s.returner != 0;
+    }
+
+    // The meet's pre-place (DungeonRunSeekMeetPrePlace, walk 56 F2). Walk 56: the receiver stood a median 47.5 yd from
+    // the puller at the shot, so the Son spent 5-10 s on the hunter among the healers before a tank reached it. With the
+    // key on, the receiver walks to the tanks' circle edge on the puller's way back when the walk-out starts, and waits
+    // there for the meet. The meet, its receiver pick at the shot and the back point are unchanged.
+
+    // The pre-place point: the tank circle's edge (its radius, no further: the anchor's own clamp point) on the ray from
+    // the circle's centre toward the stand. A stand inside the circle gives the same edge point on its ray. False
+    // (no point) for a stand on the centre itself, which has no ray.
+    inline bool WalkoutMeetPrePlacePoint(const BossAnchorCircle& tank, float standX, float standY, float& x, float& y)
+    {
+        float const dx = standX - tank.x;
+        float const dy = standY - tank.y;
+        float const d = std::sqrt(dx * dx + dy * dy);
+        if (d < 0.01f || tank.radius <= 0.0f)
+            return false;
+        x = tank.x + dx / d * tank.radius;
+        y = tank.y + dy / d * tank.radius;
+        return true;
+    }
+
+    // Whether this tank may be pre-placed: alive, not charmed, not Hakkar's victim, holding no Son and inside the tanks'
+    // circle (today's receiver rules, MeetRefusalWhy, written out on their own so the pre-place keeps its own test).
+    inline bool MeetPrePlaceAllowed(const MeetCandidate& c)
+    {
+        return c.alive && !c.charmed && !c.bossVictim && !c.holdsSon && c.inside;
+    }
+
+    // The pre-placed receiver: the raid's third tank (index 2) only, the one the meet's pick at the shot tries first.
+    // -1: no pre-place, and today's behaviour applies (the at-shot pick may still name the second off-tank).
+    inline int PickMeetPrePlaceReceiver(const std::vector<MeetCandidate>& tanks)
+    {
+        return tanks.size() > 2 && MeetPrePlaceAllowed(tanks[2]) ? 2 : -1;
+    }
+
+    // While it runs, the pre-placed receiver stays one only while alive, not charmed and not Hakkar's victim; otherwise
+    // the pre-place ends and the pick at the shot is today's.
+    inline bool MeetPrePlaceKeeps(bool alive, bool charmed, bool bossVictim)
+    {
+        return alive && !charmed && !bossVictim;
+    }
+
+    inline void WalkoutPrePlaceClear(SeekWalkoutState& s)
+    {
+        s.prePlaceReceiver = 0;
+        s.prePlacePuller = 0;
+        s.prePlaceStartMs = 0;
+        s.prePlaceMeet = false;
+        s.prePlaceMeetMs = 0;
+        s.prePlaceX = 0.0f;
+        s.prePlaceY = 0.0f;
+    }
+
+    // The task just started (WalkoutStart): pre-place `receiver` at (x, y) for it. Only an unshot running task takes one.
+    inline void WalkoutPrePlaceSet(SeekWalkoutState& s, std::uint64_t receiver, float x, float y)
+    {
+        WalkoutPrePlaceClear(s);
+        if (receiver == 0 || !WalkoutActive(s) || s.shot)
+            return;
+        s.prePlaceReceiver = receiver;
+        s.prePlacePuller = s.puller;
+        s.prePlaceStartMs = s.startMs;
+        s.prePlaceX = x;
+        s.prePlaceY = y;
+    }
+
+    // The shot landed and the meet's pick ran: a meet with the pre-placed receiver carries the pre-place on until it
+    // closes; any other outcome (no meet, another receiver) ends it.
+    inline void WalkoutPrePlaceNoteMeet(SeekWalkoutState& s)
+    {
+        if (s.prePlaceReceiver == 0)
+            return;
+        if (s.meetReceiver != 0 && s.meetReceiver == s.prePlaceReceiver && s.prePlacePuller == s.puller &&
+            s.prePlaceStartMs == s.startMs)
+        {
+            s.prePlaceMeet = true;
+            s.prePlaceMeetMs = s.meetMs;
+            return;
+        }
+        WalkoutPrePlaceClear(s);
+    }
+
+    // Whether the pre-place still runs: before the shot, its own task is the running one (a task end or a new task ends
+    // it); after the shot, its meet is still the recorded one (WalkoutMeetClear on any close ends it).
+    inline bool WalkoutPrePlaceLive(const SeekWalkoutState& s)
+    {
+        if (s.prePlaceReceiver == 0)
+            return false;
+        if (s.prePlaceMeet)
+            return s.meetReceiver == s.prePlaceReceiver && s.meetMs == s.prePlaceMeetMs;
+        return WalkoutActive(s) && !s.shot && s.puller == s.prePlacePuller && s.startMs == s.prePlaceStartMs;
     }
 
     // One record's marks for the two global counts: busy (a task or a walk back runs: the anchor's exemption reads it)

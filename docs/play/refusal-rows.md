@@ -163,6 +163,8 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 | 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
 | 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` (`peeled` adds `,victim=%u,victim_role=<tank\|healer\|dps\|pet>,son_yd=%.1f`) | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
 | 43e | wait | `son=%u,event=wait,reason=receiver_wait,victim=<name\|none>,son_yd=%.1f,after_ms=%u` | FindBossSeekTank | yes: the receiver took no other Son this tick, it waits for the walker's | added |
+| 43f | pre-place | `son=%u,event=preplace,receiver=<name>,receiver_yd=%.1f,point_yd=%.1f` | UpdateSeekWalkout | not a refusal (`DungeonRunSeekMeetPrePlace`: the walk-out started and the third tank walks to the circle edge on its way back; `receiver_yd` to the puller, `point_yd` to that point) | new |
+| 43g | pre-place end | `son=%u,event=preplace_end,receiver=<name\|none>,reason=<receiver_dead\|receiver_charmed\|receiver_victim>` | UpdateSeekWalkout | yes: the pre-placed tank can no longer wait, so the pre-place ends and the shot's pick is today's | new |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
 index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`

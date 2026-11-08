@@ -81,6 +81,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller's combat actions are held until its shot lands (not below 40 % health; reaction actions still run), it turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
+| [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -959,6 +960,22 @@ Whether the first off-tank takes a Son of Hakkar off a non-tank at once when its
 - the first off-tank is within 8 yd of the Son with its taunt ready, is not Hakkar's victim and holds no Son.
 
 "Taunt ready" is an explicit read with the taunt-after pick's own guards: in control (not stunned, feared, confused, hexed or charmed), not silenced or pacified, a taunt known (Taunt, Growl, or Turtle's Hand of Reckoning for a paladin), that spell's own cooldown ready, a warrior in Defensive Stance and a druid in Bear Form or Dire Bear Form. The global cooldown alone does not make a tank "not ready", and range is the 8 yd test. With the key on, the take also casts that known taunt, so a paladin taunts with Hand of Reckoning. A human (non-bot) tank always reads as not ready, so a human receiver never holds the first off-tank back. The main tank never takes. While the key is on, the receiver also leaves a fighting Son whose victim is the first off-tank, so it does not walk over and taunt back a Son the first off-tank just took; a Son on the main tank or any other tank is still the receiver's to take. Otherwise the receiver keeps its take and the 3 s rule still applies. The take row is the usual `seek take: ... reason=<word>`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekMeetPrePlace`
+Whether the receiving third tank walks to the puller's way back when a Hakkar walk-out starts, so the pulled Son meets it sooner. Recommended on.
+**Default:** `0` · **Values:** `0` off (the receiver stands wherever its tank AI left it until the meet, as before), `1` on (needs `DungeonRunSeekSonMeet` and a `seek_pull` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Pre-place:** in walk 56 the receiver stood a median 47.5 yd from the puller when the shot landed, so the Son spent 5-10 s on the hunter among the healers before a tank reached it, and 8 of 21 peels were the puller dying. With the key on:
+- when the walk-out starts, the third tank (tanks[2]) is pre-placed if it is alive, not charmed, not Hakkar's victim, holds no Son and stands inside the tanks' circle; otherwise there is no pre-place and nothing changes;
+- it walks to the tanks' circle edge (the anchor's tank radius, 25 yd for Hakkar, never past it) on the line from the anchor's centre toward the puller's stand, and waits there (within 4 yd its own tank AI keeps the tick);
+- the meet's receiver pick at the shot is today's (the third tank first), so the pre-placed tank is normally the receiver; the puller's walk back then ends at it as before;
+- the pre-place ends when its meet closes, when the task ends without a meet for it, when another tank is picked at the shot, or when the tank dies, is charmed or becomes Hakkar's victim;
+- a `BossTacticsSonMeet` row `event=preplace` names the tank, its distance to the puller and to the point when the task starts; the shot's `event=meet` row keeps `receiver_yd=` (the receiver's distance to the puller at the shot).
 
 </details>
 
