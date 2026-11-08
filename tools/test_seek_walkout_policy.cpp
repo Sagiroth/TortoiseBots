@@ -1978,6 +1978,303 @@ static void TestWalkoutStartTickWritesMatch()
     CHECK(s.moveFails == 1);
 }
 
+// The meet's pre-place (DungeonRunSeekMeetPrePlace, walk 56 F2). Walk 56: the receiver stood a median 47.5 yd from the
+// puller at the shot. FAILING CASE before F2 (TestMeetPrePlacePointOnTheStandRay): a stand 45 yd out on bearing 200
+// degrees gives a pre-place point on 200 degrees, 2 yd inside the 25 yd edge (23 yd, review round 1); before it there
+// was no pre-place at all.
+static BossAnchorCircle HakkarTankCircle()
+{
+    BossAnchorCircle tank;
+    tank.x = -11787.4f;
+    tank.y = -1649.34f;
+    tank.z = 54.1f;
+    tank.radius = 25.0f;
+    return tank;
+}
+
+static void TestMeetPrePlacePointOnTheStandRay()
+{
+    const BossAnchorCircle tank = HakkarTankCircle();
+    const float rad = 200.0f * 3.14159265f / 180.0f;
+    const float standX = tank.x + 45.0f * std::cos(rad);
+    const float standY = tank.y + 45.0f * std::sin(rad);
+    float x = 0.0f, y = 0.0f;
+    CHECK(WalkoutMeetPrePlacePoint(tank, standX, standY, x, y));
+    CHECK(Near(BossAnchorDistance2d(tank, x, y), 23.0f));
+    CHECK(Near(x, tank.x + 23.0f * std::cos(rad)) && Near(y, tank.y + 23.0f * std::sin(rad)));
+    // The point is inside the circle's edge: the anchor's own test and its clamp leave it where it is.
+    CHECK(InsideAnchor(tank, x, y));
+    float cx = x, cy = y;
+    CHECK(!ClampToAnchor(tank, cx, cy));
+    // A stand inside the circle gives the edge point on its ray, never the stand itself.
+    const float inX = tank.x + 10.0f * std::cos(rad);
+    const float inY = tank.y + 10.0f * std::sin(rad);
+    float ix = 0.0f, iy = 0.0f;
+    CHECK(WalkoutMeetPrePlacePoint(tank, inX, inY, ix, iy));
+    CHECK(Near(ix, x) && Near(iy, y));
+    // Far stands on other bearings stay on the edge too (never past it).
+    for (float deg = 0.0f; deg < 360.0f; deg += 37.0f)
+    {
+        const float r = deg * 3.14159265f / 180.0f;
+        float px = 0.0f, py = 0.0f;
+        CHECK(WalkoutMeetPrePlacePoint(tank, tank.x + 70.0f * std::cos(r), tank.y + 70.0f * std::sin(r), px, py));
+        CHECK(BossAnchorDistance2d(tank, px, py) <= tank.radius - kSeekMeetPrePlaceInsetYd + 0.01f);
+        CHECK(InsideAnchor(tank, px, py));
+    }
+    // A stand on the centre has no ray: no point.
+    CHECK(!WalkoutMeetPrePlacePoint(tank, tank.x, tank.y, ix, iy));
+}
+
+// Review round 1 (F1). FAILING CASE before the inset: a tank 0.2 yd past its point (one unclamped step) still reads as
+// inside the tank circle and is picked at the shot (tanks[2]); with the point on the radius it was refused `outside`.
+static void TestMeetPrePlaceTankPastThePointIsStillPicked()
+{
+    const BossAnchorCircle tank = HakkarTankCircle();
+    const float rad = 200.0f * 3.14159265f / 180.0f;
+    float x = 0.0f, y = 0.0f;
+    CHECK(WalkoutMeetPrePlacePoint(tank, tank.x + 45.0f * std::cos(rad), tank.y + 45.0f * std::sin(rad), x, y));
+    for (float past : {0.1f, 0.2f, 0.5f, 1.5f})
+    {
+        const float tx = x + past * std::cos(rad);
+        const float ty = y + past * std::sin(rad);
+        MeetCandidate third;
+        third.alive = true;
+        third.inside = InsideAnchor(tank, tx, ty);
+        MeetCandidate other;
+        other.alive = true;
+        other.inside = true;
+        std::vector<MeetCandidate> tanks = {other, other, third};
+        CHECK(PickMeetReceiver(tanks) == 2);
+    }
+}
+
+// Review round 1 (F2): at the point the task holds the tank there and stays valid; a moving tank is stopped, a standing
+// one leaves the tick to its rotation (the step does not consume it), so its attack and threat go on.
+static void TestMeetPrePlaceHoldAtThePoint()
+{
+    // Far: walk (takes the tick).
+    CHECK(MeetPrePlaceStepFor(10.0f, false, false) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepFor(4.01f, true, false) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::Walk));
+    // Round 2 (R2-1). FAILING CASE before the settle: a tank 3 yd out and still on its own walk to the point keeps
+    // walking (it was stopped at the 4 yd ring, 4 yd short of the point).
+    CHECK(MeetPrePlaceStepFor(3.0f, true, true) == MeetPrePlaceStep::Walk);
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceArriveYd, true, true) == MeetPrePlaceStep::Walk);
+    // Settled (within 1 yd): even its own walk is held.
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceSettleYd, true, true) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.5f, true, true) == MeetPrePlaceStep::HoldStop);
+    // At the point the hold stays (never "no task"): any other move -> stop, standing -> free.
+    CHECK(MeetPrePlaceStepFor(3.0f, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.0f, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(kSeekMeetPrePlaceArriveYd, true, false) == MeetPrePlaceStep::HoldStop);
+    CHECK(MeetPrePlaceStepFor(0.0f, false, false) == MeetPrePlaceStep::HoldFree);
+    CHECK(MeetPrePlaceStepFor(3.9f, false, false) == MeetPrePlaceStep::HoldFree);
+    // A standing tank's own-walk flag is meaningless: not moving is free.
+    CHECK(MeetPrePlaceStepFor(3.0f, false, true) == MeetPrePlaceStep::HoldFree);
+    CHECK(MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::HoldStop));
+    // The rotation is not blocked: a standing tank's hold returns the tick.
+    CHECK(!MeetPrePlaceStepConsumesTick(MeetPrePlaceStep::HoldFree));
+}
+
+// Review round 1, missing cases: a pre-placed tank that took a Son before the shot is refused `busy` at the shot (the
+// second off-tank is picked) and the pre-place clears; a stale live-check reader never clears a replaced record; a task
+// starting while a pre-placed meet is still open (N1) replaces the pre-place, the old meet itself runs on.
+static void TestMeetPrePlaceReviewCases()
+{
+    const std::uint64_t puller = 11, son = 21, tank1 = 31, tank2 = 32;
+    // Busy at the shot.
+    SeekWalkoutState s;
+    WalkoutStart(s, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(s, tank2, 1.0f, 2.0f);
+    MeetCandidate ok;
+    ok.alive = true;
+    ok.inside = true;
+    MeetCandidate busy = ok;
+    busy.holdsSon = true;
+    std::vector<MeetCandidate> tanks = {ok, ok, busy};
+    CHECK(std::string(MeetRefusalWhy(busy)) == "busy");
+    const int pick = PickMeetReceiver(tanks);
+    CHECK(pick == 1);
+    WalkoutNoteShot(s);
+    s.meetReceiver = tank1;
+    s.meetSon = son;
+    s.meetMs = 1500;
+    WalkoutPrePlaceNoteMeet(s);
+    CHECK(!WalkoutPrePlaceLive(s) && s.prePlaceReceiver == 0);
+
+    // A stale reader: it saw task A's pre-place; the record now holds task B's (same tank). Nothing is cleared.
+    SeekWalkoutState r;
+    WalkoutStart(r, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(r, tank2, 1.0f, 2.0f);
+    const SeekWalkoutState seen = r;
+    WalkoutAbortUnspent(r, 2000);
+    WalkoutStart(r, puller + 1, son + 1, 3000, 2);
+    WalkoutPrePlaceSet(r, tank2, 5.0f, 6.0f);
+    CHECK(!WalkoutPrePlaceClearIf(r, seen.prePlaceReceiver, seen.prePlacePuller, seen.prePlaceStartMs,
+                                  seen.prePlaceGen));
+    CHECK(WalkoutPrePlaceLive(r) && Near(r.prePlaceX, 5.0f));
+    // The current reader clears it.
+    CHECK(WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000, r.prePlaceGen));
+    CHECK(!WalkoutPrePlaceLive(r));
+    CHECK(!WalkoutPrePlaceClearIf(r, tank2, puller + 1, 3000, r.prePlaceGen));
+
+    // Round 2 (ABA). FAILING CASE before the generation: the replacement has the same tank, the same puller and the
+    // same start ms (an end and a new start in one timer tick, or a timer wrap); only the start generation differs, and
+    // the stale reader clears nothing.
+    SeekWalkoutState a;
+    WalkoutStart(a, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(a, tank2, 1.0f, 2.0f);
+    const SeekWalkoutState aSeen = a;
+    WalkoutAbortUnspent(a, 1000);
+    WalkoutStart(a, puller, son + 1, 1000, 1);
+    WalkoutPrePlaceSet(a, tank2, 9.0f, 9.5f);
+    CHECK(a.prePlaceStartMs == aSeen.prePlaceStartMs && a.prePlacePuller == aSeen.prePlacePuller);
+    CHECK(a.prePlaceGen != aSeen.prePlaceGen);
+    CHECK(!WalkoutPrePlaceClearIf(a, aSeen.prePlaceReceiver, aSeen.prePlacePuller, aSeen.prePlaceStartMs,
+                                  aSeen.prePlaceGen));
+    CHECK(WalkoutPrePlaceLive(a) && Near(a.prePlaceX, 9.0f));
+    // The old task's pre-place does not read as live for the same-ms replacement either.
+    SeekWalkoutState b = aSeen;
+    WalkoutAbortUnspent(b, 1000);
+    WalkoutStart(b, puller, son + 1, 1000, 1);
+    CHECK(!WalkoutPrePlaceLive(b));
+
+    // N1: a pre-placed meet is open, a new task starts. The new start's set replaces the pre-place: with no pick the old
+    // receiver loses its hold (the meet stays open and runs under today's rules); with a pick it holds the new point.
+    SeekWalkoutState n;
+    WalkoutStart(n, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(n, tank2, 1.0f, 2.0f);
+    WalkoutNoteShot(n);
+    n.meetReceiver = tank2;
+    n.meetSon = son;
+    n.meetMs = 1500;
+    n.meetPuller = puller;
+    WalkoutPrePlaceNoteMeet(n);
+    WalkoutFinish(n, WalkoutEnd::Back, 2000);
+    CHECK(WalkoutPrePlaceLive(n));
+    WalkoutStart(n, puller + 1, son + 1, 3000, 2);
+    CHECK(WalkoutPrePlaceLive(n)); // still the old meet's until the start's set
+    WalkoutPrePlaceSet(n, 0, 0.0f, 0.0f);
+    CHECK(!WalkoutPrePlaceLive(n));
+    CHECK(n.meetReceiver == tank2 && SeekMeetOpen(n.meetReceiver, n.meetMs, 3000)); // the meet runs on
+    WalkoutPrePlaceSet(n, tank2, 7.0f, 8.0f);
+    CHECK(WalkoutPrePlaceLive(n) && Near(n.prePlaceX, 7.0f));
+}
+
+static void TestMeetPrePlacePick()
+{
+    const auto usable = []
+    {
+        MeetCandidate c;
+        c.alive = true;
+        c.inside = true;
+        return c;
+    };
+    std::vector<MeetCandidate> tanks = {usable(), usable(), usable()};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == 2);
+    // The receiver is Hakkar's victim: no pre-place (today's pick at the shot then takes the second off-tank).
+    MeetCandidate victim = usable();
+    victim.bossVictim = true;
+    tanks = {usable(), usable(), victim};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    CHECK(!MeetPrePlaceAllowed(victim));
+    CHECK(PickMeetReceiver(tanks) == 1);
+    // Dead, charmed, holding a Son or outside the circle: no pre-place either.
+    MeetCandidate c = usable();
+    c.alive = false;
+    tanks = {usable(), usable(), c};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    c = usable();
+    c.charmed = true;
+    tanks = {usable(), usable(), c};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    c = usable();
+    c.holdsSon = true;
+    tanks = {usable(), usable(), c};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    c = usable();
+    c.inside = false;
+    tanks = {usable(), usable(), c};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    // Only the third tank: with two tanks there is no pre-place.
+    tanks = {usable(), usable()};
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    tanks.clear();
+    CHECK(PickMeetPrePlaceReceiver(tanks) == -1);
+    // The live keep: alive, not charmed, not the victim.
+    CHECK(MeetPrePlaceKeeps(true, false, false));
+    CHECK(!MeetPrePlaceKeeps(false, false, false));
+    CHECK(!MeetPrePlaceKeeps(true, true, false));
+    CHECK(!MeetPrePlaceKeeps(true, false, true));
+}
+
+static void TestMeetPrePlaceLifecycle()
+{
+    const std::uint64_t puller = 11, son = 21, receiver = 31, other = 32;
+    // Flag off: the glue never sets one, and a state without one has no pre-place.
+    SeekWalkoutState off;
+    WalkoutStart(off, puller, son, 1000, 1);
+    CHECK(!WalkoutPrePlaceLive(off));
+    // Set at the start: live while the task runs unshot.
+    SeekWalkoutState s;
+    WalkoutStart(s, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(s, receiver, 1.0f, 2.0f);
+    CHECK(WalkoutPrePlaceLive(s));
+    CHECK(Near(s.prePlaceX, 1.0f) && Near(s.prePlaceY, 2.0f));
+    // No task, or a shot task: never set.
+    SeekWalkoutState idle;
+    WalkoutPrePlaceSet(idle, receiver, 1.0f, 2.0f);
+    CHECK(!WalkoutPrePlaceLive(idle) && idle.prePlaceReceiver == 0);
+    // The shot opens the meet with the pre-placed tank: the pre-place carries on with it...
+    WalkoutNoteShot(s);
+    s.meetReceiver = receiver;
+    s.meetSon = son;
+    s.meetMs = 1500;
+    s.meetPuller = puller;
+    WalkoutPrePlaceNoteMeet(s);
+    CHECK(WalkoutPrePlaceLive(s));
+    // ... past the task's own end (the meet outlives `back`) ...
+    WalkoutFinish(s, WalkoutEnd::Back, 2000);
+    CHECK(WalkoutPrePlaceLive(s));
+    // ... and ends when the meet closes.
+    CHECK(WalkoutMeetCloseIf(s, receiver, son, 1500));
+    CHECK(!WalkoutPrePlaceLive(s));
+    // A new meet with the same tank later is not the old pre-place's.
+    s.meetReceiver = receiver;
+    s.meetMs = 9000;
+    CHECK(!WalkoutPrePlaceLive(s));
+
+    // The shot picks another tank (the pre-placed one could no longer wait): the pre-place ends at once.
+    SeekWalkoutState t;
+    WalkoutStart(t, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(t, receiver, 1.0f, 2.0f);
+    WalkoutNoteShot(t);
+    t.meetReceiver = other;
+    t.meetMs = 1500;
+    WalkoutPrePlaceNoteMeet(t);
+    CHECK(!WalkoutPrePlaceLive(t) && t.prePlaceReceiver == 0);
+    // No meet at the shot: ends too.
+    SeekWalkoutState u;
+    WalkoutStart(u, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(u, receiver, 1.0f, 2.0f);
+    WalkoutNoteShot(u);
+    WalkoutPrePlaceNoteMeet(u);
+    CHECK(!WalkoutPrePlaceLive(u));
+    // The task ends unshot (an abort): the pre-place ends with it, and a new task does not inherit it.
+    SeekWalkoutState v;
+    WalkoutStart(v, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(v, receiver, 1.0f, 2.0f);
+    WalkoutAbortUnspent(v, 2000);
+    CHECK(!WalkoutPrePlaceLive(v));
+    WalkoutStart(v, puller + 1, son + 1, 3000, 2);
+    CHECK(!WalkoutPrePlaceLive(v));
+    // The live check's clear.
+    WalkoutPrePlaceSet(v, receiver, 1.0f, 2.0f);
+    CHECK(WalkoutPrePlaceLive(v));
+    WalkoutPrePlaceClear(v);
+    CHECK(!WalkoutPrePlaceLive(v));
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -2059,6 +2356,12 @@ int main()
     TestWalkoutReplansStandWhenSonMoves();
     TestWalkoutPickMarginBelowAbort();
     TestWalkoutWaitsForTheSiphon();
+    TestMeetPrePlacePointOnTheStandRay();
+    TestMeetPrePlacePick();
+    TestMeetPrePlaceLifecycle();
+    TestMeetPrePlaceTankPastThePointIsStillPicked();
+    TestMeetPrePlaceHoldAtThePoint();
+    TestMeetPrePlaceReviewCases();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

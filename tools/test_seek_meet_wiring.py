@@ -169,12 +169,13 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertLess(read.index("std::vector<Unit*> fightSons = out.sons;"), read.index("UpdateSeekWalkout(ai,"))
 
     def test_the_take_row_says_why(self):
-        self.assertIn("seek take: %s -> %u victim=%s reason=%s meet=%d", ACTIONS)
+        self.assertIn("seek take: %s -> %u victim=%s reason=%s meet=%d src=%s", ACTIONS)
         take = execute()
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
         self.assertIn("gateRefused ? \"taunt_gated\" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),",
                       take)
+        self.assertIn("task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));", take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
         # The taunt gate is read BEFORE the row is written (the row used to say `taunt` for a refused cast), once,
         # and the same verdict ends the take.

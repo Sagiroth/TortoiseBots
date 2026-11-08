@@ -50,8 +50,8 @@ class SeekSonHoldWiring(unittest.TestCase):
         # A Son on a non-tank stands where the raid stands: inside the everyone circle (30 yd), past the tanks' (25).
         self.assertIn("BossAnchorRefusesChase(ai, bot, task.source, true)", take)
         self.assertIn("LogSeekTake(ai, bot, task.source,", take)
-        log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet)")
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d"', log)
+        log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s"', log)
         refuse = body(ACTIONS, "bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)")
         self.assertIn("AnchorCircleOf(*row, false)", refuse)
 
@@ -170,10 +170,11 @@ class SeekSonRowReview(unittest.TestCase):
 
     def test_every_son_id_is_the_guid_low(self):
         # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
-        # a raw guid is a different number. Exactly 7 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
-        # no_meet, taken, lost and wait events; a new one must be counted here, in the exact guid form.
+        # a raw guid is a different number. Exactly 10 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
+        # no_meet, taken, lost, wait, preplace and the two preplace_end rows (the live check's and the floor's); a new
+        # one must be counted here, in the exact guid form.
         ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
-        self.assertEqual(len(ids), 7)
+        self.assertEqual(len(ids), 10)
         for match in ids:
             call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
             self.assertIn("ObjectGuid(guid).GetCounter()", call)

@@ -697,6 +697,12 @@ public:
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
     // takes. Off, the 3 s rule stands as before (default off, recommended on).
     bool dungeonRunSeekNearestTake = false;
+    // The meet's pre-place (Hakkar's Sons): on, when a walk-out starts the third tank (alive, not charmed, not Hakkar's
+    // victim, holding no Son, inside the tanks' circle) walks to a point 2 yd inside the tanks' circle edge on the line
+    // from the anchor's centre toward the puller's stand and holds there for the meet. It ends when that meet closes,
+    // the task ends without one, another tank is picked at the shot, or the tank dies, is charmed or becomes Hakkar's
+    // victim. Off, the receiver stands wherever its tank AI left it, as before (default off, recommended on).
+    bool dungeonRunSeekMeetPrePlace = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

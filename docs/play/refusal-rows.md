@@ -104,7 +104,7 @@ An off-tank's take of a Son of Hakkar (`LogSeekTake`) says what it did about the
 going out; the other four are refusal codes (the take did not taunt this tick):
 
 ```
-seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
+seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0 src=receiver
 ```
 
 | Code | Meaning |
@@ -117,6 +117,21 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
 | `taunt` | Not a refusal: the taunt (Taunt or Growl) is cast this tick. |
 
 `meet=1` marks a take from the pulled Son's meet (`DungeonRunSeekSonMeet`); every other take is `meet=0`.
+
+`src=` names the take path that produced the task (always logged, no key):
+
+| Word | Path |
+| :--- | :--- |
+| `meet` | The pulled Son's receiver takes it on arrival (`DungeonRunSeekSonMeet`). |
+| `nearest` | The first off-tank's nearest take (`DungeonRunSeekNearestTake`). |
+| `healer_clock` | The 3 s healer clock: the first off-tank (three tanks) or the pickup tank (two tanks) takes a Son that sat on a non-tank. |
+| `receiver` | The third tank (the receiver) takes a fighting Son near the spot. |
+| `pickup` | With two tanks, the first off-tank takes a fighting Son near the spot. |
+| `pull_join` | The third tank's own pull target joined the fight before the pull finished. |
+| `other` | Any take without its own word. |
+
+`+edge` follows the word (e.g. `nearest+edge`) when the Son stood outside the raid circle and only the take edge
+(`DungeonRunSeekTakeEdge`) let the take chase it.
 
 ## Rows
 
@@ -148,7 +163,7 @@ ref survives line drift.
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
-| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
+| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=` and `src=` (the take path) |
 
 ### Other boss-tactics rows
 
@@ -194,6 +209,9 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 | 43c | taken | `son=%u,event=taken,receiver=<name>,by=<name>,after_ms=%u` | UpdateSeekWalkout | not a refusal (a player tank has the Son) | document |
 | 43d | lost | `son=%u,event=lost,reason=<word>,after_ms=%u` (`peeled` adds `,victim=%u,victim_role=<tank\|healer\|dps\|pet>,son_yd=%.1f`) | UpdateSeekWalkout, FindBossSeekTank (`peeled`) | yes: the lost word | added |
 | 43e | wait | `son=%u,event=wait,reason=receiver_wait,victim=<name\|none>,son_yd=%.1f,after_ms=%u` | FindBossSeekTank | yes: the receiver took no other Son this tick, it waits for the walker's | added |
+| 43f | pre-place | `son=%u,event=preplace,receiver=<name>,receiver_yd=%.1f,point_yd=%.1f` | UpdateSeekWalkout | not a refusal (`DungeonRunSeekMeetPrePlace`: the walk-out started and the third tank walks to the circle edge on its way back; `receiver_yd` to the puller, `point_yd` to that point) | new |
+| 43g | pre-place end | `son=%u,event=preplace_end,receiver=<name\|none>,reason=<receiver_dead\|receiver_charmed\|receiver_victim>` | UpdateSeekWalkout | yes: the pre-placed tank can no longer wait, so the pre-place ends and the shot's pick is today's | new |
+| 43h | pre-place skip | `son=%u,event=preplace_skip,receiver=<name>,reason=floor` | UpdateSeekWalkout | yes: at the start, the point's floor is off the platform's level, so no pre-place began | new |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
 index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`

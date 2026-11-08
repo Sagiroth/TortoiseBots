@@ -562,6 +562,18 @@ namespace ai
     // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
     // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
     // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
+    // The take's source word (walk 56 F4, the `src=` field of the `seek take` row): which take path produced the task.
+    // FindBossSeekTank names the path (`meet`, `nearest`, `healer_clock`, `receiver`, `pickup`, `pull_join`, else
+    // `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the circle, and only the
+    // edge rule allowed the chase) gets `+edge` after it, e.g. `nearest+edge`, so the path stays countable by prefix.
+    inline std::string SeekTakeSrcWord(const char* path, bool edgeTake)
+    {
+        std::string out = path && *path ? path : "other";
+        if (edgeTake)
+            out += "+edge";
+        return out;
+    }
+
     inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt, bool edgeFar = false)
     {
         if (chaseRefused && !canTaunt)

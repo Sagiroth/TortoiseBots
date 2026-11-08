@@ -669,6 +669,8 @@ namespace ai
         std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
         std::uint32_t walkoutGen = 0;        // the task's start generation: the puller's own writes match it (WalkoutTaskIs)
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
+        const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
+        bool prePlaceHold = false; // the pre-placed tank stands at its point (x, y): stop a walk, leave the rotation free
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;

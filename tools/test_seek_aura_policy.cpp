@@ -689,6 +689,15 @@ int main()
         CHECK(SeekReachYd(50.0f, 36.0f, true, anchorYd) > kSeekFallbackYd);
     }
 
+    // The take row's source (walk 56 F4, `src=`): the path's word, `other` without one, `+edge` when only the take edge
+    // let the chase through. Failing case before F4: the row had no source at all.
+    CHECK(SeekTakeSrcWord("nearest", false) == "nearest");
+    CHECK(SeekTakeSrcWord("healer_clock", false) == "healer_clock");
+    CHECK(SeekTakeSrcWord("receiver", true) == "receiver+edge");
+    CHECK(SeekTakeSrcWord("meet", false) == "meet");
+    CHECK(SeekTakeSrcWord(nullptr, false) == "other");
+    CHECK(SeekTakeSrcWord("", true) == "other+edge");
+
     // The take row's reason (walk 53): all eight inputs of the chase refusal, a taunt's presence and its cast.
     CHECK(std::string(SeekTakeReasonWord(false, false, false)) == "no_taunt");
     CHECK(std::string(SeekTakeReasonWord(false, false, true)) == "no_taunt");
