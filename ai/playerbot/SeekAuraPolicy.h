@@ -574,12 +574,24 @@ namespace ai
         return selfCollapsesCap && !capLatched;
     }
 
-    // Whether the healer clock's take goes ahead (walk 57 F4 review H1): key off (DungeonRunSeekNearestTakeReach) always,
-    // as today; key on, unless the cap guard blocks it (SeekCapGuardBlocks). A blocked take leaves the branch with no
-    // task this tick.
-    inline bool SeekHealerClockTakeAllowed(bool reachKey, bool selfCollapsesCap, bool capLatched)
+    // The healer clock's override of the cap guard (round 2 NEW-1: a guarded take had no fallback, so a Son on a healer
+    // was never taken while the cap would collapse): the Son has sat on that non-tank for kSeekHealerClockOverrideMs,
+    // or its victim is under kSeekHealerClockOverrideHpPct health. Then the take goes, cap or not.
+    constexpr std::uint32_t kSeekHealerClockOverrideMs = 6000;
+    constexpr float kSeekHealerClockOverrideHpPct = 40.0f;
+
+    inline bool HealerClockOverridesCap(std::uint32_t onNonTankMs, float victimHpPct)
     {
-        return !reachKey || !SeekCapGuardBlocks(selfCollapsesCap, capLatched);
+        return onNonTankMs >= kSeekHealerClockOverrideMs || victimHpPct < kSeekHealerClockOverrideHpPct;
+    }
+
+    // Whether the healer clock's take goes ahead (walk 57 F4 review H1): key off (DungeonRunSeekNearestTakeReach) always,
+    // as today; key on, when the clock overrides the guard (HealerClockOverridesCap) or the cap guard does not block it
+    // (SeekCapGuardBlocks). A blocked take leaves the branch with no task this tick, until the override comes.
+    inline bool SeekHealerClockTakeAllowed(bool reachKey, bool selfCollapsesCap, bool capLatched,
+                                           bool clockOverrides = false)
+    {
+        return !reachKey || clockOverrides || !SeekCapGuardBlocks(selfCollapsesCap, capLatched);
     }
 
     // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes

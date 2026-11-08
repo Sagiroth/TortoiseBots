@@ -1131,7 +1131,8 @@ AiPlayerbot.DungeonRunSeekNearestTake = 0
 # third tank is more than 15 yd from it, or that Son's meet closed as peeled or receiver_victim in the last 10 s and the
 # receiver cannot take it itself (within 8 yd, its taunt ready). Never while the first off-tank is Hakkar's victim or
 # holds a Son, or when its leaving Hakkar would collapse the damage dealers' threat-cap reference; that guard also holds
-# back its 3 s healer-clock take. The take row says src=nearest_reach. Off keeps the 8 yd nearest take and the clock.
+# back its 3 s healer-clock take until the Son has sat 6 s on the non-tank or its victim is under 40 % health. The take
+# row says src=nearest_reach. Off keeps the 8 yd nearest take and the clock.
 AiPlayerbot.DungeonRunSeekNearestTakeReach = 0
 
 # The meet's pre-place for Hakkar's Sons (recommended on; needs DungeonRunSeekSonMeet): when a walk-out starts, the

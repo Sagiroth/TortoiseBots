@@ -75,13 +75,10 @@ class SeekNearestTakeWiring(unittest.TestCase):
         # Walk 57 F4: the reach's inputs are read only with its key, per Son, and the reference guard is the cap's own.
         fn = body(ACTIONS, "Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
         self.assertIn("const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;", fn)
-        self.assertIn("if (reachOn)\n        SeekWalkoutReachRead(bot->GetInstanceId(), walked, lostMeets, capTaker, capTakeSon);",
-                      fn)
+        self.assertIn("if (reachOn)\n        SeekWalkoutReachRead(bot, walked, lostMeets, latch);", fn)
         self.assertIn("const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot);", fn)
-        # Review L3: a reach take is latched for its Son, and a latched Son skips the collapse re-check.
-        self.assertIn("c.capLatched = WalkoutCapTakeLatched(capTaker, capTakeSon, self, entry.first);", fn)
-        self.assertIn("if (viaReach)\n        SeekCapTakeLatch(bot->GetInstanceId(), self, picked->GetObjectGuid().GetRawValue());",
-                      fn)
+        # Review L3 / round 2: a latched (started, under 10 s) take of a Son skips the collapse re-check.
+        self.assertIn("c.capLatched = WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, entry.first, nowMs);", fn)
         loop = fn[fn.index("for (const auto& entry : state.nonTankSince)"):fn.index("const int pick =")]
         self.assertIn("c.meetLost = WalkoutMeetLostWithin(lostMeets, entry.first, nowMs, kSeekNearestTakeMeetLostMs);",
                       loop)
@@ -102,15 +99,21 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("if (state.healerSon && (!sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach ||\n"
                       "                                SeekHealerClockCapOk(ai, bot, roles, state, state.healerSon)))", find)
         ok = body(ACTIONS, "bool SeekHealerClockCapOk(")
-        self.assertIn("if (!SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot),", ok)
-        self.assertIn("WalkoutCapTakeLatched(capTaker, capTakeSon, self, sonGuid)))\n        return false;", ok)
-        self.assertLess(ok.index("return false;"), ok.index("SeekCapTakeLatch(bot->GetInstanceId(), self, sonGuid);"))
+        self.assertIn("return SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot),", ok)
+        self.assertIn("WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),", ok)
+        # Round 2 NEW-1: the clock's override (6 s on the non-tank, or the victim under 40 %) feeds the guard.
+        self.assertIn("HealerClockOverridesCap(onNonTankMs, victimHpPct));", ok)
+        self.assertIn("state.nowMs - held->second.sinceMs", ok)
+        self.assertIn("const float victimHpPct = victim ? victim->GetHealthPercent() : 100.0f;", ok)
         values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
         self.assertIn("ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);", values)
         read = body(ACTIONS, "void SeekWalkoutReachRead(")
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", read)
         self.assertIn("walked = it->second.state.walkedSons;", read)
         self.assertIn("lostMeets = it->second.state.lostMeets;", read)
+        # Round 2 NEW-2: a latched Son dead, gone or on any tank ends the latch (compare-and-clear on Son and stamp).
+        self.assertIn("if (!WalkoutCapTakeEnds(alive, victim && PlayerbotAI::IsTank(victim)))\n        return;", read)
+        self.assertIn("it->second.state.capTakeMs == latch.ms)\n            WalkoutCapTakeClear(it->second.state);", read)
 
     def test_taunt_readiness_reuses_the_taunt_after_guards(self):
         ready = body(ACTIONS, "bool SeekTankTauntReady(Player* tank)")
@@ -146,7 +149,28 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("taunt = KnownTaunt(ai);", take)
         # Flag off: today's warrior/druid switch.
         self.assertIn('case CLASS_WARRIOR: taunt = "taunt"; break;', take)
-        self.assertIn("return ai->CastSpell(taunt, task.source);", take)
+        self.assertIn("const bool cast = ai->CastSpell(taunt, task.source);", take)
+        self.assertIn("return cast;", take)
+
+    def test_the_cap_latch_is_set_only_once_the_take_starts(self):
+        # Codex round 2: a cap-guarded take (`nearest_reach`, `healer_clock`, key on) latches only after the attack or
+        # chase went out, the tank was already after it, or the taunt cast; a refused or failed one clears its latch.
+        fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = fn[fn.index("if (task.take)"):fn.index("if (task.pull)")]
+        self.assertIn("const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&", take)
+        self.assertIn('(std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);',
+                      take)
+        self.assertEqual(3, take.count("SeekCapTakeNoteExec("))
+        self.assertIn("task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());\n                return true;",
+                      take)
+        self.assertIn("task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());\n            return false;",
+                      take)
+        self.assertIn("started || cast, WorldTimer::getMSTime());\n        return cast;", take)
+        self.assertIn("else if (!chaseRefused)\n            started = true; // already after it", take)
+        # No latch is set at pick time any more.
+        self.assertNotIn("SeekCapTakeLatch(", ACTIONS)
+        note = body(ACTIONS, "void SeekCapTakeNoteExec(")
+        self.assertIn("WalkoutCapTakeNoteExec(it->second.state, taker, son, started, nowMs);", note)
         known = body(ACTIONS, "const char* KnownTaunt(PlayerbotAI* ai)")
         self.assertIn('"hand of reckoning"', known)
         # KnownTaunt's own comment sits above it again.

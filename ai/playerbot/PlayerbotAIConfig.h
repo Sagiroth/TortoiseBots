@@ -702,7 +702,8 @@ public:
     // meet closed as peeled or receiver_victim in the last 10 s and the receiver cannot take it itself (within 8 yd,
     // its taunt ready); never while it is Hakkar's victim or holds a Son, or when its leaving Hakkar would collapse the
     // damage dealers' threat-cap reference (no off-tank reference left, or one under half of today's). The same cap
-    // guard then holds back its 3 s healer-clock take too. A take that passed the guard is kept for its Son. The take
+    // guard then holds back its 3 s healer-clock take too, until the Son has sat 6 s on that non-tank or its victim is
+    // under 40 % health. A take that passed the guard and started is kept for its Son for 10 s. The take
     // row says src=nearest_reach. Off, the 8 yd nearest take and the healer clock stand as before (default off,
     // recommended on).
     bool dungeonRunSeekNearestTakeReach = false;

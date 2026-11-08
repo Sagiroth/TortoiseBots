@@ -308,7 +308,8 @@ class TakeEdgeWiring(unittest.TestCase):
         self.assertNotIn("Attack(bot,", take[:edge])
         after = take[take.index("const bool canTaunt"):]
         self.assertIn("if (!chaseRefused && AI_VALUE(Unit*, \"current target\") != task.source)\n        {\n"
-                      "            if (Attack(bot, task.source) && !canTaunt)", after)
+                      "            const bool attacked = Attack(bot, task.source);", after)
+        self.assertIn("if (attacked && !canTaunt)", after)
         self.assertEqual(1, take.count("Attack(bot, task.source)"))
         self.assertLess(take.index("edgeFar = edge == SeekTakeEdge::Far;"), take.index("Attack(bot, task.source)"))
 

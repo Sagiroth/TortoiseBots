@@ -1039,24 +1039,60 @@ namespace ai
         // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
         // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
         std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
-        // The cap-checked take latch (DungeonRunSeekNearestTakeReach, review L3): the tank whose reach or healer-clock
-        // take of `capTakeSon` passed the cap's collapse check; that take keeps going without a re-check, and a new take
-        // (another Son, or another tank) checks again.
+        // The cap-checked take latch (DungeonRunSeekNearestTakeReach, review L3, round 2): the tank whose reach or
+        // healer-clock take of `capTakeSon` passed the cap's collapse check AND really started (the taunt cast, or the
+        // attack or chase command went out), and when. That take keeps going without a re-check for
+        // kSeekCapTakeLatchMs; a refused or failed take clears it, and so does that Son dying or reaching any tank.
         std::uint64_t capTaker = 0;
         std::uint64_t capTakeSon = 0;
+        std::uint32_t capTakeMs = 0;
     };
 
-    // The cap take latch (above): set it for this taker and Son, or read whether this taker's take of `son` is latched.
-    inline void WalkoutCapTakeLatch(SeekWalkoutState& s, std::uint64_t taker, std::uint64_t son)
+    // How long a started cap-checked take is honoured without a re-check (round 2: it never expired).
+    constexpr std::uint32_t kSeekCapTakeLatchMs = 10000;
+
+    inline void WalkoutCapTakeClear(SeekWalkoutState& s)
     {
-        s.capTaker = taker;
-        s.capTakeSon = son;
+        s.capTaker = 0;
+        s.capTakeSon = 0;
+        s.capTakeMs = 0;
     }
 
-    inline bool WalkoutCapTakeLatched(std::uint64_t latchedTaker, std::uint64_t latchedSon, std::uint64_t taker,
-                                      std::uint64_t son)
+    // Whether the latched take (taker, Son, stamp) is this taker's take of `son` and younger than kSeekCapTakeLatchMs.
+    // The age is signed, so a reader a tick behind the writer still honours it.
+    inline bool WalkoutCapTakeLatched(std::uint64_t latchedTaker, std::uint64_t latchedSon, std::uint32_t latchedMs,
+                                      std::uint64_t taker, std::uint64_t son, std::uint32_t nowMs)
     {
-        return taker != 0 && son != 0 && latchedTaker == taker && latchedSon == son;
+        if (taker == 0 || son == 0 || latchedTaker != taker || latchedSon != son)
+            return false;
+        const std::int64_t age = static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - latchedMs));
+        return age < static_cast<std::int64_t>(kSeekCapTakeLatchMs);
+    }
+
+    // The take's execution result for a cap-guarded take (Codex round 2: latch only once the take really started):
+    // started, it latches (taker, Son, now); refused or failed, a latch of that same take is cleared (another take's
+    // latch is left alone).
+    inline void WalkoutCapTakeNoteExec(SeekWalkoutState& s, std::uint64_t taker, std::uint64_t son, bool started,
+                                       std::uint32_t nowMs)
+    {
+        if (taker == 0 || son == 0)
+            return;
+        if (started)
+        {
+            s.capTaker = taker;
+            s.capTakeSon = son;
+            s.capTakeMs = nowMs;
+            return;
+        }
+        if (s.capTaker == taker && s.capTakeSon == son)
+            WalkoutCapTakeClear(s);
+    }
+
+    // Whether the latched Son's state ends the latch: dead (or gone), or on any tank (the take finished, or another tank
+    // has it), so a later peel of that Son checks the cap again.
+    inline bool WalkoutCapTakeEnds(bool sonAlive, bool sonOnTank)
+    {
+        return !sonAlive || sonOnTank;
     }
 
     // A lost meet's age at `nowMs`, signed (review L1): readers' clocks may be a tick older than the writer's, so a record

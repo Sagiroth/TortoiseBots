@@ -2435,18 +2435,46 @@ static void TestWalkoutLostMeetWriterClockNewer()
     CHECK(WalkoutMeetLostWithin(lost, 3, 0xFFFFFFF0u, 10000));
 }
 
-// Review L3: the cap take latch keeps one tank's take of one Son; another Son or another tank checks the cap again.
+// Review L3 + round 2: the cap take latch keeps one tank's started take of one Son for 10 s; another Son, another tank,
+// a lapsed stamp, a refused take, or the Son dead or on a tank all end it.
 static void TestWalkoutCapTakeLatch()
 {
     SeekWalkoutState s;
-    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
-    WalkoutCapTakeLatch(s, 41, 7);
-    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
-    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 8));   // a new Son: re-check
-    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 42, 7));   // another tank
-    CHECK(!WalkoutCapTakeLatched(0, 0, 0, 0));
-    WalkoutCapTakeLatch(s, 41, 8);                                    // a new take replaces the latch
-    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, 41, 7));
+    CHECK(kSeekCapTakeLatchMs == 10000u);
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 1000));
+    // A refused take leaves no latch (Codex round 2: latched only once the take really starts).
+    WalkoutCapTakeNoteExec(s, 41, 7, false, 1000);
+    CHECK(s.capTaker == 0 && s.capTakeSon == 0);
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 1000));
+    // Started: latched.
+    WalkoutCapTakeNoteExec(s, 41, 7, true, 1000);
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 1000));
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 10999));
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 990));   // a reader a tick behind
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 8, 2000)); // a new Son: re-check
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 42, 7, 2000)); // another tank
+    CHECK(!WalkoutCapTakeLatched(0, 0, 0, 0, 0, 0));
+    // Round 2 NEW-2: the same guid re-taken after the latch lapsed (the Son respawned after 60 s) checks the cap again
+    // (mutation: ignore the stamp and this fails).
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 11000));
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 61000));
+    // A later failed execution of the same take clears its latch; another take's failure leaves it.
+    WalkoutCapTakeNoteExec(s, 41, 7, true, 20000);
+    WalkoutCapTakeNoteExec(s, 41, 8, false, 20500);
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 21000));
+    WalkoutCapTakeNoteExec(s, 41, 7, false, 21000);
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 21000));
+    // A new started take replaces the latch.
+    WalkoutCapTakeNoteExec(s, 41, 7, true, 30000);
+    WalkoutCapTakeNoteExec(s, 41, 8, true, 30100);
+    CHECK(!WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 7, 30200));
+    CHECK(WalkoutCapTakeLatched(s.capTaker, s.capTakeSon, s.capTakeMs, 41, 8, 30200));
+    // An abandoned take ends on the Son's state: dead, or on any tank (the take done, or another tank has it).
+    CHECK(WalkoutCapTakeEnds(false, false));
+    CHECK(WalkoutCapTakeEnds(true, true));
+    CHECK(!WalkoutCapTakeEnds(true, false));
+    WalkoutCapTakeClear(s);
+    CHECK(s.capTaker == 0 && s.capTakeSon == 0 && s.capTakeMs == 0);
 }
 
 int main()

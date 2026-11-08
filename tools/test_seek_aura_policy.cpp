@@ -340,6 +340,20 @@ int main()
         CHECK(!SeekHealerClockTakeAllowed(true, collapses, false));
         CHECK(SeekHealerClockTakeAllowed(false, collapses, false));
         CHECK(SeekHealerClockTakeAllowed(true, collapses, true));
+        // Round 2 NEW-1, the reviewer's case: 3+ tanks, NotHolder on, tanks[2] dead (off the list), tanks[1] under half
+        // the main tank's threat. The main tank holds; tanks[1] 400 is the not-holder reference; its leave collapses the
+        // cap. Blocked at 3 s, taken at 6 s (the clock overrides), and at once when the victim is at 35 %.
+        const std::vector<ThreatCapTank> r2 = {{1000.0f, false, true, true}, {400.0f, true, true, false}};
+        const bool r2Collapses = ThreatCapLeaveCollapses(r2, 1, true);
+        CHECK(r2Collapses);
+        CHECK(kSeekHealerClockOverrideMs == 6000u);
+        CHECK(kSeekHealerClockOverrideHpPct == 40.0f);
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 90.0f)));
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(5999, 90.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(6000, 90.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 35.0f)));
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 40.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(0, 39.9f)));
         // tanks[2] (away) leaving collapses nothing: its healer-clock take is not held back.
         CHECK(SeekHealerClockTakeAllowed(true, ThreatCapLeaveCollapses(h1, 2), false));
         CHECK(!SeekCapGuardBlocks(true, true));
