@@ -143,6 +143,47 @@ namespace ai
         return focusOn && rulesOn && !inFront;
     }
 
+    // Face and cast in one tick (DungeonRunSeekWalkoutFaceCast, walk 56: 8 of 11 no-shot aborts stood stopped in range
+    // and sight but facing Hakkar). A stopped bot's forced turn is an instant orientation set (ServerFacade::SetFacingTo
+    // with force: SetOrientation plus a heartbeat), so the cast can follow in the same tick; the split turn of
+    // WalkoutFaceFirst lost the race to UpdateFaceTarget, which turns the bot back to its current target first.
+    struct WalkoutFaceStep
+    {
+        bool stop = false;            // stop the bot before it turns
+        bool face = false;            // turn to the Son this tick
+        bool force = false;           // the turn is SetFacingTo's instant `force` turn
+        bool returnAfterFace = false; // return after the turn, the cast left to the next tick
+    };
+
+    // With FaceCast on: always stopped, turned (forced) only when not facing, and the cast follows in the same tick.
+    // Off: today's t1106k steps (WalkoutFaceFirst: stop, turn, return; the rules alone: turn and cast).
+    inline WalkoutFaceStep WalkoutFaceThenCast(bool faceCastOn, bool focusOn, bool rulesOn, bool inFront)
+    {
+        WalkoutFaceStep step;
+        if (faceCastOn)
+        {
+            step.stop = true;
+            step.face = !inFront;
+            step.force = true;
+            step.returnAfterFace = false;
+            return step;
+        }
+        bool const faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);
+        step.stop = faceFirst;
+        step.face = rulesOn && !inFront;
+        step.force = false;
+        step.returnAfterFace = faceFirst;
+        return step;
+    }
+
+    // Whether PlayerbotAI::UpdateFaceTarget leaves the bot's facing alone this update (DungeonRunSeekWalkoutFaceCast):
+    // the live, unshot walk-out puller faces its Son, not its current target (Hakkar). Every other bot, and the puller
+    // once its shot landed, is turned as before.
+    inline bool WalkoutFaceTargetYields(bool flagOn, bool livePuller)
+    {
+        return flagOn && livePuller;
+    }
+
     // Whether the walk-out's own record still names this bot as a live puller: recorded as the task's puller, alive,
     // not charmed, and the task inside its 25 s (the same `<` as the anchor's exemption, WalkoutExempts). A dead or
     // charmed puller (the abort clears the record only on the next reader's update) and a stale record never hold

@@ -672,6 +672,11 @@ public:
     // unshot walk-out puller, and the pick skips a bot whose AI is off the combat engine or that eats or drinks; off,
     // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
     bool dungeonRunSeekWalkoutHoldCombat = false;
+    // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the
+    // instant forced turn and casts in the same tick, UpdateFaceTarget leaves the live unshot puller's facing alone, and
+    // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out
+    // focus and the wall-time clock stay as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutFaceCast = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never

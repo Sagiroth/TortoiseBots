@@ -17,6 +17,7 @@ CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+PLAYERBOT_AI = (ROOT / "ai/playerbot/PlayerbotAI.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BotStateTriggers.cpp").read_text()
 
 
@@ -40,9 +41,9 @@ class WalkoutFocusWiring(unittest.TestCase):
 
     def test_the_facing_branch_returns_before_the_cast(self):
         walk = walkout_branch()
-        face = walk.index("if (faceFirst)\n                    return true;")
-        stop = walk.index("if (faceFirst && !bot->IsStopped())\n                    ai->StopMoving();")
-        turn = walk.index("sServerFacade.SetFacingTo(bot, task.source);")
+        face = walk.index("if (step.returnAfterFace)\n                    return true;")
+        stop = walk.index("if (step.stop && !bot->IsStopped())\n                    ai->StopMoving();")
+        turn = walk.index("if (step.face)\n                    sServerFacade.SetFacingTo(bot, task.source, step.force);")
         # Stop, then turn, then return: the stop's spline cannot undo the facing.
         self.assertLess(stop, turn)
         self.assertLess(turn, face)
@@ -50,7 +51,10 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertLess(face, walk.index("return ai->CastSpell(spell, task.source);") if "return ai->CastSpell(spell, task.source);" in walk
                         else walk.index("const bool pullCast = ai->CastSpell(spell, task.source);"))
         self.assertLess(face, walk.index("bot->InterruptNonMeleeSpells(false);"))
-        self.assertIn("const bool faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);", walk)
+        self.assertIn("const WalkoutFaceStep step = WalkoutFaceThenCast(sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast,\n"
+                      "                                                                 focusOn, rulesOn, inFront);", walk)
+        # The old split is gone from the glue: WalkoutFaceThenCast is the one reader of WalkoutFaceFirst.
+        self.assertNotIn("WalkoutFaceFirst(", walk)
         self.assertIn("const bool focusOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus;", walk)
 
     def test_a_pull_shot_in_flight_is_waited_for(self):
@@ -181,6 +185,37 @@ class WalkoutHoldCombatWiring(unittest.TestCase):
         self.assertLess(gate, fn.index("if (c.canShoot && WalkoutEligible(c))"))
         # The bot's own engine, never its pet's combat.
         self.assertNotIn("GetPet()", fn[gate:fn.index("if (c.canShoot && WalkoutEligible(c))")])
+
+
+
+class WalkoutFaceCastWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutFaceCast (walk 56 fix 2): turn and cast in one tick; UpdateFaceTarget yields."""
+
+    def test_the_flag_defaults_off(self):
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutFaceCast", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekWalkoutFaceCast = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekWalkoutFaceCast`", SETTINGS)
+
+    def test_the_turn_is_forced_and_the_cast_follows(self):
+        walk = walkout_branch()
+        turn = walk.index("sServerFacade.SetFacingTo(bot, task.source, step.force);")
+        # One SetFacingTo in the stand branch, and it carries the step's force.
+        self.assertEqual(walk.count("sServerFacade.SetFacingTo(bot, task.source"), 1)
+        self.assertLess(turn, walk.index("bot->InterruptNonMeleeSpells(false);"))
+        self.assertLess(turn, walk.index("const bool pullCast = ai->CastSpell(spell, task.source);"))
+
+    def test_update_face_target_yields_for_the_live_puller(self):
+        fn = body(PLAYERBOT_AI, "void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)")
+        self.assertIn("bool const faceCastOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast;", fn)
+        gate = fn.index("if (pullTarget == nullptr &&\n"
+                        "                        !ai::WalkoutFaceTargetYields(faceCastOn, faceCastOn && ai::IsLiveWalkoutPuller(bot)))")
+        # The yield guards the turn itself; every other bot's facing is unchanged.
+        self.assertLess(gate, fn.index("sServerFacade.SetFacingTo(bot, target);"))
+        self.assertLess(gate, fn.index("bot->SetInFront(target);"))
+        self.assertIn('#include "playerbot/SeekWalkoutPolicy.h"', PLAYERBOT_AI)
+        # The delay reset still runs on every path.
+        self.assertIn("faceTargetUpdateDelay = minimal ? sPlayerbotAIConfig.reactDelay * 10 : sPlayerbotAIConfig.reactDelay * 5;", fn)
 
 
 if __name__ == "__main__":

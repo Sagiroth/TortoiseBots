@@ -1557,6 +1557,41 @@ static void TestWalkoutEligibleNeedsCombatEngine()
     CHECK(!WalkoutCombatEngineReady(true, true)); // eating or drinking
 }
 
+
+static void TestWalkoutFaceThenCast()
+{
+    // Named failing case: FaceCast on, a stopped puller facing away turns and casts in the same tick (no return).
+    CHECK(WalkoutFaceThenCast(true, true, true, false).returnAfterFace == false);
+    WalkoutFaceStep on = WalkoutFaceThenCast(true, true, true, false);
+    CHECK(on.face && on.force && on.stop);
+    on = WalkoutFaceThenCast(true, true, true, true); // already facing: no turn, still stopped, cast now
+    CHECK(!on.face && on.stop && !on.returnAfterFace);
+    on = WalkoutFaceThenCast(true, false, false, false); // FaceCast alone, without the focus or the rules
+    CHECK(on.face && on.force && !on.returnAfterFace);
+    // Off: today's t1106k values, exactly.
+    for (int f = 0; f < 2; ++f)
+        for (int r = 0; r < 2; ++r)
+            for (int i = 0; i < 2; ++i)
+            {
+                const WalkoutFaceStep off = WalkoutFaceThenCast(false, f != 0, r != 0, i != 0);
+                CHECK(off.returnAfterFace == WalkoutFaceFirst(f != 0, r != 0, i != 0));
+                CHECK(off.stop == WalkoutFaceFirst(f != 0, r != 0, i != 0));
+                CHECK(off.face == (r != 0 && i == 0));
+                CHECK(!off.force);
+            }
+    CHECK(WalkoutFaceThenCast(false, true, true, false).returnAfterFace); // face-first still returns with the flag off
+}
+
+static void TestWalkoutFaceTargetYields()
+{
+    CHECK(!WalkoutFaceTargetYields(false, true)); // flag off: as before
+    CHECK(WalkoutFaceTargetYields(true, true));   // the live, unshot puller keeps facing its Son
+    CHECK(!WalkoutFaceTargetYields(true, false)); // not the puller: turned as before
+    // The shot landed: the live-puller read (WalkoutHoldsCombat) is false, so the facing update runs again.
+    CHECK(!WalkoutFaceTargetYields(true, WalkoutHoldsCombat(true, true, true, false, 3000, true)));
+    CHECK(WalkoutFaceTargetYields(true, WalkoutHoldsCombat(true, true, true, false, 3000, false)));
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1602,6 +1637,8 @@ int main()
     TestWalkoutFocusPullerLive();
     TestWalkoutHoldsCombat();
     TestWalkoutEligibleNeedsCombatEngine();
+    TestWalkoutFaceThenCast();
+    TestWalkoutFaceTargetYields();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

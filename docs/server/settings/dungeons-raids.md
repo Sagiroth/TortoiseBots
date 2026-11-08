@@ -81,6 +81,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller's combat actions are held until its shot lands (not below 40 % health; reaction actions still run), it turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`](#aiplayerbotdungeonrunseekwalkoutholdcombat) | `0` | `1` (recommended): the live, unshot Hakkar walk-out puller stays on the combat engine, and the pick skips a bot off the combat engine or eating or drinking. |
+| [`AiPlayerbot.DungeonRunSeekWalkoutFaceCast`](#aiplayerbotdungeonrunseekwalkoutfacecast) | `0` | `1` (recommended): the Hakkar walk-out puller turns to the Son and casts in one tick, and its per-update facing no longer turns it back to Hakkar. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -957,6 +958,19 @@ Whether the Hakkar walk-out puller stays in combat until its shot lands. Recomme
 - `combat end` does not fire while the bot is the live, unshot walk-out puller: recorded as the instance's puller, alive, not charmed, inside the task's 25 s, the shot not landed. The hold ends with the task however it ends (shot, timeout, abort, death, charm); the walk back is not held.
 - The pick skips a candidate whose AI is not on the combat engine, or that is eating or drinking (`no_combat` in the no-puller row). The bot's own engine is read, never its pet's combat.
 - Only the instance's own record is read, so two raids in different instances never hold each other's bots; with no task running the check costs no lock.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekWalkoutFaceCast`
+Whether the Hakkar walk-out puller turns to its Son and casts in the same tick. Recommended on.
+**Default:** `0` · **Values:** `0` off (with `AiPlayerbot.DungeonRunSeekWalkoutFocus` the turn takes one tick and the cast the next, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Face and cast:** walk 56 had 8 of its 11 no-shot aborts stopped in range and sight of the Son but not facing it. The bot's own per-update facing (`PlayerbotAI::UpdateFaceTarget`, every 500 ms) turns a stopped bot in combat to its current target, Hakkar, and it runs before the walk-out, so the walk-out's turn on one tick was undone before its cast on the next. With the key on:
+- At the stand the puller stops, turns to the Son with the instant forced turn (an orientation set plus a heartbeat, not a spline) and casts in the same tick.
+- `UpdateFaceTarget` leaves the live, unshot walk-out puller's facing alone. Every other bot, and the puller once its shot landed (the walk back), is turned as before.
 
 </details>
 

@@ -470,9 +470,10 @@ class SeekWalkoutWalk52(unittest.TestCase):
         self.assertIn("const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);", walk)
         self.assertIn("const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
                       "                                                             CAST_ANGLE_IN_FRONT);", walk)
-        self.assertIn("if (rulesOn && !inFront)\n"
-                      "                    sServerFacade.SetFacingTo(bot, task.source);", walk)
-        self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source)"),
+        # The turn's rule is the pure WalkoutFaceThenCast (flag off: face while the rules are on and not in front).
+        self.assertIn("if (step.face)\n"
+                      "                    sServerFacade.SetFacingTo(bot, task.source, step.force);", walk)
+        self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source, step.force)"),
                         walk.index("WalkoutCurrentCast(bot, task.source"))
         helper = body(ACTIONS, "bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)")
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekPullCycle", helper)

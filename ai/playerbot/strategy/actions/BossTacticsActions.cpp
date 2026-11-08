@@ -7909,15 +7909,18 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),
                                                     task.source->IsInCombat()))
                     return true;
-                const bool faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);
+                // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
+                // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).
+                const WalkoutFaceStep step = WalkoutFaceThenCast(sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast,
+                                                                 focusOn, rulesOn, inFront);
                 // The focus stops the bot before it turns, so the stop's spline cannot undo the facing.
-                if (faceFirst && !bot->IsStopped())
+                if (step.stop && !bot->IsStopped())
                     ai->StopMoving();
-                if (rulesOn && !inFront)
-                    sServerFacade.SetFacingTo(bot, task.source);
-                // The walk-out focus: the turn takes this tick and the cast goes out on the next one, facing the Son
-                // (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
-                if (faceFirst)
+                if (step.face)
+                    sServerFacade.SetFacingTo(bot, task.source, step.force);
+                // The walk-out focus without FaceCast: the turn takes this tick and the cast goes out on the next one,
+                // facing the Son (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
+                if (step.returnAfterFace)
                     return true;
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
