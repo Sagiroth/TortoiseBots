@@ -233,9 +233,9 @@ Unit* PartyMemberToHeal::Calculate()
                 return true;
         return false;
     };
-    // DungeonRunSeekMeetNoHeal: the open meet's puller, read once per pick (0: the key is off, another map or no meet
-    // open), so a candidate costs one guid compare. Only the puller itself pays for the incoming-damage scan.
-    std::uint64_t const meetPuller = SeekMeetHealPuller(bot->GetMapId(), bot->GetInstanceId());
+    // DungeonRunSeekMeetNoHeal: the open meet's puller, read once per pick (0: the key is off or no meet is open), so
+    // a candidate costs one guid compare. Only the puller itself pays for the incoming-damage scan.
+    std::uint64_t const meetPuller = SeekMeetHealPuller(bot->GetInstanceId());
     auto const meetHealHeld = [&](Unit* target)
     {
         if (!SeekMeetHealWalker(target->GetObjectGuid().GetRawValue(), meetPuller))

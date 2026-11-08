@@ -261,17 +261,26 @@ namespace ai
     // puller holds). So while the meet is open a heal target that is the puller is skipped, unless its hp after the
     // incoming hits is below kSeekMeetHealFloorPct (then the heal wins over the threat). `flagOn` is the key.
     constexpr float kSeekMeetHealFloorPct = 40.0f;
-    constexpr std::uint32_t kSeekMeetHealMapId = 309; // Zul'Gurub, the only map with a pulled-Son meet
     inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
     {
         return flagOn && meetOpen && isPuller && hpPct >= kSeekMeetHealFloorPct;
     }
 
-    // Whether the meet hold can apply at all: the key on and the bot on the map that has the meet. Checked before any
-    // lock, so every other map and the key off cost nothing.
-    inline bool SeekMeetHealScope(bool flagOn, std::uint32_t mapId)
+    // Whether the meet hold can apply at all: the key on and at least one pulled-Son meet open on the server (the count
+    // of records holding a receiver, kept by SeekMeetOpenDelta). Checked before any lock, so the key off, and every
+    // server or map without a meet, cost one atomic read.
+    inline bool SeekMeetHealScope(bool flagOn, int openMeets)
     {
-        return flagOn && mapId == kSeekMeetHealMapId;
+        return flagOn && openMeets > 0;
+    }
+
+    // The change one record's meet makes to that count (+1 opened, -1 closed or dropped, 0 neither): `before` and `after`
+    // are "the record names a receiver" around the change. Every place that opens, closes or drops a meet applies it, so
+    // the count is exact whatever ends the meet (a taken Son, a lost receiver, the 20 s cap seen by a reader, a wipe or
+    // reset that drops the record).
+    inline int SeekMeetOpenDelta(bool before, bool after)
+    {
+        return (after ? 1 : 0) - (before ? 1 : 0);
     }
 
     // The walker a healer skips: the meet's own puller. The returner is the same bot in the normal path (the abort moves

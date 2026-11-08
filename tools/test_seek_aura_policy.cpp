@@ -640,12 +640,46 @@ int main()
         CHECK(!SeekMeetHealWalker(puller, 0));
     }
 
-    // The scope: the key on and the bot on Zul'Gurub's map (309). Another map or the key off never reaches the lock.
+    // The scope: the key on and at least one meet open on the server (an atomic count). The key off, or a count of 0,
+    // never reaches the lock; no map constant is involved, so a seek_pull row on any map works.
     {
-        CHECK(SeekMeetHealScope(true, 309));
-        CHECK(!SeekMeetHealScope(false, 309));
-        CHECK(!SeekMeetHealScope(true, 533));
-        CHECK(!SeekMeetHealScope(true, 0));
+        CHECK(SeekMeetHealScope(true, 1));
+        CHECK(SeekMeetHealScope(true, 3));
+        CHECK(!SeekMeetHealScope(false, 1));   // key off: no lock
+        CHECK(!SeekMeetHealScope(true, 0));    // count 0: no lock
+        CHECK(!SeekMeetHealScope(false, 0));
+    }
+
+    // The open-meet count stays exact over every life a meet can have. The delta is applied wherever a record's receiver
+    // is set, cleared or dropped; this replays the sequences, and a path that skipped its decrement would leave the
+    // count above 0 here.
+    {
+        int count = 0;
+        auto step = [&](bool before, bool after) { count += SeekMeetOpenDelta(before, after); };
+        CHECK(SeekMeetOpenDelta(false, true) == 1);
+        CHECK(SeekMeetOpenDelta(true, false) == -1);
+        CHECK(SeekMeetOpenDelta(true, true) == 0);   // a second meet on a record that still holds one
+        CHECK(SeekMeetOpenDelta(false, false) == 0);
+        // Opened, then closed by a taken or lost reader: back to 0.
+        step(false, true);
+        CHECK(count == 1);
+        step(true, false);
+        CHECK(count == 0);
+        // Opened, then the record is dropped (a wipe, a reset, the stale sweep): back to 0.
+        step(false, true);
+        step(true, false);
+        CHECK(count == 0);
+        // Two instances at once, one replaced while open (delta 0), both closed.
+        step(false, true);
+        step(false, true);
+        step(true, true);
+        CHECK(count == 2);
+        step(true, false);
+        step(true, false);
+        CHECK(count == 0);
+        // A stale second close of a record that no longer holds a meet changes nothing.
+        step(false, false);
+        CHECK(count == 0);
     }
 
     // The floor reads the hp after the incoming hits (review M1): the puller at 45 % with a swing worth 10 % is at 35 %
