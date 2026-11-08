@@ -1063,6 +1063,7 @@ struct WalkoutRecord
     std::uint32_t noSonLogMs = 0;           // the "no son" row's throttle
     std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
     std::uint32_t lateLogMs = 0;            // the "late" row's throttle
+    std::uint32_t preemptLogStartMs = 0;    // the "walk-out preempted" row's throttle: the task start it logged for
     WalkoutCycleRules rules;                // the seek_pull row's rules the task runs under (defaults: the old ones)
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
@@ -2619,6 +2620,34 @@ void SeekMeetWalkers(std::uint32_t instanceId, std::uint64_t& puller, std::uint6
     returner = it->second.state.returner;
 }
 
+// The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
+// and when the task started. False with no task running or another puller. `preemptRow`: the bot is alive and its own
+// (`inControl`), the task is live and unshot (the focus holds an action now), and this walk-out has not logged its
+// `walk-out preempted` row yet; the claim is made here, under the lock, so one row per walk-out goes out.
+bool SeekWalkoutFocusRead(Player* bot, bool inControl, std::uint32_t nowMs, bool& shot, std::uint32_t& startMs,
+                          bool& preemptRow)
+{
+    shot = false;
+    startMs = 0;
+    preemptRow = false;
+    if (g_walkoutsActive.load(std::memory_order_relaxed) == 0)
+        return false;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    shot = it->second.state.shot;
+    startMs = it->second.state.startMs;
+    if (WalkoutFocusPullerLive(true, inControl, false, nowMs - startMs) && !shot &&
+        WalkoutPreemptRowDue(it->second.preemptLogStartMs, startMs))
+    {
+        it->second.preemptLogStartMs = startMs;
+        preemptRow = true;
+    }
+    return true;
+}
+
 // Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
 // follows. The receiver, the Son and `meetMs` tell this meet from a later one.
 bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
@@ -3868,6 +3897,35 @@ float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)
     if (!SeekPetCallAction(action->getName()))
         return 1.0f;
     return BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f;
+}
+
+float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus || !bot)
+        return 1.0f;
+    const std::string& name = action->getName();
+    // The walk-out and the pet's dismissal are never held: no record read for them.
+    if (WalkoutFocusAllows(name))
+        return 1.0f;
+    bool shot = false;
+    std::uint32_t startMs = 0;
+    bool preemptRow = false;
+    // A dead or charmed puller holds nothing, even while the record still names it (the abort clears it on the next
+    // reader's update): its release, its revive and its charmer's orders run as without the focus.
+    const bool alive = sServerFacade.IsAlive(bot);
+    const bool charmed = !bot->GetCharmerGuid().IsEmpty();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const bool recorded = SeekWalkoutFocusRead(bot, alive && !charmed, nowMs, shot, startMs, preemptRow);
+    const bool live = WalkoutFocusPullerLive(recorded, alive, charmed, nowMs - startMs);
+    if (!WalkoutFocusBlocks(true, live, shot, name))
+        return 1.0f;
+    if (preemptRow)
+    {
+        char info1[128];
+        snprintf(info1, sizeof(info1), "seek pull: walk-out preempted action=%s", name.c_str());
+        LogSeekWalkout(ai, info1);
+    }
+    return 0.0f;
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
@@ -7692,10 +7750,20 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             {
                 hasLast = false;
                 // The Son patrols: a running Auto Shot or Shoot keeps facing it, so the shot lands.
-                if (SeekPullRulesOn(bot->GetMapId(), task.row) &&
-                    !sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,
-                                             CAST_ANGLE_IN_FRONT))
+                const bool focusOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus;
+                const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);
+                const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,
+                                                             CAST_ANGLE_IN_FRONT);
+                if (rulesOn && !inFront)
                     sServerFacade.SetFacingTo(bot, task.source);
+                // The walk-out focus: the turn takes this tick and the cast goes out on the next one, facing the Son
+                // (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
+                if (WalkoutFaceFirst(focusOn, rulesOn, inFront))
+                {
+                    if (!bot->IsStopped())
+                        ai->StopMoving();
+                    return true;
+                }
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
                 // now.
@@ -7709,7 +7777,11 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 // The exact cast, cast directly: the generic attack would send the pet in. A shot that cannot be cast
                 // here aborts at once: the Son is free again and the spent cycle is not reopened, its puller sitting
                 // out the next picks.
-                const char* const spell = WalkoutShotSpell(bot->GetClass());
+                // With the focus a hunter opens with the instant Arcane Shot when it can (never a DoT), else Auto Shot.
+                const char* const spell = focusOn
+                    ? WalkoutPullShotSpell(bot->GetClass(), bot->GetClass() == CLASS_HUNTER &&
+                                                                ai->CanCastSpell("arcane shot", task.source))
+                    : WalkoutShotSpell(bot->GetClass());
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
                     AbortSeekWalkoutUnspent(ai, bot, sonYd);

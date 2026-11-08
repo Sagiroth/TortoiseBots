@@ -121,6 +121,58 @@ namespace ai
         }
     }
 
+    // The walk-out focus (DungeonRunSeekWalkoutFocus, walk 55: 15 cycle-1 walk-outs never shot, the puller in range
+    // and sight but in "follow", "hunter step out" or another action, and not facing the Son in 10 of 13 no-shot
+    // aborts). Pure rules the glue (BossTacticsSeekTankAction's walk-out branch and BossTacticsWalkoutFocusMultiplier)
+    // reads.
+    //
+    // The pull shot: a hunter opens with the instant Arcane Shot when it can cast it now, else Auto Shot (the
+    // auto-repeat waits on the ranged swing timer and needs the Son in front). Never a DoT: Serpent Sting stays vetoed.
+    // Every other class keeps WalkoutShotSpell's shot (a warrior or paladin still has none and is never picked).
+    inline const char* WalkoutPullShotSpell(std::uint8_t classId, bool arcaneReady)
+    {
+        if (classId == 3)
+            return arcaneReady ? "arcane shot" : "auto shot";
+        return WalkoutShotSpell(classId);
+    }
+
+    // Facing first: with the focus on, a puller in shot position that does not face the Son turns this tick and
+    // casts on the next one (a cast in the same tick as SetFacingTo went out before the turn landed).
+    inline bool WalkoutFaceFirst(bool focusOn, bool rulesOn, bool inFront)
+    {
+        return focusOn && rulesOn && !inFront;
+    }
+
+    // Whether the walk-out's own record still names this bot as a live puller: recorded as the task's puller, alive,
+    // not charmed, and the task inside its 25 s. A dead or charmed puller (the abort clears the record only on the
+    // next reader's update) and a stale record never hold anything.
+    inline bool WalkoutFocusPullerLive(bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs)
+    {
+        return recordedPuller && alive && !charmed && sinceStartMs <= kSeekWalkoutTimeoutMs;
+    }
+
+    // The actions the focus lets run: the walk-out itself and the pet's dismissal.
+    inline bool WalkoutFocusAllows(const std::string& action)
+    {
+        return action == "boss tactics seek tank" || action == "boss tactics seek pet";
+    }
+
+    // Whether the focus holds `action` this tick: the flag on, this bot the live walk-out puller (WalkoutFocusPullerLive)
+    // and the shot not landed yet. Everything but the walk-out and the pet's dismissal is held: "follow", "hunter step
+    // out", "wait for attack", "reach melee"/"reach spell", "feign death", "flee". The walk-out itself aborts on
+    // threat, on the boss's victim and on a charm, so no survival action is needed during the task. Once the shot
+    // lands (or the task ends) nothing is held: the walk back is the walk-out action's own.
+    inline bool WalkoutFocusBlocks(bool flagOn, bool isPuller, bool shot, const std::string& action)
+    {
+        return flagOn && isPuller && !shot && !WalkoutFocusAllows(action);
+    }
+
+    // The `walk-out preempted` row: one per walk-out, keyed by the task's start time.
+    inline bool WalkoutPreemptRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs)
+    {
+        return loggedStartMs != startMs;
+    }
+
     // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
     // damage dealer. None: no puller. The pet stays held at the puller's heels the whole task (it never takes the Son).
     enum class WalkoutRole : std::uint8_t

@@ -572,6 +572,74 @@ static void TestShotSpellPerClass()
     CHECK(PickWalkoutPuller(raid) == 1);
 }
 
+static void TestWalkoutFocusHoldsOtherActions()
+{
+    // Walk 55 (failing case before the focus): the live puller, no shot yet, wins "follow" -> held. Without the
+    // focus nothing held it and the puller stood in range and sight in "follow" until the 25 s timeout.
+    CHECK(WalkoutFocusBlocks(true, true, false, "follow"));
+    for (const char* other : {"hunter step out", "wait for attack", "reach melee", "reach spell", "feign death",
+                              "flee", "auto shot", "boss tactics seek"})
+        CHECK(WalkoutFocusBlocks(true, true, false, other));
+    // The walk-out itself and the pet's dismissal still run.
+    CHECK(!WalkoutFocusBlocks(true, true, false, "boss tactics seek tank"));
+    CHECK(!WalkoutFocusBlocks(true, true, false, "boss tactics seek pet"));
+    // The shot landed: the block lifts for the walk back (mutation: drop `!shot` and this fails).
+    CHECK(!WalkoutFocusBlocks(true, true, true, "follow"));
+    // Flag off and a bot that is not the puller: nothing held.
+    CHECK(!WalkoutFocusBlocks(false, true, false, "follow"));
+    CHECK(!WalkoutFocusBlocks(true, false, false, "follow"));
+    // The row is one per walk-out: the same start logs once, the next walk-out logs again.
+    CHECK(WalkoutPreemptRowDue(0, 1000));
+    CHECK(!WalkoutPreemptRowDue(1000, 1000));
+    CHECK(WalkoutPreemptRowDue(1000, 52000));
+}
+
+static void TestWalkoutPullShotSpell()
+{
+    // A hunter opens with Arcane Shot when castable, else Auto Shot; never a DoT.
+    CHECK(std::string(WalkoutPullShotSpell(3, true)) == "arcane shot");
+    CHECK(std::string(WalkoutPullShotSpell(3, false)) == "auto shot");
+    CHECK(std::string(WalkoutPullShotSpell(3, true)) != "serpent sting");
+    // Every other class keeps its shot whatever `arcaneReady` says.
+    for (bool ready : {true, false})
+    {
+        CHECK(std::string(WalkoutPullShotSpell(8, ready)) == "shoot");
+        CHECK(std::string(WalkoutPullShotSpell(9, ready)) == "shoot");
+        CHECK(std::string(WalkoutPullShotSpell(5, ready)) == "shoot");
+        CHECK(std::string(WalkoutPullShotSpell(11, ready)) == "wrath");
+        CHECK(std::string(WalkoutPullShotSpell(7, ready)) == "lightning bolt");
+        // A warrior or paladin has no walk-out shot, so its pick and its pull path are unchanged.
+        CHECK(std::string(WalkoutPullShotSpell(1, ready)).empty());
+        CHECK(std::string(WalkoutPullShotSpell(2, ready)).empty());
+    }
+}
+
+static void TestWalkoutFaceFirst()
+{
+    // Not facing the Son at the stand: turn this tick, cast next tick.
+    CHECK(WalkoutFaceFirst(true, true, false));
+    // Already facing: cast now.
+    CHECK(!WalkoutFaceFirst(true, true, true));
+    // Flag off: today's turn-and-cast in one tick.
+    CHECK(!WalkoutFaceFirst(false, true, false));
+    // No seek_pull rules: no facing at all, as today.
+    CHECK(!WalkoutFaceFirst(true, false, false));
+}
+
+static void TestWalkoutFocusPullerLive()
+{
+    CHECK(WalkoutFocusPullerLive(true, true, false, 0));
+    CHECK(WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs));
+    // A puller that died or was charmed mid-walk-out is held by nothing, even before the abort clears the record.
+    CHECK(!WalkoutFocusPullerLive(true, false, false, 1000));
+    CHECK(!WalkoutFocusPullerLive(true, true, true, 1000));
+    CHECK(!WalkoutFocusBlocks(true, WalkoutFocusPullerLive(true, false, false, 1000), false, "release spirit"));
+    // A stale record past the task's 25 s holds nothing.
+    CHECK(!WalkoutFocusPullerLive(true, true, false, kSeekWalkoutTimeoutMs + 1));
+    // Not this bot's walk-out.
+    CHECK(!WalkoutFocusPullerLive(false, true, false, 1000));
+}
+
 static void TestPullerUsable()
 {
     CHECK(WalkoutPullerUsable(true, false, false, false));
@@ -1386,6 +1454,10 @@ int main()
     TestMeetReceiverLostWhy();
     TestMeetCloseIsWonByOneReader();
     TestShotSpellPerClass();
+    TestWalkoutFocusHoldsOtherActions();
+    TestWalkoutPullShotSpell();
+    TestWalkoutFaceFirst();
+    TestWalkoutFocusPullerLive();
     TestPullerUsable();
     TestCastFailAbortUnspends();
     TestWalkBackAfterAnyEnd();

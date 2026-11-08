@@ -467,9 +467,10 @@ class SeekWalkoutWalk52(unittest.TestCase):
 
     def test_the_puller_faces_the_son_behind_the_seek_row(self):
         walk = walkout_branch()
-        self.assertIn("if (SeekPullRulesOn(bot->GetMapId(), task.row) &&\n"
-                      "                    !sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
-                      "                                             CAST_ANGLE_IN_FRONT))\n"
+        self.assertIn("const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);", walk)
+        self.assertIn("const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
+                      "                                                             CAST_ANGLE_IN_FRONT);", walk)
+        self.assertIn("if (rulesOn && !inFront)\n"
                       "                    sServerFacade.SetFacingTo(bot, task.source);", walk)
         self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source)"),
                         walk.index("WalkoutCurrentCast(bot, task.source"))

@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: Hakkar's walk-out puller no longer loses its pull shot to follow or step-out: with `DungeonRunSeekWalkoutFocus` it holds every other action until the shot lands, turns to the Son before it casts, and a hunter opens with Arcane Shot.
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
 
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.

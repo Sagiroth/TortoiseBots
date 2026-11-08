@@ -583,6 +583,16 @@ namespace ai
         BossTacticsSeekPetHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek pet hold") {}
         float GetValue(Action* action) override;
     };
+    // The walk-out focus (DungeonRunSeekWalkoutFocus): while this bot is the live walk-out puller and its shot has not
+    // landed, every action but the walk-out ("boss tactics seek tank") and the pet's dismissal ("boss tactics seek
+    // pet") is held, so "follow", "hunter step out" or "wait for attack" no longer take the puller's ticks at the
+    // stand (WalkoutFocusBlocks). One `seek pull: walk-out preempted action=<name>` row per walk-out.
+    class BossTacticsWalkoutFocusMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsWalkoutFocusMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics walkout focus") {}
+        float GetValue(Action* action) override;
+    };
 
     // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
     // off. False on every other bot, row or target.

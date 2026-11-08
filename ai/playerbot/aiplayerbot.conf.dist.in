@@ -1073,6 +1073,12 @@ AiPlayerbot.DungeonRunSeekSonMeet = 0
 # Off refuses every Son outside the circle as before.
 AiPlayerbot.DungeonRunSeekTakeEdge = 0
 
+# The walk-out focus for Hakkar's seek pull (recommended on): until its shot lands, the live walk-out puller runs only
+# the walk-out (and its pet's dismissal), so "follow" or "hunter step out" no longer take its ticks at the stand; it
+# turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can (else Auto Shot). Off
+# keeps the old turn-and-cast in one tick and lets other actions run.
+AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

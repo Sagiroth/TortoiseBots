@@ -79,6 +79,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekPullCycle`](#aiplayerbotdungeonrunseekpullcycle) | `0` | `1`: the boss tactics keep their `seek_pull` rows — the seek walk-out pulls and kills one source in every cycle, up to the row's walk-outs a cycle (needs `DungeonRunSeekAura` and the rows). |
 | [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
+| [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller runs only its walk-out until its shot lands, turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -921,6 +922,20 @@ Whether a tank takes a Son of Hakkar that stands just outside the raid's circle 
 <summary>How it works in detail</summary>
 
 **Take edge:** the anchored take never chased a Son out of the raid's 30 yd circle (Taunt and Growl are melee), but the bots a Son hits stand clamped on the circle's edge, so the Son stood at 31-45 yd and walk 54 refused 56 % of its take rows (`reason=chase_refused`). With the key on, the take chases a Son outside the circle only when all of these hold: the Son's victim stands inside the raid circle (plus 2 yd), the Son's z is 46.5 or higher (above Hakkar's 45.8 evade line), the Son is within 8 yd of the circle (38 yd from the spawn) and within 10 yd of that victim. Anything else stays refused so the tank is never led far off the circle (`chase_refused`; `edge_far` when only a distance fails). A Son inside the circle is never refused. Only a tank that is not Hakkar's victim takes. Applies to every take of a Son (the healer take, the pickup take, the meet's take).
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekWalkoutFocus`
+Whether the Hakkar walk-out puller keeps to its walk-out until its shot lands. Recommended on.
+**Default:** `0` · **Values:** `0` off (other actions may take the puller's ticks, and it turns and casts in one tick, as before), `1` on (needs `AiPlayerbot.DungeonRunSeekPullCycle` and a `seek_pull` row for the facing) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Walk-out focus:** walk 55 lost 15 cycle-1 walk-outs to a shot that never went out: the puller stood in range and sight of its Son but ran `follow`, `hunter step out`, `wait for attack` or another action, and in 10 of 13 no-shot aborts it was not facing the Son. With the key on, three things change while this bot is the live walk-out puller and its shot has not landed:
+- Every action except the walk-out (`boss tactics seek tank`) and the pet's dismissal (`boss tactics seek pet`) is held, survival actions such as Feign Death and flee included (the walk-out itself aborts on threat, on becoming Hakkar's victim and on a charm). A dead or charmed puller holds nothing, nor does a record older than the task's 25 s. Once the shot lands the hold lifts, so the walk back is not blocked. The first held action of each walk-out logs `seek pull: walk-out preempted action=<name>` (one row per walk-out).
+- At the stand, a puller that does not face the Son turns this tick and casts on the next one, instead of casting in the same tick as the turn.
+- A hunter opens with Arcane Shot when it can cast it now, else Auto Shot (never a DoT, so never Serpent Sting). Every other class keeps its shot (wand Shoot, Wrath, Lightning Bolt).
 
 </details>
 
