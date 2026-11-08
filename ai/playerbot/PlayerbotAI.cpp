@@ -1439,6 +1439,7 @@ void PlayerbotAI::OnCombatStarted()
         aiObjectContext->GetValue<bool>("has attackers")->Reset();
 
         ChangeEngine(BotState::BOT_STATE_COMBAT);
+        aiObjectContext->GetValue<bool>("drink unfinished")->Set(false);
         if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
         {
             ResetAIInternalUpdateDelay();

@@ -44,6 +44,15 @@ namespace ai
         return usesMana && manaPct < stopManaPct;
     }
 
+    // A drink cut short (the master walked off) left mana above the drink
+    // start line, so the normal trigger would wait for the next fight: an
+    // unfinished drink resumes until the stop line instead.
+    inline bool ShouldResumeDrink(bool drinkUnfinished, bool usesMana, std::uint32_t manaPct,
+        std::uint32_t stopManaPct, bool drinkingNow)
+    {
+        return drinkUnfinished && !drinkingNow && ShouldDrinkAtManaPct(usesMana, manaPct, stopManaPct);
+    }
+
     // Why a bot did not start resting on `.bot action rest` (issue #916). The
     // order already ran the drink/food actions; this only names the first
     // gate that held, so the refusal can say why instead of the generic
