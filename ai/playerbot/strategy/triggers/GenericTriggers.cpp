@@ -3,6 +3,7 @@
 #include "playerbot/RaidTankHealing.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "playerbot/BoostReadinessPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ThreatCapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
@@ -1491,6 +1492,16 @@ bool NotDpsTargetActiveTrigger::IsActive()
 
         if(sServerFacade.IsAlive(target))
         {
+            // AiPlayerbot.DungeonRunCarrierHold: a Delusions carrier on its Shade keeps it; "dps assist" would pull it
+            // to the skull (Jin'do). Key off, or not a needs_aura subject the bot carries the aura for: as before.
+            if (sPlayerbotAIConfig.dungeonRunCarrierHold)
+            {
+                std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+                if (CarrierHoldsCurrent(sPlayerbotAIConfig.dungeonRunCarrierHold, requiredAura != 0,
+                        requiredAura != 0 && bot->HasAura(requiredAura)))
+                    return false;
+            }
+
             // do not switch if enemy target
             Unit* enemy = AI_VALUE(Unit*, "enemy player target");
             if (enemy)

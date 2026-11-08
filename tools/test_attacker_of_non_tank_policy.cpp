@@ -158,10 +158,10 @@ int main()
             CHECK(origin[pick] == c.seenPick);
             // The gate answers the same bot for the unit the value returned: never a refusal.
             std::uint32_t const required = seen[origin[pick]].requiredAura;
-            CHECK(TauntGateFor(c.gateOn, required, c.botHasAura && required != 0, false) == TauntGate::Allow);
+            CHECK(TauntGateFor(c.gateOn, required, c.botHasAura && required != 0, false, false) == TauntGate::Allow);
         }
         // The disagreement the pair used to have: an uncursed tank is refused at the Shade, and the value never offers it.
-        CHECK(TauntGateFor(true, kDelusions, false, false) == TauntGate::NeedsAura);
+        CHECK(TauntGateFor(true, kDelusions, false, false, false) == TauntGate::NeedsAura);
         CHECK(AttackerOfNonTankSkipsUnit(true, kDelusions, false));
     }
 

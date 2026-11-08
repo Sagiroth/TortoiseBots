@@ -1,5 +1,7 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunCarrierHold (default 0), a Delusions carrier on its Shade of Jin'do keeps it instead of being pulled to the boss, and the kill-first check runs every second.
+- Changed: with AiPlayerbot.DungeonRunTauntGate on, the main tank holding Jin'do no longer taunts a Shade (reason holding_boss), and each taunt-gate refusal word is logged once per bot per 5 s.
 - Changed: a Delusions carrier at Jin'do finds its Shade even when its attackers list misses it, and the kill-first row says why it did not switch (AiPlayerbot.DungeonRunCarrierScan).
 - Changed: tanks no longer single-target taunt a Shade of Jin'do or a taunt-immune boss (AiPlayerbot.DungeonRunTauntGate); area taunts are not covered.
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.

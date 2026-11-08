@@ -130,7 +130,7 @@ ref survives line drift.
 | 41 | `BossTacticsBurnMana` | `spell=<id>,boss_mana_pct=<pct>` | LogBurnMana | not a refusal (the cast went out) | document |
 | 42 | `BossTacticsRangedOnly` | `subject=<entry>,gap=%.1f` | ai::LogBossRangedOnly | not a refusal (the hold is active) | document |
 | 43 | `BossTacticsThreatCap` | `threat cap: ref=<main\|offtank> <threat> offtank_target=<name\|none>` | LogThreatCap (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the reference a cap is measured against) | document |
-| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune>` (`needs_aura`: the bot lacks the row's aura; a carrier of it is not refused); info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
+| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune\|holding_boss>` (`needs_aura`: the bot lacks the row's aura; a carrier of it is not refused unless it is the boss's current victim, `holding_boss`; one row per bot and reason per 5 s); info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
 
 ### Healer
 

@@ -909,6 +909,10 @@ Whether the boss tactics keep their `swap_on_aura` rows: the tanks of the row's 
 
 </details>
 
+### `AiPlayerbot.DungeonRunCarrierHold`
+Whether a Delusions carrier standing on its Shade of Jin'do keeps it: the "not dps target active" trigger stays quiet for it, so "dps assist" no longer pulls it to the boss, and the kill-first trigger checks every second.
+**Default:** `0` · **Values:** `0` off (today's rules), `1` on (needs `AiPlayerbot.DungeonRunAuraTactics` for the needs_aura rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

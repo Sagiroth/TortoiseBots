@@ -1091,10 +1091,22 @@ AiPlayerbot.DungeonRunCarrierStrike = 0
 # 1 - on
 AiPlayerbot.DungeonRunCarrierScan = 0
 
+# A Delusions carrier standing on its Shade of Jin'do keeps it. "not dps target active" fires whenever the current
+# target differs from the DPS target (the skull, Jin'do) and its action "dps assist" outranks kill-first, so a carrier
+# was pulled off a live Shade for the boss (walk 54: 76 times). With the key on the trigger stays quiet when the current
+# target is a needs_aura subject the bot carries the aura for; the kill-first trigger also checks every second (the
+# re-pick after a Shade dies). Needs DungeonRunAuraTactics for the needs_aura rows. `.reload config` reads it again with
+# the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: today's rules (Default)
+# 1 - on
+AiPlayerbot.DungeonRunCarrierHold = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
-# carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). The warrior taunts are gated
+# carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
+# boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed
+# off-tank may. The warrior taunts are gated
 # (Taunt, Mocking Blow, the off-target taunt); Challenging Shout is an area taunt with no single target and is not
-# covered. Each refusal logs BossTacticsTauntGate once per bot per 5 s. `.reload config` reads it again with the other
+# covered. Each refusal logs BossTacticsTauntGate once per bot and reason per 5 s. `.reload config` reads it again with the other
 # AiPlayerbot.DungeonRun* keys.
 # 0 - off: every taunt goes out as before (Default)
 # 1 - on
