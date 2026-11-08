@@ -2,7 +2,8 @@
 
 The suppression is a multiplier, not an action gate: it only shapes
 automatic selection while the bot knows Heal rank 2+ (level 22: 2055, 6063,
-6064) and could pay for the Heal cast now. Explicit `do lesser heal` orders
+6064) and has the mana for at least one known rank (a busy Heal does not
+let Lesser Heal through). Explicit `do lesser heal` orders
 and low-mana fallbacks still use Lesser Heal. The wand probe picks the same
 spell the multiplier would allow through a shared helper.
 
@@ -41,7 +42,13 @@ class PriestLesserHealWiringTest(unittest.TestCase):
         for rank in ("2055", "6063", "6064"):
             self.assertIn(rank, source)
         self.assertNotIn("2054", source)
-        self.assertIn('CanCastSpell("heal", bot)', source)
+        # Mana against the cost of each known Heal rank 2+ (the core's price), never CanCastSpell("heal"), which also
+        # fails on a cast in progress or a cooldown (walk 55: Durgrim cast Lesser Heal with Heal known).
+        self.assertNotIn("CanCastSpell", source)
+        self.assertIn("Spell::CalculatePowerCost(spellInfo, bot, nullptr, nullptr)", source)
+        self.assertIn("PriestAnyHealRankAffordable(costs, known, bot->GetPower(POWER_MANA))", source)
+        self.assertIn("PriestSuppressLesserHeal(true, PriestAnyHealRankAffordable(", source)
+        self.assertIn("if (!bot->HasSpell(spellId))", source)
         self.assertIn("PriestSuppressLesserHeal", source)
         self.assertIn('"lesser heal"', source)
         self.assertIn('"lesser heal on party"', source)

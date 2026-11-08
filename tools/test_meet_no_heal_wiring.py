@@ -42,7 +42,7 @@ class MeetNoHealWiring(unittest.TestCase):
         self.assertIn("### `AiPlayerbot.DungeonRunSeekMeetNoHeal`", SETTINGS)
         self.assertIn("(recommended `1`)", SETTINGS)
         self.assertIn("DungeonRunSeekMeetNoHeal", BOSS_DOC)
-        self.assertIn("DungeonRunSeekMeetNoHeal", CHANGELOG.split("\n", 3)[2])
+        self.assertIn("AiPlayerbot.DungeonRunSeekMeetNoHeal", CHANGELOG)
 
     def test_the_query_is_declared_for_the_heal_value(self):
         self.assertIn("bool SeekMeetWalkerHealHeld(std::uint32_t instanceId, std::uint64_t guid, float hpPct);", ACTIONS_H)
