@@ -327,8 +327,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
 
     def test_a_stalled_shot_aborts_unspent(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("rules.shotStall && WalkoutShotStalled(state, nowMs)", update)
-        stall = update[update.index("rules.shotStall && WalkoutShotStalled(state, nowMs)"):]
+        self.assertIn("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs)", update)
+        stall = update[update.index("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs)"):]
         self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules)", stall)
         self.assertIn("WalkoutExclude(it->second.state, state.puller, nowMs)", stall)
         self.assertIn('LogSeekWalkoutAbort(ai, "no shot"', stall)
@@ -467,9 +467,10 @@ class SeekWalkoutWalk52(unittest.TestCase):
 
     def test_the_puller_faces_the_son_behind_the_seek_row(self):
         walk = walkout_branch()
-        self.assertIn("if (SeekPullRulesOn(bot->GetMapId(), task.row) &&\n"
-                      "                    !sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
-                      "                                             CAST_ANGLE_IN_FRONT))\n"
+        self.assertIn("const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);", walk)
+        self.assertIn("const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
+                      "                                                             CAST_ANGLE_IN_FRONT);", walk)
+        self.assertIn("if (rulesOn && !inFront)\n"
                       "                    sServerFacade.SetFacingTo(bot, task.source);", walk)
         self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source)"),
                         walk.index("WalkoutCurrentCast(bot, task.source"))

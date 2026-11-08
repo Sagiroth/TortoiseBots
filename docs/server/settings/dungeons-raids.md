@@ -80,6 +80,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
 | [`AiPlayerbot.DungeonRunSeekMeetNoHeal`](#aiplayerbotdungeonrunseekmeetnoheal) | `0` (recommended `1`) | `1`: while a pulled Son of Hakkar's meet is open, bots that heal members (healers and off-heal hybrids) skip its puller as a heal target unless its health after the next hit is under 40 %, so a heal's threat does not peel the Son onto a healer (needs `DungeonRunSeekSonMeet`). |
+| [`AiPlayerbot.DungeonRunSeekWalkoutFocus`](#aiplayerbotdungeonrunseekwalkoutfocus) | `0` | `1` (recommended): the Hakkar walk-out puller's combat actions are held until its shot lands (not below 40 % health; reaction actions still run), it turns to the Son one tick before it casts, and a hunter opens with Arcane Shot when it can. |
+| [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -937,6 +939,42 @@ Whether healers leave the pulled Son's puller alone while the Son's meet is open
 **Who is affected:** every bot that heals a member through this value, so off-heal hybrids (a retribution paladin with `offheal`, for one) skip the puller too, not only healers. A bot's own heal of itself does not go through this value and is unchanged. With the key off, or while no meet is open anywhere on the server, the pick takes no lock (one atomic count is read).
 
 **Limits:** a group heal centred on another member (Prayer of Healing, Chain Heal bounces) can still land on the puller. A Renew already ticking on the puller before the meet opened keeps ticking, and each tick still adds threat. The puller's pet is not held. The incoming-damage estimate counts only attackers already in melee reach, so while the Son is still running at the puller it reads 0 and the floor sees the plain health. At the 40 % line the healers' triage picks its biggest heal, which carries the most threat; that is the trade.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekWalkoutFocus`
+Whether the Hakkar walk-out puller keeps to its walk-out until its shot lands. Recommended on.
+**Default:** `0` · **Values:** `0` off (other actions may take the puller's ticks, and it turns and casts in one tick, as before), `1` on (needs `AiPlayerbot.DungeonRunSeekPullCycle` and a `seek_pull` row for the facing) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Walk-out focus:** walk 55 lost 15 cycle-1 walk-outs to a shot that never went out: the puller stood in range and sight of its Son but ran `follow`, `hunter step out`, `wait for attack` or another action, and in 10 of 13 no-shot aborts it was not facing the Son. With the key on, these change while this bot is the live walk-out puller and its shot has not landed:
+- Combat actions are held; reaction actions still run. Every combat-engine action except the walk-out (`boss tactics seek tank`) and the pet's dismissal (`boss tactics seek pet`) is held, Feign Death included. Reaction-engine actions (flee, avoid cast, tank swap) are not held: they are the puller's survival moves, the walk-out already aborts on threat, on becoming Hakkar's victim and on a charm, and walk 55's frames show no reaction action preempting a puller.
+- Below 40 % health nothing is held, so potions, healthstones and Mend Pet run as usual; the walk-out's own aborts are unchanged.
+- A dead or charmed puller holds nothing, nor does a task 25 s old or older. Once the shot lands the hold lifts, so the walk back is not blocked.
+- A bot off a `seek_aura` map, and every bot while no walk-out task runs (a walk back does not count), skips the hold without taking the walk-out lock.
+- The first held action of each walk-out logs `seek pull: walk-out preempted action=<name>` (one row per walk-out). The engine asks the hold only about an action it is about to run, so the name is the action that would have run that tick, had the walk-out not been chosen or had it returned false.
+- At the stand, a puller that does not face the Son stops, turns this tick and casts on the next one, instead of casting in the same tick as the turn.
+- A hunter opens with Arcane Shot when it can cast it now, else Auto Shot (never a DoT, so never Serpent Sting). Every other class keeps its shot (wand Shoot, Wrath, Lightning Bolt).
+- For 2 s after the pull cast the puller waits for the Son to join the fight instead of casting again, and the 6 s stall does not abort it as `no shot` (the instant Arcane Shot leaves no cast behind while it travels).
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekNearestTake`
+Whether the first off-tank takes a Son of Hakkar off a non-tank at once when its taunt reaches and the receiving tank's does not. Recommended on.
+**Default:** `0` · **Values:** `0` off (the first off-tank takes only after the Son sat 3 s on the non-tank, as before), `1` on (needs the live `anchor` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Nearest take:** walk 55's Sons on a non-tank were taken almost only by the receiver (the third tank), mostly with `attack` (walking, the taunt out of reach or on cooldown), while 1-3 other tanks stood free a median 12.9 yd away. With the key on, the first off-tank (tanks[1]) takes a Son at once, without the 3 s clock, when all of these hold:
+- the Son fights a non-tank, and it is not the open meet's Son;
+- the Son's victim stands inside the raid circle (plus 2 yd) of the live `anchor` row (no live anchor: no nearest take, and the 3 s rule applies silently);
+- the receiver is more than 8 yd from the Son, or its taunt is not ready;
+- the first off-tank is within 8 yd of the Son with its taunt ready, is not Hakkar's victim and holds no Son.
+
+"Taunt ready" is an explicit read with the taunt-after pick's own guards: in control (not stunned, feared, confused, hexed or charmed), not silenced or pacified, a taunt known (Taunt, Growl, or Turtle's Hand of Reckoning for a paladin), that spell's own cooldown ready, a warrior in Defensive Stance and a druid in Bear Form or Dire Bear Form. The global cooldown alone does not make a tank "not ready", and range is the 8 yd test. With the key on, the take also casts that known taunt, so a paladin taunts with Hand of Reckoning. A human (non-bot) tank always reads as not ready, so a human receiver never holds the first off-tank back. The main tank never takes. While the key is on, the receiver also leaves a fighting Son whose victim is the first off-tank, so it does not walk over and taunt back a Son the first off-tank just took; a Son on the main tank or any other tank is still the receiver's to take. Otherwise the receiver keeps its take and the 3 s rule still applies. The take row is the usual `seek take: ... reason=<word>`.
 
 </details>
 

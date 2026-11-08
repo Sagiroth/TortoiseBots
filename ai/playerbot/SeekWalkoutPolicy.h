@@ -121,6 +121,111 @@ namespace ai
         }
     }
 
+    // The walk-out focus (DungeonRunSeekWalkoutFocus, walk 55: 15 cycle-1 walk-outs never shot, the puller in range
+    // and sight but in "follow", "hunter step out" or another action, and not facing the Son in 10 of 13 no-shot
+    // aborts). Pure rules the glue (BossTacticsSeekTankAction's walk-out branch and BossTacticsWalkoutFocusMultiplier)
+    // reads.
+    //
+    // The pull shot: a hunter opens with the instant Arcane Shot when it can cast it now, else Auto Shot (the
+    // auto-repeat waits on the ranged swing timer and needs the Son in front). Never a DoT: Serpent Sting stays vetoed.
+    // Every other class keeps WalkoutShotSpell's shot (a warrior or paladin still has none and is never picked).
+    inline const char* WalkoutPullShotSpell(std::uint8_t classId, bool arcaneReady)
+    {
+        if (classId == 3)
+            return arcaneReady ? "arcane shot" : "auto shot";
+        return WalkoutShotSpell(classId);
+    }
+
+    // Facing first: with the focus on, a puller in shot position that does not face the Son stops, turns this tick and
+    // casts on the next one (a cast in the same tick as SetFacingTo went out before the turn landed).
+    inline bool WalkoutFaceFirst(bool focusOn, bool rulesOn, bool inFront)
+    {
+        return focusOn && rulesOn && !inFront;
+    }
+
+    // Whether the walk-out's own record still names this bot as a live puller: recorded as the task's puller, alive,
+    // not charmed, and the task inside its 25 s (the same `<` as the anchor's exemption, WalkoutExempts). A dead or
+    // charmed puller (the abort clears the record only on the next reader's update) and a stale record never hold
+    // anything.
+    inline bool WalkoutFocusPullerLive(bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs)
+    {
+        return recordedPuller && alive && !charmed && sinceStartMs < kSeekWalkoutTimeoutMs;
+    }
+
+    // Below this health the focus lets go (walk 56 review): a puller 30+ yd out, often past its healers' reach, drinks
+    // its potion, uses its healthstone or mends its pet as usual. The walk-out's own aborts (threat, victim, charm, the
+    // stall and the timeout) are unchanged.
+    constexpr float kWalkoutFocusFloorPct = 40.0f;
+
+    // The actions the focus lets run: the walk-out itself and the pet's dismissal.
+    inline bool WalkoutFocusAllows(const std::string& action)
+    {
+        return action == "boss tactics seek tank" || action == "boss tactics seek pet";
+    }
+
+    // Whether the focus holds `action` this tick: the flag on, this bot the live walk-out puller (WalkoutFocusPullerLive)
+    // and the shot not landed yet. Every combat-engine action but the walk-out and the pet's dismissal is held:
+    // "follow", "hunter step out", "wait for attack", "reach melee"/"reach spell", "feign death". Reaction-engine
+    // actions (flee, avoid cast, tank swap) are not multiplied by it and still run: they are the puller's survival
+    // moves, and the walk-out already aborts on threat, on the boss's victim and on a charm. Once the shot lands (or the
+    // task ends) nothing is held: the walk back is the walk-out action's own.
+    inline bool WalkoutFocusBlocks(bool flagOn, bool isPuller, bool shot, const std::string& action)
+    {
+        return flagOn && isPuller && !shot && !WalkoutFocusAllows(action);
+    }
+
+    // The multiplier's whole decision, from plain inputs the glue fills by name (BossTacticsWalkoutFocusMultiplier).
+    struct WalkoutFocusInput
+    {
+        bool flagOn = false;
+        bool recordedPuller = false; // the instance's running task names this bot as its puller
+        bool alive = false;
+        bool charmed = false;
+        std::uint32_t sinceStartMs = 0;
+        bool shot = false;
+        float hpPct = 100.0f;
+    };
+
+    // Whether the focus holds `action`: the puller live (WalkoutFocusPullerLive), unshot, at or above the health floor,
+    // and the action not the walk-out's own (WalkoutFocusBlocks).
+    inline bool WalkoutFocusHolds(const WalkoutFocusInput& in, const std::string& action)
+    {
+        bool const live = WalkoutFocusPullerLive(in.recordedPuller, in.alive, in.charmed, in.sinceStartMs);
+        return in.hpPct >= kWalkoutFocusFloorPct && WalkoutFocusBlocks(in.flagOn, live, in.shot, action);
+    }
+
+    // The pull shot in flight (walk 56 review): the instant Arcane Shot leaves no cast behind, and the Son counts as shot
+    // only once it is in combat. For this long after the pull cast the puller waits for the Son instead of casting
+    // again, and the 6 s stall does not abort the walk-out as "no shot".
+    constexpr std::uint32_t kSeekWalkoutShotFlightMs = 2000;
+
+    // Whether the pull cast at `castMs` (0: none this task) may still land at `nowMs`.
+    inline bool WalkoutPullShotInFlight(std::uint32_t castMs, std::uint32_t nowMs)
+    {
+        return castMs != 0 && nowMs - castMs < kSeekWalkoutShotFlightMs;
+    }
+
+    // At the stand: whether the puller waits this tick for a pull shot already sent (in flight, the Son not yet in
+    // combat) instead of casting again or aborting.
+    inline bool WalkoutPullShotWaits(std::uint32_t castMs, std::uint32_t nowMs, bool sonInCombat)
+    {
+        return !sonInCombat && WalkoutPullShotInFlight(castMs, nowMs);
+    }
+
+    // Whether the 6 s stall aborts the walk-out as "no shot" now: stalled, and no pull shot in flight.
+    inline bool WalkoutNoShotAbortDue(bool stalled, std::uint32_t castMs, std::uint32_t nowMs)
+    {
+        return stalled && !WalkoutPullShotInFlight(castMs, nowMs);
+    }
+
+    // The `walk-out preempted` row: one per walk-out, keyed by the task's start time. It names the first action the focus
+    // held in that walk-out (the engine asks the multiplier only for an action it is about to run, so that action would
+    // have run this tick had the walk-out not been chosen or had it returned false).
+    inline bool WalkoutPreemptRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs)
+    {
+        return loggedStartMs != startMs;
+    }
+
     // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
     // damage dealer. None: no puller. The pet stays held at the puller's heels the whole task (it never takes the Son).
     enum class WalkoutRole : std::uint8_t
@@ -697,6 +802,7 @@ namespace ai
         std::uint32_t standMs = 0;       // the stand's last re-plan
         std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
         std::uint32_t atStandSinceMs = 0; // the puller stood at its stand since then, unshot (0: not yet)
+        std::uint32_t pullCastMs = 0;     // the walk-out focus's pull cast went out then (0: not this task)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -760,6 +866,28 @@ namespace ai
         return WalkoutActive(s) || s.returner != 0;
     }
 
+    // One record's marks for the two global counts: busy (a task or a walk back runs: the anchor's exemption reads it)
+    // and running (a task runs: the walk-out focus reads it, a walk back holds nothing).
+    struct WalkoutBusyMarks
+    {
+        bool busy = false;
+        bool running = false;
+    };
+
+    inline WalkoutBusyMarks WalkoutMarksOf(const SeekWalkoutState& s)
+    {
+        WalkoutBusyMarks m;
+        m.busy = WalkoutBusy(s);
+        m.running = WalkoutActive(s);
+        return m;
+    }
+
+    // A count's step for one record's change: +1 when the mark appears, -1 when it goes, 0 otherwise.
+    inline int WalkoutCountStep(bool before, bool now)
+    {
+        return before == now ? 0 : (now ? 1 : -1);
+    }
+
     // The seek cycle still takes a walk-out: not spent by one, and fewer than the rules' walk-outs started in it (with
     // the defaults, one per cycle, no second start).
     inline bool WalkoutCycleOpen(const SeekWalkoutState& s, std::uint32_t cycleNo,
@@ -803,6 +931,7 @@ namespace ai
         s.standMs = nowMs;
         s.noStandSinceMs = 0;
         s.atStandSinceMs = 0;
+        s.pullCastMs = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
@@ -997,6 +1126,7 @@ namespace ai
         s.startMs = 0;
         s.shot = false;
         s.atStandSinceMs = 0;
+        s.pullCastMs = 0;
         return reopened;
     }
 

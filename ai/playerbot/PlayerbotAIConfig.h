@@ -668,6 +668,16 @@ public:
     // Healers skip the open pulled-Son meet's puller and returner as heal targets unless they are under 40 % hp (a heal on
     // the puller adds threat on the Son and peels it onto the healer); off, they heal them as before (default off).
     bool dungeonRunSeekMeetNoHeal = false;
+    // The walk-out focus (Hakkar's seek pull): on, the live walk-out puller's combat actions are held until its shot
+    // lands (reaction actions still run; nothing below 40 % health), it turns to the Son one tick before it casts, and
+    // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks
+    // and it turns and casts in one tick as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutFocus = false;
+    // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
+    // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
+    // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
+    // takes. Off, the 3 s rule stands as before (default off, recommended on).
+    bool dungeonRunSeekNearestTake = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

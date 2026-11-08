@@ -453,6 +453,104 @@ namespace ai
         return heldMs >= kSeekHealerTakeMs;
     }
 
+    // The nearest take (DungeonRunSeekNearestTake, walk 55): a Son on a non-tank is taken at once by the tank whose
+    // taunt reaches it, not only by the receiver (tanks[2]) or, after the 3 s healer clock, by tanks[1]. Walk 55: the
+    // nearest free tank stood a median 12.9 yd from such a Son, and the receiver's take was mostly `attack` (walking,
+    // the taunt out of reach or on cooldown) while 1-3 other tanks stood free.
+    constexpr float kSeekNearestTakeYd = 8.0f; // Taunt and Growl are melee: within this, Attack closes the last yards
+
+    // Which Son the nearest take may go to: one fighting a non-tank, not the open meet's Son (the meet's own take
+    // handles it), with its victim inside the raid circle plus 2 yd (a victim outside is the edge take's business).
+    inline bool SeekNearestTakeSonOk(bool victimNonTank, bool openMeetSon, bool victimInsideRaidCircle)
+    {
+        return victimNonTank && !openMeetSon && victimInsideRaidCircle;
+    }
+
+    // Whether the tank at `selfIdx` (in the raid's tank order) is the nearest take's taker for one such Son. The main
+    // tank (0) never takes. The receiver (`receiverIdx`, the third tank) keeps its own take. tanks[1] takes at once,
+    // without the 3 s clock, only when the receiver cannot (more than 8 yd from the Son, or its taunt on cooldown;
+    // a dead receiver is passed as far and not ready) and tanks[1] itself can: within 8 yd, its taunt ready, not the
+    // boss's victim and holding no Son. Any other tank index is not a taker here.
+    inline bool SeekNearestTakerIs(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
+                                   float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon)
+    {
+        if (selfIdx <= 0)
+            return false;
+        if (selfIdx == receiverIdx)
+            return true;
+        if (selfIdx != 1)
+            return false;
+        const bool receiverCannot = receiverYd > kSeekNearestTakeYd || !receiverTauntReady;
+        const bool selfCan = selfYd <= kSeekNearestTakeYd && selfTauntReady && !selfIsBossVictim && !selfHoldsSon;
+        return receiverCannot && selfCan;
+    }
+
+    // The stance or form a tank's taunt needs (by class id): a warrior's Taunt needs Defensive Stance, a druid's Growl
+    // Bear Form or Dire Bear Form; a paladin's Hand of Reckoning (Turtle) needs none.
+    inline bool SeekTauntFormOk(std::uint8_t classId, bool defensiveStance, bool bearForm)
+    {
+        switch (classId)
+        {
+            case 1: return defensiveStance;
+            case 11: return bearForm;
+            default: return true;
+        }
+    }
+
+    // Whether a tank's taunt is ready now: the taunt-after pick's own guards (TankTauntGuards: in control, not
+    // silenced or pacified), a taunt known (KnownTaunt), the taunt's own spell cooldown ready, and its stance or form
+    // held (SeekTauntFormOk). Not the full cast check: the global cooldown alone (a warrior's Sunder a moment ago) is
+    // not "not ready", and range is the caller's 8 yd test (the take's Attack closes it).
+    inline bool SeekTankTauntReadyNow(bool inControl, bool silencedOrPacified, bool hasTaunt, bool spellCooldownReady,
+                                      bool formOk)
+    {
+        return inControl && !silencedOrPacified && hasTaunt && spellCooldownReady && formOk;
+    }
+
+    // One Son the nearest take judges: its eligibility (SeekNearestTakeSonOk's inputs), both tanks' distances to it,
+    // and both tanks' taunt readiness for it (SeekTankTauntReadyNow, per Son).
+    struct SeekNearestTakeCand
+    {
+        bool victimNonTank = false;
+        bool openMeetSon = false;
+        bool victimInside = false;
+        float selfYd = 0.0f;
+        float receiverYd = 0.0f;
+        bool receiverTauntReady = false;
+        bool selfTauntReady = false;
+    };
+
+    // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes
+    // (SeekNearestTakerIs), or -1. Flag off: always -1, so the 3 s healer clock is the only take.
+    inline int PickSeekNearestTake(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
+                                   const std::vector<SeekNearestTakeCand>& sons)
+    {
+        if (!flagOn)
+            return -1;
+        int best = -1;
+        for (std::size_t i = 0; i < sons.size(); ++i)
+        {
+            const SeekNearestTakeCand& c = sons[i];
+            if (!SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
+                continue;
+            if (!SeekNearestTakerIs(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
+                                    c.selfTauntReady, selfIsBossVictim, selfHoldsSon))
+                continue;
+            if (best < 0 || c.selfYd < sons[static_cast<std::size_t>(best)].selfYd)
+                best = static_cast<int>(i);
+        }
+        return best;
+    }
+
+    // The receiver's own pick of a fighting Son near the spot (the third tank's `fighting`): with the nearest take on it
+    // skips only a Son whose victim is the first off-tank (`victimTankIdx` 1, the nearest taker that just took it), so
+    // it does not walk over and taunt it back. A Son on the main tank (0), on any other tank or on a non-tank (-1) is
+    // still the receiver's. Flag off: today's pick (any fighting Son not on itself).
+    inline bool SeekReceiverSkipsFighting(bool flagOn, bool isReceiver, int victimTankIdx)
+    {
+        return flagOn && isReceiver && victimTankIdx == 1;
+    }
+
     // Whether an off-tank may take a Son, drag one or walk a pull at all: never while it is the boss's victim (after
     // Cause Insanity the threat successor can hand Hakkar to it, and its walk would bring him onto the gather).
     inline bool SeekTankTakeAllowed(bool isBossVictim)

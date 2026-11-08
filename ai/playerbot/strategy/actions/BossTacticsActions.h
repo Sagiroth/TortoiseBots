@@ -593,6 +593,17 @@ namespace ai
         BossTacticsSeekPetHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek pet hold") {}
         float GetValue(Action* action) override;
     };
+    // The walk-out focus (DungeonRunSeekWalkoutFocus): while this bot is the live walk-out puller, at or above 40 %
+    // health, and its shot has not landed, every combat-engine action but the walk-out ("boss tactics seek tank") and
+    // the pet's dismissal ("boss tactics seek pet") is held (WalkoutFocusHolds; reaction actions still run), so
+    // "follow", "hunter step out" or "wait for attack" no longer take the puller's ticks at the stand. One
+    // `seek pull: walk-out preempted action=<name>` row per walk-out.
+    class BossTacticsWalkoutFocusMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsWalkoutFocusMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics walkout focus") {}
+        float GetValue(Action* action) override;
+    };
 
     // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
     // off. False on every other bot, row or target.
@@ -649,6 +660,7 @@ namespace ai
         bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
         bool walkout = false;     // the walk-out task (SeekWalkoutPolicy.h): out to shoot `source` once, then back
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
+        std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         bool walkToSpot = false;
         bool holdSwing = false;

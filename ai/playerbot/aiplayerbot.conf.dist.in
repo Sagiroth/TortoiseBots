@@ -1085,6 +1085,20 @@ AiPlayerbot.DungeonRunSeekTakeEdge = 0
 # Off heals the puller as before.
 AiPlayerbot.DungeonRunSeekMeetNoHeal = 0
 
+# The walk-out focus for Hakkar's seek pull (recommended on): until its shot lands, the live walk-out puller's combat
+# actions are held except the walk-out (and its pet's dismissal), so "follow" or "hunter step out" no longer take its
+# ticks at the stand; reaction actions still run, and below 40 % health nothing is held. It turns to the Son one tick
+# before it casts, a hunter opens with Arcane Shot when it can (else Auto Shot), and a shot in flight is waited for
+# 2 s. Off keeps the old turn-and-cast in one tick and lets other actions run.
+AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
+
+# The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
+# victim inside the live anchor's raid circle, plus 2 yd, and not the open meet's Son) at once when the receiving third
+# tank is more than 8 yd from it or its taunt is not ready, and the first off-tank is within 8 yd with its taunt ready,
+# is not Hakkar's victim and holds no Son; the receiver then leaves a Son on the first off-tank. The main tank never takes.
+# Off (or no live anchor) keeps the 3 s healer clock.
+AiPlayerbot.DungeonRunSeekNearestTake = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 
