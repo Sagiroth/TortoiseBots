@@ -108,24 +108,42 @@ func (h *Hub) Unsubscribe(c *Client) {
 
 // Publish marshals one payload and offers it to every client that asked for
 // the commander. It holds the lock only to copy the matching clients, so a
-// slow reader never delays the UDP read loop.
+// slow reader never delays the UDP read loop. A frame nobody asked for costs
+// one map scan and no allocation: the payload is marshalled only after the
+// matching clients are known, once, and shared by all of them.
 func (h *Hub) Publish(commander, event string, payload interface{}) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	f := Frame{Event: event, Data: data}
+	var targets []*Client
 	h.mu.Lock()
-	targets := make([]*Client, 0, len(h.clients))
 	for c := range h.clients {
 		if c.want[commander] {
 			targets = append(targets, c)
 		}
 	}
 	h.mu.Unlock()
+	if len(targets) == 0 {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	f := Frame{Event: event, Data: data}
 	for _, c := range targets {
 		c.push(f, &h.dropped)
 	}
+}
+
+// Wants reports whether any open stream asked for the commander, so a caller
+// can skip building a payload nobody will read.
+func (h *Hub) Wants(commander string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for c := range h.clients {
+		if c.want[commander] {
+			return true
+		}
+	}
+	return false
 }
 
 // Clients is the number of open streams.

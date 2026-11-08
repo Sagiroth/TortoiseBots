@@ -705,6 +705,8 @@ func main() {
 	// run's fights per bot for the debugger's "Total" view.
 	mux.HandleFunc("/api/v1/combat/fights", requireAuth(combatFightsHandler(combatStore, historyStore)))
 	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
+	// The live fight's catch-up: the held events at or after a cursor, bounded by the live row's own rings.
+	mux.HandleFunc("GET /api/v1/combat/live", requireAuth(combatLiveHandler(combatStore)))
 	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// The detail key is (commander, session, id): fight ids repeat
 		// across commanders and sessions. The list rows carry the composed
@@ -798,6 +800,11 @@ func main() {
 			return
 		}
 		frames, names, tracked := store.TrackWindow(c, from, to)
+		if r.URL.Query().Get("x") == "1" {
+			// The live view's form: dps, hps and the boss debuff ids per bot, and the window length per frame.
+			writeJSON(w, state.TrackJSONX(c, frames, names, tracked))
+			return
+		}
 		writeJSON(w, state.TrackJSON(c, frames, names, tracked))
 	}))
 
@@ -1162,6 +1169,39 @@ func qUint(s string) uint32 {
 		return 0
 	}
 	return uint32(v)
+}
+
+// combatLiveHandler serves GET /api/v1/combat/live?commander=<name>&since=<cursor>: the live row's header and the events whose
+// index is at or past the cursor (the page's catch-up after a gap, a resync or a fresh open). A bad name or cursor is a 400, a
+// commander with no live fight a 404.
+func combatLiveHandler(combatStore *combat.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fail := func(code int, msg string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
+		}
+		q := r.URL.Query()
+		names, err := live.ParseCommanders(q)
+		if err != nil || len(names) != 1 || len(q["commander"]) != 1 {
+			fail(http.StatusBadRequest, "bad commander")
+			return
+		}
+		var since uint64
+		if raw := q.Get("since"); raw != "" {
+			since, err = strconv.ParseUint(raw, 10, 64)
+			if err != nil {
+				fail(http.StatusBadRequest, "bad since")
+				return
+			}
+		}
+		d, ok := combatStore.LiveSince(names[0], since)
+		if !ok {
+			fail(http.StatusNotFound, "no live fight")
+			return
+		}
+		writeJSON(w, d)
+	}
 }
 
 // combatFightsHandler serves GET /api/v1/combat/fights?commander=: the memory list, newest first, with the stored pack key and

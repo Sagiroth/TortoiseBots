@@ -499,3 +499,93 @@ func TestTrackKeepsALaneSegment(t *testing.T) {
 		t.Fatalf("a frame's lane segment must be a copy, got %v", got)
 	}
 }
+
+// liveSampleBinding is a fighting binding: one bot with boss debuffs (a zero id in the middle) and a combat report whose window
+// carries that bot's meters.
+func liveSampleBinding() model.CommanderBinding {
+	bot := trackBot(7, 1.5, 2.5, 50, 100)
+	bot.Debuffs = []model.CommanderAura{{ID: 24321}, {ID: 0}, {ID: 17172}}
+	b := trackBinding("c", []model.CommanderBot{bot, trackBot(8, 3, 4, 100, 100)}, nil)
+	b.MobsMap = 249
+	b.Combat = &model.CommanderCombat{WinS: 10, Bots: []model.CommanderCombatBot{{GUID: 7, DPS: 120, HPS: 40}}}
+	return b
+}
+
+// TestTrackKeepsLiveSamples: a frame keeps each bot's dps, hps and its first four boss debuff ids from the report, and the
+// window length; a bot the combat report leaves out, and a binding with no combat report, keep zeros.
+func TestTrackKeepsLiveSamples(t *testing.T) {
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, liveSampleBinding()))
+	frames, _ := s.Track("c", 100, 100)
+	if len(frames) != 1 {
+		t.Fatalf("frames = %d", len(frames))
+	}
+	f := frames[0]
+	if f.WinS != 10 {
+		t.Fatalf("WinS = %d, want 10", f.WinS)
+	}
+	b7, b8 := f.Bots[0], f.Bots[1]
+	if b7.DPS != 120 || b7.HPS != 40 || b7.DB != [4]uint32{24321, 17172, 0, 0} {
+		t.Fatalf("bot 7 samples: %+v", b7)
+	}
+	if b8.DPS != 0 || b8.HPS != 0 || b8.DB != [4]uint32{} {
+		t.Fatalf("bot 8 is not in the combat report: %+v", b8)
+	}
+	// A fifth debuff does not fit; a huge counter saturates.
+	b := liveSampleBinding()
+	b.Bots[0].Debuffs = []model.CommanderAura{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}, {ID: 5}}
+	b.Combat.Bots[0].DPS = 1 << 40
+	s2 := newTestStore(newClock())
+	s2.ApplyCommanders(trackPayload(1, 100, b))
+	g, _ := s2.Track("c", 100, 100)
+	if g[0].Bots[0].DB != [4]uint32{1, 2, 3, 4} || g[0].Bots[0].DPS != 0xFFFFFFFF {
+		t.Fatalf("cap and saturation: %+v", g[0].Bots[0])
+	}
+	// No combat report: zeros and no window.
+	plain := trackBinding("p", []model.CommanderBot{trackBot(7, 1, 2, 50, 100)}, nil)
+	s3 := newTestStore(newClock())
+	s3.ApplyCommanders(trackPayload(1, 100, plain))
+	h, _ := s3.Track("p", 100, 100)
+	if h[0].WinS != 0 || h[0].Bots[0].DPS != 0 || h[0].Bots[0].HPS != 0 || h[0].Bots[0].DB != [4]uint32{} {
+		t.Fatalf("no combat report: %+v", h[0])
+	}
+}
+
+// TestTrackJSONXRows: the x=1 form has nine-element bot rows (dps, hps, the debuff ids without the zeros) and the window as w.
+func TestTrackJSONXRows(t *testing.T) {
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, liveSampleBinding()))
+	frames, names := s.Track("c", 100, 100)
+	raw, err := json.Marshal(TrackJSONX("c", frames, names, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"w":10`, `[7,1.5,2.5,50,1,249,120,40,[24321,17172]]`, `[8,3,4,100,1,249,0,0,[]]`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("x=1 JSON lacks %s: %s", want, raw)
+		}
+	}
+	plain, _ := json.Marshal(TrackJSON("c", frames, names, true))
+	if strings.Contains(string(plain), `"w"`) || strings.Contains(string(plain), `,120,`) {
+		t.Fatalf("the plain form must not grow: %s", plain)
+	}
+}
+
+// TestTrackJSONUnchanged pins the plain track answer byte for byte (a string written out before the live fields existed).
+func TestTrackJSONUnchanged(t *testing.T) {
+	bot := trackBot(7, 1.5, 2.5, 50, 100)
+	mobs := []model.CommanderMob{{ID: "9", Entry: 100, Name: "Boss", X: 3, Y: 4, HP: 80}}
+	b := trackBinding("c", []model.CommanderBot{bot}, mobs)
+	b.MobsMap = 249
+	s := newTestStore(newClock())
+	s.ApplyCommanders(trackPayload(1, 100, b))
+	frames, names, tracked := s.TrackWindow("c", 100, 100)
+	raw, err := json.Marshal(TrackJSON("c", frames, names, tracked))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const golden = `{"commander":"c","tracked":true,"frames":[{"t":100,"map":249,"step":0,"fight":false,"bots":[[7,1.5,2.5,50,1,249]],"mobs":[{"id":"9","e":100,"x":3,"y":4,"hp":80}]}],"names":{"100":"Boss"}}`
+	if string(raw) != golden {
+		t.Fatalf("track JSON changed:\n got %s\nwant %s", raw, golden)
+	}
+}

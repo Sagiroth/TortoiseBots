@@ -373,13 +373,16 @@ func (l *Listener) processPacket(data []byte) {
 		if !accepted || l.live == nil {
 			return
 		}
-		l.live.Publish(dg.Commander, "events", dg)
+		// One frame value for every target: the datagram's own fields plus the fight key and the cursor range of its events
+		// (the page appends by index and catches up from `cur`).
+		frame := liveEventsFrame{EventsDatagram: dg, Key: summary.Key, From: summary.EvFrom, Cur: summary.EvCur}
+		l.live.Publish(dg.Commander, "events", frame)
 		if changed {
 			l.live.Publish(dg.Commander, "fight_live", summary)
 		}
 		for _, key := range l.store.RaidKeysForCommander(dg.Commander) {
 			if key != dg.Commander {
-				l.live.Publish(key, "events", dg)
+				l.live.Publish(key, "events", frame)
 				if changed {
 					l.live.Publish(key, "fight_live", summary)
 				}
@@ -420,6 +423,15 @@ func (l *Listener) processPacket(data []byte) {
 		}
 		l.hub.Broadcast("anomaly", saved)
 	}
+}
+
+// liveEventsFrame is the SSE `events` frame: the COMBAT_EVENTS datagram unchanged, plus the fight key and the cursor range
+// of its events (`from` is the index of the first one, `cur` the next index after the last).
+type liveEventsFrame struct {
+	combat.EventsDatagram
+	Key  string `json:"key"`
+	From uint64 `json:"from"`
+	Cur  uint64 `json:"cur"`
 }
 
 func (l *Listener) project(bot *model.BotSnapshot) {

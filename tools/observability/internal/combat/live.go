@@ -97,10 +97,14 @@ type liveFight struct {
 	mapID    uint32
 	header   LiveHeader
 	events   []json.RawMessage
-	kinds    []bool // kinds[i]: events[i] is of a kind the fight log keeps
-	logged   int    // events of the log kinds held in events
-	dropped  int    // log-kind events trimmed past LiveLogMax, so the filed fight can report them
-	other    int    // events of every other kind held in events
+	kinds    []bool   // kinds[i]: events[i] is of a kind the fight log keeps
+	idx      []uint64 // idx[i]: the arrival index of events[i] (the cursor the page catches up from)
+	next     uint64   // the index the next kept event takes
+	lostMax  uint64   // the largest index dropOldest removed (valid when lost)
+	lost     bool     // dropOldest has removed an event
+	logged   int      // events of the log kinds held in events
+	dropped  int      // log-kind events trimmed past LiveLogMax, so the filed fight can report them
+	other    int      // events of every other kind held in events
 	deaths   []FightDeath
 	lastSeen time.Time
 	outcome  string
@@ -167,6 +171,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 		row.seq = dg.Seq
 	}
 	row.lastSeen = now
+	from := row.next
 
 	for _, raw := range dg.Events {
 		var ev liveEvent
@@ -179,6 +184,7 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 				// Shorter than the module's minimum: no COMBAT_FIGHT follows.
 				sum := s.liveSummaryLocked(dg.Commander, row)
 				sum.Outcome, sum.Live = ev.O, false
+				sum.EvFrom, sum.EvCur = from, row.next
 				delete(s.live, dg.Commander)
 				return sum, true, true
 			}
@@ -193,7 +199,9 @@ func (s *Store) ApplyEvents(dg EventsDatagram, now time.Time) (FightSummary, boo
 			}
 		}
 	}
-	return s.liveSummaryLocked(dg.Commander, row), changed, true
+	sum := s.liveSummaryLocked(dg.Commander, row)
+	sum.EvFrom, sum.EvCur = from, row.next
+	return sum, changed, true
 }
 
 // noteEvent adds one event to the row's ring, oldest first. Each class has its own cap: the kinds a fight log keeps up to
@@ -203,6 +211,8 @@ func (lf *liveFight) noteEvent(raw json.RawMessage, kind string) {
 	logged := isLogKind(kind)
 	lf.events = append(lf.events, raw)
 	lf.kinds = append(lf.kinds, logged)
+	lf.idx = append(lf.idx, lf.next)
+	lf.next++
 	if logged {
 		lf.logged++
 		if lf.logged > LiveLogMax {
@@ -229,6 +239,11 @@ func (lf *liveFight) dropOldest(log bool) {
 		lf.events = lf.events[:n-1]
 		copy(lf.kinds[i:], lf.kinds[i+1:])
 		lf.kinds = lf.kinds[:n-1]
+		if gone := lf.idx[i]; !lf.lost || gone > lf.lostMax {
+			lf.lostMax, lf.lost = gone, true
+		}
+		copy(lf.idx[i:], lf.idx[i+1:])
+		lf.idx = lf.idx[:n-1]
 		if log {
 			lf.logged--
 		} else {
@@ -359,4 +374,60 @@ func (s *Store) liveFightLocked(commander string, lf *liveFight) Fight {
 			UpS: map[string]uint64{},
 		},
 	}
+}
+
+// LiveEvent is one held live event with its arrival index.
+type LiveEvent struct {
+	I uint64          `json:"i"`
+	E json.RawMessage `json:"e"`
+}
+
+// LiveDelta is the catch-up answer of GET /api/v1/combat/live: the live row's header and the events whose index is at
+// or past the caller's cursor. Gap is true when the row's caps already dropped an event at or after the cursor.
+type LiveDelta struct {
+	V         int          `json:"v"`
+	Commander string       `json:"commander"`
+	Key       string       `json:"key"`
+	Summary   FightSummary `json:"summary"`
+	StartMs   int64        `json:"start_ms"`
+	FightMs   uint32       `json:"fight_ms"`
+	Boss      uint32       `json:"boss"`
+	BossName  string       `json:"boss_name"`
+	From      uint64       `json:"from"`
+	Cur       uint64       `json:"cur"`
+	Gap       bool         `json:"gap"`
+	Events    []LiveEvent  `json:"events"`
+}
+
+// LiveSince returns the events of the commander's live fight with index >= since (at most what the ring holds, about
+// LiveLogMax + LiveEventsMax). false when the commander has no live row. A cursor past the row's next index belongs
+// to an older fight and counts as 0.
+func (s *Store) LiveSince(commander string, since uint64) (LiveDelta, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row := s.live[commander]
+	if row == nil {
+		return LiveDelta{}, false
+	}
+	if since > row.next {
+		since = 0
+	}
+	sum := s.liveSummaryLocked(commander, row)
+	d := LiveDelta{
+		V: 1, Commander: commander, Key: sum.Key, Summary: sum,
+		StartMs: row.header.StartMs, FightMs: row.header.FightMs,
+		Boss: row.header.Boss, BossName: row.header.BossName,
+		Cur: row.next, Gap: row.lost && row.lostMax >= since,
+		Events: []LiveEvent{},
+	}
+	for i, ix := range row.idx {
+		if ix >= since {
+			d.Events = append(d.Events, LiveEvent{I: ix, E: row.events[i]})
+		}
+	}
+	d.From = d.Cur
+	if len(d.Events) > 0 {
+		d.From = d.Events[0].I
+	}
+	return d, true
 }

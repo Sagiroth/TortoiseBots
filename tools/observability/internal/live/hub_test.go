@@ -127,3 +127,50 @@ func TestUnsubscribeIdempotent(t *testing.T) {
 	default:
 	}
 }
+
+// countingPayload counts how many times it is marshalled.
+type countingPayload struct{ n *int }
+
+func (p countingPayload) MarshalJSON() ([]byte, error) {
+	*p.n++
+	return []byte(`{"ok":1}`), nil
+}
+
+// TestPublishSkipsMarshalWithoutClients: with nobody watching the commander
+// the payload is never marshalled; with watchers it is marshalled exactly once
+// and shared.
+func TestPublishSkipsMarshalWithoutClients(t *testing.T) {
+	h := NewHub()
+	calls := 0
+	h.Publish("Alice", "pos", countingPayload{&calls})
+	if calls != 0 {
+		t.Fatalf("no clients: %d marshal calls, want 0", calls)
+	}
+	other, err := h.Subscribe([]string{"Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Publish("Alice", "pos", countingPayload{&calls})
+	if calls != 0 {
+		t.Fatalf("client of another commander: %d marshal calls, want 0", calls)
+	}
+	if h.Wants("Alice") || !h.Wants("Bob") {
+		t.Fatal("Wants must follow the subscriptions")
+	}
+	select {
+	case <-other.Frames():
+		t.Fatal("bob got alice's frame")
+	default:
+	}
+	a1, _ := h.Subscribe([]string{"Alice"})
+	a2, _ := h.Subscribe([]string{"Alice", "Bob"})
+	h.Publish("Alice", "pos", countingPayload{&calls})
+	if calls != 1 {
+		t.Fatalf("two clients: %d marshal calls, want 1", calls)
+	}
+	for _, c := range []*Client{a1, a2} {
+		if f := wantFrame(t, c); string(f.Data) != `{"ok":1}` {
+			t.Fatalf("frame %s", f.Data)
+		}
+	}
+}

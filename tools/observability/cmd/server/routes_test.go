@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/web"
@@ -20,7 +21,7 @@ func TestTrackRouteWired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"GET /api/v1/commanders/track", "state.ParseTrackWindow(", "store.TrackWindow("} {
+	for _, want := range []string{"GET /api/v1/commanders/track", "state.ParseTrackWindow(", "store.TrackWindow(", "state.TrackJSONX("} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("main.go does not contain %q", want)
 		}
@@ -179,5 +180,66 @@ func TestFightsListQueryWired(t *testing.T) {
 	}
 	if code, _, _, body := do("&limit=0"); code != 400 || !strings.Contains(body, "bad limit") {
 		t.Errorf("limit=0: %d %s", code, body)
+	}
+}
+
+// TestCombatLiveRoute: the catch-up route answers 404 without a live row, 200 with the cursor and the held events after one
+// COMBAT_EVENTS datagram, and 400 for a bad cursor or name; it is registered behind requireAuth.
+func TestCombatLiveRoute(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `mux.HandleFunc("GET /api/v1/combat/live", requireAuth(combatLiveHandler(combatStore)))`) {
+		t.Fatal("the route does not serve combatLiveHandler behind requireAuth")
+	}
+	st := combat.NewStore(nil)
+	h := combatLiveHandler(st)
+	do := func(target string) (int, string) {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := do("/api/v1/combat/live?commander=Gbmage"); code != 404 || !strings.Contains(body, "no live fight") {
+		t.Fatalf("no live row: %d %s", code, body)
+	}
+	now := time.Now()
+	dg := combat.EventsDatagram{
+		FMT: 1, Session: 7, Seq: 1, Commander: "Gbmage", Group: 5, Map: 409,
+		Fight: &combat.LiveHeader{ID: "5-1", Start: now.Unix(), StartMs: now.UnixMilli(), Boss: 11502, BossName: "Magmadar", FightMs: 1000},
+		Events: []json.RawMessage{
+			json.RawMessage(`{"k":"start","t":0}`),
+			json.RawMessage(`{"k":"cast","t":500,"n":"Magmadar","s":"Panic"}`),
+		},
+	}
+	if _, _, ok := st.ApplyEvents(dg, now); !ok {
+		t.Fatal("ApplyEvents refused the datagram")
+	}
+	code, body := do("/api/v1/combat/live?commander=Gbmage&since=1")
+	if code != 200 {
+		t.Fatalf("live row: %d %s", code, body)
+	}
+	var got struct {
+		Cur    uint64 `json:"cur"`
+		From   uint64 `json:"from"`
+		Key    string `json:"key"`
+		Events []struct {
+			I uint64 `json:"i"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Cur != 2 || got.From != 1 || len(got.Events) != 1 || got.Events[0].I != 1 || got.Key == "" {
+		t.Fatalf("delta: %s", body)
+	}
+	if code, body := do("/api/v1/combat/live?commander=Gbmage&since=x"); code != 400 || !strings.Contains(body, "bad since") {
+		t.Fatalf("since=x: %d %s", code, body)
+	}
+	if code, _ := do("/api/v1/combat/live"); code != 400 {
+		t.Fatalf("no commander: %d", code)
+	}
+	if code, _ := do("/api/v1/combat/live?commander=a&commander=b"); code != 400 {
+		t.Fatalf("two commanders: %d", code)
 	}
 }

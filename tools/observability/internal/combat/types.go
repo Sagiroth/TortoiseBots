@@ -160,6 +160,10 @@ type FightSummary struct {
 	PackKey   string `json:"pack_key,omitempty"`
 	NonTankMs *int64 `json:"nontank_ms,omitempty"`
 	Hist      bool   `json:"hist,omitempty"`
+	// EvFrom and EvCur are the live-event cursor range of the COMBAT_EVENTS datagram that produced this summary: the
+	// index of its first event and the next index after it. They ride on the events frame, never on a list row.
+	EvFrom uint64 `json:"-"`
+	EvCur  uint64 `json:"-"`
 }
 
 // Warning is one fired rule on one bot.
