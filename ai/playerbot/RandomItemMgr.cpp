@@ -13,6 +13,7 @@
 
 #include "strategy/values/SharedValueContext.h"
 #include "policy/gear/SpecWeaponPolicy.h"
+#include "policy/gear/SpecArmorPolicy.h"
 #include "../../runtime/policy/provision/AmmoCachePolicy.h"
 
 char * strstri (const char* str1, const char* str2);
@@ -401,7 +402,10 @@ bool RandomItemMgr::CheckItemStats(uint8 clazz, uint8 sp, uint8 ap, uint8 tank)
 
 bool RandomItemMgr::ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto)
 {
-    if (proto->InventoryType == INVTYPE_TABARD)
+    if (!proto)
+        return false;
+
+    if (ai::IsArmorExemptFromMaterialGate(proto->InventoryType))
         return true;
 
     if (!spec)
@@ -410,94 +414,7 @@ bool RandomItemMgr::ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemP
     if (!m_weightScales[spec].info.id)
         return false;
 
-    std::unordered_set<uint32> resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-
-    switch (playerclass)
-    {
-    case CLASS_WARRIOR:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "arms" || m_weightScales[spec].info.name == "fury")
-        {
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
-        }
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
-        break;
-    }
-    case CLASS_PALADIN:
-    {
-        if (m_weightScales[spec].info.name != "holy" && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name != "holy")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE , ITEM_SUBCLASS_ARMOR_LIBRAM };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE, ITEM_SUBCLASS_ARMOR_LIBRAM };
-        break;
-    }
-    case CLASS_HUNTER:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        break;
-    }
-    case CLASS_ROGUE:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER };
-        break;
-    }
-    case CLASS_PRIEST:
-    {
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-        break;
-    }
-    case CLASS_SHAMAN:
-    {
-        if (m_weightScales[spec].info.name == "shamantank")
-        {
-            // Shaman tank: shield always (its armor is the prized stat); the
-            // leather/mail level split stays in CanEquipArmor, not here.
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_SHIELD };
-            break;
-        }
-        if (m_weightScales[spec].info.name == "enhance" && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "enhance")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        break;
-    }
-    case CLASS_MAGE:
-    case CLASS_WARLOCK:
-    {
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-        break;
-    }
-    case CLASS_DRUID:
-    {
-        if ((m_weightScales[spec].info.name == "feraltank" || m_weightScales[spec].info.name == "feraldps") && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "feraltank" || m_weightScales[spec].info.name == "feraldps")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_IDOL, ITEM_SUBCLASS_ARMOR_LEATHER };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_IDOL, ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER };
-
-        break;
-    }
-    }
-
-    return resultArmorSubClass.find(proto->SubClass) != resultArmorSubClass.end();
+    return ai::SpecArmorSubClassAllowed(playerclass, m_weightScales[spec].info.name, proto->InventoryType, proto->SubClass);
 }
 
 bool RandomItemMgr::CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPrototype const* proto)

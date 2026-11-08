@@ -990,11 +990,11 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
             return ItemUsage::ITEM_USAGE_NONE;
     }
 
-    // Caster off-hand on a melee class with an empty off-hand slot: the
-    // armor-class fallthrough below would EQUIP it unconditionally. Reject
-    // first so warriors/rogues/hunters never pick it up (Issue #219).
+    // Caster off-hand on a melee class or off-spec with an empty off-hand slot:
+    // the armor-class fallthrough below would EQUIP it unconditionally. Reject
+    // first so non-caster specs never pick it up (Issue #219).
     if (!oldItem && slot == EQUIPMENT_SLOT_OFFHAND && itemProto->InventoryType == INVTYPE_HOLDABLE &&
-        (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_HUNTER))
+        (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_HUNTER || !armorForSpec))
         return ItemUsage::ITEM_USAGE_NONE;
 
     //No item equiped
