@@ -43,7 +43,7 @@ namespace ai
                 target->IsPlayer() && PlayerbotAI::HasExplicitNonTankRole((Player*)target),
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_WARRIOR && ai->HasAura(71, target),
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_DRUID && (ai->HasAura(5487, target) || ai->HasAura(9634, target))),
-                target->GetPowerType() == POWER_RAGE, target->IsInCombat(),
+                target->GetPowerType() == POWER_RAGE, TankEngagedForShield(target->IsInCombat(), bot->IsInCombat()),
                 (unsigned)target->GetHealthPercent(), sPlayerbotAIConfig.criticalHealth))
                 return false;
             return HealPartyMemberAction::isUseful();

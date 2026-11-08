@@ -14,6 +14,7 @@
 
 using ai::ShouldShieldTarget;
 using ai::TankForShield;
+using ai::TankEngagedForShield;
 
 int main()
 {
@@ -42,6 +43,13 @@ int main()
     CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, true, 50, 20));
     // Explicit DPS in Defensive Stance: shields as usual.
     CHECK(ShouldShieldTarget(TankForShield(false, true, true, false), true, true, 50, 20));
+    // Between chained pulls the tank's own combat flag drops while the
+    // healer is still in combat: the rage-tank rule still holds.
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 65, 20));
+    CHECK(!ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 66, 20));
+    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, true), 20, 20));
+    CHECK(ShouldShieldTarget(TankForShield(false, false, true, false), true, TankEngagedForShield(false, false), 66, 20));
+    CHECK(TankEngagedForShield(true, false));
 
     std::cout << "All shield-target policy tests passed.\n";
     return 0;
