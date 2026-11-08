@@ -467,7 +467,8 @@ public:
     static bool IsTank(Player* player, bool inGroup = true);
     static bool HasExplicitNonTankRole(Player* player);
     static bool IsHeal(Player* player, bool inGroup = true);
-    // This bot's white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict,
+    // This bot's white-damage stop on a boss whose `threat_successor` row carries `strict`
+    // (AiPlayerbot.DungeonRunThreatSuccessorStrict,
     // ThreatCapPolicy.h SuccessorWhiteLatch): stops at 92 % of the reference, resumes under 85 %.
     ai::SuccessorWhiteLatch& SuccessorWhiteCap() { return successorWhiteCap_; }
     bool IsRanged(Player* player, bool inGroup = true);

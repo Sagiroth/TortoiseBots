@@ -314,6 +314,47 @@ int main()
     CHECK(!HighThreatProjectionEscapes(false, false, 8500.0f, -20.0f, 10000.0f));
     CHECK(kHighThreatProjectionSeconds == 5.0f);
 
+    // strict_needs_the_row_opt_in (t1106m, fails while every `threat_successor` row is strict: walk 57 held Hakkar's
+    // white damage): with the key on, a successor target whose row lacks `strict` keeps the 5 s projection escape and
+    // never latches white damage. Its row carrying `strict` behaves as in t1106l; with the key off neither row changes.
+    {
+        // Key on, plain row (Hakkar).
+        const bool plain = StrictSuccessorTarget(true, false);
+        CHECK(!plain);
+        CHECK(HighThreatProjectionEscapes(plain, true, 8500.0f, 50.0f, 10000.0f));   // the escape stays
+        SuccessorWhiteLatch latch;
+        CHECK(!latch.Update(plain, false, 95));                                       // never latches
+        CHECK(!latch.Update(plain, false, 255));
+        CHECK(!SuccessorWhiteStopNow(latch, plain, false, 255, false, true));         // the swing is never stopped
+        // Key on, strict row (Jin'do): t1106l's behaviour.
+        const bool strictRow = StrictSuccessorTarget(true, true);
+        CHECK(strictRow);
+        CHECK(!HighThreatProjectionEscapes(strictRow, true, 8500.0f, 50.0f, 10000.0f));
+        SuccessorWhiteLatch jindo;
+        CHECK(jindo.Update(strictRow, false, 92));
+        CHECK(SuccessorWhiteStopNow(jindo, strictRow, false, 88, false, true));
+        // Key off: both rows as today.
+        for (bool optIn : {false, true})
+        {
+            const bool off = StrictSuccessorTarget(false, optIn);
+            CHECK(!off);
+            CHECK(HighThreatProjectionEscapes(off, false, 8500.0f, 50.0f, 10000.0f));
+            SuccessorWhiteLatch keyOff;
+            CHECK(!keyOff.Update(off, false, 255));
+        }
+    }
+
+    // latch_clears_on_a_plain_row (r5 review): the latch holds on a strict-row target, the bot moves to a target whose
+    // successor row is plain (Jin'do, then Hakkar), and the latch clears at the first read, even at 95 %.
+    {
+        SuccessorWhiteLatch latch;
+        CHECK(latch.Update(StrictSuccessorTarget(true, true), false, 95));   // held on the strict row
+        CHECK(latch.stopped);
+        CHECK(!latch.Update(StrictSuccessorTarget(true, false), false, 95)); // the plain row clears it
+        CHECK(!latch.stopped);
+        CHECK(!SuccessorWhiteStopNow(latch, StrictSuccessorTarget(true, false), false, 95, false, true));
+    }
+
     // successor_white_stops_at_92_resumes_under_85: the white-damage latch on a successor target.
     CHECK(kSuccessorWhiteStopPct == 92);
     CHECK(kSuccessorWhiteResumePct == 85);
@@ -403,6 +444,31 @@ int main()
         CHECK(!SuccessorWhiteStopNow(tank, true, true, 200, false, true));
         SuccessorWhiteLatch hexed;
         CHECK(!SuccessorWhiteStopNow(hexed, true, false, 100, true, true));
+    }
+
+    // white_stop_split_per_attack_mode (t1106m, fails while one stop cancels both): the latch is past 92 % and the bot runs
+    // white damage in two modes on two targets. Melee on the successor with the auto-repeat on an add stops the swing
+    // only; the auto-repeat on the successor with the swing on an add interrupts the shot only. Both on the successor:
+    // both stop; neither: nothing; under the line: nothing.
+    {
+        const SuccessorWhiteStops meleeOnly = SuccessorWhiteStopsOf(true, true, false);
+        CHECK(meleeOnly.melee);
+        CHECK(!meleeOnly.autoRepeat);   // the shot on the add keeps going
+        const SuccessorWhiteStops shotOnly = SuccessorWhiteStopsOf(true, false, true);
+        CHECK(!shotOnly.melee);         // the swing on the add keeps going
+        CHECK(shotOnly.autoRepeat);
+        const SuccessorWhiteStops both = SuccessorWhiteStopsOf(true, true, true);
+        CHECK(both.melee && both.autoRepeat);
+        const SuccessorWhiteStops none = SuccessorWhiteStopsOf(true, false, false);
+        CHECK(!none.melee && !none.autoRepeat);
+        const SuccessorWhiteStops under = SuccessorWhiteStopsOf(false, true, true);
+        CHECK(!under.melee && !under.autoRepeat);
+        // Through the latch, as the trigger runs it: melee on the boss at 93 %, wand on an add.
+        SuccessorWhiteLatch latch;
+        const bool melee = true, shot = false;
+        const SuccessorWhiteStops step = SuccessorWhiteStopsOf(
+            SuccessorWhiteStopNow(latch, true, false, 93, false, SuccessorWhiteOnTarget(melee, true, shot, true)), melee, shot);
+        CHECK(step.melee && !step.autoRepeat);
     }
 
     // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions mark):

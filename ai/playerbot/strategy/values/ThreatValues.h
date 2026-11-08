@@ -44,4 +44,8 @@ namespace ai
     // damage dealers are then measured against the assigned off-tanks' highest threat, so the second tank stays second
     // for a threat reset. A taunt-immune target without the row keeps the highest tank.
     bool ThreatSuccessorTarget(Unit* target);
+
+    // Whether the target's `threat_successor` row carries the mode word `strict` (BossTacticTable::HasStrictThreatSuccessor):
+    // the row's opt-in to AiPlayerbot.DungeonRunThreatSuccessorStrict. Callers gate it with StrictSuccessorTarget.
+    bool StrictThreatSuccessorRow(Unit* target);
 }

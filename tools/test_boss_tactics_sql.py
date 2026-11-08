@@ -34,6 +34,7 @@ MODE_WORDS = {
     "taunt_after_cast": {"engage", "blink", "until_tank"},
     "use_object": {"tank_anchor"},
     "avoid_cast": {"all"},
+    "threat_successor": {"strict"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -158,7 +159,7 @@ def migration_updates(paths=None):
 def _conditions(text, name):
     """{column: value or set of values} of a WHERE clause over the row columns the replay tracks."""
     wanted = {}
-    for part in re.split(r"\s+AND\s+", text.strip(), re.I):
+    for part in re.split(r"\s+AND\s+", text.strip(), flags=re.I):
         found = re.fullmatch(r"`(\w+)`\s*=\s*(.+)", part.strip(), re.S)
         if found:
             column, raw = found.groups()
@@ -297,8 +298,8 @@ def new_kind_problem(row):
         # The boss itself, and nothing else: the kind is read straight from the table by the threat reference.
         if row["target_entry"]:
             return "threat_successor with a target"
-        if row["tactic_mode"]:
-            return "a mode word on threat_successor"
+        if row["tactic_mode"] not in ("", "strict"):
+            return "a mode word threat_successor does not take (only strict)"
         return None
     if kind == "seek_pull":
         # The seek source (target_entry), the most walk-outs in one cycle (priority), the kill lead (param) and the
@@ -1300,9 +1301,12 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIsNotNone(cap, "the Jin'do threat_successor row is missing")
         for row in (ignore, cap):
             self.assertEqual(name, row["file"])
-            self.assertEqual((0, 0.0, "", 0, 100, 0),
-                             (row["priority"], row["param"], row["tactic_mode"], row["hp_min"], row["hp_max"],
-                              row["bot_aura"]))
+            self.assertEqual((0, 0.0, 0, 100, 0),
+                             (row["priority"], row["param"], row["hp_min"], row["hp_max"], row["bot_aura"]))
+        # The file inserted both rows plain; 20261108220000 later opts the threat_successor row into `strict`.
+        self.assertEqual("", ignore["tactic_mode"])
+        self.assertIn("(309, 11380, 'threat_successor', 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 0, ", text)
+        for row in (ignore, cap):
             self.assertIsNone(new_kind_problem(row))
         # The Shade's gate, its decurse ban and the kill_first rows stay.
         for key in ((309, 11380, "needs_aura", 14986, 24306), (309, 11380, "dispel_priority", 0, 24306),
@@ -1318,12 +1322,71 @@ class BossTacticsSql(unittest.TestCase):
                        dict(row, hp_min=20), dict(row, bot_aura=24306), dict(row, spot_x=1.0)):
             self.assertIsNotNone(new_kind_problem(broken), broken)
 
+    def test_strict_opt_in_rollback_restores_the_plain_row(self):
+        # Codex r5: a binary from before `strict` refuses Jin'do's migrated row and loses his whole successor cap. The
+        # rollback script (outside data/sql, so the updater never runs it) must leave the row exactly as 20261106120000
+        # wrote it. Replay every migration, then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261108220000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the strict opt-in rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        key = (309, 11380, "threat_successor", 0, 0)
+
+        def live(paths):
+            return {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows(paths)}
+
+        before = [path for path in migration_paths() if os.path.basename(path) < "20261108220000_world.sql"]
+        plain = live(before)[key]
+        migrated = live(migration_paths())[key]
+        rolled = live(migration_paths() + [rollback])[key]
+        self.assertEqual("", plain["tactic_mode"])
+        self.assertEqual("strict", migrated["tactic_mode"])
+        self.assertEqual("", rolled["tactic_mode"])
+        self.assertEqual(plain, rolled)
+        # An older binary's loader (a threat_successor row takes no mode word) accepts the rolled-back row again.
+        self.assertEqual("", rolled["tactic_mode"])
+        self.assertIsNone(new_kind_problem(rolled))
+        self.assertEqual("", live(migration_paths() + [rollback])[(309, 14834, "threat_successor", 0, 0)]["tactic_mode"])
+        with open(rollback, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertNotRegex(text, r"(?m)^(?:INSERT|DELETE|ALTER|DROP)\b")
+        # The comment goes back to the one 20261106120000 inserted (the replay does not track comments).
+        comment = ("'Jindo: taunt-immune (immunity_flags 6) and Hex wipes the tank threat; the damage dealers keep below "
+                   "the off-tank so it inherits him'")
+        with open(os.path.join(ROOT, "data/sql/world/20261106120000_world.sql"), encoding="utf-8") as handle:
+            self.assertIn(comment + ");", handle.read())
+        self.assertIn("`comment` = " + comment + "\n", text)
+
     def test_threat_successor_row_shape_refused(self):
         cap = dict(INSERT_COLUMNS, map=309, boss_entry=14834, kind="threat_successor")
         self.assertIsNone(new_kind_problem(cap))
+        self.assertIsNone(new_kind_problem(dict(cap, tactic_mode="strict")))
         for broken in (dict(cap, target_entry=11357), dict(cap, tactic_mode="until_tank"), dict(cap, hp_min=20),
-                       dict(cap, bot_aura=24321)):
+                       dict(cap, bot_aura=24321), dict(cap, tactic_mode="all")):
             self.assertIsNotNone(new_kind_problem(broken), broken)
+
+    def test_strict_successor_opt_in_is_jindo_only(self):
+        # 20261108220000 (t1106m): AiPlayerbot.DungeonRunThreatSuccessorStrict needs the row's `strict` word. Jin'do's
+        # threat_successor row carries it; Hakkar's stays plain (walk 57: 0/58 kills on Hakkar, against 4/41).
+        name = "20261108220000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the strict opt-in migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("UPDATE `ai_boss_tactic` SET `tactic_mode` = 'strict',", text)
+        self.assertIn("WHERE `map` = 309 AND `boss_entry` = 11380 AND `kind` = 'threat_successor' AND `target_entry` = 0 "
+                      "AND `spell_id` = 0 AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertNotRegex(text, r"(?m)^(?:INSERT|DELETE|ALTER|DROP)\b")
+        self.assertNotIn("14834", text.split("\n\n", 1)[1] if "\n\n" in text else "")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        jindo = live[(309, 11380, "threat_successor", 0, 0)]
+        hakkar = live[(309, 14834, "threat_successor", 0, 0)]
+        self.assertEqual("strict", jindo["tactic_mode"])
+        self.assertEqual("", hakkar["tactic_mode"])
+        self.assertIsNone(new_kind_problem(jindo))
+        # Only Jin'do opts in.
+        self.assertEqual([(309, 11380, "threat_successor", 0, 0)],
+                         sorted(key for key, row in live.items() if key[2] == "threat_successor"
+                                and row["tactic_mode"] == "strict"))
 
     def test_aq20_step_one_keeps_the_ayamiss_larva_row(self):
         # 20261104150000 re-inserts Ayamiss's hornet row 15934 (kill_first). Its DELETE used to match every kill_first

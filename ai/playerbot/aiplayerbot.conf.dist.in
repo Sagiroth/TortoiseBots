@@ -1214,7 +1214,9 @@ AiPlayerbot.DungeonRunThreatSuccessorNotHolder = 0
 # 1 - on
 AiPlayerbot.DungeonRunCureIgnoresThreat = 0
 
-# A successor line that holds, on a boss with a `threat_successor` row (Jin'do, Hakkar) only. Two changes:
+# A successor line that holds, on a boss whose `threat_successor` row carries the mode word `strict` only (the shipped
+# data: Jin'do; Hakkar's row stays plain: walk 57 went from 4/41 to 0/58 kills on him, and Strict cost about 13 of
+# the 18 points his damage fell). Two changes:
 # (a) the high-threat back-off's 5 s projection escape is off there: today a damage dealer at or over 80 % of the
 #     reference keeps attacking while its threat projects under the tank's in 5 s, so it rides just under a slowly
 #     climbing non-holding tank (walk 56: every Hex that went to a damage dealer found it at 1.00x the successor or more);

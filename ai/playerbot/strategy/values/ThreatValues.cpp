@@ -330,6 +330,13 @@ bool ai::ThreatSuccessorTarget(Unit* target)
     return GetBossTactics().HasThreatSuccessor(target->GetMapId(), target->GetEntry());
 }
 
+bool ai::StrictThreatSuccessorRow(Unit* target)
+{
+    if (!target || target->getObjectGuid().IsPlayer())
+        return false;
+    return GetBossTactics().HasStrictThreatSuccessor(target->GetMapId(), target->GetEntry());
+}
+
 uint8 ThreatValue::Calculate(Unit* target)
 {
     if (!target)

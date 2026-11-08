@@ -86,6 +86,7 @@ namespace ai
         TankAnchor = 10, // use_object: the tank the boss is on also brings the boss to the object
         Assigned = 11, // interrupt: a directed row the run leader may order (F3), inert until its key reads it
         All = 12,      // avoid_cast: every bot leaves the blast while the spell is cast, tanks too (F4-A)
+        Strict = 13,   // threat_successor: the row opts the boss into AiPlayerbot.DungeonRunThreatSuccessorStrict
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -131,6 +132,10 @@ namespace ai
             case BossTacticKind::AvoidCast:
                 if (text == "all")
                     return TacticMode::All;
+                break;
+            case BossTacticKind::ThreatSuccessor:
+                if (text == "strict")
+                    return TacticMode::Strict;
                 break;
             default:
                 break;
@@ -519,9 +524,10 @@ namespace ai
                 (row.param < 3.0f || row.param > 40.0f || row.mode != TacticMode::Default))
                 return false;
             // threat_successor: the boss itself and nothing else — the row marks the creature whose damage dealers are
-            // capped at the off-tank. Like ranged_only it takes no mode word, and it carries no gate (see above).
+            // capped at the off-tank. It carries no gate (see above). Its one mode word is `strict`: the boss opts into
+            // AiPlayerbot.DungeonRunThreatSuccessorStrict (HasStrictThreatSuccessor); empty keeps the plain cap.
             if (row.kind == BossTacticKind::ThreatSuccessor &&
-                (row.targetEntry != 0 || row.mode != TacticMode::Default))
+                (row.targetEntry != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::Strict)))
                 return false;
             // tank_ignore: the entry the tanks leave alone while the row's boss fights, and nothing else. It is read
             // straight from the table (the tank pickers, the run guard), so it carries no gate (see above) and no mode.
@@ -600,7 +606,11 @@ namespace ai
             if (row.kind == BossTacticKind::RangedOnly)
                 rangedOnlyGaps_[row.map].emplace(row.targetEntry != 0 ? row.targetEntry : row.bossEntry, row.param);
             if (row.kind == BossTacticKind::ThreatSuccessor)
+            {
                 threatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+                if (row.mode == TacticMode::Strict)
+                    strictThreatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+            }
             if (row.kind == BossTacticKind::TankIgnore)
                 tankIgnoreBosses_[row.map][row.targetEntry].push_back(row.bossEntry);
             if (row.kind == BossTacticKind::LinkedDeath)
@@ -750,6 +760,17 @@ namespace ai
             return byMap != threatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
         }
 
+        // Whether that `threat_successor` row carries the mode word `strict`: the boss asks for the strict successor
+        // line (AiPlayerbot.DungeonRunThreatSuccessorStrict: no projection escape, the white-damage stop). A row without
+        // it keeps the plain cap with the key on or off. False before the seal.
+        bool HasStrictThreatSuccessor(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || strictThreatSuccessors_.empty())
+                return false;
+            auto const byMap = strictThreatSuccessors_.find(map);
+            return byMap != strictThreatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
+        }
+
         // The bosses whose tank_ignore row names the entry on this map (empty: none): while one of them fights, the
         // tanks leave the entry to the damage dealers (TankIgnoresUnit). Empty before the seal.
         const std::vector<std::uint32_t>& TankIgnoreBosses(std::uint32_t map, std::uint32_t entry) const
@@ -887,6 +908,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
+        std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> strictThreatSuccessors_;
         // tank_ignore: map -> the ignored entry -> the bosses whose row names it.
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>> tankIgnoreBosses_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
