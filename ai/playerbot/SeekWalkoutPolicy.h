@@ -152,6 +152,26 @@ namespace ai
         return recordedPuller && alive && !charmed && sinceStartMs < kSeekWalkoutTimeoutMs;
     }
 
+    // The walk-out keeps its puller in combat (DungeonRunSeekWalkoutHoldCombat, walk 56: 5 of the 6 `timeout shot=0`
+    // pullers fell to the non-combat engine inside their own task, where the walk-out has no action and `follow`, food
+    // or drink walked them off the stand). `combat end` does not fire while this holds: the flag on, the bot the live
+    // puller (WalkoutFocusPullerLive: recorded, alive, not charmed, inside the 25 s) and the shot not landed. The walk
+    // back is not held, and the hold ends with the task however it ends (shot, timeout, abort, death, charm).
+    inline bool WalkoutHoldsCombat(bool flagOn, bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs,
+                                   bool shot)
+    {
+        return flagOn && WalkoutFocusPullerLive(recordedPuller, alive, charmed, sinceStartMs) && !shot;
+    }
+
+    // Whether a pick candidate's AI can run the walk-out at all (DungeonRunSeekWalkoutHoldCombat): the walk-out is a
+    // combat-engine action, so a bot on the non-combat engine, or one eating or drinking, is not sent. The bot's own
+    // engine state is read, never its pet's combat: a hunter whose pet fights while the hunter's AI sits on the
+    // non-combat engine is still not ready.
+    inline bool WalkoutCombatEngineReady(bool combatEngine, bool eatingOrDrinking)
+    {
+        return combatEngine && !eatingOrDrinking;
+    }
+
     // Below this health the focus lets go (walk 56 review): a puller 30+ yd out, often past its healers' reach, drinks
     // its potion, uses its healthstone or mends its pet as usual. The walk-out's own aborts (threat, victim, charm, the
     // stall and the timeout) are unchanged.
@@ -262,13 +282,14 @@ namespace ai
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
         bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
+        bool combatEngine = true; // its AI is on the combat engine and not eating or drinking (HoldCombat only; else true)
         float yd = 0.0f;         // to the Son (or the anchor's centre when no Son is known)
     };
 
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
-            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
+            !c.charmed && !c.insane && c.canShoot && c.combatEngine && c.inside && c.pathOk && !c.excluded;
     }
 
     // Whether a bot stands on the ranged platform: within kSeekWalkoutPlatformYd of the anchor's centre and above
@@ -310,6 +331,7 @@ namespace ai
         Outside = 11, // outside the anchor
         Bench = 12,   // left out of the picks (recent failed moves)
         NoPath = 13,  // no navmesh path to the stand
+        NoCombat = 14, // its AI is not on the combat engine, or it eats or drinks (DungeonRunSeekWalkoutHoldCombat)
     };
 
     inline const char* WalkoutRejectWord(WalkoutReject reject)
@@ -330,6 +352,7 @@ namespace ai
             case WalkoutReject::Outside: return "outside";
             case WalkoutReject::Bench: return "bench";
             case WalkoutReject::NoPath: return "no_path";
+            case WalkoutReject::NoCombat: return "no_combat";
         }
         return "away";
     }
@@ -355,6 +378,8 @@ namespace ai
             return WalkoutReject::Cc;
         if (!c.canShoot)
             return WalkoutReject::NoShot;
+        if (!c.combatEngine)
+            return WalkoutReject::NoCombat;
         if (!c.inside)
             return WalkoutReject::Outside;
         if (!c.pathOk)
@@ -367,7 +392,7 @@ namespace ai
     // candidate's threat, so a threat refusal can be read against both.
     struct WalkoutRejectTally
     {
-        std::array<std::uint16_t, 14> n{};
+        std::array<std::uint16_t, 15> n{};
         std::uint16_t members = 0;
         float top = -1.0f; // the live top tank's threat (-1: not measured)
         float low = -1.0f; // the lowest candidate's threat (-1: no candidate reached the threat test)

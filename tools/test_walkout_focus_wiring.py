@@ -17,6 +17,7 @@ CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BotStateTriggers.cpp").read_text()
 
 
 def body(text, signature):
@@ -128,6 +129,58 @@ class WalkoutFocusWiring(unittest.TestCase):
         self.assertNotIn("BossTacticsWalkoutFocusMultiplier", reaction)
         noncombat = body(STRATEGY, "void BossTacticsStrategy::InitNonCombatMultipliers(")
         self.assertNotIn("BossTacticsWalkoutFocusMultiplier", noncombat)
+
+
+class WalkoutHoldCombatWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutHoldCombat (walk 56 fix 1): the live unshot puller stays on the combat engine."""
+
+    def test_the_flag_defaults_off(self):
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutHoldCombat", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekWalkoutHoldCombat = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`", SETTINGS)
+
+    def test_combat_end_reads_the_live_puller_after_the_pull_check(self):
+        fn = body(TRIGGERS, "bool CombatEndTrigger::IsActive()")
+        hold = fn.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat && ai::IsLiveWalkoutPuller(bot))\n"
+                        "            return false;")
+        # After the pull check, before every other veto and before the stale-order clear (which would AttackStop).
+        self.assertLess(fn.index("strategy->HasTarget()"), hold)
+        self.assertLess(hold, fn.index("CombatOrderHolds("))
+        self.assertLess(hold, fn.index("bot->AttackStop();"))
+        # Flag first: with it off no record is read.
+        self.assertIn('#include "playerbot/strategy/actions/BossTacticsActions.h"', TRIGGERS)
+        self.assertIn("bool IsLiveWalkoutPuller(Player* bot);", ACTIONS_H)
+
+    def test_the_live_puller_read_is_the_focus_read_and_the_pure_rule(self):
+        fn = body(ACTIONS, "bool ai::IsLiveWalkoutPuller(Player* bot)")
+        fast = fn.index("g_walkoutsRunning.load(std::memory_order_relaxed) == 0")
+        seek = fn.index("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())")
+        read = fn.index("SeekWalkoutFocusRead(bot, WorldTimer::getMSTime(), in, std::string(), preemptRow);")
+        self.assertLess(fast, seek)
+        self.assertLess(seek, read)
+        self.assertIn("in.alive = sServerFacade.IsAlive(bot);", fn)
+        self.assertIn("in.charmed = !bot->GetCharmerGuid().IsEmpty();", fn)
+        self.assertIn("return WalkoutHoldsCombat(true, in.recordedPuller, in.alive, in.charmed, in.sinceStartMs, in.shot);",
+                      fn)
+        # flagOn is left false so the read never claims the preempted row.
+        self.assertNotIn("in.flagOn = true;", fn)
+        # Two raids in different instances: the record is the bot's own instance's, and it must name this bot.
+        focus = body(ACTIONS, "bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& in,")
+        self.assertIn("g_walkouts.find(bot->GetInstanceId())", focus)
+        self.assertIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", focus)
+        self.assertIn("!WalkoutActive(it->second.state)", focus)
+
+    def test_the_pick_reads_the_combat_engine_under_the_flag(self):
+        fn = body(ACTIONS, "Player* FindSeekWalkoutPuller(")
+        gate = fn.index("if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat)\n"
+                        "            c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),")
+        self.assertIn('memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));', fn)
+        self.assertNotIn("BOT_STATE_NON_COMBAT", fn)
+        # Filled before the first eligibility test, so the costly questions skip it.
+        self.assertLess(gate, fn.index("if (c.canShoot && WalkoutEligible(c))"))
+        # The bot's own engine, never its pet's combat.
+        self.assertNotIn("GetPet()", fn[gate:fn.index("if (c.canShoot && WalkoutEligible(c))")])
 
 
 if __name__ == "__main__":

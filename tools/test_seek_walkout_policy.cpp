@@ -1511,6 +1511,52 @@ static void TestStandCandidatesFan()
     CHECK(WalkoutStandCandidatesFan(c, 10.0f, 0.0f, {0.0f, 10.0f}).empty());
 }
 
+
+static void TestWalkoutHoldsCombat()
+{
+    // DungeonRunSeekWalkoutHoldCombat: `combat end` is held only for the live, unshot puller.
+    // Named failing case: a live unshot puller 1 s into its task holds combat.
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 1000, false) == true);
+    CHECK(!WalkoutHoldsCombat(false, true, true, false, 1000, false)); // flag off
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, true));   // shot: the walk back is not held
+    CHECK(WalkoutHoldsCombat(true, true, true, false, kSeekWalkoutTimeoutMs - 1, false));
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, kSeekWalkoutTimeoutMs, false)); // the same `<` edge as the focus
+    CHECK(!WalkoutHoldsCombat(true, true, false, false, 1000, false)); // dead
+    CHECK(!WalkoutHoldsCombat(true, true, true, true, 1000, false));   // charmed
+    CHECK(!WalkoutHoldsCombat(true, false, true, false, 1000, false)); // not the recorded puller
+    // A puller that dies mid-task: held at 4 s, released the read it is dead (the record still names it).
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 4000, false));
+    CHECK(!WalkoutHoldsCombat(true, true, false, false, 4100, false));
+    // The walk-out ends while the trigger is held: the next read finds no task naming the bot, and the hold is gone.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    bool recorded = WalkoutActive(s) && s.puller == 7;
+    CHECK(WalkoutHoldsCombat(true, recorded, true, false, 2000, s.shot));
+    WalkoutFinish(s, WalkoutEnd::Timeout, 26000);
+    recorded = WalkoutActive(s) && s.puller == 7;
+    CHECK(!WalkoutHoldsCombat(true, recorded, true, false, 2100, s.shot));
+}
+
+static void TestWalkoutEligibleNeedsCombatEngine()
+{
+    WalkoutCandidate ok = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(ok.combatEngine); // the default: with the flag off the field stays true
+    CHECK(WalkoutEligible(ok));
+    WalkoutCandidate c = ok;
+    c.combatEngine = false;
+    CHECK(!WalkoutEligible(c));
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoCombat);
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::NoCombat), "no_combat") == 0);
+    WalkoutRejectTally t;
+    t.Add(WalkoutReject::NoCombat);
+    CHECK(WalkoutRejectText(t).find("no_combat:1") != std::string::npos);
+    // The bot's own engine and meal decide; a hunter whose pet fights while its own AI is on the non-combat engine is
+    // not ready (the pet's combat is not an input).
+    CHECK(WalkoutCombatEngineReady(true, false));
+    CHECK(!WalkoutCombatEngineReady(false, false));
+    CHECK(!WalkoutCombatEngineReady(true, true)); // eating or drinking
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1554,6 +1600,8 @@ int main()
     TestWalkoutPullShotSpell();
     TestWalkoutFaceFirst();
     TestWalkoutFocusPullerLive();
+    TestWalkoutHoldsCombat();
+    TestWalkoutEligibleNeedsCombatEngine();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

@@ -595,6 +595,12 @@ namespace ai
         float GetValue(Action* action) override;
     };
 
+    // Whether this bot is the live, unshot walk-out puller of its instance's task (the walk-out focus's record read:
+    // recorded as the puller, alive, not charmed, inside the 25 s, the shot not landed; WalkoutHoldsCombat). False,
+    // without a lock, while no task runs or off a seek_aura map. `combat end` (DungeonRunSeekWalkoutHoldCombat) and
+    // UpdateFaceTarget (DungeonRunSeekWalkoutFaceCast) read it.
+    bool IsLiveWalkoutPuller(Player* bot);
+
     // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
     // off. False on every other bot, row or target.
     bool IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit);

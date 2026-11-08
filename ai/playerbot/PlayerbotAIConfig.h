@@ -668,6 +668,10 @@ public:
     // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks
     // and it turns and casts in one tick as before (default off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
+    // The walk-out keeps its puller in combat (Hakkar's seek pull): on, `combat end` does not fire for the live,
+    // unshot walk-out puller, and the pick skips a bot whose AI is off the combat engine or that eats or drinks; off,
+    // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutHoldCombat = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never

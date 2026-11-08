@@ -59,6 +59,7 @@ the pick never measured them.
 | `threat` | At `kSeekWalkoutThreatShare` of the reference or more. Without a `seek_pull` row the reference is the main tank (`WalkoutThreatTooHigh`, 0.7 of it); with one it is the live top tank (`WalkoutPickThreatTooHigh`). |
 | `cc` | Charmed, or carrying Cause Insanity. |
 | `no_shot` | Its own opener (`WalkoutShotSpell`) cannot be cast at the Son now. With the row's cast-later rule (`WalkoutShotReadyLater`) a cast already in progress or a spell on cooldown is not a refusal. |
+| `no_combat` | With `DungeonRunSeekWalkoutHoldCombat` only: its AI is not on the combat engine, or it is eating or drinking (the walk-out is a combat-engine action). Its own engine is read, never its pet's combat. |
 | `outside` | It stands outside the anchor (the "reach" half of the pick). |
 | `bench` | Left out of the picks: its last task's moves failed less than `kSeekWalkoutExcludeMs` ago. |
 | `no_path` | It has no navmesh path to the stand. |

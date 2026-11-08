@@ -1923,6 +1923,12 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         c.bossVictim = boss->GetVictim() == member;
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
+        // DungeonRunSeekWalkoutHoldCombat: the walk-out is a combat-engine action, so a bot on the non-combat engine (or
+        // one eating or drinking) is never sent (walk 56: three of five shot=0 timeouts were picked mid-meal). The bot's
+        // own engine is read, not its pet's combat. Off, the field stays true.
+        if (sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat)
+            c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),
+                memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));
         c.inside = rules.platformPick
             ? WalkoutOnPlatform(BossAnchorDistance2d(circle, member->GetPositionX(), member->GetPositionY()),
                                 member->GetPositionZ())
@@ -3945,6 +3951,23 @@ float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)
         LogSeekWalkout(ai, info1);
     }
     return 0.0f;
+}
+
+bool ai::IsLiveWalkoutPuller(Player* bot)
+{
+    // No task runs (a walk back holds nothing), or the bot is off a seek map: no lock.
+    if (!bot || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return false;
+    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return false;
+    // The focus's own record read (the instance's record, this bot its puller); flagOn stays false, so the read claims
+    // no `walk-out preempted` row.
+    WalkoutFocusInput in;
+    in.alive = sServerFacade.IsAlive(bot);
+    in.charmed = !bot->GetCharmerGuid().IsEmpty();
+    bool preemptRow = false;
+    SeekWalkoutFocusRead(bot, WorldTimer::getMSTime(), in, std::string(), preemptRow);
+    return WalkoutHoldsCombat(true, in.recordedPuller, in.alive, in.charmed, in.sinceStartMs, in.shot);
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
