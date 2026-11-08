@@ -242,6 +242,9 @@ class RandomItemMgr
         // canDualWield=false: the bot cannot use an off-hand yet (no Dual Wield
         // spell), so a dual-wield spec may fall back to a two-hander it can
         // actually swing. Only fury's weapon set changes (see .cpp).
+        // When bot is provided, spec weapon policies (e.g. Rogue weapon-spec
+        // talents) evaluate against the bot's learned talents.
+        bool ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
         bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
         // Slot-aware twin: answers for the concrete slot the item is evaluated
         // for. The plain overload answers "legal in ANY slot" (main hand is
@@ -250,6 +253,7 @@ class RandomItemMgr
         // against the shield-transition. Warriors/paladins use the policy
         // header (SpecWeaponPolicy.h); other classes fail open to the plain
         // answer. slot is a raw EquipmentSlots value (core header type).
+        bool ShouldEquipWeaponForSlot(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield = true);
         bool ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield = true);
         bool CheckItemSpec(uint8 spec, ItemSpecType itSpec);
         // Fresh-seed provenance gates. Unknown items pass (fail-open): missing

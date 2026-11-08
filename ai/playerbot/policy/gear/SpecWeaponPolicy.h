@@ -19,6 +19,7 @@
 // Classes (SharedDefines.h).
 constexpr uint32_t SPEC_POLICY_CLASS_WARRIOR = 1;
 constexpr uint32_t SPEC_POLICY_CLASS_PALADIN = 2;
+constexpr uint32_t SPEC_POLICY_CLASS_HUNTER = 3;
 constexpr uint32_t SPEC_POLICY_CLASS_SHAMAN = 7;
 // Equipment slots (Player.h).
 constexpr uint32_t SPEC_POLICY_SLOT_MAINHAND = 15;
@@ -39,6 +40,7 @@ constexpr uint32_t SPEC_POLICY_WS_MACE2 = 5;
 constexpr uint32_t SPEC_POLICY_WS_POLEARM = 6;
 constexpr uint32_t SPEC_POLICY_WS_SWORD = 7;
 constexpr uint32_t SPEC_POLICY_WS_SWORD2 = 8;
+constexpr uint32_t SPEC_POLICY_WS_STAFF = 10;
 constexpr uint32_t SPEC_POLICY_WS_FIST = 13;
 constexpr uint32_t SPEC_POLICY_WS_DAGGER = 15;
 constexpr uint32_t SPEC_POLICY_WS_CROSSBOW = 18;
@@ -95,7 +97,10 @@ namespace ai
                 if (slot == SPEC_POLICY_SLOT_MAINHAND)
                     return itemClass == SPEC_POLICY_ITEM_WEAPON &&
                         (itemSubClass == SPEC_POLICY_WS_SWORD2 || itemSubClass == SPEC_POLICY_WS_AXE2 ||
-                         itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM);
+                         itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM ||
+                         itemSubClass == SPEC_POLICY_WS_STAFF || itemSubClass == SPEC_POLICY_WS_SWORD ||
+                         itemSubClass == SPEC_POLICY_WS_AXE || itemSubClass == SPEC_POLICY_WS_MACE ||
+                         itemSubClass == SPEC_POLICY_WS_DAGGER || itemSubClass == SPEC_POLICY_WS_FIST);
                 if (slot == SPEC_POLICY_SLOT_RANGED)
                     return itemClass == SPEC_POLICY_ITEM_WEAPON &&
                         (itemSubClass == SPEC_POLICY_WS_BOW || itemSubClass == SPEC_POLICY_WS_CROSSBOW ||
@@ -114,7 +119,8 @@ namespace ai
                     return true;
                 if (!canDualWield &&
                     (itemSubClass == SPEC_POLICY_WS_SWORD2 || itemSubClass == SPEC_POLICY_WS_AXE2 ||
-                     itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM))
+                     itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM ||
+                     itemSubClass == SPEC_POLICY_WS_STAFF))
                     return true;
                 return false;
             }
@@ -148,11 +154,13 @@ namespace ai
                     return itemClass == SPEC_POLICY_ITEM_ARMOR && itemSubClass == SPEC_POLICY_AS_LIBRAM;
                 return false;
             }
-            // Retribution: 2H only, never a shield.
+            // Retribution: 2H with 1H stand-in, never a shield.
             if (slot == SPEC_POLICY_SLOT_MAINHAND)
                 return itemClass == SPEC_POLICY_ITEM_WEAPON &&
                     (itemSubClass == SPEC_POLICY_WS_SWORD2 || itemSubClass == SPEC_POLICY_WS_AXE2 ||
-                     itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM);
+                     itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_POLEARM ||
+                     itemSubClass == SPEC_POLICY_WS_SWORD || itemSubClass == SPEC_POLICY_WS_AXE ||
+                     itemSubClass == SPEC_POLICY_WS_MACE);
             if (slot == SPEC_POLICY_SLOT_RANGED)
                 return itemClass == SPEC_POLICY_ITEM_ARMOR && itemSubClass == SPEC_POLICY_AS_LIBRAM;
             return false;
@@ -161,7 +169,7 @@ namespace ai
         {
             // Shaman tank only: slow 1H main hand (axe/mace/fist - no daggers
             // for threat, no swords, never a 2H), shield off hand, totem
-            // ranged. Every other shaman spec stays fail-open below.
+            // ranged.
             if (specName == "shamantank")
             {
                 if (slot == SPEC_POLICY_SLOT_MAINHAND)
@@ -174,6 +182,38 @@ namespace ai
                     return itemClass == SPEC_POLICY_ITEM_ARMOR && itemSubClass == SPEC_POLICY_AS_TOTEM;
                 return false;
             }
+            if (specName == "enhance")
+            {
+                if (slot == SPEC_POLICY_SLOT_MAINHAND)
+                    return itemClass == SPEC_POLICY_ITEM_WEAPON &&
+                        (itemSubClass == SPEC_POLICY_WS_MACE2 || itemSubClass == SPEC_POLICY_WS_AXE2 ||
+                         itemSubClass == SPEC_POLICY_WS_STAFF || itemSubClass == SPEC_POLICY_WS_AXE ||
+                         itemSubClass == SPEC_POLICY_WS_MACE || itemSubClass == SPEC_POLICY_WS_DAGGER ||
+                         itemSubClass == SPEC_POLICY_WS_FIST);
+                if (slot == SPEC_POLICY_SLOT_OFFHAND)
+                    return itemClass == SPEC_POLICY_ITEM_ARMOR && itemSubClass == SPEC_POLICY_AS_SHIELD;
+                if (slot == SPEC_POLICY_SLOT_RANGED)
+                    return itemClass == SPEC_POLICY_ITEM_ARMOR && itemSubClass == SPEC_POLICY_AS_TOTEM;
+                return false;
+            }
+        }
+        if (playerClass == SPEC_POLICY_CLASS_HUNTER)
+        {
+            if (slot == SPEC_POLICY_SLOT_MAINHAND)
+                return itemClass == SPEC_POLICY_ITEM_WEAPON &&
+                    (itemSubClass == SPEC_POLICY_WS_FIST || itemSubClass == SPEC_POLICY_WS_DAGGER ||
+                     itemSubClass == SPEC_POLICY_WS_SWORD || itemSubClass == SPEC_POLICY_WS_AXE ||
+                     itemSubClass == SPEC_POLICY_WS_SWORD2 || itemSubClass == SPEC_POLICY_WS_AXE2 ||
+                     itemSubClass == SPEC_POLICY_WS_POLEARM || itemSubClass == SPEC_POLICY_WS_STAFF);
+            if (slot == SPEC_POLICY_SLOT_OFFHAND)
+                return canDualWield && itemClass == SPEC_POLICY_ITEM_WEAPON &&
+                    (itemSubClass == SPEC_POLICY_WS_FIST || itemSubClass == SPEC_POLICY_WS_DAGGER ||
+                     itemSubClass == SPEC_POLICY_WS_SWORD || itemSubClass == SPEC_POLICY_WS_AXE);
+            if (slot == SPEC_POLICY_SLOT_RANGED)
+                return itemClass == SPEC_POLICY_ITEM_WEAPON &&
+                    (itemSubClass == SPEC_POLICY_WS_BOW || itemSubClass == SPEC_POLICY_WS_CROSSBOW ||
+                     itemSubClass == SPEC_POLICY_WS_GUN);
+            return false;
         }
         return true;
     }

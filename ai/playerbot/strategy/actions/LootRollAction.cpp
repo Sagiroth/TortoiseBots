@@ -351,7 +351,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier, RollVote* f
     if (usage != ItemUsage::ITEM_USAGE_FORCE_NEED &&
         itemProto && itemProto->Class == ITEM_CLASS_WEAPON &&
         groupLootContext &&
-        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, itemProto, bot->CanDualWield()))
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot, bot->GetClass(), specId, itemProto, bot->CanDualWield()))
     {
         needVote = ROLL_GREED;
     }
