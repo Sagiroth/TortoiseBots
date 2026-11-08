@@ -143,6 +143,47 @@ namespace ai
         return focusOn && rulesOn && !inFront;
     }
 
+    // Face and cast in one tick (DungeonRunSeekWalkoutFaceCast, walk 56: 8 of 11 no-shot aborts stood stopped in range
+    // and sight but facing Hakkar). A stopped bot's forced turn is an instant orientation set (ServerFacade::SetFacingTo
+    // with force: SetOrientation plus a heartbeat), so the cast can follow in the same tick; the split turn of
+    // WalkoutFaceFirst lost the race to UpdateFaceTarget, which turns the bot back to its current target first.
+    struct WalkoutFaceStep
+    {
+        bool stop = false;            // stop the bot before it turns
+        bool face = false;            // turn to the Son this tick
+        bool force = false;           // the turn is SetFacingTo's instant `force` turn
+        bool returnAfterFace = false; // return after the turn, the cast left to the next tick
+    };
+
+    // With FaceCast on: always stopped, turned (forced) only when not facing, and the cast follows in the same tick.
+    // Off: today's t1106k steps (WalkoutFaceFirst: stop, turn, return; the rules alone: turn and cast).
+    inline WalkoutFaceStep WalkoutFaceThenCast(bool faceCastOn, bool focusOn, bool rulesOn, bool inFront)
+    {
+        WalkoutFaceStep step;
+        if (faceCastOn)
+        {
+            step.stop = true;
+            step.face = !inFront;
+            step.force = true;
+            step.returnAfterFace = false;
+            return step;
+        }
+        bool const faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);
+        step.stop = faceFirst;
+        step.face = rulesOn && !inFront;
+        step.force = false;
+        step.returnAfterFace = faceFirst;
+        return step;
+    }
+
+    // Whether PlayerbotAI::UpdateFaceTarget leaves the bot's facing alone this update (DungeonRunSeekWalkoutFaceCast):
+    // the live, unshot walk-out puller faces its Son, not its current target (Hakkar). Every other bot, and the puller
+    // once its shot landed, is turned as before.
+    inline bool WalkoutFaceTargetYields(bool flagOn, bool livePuller)
+    {
+        return flagOn && livePuller;
+    }
+
     // Whether the walk-out's own record still names this bot as a live puller: recorded as the task's puller, alive,
     // not charmed, and the task inside its 25 s (the same `<` as the anchor's exemption, WalkoutExempts). A dead or
     // charmed puller (the abort clears the record only on the next reader's update) and a stale record never hold
@@ -150,6 +191,43 @@ namespace ai
     inline bool WalkoutFocusPullerLive(bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs)
     {
         return recordedPuller && alive && !charmed && sinceStartMs < kSeekWalkoutTimeoutMs;
+    }
+
+    // The walk-out keeps its puller in combat (DungeonRunSeekWalkoutHoldCombat, walk 56: 5 of the 6 `timeout shot=0`
+    // pullers fell to the non-combat engine inside their own task, where the walk-out has no action and `follow`, food
+    // or drink walked them off the stand). `combat end` does not fire while this holds: the flag on, the bot the live
+    // puller (WalkoutFocusPullerLive: recorded, alive, not charmed, inside the 25 s) and the shot not landed. The walk
+    // back is not held, and the hold ends with the task however it ends (shot, timeout, abort, death, charm).
+    //
+    // `bossFighting` (review L2): the record's boss is alive, in combat and not evading (WalkoutBossFighting), so a wipe,
+    // an evade or a kill ends the hold at once instead of at the 25 s.
+    inline bool WalkoutHoldsCombat(bool flagOn, bool recordedPuller, bool alive, bool charmed, std::uint32_t sinceStartMs,
+                                   bool shot, bool bossFighting = true)
+    {
+        return flagOn && bossFighting && WalkoutFocusPullerLive(recordedPuller, alive, charmed, sinceStartMs) && !shot;
+    }
+
+    // The hold's flag (review L1): HoldCombat needs the walk-out focus, which keeps the held puller's other combat
+    // actions (a Hakkar target pick, the rotation) from running; without it nothing is held.
+    inline bool WalkoutHoldCombatOn(bool holdCombatFlag, bool focusFlag)
+    {
+        return holdCombatFlag && focusFlag;
+    }
+
+    // The walk-out's boss still fights: found, alive, in combat and not evading (the record's sweep drops a boss that is
+    // dead or out of combat; an evading one is added here).
+    inline bool WalkoutBossFighting(bool found, bool alive, bool inCombat, bool evading)
+    {
+        return found && alive && inCombat && !evading;
+    }
+
+    // Whether a pick candidate's AI can run the walk-out at all (DungeonRunSeekWalkoutHoldCombat): the walk-out is a
+    // combat-engine action, so a bot on the non-combat engine, or one eating or drinking, is not sent. The bot's own
+    // engine state is read, never its pet's combat: a hunter whose pet fights while the hunter's AI sits on the
+    // non-combat engine is still not ready.
+    inline bool WalkoutCombatEngineReady(bool combatEngine, bool eatingOrDrinking)
+    {
+        return combatEngine && !eatingOrDrinking;
     }
 
     // Below this health the focus lets go (walk 56 review): a puller 30+ yd out, often past its healers' reach, drinks
@@ -226,6 +304,107 @@ namespace ai
         return loggedStartMs != startMs;
     }
 
+    // The walk-out stand rows (DungeonRunSeekWalkoutStandLog, diagnostic, walk 56 fix 4): while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` at once, at most kSeekWalkoutCastRefusedRowsMax a walk-out. A 25 s task
+    // writes at most 26 stand rows.
+    constexpr std::uint32_t kSeekWalkoutStandRowMs = 1000;
+    constexpr int kSeekWalkoutCastRefusedRowsMax = 10;
+
+    // The branch the puller's walk-out tick took: `out` walking (not at the stand, not in shot position), `inpos` at
+    // the stand but not in shot position (range, floor or sight missing), `wait` a pull shot in flight, `face` the turn
+    // with the cast left to the next tick, `castwait` its own cast on the Son still running, `checkfail` the shot's cast
+    // check refused (the `abort cast failed` row follows), `cast` the pull cast went out, `castrefused` CastSpell said no.
+    enum class WalkoutStandBranch : std::uint8_t
+    {
+        Out = 0,
+        InPos = 1,
+        Wait = 2,
+        Face = 3,
+        CastWait = 4,
+        CheckFail = 5,
+        Cast = 6,
+        CastRefused = 7,
+    };
+
+    inline const char* WalkoutStandBranchWord(WalkoutStandBranch b)
+    {
+        switch (b)
+        {
+            case WalkoutStandBranch::Out: return "out";
+            case WalkoutStandBranch::InPos: return "inpos";
+            case WalkoutStandBranch::Wait: return "wait";
+            case WalkoutStandBranch::Face: return "face";
+            case WalkoutStandBranch::CastWait: return "castwait";
+            case WalkoutStandBranch::CheckFail: return "checkfail";
+            case WalkoutStandBranch::Cast: return "cast";
+            case WalkoutStandBranch::CastRefused: return "castrefused";
+        }
+        return "out";
+    }
+
+    // A second since the walk-out's last stand row (the throttle; the first row of a walk-out is keyed by its start,
+    // WalkoutStandRowClaim).
+    inline bool WalkoutStandRowDue(std::uint32_t lastRowMs, std::uint32_t nowMs)
+    {
+        return nowMs - lastRowMs >= kSeekWalkoutStandRowMs;
+    }
+
+    // Whether this read writes the stand row: the walk-out's first (its start not logged yet) or a second after the last.
+    inline bool WalkoutStandRowClaim(std::uint32_t loggedStartMs, std::uint32_t startMs, std::uint32_t lastRowMs,
+                                     std::uint32_t nowMs)
+    {
+        return loggedStartMs != startMs || WalkoutStandRowDue(lastRowMs, nowMs);
+    }
+
+    // Whether a refused pull cast still writes its row: fewer than kSeekWalkoutCastRefusedRowsMax this walk-out (`rows`
+    // counts the walk-out started at `loggedStartMs`).
+    inline bool WalkoutCastRefusedRowDue(std::uint32_t loggedStartMs, std::uint32_t startMs, int rows)
+    {
+        return loggedStartMs != startMs || rows < kSeekWalkoutCastRefusedRowsMax;
+    }
+
+    // The refused cast's reason word: the core's or the cast check's own result when CastSpell noted one (`castFail`,
+    // SpellCastResult; 0 is SPELL_CAST_OK in the core, so none noted), else the CastSpell gate the state before the call
+    // points at (PlayerbotAISpells.cpp: flying, the stand-up delay, the moving turn's delay, a move with no master), else
+    // `gate` (the self-harm, dispel-hold and pet-redirect gates).
+    inline std::string WalkoutCastRefuseWord(std::uint32_t castFail, std::uint32_t castOk, bool flying, bool standing,
+                                             bool stopped, bool inFront)
+    {
+        if (castFail != castOk)
+            return "spell_fail_" + std::to_string(castFail);
+        if (flying)
+            return "flying";
+        if (!standing)
+            return "stand_delay";
+        if (!stopped && !inFront)
+            return "facing_delay";
+        if (!stopped)
+            return "moving";
+        return "gate";
+    }
+
+    // The stand row's text.
+    inline std::string WalkoutStandRowText(WalkoutStandBranch branch, bool combatEngine, bool inRange, bool los,
+                                           bool front, bool stopped, std::uint32_t castSpellId, const std::string& refuse,
+                                           std::uint32_t tickMs)
+    {
+        char buf[224];
+        snprintf(buf, sizeof(buf),
+                 "seek pull: walk-out stand branch=%s state=%c inrange=%d los=%d front=%d stopped=%d cast=%u refuse=%s "
+                 "tick_ms=%u",
+                 WalkoutStandBranchWord(branch), combatEngine ? 'c' : 'n', inRange ? 1 : 0, los ? 1 : 0, front ? 1 : 0,
+                 stopped ? 1 : 0, static_cast<unsigned>(castSpellId), refuse.empty() ? "-" : refuse.c_str(),
+                 static_cast<unsigned>(tickMs));
+        return buf;
+    }
+
+    // The castrefused row's text.
+    inline std::string WalkoutCastRefusedRowText(std::uint32_t spellId, const std::string& reason)
+    {
+        return "seek pull: walk-out castrefused spell=" + std::to_string(spellId) + " reason=" + reason;
+    }
+
     // The puller's rank: a hunter (the longest shot), then a mage, warlock or shadow priest, then any other ranged
     // damage dealer. None: no puller. The pet stays held at the puller's heels the whole task (it never takes the Son).
     enum class WalkoutRole : std::uint8_t
@@ -262,13 +441,14 @@ namespace ai
         bool charmed = false;
         bool insane = false;     // carries Cause Insanity
         bool canShoot = true;    // its shot can be cast at the Son now (spell or wand known, ammo, mana, not silenced)
+        bool combatEngine = true; // its AI is on the combat engine and not eating or drinking (HoldCombat only; else true)
         float yd = 0.0f;         // to the Son (or the anchor's centre when no Son is known)
     };
 
     inline bool WalkoutEligible(const WalkoutCandidate& c)
     {
         return c.alive && c.role != WalkoutRole::None && !c.tank && !c.healer && !c.bossVictim && !c.highThreat &&
-            !c.charmed && !c.insane && c.canShoot && c.inside && c.pathOk && !c.excluded;
+            !c.charmed && !c.insane && c.canShoot && c.combatEngine && c.inside && c.pathOk && !c.excluded;
     }
 
     // Whether a bot stands on the ranged platform: within kSeekWalkoutPlatformYd of the anchor's centre and above
@@ -310,6 +490,7 @@ namespace ai
         Outside = 11, // outside the anchor
         Bench = 12,   // left out of the picks (recent failed moves)
         NoPath = 13,  // no navmesh path to the stand
+        NoCombat = 14, // its AI is not on the combat engine, or it eats or drinks (DungeonRunSeekWalkoutHoldCombat)
     };
 
     inline const char* WalkoutRejectWord(WalkoutReject reject)
@@ -330,6 +511,7 @@ namespace ai
             case WalkoutReject::Outside: return "outside";
             case WalkoutReject::Bench: return "bench";
             case WalkoutReject::NoPath: return "no_path";
+            case WalkoutReject::NoCombat: return "no_combat";
         }
         return "away";
     }
@@ -355,6 +537,8 @@ namespace ai
             return WalkoutReject::Cc;
         if (!c.canShoot)
             return WalkoutReject::NoShot;
+        if (!c.combatEngine)
+            return WalkoutReject::NoCombat;
         if (!c.inside)
             return WalkoutReject::Outside;
         if (!c.pathOk)
@@ -367,7 +551,7 @@ namespace ai
     // candidate's threat, so a threat refusal can be read against both.
     struct WalkoutRejectTally
     {
-        std::array<std::uint16_t, 14> n{};
+        std::array<std::uint16_t, 15> n{};
         std::uint16_t members = 0;
         float top = -1.0f; // the live top tank's threat (-1: not measured)
         float low = -1.0f; // the lowest candidate's threat (-1: no candidate reached the threat test)
@@ -803,6 +987,12 @@ namespace ai
         std::uint32_t noStandSinceMs = 0; // the re-plans have found no stand since then (0: they found one)
         std::uint32_t atStandSinceMs = 0; // the puller stood at its stand since then, unshot (0: not yet)
         std::uint32_t pullCastMs = 0;     // the walk-out focus's pull cast went out then (0: not this task)
+        // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast): the time the puller has stood in shot position this
+        // task, and the previous read's time when that read was in shot position (0: it was not).
+        std::uint32_t inShotMs = 0;
+        std::uint32_t lastInShotMs = 0;
+        std::uint32_t firstInShotMs = 0; // the task's first in-shot read (the backstop's start; 0: none yet)
+        int freeReplans = 0; // refusals at the stand that re-planned instead of counting (DungeonRunSeekWalkoutStandSight)
         int moveFails = 0;
         // The last refused move: the mover's reason, the path type and length to the stand (the abort row says them).
         std::uint32_t failReason = 0;
@@ -828,6 +1018,10 @@ namespace ai
         std::uint64_t meetSon = 0;
         std::uint32_t meetMs = 0;
         std::uint64_t meetPuller = 0;
+        // Every WalkoutStart bumps `startGen` (ABA): a replacement task with the same puller and start ms is still told
+        // apart from the one a stale reader saw (WalkoutSnapshotCurrent, WalkoutTaskIs). Same name and meaning as
+        // fix/hakkar-meet-r4's.
+        std::uint32_t startGen = 0;
     };
 
     inline void WalkoutMeetClear(SeekWalkoutState& s)
@@ -855,9 +1049,44 @@ namespace ai
         return s.puller != 0;
     }
 
+    // The running task's record for this bot in its own instance: the instance's record, a task running, this bot its
+    // puller; nullptr otherwise (another instance's record never matches). `Records` maps an instance id to a record
+    // with a `state` (SeekWalkoutState).
+    template <typename Records>
+    auto WalkoutPullerRecordIn(Records& records, std::uint32_t instanceId, std::uint64_t bot)
+        -> decltype(&records.begin()->second)
+    {
+        auto const it = records.find(instanceId);
+        if (it == records.end() || !WalkoutActive(it->second.state) || it->second.state.puller != bot)
+            return nullptr;
+        return &it->second;
+    }
+
     inline bool WalkoutReturning(const SeekWalkoutState& s, std::uint32_t nowMs)
     {
         return s.returner != 0 && nowMs - s.returnStartMs < kSeekWalkoutReturnMs;
+    }
+
+    // Whether the live record still runs the task a reader's snapshot saw: the same puller, start ms and start generation.
+    // Every compare-and-mutate of a reader's snapshot (the shot, the end, the no-shot and no-stand aborts) reads it, so an
+    // old snapshot never shoots, finishes or aborts a replacement with the same puller and the same start ms.
+    inline bool WalkoutSnapshotCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.puller == snap.puller && live.startMs == snap.startMs && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record's walk back is the one a reader's snapshot saw: the same returner of the same task's
+    // generation (a new task's walk back, even by the same bot, is never closed by an old snapshot).
+    inline bool WalkoutReturnCurrent(const SeekWalkoutState& live, const SeekWalkoutState& snap)
+    {
+        return live.returner == snap.returner && live.startGen == snap.startGen;
+    }
+
+    // Whether the live record runs `puller`'s task of generation `gen` (the puller's own action writes: its moves, its
+    // stand, its pull cast, its cast-fail abort; `gen` is the task's SeekTankTask::walkoutGen).
+    inline bool WalkoutTaskIs(const SeekWalkoutState& live, std::uint64_t puller, std::uint32_t gen)
+    {
+        return WalkoutActive(live) && live.puller == puller && live.startGen == gen;
     }
 
     // A task or its walk back holds the fight's one slot.
@@ -932,10 +1161,15 @@ namespace ai
         s.noStandSinceMs = 0;
         s.atStandSinceMs = 0;
         s.pullCastMs = 0;
+        s.inShotMs = 0;
+        s.lastInShotMs = 0;
+        s.firstInShotMs = 0;
+        s.freeReplans = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
         s.walkedAt.emplace_back(son, cycleNo);
+        ++s.startGen;
     }
 
     // One move of the task: a refused one counts, a good one resets the count. True: kSeekWalkoutMoveFails in a row,
@@ -945,6 +1179,52 @@ namespace ai
         s.lastMoveOk = moved;
         s.moveFails = moved ? 0 : s.moveFails + 1;
         return s.moveFails >= kSeekWalkoutMoveFails;
+    }
+
+    // The stand's sight (DungeonRunSeekWalkoutStandSight, walk 56: 12 of 13 `abort move failed` rows stood on their
+    // stand, len <= 0.6, refused): the stand search aimed from floor + 2 at the Son's z + 2, the bot's own test
+    // (IsWithinLOSInMap -> Unit::GetLosCheckPosition, IsWithinLOSAtPosition) aims from its z + its collision height at
+    // the Son's z + the Son's collision height, so the ledge's lip could block the bot's line at a stand the search had
+    // passed. With the flag on the search aims the core's way, with both units' own heights.
+    inline float WalkoutStandSightZ(bool flagOn, float sonZ, float sonCollisionHeight)
+    {
+        return sonZ + (flagOn ? sonCollisionHeight : 2.0f);
+    }
+
+    // The stand search's eye: the floor plus the bot's collision height with the flag on, plus 2 off.
+    inline float WalkoutStandEyeZ(bool flagOn, float floorZ, float collisionHeight)
+    {
+        return floorZ + (flagOn ? collisionHeight : 2.0f);
+    }
+
+    // A task re-plans this many times for free on refusals at its stand; after that they count again (review R2-L2), so
+    // a stand the re-plan keeps finding still ends in the `move failed` abort and frees the Son.
+    constexpr int kSeekWalkoutFreeReplansMax = 3;
+
+    // Whether a refused outbound move counts toward kSeekWalkoutMoveFails: with the flag on a refusal within
+    // kSeekWalkoutStandArriveYd of the stand is the bot standing on a stand it cannot shoot from, not a path failure; it
+    // re-plans the stand instead (WalkoutNoteOutboundMove), up to kSeekWalkoutFreeReplansMax a task (`freeUsed`). A move
+    // that went out never counts.
+    inline bool WalkoutMoveRefusalCounts(bool flagOn, bool moved, float standYd, int freeUsed = 0)
+    {
+        if (moved)
+            return false;
+        return !(flagOn && standYd <= kSeekWalkoutStandArriveYd && freeUsed < kSeekWalkoutFreeReplansMax);
+    }
+
+    // One outbound move of the task with the stand-sight rule: a refusal that does not count (WalkoutMoveRefusalCounts)
+    // leaves the fail count alone and makes the stand due a re-plan at once (the 5 s no-stand clock still bounds it);
+    // anything else is WalkoutNoteMove. True: the task aborts ("move failed").
+    inline bool WalkoutNoteOutboundMove(SeekWalkoutState& s, bool moved, bool counts, std::uint32_t nowMs)
+    {
+        if (!moved && !counts)
+        {
+            s.lastMoveOk = false;
+            s.standMs = nowMs - kSeekWalkoutReplanMs;
+            ++s.freeReplans;
+            return false;
+        }
+        return WalkoutNoteMove(s, moved);
     }
 
     // The puller whose moves failed sits out kSeekWalkoutExcludeMs, so the next pick takes another bot.
@@ -1049,6 +1329,9 @@ namespace ai
         {
             s.shot = true;
             s.atStandSinceMs = 0;
+            s.inShotMs = 0;
+            s.lastInShotMs = 0;
+            s.firstInShotMs = 0;
         }
     }
 
@@ -1068,6 +1351,49 @@ namespace ai
             nowMs - s.atStandSinceMs >= kSeekWalkoutShotStallMs;
     }
 
+    // The in-shot stall clock (DungeonRunSeekWalkoutFaceCast, walk 56: the Sons patrol under the ledge, out of sight or
+    // range for seconds, and the wall-time clock aborted pullers that had stood in shot position only part of the 6 s).
+    // In shot position: the Son in shot range and sight, the puller on the stand's floor (z >= kSeekWalkoutMinStandZ)
+    // and not moving.
+    inline bool WalkoutInShotPosition(bool inRange, bool los, bool onStandFloor, bool moving)
+    {
+        return inRange && los && onStandFloor && !moving;
+    }
+
+    // One gap between two in-shot reads counts in full up to this (the GCD's 1.5 s fail-with-delay plus the react
+    // delay); the cap only guards against a clock jump (review M1: a 250 ms cap turned slow ticks into 25 s timeouts).
+    constexpr std::uint32_t kSeekWalkoutInShotStepMs = 2000;
+    // The wall-time backstop: this long after the puller first stood in shot position this task the no-shot abort is
+    // due whatever the count (a walk-out tick that stops running counts nothing).
+    constexpr std::uint32_t kSeekWalkoutInShotBackstopMs = 12000;
+
+    // One read of the puller's position: in shot position, the gap since the previous read counts when that read was in
+    // shot position too (at most kSeekWalkoutInShotStepMs), and the first in-shot read of the task starts the backstop;
+    // out of it, nothing counts and the next in-shot read starts a new stretch. Only a running, unshot task counts.
+    inline void WalkoutNoteInShot(SeekWalkoutState& s, bool inShot, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s) || s.shot)
+            return;
+        std::uint32_t const stamp = nowMs == 0 ? 1 : nowMs;
+        if (inShot && s.lastInShotMs != 0)
+            s.inShotMs += std::min<std::uint32_t>(nowMs - s.lastInShotMs, kSeekWalkoutInShotStepMs);
+        if (inShot && s.firstInShotMs == 0)
+            s.firstInShotMs = stamp;
+        s.lastInShotMs = inShot ? stamp : 0;
+    }
+
+    // Whether the 6 s no-shot stall is due: with the in-shot clock, kSeekWalkoutShotStallMs of time in shot position, or
+    // kSeekWalkoutInShotBackstopMs since the task's first in-shot read; without it, WalkoutShotStalled's wall time since
+    // the arrival at the stand.
+    inline bool WalkoutStallDue(const SeekWalkoutState& s, std::uint32_t nowMs, bool inShotClock)
+    {
+        if (!inShotClock)
+            return WalkoutShotStalled(s, nowMs);
+        if (!WalkoutActive(s) || s.shot)
+            return false;
+        return s.inShotMs >= kSeekWalkoutShotStallMs ||
+            (s.firstInShotMs != 0 && nowMs - s.firstInShotMs >= kSeekWalkoutInShotBackstopMs);
+    }
 
     enum class WalkoutEnd : std::uint8_t
     {

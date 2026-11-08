@@ -1092,6 +1092,33 @@ AiPlayerbot.DungeonRunSeekMeetNoHeal = 0
 # 2 s. Off keeps the old turn-and-cast in one tick and lets other actions run.
 AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 
+# The walk-out keeps its puller in combat (Hakkar's seek pull, recommended on): while the live walk-out puller's shot
+# has not landed, "combat end" does not fire for it, so the non-combat engine's follow, food or drink cannot walk it off
+# its stand; the walk back is not held. The pick also skips a bot whose AI is off the combat engine, or that is eating
+# or drinking. Needs AiPlayerbot.DungeonRunSeekWalkoutFocus = 1 (without it nothing is held); the hold also ends when
+# Hakkar dies, leaves combat or evades. Off keeps the old behaviour.
+AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
+
+# The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son
+# with an instant turn and casts in the same tick, and the bot's own per-update facing no longer turns the live, unshot
+# puller back to Hakkar; the 6 s no-shot clock counts only the time in shot position (range, sight, the stand's floor,
+# not moving; each gap between in-shot reads in full, at most 2 s), with a 12 s wall-time backstop from the first
+# in-shot read. Off keeps the turn on one tick and the cast on the next (with DungeonRunSeekWalkoutFocus) and the
+# wall-time clock.
+AiPlayerbot.DungeonRunSeekWalkoutFaceCast = 0
+
+# The walk-out stand rows (Hakkar's seek pull; diagnostic, safe to turn on for test walks): while the walk-out puller
+# walks out unshot, bot_events.csv gets one "seek pull: walk-out stand" row a second (the branch its tick took, its
+# engine state, range, sight, facing, the cast it attempted and the refusal's reason), and every refused pull cast logs
+# "seek pull: walk-out castrefused" (at most 10 a walk-out). Changes no behaviour.
+AiPlayerbot.DungeonRunSeekWalkoutStandLog = 0
+
+# The walk-out stand's sight (Hakkar's seek pull, recommended on): the stand search tests sight the way the bot itself
+# does (its collision height to the Son's z + the Son's collision height), so the puller is not sent to a stand it
+# cannot shoot from, and a refused move within 3 yd of the stand re-plans the stand instead of counting toward the three
+# refusals that abort the walk-out ("move failed"), up to 3 times a walk-out. Off keeps floor + 2 to the Son's z + 2 and counts every refusal.
+AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
+
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its
 # victim inside the live anchor's raid circle, plus 2 yd, and not the open meet's Son) at once when the receiving third
 # tank is more than 8 yd from it or its taunt is not ready, and the first off-tank is within 8 yd with its taunt ready,

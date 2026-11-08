@@ -786,6 +786,7 @@ struct SeekFight
     bool walkout = false;
     bool walkoutShot = false;
     std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast (0: none this task)
+    std::uint32_t walkoutGen = 0;        // the task's start generation (SeekWalkoutState::startGen)
     // A Son that fights a non-tank: the first off-tank's own take once the fight record says the non-tank has had it
     // for kSeekHealerTakeMs (SeekTakeFightingSonOnHealer), whatever the third off-tank does.
     Unit* healerSon = nullptr;
@@ -1065,6 +1066,13 @@ struct WalkoutRecord
     std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
     std::uint32_t lateLogMs = 0;            // the "late" row's throttle
     std::uint32_t preemptLogStartMs = 0;    // the "walk-out preempted" row's throttle: the task start it logged for
+    // The stand rows (DungeonRunSeekWalkoutStandLog): the walk-out they count (its start), the last row, the last read
+    // (tick_ms), and the castrefused rows written for that walk-out.
+    std::uint32_t standLogStartMs = 0;
+    std::uint32_t standRowMs = 0;
+    std::uint32_t standReadMs = 0;
+    std::uint32_t refusedLogStartMs = 0;
+    int refusedRows = 0;
     WalkoutCycleRules rules;                // the seek_pull row's rules the task runs under (defaults: the old ones)
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
@@ -1709,13 +1717,13 @@ void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId, const char* ca
 // The shot cannot be cast at the stand: the task aborts at once, its Son is free again, and the walk back starts. The
 // cycle stays spent (one walk-out per cycle) and the puller sits out the picks for 60 s, so the next cycle's walk-out
 // goes to another bot.
-void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
+void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd, std::uint32_t gen)
 {
     SeekWalkoutState state;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         auto const it = g_walkouts.find(bot->GetInstanceId());
-        if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
             return;
         state = it->second.state;
         WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
@@ -1729,18 +1737,22 @@ void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
 }
 
 // One move of the task (the walk to its stand): the result is noted, and kSeekWalkoutMoveFails refused moves in a row
-// abort the task unspent ("move failed"), its walk back starting.
+// abort the task unspent ("move failed"), its walk back starting. With DungeonRunSeekWalkoutStandSight a refusal within
+// 3 yd of the stand (`standYd`) does not count: it re-plans the stand (WalkoutMoveRefusalCounts, WalkoutNoteOutboundMove).
 void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason, std::uint32_t pathType,
-                         float pathYd)
+                         float pathYd, float standYd, std::uint32_t gen)
 {
     SeekWalkoutState state;
     bool abort = false;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         auto const it = g_walkouts.find(bot->GetInstanceId());
-        if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
             return;
-        abort = WalkoutNoteMove(it->second.state, moved);
+        bool const counts =
+            WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd,
+                                     it->second.state.freeReplans);
+        abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());
         if (!moved)
         {
             it->second.state.failReason = failReason;
@@ -1770,22 +1782,116 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
 
 // The puller reached its stand: the shot-stall clock starts at its first read there (WalkoutNoteAtStand), so a shot
 // that never comes aborts after kSeekWalkoutShotStallMs instead of running out the 25 s task.
-void NoteSeekWalkoutAtStand(Player* bot)
+void NoteSeekWalkoutAtStand(Player* bot, std::uint32_t gen)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(bot->GetInstanceId());
-    if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
         return;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
     WalkoutNoteAtStand(it->second.state, nowMs);
 }
 
-// The walk-out focus's pull cast went out now (the shot-in-flight wait, WalkoutPullShotInFlight).
-void NoteSeekWalkoutPullCast(Player* bot)
+// One read of the puller's shot position for the in-shot stall clock (DungeonRunSeekWalkoutFaceCast,
+// WalkoutNoteInShot).
+void NoteSeekWalkoutInShot(Player* bot, bool inShot, std::uint32_t gen)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(bot->GetInstanceId());
-    if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
+        return;
+    WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());
+}
+
+// One stand read of the puller (DungeonRunSeekWalkoutStandLog), under g_walkoutMutex: `tickMs` is the time since its
+// previous read this walk-out (0 for the first), and true when this read writes the stand row (WalkoutStandRowClaim:
+// the walk-out's first, then one a second). False for a bot that is not the running task's puller.
+bool ClaimSeekWalkoutStandRow(Player* bot, std::uint32_t& tickMs)
+{
+    tickMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    std::uint32_t const startMs = record.state.startMs;
+    bool const fresh = record.standLogStartMs != startMs;
+    tickMs = fresh ? 0 : nowMs - record.standReadMs;
+    bool const due = WalkoutStandRowClaim(record.standLogStartMs, startMs, record.standRowMs, nowMs);
+    record.standLogStartMs = startMs;
+    record.standReadMs = nowMs;
+    if (due)
+        record.standRowMs = nowMs;
+    return due;
+}
+
+// Whether a refused pull cast writes its castrefused row (WalkoutCastRefusedRowDue: at most
+// kSeekWalkoutCastRefusedRowsMax a walk-out), counting it under g_walkoutMutex.
+bool ClaimSeekWalkoutCastRefusedRow(Player* bot)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const startMs = record.state.startMs;
+    if (!WalkoutCastRefusedRowDue(record.refusedLogStartMs, startMs, record.refusedRows))
+        return false;
+    if (record.refusedLogStartMs != startMs)
+    {
+        record.refusedLogStartMs = startMs;
+        record.refusedRows = 0;
+    }
+    ++record.refusedRows;
+    return true;
+}
+
+// The stand row (DungeonRunSeekWalkoutStandLog, diagnostic): one a second while the puller walks out unshot, naming the
+// branch its tick took, its engine state, whether the Son is in range, sight and front, whether it stands still, the
+// cast it attempted and the refusal's reason. A no-op with the key off.
+void LogSeekWalkoutStand(PlayerbotAI* ai, Player* bot, Unit* son, WalkoutStandBranch branch, float rangeYd,
+                         std::uint32_t castSpellId = 0, const std::string& refuse = std::string())
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog || !ai || !bot || !son)
+        return;
+    std::uint32_t tickMs = 0;
+    if (!ClaimSeekWalkoutStandRow(bot, tickMs))
+        return;
+    bool const front = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    std::string const text = WalkoutStandRowText(branch, ai->IsStateActive(BotState::BOT_STATE_COMBAT),
+        bot->GetDistance(son) <= rangeYd, bot->IsWithinLOSInMap(son), front, bot->IsStopped(), castSpellId, refuse,
+        tickMs);
+    LogSeekWalkout(ai, text.c_str());
+}
+
+// The puller's state just before its pull cast, for the refusal's reason word (WalkoutCastRefuseWord).
+struct WalkoutCastBefore
+{
+    bool flying = false;
+    bool standing = true;
+    bool stopped = true;
+    bool inFront = true;
+};
+
+WalkoutCastBefore ReadWalkoutCastBefore(Player* bot, Unit* son)
+{
+    WalkoutCastBefore before;
+    before.flying = bot->IsFlying() || bot->IsTaxiFlying();
+    before.standing = bot->GetStandState() == UNIT_STAND_STATE_STAND;
+    before.stopped = bot->IsStopped();
+    before.inFront = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    return before;
+}
+
+// The walk-out focus's pull cast went out now (the shot-in-flight wait, WalkoutPullShotInFlight).
+void NoteSeekWalkoutPullCast(Player* bot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
         return;
     it->second.state.pullCastMs = WorldTimer::getMSTime();
 }
@@ -1832,9 +1938,15 @@ bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, flo
         float const dy = son->GetPositionY() - py;
         float const dz = son->GetPositionZ() - floor;
         float const toSon = std::sqrt(dx * dx + dy * dy + dz * dz);
+        // DungeonRunSeekWalkoutStandSight: aim the way the bot's own sight test does (its collision height to the
+        // Son's z + the Son's collision height, IsWithinLOSInMap -> Unit::GetLosCheckPosition), so a stand that passes
+        // here passes at the stand too. Off: floor + 2 to z + 2. The start scan runs with the reading bot's eye height
+        // (the puller is picked afterwards); the puller's own re-plan corrects it within 1 s.
+        bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;
         bool const sight = found && toSon <= rangeYd &&
-            map->isInLineOfSight(px, py, floor + 2.0f, son->GetPositionX(), son->GetPositionY(),
-                                 son->GetPositionZ() + 2.0f, true);
+            map->isInLineOfSight(px, py, WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight()),
+                                 son->GetPositionX(), son->GetPositionY(),
+                                 WalkoutStandSightZ(standSight, son->GetPositionZ(), son->GetCollisionHeight()), true);
         if (!WalkoutStandOk(found, floor, toSon, rangeYd, sight))
             return false;
         x = px;
@@ -1942,6 +2054,13 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         c.bossVictim = boss->GetVictim() == member;
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
+        // DungeonRunSeekWalkoutHoldCombat: the walk-out is a combat-engine action, so a bot on the non-combat engine (or
+        // one eating or drinking) is never sent (walk 56: three of five shot=0 timeouts were picked mid-meal). The bot's
+        // own engine is read, not its pet's combat. Off, the field stays true.
+        if (WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,
+                                sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus))
+            c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),
+                memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));
         c.inside = rules.platformPick
             ? WalkoutOnPlatform(BossAnchorDistance2d(circle, member->GetPositionX(), member->GetPositionY()),
                                 member->GetPositionZ())
@@ -2150,13 +2269,14 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // A shot that does not come: the puller has stood at its stand 6 s unshot (a blocked sight line, a cast the
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
         // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
-        if (rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs))
+        // With DungeonRunSeekWalkoutFaceCast the clock counts only the time in shot position (WalkoutStallDue).
+        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);
+        if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))
         {
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
-                if (it == g_walkouts.end() || it->second.state.puller != state.puller ||
-                    it->second.state.startMs != state.startMs)
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                     return; // another read closed or replaced it
                 WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
                 WalkoutAbortUnspent(it->second.state, nowMs, rules);
@@ -2210,8 +2330,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
-            if (it == g_walkouts.end() || it->second.state.puller != state.puller ||
-                it->second.state.startMs != state.startMs)
+            if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                 return; // another read closed or replaced it
             if (shotNow)
             {
@@ -2325,8 +2444,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
-                if (it == g_walkouts.end() || it->second.state.puller != self ||
-                    it->second.state.startMs != state.startMs)
+                // state.puller == self here: the snapshot's own task, generation included.
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                     return;
                 noStand = WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs, inShot);
                 if (noStand)
@@ -2350,6 +2469,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             out.walkout = true;
             out.walkoutShot = state.shot;
             out.walkoutPullCastMs = state.pullCastMs;
+            out.walkoutGen = state.startGen;
             out.puller = !state.shot;
             out.pullTarget = !state.shot && sonOk ? son : nullptr;
             out.shotX = state.standX;
@@ -2384,7 +2504,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
-            if (it != g_walkouts.end() && it->second.state.returner == state.returner)
+            if (it != g_walkouts.end() && WalkoutReturnCurrent(it->second.state, state))
             {
                 WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
                 WalkoutReturnDone(it->second.state);
@@ -2604,6 +2724,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         record.state.standZ = scan.z;
         starts = record.state.cycleStarts;
         NoteWalkoutBusy(before, record.state);
+        // The new task's generation: the puller's own writes on this start tick match it (WalkoutTaskIs).
+        out.walkoutGen = record.state.startGen;
     }
     char info1[192];
     if (rules.perCycleWalked)
@@ -2671,17 +2793,18 @@ bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& i
     if (g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
         return false;
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
-    auto const it = g_walkouts.find(bot->GetInstanceId());
-    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
-        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+    // The bot's own instance's record naming it as the running task's puller (another instance's never matches).
+    WalkoutRecord* const record =
+        WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+    if (!record)
         return false;
-    shot = it->second.state.shot;
-    startMs = it->second.state.startMs;
+    shot = record->state.shot;
+    startMs = record->state.startMs;
     in.recordedPuller = true;
     in.sinceStartMs = nowMs - startMs;
-    if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(it->second.preemptLogStartMs, startMs))
+    if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(record->preemptLogStartMs, startMs))
     {
-        it->second.preemptLogStartMs = startMs;
+        record->preemptLogStartMs = startMs;
         preemptRow = true;
     }
     return true;
@@ -3980,6 +4103,37 @@ float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)
         LogSeekWalkout(ai, info1);
     }
     return 0.0f;
+}
+
+bool ai::IsLiveWalkoutPuller(Player* bot)
+{
+    // No task runs (a walk back holds nothing), or the bot is off a seek map: no lock.
+    if (!bot || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return false;
+    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return false;
+    // The focus's record read (WalkoutPullerRecordIn: the bot's own instance, a running task, this bot its puller),
+    // plus the record's boss.
+    bool shot = false;
+    std::uint32_t sinceStartMs = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        const WalkoutRecord* const record =
+            WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+        if (!record)
+            return false;
+        shot = record->state.shot;
+        sinceStartMs = WorldTimer::getMSTime() - record->state.startMs;
+        bossGuid = record->bossGuid;
+    }
+    // The fight still runs (review L2): the boss read the way the record's sweep reads it, plus its evade, so a wipe,
+    // an evade or a kill ends the hold at once.
+    Creature* const boss = bossGuid != 0 && bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),
+                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());
+    return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,
+                              shot, bossFighting);
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
@@ -7981,6 +8135,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         task.walkout = true;
         task.walkoutShot = state.walkoutShot;
         task.walkoutPullCastMs = state.walkoutPullCastMs;
+        task.walkoutGen = state.walkoutGen;
         task.source = state.pullTarget;
         task.x = state.shotX;
         task.y = state.shotY;
@@ -8239,7 +8394,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||
                  (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
                   bot->IsWithinLOSInMap(task.source))))
-                NoteSeekWalkoutAtStand(bot);
+                NoteSeekWalkoutAtStand(bot, task.walkoutGen);
+            // DungeonRunSeekWalkoutFaceCast: the no-shot clock counts only the time in shot position (range, sight,
+            // the stand's floor, not moving), so a Son that patrols out of sight under the ledge does not run it.
+            if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))
+                NoteSeekWalkoutInShot(bot, WalkoutInShotPosition(sonYd <= range, bot->IsWithinLOSInMap(task.source),
+                                                                 bot->GetPositionZ() >= kSeekWalkoutMinStandZ,
+                                                                 sServerFacade.isMoving(bot)),
+                                      task.walkoutGen);
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;
@@ -8252,24 +8414,37 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 // yet (the instant Arcane Shot leaves no cast behind): no second cast, no abort.
                 if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),
                                                     task.source->IsInCombat()))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);
                     return true;
-                const bool faceFirst = WalkoutFaceFirst(focusOn, rulesOn, inFront);
+                }
+                // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
+                // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).
+                const WalkoutFaceStep step = WalkoutFaceThenCast(sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast,
+                                                                 focusOn, rulesOn, inFront);
                 // The focus stops the bot before it turns, so the stop's spline cannot undo the facing.
-                if (faceFirst && !bot->IsStopped())
+                if (step.stop && !bot->IsStopped())
                     ai->StopMoving();
-                if (rulesOn && !inFront)
-                    sServerFacade.SetFacingTo(bot, task.source);
-                // The walk-out focus: the turn takes this tick and the cast goes out on the next one, facing the Son
-                // (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
-                if (faceFirst)
+                if (step.face)
+                    sServerFacade.SetFacingTo(bot, task.source, step.force);
+                // The walk-out focus without FaceCast: the turn takes this tick and the cast goes out on the next one,
+                // facing the Son (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
+                if (step.returnAfterFace)
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Face, range);
                     return true;
+                }
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
                 // now.
                 bool castOnSon = false;
                 Spell* const cast = WalkoutCurrentCast(bot, task.source, castOnSon);
                 if (WalkoutShotWaits(castOnSon, cast != nullptr))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CastWait, range,
+                                        cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0);
                     return true;
+                }
                 bot->InterruptNonMeleeSpells(false);
                 if (!bot->IsStopped())
                     ai->StopMoving();
@@ -8281,16 +8456,54 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                     ? WalkoutPullShotSpell(bot->GetClass(), bot->GetClass() == CLASS_HUNTER &&
                                                                 ai->CanCastSpell("arcane shot", task.source))
                     : WalkoutShotSpell(bot->GetClass());
+                // DungeonRunSeekWalkoutStandLog (diagnostic): the attempted cast's id and the refusal's reason.
+                const bool standLog = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog;
+                const std::uint32_t spellId = standLog && *spell ? AI_VALUE2(uint32, "spell id", spell) : 0;
+                // The Arcane Shot probe above may have noted its own refusal: the check_<n> below names this check's.
+                if (standLog)
+                    ai->ClearLastCastCheckFail();
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
-                    AbortSeekWalkoutUnspent(ai, bot, sonYd);
+                    // Logged before the abort, which clears the record the row is keyed by.
+                    if (standLog)
+                    {
+                        std::string const check =
+                            "check_" + std::to_string(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()));
+                        LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CheckFail, range, spellId, check);
+                    }
+                    AbortSeekWalkoutUnspent(ai, bot, sonYd, task.walkoutGen);
                     return false;
+                }
+                WalkoutCastBefore before;
+                if (standLog)
+                {
+                    before = ReadWalkoutCastBefore(bot, task.source);
+                    ai->ClearLastCastCheckFail();
                 }
                 const bool pullCast = ai->CastSpell(spell, task.source);
                 if (pullCast && focusOn)
-                    NoteSeekWalkoutPullCast(bot);
+                    NoteSeekWalkoutPullCast(bot, task.walkoutGen);
+                if (standLog)
+                {
+                    // Every refused pull cast logs its castrefused row at once (at most 10 a walk-out); the stand row
+                    // names the branch once a second.
+                    std::string const refuse = pullCast ? std::string() :
+                        WalkoutCastRefuseWord(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()),
+                                              static_cast<std::uint32_t>(SPELL_CAST_OK), before.flying, before.standing,
+                                              before.stopped, before.inFront);
+                    if (!pullCast && ClaimSeekWalkoutCastRefusedRow(bot))
+                        LogSeekWalkout(ai, WalkoutCastRefusedRowText(spellId, refuse).c_str());
+                    LogSeekWalkoutStand(ai, bot, task.source,
+                                        pullCast ? WalkoutStandBranch::Cast : WalkoutStandBranch::CastRefused, range,
+                                        spellId, refuse);
+                }
                 return pullCast;
             }
+            // Not in shot position: at the stand (range, floor or sight missing) or still walking out.
+            LogSeekWalkoutStand(ai, bot, task.source,
+                                bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd
+                                    ? WalkoutStandBranch::InPos : WalkoutStandBranch::Out,
+                                range);
             // The stand the platform search found (never the Son's own height, down the slope).
             x = task.x;
             y = task.y;
@@ -8346,7 +8559,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (!moved)
                 SeekWalkoutPathProbe(bot, x, y, z, probeType, probeYd);
             NoteSeekWalkoutMove(ai, bot, moved, lastMove.moveFailReason,
-                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd);
+                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd,
+                                bot->GetDistance2d(x, y), task.walkoutGen);
         }
         if (!moved)
             return false;

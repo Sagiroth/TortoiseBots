@@ -1511,6 +1511,473 @@ static void TestStandCandidatesFan()
     CHECK(WalkoutStandCandidatesFan(c, 10.0f, 0.0f, {0.0f, 10.0f}).empty());
 }
 
+
+static void TestWalkoutHoldsCombat()
+{
+    // DungeonRunSeekWalkoutHoldCombat: `combat end` is held only for the live, unshot puller.
+    // Named failing case: a live unshot puller 1 s into its task holds combat.
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 1000, false) == true);
+    CHECK(!WalkoutHoldsCombat(false, true, true, false, 1000, false)); // flag off
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, true));   // shot: the walk back is not held
+    CHECK(WalkoutHoldsCombat(true, true, true, false, kSeekWalkoutTimeoutMs - 1, false));
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, kSeekWalkoutTimeoutMs, false)); // the same `<` edge as the focus
+    CHECK(!WalkoutHoldsCombat(true, true, false, false, 1000, false)); // dead
+    CHECK(!WalkoutHoldsCombat(true, true, true, true, 1000, false));   // charmed
+    CHECK(!WalkoutHoldsCombat(true, false, true, false, 1000, false)); // not the recorded puller
+    // A puller that dies mid-task: held at 4 s, released the read it is dead (the record still names it).
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 4000, false));
+    CHECK(!WalkoutHoldsCombat(true, true, false, false, 4100, false));
+    // The walk-out ends while the trigger is held: the next read finds no task naming the bot, and the hold is gone.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    bool recorded = WalkoutActive(s) && s.puller == 7;
+    CHECK(WalkoutHoldsCombat(true, recorded, true, false, 2000, s.shot));
+    WalkoutFinish(s, WalkoutEnd::Timeout, 26000);
+    recorded = WalkoutActive(s) && s.puller == 7;
+    CHECK(!WalkoutHoldsCombat(true, recorded, true, false, 2100, s.shot));
+}
+
+static void TestWalkoutEligibleNeedsCombatEngine()
+{
+    WalkoutCandidate ok = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(ok.combatEngine); // the default: with the flag off the field stays true
+    CHECK(WalkoutEligible(ok));
+    WalkoutCandidate c = ok;
+    c.combatEngine = false;
+    CHECK(!WalkoutEligible(c));
+    CHECK(WalkoutRejectOf(c) == WalkoutReject::NoCombat);
+    CHECK(std::strcmp(WalkoutRejectWord(WalkoutReject::NoCombat), "no_combat") == 0);
+    WalkoutRejectTally t;
+    t.Add(WalkoutReject::NoCombat);
+    CHECK(WalkoutRejectText(t).find("no_combat:1") != std::string::npos);
+    // The bot's own engine and meal decide; a hunter whose pet fights while its own AI is on the non-combat engine is
+    // not ready (the pet's combat is not an input).
+    CHECK(WalkoutCombatEngineReady(true, false));
+    CHECK(!WalkoutCombatEngineReady(false, false));
+    CHECK(!WalkoutCombatEngineReady(true, true)); // eating or drinking
+}
+
+
+static void TestWalkoutFaceThenCast()
+{
+    // Named failing case: FaceCast on, a stopped puller facing away turns and casts in the same tick (no return).
+    CHECK(WalkoutFaceThenCast(true, true, true, false).returnAfterFace == false);
+    WalkoutFaceStep on = WalkoutFaceThenCast(true, true, true, false);
+    CHECK(on.face && on.force && on.stop);
+    on = WalkoutFaceThenCast(true, true, true, true); // already facing: no turn, still stopped, cast now
+    CHECK(!on.face && on.stop && !on.returnAfterFace);
+    on = WalkoutFaceThenCast(true, false, false, false); // FaceCast alone, without the focus or the rules
+    CHECK(on.face && on.force && !on.returnAfterFace);
+    // Off: today's t1106k values, exactly.
+    for (int f = 0; f < 2; ++f)
+        for (int r = 0; r < 2; ++r)
+            for (int i = 0; i < 2; ++i)
+            {
+                const WalkoutFaceStep off = WalkoutFaceThenCast(false, f != 0, r != 0, i != 0);
+                CHECK(off.returnAfterFace == WalkoutFaceFirst(f != 0, r != 0, i != 0));
+                CHECK(off.stop == WalkoutFaceFirst(f != 0, r != 0, i != 0));
+                CHECK(off.face == (r != 0 && i == 0));
+                CHECK(!off.force);
+            }
+    CHECK(WalkoutFaceThenCast(false, true, true, false).returnAfterFace); // face-first still returns with the flag off
+}
+
+static void TestWalkoutFaceTargetYields()
+{
+    CHECK(!WalkoutFaceTargetYields(false, true)); // flag off: as before
+    CHECK(WalkoutFaceTargetYields(true, true));   // the live, unshot puller keeps facing its Son
+    CHECK(!WalkoutFaceTargetYields(true, false)); // not the puller: turned as before
+    // The shot landed: the live-puller read (WalkoutHoldsCombat) is false, so the facing update runs again.
+    CHECK(!WalkoutFaceTargetYields(true, WalkoutHoldsCombat(true, true, true, false, 3000, true)));
+    CHECK(WalkoutFaceTargetYields(true, WalkoutHoldsCombat(true, true, true, false, 3000, false)));
+}
+
+
+static void TestWalkoutStallCountsOnlyInShot()
+{
+    // Named failing case: 3 s in shot position at 6 s wall time is no stall with the in-shot clock; the wall clock is.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteAtStand(s, 1000);
+    s.inShotMs = 3000;
+    CHECK(WalkoutStallDue(s, 7000, true) == false);
+    CHECK(WalkoutStallDue(s, 7000, false) == true); // the flag off keeps WalkoutShotStalled's wall time
+
+    // The spec's walk: the Son out of sight 5 s, then in sight 2 s (100 ms reads): no abort at 7 s.
+    SeekWalkoutState w;
+    WalkoutStart(w, 7, 100, 1000, 1);
+    std::uint32_t t = 1000;
+    WalkoutNoteAtStand(w, t);
+    for (; t < 6000; t += 100)
+        WalkoutNoteInShot(w, WalkoutInShotPosition(true, false, true, false), t); // out of sight
+    CHECK(w.inShotMs == 0);
+    for (; t <= 8000; t += 100)
+        WalkoutNoteInShot(w, WalkoutInShotPosition(true, true, true, false), t);
+    CHECK(w.inShotMs == 2000);
+    CHECK(!WalkoutStallDue(w, 8000, true));
+    CHECK(WalkoutStallDue(w, 8000, false)); // the old clock would have aborted it
+    // 6 s in shot position in all: stalled.
+    for (; t <= 12000; t += 100)
+        WalkoutNoteInShot(w, true, t);
+    CHECK(w.inShotMs == 6000);
+    CHECK(WalkoutStallDue(w, 12000, true));
+    // Alternating 1 s reads: a read after an out-of-shot read counts nothing.
+    SeekWalkoutState a;
+    WalkoutStart(a, 7, 100, 0, 1);
+    for (int i = 0; i < 12; ++i)
+        WalkoutNoteInShot(a, i % 2 == 1, 1000u * static_cast<std::uint32_t>(i + 1));
+    CHECK(a.inShotMs == 0);
+    CHECK(!WalkoutStallDue(a, 13000, true));
+    // A stalled tick counts at most the cap (2 s).
+    SeekWalkoutState g;
+    WalkoutStart(g, 7, 100, 0, 1);
+    WalkoutNoteInShot(g, true, 1000);
+    WalkoutNoteInShot(g, true, 4000);
+    CHECK(g.inShotMs == kSeekWalkoutInShotStepMs);
+    // Each input of the shot position counts.
+    CHECK(WalkoutInShotPosition(true, true, true, false));
+    CHECK(!WalkoutInShotPosition(false, true, true, false));
+    CHECK(!WalkoutInShotPosition(true, false, true, false));
+    CHECK(!WalkoutInShotPosition(true, true, false, false));
+    CHECK(!WalkoutInShotPosition(true, true, true, true)); // moving
+    // The shot clears the clock, and a new task starts it at 0.
+    WalkoutNoteShot(w);
+    CHECK(w.inShotMs == 0 && !WalkoutStallDue(w, 20000, true));
+    WalkoutNoteInShot(w, true, 20100); // shot: nothing counts
+    CHECK(w.inShotMs == 0);
+    SeekWalkoutState n = g;
+    WalkoutFinish(n, WalkoutEnd::Timeout, 30000);
+    WalkoutNoteInShot(n, true, 30100); // no task
+    WalkoutStart(n, 8, 101, 40000, 2);
+    CHECK(n.inShotMs == 0 && n.lastInShotMs == 0);
+}
+
+
+static void TestWalkoutStandRowDue()
+{
+    // Named failing case: no second row 999 ms after the last.
+    CHECK(WalkoutStandRowDue(0, 999) == false);
+    CHECK(WalkoutStandRowDue(5000, 5000 + kSeekWalkoutStandRowMs));
+    CHECK(WalkoutStandRowDue(0, 1000));
+    CHECK(!WalkoutStandRowDue(5000, 5500));
+    // A row at 0, none at 999, a row at 1000 (through the claim, as the glue keys it by the walk-out's start).
+    std::uint32_t logged = 0, last = 0;
+    const std::uint32_t start = 400;
+    int rows = 0;
+    for (std::uint32_t t = 400; t <= 400 + 25000; t += 100)
+    {
+        if (WalkoutStandRowClaim(logged, start, last, t))
+        {
+            ++rows;
+            last = t;
+        }
+        logged = start;
+        if (t == 400)
+            CHECK(rows == 1);  // the walk-out's first read writes a row
+        if (t == 1300)
+            CHECK(rows == 1);  // 900 ms later: none
+        if (t == 1400)
+            CHECK(rows == 2);  // 1000 ms: the next
+    }
+    CHECK(rows == 26); // bounded: a 25 s task writes at most 26 stand rows
+    // A new walk-out writes its first row at once, whatever the last row's time.
+    CHECK(WalkoutStandRowClaim(400, 30000, 29900, 30000));
+    // The castrefused rows: at most kSeekWalkoutCastRefusedRowsMax a walk-out, a new walk-out starts afresh.
+    CHECK(WalkoutCastRefusedRowDue(400, 400, kSeekWalkoutCastRefusedRowsMax - 1));
+    CHECK(!WalkoutCastRefusedRowDue(400, 400, kSeekWalkoutCastRefusedRowsMax));
+    CHECK(WalkoutCastRefusedRowDue(400, 30000, kSeekWalkoutCastRefusedRowsMax));
+}
+
+static void TestWalkoutStandRowText()
+{
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Out), "out") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::InPos), "inpos") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Wait), "wait") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Face), "face") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CastWait), "castwait") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CheckFail), "checkfail") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::Cast), "cast") == 0);
+    CHECK(std::strcmp(WalkoutStandBranchWord(WalkoutStandBranch::CastRefused), "castrefused") == 0);
+    CHECK(WalkoutStandRowText(WalkoutStandBranch::CastRefused, true, true, true, false, true, 3044, "facing_delay", 512) ==
+          "seek pull: walk-out stand branch=castrefused state=c inrange=1 los=1 front=0 stopped=1 cast=3044 "
+          "refuse=facing_delay tick_ms=512");
+    CHECK(WalkoutStandRowText(WalkoutStandBranch::Out, false, false, false, false, false, 0, "", 0) ==
+          "seek pull: walk-out stand branch=out state=n inrange=0 los=0 front=0 stopped=0 cast=0 refuse=- tick_ms=0");
+    CHECK(WalkoutCastRefusedRowText(75, "spell_fail_51") == "seek pull: walk-out castrefused spell=75 reason=spell_fail_51");
+    // The refusal's reason: the core's own result first, then the CastSpell gates in their order.
+    CHECK(WalkoutCastRefuseWord(51, 0, true, false, false, false) == "spell_fail_51");
+    CHECK(WalkoutCastRefuseWord(0, 0, true, true, true, true) == "flying");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, false, true, true) == "stand_delay");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, false, false) == "facing_delay");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, false, true) == "moving");
+    CHECK(WalkoutCastRefuseWord(0, 0, false, true, true, true) == "gate");
+}
+
+
+static void TestWalkoutFlagsOffKeepToday()
+{
+    // Every new flag off: the pure rules give today's answers.
+    CHECK(!WalkoutHoldsCombat(false, true, true, false, 1000, false));
+    CHECK(!WalkoutFaceTargetYields(false, true));
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteAtStand(s, 2000);
+    for (std::uint32_t t = 2000; t <= 9000; t += 500)
+        CHECK(WalkoutStallDue(s, t, false) == WalkoutShotStalled(s, t));
+    WalkoutCandidate c = Cand(1, WalkoutRole::Hunter, 5.0f);
+    CHECK(WalkoutEligible(c)); // combatEngine stays true unless the glue fills it under the flag
+}
+
+
+static void TestWalkoutStallFullGapsAndBackstop()
+{
+    // Review M1: the full gap between two in-shot reads counts (capped at 2 s), so slow ticks still abort at ~6 s of
+    // in-shot time, well inside the 25 s task.
+    for (std::uint32_t step : {500u, 1000u, 1500u})
+    {
+        SeekWalkoutState s;
+        WalkoutStart(s, 7, 100, 0, 1);
+        const std::uint32_t t0 = 1000;
+        std::uint32_t t = t0;
+        for (; t < t0 + kSeekWalkoutShotStallMs; t += step)
+        {
+            WalkoutNoteInShot(s, true, t);
+            CHECK(!WalkoutStallDue(s, t, true));
+        }
+        WalkoutNoteInShot(s, true, t); // t == t0 + 6000 for every step above
+        CHECK(t == t0 + kSeekWalkoutShotStallMs);
+        CHECK(s.inShotMs == kSeekWalkoutShotStallMs);
+        CHECK(WalkoutStallDue(s, t, true));
+    }
+    // A gap after a clock jump counts at most the cap.
+    SeekWalkoutState j;
+    WalkoutStart(j, 7, 100, 0, 1);
+    WalkoutNoteInShot(j, true, 1000);
+    WalkoutNoteInShot(j, true, 9000);
+    CHECK(j.inShotMs == kSeekWalkoutInShotStepMs);
+    // A silent gap: in shot at 1.0 and 1.1 s, then no reads for 8 s (the walk-out tick stopped running). The backstop
+    // aborts 12 s after the first in-shot read whatever the count.
+    SeekWalkoutState g;
+    WalkoutStart(g, 7, 100, 0, 1);
+    WalkoutNoteInShot(g, true, 1000);
+    WalkoutNoteInShot(g, true, 1100);
+    CHECK(g.firstInShotMs == 1000);
+    CHECK(!WalkoutStallDue(g, 9100, true));
+    WalkoutNoteInShot(g, true, 9100); // the read after the 8 s silence adds only the cap
+    CHECK(g.inShotMs == 100 + kSeekWalkoutInShotStepMs);
+    CHECK(!WalkoutStallDue(g, 1000 + kSeekWalkoutInShotBackstopMs - 1, true));
+    CHECK(WalkoutStallDue(g, 1000 + kSeekWalkoutInShotBackstopMs, true));
+    // The backstop needs an in-shot read this task: a puller never in shot position never stalls on it.
+    SeekWalkoutState n;
+    WalkoutStart(n, 7, 100, 0, 1);
+    WalkoutNoteInShot(n, false, 1000);
+    CHECK(n.firstInShotMs == 0);
+    CHECK(!WalkoutStallDue(n, 20000, true));
+    // The shot and a new task clear the backstop.
+    WalkoutNoteShot(g);
+    CHECK(g.firstInShotMs == 0 && !WalkoutStallDue(g, 20000, true));
+    WalkoutFinish(g, WalkoutEnd::Back, 21000);
+    WalkoutStart(g, 8, 101, 30000, 2);
+    CHECK(g.firstInShotMs == 0 && g.inShotMs == 0);
+}
+
+static void TestWalkoutHoldNeedsFocusAndAFight()
+{
+    // Review L1: HoldCombat holds only with the walk-out focus on.
+    CHECK(!WalkoutHoldCombatOn(true, false)); // Focus off, HoldCombat on: no hold
+    CHECK(WalkoutHoldCombatOn(true, true));
+    CHECK(!WalkoutHoldCombatOn(false, true));
+    CHECK(!WalkoutHoldsCombat(WalkoutHoldCombatOn(true, false), true, true, false, 1000, false));
+    // Review L2: the boss dead, evading, out of combat or gone ends the hold.
+    CHECK(WalkoutBossFighting(true, true, true, false));
+    CHECK(!WalkoutBossFighting(true, false, true, false)); // dead
+    CHECK(!WalkoutBossFighting(true, true, true, true));   // evading
+    CHECK(!WalkoutBossFighting(true, true, false, false)); // out of combat (a wipe)
+    CHECK(!WalkoutBossFighting(false, true, true, false)); // not found
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, false, true, false)));
+    CHECK(!WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, true, true, true)));
+    CHECK(WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, true, true, false)));
+}
+
+namespace
+{
+    struct TestWalkoutRecord
+    {
+        SeekWalkoutState state;
+    };
+}
+
+static void TestWalkoutPullerRecordPerInstance()
+{
+    // Two raids in two instances: each record names only its own puller, looked up by the bot's own instance.
+    std::unordered_map<std::uint32_t, TestWalkoutRecord> records;
+    WalkoutStart(records[1].state, 7, 100, 1000, 1);
+    WalkoutStart(records[2].state, 9, 200, 1000, 1);
+    CHECK(WalkoutPullerRecordIn(records, 1, 7) == &records[1]);
+    CHECK(WalkoutPullerRecordIn(records, 2, 9) == &records[2]);
+    CHECK(WalkoutPullerRecordIn(records, 2, 7) == nullptr); // instance 2's record never holds instance 1's puller
+    CHECK(WalkoutPullerRecordIn(records, 1, 9) == nullptr);
+    CHECK(WalkoutPullerRecordIn(records, 3, 7) == nullptr); // no record at all
+    WalkoutFinish(records[1].state, WalkoutEnd::Timeout, 26000);
+    CHECK(WalkoutPullerRecordIn(records, 1, 7) == nullptr); // the task ended (its walk back holds nothing)
+    CHECK(WalkoutPullerRecordIn(records, 2, 9) == &records[2]);
+    const auto& constRecords = records;
+    CHECK(WalkoutPullerRecordIn(constRecords, 2, 9) == &records[2]);
+}
+
+static void TestWalkoutFaceCastWithoutRules()
+{
+    // FaceCast on with no seek_pull row (rulesOn false): stop, forced turn and cast in the same tick (documented).
+    const WalkoutFaceStep step = WalkoutFaceThenCast(true, true, false, false);
+    CHECK(step.stop && step.face && step.force && !step.returnAfterFace);
+    // Off, without the rules row nothing turns, as before.
+    const WalkoutFaceStep off = WalkoutFaceThenCast(false, true, false, false);
+    CHECK(!off.stop && !off.face && !off.force && !off.returnAfterFace);
+}
+
+
+static void TestWalkoutMoveRefusalCounts()
+{
+    // Named failing case: with StandSight on, a refusal 0.5 yd from the stand does not count.
+    CHECK(WalkoutMoveRefusalCounts(true, false, 0.5f) == false);
+    CHECK(WalkoutMoveRefusalCounts(true, false, kSeekWalkoutStandArriveYd) == false); // the `<=` edge
+    CHECK(WalkoutMoveRefusalCounts(true, false, 3.5f) == true);
+    CHECK(WalkoutMoveRefusalCounts(false, false, 0.5f) == true); // flag off: every refusal counts
+    CHECK(WalkoutMoveRefusalCounts(true, true, 0.5f) == false);  // moved
+    CHECK(WalkoutMoveRefusalCounts(false, true, 10.0f) == false);
+    // Three refusals on the stand: no abort, the stand due a re-plan each time, the fail count untouched.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteStand(s, true, 10.0f, 10.0f, 50.0f, 1000);
+    CHECK(!WalkoutReplanDue(s, 1100));
+    for (std::uint32_t t = 1100; t <= 1300; t += 100)
+    {
+        CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f), t));
+        CHECK(WalkoutReplanDue(s, t)); // the re-plan reset
+        CHECK(!s.lastMoveOk);
+    }
+    CHECK(s.moveFails == 0);
+    // Real path failures farther out still count, and three abort.
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1400));
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1500));
+    CHECK(WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1600));
+    // Flag off: three refusals on the stand abort, as before.
+    SeekWalkoutState o;
+    WalkoutStart(o, 7, 100, 1000, 1);
+    CHECK(!WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1100));
+    CHECK(!WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1200));
+    CHECK(WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1300));
+    // A move that went out resets the count.
+    SeekWalkoutState m;
+    WalkoutStart(m, 7, 100, 1000, 1);
+    WalkoutNoteOutboundMove(m, false, true, 1100);
+    CHECK(m.moveFails == 1);
+    WalkoutNoteOutboundMove(m, true, false, 1200);
+    CHECK(m.moveFails == 0 && m.lastMoveOk);
+}
+
+static void TestWalkoutStandSightZ()
+{
+    CHECK(Near(WalkoutStandSightZ(true, 30.0f, 1.0f), 31.0f));  // the Son's own collision height
+    CHECK(Near(WalkoutStandSightZ(false, 30.0f, 2.6f), 32.0f)); // flag off: z + 2, as before
+    // A Son whose collision height is not 1.0: the search's two endpoints equal the live check's
+    // (IsWithinLOSAtPosition: the bot's z + its collision height; Unit::GetLosCheckPosition: the Son's z + its own).
+    const float botZ = 50.0f, botH = 1.3f, sonZ = 34.0f, sonH = 2.6f;
+    const float liveEye = botZ + botH;
+    const float liveTarget = sonZ + sonH;
+    CHECK(Near(WalkoutStandEyeZ(true, botZ, botH), liveEye));
+    CHECK(Near(WalkoutStandSightZ(true, sonZ, sonH), liveTarget));
+    CHECK(!Near(WalkoutStandSightZ(true, sonZ, sonH), sonZ + 1.0f)); // not the base WorldObject's z + 1
+    CHECK(Near(WalkoutStandEyeZ(true, 50.0f, 1.8f), 51.8f)); // the bot's collision height
+    CHECK(Near(WalkoutStandEyeZ(false, 50.0f, 1.8f), 52.0f));
+}
+
+
+static void TestWalkoutStartGenStopsStaleWrites()
+{
+    // A reader snapshots a task; another read ends it and a replacement starts with the same puller in the same ms.
+    // Without the generation the old snapshot matched it and could mark it shot, finish it or abort it.
+    SeekWalkoutState live;
+    WalkoutStart(live, 7, 100, 5000, 1);
+    const std::uint32_t firstGen = live.startGen;
+    CHECK(firstGen == 1);
+    const SeekWalkoutState snap = live; // the stale reader's copy
+    WalkoutAbortUnspent(live, 5000);
+    live.returner = 0; // its walk back done
+    WalkoutStart(live, 7, 101, 5000, 1); // the replacement: same puller, same start ms
+    CHECK(live.puller == snap.puller && live.startMs == snap.startMs);
+    CHECK(live.startGen == firstGen + 1);
+    // Named failing case: the old snapshot is not current, so none of its writes go through.
+    CHECK(WalkoutSnapshotCurrent(live, snap) == false);
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutNoteShot(live);
+    CHECK(!live.shot);
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutFinish(live, WalkoutEnd::Timeout, 30000);
+    CHECK(WalkoutActive(live));
+    if (WalkoutSnapshotCurrent(live, snap))
+        WalkoutAbortUnspent(live, 30000);
+    CHECK(WalkoutActive(live) && live.son == 101);
+    // A fresh snapshot of the replacement is current.
+    const SeekWalkoutState fresh = live;
+    CHECK(WalkoutSnapshotCurrent(live, fresh));
+    // The puller's own action writes carry the task's generation.
+    CHECK(WalkoutTaskIs(live, 7, live.startGen));
+    CHECK(!WalkoutTaskIs(live, 7, firstGen)); // the old task's action
+    CHECK(!WalkoutTaskIs(live, 8, live.startGen));
+    // The walk back: an old snapshot's returner never closes a new task's walk back by the same bot.
+    SeekWalkoutState back = live;
+    WalkoutFinish(back, WalkoutEnd::Timeout, 31000);
+    const SeekWalkoutState backSnap = back;
+    CHECK(WalkoutReturnCurrent(back, backSnap));
+    SeekWalkoutState backOld = backSnap;
+    backOld.startGen = firstGen;
+    CHECK(!WalkoutReturnCurrent(back, backOld));
+    // No task: the action-side match fails.
+    SeekWalkoutState none;
+    CHECK(!WalkoutTaskIs(none, 0, 0));
+}
+
+
+static void TestWalkoutFreeReplansAreCapped()
+{
+    // Review R2-L2: three free re-plans at the stand, then refusals there count again and three abort.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    std::uint32_t t = 1100;
+    for (int i = 0; i < kSeekWalkoutFreeReplansMax; ++i, t += 100)
+    {
+        CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t));
+        CHECK(WalkoutReplanDue(s, t));
+    }
+    CHECK(s.freeReplans == kSeekWalkoutFreeReplansMax);
+    CHECK(s.moveFails == 0);
+    CHECK(WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans)); // the cap reached: it counts
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    CHECK(WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f, s.freeReplans), t += 100));
+    // A new task starts with its free re-plans again.
+    WalkoutStart(s, 8, 101, 40000, 2);
+    CHECK(s.freeReplans == 0);
+}
+
+static void TestWalkoutStartTickWritesMatch()
+{
+    // Review R2-M1: the start tick hands the puller the new task's generation, so its own writes that tick go through.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    const std::uint32_t outGen = s.startGen; // what the start branch now copies into out.walkoutGen
+    CHECK(WalkoutTaskIs(s, 7, outGen));
+    CHECK(!WalkoutTaskIs(s, 7, 0)); // the old start tick's gen 0 was rejected
+    // The start tick's own at-stand note and move are accepted under the guard.
+    if (WalkoutTaskIs(s, 7, outGen))
+        WalkoutNoteAtStand(s, 1000);
+    CHECK(s.atStandSinceMs == 1000);
+    if (WalkoutTaskIs(s, 7, outGen))
+        WalkoutNoteOutboundMove(s, false, true, 1000);
+    CHECK(s.moveFails == 1);
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1554,6 +2021,23 @@ int main()
     TestWalkoutPullShotSpell();
     TestWalkoutFaceFirst();
     TestWalkoutFocusPullerLive();
+    TestWalkoutHoldsCombat();
+    TestWalkoutEligibleNeedsCombatEngine();
+    TestWalkoutFaceThenCast();
+    TestWalkoutFaceTargetYields();
+    TestWalkoutStallCountsOnlyInShot();
+    TestWalkoutStandRowDue();
+    TestWalkoutStandRowText();
+    TestWalkoutFlagsOffKeepToday();
+    TestWalkoutStallFullGapsAndBackstop();
+    TestWalkoutHoldNeedsFocusAndAFight();
+    TestWalkoutPullerRecordPerInstance();
+    TestWalkoutFaceCastWithoutRules();
+    TestWalkoutMoveRefusalCounts();
+    TestWalkoutStandSightZ();
+    TestWalkoutStartGenStopsStaleWrites();
+    TestWalkoutFreeReplansAreCapped();
+    TestWalkoutStartTickWritesMatch();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

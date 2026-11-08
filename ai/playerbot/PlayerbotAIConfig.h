@@ -673,6 +673,25 @@ public:
     // a hunter opens with Arcane Shot when it can (else Auto Shot); off, the puller's other actions may take its ticks
     // and it turns and casts in one tick as before (default off, recommended on).
     bool dungeonRunSeekWalkoutFocus = false;
+    // The walk-out keeps its puller in combat (Hakkar's seek pull): on, `combat end` does not fire for the live,
+    // unshot walk-out puller while Hakkar fights, and the pick skips a bot whose AI is off the combat engine or that eats
+    // or drinks; it needs dungeonRunSeekWalkoutFocus (without it nothing is held); off,
+    // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutHoldCombat = false;
+    // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the
+    // instant forced turn and casts in the same tick, UpdateFaceTarget leaves the live unshot puller's facing alone, and
+    // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out
+    // focus and the wall-time clock stay as before (default off, recommended on).
+    bool dungeonRunSeekWalkoutFaceCast = false;
+    // The walk-out stand rows (Hakkar's seek pull, diagnostic, safe on for test walks): on, while the puller walks out
+    // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
+    // logs `seek pull: walk-out castrefused` (at most 10 a walk-out); no behaviour changes (default off).
+    bool dungeonRunSeekWalkoutStandLog = false;
+    // The walk-out stand's sight (Hakkar's seek pull): on, the stand search aims the way the bot's own sight test does
+    // (its collision height to the Son's z + the Son's collision height), and a refused move within 3 yd of the stand
+    // re-plans the stand (up to 3 times a walk-out) instead of counting toward the three-refusal abort; off, floor + 2
+    // to z + 2 and every refusal counts (default off, recommended on).
+    bool dungeonRunSeekWalkoutStandSight = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never

@@ -120,8 +120,8 @@ class SeekWalkoutRound1(unittest.TestCase):
         # At the stand the exact cast is checked; a cast that fails aborts at once and spends nothing.
         self.assertIn("ai->CanCastSpell(spell, task.source)", walk)
         self.assertLess(walk.index("ai->CanCastSpell(spell, task.source)"), walk.index("ai->CastSpell(spell, task.source)"))
-        self.assertIn("AbortSeekWalkoutUnspent(ai, bot, sonYd);", walk)
-        self.assertIn("WalkoutCastFailed(", body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)"))
+        self.assertIn("AbortSeekWalkoutUnspent(ai, bot, sonYd, task.walkoutGen);", walk)
+        self.assertIn("WalkoutCastFailed(", body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd, std::uint32_t gen)"))
 
     def test_any_end_walks_back_without_attacking(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
@@ -188,7 +188,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
         walk = fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
         self.assertIn("NoteSeekWalkoutMove(ai, bot, moved", walk)
         note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved,")
-        self.assertIn("WalkoutNoteMove(", note)
+        self.assertIn("WalkoutNoteOutboundMove(", note)  # WalkoutNoteMove behind the stand-sight rule
         self.assertIn('"move failed"', note)
         self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s"', ACTIONS)
 
@@ -262,7 +262,7 @@ class SeekWalkoutT1105j(unittest.TestCase):
         self.assertIn("!WalkoutRetryStartInTime(state, cycleNo, nowMs, rules)", update)
 
     def test_a_cast_fail_excludes_the_puller_and_rescans(self):
-        abort = body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)")
+        abort = body(ACTIONS, "void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd, std::uint32_t gen)")
         self.assertIn("WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime(),",
                       abort)
         self.assertIn("it->second.rules);", abort)
@@ -327,8 +327,8 @@ class SeekWalkoutSeekPull(unittest.TestCase):
 
     def test_a_stalled_shot_aborts_unspent(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs), state.pullCastMs, nowMs)", update)
-        stall = update[update.index("rules.shotStall && WalkoutNoShotAbortDue(WalkoutShotStalled(state, nowMs)"):]
+        self.assertIn("rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs)", update)
+        stall = update[update.index("rules.shotStall && WalkoutNoShotAbortDue(stallDue"):]
         self.assertIn("WalkoutAbortUnspent(it->second.state, nowMs, rules)", stall)
         self.assertIn("WalkoutExclude(it->second.state, state.puller, nowMs)", stall)
         self.assertIn('LogSeekWalkoutAbort(ai, "no shot"', stall)
@@ -337,10 +337,10 @@ class SeekWalkoutSeekPull(unittest.TestCase):
 
     def test_the_action_notes_the_arrival_at_the_stand(self):
         walk = walkout_branch()
-        self.assertIn("NoteSeekWalkoutAtStand(bot);", walk)
+        self.assertIn("NoteSeekWalkoutAtStand(bot, task.walkoutGen);", walk)
         self.assertIn("kSeekWalkoutStandArriveYd", walk)
         self.assertIn("NoteSeekWalkoutAtStand", ACTIONS)
-        note = body(ACTIONS, "void NoteSeekWalkoutAtStand(Player* bot)")
+        note = body(ACTIONS, "void NoteSeekWalkoutAtStand(Player* bot, std::uint32_t gen)")
         self.assertIn("WalkoutNoteAtStand(it->second.state, nowMs)", note)
 
     def test_the_pick_and_the_abort_share_the_top_tank_reference(self):
@@ -470,9 +470,10 @@ class SeekWalkoutWalk52(unittest.TestCase):
         self.assertIn("const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);", walk)
         self.assertIn("const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,\n"
                       "                                                             CAST_ANGLE_IN_FRONT);", walk)
-        self.assertIn("if (rulesOn && !inFront)\n"
-                      "                    sServerFacade.SetFacingTo(bot, task.source);", walk)
-        self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source)"),
+        # The turn's rule is the pure WalkoutFaceThenCast (flag off: face while the rules are on and not in front).
+        self.assertIn("if (step.face)\n"
+                      "                    sServerFacade.SetFacingTo(bot, task.source, step.force);", walk)
+        self.assertLess(walk.index("sServerFacade.SetFacingTo(bot, task.source, step.force)"),
                         walk.index("WalkoutCurrentCast(bot, task.source"))
         helper = body(ACTIONS, "bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)")
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekPullCycle", helper)
@@ -549,6 +550,38 @@ class SeekWalkoutRefusalReasons(unittest.TestCase):
         self.assertIn("tally->Add(WalkoutReject::HunterOnly);", pick)
         self.assertIn("if (!WalkoutEligible(c))\n                tally->Add(WalkoutRejectOf(c));", pick)
         self.assertIn("tally->Add(WalkoutReject::NoPath);", pick)
+
+
+
+class WalkoutStandSightWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutStandSight (walk 56 HAKKAR-WHY F1)."""
+
+    def test_the_flag_defaults_off(self):
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        config_h = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        settings = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandSight", false)', config)
+        self.assertIn("bool dungeonRunSeekWalkoutStandSight = false;", config_h)
+        self.assertIn("AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0", template)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekWalkoutStandSight`", settings)
+
+    def test_the_stand_test_aims_the_core_way(self):
+        fn = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;", fn)
+        self.assertIn("WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight())", fn)
+        self.assertIn("WalkoutStandSightZ(standSight, son->GetPositionZ(), son->GetCollisionHeight()), true);", fn)
+        self.assertNotIn("son->GetPositionZ() + 2.0f", fn)
+
+    def test_note_move_calls_the_refusal_rule(self):
+        fn = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason,")
+        self.assertIn("WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd,\n"
+                      "                                     it->second.state.freeReplans);", fn)
+        self.assertIn("abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());", fn)
+        self.assertNotIn("WalkoutNoteMove(it->second.state, moved)", fn)
+        walk = walkout_branch()
+        self.assertIn("lastMove.movePathType ? lastMove.movePathType : probeType, probeYd,\n"
+                      "                                bot->GetDistance2d(x, y), task.walkoutGen);", walk)
 
 
 if __name__ == "__main__":

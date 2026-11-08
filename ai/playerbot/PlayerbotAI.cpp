@@ -79,6 +79,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/actions/FishAction.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/SeekWalkoutPolicy.h"
 #include "playerbot/DeathClusterPolicy.h"
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/MovementModePolicy.h"
@@ -1097,9 +1098,12 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
                 Unit* target = AI_VALUE(Unit*, "current target");
                 if(target)
                 {
-                    // Do not update the facing while pulling
+                    // Do not update the facing while pulling, nor for the live, unshot Hakkar walk-out puller, which
+                    // faces its Son, not its current target (DungeonRunSeekWalkoutFaceCast)
                     Unit* pullTarget = AI_VALUE(Unit*, "pull target");
-                    if (pullTarget == nullptr)
+                    bool const faceCastOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast;
+                    if (pullTarget == nullptr &&
+                        !ai::WalkoutFaceTargetYields(faceCastOn, faceCastOn && ai::IsLiveWalkoutPuller(bot)))
                     {
                         if (!AI_VALUE2(bool, "facing", "current target"))
                         {
