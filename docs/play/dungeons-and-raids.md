@@ -133,7 +133,14 @@ When following out of combat inside instances, navmesh paths can occasionally st
 
 ### Bots Cut Off on a Navmesh Island
 
-A teleport, a summon, a knockback or a raid placement can drop a bot on a small patch of ground that has no walkable way off it. The bot then stands still for the rest of the fight: every move it tries finds no path. With `AiPlayerbot.DungeonRunPlaceUnstick` on (recommended), a bot inside a dungeon or raid whose moves have found no path for 10 seconds, while you (or the bot it follows) are more than 20 yards away, is teleported to you the way [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) does. It happens at most once every 30 seconds per bot, never on a battleground, never while the bot is dead, charmed or casting, and never while you are fighting its own target right next to it. Without the setting, summon such a bot yourself.
+A teleport, a summon, a knockback or a raid placement can drop a bot on a small patch of ground that has no walkable way off it. The bot then stands still for the rest of the fight: every move it tries finds no path. With `AiPlayerbot.DungeonRunPlaceUnstick` on (recommended), a bot inside a dungeon or raid whose moves have found no path for 10 seconds, and whose own spot really is cut off from you (not just a target it cannot reach), is teleported beside you (or the bot it follows) the way [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) picks the spot.
+- It lands wherever you stand, inside a boss room too.
+- It stays in combat, and its pet comes along.
+- It is not whispered about; a stay or guard point on the island is cleared, any other is kept.
+- Only while you are more than 20 yards away and within sight range (any distance when a dungeon run or raid walk drives the group), at most once every 30 seconds per bot.
+- Never on a battleground, never while the bot is dead, charmed, charming something or casting, and never while you are fighting its own target right next to it.
+
+Without the setting, summon such a bot yourself.
 
 ### Bots in Deep Water
 

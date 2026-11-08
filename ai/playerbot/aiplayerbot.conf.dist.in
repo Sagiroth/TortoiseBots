@@ -1121,10 +1121,13 @@ AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
 
 # The navmesh-island unstick (recommended on): a bot in a dungeon or raid that a teleport, summon, knockback or
 # placement left on a small piece of navmesh with no path off it fails every move ("dispatch-short", path type NOPATH)
-# and never moves again. With this on, after 10 s of such failures, while its master (player or bot) is alive and more
-# than 20 yd away, the bot is teleported to its master the way the summon command does, at most once per 30 s, and logs
-# a BotUnstick row. Never on battlegrounds, never while the bot is dead, charmed or casting, and never while the master
-# fights the bot's own target within 5 yd of the bot. Off keeps such a bot where it is.
+# and never moves again. With this on, after 10 s of such failures one navmesh query checks that the bot's own spot is
+# cut off (not just a target off the mesh); then the bot is teleported beside its master (player or bot), wherever the
+# master stands, a boss room included. Combat is kept, a pet within 30 yd goes along, a stay or guard point on the
+# island is cleared (others are kept), nobody is whispered, and a BotUnstick row is logged; at most once per 30 s.
+# Only while the master is alive, more than 20 yd away and within sight distance (or the group is driven by a dungeon
+# run or raid walk commander). Never on battlegrounds, never while the bot is dead, charmed, charming or casting, and
+# never while the master fights the bot's own target within 5 yd of the bot. Off keeps such a bot where it is.
 AiPlayerbot.DungeonRunPlaceUnstick = 0
 
 # The nearest take for Hakkar's Sons (recommended on): the first off-tank takes a Son that fights a non-tank (its

@@ -693,10 +693,11 @@ public:
     // to z + 2 and every refusal counts (default off, recommended on).
     bool dungeonRunSeekWalkoutStandSight = false;
     // The navmesh-island unstick (PlaceUnstickPolicy.h): on, a bot in a dungeon or raid whose moves have failed with
-    // dispatch-short / NOPATH for 10 s while its master is alive and more than 20 yd away is teleported to the master
-    // (the summon teleport), at most once per 30 s, never on a battleground, never while dead, charmed or casting, and
-    // never while the master fights the bot's own target within 5 yd of it; off, such a bot stays where it is (default
-    // off, recommended on).
+    // dispatch-short / NOPATH for 10 s, and whose own spot one navmesh query proves cut off from its master, is
+    // teleported beside the master (combat and pet kept, no whisper), at most once per 30 s; only while the master is
+    // alive, more than 20 yd away and within sight distance (or the group is commander-bound), never on a battleground,
+    // never while the bot is dead, charmed, charming or casting, and never while the master fights the bot's own target
+    // within 5 yd of it; off, such a bot stays where it is (default off, recommended on).
     bool dungeonRunPlaceUnstick = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
