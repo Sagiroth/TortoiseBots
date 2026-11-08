@@ -86,18 +86,27 @@ class ThreatSuccessorStrict(unittest.TestCase):
                       "StrictThreatSuccessorRow(target)))", trigger)
         self.assertNotIn("ThreatSuccessorTarget(target)", trigger.replace("StrictThreatSuccessorRow(target)", ""))
         self.assertIn('const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;', trigger)
-        self.assertIn("if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),", trigger)
-        stop = trigger[trigger.index("if (SuccessorWhiteStopNow("):]
-        self.assertIn("bot->AttackStop();", stop)
-        self.assertIn("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);", stop)
+        self.assertIn("SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,", trigger)
+        # t1106m: each attack mode stops on its own target, never both on either.
+        self.assertIn("const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;",
+                      trigger)
+        self.assertIn("const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;",
+                      trigger)
+        self.assertIn("meleeOnSuccessor, autoRepeatOnSuccessor);", trigger)
+        self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)
+        self.assertIn("    if (stops.autoRepeat)\n        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);\n", trigger)
+        self.assertEqual(1, trigger.count("bot->AttackStop();"))
+        self.assertEqual(1, trigger.count("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);"))
+        self.assertIn("stops.melee = stopNow && meleeOnSuccessor;", THREAT_POLICY)
+        self.assertIn("stops.autoRepeat = stopNow && autoRepeatOnSuccessor;", THREAT_POLICY)
         # The stop is never a queued action that a higher action could beat: the trigger is never active, no stop
         # action exists, and the node queues nothing.
         self.assertTrue(trigger.rstrip().endswith("return false;"))
         self.assertNotIn("return true", trigger)
         self.assertNotIn('"stop auto attack"', AI_TREE)
         self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
-        self.assertIn("SuccessorWhiteOnTarget(bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING), bot->GetVictim() == target,", trigger)
-        self.assertIn("repeating && autoRepeat->m_targets.getUnitTarget() == target);", trigger)
+        self.assertIn("const bool whiteRunning = SuccessorWhiteOnTarget(meleeOnSuccessor, true, autoRepeatOnSuccessor, true);",
+                      trigger)
         self.assertIn("return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;", THREAT_POLICY)
 
     def test_the_trigger_is_checked_on_minimal_ticks(self):

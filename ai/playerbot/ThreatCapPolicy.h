@@ -95,6 +95,23 @@ namespace ai
         return (meleeAttacking && victimIsTarget) || (autoRepeat && autoRepeatOnTarget);
     }
 
+    // What the white stop cancels, per attack mode: the melee swing only when its victim is the successor, the auto-repeat
+    // (wand Shoot, Auto Shot) only when its target is the successor. A bot meleeing the boss while its auto-repeat is on an
+    // add keeps the shot, and the reverse keeps the swing: only the white damage that climbs the successor's threat stops.
+    struct SuccessorWhiteStops
+    {
+        bool melee = false;
+        bool autoRepeat = false;
+    };
+
+    inline SuccessorWhiteStops SuccessorWhiteStopsOf(bool stopNow, bool meleeOnSuccessor, bool autoRepeatOnSuccessor)
+    {
+        SuccessorWhiteStops stops;
+        stops.melee = stopNow && meleeOnSuccessor;
+        stops.autoRepeat = stopNow && autoRepeatOnSuccessor;
+        return stops;
+    }
+
     // The trigger's step (SuccessorWhiteCapTrigger::IsActive), run in the engine's trigger pass at the start of every
     // decision cycle: advance the latch and say whether the bot's running white damage must be stopped right now. The
     // trigger stops it on the spot instead of queueing an action, so no higher-relevance action picked in the same cycle

@@ -435,6 +435,31 @@ int main()
         CHECK(!SuccessorWhiteStopNow(hexed, true, false, 100, true, true));
     }
 
+    // white_stop_split_per_attack_mode (t1106m, fails while one stop cancels both): the latch is past 92 % and the bot runs
+    // white damage in two modes on two targets. Melee on the successor with the auto-repeat on an add stops the swing
+    // only; the auto-repeat on the successor with the swing on an add interrupts the shot only. Both on the successor:
+    // both stop; neither: nothing; under the line: nothing.
+    {
+        const SuccessorWhiteStops meleeOnly = SuccessorWhiteStopsOf(true, true, false);
+        CHECK(meleeOnly.melee);
+        CHECK(!meleeOnly.autoRepeat);   // the shot on the add keeps going
+        const SuccessorWhiteStops shotOnly = SuccessorWhiteStopsOf(true, false, true);
+        CHECK(!shotOnly.melee);         // the swing on the add keeps going
+        CHECK(shotOnly.autoRepeat);
+        const SuccessorWhiteStops both = SuccessorWhiteStopsOf(true, true, true);
+        CHECK(both.melee && both.autoRepeat);
+        const SuccessorWhiteStops none = SuccessorWhiteStopsOf(true, false, false);
+        CHECK(!none.melee && !none.autoRepeat);
+        const SuccessorWhiteStops under = SuccessorWhiteStopsOf(false, true, true);
+        CHECK(!under.melee && !under.autoRepeat);
+        // Through the latch, as the trigger runs it: melee on the boss at 93 %, wand on an add.
+        SuccessorWhiteLatch latch;
+        const bool melee = true, shot = false;
+        const SuccessorWhiteStops step = SuccessorWhiteStopsOf(
+            SuccessorWhiteStopNow(latch, true, false, 93, false, SuccessorWhiteOnTarget(melee, true, shot, true)), melee, shot);
+        CHECK(step.melee && !step.autoRepeat);
+    }
+
     // cursed_main_tank_is_successor (AiPlayerbot.DungeonRunThreatSuccessorKeepsAway, fails without the Delusions mark):
     // the main tank wears Delusions and is on its Shade (6000 Jin'do threat, not hitting him); the off-tank holds at
     // 9000. Key on (the caller marks `cursed` and runs ThreatCapCursedOnBoss): the cursed main tank is on the boss and the

@@ -828,17 +828,21 @@ bool SuccessorWhiteCapTrigger::IsActive()
         return false;
     }
     // Only white damage on the successor itself is stopped: a swing or shot an action put on a Shade or an add is left alone.
+    // Each attack mode is judged on its own target (SuccessorWhiteStopsOf): melee on the boss with the wand on an add stops
+    // the swing only, and the reverse interrupts the auto-repeat only.
     Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
     const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
-    const bool whiteRunning = SuccessorWhiteOnTarget(bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING), bot->GetVictim() == target,
-        repeating, repeating && autoRepeat->m_targets.getUnitTarget() == target);
+    const bool meleeOnSuccessor = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
+    const bool autoRepeatOnSuccessor = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    const bool whiteRunning = SuccessorWhiteOnTarget(meleeOnSuccessor, true, autoRepeatOnSuccessor, true);
     const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;
-    if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),
-            AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning))
-    {
+    const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,
+            PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning),
+        meleeOnSuccessor, autoRepeatOnSuccessor);
+    if (stops.melee)
         bot->AttackStop();
+    if (stops.autoRepeat)
         bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-    }
     return false;
 }
 
