@@ -4,12 +4,24 @@
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/ThreatCapPolicy.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
 using namespace ai;
+
+namespace
+{
+// The white damage the threat multiplier exempts: the melee auto-attack, the wand's Shoot and the hunter's Auto Shot.
+// The successor white stop has to see them (AiPlayerbot.DungeonRunThreatSuccessorStrict, ThreatCapPolicy.h).
+bool AutoAttackAction(Action* action)
+{
+    return dynamic_cast<MeleeAction*>(action) || dynamic_cast<CastShootAction*>(action) ||
+        action->getName() == "auto shot";
+}
+}
 
 float ThreatMultiplier::GetValue(Action* action)
 {
@@ -19,7 +31,23 @@ float ThreatMultiplier::GetValue(Action* action)
     if (AI_VALUE(bool, "neglect threat"))
         return 1.0f;
 
-    if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+    if (action == NULL)
+        return 1.0f;
+
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the auto-attack, the wand's Shoot and
+    // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never). The row
+    // decides before the percentage is read; a target without it clears the latch. Key off: the old exemption below.
+    if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))
+    {
+        Unit* const target = AI_VALUE(Unit*, "current target");
+        if (!ThreatSuccessorTarget(target))
+            ai->SuccessorWhiteCap().Update(false, false, 0);
+        else if (ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot),
+                     AI_VALUE2(uint8, "threat", "current target")))
+            return 0.0f;
+    }
+
+    if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     // Burn the raid's timed Fankriss Spawn before its enrage. Single-target
@@ -90,6 +118,14 @@ float ThreatMultiplier::GetValue(Action* action)
     }
 
     return 1.0f;
+}
+
+// The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger is never active with the key off.
+void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "successor white cap",
+        NextAction::array(0, new NextAction("stop auto attack", ACTION_HIGH), NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)

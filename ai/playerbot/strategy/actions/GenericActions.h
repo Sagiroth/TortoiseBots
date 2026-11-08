@@ -17,6 +17,17 @@ namespace ai
         virtual bool isUseful() override;
     };
 
+    // Stops the melee auto-attack and the running auto-repeat (a wand's Shoot, a hunter's Auto Shot): the white damage
+    // the threat multiplier never vetoes. Fired by "successor white cap" (AiPlayerbot.DungeonRunThreatSuccessorStrict)
+    // over the successor white line (ThreatCapPolicy.h SuccessorWhiteLatch).
+    class StopAutoAttackAction : public Action
+    {
+    public:
+        StopAutoAttackAction(PlayerbotAI* ai) : Action(ai, "stop auto attack") {}
+        virtual bool isUseful() override;
+        virtual bool Execute(Event& event) override;
+    };
+
     class UseLightwellAction : public MovementAction
     {
     public:

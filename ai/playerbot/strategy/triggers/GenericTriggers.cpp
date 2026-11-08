@@ -5,6 +5,7 @@
 #include "playerbot/BoostReadinessPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ThreatCapPolicy.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
@@ -765,6 +766,11 @@ bool HighThreatTrigger::IsActive()
 
     if (relativeThreat >= kThreatHighLinePct)
     {
+        // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the 5 s projection escape is off, so
+        // the 80 % line binds (ThreatCapPolicy.h HighThreatProjectionEscapes). The row is read only with the key on.
+        const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;
+        const bool successorTarget = strict && ThreatSuccessorTarget(target);
+
         //Watch delta.
         uint32 lastTime = MEM_AI_VALUE(float, "my threat::current target")->GetLastTime();
 
@@ -777,9 +783,8 @@ bool HighThreatTrigger::IsActive()
             {
                 float tankThreat = AI_VALUE2(float, "tank threat", "current target");
 
-                float newThreat = currentThreat + deltaThreat * 5.0f; //No agro in 5 seconds.
-
-                if (newThreat < tankThreat)
+                //No agro in 5 seconds.
+                if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))
                     return false;
             }
         }
@@ -797,6 +802,27 @@ bool MediumThreatTrigger::IsActive()
         return true;
 
     return false;
+}
+
+// The successor white-damage stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the auto-attack, the wand's Shoot and
+// Auto Shot carry no threat type (or run as the core's auto-repeat), so the 80 % veto never bound them. Over 92 % of the
+// successor reference this trigger stops them (StopAutoAttackAction); under 85 % it lets them start again; the bot's
+// latch sits between the two. Tanks are never stopped, and a target without the row clears the latch. Key off: never
+// active and the latch is never read.
+bool SuccessorWhiteCapTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
+    if (!AI_VALUE(bool, "group")) return false;
+    if (AI_VALUE(bool, "neglect threat")) return false;
+    // The row decides before the percentage is read: a trash target never pays for the tank scan the threat value costs.
+    if (!ThreatSuccessorTarget(target))
+    {
+        ai->SuccessorWhiteCap().Update(false, false, 0);
+        return false;
+    }
+    return ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, "threat", "current target"));
 }
 
 bool LowTankThreatTrigger::IsActive()

@@ -937,6 +937,17 @@ A cure on a party member (`dispel magic`, `cure poison`, `cure disease`, `abolis
 
 </details>
 
+### `AiPlayerbot.DungeonRunThreatSuccessorStrict`
+Whether the 80 % line on a boss with a `threat_successor` row (Jin'do, Hakkar) holds: no projection escape, and white damage stops near the line. Recommended on, together with `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`.
+**Default:** `0` · **Values:** `0` off (today's escape, white damage never stopped), `1` on (on a `threat_successor` boss only: no projection escape; auto-attack, wand Shoot and Auto Shot stop at 92 % of the reference and resume under 85 %) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+The high-threat back-off vetoes a damage dealer's single-target attacks at 80 % of the reference tank's threat, but `HighThreatTrigger` lets it through while its threat, rising at the last 5 s rate, projects under the tank's in 5 s. On a successor boss the reference is the tank the boss is not hitting, which builds threat slowly, so the damage dealers rode just under it: in walk 56 every Hex on a tank that went to a tank found the top damage dealer at 0.89-0.99 of the successor, and every one that went to a damage dealer at 1.00 or more. With the key on there is no escape on such a boss (`HighThreatProjectionEscapes`). Second, the melee auto-attack, a wand's Shoot and Auto Shot carry no threat type (or run as the core's auto-repeat), so the veto never bound them; with the key on they stop at 92 % of the reference (`stop auto attack`: the swing stops and the auto-repeat is interrupted) and do not start again until the threat is under 85 % (`SuccessorWhiteLatch`, per bot). Tanks are never stopped; a target without the row clears the latch. DoT ticks already on the boss cannot be stopped; only their re-cast is vetoed at 80 %. A 65 % white stop was removed in 405801e86 because it cost a fifth of the raid's damage; this one aims at damage dealers between 80 % and 92 % of the successor instead of 89-100 % and above. Walk-57 measures: top damage dealer / successor at a tank Hex, median, from about 1.05 to 0.90 or less; Hexes on a tank holder that go to a damage dealer from 66 of 91 to 35 % or less (off-tank holder: 76 % to 35 % or less); pure-overtake time with Jin'do on a damage dealer from 227 s to 80 s or less; the guard: raid damage per second on Jin'do at 92 % of walk 56 or more.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

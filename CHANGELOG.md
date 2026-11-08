@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunThreatSuccessorStrict (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers lose the 5 s projection escape at the 80 % line, and their auto-attack, wand and Auto Shot stop at 92 % of the successor tank's threat and resume under 85 %.
 - New: behind AiPlayerbot.DungeonRunCureIgnoresThreat (default 0), cures and dispels on a party member skip the threat back-off like heals, so a healer high on Jin'do's threat still cures his Hex on the tank.
 - New: two Jin'do log rows, BossTacticsKillFirst reason=switch (how long a carrier's pick had known a Shade when it turned on it) and BossTacticsHex (holder= is the member who wore the Hex, found among the group, with the tank and top-DPS threat right after).
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorNotHolder (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers are capped against the real threat of a tank that is on the boss and is not the one it is hitting, so a Hex on the holding off-tank no longer hands Jin'do to a damage dealer; after a Hex on either tank the damage dealers wait on the wiped tank to rebuild, which can take tens of seconds.

@@ -304,6 +304,47 @@ int main()
         CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, true), true) == 1.0f);
     }
 
+    // successor_no_projection_escape (AiPlayerbot.DungeonRunThreatSuccessorStrict, fails while the escape stays): a damage
+    // dealer at 85 % (8500 of 10000) rising 50/s projects to 8750 in 5 s, under the tank: today it escapes the veto. On a
+    // successor target with the key on it does not.
+    CHECK(ThreatPctOf(8500.0f, 10000.0f, true, false) == 85);
+    CHECK(!HighThreatProjectionEscapes(true, true, 8500.0f, 50.0f, 10000.0f));
+    // The lead's case: 90 % (9000), passing the tank in 6 s (167/s): 9835 in 5 s, today's escape; strict: vetoed.
+    CHECK(HighThreatProjectionEscapes(true, false, 9000.0f, 1000.0f / 6.0f, 10000.0f));
+    CHECK(!HighThreatProjectionEscapes(true, true, 9000.0f, 1000.0f / 6.0f, 10000.0f));
+    // Key off, or a target without the row: today's escape exactly.
+    CHECK(HighThreatProjectionEscapes(true, false, 8500.0f, 50.0f, 10000.0f));
+    CHECK(HighThreatProjectionEscapes(false, true, 8500.0f, 50.0f, 10000.0f));
+    CHECK(HighThreatProjectionEscapes(false, false, 8500.0f, 50.0f, 10000.0f));
+    // Projecting past the tank, or not rising: no escape anywhere (today's rule).
+    CHECK(!HighThreatProjectionEscapes(false, false, 9000.0f, 300.0f, 10000.0f));
+    CHECK(!HighThreatProjectionEscapes(false, false, 8500.0f, 0.0f, 10000.0f));
+    CHECK(!HighThreatProjectionEscapes(false, false, 8500.0f, -20.0f, 10000.0f));
+    CHECK(kHighThreatProjectionSeconds == 5.0f);
+
+    // successor_white_stops_at_92_resumes_under_85: the white-damage latch on a successor target.
+    CHECK(kSuccessorWhiteStopPct == 92);
+    CHECK(kSuccessorWhiteResumePct == 85);
+    {
+        SuccessorWhiteLatch latch;
+        CHECK(!latch.Update(true, false, 91));   // running
+        CHECK(latch.Update(true, false, 92));    // stopped
+        CHECK(latch.Update(true, false, 88));    // still stopped inside the band
+        CHECK(latch.Update(true, false, 85));    // 85 is still in the band
+        CHECK(!latch.Update(true, false, 84));   // running again
+        CHECK(!latch.Update(true, false, 88));   // running: 88 does not stop a running bot
+        CHECK(latch.Update(true, false, 255));   // a saturated read stops
+        // A tank is never stopped, and its read clears the latch.
+        CHECK(!latch.Update(true, true, 200));
+        CHECK(!latch.stopped);
+        // A non-successor target clears the latch: the next successor read starts from the stop line again.
+        CHECK(latch.Update(true, false, 95));
+        CHECK(!latch.Update(false, false, 95));
+        CHECK(!latch.Update(true, false, 90));
+        SuccessorWhiteLatch tank;
+        CHECK(!tank.Update(true, true, 255));
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

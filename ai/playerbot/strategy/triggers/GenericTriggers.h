@@ -293,6 +293,15 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    // The successor white-damage stop (AiPlayerbot.DungeonRunThreatSuccessorStrict, ThreatCapPolicy.h
+    // SuccessorWhiteLatch): active while this bot's latch says its auto-attack, wand Shoot and Auto Shot stop.
+    class SuccessorWhiteCapTrigger : public Trigger
+    {
+    public:
+        SuccessorWhiteCapTrigger(PlayerbotAI* ai) : Trigger(ai, "successor white cap", 1) {}
+        virtual bool IsActive() override;
+    };
+
     // mod-playerbots LowTankThreatTrigger (LD-8): the bot climbs past half
     // the main tank's threat (or the tank holds nothing). No live consumers
     // in 1.18.1 (Misdirection/Tricks are WotLK-only); raid tactics read it.

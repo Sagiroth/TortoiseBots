@@ -19,6 +19,7 @@
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/PullJoinWindowPolicy.h"
 #include "playerbot/SurvivePolicy.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "playerbot/BotAreaTriggerPolicy.h"
 #include "playerbot/FollowTrailPolicy.h"
 #include "../../runtime/PublicNotePolicy.h"
@@ -465,6 +466,9 @@ public:
     void Reset(bool full = false);
     static bool IsTank(Player* player, bool inGroup = true);
     static bool IsHeal(Player* player, bool inGroup = true);
+    // This bot's white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict,
+    // ThreatCapPolicy.h SuccessorWhiteLatch): stops at 92 % of the reference, resumes under 85 %.
+    ai::SuccessorWhiteLatch& SuccessorWhiteCap() { return successorWhiteCap_; }
     bool IsRanged(Player* player, bool inGroup = true);
     bool IsMelee(Player* player, bool inGroup = true);
     Creature* GetCreature(ObjectGuid guid) const;
@@ -1169,6 +1173,8 @@ protected:
     bool m_chatGatePublished = false;
     bool m_chatGateIgnoreAll = false;
     bool m_chatGateOnlyOrders = false;
+    // The successor white-damage stop the last read decided (per bot, so the 85-92 % band holds across ticks).
+    ai::SuccessorWhiteLatch successorWhiteCap_;
     time_t m_chatGatePublishedAt = 0;
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;

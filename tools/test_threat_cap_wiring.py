@@ -2,8 +2,9 @@
 
 The rules are pure and tested in tools/test_threat_cap_policy.cpp (ThreatPctSaturated) and
 tools/test_seek_aura_policy.cpp (the 3 s take, the 5 s burn, the 20 s hold cap). These pins prove the live code feeds
-them: the high-threat trigger reads the named 80 % line on every target, no leftover cap trigger or stop action
-survives in ai/, ThreatValue::Calculate still saturates, the hold read feeds the hold clock, and the docs state the
+them: the high-threat trigger reads the named 80 % line on every target, the 65 % cap trigger removed by 405801e86
+stays gone (the white-damage stop of AiPlayerbot.DungeonRunThreatSuccessorStrict replaces it behind its key),
+ThreatValue::Calculate still saturates, the hold read feeds the hold clock, and the docs state the
 shipped timings.
 Run: python3 -m unittest tools/test_threat_cap_wiring.py
 """
@@ -53,13 +54,59 @@ class HighLine(unittest.TestCase):
         trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
         self.assertIn("relativeThreat >= kThreatHighLinePct", trigger)
 
-    def test_no_cap_trigger_text_survives_in_ai(self):
-        # The removed trigger's creator name, built without spelling it: it must appear nowhere under ai/.
+    def test_no_65_percent_cap_survives_in_ai(self):
+        # The removed 65 % trigger and its line, built without spelling them: they must appear nowhere under ai/.
         self.assertNotIn("successor" + " threat cap", AI_TREE)
+        self.assertNotIn("kThreatSuccessor" + "HighLinePct", AI_TREE)
+        self.assertNotIn("SuccessorCap" + "Hysteresis", AI_TREE)
 
-    def test_no_stop_action_survives_in_ai(self):
-        # The removed action's class name, built without spelling it: it must appear nowhere under ai/.
-        self.assertNotIn("Stop" + "AutoAttack" + "Action", AI_TREE)
+
+class ThreatSuccessorStrict(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatSuccessorStrict: no projection escape and the 92/85 % white stop on successor bosses."""
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatSuccessorStrict = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorStrict", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorStrict = 0", CONF)
+
+    def test_the_high_threat_trigger_calls_the_escape_helper(self):
+        trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
+        self.assertIn("const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;", trigger)
+        self.assertIn("const bool successorTarget = strict && ThreatSuccessorTarget(target);", trigger)
+        self.assertIn(
+            "if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))", trigger)
+        self.assertNotIn("newThreat < tankThreat", trigger)
+
+    def test_the_white_stop_trigger_is_keyed_and_registered(self):
+        trigger = body(TRIGGERS, "bool SuccessorWhiteCapTrigger::IsActive()")
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;", trigger)
+        self.assertIn("ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, \"threat\", \"current target\"))", trigger)
+        self.assertIn('creators["successor white cap"]', (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
+        self.assertIn('creators["stop auto attack"]', (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        self.assertIn('"successor white cap"', triggers)
+        self.assertIn('new NextAction("stop auto attack", ACTION_HIGH)', triggers)
+        stop = body((ROOT / "ai/playerbot/strategy/actions/GenericActions.cpp").read_text(),
+                    "bool StopAutoAttackAction::Execute(Event& event)")
+        self.assertIn("bot->AttackStop();", stop)
+        self.assertIn("bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);", stop)
+
+    def test_the_multiplier_holds_white_damage_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))", multiplier)
+        self.assertIn("ai->SuccessorWhiteCap().Update(false, false, 0);", multiplier)
+        # The latch runs before the old ACTION_THREAT_NONE exemption, or a wand/melee restart would slip through.
+        self.assertLess(multiplier.index("AutoAttackAction(action)"),
+                        multiplier.index("action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE"))
+        self.assertIn("kSuccessorWhiteStopPct = 92;", THREAT_POLICY)
+        self.assertIn("kSuccessorWhiteResumePct = 85;", THREAT_POLICY)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorStrict`", SETTINGS)
+        self.assertIn("DungeonRunThreatSuccessorStrict", DOC)
+        self.assertIn("DoT ticks", DOC)
+        self.assertIn("92 % of walk 56", DOC)
+        self.assertIn("DungeonRunThreatSuccessorStrict", CHANGELOG)
 
 
 class ThreatValueSaturation(unittest.TestCase):

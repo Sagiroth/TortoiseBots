@@ -286,6 +286,16 @@ Side effect, accepted: after a Hex on **either** tank the wiped tank is the refe
 
 Behind `AiPlayerbot.DungeonRunCureIgnoresThreat` (default `0`, recommended on): a cure or dispel on a party member (dispel magic, cure poison/disease, remove curse, cleanse, purify) is exempt from the damage dealers' threat back-off, the same way heals are (`ThreatCapExempt`). Without it a healer whose own threat on Jin'do read at or over the 80 % line had its cure on the Hexed tank vetoed, and the Hex ran its full 5 s while a damage dealer held the boss (walk 56: 50 of 91 tank Hexes never cured; `dispel magic on party` result `I` in 10 of 12 failing frames). This is not limited to `threat_successor` bosses: every party cure on every fight. Range and line of sight still stop a cure. Measure in walk 57: tank Hexes cured within 1.5 s at least 70 % (walk 56: 32 %), Jin'do-on-DPS time after tank Hexes at most 120 s over 30 fights (252 s), and `dispel magic on party` `I` after a Hex at most 20 % (10 of 12).
 
+#### A successor line that holds
+
+Behind `AiPlayerbot.DungeonRunThreatSuccessorStrict` (default `0`, recommended on with the not-holder key), on a boss with a `threat_successor` row only:
+
+- **No projection escape.** The high-threat trigger no longer lets a damage dealer at or over 80 % of the reference keep attacking while its threat projects under the tank's in 5 s (`HighThreatProjectionEscapes`). That escape is why the damage dealers rode at 0.89-0.99 of a slowly climbing non-holding tank in walk 56, and why every Hex that went to a damage dealer found it at 1.00x the successor or more.
+- **White damage stops near the line.** Melee auto-attack, the wand's Shoot and Auto Shot carry no threat type and were never vetoed. They now stop at 92 % of the reference (`stop auto attack`: the swing stops, the auto-repeat is interrupted) and start again only under 85 % (`SuccessorWhiteLatch`, per bot). Specials keep the 80 % line. Tanks are never stopped, and a target without the row clears the latch.
+- **Not covered:** DoT ticks already on the boss cannot be stopped; only the re-cast is vetoed at 80 %.
+
+The 65 % white stop removed in 405801e86 cost a fifth of the raid's damage; this one keeps the damage dealers between 80 % and 92 % of the successor. The guard for walk 57: raid damage per second on Jin'do at 92 % of walk 56 or more. The aims: top damage dealer / successor at a tank Hex, median, at most 0.90 (walk 56: about 1.05); Hexes on a tank holder that go to a damage dealer at most 35 % (66 of 91; off-tank holder 76 %); pure-overtake time with Jin'do on a damage dealer at most 80 s (227 s).
+
 ### Reaction and Hex rows
 
 Two log rows make the Jin'do fight measurable on the server clock (no flag; they cost nothing without `bot_events.csv`):

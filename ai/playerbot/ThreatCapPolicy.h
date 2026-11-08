@@ -40,6 +40,44 @@ namespace ai
         return exempt || !highThreat ? 1.0f : 0.0f;
     }
 
+    // The high-threat trigger's projection escape (HighThreatTrigger::IsActive): at or over the high line a damage dealer
+    // is let through while its threat, rising at `delta` per second, projects under the reference tank's threat in
+    // kHighThreatProjectionSeconds. On a `threat_successor` boss that let the damage dealers ride just under a slowly
+    // climbing non-holding tank (walk 56: every tank-inherited Hex had the top damage dealer at 0.89-0.99 of the
+    // successor, every DPS-inherited one at 1.00 or more). With AiPlayerbot.DungeonRunThreatSuccessorStrict on there is
+    // no escape on such a boss; everywhere else, and with the key off, today's escape.
+    constexpr float kHighThreatProjectionSeconds = 5.0f;
+
+    inline bool HighThreatProjectionEscapes(bool successorTarget, bool strictKey, float current, float delta, float tank)
+    {
+        if (successorTarget && strictKey)
+            return false;
+        return delta > 0.0f && current + delta * kHighThreatProjectionSeconds < tank;
+    }
+
+    // The white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict): the melee
+    // auto-attack, the wand's Shoot and Auto Shot carry no threat type (or run as the core's auto-repeat), so the 80 %
+    // veto never bound them and a damage dealer kept climbing past the line on white damage alone. They stop at
+    // kSuccessorWhiteStopPct of the reference and resume only under kSuccessorWhiteResumePct, so a read that wobbles
+    // around the stop line does not start and stop the auto-repeat every tick. Specials keep the 80 % line. The lines are
+    // high on purpose: 405801e86 removed a 65 % stop that cost a fifth of the raid's damage; the aim is damage dealers at
+    // 80-92 % of the successor instead of 89-100 %+. DoT ticks already on the boss cannot be stopped.
+    constexpr std::uint8_t kSuccessorWhiteStopPct = 92;
+    constexpr std::uint8_t kSuccessorWhiteResumePct = 85;
+
+    // One bot's white-damage stop, kept across ticks. Every read advances it: a tank, or a target without the
+    // `threat_successor` row, clears it, so the next boss starts from the stop line again.
+    struct SuccessorWhiteLatch
+    {
+        bool stopped = false;
+
+        bool Update(bool successorTarget, bool isTank, std::uint8_t pct)
+        {
+            stopped = successorTarget && !isTank && pct >= (stopped ? kSuccessorWhiteResumePct : kSuccessorWhiteStopPct);
+            return stopped;
+        }
+    };
+
     // The percentage a damage dealer's threat reads against the reference tank's (ThreatValue::Calculate), saturated to
     // the uint8 the threat values carry. botThreat * 100 / maxThreat above 255 used to wrap (300 % read as 44 %), and
     // the cap then let the attack through exactly where the margin matters most. `maxThreat` <= 0 is the caller's "no

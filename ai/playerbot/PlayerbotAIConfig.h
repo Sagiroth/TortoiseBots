@@ -695,6 +695,11 @@ public:
     // party member) skip the damage threat back-off the way heals do, so a healer high on its own target's threat still
     // cures Jin'do's Hex on the tank. Off = as before (the cure is vetoed at the high-threat line).
     bool dungeonRunCureIgnoresThreat = false;
+    // A successor line that holds: on a `threat_successor` boss the high-threat trigger's 5 s projection escape is off
+    // (a damage dealer at or over 80 % is vetoed even while it projects under the tank), and the melee auto-attack, wand
+    // Shoot and Auto Shot stop at 92 % of the reference and resume under 85 % (ThreatCapPolicy.h SuccessorWhiteLatch).
+    // Off = as before.
+    bool dungeonRunThreatSuccessorStrict = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;
