@@ -52,8 +52,15 @@ namespace ai
     constexpr float kPlaceUnstickReachYd = 2.0f;
     // A stay or guard point within this of the island start is cleared on the teleport.
     constexpr float kPlaceUnstickAnchorYd = 5.0f;
-    // The bot's pet within this of the island start goes with it.
-    constexpr float kPlaceUnstickPetYd = 30.0f;
+    // The bot's pet within this of the island start is on the island too and goes with it; a pet farther
+    // out goes along only when the same probe from its own spot says it is cut off as well.
+    constexpr float kPlaceUnstickPetNearYd = 5.0f;
+    // The enclosure test: the polygons connected to the bot's poly within this circle around the bot...
+    constexpr float kPlaceUnstickRegionRadiusYd = 15.0f;
+    // ...every vertex of them within this of the bot (so the region never touches the circle's edge)...
+    constexpr float kPlaceUnstickRegionEdgeYd = 14.0f;
+    // ...and at most this many polygons (a fuller answer is truncated: not enclosed).
+    constexpr int kPlaceUnstickRegionCap = 128;
 
     struct PlaceUnstickState
     {
@@ -137,14 +144,28 @@ namespace ai
         return nowMs - s.streakStartMs;
     }
 
+    // The enclosure test, pure part: the polygons connected to the bot's poly inside a
+    // kPlaceUnstickRegionRadiusYd circle (Detour findPolysAroundCircle). Enclosed: the
+    // search answered, was not truncated (result cap or node pool), and no returned
+    // polygon has a vertex farther than kPlaceUnstickRegionEdgeYd from the bot (2D), so
+    // the connected region ends inside the circle. The main mesh always reaches the edge.
+    inline bool PlaceUnstickRegionEnclosed(bool queryOk, bool truncated, float maxVertexYd)
+    {
+        return queryOk && !truncated && maxVertexYd <= kPlaceUnstickRegionEdgeYd;
+    }
+
     // The isolation query (one navmesh path from the bot to its master), pure part.
     // queryRan: the navmesh answered. startPoly / endPoly: a walkable poly under the
     // bot / the master. reachedEnd: the path ends on the master's poly (complete).
-    // reachYd: its farthest reachable point from the bot. Isolated: no poly under the
-    // bot at all, or a path that stops short of the master within kPlaceUnstickReachYd
-    // of the bot (the walk 55 signature: "nearest reachable point is the start itself").
-    // A master off the mesh proves nothing about the start.
-    inline bool PlaceUnstickStartIsolated(bool queryRan, bool startPoly, bool endPoly, bool reachedEnd, float reachYd)
+    // reachYd: its farthest reachable point from the bot. regionEnclosed:
+    // PlaceUnstickRegionEnclosed for the bot's poly. Isolated: no poly under the bot at
+    // all, or a path that is not complete and either stops within kPlaceUnstickReachYd of
+    // the bot (the walk 55 signature: "nearest reachable point is the start itself") or
+    // starts on an enclosed region (a several-yard island whose partial path still gets a
+    // few yards toward the master). A master off the mesh proves nothing about the start
+    // (a known false negative: such a bot is not rescued).
+    inline bool PlaceUnstickStartIsolated(bool queryRan, bool startPoly, bool endPoly, bool reachedEnd, float reachYd,
+        bool regionEnclosed)
     {
         if (!queryRan)
             return false;
@@ -154,7 +175,7 @@ namespace ai
             return false;
         if (reachedEnd)
             return false;
-        return reachYd <= kPlaceUnstickReachYd;
+        return reachYd <= kPlaceUnstickReachYd || regionEnclosed;
     }
 
     struct PlaceUnstickInputs
@@ -164,11 +185,12 @@ namespace ai
         bool inBattleground = false;    // battleground or arena
         bool hasMaster = false;         // a master (player or bot), not the bot, in world, same map, alive, not teleporting
         float masterYd = 0.0f;
+        bool masterOnTransport = false; // the master rides a transport (boat, zeppelin, elevator): never teleport onto it
         bool masterInSight = false;     // master within the config's sightDistance (the summon command's own bound)
         bool runCommanded = false;      // the bot's group is bound by a commander (dungeon run, raid walk)
         bool botAlive = false;
         bool botCharmed = false;
-        bool botCharming = false;       // the bot holds a charm on something
+        bool botCharming = false;       // the bot possesses another unit (PlaceUnstickBotPossessing)
         bool botCasting = false;
         bool masterFightNearBot = false; // master in combat and the bot's own live target within kPlaceUnstickFightYd of the bot
         uint32_t streakMs = 0;
@@ -185,6 +207,7 @@ namespace ai
         Battleground,
         NoMaster,
         MasterNear,
+        MasterOnTransport,
         MasterTooFar,
         BotDead,
         Charmed,
@@ -210,6 +233,8 @@ namespace ai
             return PlaceUnstickVerdict::NoMaster;
         if (!(in.masterYd > kPlaceUnstickMasterMinYd))
             return PlaceUnstickVerdict::MasterNear;
+        if (in.masterOnTransport)
+            return PlaceUnstickVerdict::MasterOnTransport;
         // The misuse cap: beyond sight only for a commander-bound group.
         if (!in.masterInSight && !in.runCommanded)
             return PlaceUnstickVerdict::MasterTooFar;
@@ -260,9 +285,20 @@ namespace ai
         return anchorSet && sameMap && anchorFromStartYd <= kPlaceUnstickAnchorYd;
     }
 
-    // The bot's pet goes with it: alive, in world, within kPlaceUnstickPetYd of the island start.
-    inline bool PlaceUnstickMovesPet(bool petLive, float petFromStartYd)
+    // The bot's pet goes with it only when it is stuck too: alive and in world, and within
+    // kPlaceUnstickPetNearYd of the island start or cut off itself (the same probe from its own
+    // spot). A pet elsewhere on the main mesh stays: it may be tanking, and it walks after its
+    // owner by itself.
+    inline bool PlaceUnstickMovesPet(bool petLive, float petFromStartYd, bool petIsolated)
     {
-        return petLive && petFromStartYd <= kPlaceUnstickPetYd;
+        return petLive && (petFromStartYd <= kPlaceUnstickPetNearYd || petIsolated);
+    }
+
+    // Whether the bot controls another unit (Mind Control, Eyes of the Beast, Eye of Kilrogg):
+    // its mover is not itself. A charm that leaves the bot its own mover (its pet, an enslaved
+    // demon, both in UNIT_FIELD_CHARM or UNIT_FIELD_SUMMON) does not block the unstick.
+    inline bool PlaceUnstickBotPossessing(bool moverIsSelf)
+    {
+        return !moverIsSelf;
     }
 }

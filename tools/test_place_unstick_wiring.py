@@ -72,7 +72,10 @@ class PlaceUnstickWiring(unittest.TestCase):
         self.assertIn("in.inInstance = map->IsDungeon();", unstick)
         self.assertIn("in.inBattleground = bot->InBattleGround() || map->IsBattleGround();", unstick)
         self.assertIn("in.botCharmed = !bot->GetCharmerGuid().IsEmpty();", unstick)
-        self.assertIn("in.botCharming = !bot->GetCharmGuid().IsEmpty();", unstick)
+        # Possess only: the bot's own pet or an enslaved demon leaves it its own mover.
+        self.assertIn("in.botCharming = ai::PlaceUnstickBotPossessing(bot->GetMover() == bot);", unstick)
+        self.assertNotIn("GetCharmGuid()", unstick)
+        self.assertIn("in.masterOnTransport = hasMaster && master->GetTransport() != nullptr;", unstick)
         self.assertIn("in.botCasting = bot->IsNonMeleeSpellCasted(true);", unstick)
         self.assertIn("ai::PlaceUnstickIsFight(hasMaster && master->IsInCombat(), liveTarget,", unstick)
         # The misuse cap: the summon command's sight bound, or a commander-bound group.
@@ -82,18 +85,25 @@ class PlaceUnstickWiring(unittest.TestCase):
     def test_the_isolation_query_runs_before_the_teleport(self):
         unstick = body(MOVEMENT, "bool MovementAction::TryPlaceUnstick(LastMovement& lastMove)")
         cheap = unstick.index("in.startIsolated = true;")
-        probe = unstick.index("in.startIsolated = ProbePlaceUnstickStart(bot, master);")
+        probe = unstick.index("in.startIsolated = ProbePlaceUnstickIsolated(bot->GetMapId(), bot->GetPositionX(),")
         teleport = unstick.index("bot->TeleportTo(")
         self.assertLess(cheap, probe)
         self.assertLess(probe, teleport)
         # A connected start restarts the streak: the query runs at most once per 10 s streak.
         self.assertIn("ai::PlaceUnstickRestartStreak(state, nowMs);", unstick[probe:teleport])
-        query = body(MOVEMENT, "static bool ProbePlaceUnstickStart(Player* bot, Player* master)")
+        query = body(MOVEMENT, "static bool ProbePlaceUnstickIsolated(uint32 mapId, float fx, float fy, float fz, Player* master)")
         self.assertIn("PathInfo::FindWalkPoly(query, start, filter, startNearest)", query)
         self.assertIn("PathInfo::FindWalkPoly(query, end, filter, endNearest)", query)
         self.assertIn("query->findPath(startRef, endRef", query)
         self.assertIn("bool const reachedEnd = polys[polyCount - 1] == endRef;", query)
-        self.assertIn("return ai::PlaceUnstickStartIsolated(true, true, true, reachedEnd, reachYd);", query)
+        self.assertIn("return ai::PlaceUnstickStartIsolated(true, true, true, reachedEnd, reachYd, regionEnclosed);", query)
+        self.assertIn("PlaceUnstickRegionAround(query, filter, startRef, start)", query)
+        # The enclosure test: a capped circle search around the start, truncation read from the status.
+        region = body(MOVEMENT, "static bool PlaceUnstickRegionAround(")
+        self.assertIn("query->findPolysAroundCircle(startRef, centerYZX, ai::kPlaceUnstickRegionRadiusYd, &filter,", region)
+        self.assertIn("polys, nullptr, nullptr, &polyCount, ai::kPlaceUnstickRegionCap);", region)
+        self.assertIn("dtStatusDetail(status, DT_BUFFER_TOO_SMALL) || dtStatusDetail(status, DT_OUT_OF_NODES)", region)
+        self.assertIn("return ai::PlaceUnstickRegionEnclosed(queryOk, truncated, maxVertexYd);", region)
         self.assertIn("filter.setIncludeFlags(NAV_GROUND | NAV_WATER);", query)
 
     def test_own_teleport_keeps_combat_and_pet(self):
@@ -109,7 +119,10 @@ class PlaceUnstickWiring(unittest.TestCase):
         self.assertNotIn("TellDebug", unstick)
         self.assertNotIn('GetAction("summon")', unstick)
         # The pet goes with the bot.
-        self.assertIn("ai::PlaceUnstickMovesPet(", unstick)
+        self.assertIn("bool const movePet = ai::PlaceUnstickMovesPet(petLive, petFromIslandYd, petIsolated);", unstick)
+        # The pet's own probe runs only for a live pet beyond the island's 5 yd.
+        self.assertIn("bool const petIsolated = petLive && petFromIslandYd > ai::kPlaceUnstickPetNearYd &&\n"
+                      "        ProbePlaceUnstickIsolated(pet->GetMapId(), pet->GetPositionX(),", unstick)
         self.assertIn("pet->NearTeleportTo(x, y, z, pet->GetOrientation());", unstick)
         # Stay and guard are cleared only when they point at the island.
         self.assertIn('for (char const* anchor : {"stay", "guard"})', unstick)
@@ -142,7 +155,10 @@ class PlaceUnstickWiring(unittest.TestCase):
         self.assertIn("constexpr float kPlaceUnstickMoveYd = 3.0f;", POLICY)
         self.assertIn("constexpr float kPlaceUnstickReachYd = 2.0f;", POLICY)
         self.assertIn("constexpr float kPlaceUnstickAnchorYd = 5.0f;", POLICY)
-        self.assertIn("constexpr float kPlaceUnstickPetYd = 30.0f;", POLICY)
+        self.assertIn("constexpr float kPlaceUnstickPetNearYd = 5.0f;", POLICY)
+        self.assertIn("constexpr float kPlaceUnstickRegionRadiusYd = 15.0f;", POLICY)
+        self.assertIn("constexpr float kPlaceUnstickRegionEdgeYd = 14.0f;", POLICY)
+        self.assertIn("constexpr int kPlaceUnstickRegionCap = 128;", POLICY)
 
     def test_flag_and_docs(self):
         config_h = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()

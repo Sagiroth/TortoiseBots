@@ -1123,10 +1123,11 @@ AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0
 # placement left on a small piece of navmesh with no path off it fails every move ("dispatch-short", path type NOPATH)
 # and never moves again. With this on, after 10 s of such failures one navmesh query checks that the bot's own spot is
 # cut off (not just a target off the mesh); then the bot is teleported beside its master (player or bot), wherever the
-# master stands, a boss room included. Combat is kept, a pet within 30 yd goes along, a stay or guard point on the
-# island is cleared (others are kept), nobody is whispered, and a BotUnstick row is logged; at most once per 30 s.
+# master stands, a boss room included. Combat is kept, the pet goes along only when it is stuck on the island too, a
+# stay or guard point on the island is cleared (others are kept), nobody is whispered, and a BotUnstick row is
+# logged; at most once per 30 s. Never while the master is on a transport or stands off the navmesh itself.
 # Only while the master is alive, more than 20 yd away and within sight distance (or the group is driven by a dungeon
-# run or raid walk commander). Never on battlegrounds, never while the bot is dead, charmed, charming or casting, and
+# run or raid walk commander). Never on battlegrounds, never while the bot is dead, charmed, possessing another unit or casting, and
 # never while the master fights the bot's own target within 5 yd of the bot. Off keeps such a bot where it is.
 AiPlayerbot.DungeonRunPlaceUnstick = 0
 

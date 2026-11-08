@@ -59,7 +59,7 @@ static PlaceUnstickInputs IslandPriest(const PlaceUnstickState& s, uint32_t nowM
     in.teleportedBefore = s.teleported;
     in.sinceTeleportMs = nowMs - s.lastTeleportMs;
     // The walk 55 query: start poly 0.4 yd away, master's poly found, the path stops at the start.
-    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 0.3f);
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 0.3f, false);
     return in;
 }
 
@@ -82,22 +82,22 @@ static void DestinationOffMeshBotOnMainMeshNoTeleport()
     PlaceUnstickState s;
     FeedFails(s, 100000, 12, kShort, kNoPath);
     PlaceUnstickInputs in = IslandPriest(s, 112000);
-    in.startIsolated = PlaceUnstickStartIsolated(true, true, false, false, 0.0f); // no poly under the master
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, false, false, 0.0f, false); // no poly under the master
     CHECK(!in.startIsolated);
     CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::NotIsolated);
     // On the main mesh with a partial path that gets 40 yd toward the master: connected.
-    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 40.0f);
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 40.0f, false);
     CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::NotIsolated);
     // A complete path: connected.
-    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, true, 0.0f);
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, true, 0.0f, false);
     CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::NotIsolated);
     // No navmesh answer: nothing proven.
-    CHECK(!PlaceUnstickStartIsolated(false, false, false, false, 0.0f));
+    CHECK(!PlaceUnstickStartIsolated(false, false, false, false, 0.0f, false));
     // No poly under the bot at all: cut off.
-    CHECK(PlaceUnstickStartIsolated(true, false, false, false, 0.0f));
+    CHECK(PlaceUnstickStartIsolated(true, false, false, false, 0.0f, false));
     // The reach bound: 2 yd in, 2.1 yd out.
-    CHECK(PlaceUnstickStartIsolated(true, true, true, false, 2.0f));
-    CHECK(!PlaceUnstickStartIsolated(true, true, true, false, 2.1f));
+    CHECK(PlaceUnstickStartIsolated(true, true, true, false, 2.0f, false));
+    CHECK(!PlaceUnstickStartIsolated(true, true, true, false, 2.1f, false));
 }
 
 static void NotIsolatedRestartsTheStreak()
@@ -329,10 +329,75 @@ static void StayGuardAndPet()
     CHECK(!PlaceUnstickClearsAnchor(true, true, 5.1f));
     CHECK(!PlaceUnstickClearsAnchor(false, true, 1.0f));
     CHECK(!PlaceUnstickClearsAnchor(true, false, 1.0f));
-    // The pet goes along within 30 yd of the island start.
-    CHECK(PlaceUnstickMovesPet(true, 30.0f));
-    CHECK(!PlaceUnstickMovesPet(true, 30.5f));
-    CHECK(!PlaceUnstickMovesPet(false, 2.0f));
+    // The pet goes along only when it is stuck too.
+    CHECK(PlaceUnstickMovesPet(true, 3.0f, false));    // a pet 3 yd from the island start moves
+    CHECK(PlaceUnstickMovesPet(true, 5.0f, false));
+    CHECK(!PlaceUnstickMovesPet(true, 25.0f, false));  // a pet 25 yd away on the main mesh does not
+    CHECK(PlaceUnstickMovesPet(true, 25.0f, true));    // ...unless its own probe says it is cut off too
+    CHECK(!PlaceUnstickMovesPet(false, 2.0f, true));
+}
+
+static void EnclosedTenYardIslandPartialPathSixYardsTeleports()
+{
+    // a partial path that reaches 6 yd on an enclosed 10 yd island -> teleport
+    bool const enclosed = PlaceUnstickRegionEnclosed(true, false, 10.0f);
+    CHECK(enclosed);
+    PlaceUnstickState s;
+    FeedFails(s, 100000, 10, kShort, kNoPath);
+    PlaceUnstickInputs in = IslandPriest(s, 110000);
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 6.0f, enclosed);
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::Teleport);
+    // The same 6 yd partial path on the main mesh is not a rescue.
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 6.0f, false);
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::NotIsolated);
+    // A complete path out of a small region is no island either.
+    CHECK(!PlaceUnstickStartIsolated(true, true, true, true, 6.0f, true));
+}
+
+static void LargeRegionPartialPathNoTeleport()
+{
+    // a large region (the main mesh) with a partial path -> no teleport
+    bool const enclosed = PlaceUnstickRegionEnclosed(true, false, 40.0f); // a polygon reaches past the circle
+    CHECK(!enclosed);
+    CHECK(!PlaceUnstickRegionEnclosed(true, false, 14.1f));
+    CHECK(PlaceUnstickRegionEnclosed(true, false, 14.0f));
+    PlaceUnstickState s;
+    FeedFails(s, 100000, 10, kShort, kNoPath);
+    PlaceUnstickInputs in = IslandPriest(s, 110000);
+    in.startIsolated = PlaceUnstickStartIsolated(true, true, true, false, 8.0f, enclosed);
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::NotIsolated);
+}
+
+static void TruncatedRegionQueryIsNotEnclosed()
+{
+    // a truncated query (128-polygon cap or node pool) counts as not enclosed
+    CHECK(!PlaceUnstickRegionEnclosed(true, true, 3.0f));
+    CHECK(!PlaceUnstickRegionEnclosed(false, false, 3.0f));
+    CHECK(!PlaceUnstickStartIsolated(true, true, true, false, 6.0f, PlaceUnstickRegionEnclosed(true, true, 3.0f)));
+}
+
+static void MasterOnTransportNoTeleport()
+{
+    PlaceUnstickState s;
+    FeedFails(s, 100000, 12, kShort, kNoPath);
+    PlaceUnstickInputs in = IslandPriest(s, 112000);
+    in.masterOnTransport = true;
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::MasterOnTransport);
+}
+
+static void OwnPetOrEnslavedDemonIsNotCharming()
+{
+    // An enslaved demon or the bot's own pet leaves the bot its own mover: not "charming".
+    CHECK(!PlaceUnstickBotPossessing(true));
+    // Mind Control, Eyes of the Beast, Eye of Kilrogg: the bot moves another unit.
+    CHECK(PlaceUnstickBotPossessing(false));
+    PlaceUnstickState s;
+    FeedFails(s, 100000, 12, kShort, kNoPath);
+    PlaceUnstickInputs in = IslandPriest(s, 112000);
+    in.botCharming = PlaceUnstickBotPossessing(true);
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::Teleport);
+    in.botCharming = PlaceUnstickBotPossessing(false);
+    CHECK(PlaceUnstickDecide(in) == PlaceUnstickVerdict::Charming);
 }
 
 static void WorldTimerWrap()
@@ -364,6 +429,11 @@ int main()
     BotStateGuards();
     FightNearTheBotIsNotASnag();
     StayGuardAndPet();
+    EnclosedTenYardIslandPartialPathSixYardsTeleports();
+    LargeRegionPartialPathNoTeleport();
+    TruncatedRegionQueryIsNotEnclosed();
+    MasterOnTransportNoTeleport();
+    OwnPetOrEnslavedDemonIsNotCharming();
     WorldTimerWrap();
     std::cout << "test_place_unstick_policy: all checks passed\n";
     return 0;
