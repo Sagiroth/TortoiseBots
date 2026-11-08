@@ -840,7 +840,14 @@ bool SuccessorWhiteCapTrigger::IsActive()
             PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning),
         meleeOnSuccessor, autoRepeatOnSuccessor);
     if (stops.melee)
+    {
         bot->AttackStop();
+        // AttackStop clears the target guid; AiPlayerbot.DungeonRunThreatSuccessorKeepTarget puts the successor back.
+        const std::uint64_t keep = SuccessorStopTargetAfter(sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepTarget,
+            target->GetObjectGuid().GetRawValue());
+        if (keep != 0)
+            bot->SetTargetGuid(ObjectGuid(keep));
+    }
     if (stops.autoRepeat)
         bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
     return false;

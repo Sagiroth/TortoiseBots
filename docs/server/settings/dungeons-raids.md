@@ -963,6 +963,17 @@ With `AiPlayerbot.DungeonRunThreatSuccessorNotHolder` the reference is the highe
 
 </details>
 
+### `AiPlayerbot.DungeonRunThreatSuccessorKeepTarget`
+Whether the strict successor white stop keeps the boss as the bot's target. Recommended on, together with `AiPlayerbot.DungeonRunThreatSuccessorStrict`.
+**Default:** `0` · **Values:** `0` off (the melee stop leaves the target cleared), `1` on (the successor is set back as the target right after the stop) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+The `successor white cap` trigger stops a melee swing on the successor with `AttackStop()`, and the core's `AttackStop` also clears the unit's target guid. In walk 57 held melee had no target 37 % of the time, against 16 % when free. With the key on the trigger sets the successor back as the bot's target (`SetTargetGuid`) right after the stop (`SuccessorStopTargetAfter`): the swing stays stopped, the boss stays selected, and the specials go on under the 80 % veto. Only the melee stop restores it; an auto-repeat interrupt never cleared the target. It acts only where the strict stop runs (a `threat_successor` row carrying `strict`, with `AiPlayerbot.DungeonRunThreatSuccessorStrict` on).
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

@@ -1159,6 +1159,15 @@ AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0
 
+# The strict successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict) stops a melee swing with AttackStop, and
+# the core's AttackStop clears the bot's target guid. Walk 57: held melee had no target 37 % of the time, against 16 %
+# when free. With this on the trigger sets the successor back as the bot's target right after the stop, so it stays
+# selected and the specials go on under the 80 % veto; the swing itself stays stopped. Recommended on, together with
+# AiPlayerbot.DungeonRunThreatSuccessorStrict. `.reload config` reads it.
+# 0 - off: the stop leaves the target cleared (Default)
+# 1 - on
+AiPlayerbot.DungeonRunThreatSuccessorKeepTarget = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed

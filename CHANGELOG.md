@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunThreatSuccessorKeepTarget (default 0), the strict successor white stop sets the boss back as the bot's target after stopping its melee swing, so held melee keep the boss selected and go on with specials.
 - Fixed: the strict successor white stop judges each attack mode on its own target: a swing on the boss stops without cancelling a wand or Auto Shot on an add, and the reverse.
 - Changed: AiPlayerbot.DungeonRunThreatSuccessorStrict now applies only to a boss whose threat_successor row carries the mode word `strict`; the shipped data turns it on for Jin'do only, so Hakkar keeps the plain off-tank cap (walk 57: strict cost 17 % of the damage on Hakkar, 0 kills in 26 fights).
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorKeepsAway (default 0), the threat successor pick keeps a tank cursed by Delusions of Jin'do as on the boss while it holds at least half the top tank's threat, so the damage dealers' cap no longer falls back to the holding tank.
