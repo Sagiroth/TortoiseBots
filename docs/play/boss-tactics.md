@@ -282,6 +282,10 @@ Only bosses with a `threat_successor` row change, and only while a non-holding t
 
 Side effect, accepted: after a Hex on **either** tank the wiped tank is the reference at about 0 threat, so the damage dealers' single-target attacks are held until it has rebuilt past them. That lasts as long as the fight's threat needs (tens of seconds is possible, not a fixed 5-8 s), and a second Hex on the new holder before then still gives the boss to a damage dealer. The damage dealers keep working on adds (Shades, pit trolls, totems) meanwhile, Rogue Vanish and priest Fade on threat stay quiet on a 0 reference, and hunter pets cower (`ShouldPetCower`: pet threat above the tank's) against it too, so pets are held during the stall as well. A Hex handing Jin'do to a damage dealer is the top first-death cause, so the trade stands for walk 56, to be judged from the ThreatCap and Hex rows.
 
+#### Cures skip the threat back-off
+
+Behind `AiPlayerbot.DungeonRunCureIgnoresThreat` (default `0`, recommended on): a cure or dispel on a party member (dispel magic, cure poison/disease, remove curse, cleanse, purify) is exempt from the damage dealers' threat back-off, the same way heals are (`ThreatCapExempt`). Without it a healer whose own threat on Jin'do read at or over the 80 % line had its cure on the Hexed tank vetoed, and the Hex ran its full 5 s while a damage dealer held the boss (walk 56: 50 of 91 tank Hexes never cured; `dispel magic on party` result `I` in 10 of 12 failing frames). This is not limited to `threat_successor` bosses: every party cure on every fight. Range and line of sight still stop a cure. Measure in walk 57: tank Hexes cured within 1.5 s at least 70 % (walk 56: 32 %), Jin'do-on-DPS time after tank Hexes at most 120 s over 30 fights (252 s), and `dispel magic on party` `I` after a Hex at most 20 % (10 of 12).
+
 ### Reaction and Hex rows
 
 Two log rows make the Jin'do fight measurable on the server clock (no flag; they cost nothing without `bot_events.csv`):

@@ -926,6 +926,17 @@ The price: after a Hex on **either** tank the wiped tank has about 0 threat and 
 
 </details>
 
+### `AiPlayerbot.DungeonRunCureIgnoresThreat`
+Whether party cures and dispels skip the damage threat back-off, the way heals already do. Recommended on.
+**Default:** `0` · **Values:** `0` off (a cure is vetoed at the 80 % high-threat line like any single-target spell), `1` on (every cure on a party member runs whatever the healer's threat) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+A cure on a party member (`dispel magic`, `cure poison`, `cure disease`, `abolish poison`, `remove curse`, `remove lesser curse`, `cleanse` and `purify` on a party member: every `CurePartyMemberAction`) is a single-target spell action, and the threat back-off (`ThreatMultiplier`) vetoed it whenever the healer's own threat on its current target read at or above the 80 % line, or 100 % on a mob no tank has touched. Heals were exempt already; cures were not. At Jin'do that left the Hex (17172) on the tank for its full 5 s in 50 of 91 tank Hexes in walk 56, while a dispeller had been picked within a second: the failing frames read `dispel magic on party` with result `I` (vetoed) in 10 of 12. With the key on the cure is exempt like a heal: a cure pulls no mob off the tank. It covers every boss and every party cure; self cures and offensive dispels on an enemy keep the back-off. A cure can still fail for range or line of sight (that also reads `I`). Walk-57 measures: tank Hexes cured within 1.5 s from 29 of 91 (32 %) to at least 70 %; Jin'do-on-DPS seconds after tank Hexes from 252 s over 30 fights to at most 120 s; the `I` share of `dispel magic on party` after a Hex from 10 of 12 to at most 20 %.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

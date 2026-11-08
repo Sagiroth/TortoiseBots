@@ -284,6 +284,26 @@ int main()
     // A saturated read still vetoes: the cap sees 255, not the wrapped 44.
     CHECK(ThreatPctSaturated(300.0f, 100.0f) >= kThreatHighLinePct);
 
+    // cure_not_vetoed_at_high_threat (AiPlayerbot.DungeonRunCureIgnoresThreat, fails without the cure exemption): a
+    // healer at 100 % of the reference casts `dispel magic on party` on the Hexed tank. Key on: the cure runs (1.0).
+    // Key off: vetoed as today (0.0). Heals run either way; a nuke is vetoed either way; under the line all run.
+    {
+        const std::uint8_t pct = ThreatPctOf(10000.0f, 10000.0f, true, false);
+        const bool highThreat = pct >= kThreatHighLinePct;
+        CHECK(highThreat);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, true), highThreat) == 1.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, false), highThreat) == 0.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(true, false, false), highThreat) == 1.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(true, false, true), highThreat) == 1.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, true), highThreat) == 0.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, false), highThreat) == 0.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, false), false) == 1.0f);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, false, false), false) == 1.0f);
+        // A 0 reference on an engaged mob no tank touched reads 100 too: the cure still runs with the key on.
+        CHECK(ThreatPctOf(50.0f, 0.0f, true, false) == 100);
+        CHECK(ThreatCapBackoffMultiplier(ThreatCapExempt(false, true, true), true) == 1.0f);
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

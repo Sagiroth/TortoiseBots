@@ -21,6 +21,25 @@ namespace ai
     // back-off vetoes single-target attacks at or above it. Every target uses 80 %, successor bosses included.
     constexpr std::uint8_t kThreatHighLinePct = 80;
 
+    // Whether an action skips the damage threat back-off (ThreatMultiplier) whatever the bot's threat on its target.
+    // Heals always do: a heal pulls no mob off the tank. A party cure or dispel (CurePartyMemberAction: dispel magic,
+    // cure poison/disease, remove curse, cleanse, purify on a party member) is a SINGLE-threat CastSpellAction and was
+    // vetoed at the high line like a nuke, so a healer high on Jin'do's threat list left his Hex on the tank for its
+    // full 5 s (walk 56: 50 of 91 tank Hexes never cured, `dispel magic on party` result I in 10 of 12 frames). With
+    // AiPlayerbot.DungeonRunCureIgnoresThreat on, a party cure is exempt like a heal; off, as before.
+    inline bool ThreatCapExempt(bool heal, bool partyCure, bool cureIgnoresThreat)
+    {
+        return heal || (partyCure && cureIgnoresThreat);
+    }
+
+    // The single-target back-off's answer for one action: 1 (run) when the action is exempt or the bot is under the
+    // high line, 0 (vetoed) over it. The live multiplier has more exits (no group, a commanded yield, Fankriss); this is
+    // the part the exemption decides.
+    inline float ThreatCapBackoffMultiplier(bool exempt, bool highThreat)
+    {
+        return exempt || !highThreat ? 1.0f : 0.0f;
+    }
+
     // The percentage a damage dealer's threat reads against the reference tank's (ThreatValue::Calculate), saturated to
     // the uint8 the threat values carry. botThreat * 100 / maxThreat above 255 used to wrap (300 % read as 44 %), and
     // the cap then let the attack through exactly where the margin matters most. `maxThreat` <= 0 is the caller's "no

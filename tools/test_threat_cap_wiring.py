@@ -17,6 +17,12 @@ SEEK_POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 SEEK_FIGHT = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 BOSS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 DOC = (ROOT / "docs/play/boss-tactics.md").read_text()
+STRATEGY = (ROOT / "ai/playerbot/strategy/generic/ThreatStrategy.cpp").read_text()
+CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+CONF = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+CHANGELOG = (ROOT / "CHANGELOG.md").read_text()
 
 
 def ai_tree_text():
@@ -94,6 +100,29 @@ class SonHoldTimings(unittest.TestCase):
     def test_the_docs_state_the_shipped_timings(self):
         self.assertIn("for 3 s is the first off-tank's take", DOC)
         self.assertIn("kept fighting for 20 s is released to the damage dealers", DOC)
+
+
+class CureIgnoresThreat(unittest.TestCase):
+    """AiPlayerbot.DungeonRunCureIgnoresThreat: party cures join the heals in the threat back-off's exemption."""
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunCureIgnoresThreat = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunCureIgnoresThreat", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunCureIgnoresThreat = 0", CONF)
+
+    def test_the_multiplier_exempts_party_cures_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,", multiplier)
+        self.assertIn("dynamic_cast<CurePartyMemberAction*>(action) != nullptr,", multiplier)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunCureIgnoresThreat))", multiplier)
+        # The exemption runs before the high-threat veto it skips.
+        self.assertLess(multiplier.index("ThreatCapExempt("), multiplier.index('"trigger active", "high threat"))\n    {'))
+        self.assertIn("return heal || (partyCure && cureIgnoresThreat);", THREAT_POLICY)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunCureIgnoresThreat`", SETTINGS)
+        self.assertIn("DungeonRunCureIgnoresThreat", DOC)
+        self.assertIn("DungeonRunCureIgnoresThreat", CHANGELOG)
 
 
 if __name__ == "__main__":

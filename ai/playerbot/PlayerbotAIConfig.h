@@ -691,6 +691,10 @@ public:
     // against the real threat of the highest tank that is on the boss and is not the one it is hitting, so an
     // off-tank holding Jin'do no longer caps them against itself while a Hexed main tank sits below. Off = as before.
     bool dungeonRunThreatSuccessorNotHolder = false;
+    // Party cures and dispels (CurePartyMemberAction: dispel magic, cure poison/disease, remove curse, cleanse, purify on a
+    // party member) skip the damage threat back-off the way heals do, so a healer high on its own target's threat still
+    // cures Jin'do's Hex on the tank. Off = as before (the cure is vetoed at the high-threat line).
+    bool dungeonRunCureIgnoresThreat = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;

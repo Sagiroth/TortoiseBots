@@ -1118,6 +1118,16 @@ AiPlayerbot.DungeonRunCarrierHold = 0
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorNotHolder = 0
 
+# Party cures and dispels skip the damage threat back-off the way heals do. A cure on a party member (dispel magic,
+# cure poison/disease, remove curse, cleanse, purify on a party member) is a single-target spell action, so a healer
+# whose own threat on its target sat at the 80 % line had it vetoed like a nuke: at Jin'do the Hex on the tank was
+# never cured in 50 of 91 cases (walk 56), and the boss sat on a damage dealer for the Hex's full 5 s. A cure pulls no
+# mob off the tank. All bosses, every party cure; self cures and offensive dispels are unchanged. Range and line of
+# sight still stop a cure. Recommended on. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: cures are vetoed at the high-threat line as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunCureIgnoresThreat = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed
