@@ -192,6 +192,7 @@ const bind = (t, db, extra) => Object.assign({
   assert.strictEqual(fo.id, "55-6");
   assert.strictEqual(fo.outcome, "live");
   assert.strictEqual(fo.aura_src, "sampled");
+  assert.strictEqual(fo.aura_slots_full, false, "no sample held 4 debuff ids");
   assert.deepStrictEqual(fo.log.map((e) => e.k), ["cast", "death", "interrupt"], "log kinds only");
   assert.deepStrictEqual(fo.deaths, [{ name: "Tanky", t_ms: 5000, x: 1.5, y: 2.5, killer: "Magmadar", hits: [] }]);
   assert.deepStrictEqual(fo.bots, [{ name: "Tank", guid: 1, role: "tank" }]);
