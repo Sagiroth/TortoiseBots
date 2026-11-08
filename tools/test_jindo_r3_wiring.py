@@ -47,6 +47,18 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
         build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
         self.assertIn("player->GetVictim() == target, target->GetVictim() == player", build)
 
+    def test_only_a_non_holder_on_the_boss_is_the_successor(self):
+        branch = member(POLICY, "if (notHolder)", "return pick;\n            }")
+        self.assertIn("if (tank.holdsBoss || !tank.onBoss)", branch)
+        self.assertIn("pick.threat = best->threat;", branch)
+        self.assertNotIn("floor", branch)
+
+    def test_a_zero_reference_holds_the_damage_dealers(self):
+        calc = member(VALUES, "uint8 ThreatValue::Calculate(Unit* target)", "\n}\n")
+        self.assertIn("return ThreatPctOf(botThreat, maxThreat, target->IsInCombat(), fleeing);", calc)
+        pct = member(POLICY, "inline std::uint8_t ThreatPctOf(", "\n    }\n")
+        self.assertIn("if (targetInCombat && maxThreat == 0 && !fleeing)\n            return 100;", pct)
+
     def test_the_pick_gets_the_key(self):
         self.assertIn(
             "ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder)", VALUES)
@@ -102,6 +114,11 @@ class KillFirstSwitchRow(unittest.TestCase):
         self.assertLess(sync.index("g_shadeSeenCount.load(std::memory_order_relaxed) == 0"), sync.index("lock_guard"))
         self.assertIn("it = g_shadeSeen.erase(it);", sync)
         self.assertIn("kShadeSeenMaxEntries", sync)
+        # A single missed pass keeps the record: it goes only after the grace, and the cap drops the oldest, never all.
+        self.assertIn("else if (ShadeSeenExpired(it->second.lastMs, nowMs))", sync)
+        self.assertNotIn("g_shadeSeen.clear()", sync)
+        self.assertIn("std::nth_element(", sync)
+        self.assertIn("constexpr std::uint32_t kShadeSeenGraceMs = 3000;", BOSS_POLICY)
 
     def test_docs_and_changelog(self):
         self.assertIn("reason=switch", DOCS)
@@ -118,9 +135,16 @@ class HexSnapshotRow(unittest.TestCase):
         log = member(VALUES, "void LogHexSnapshot(", "\n}\n")
         self.assertIn('"holder=%s ot_threat=%.0f mt_threat=%.0f top_dps=%s:%.0f"', log)
         self.assertIn('"BossTacticsHex"', log)
-        self.assertIn("ai->HasAura(kJindoHexSpellId, tank)", log)
-        self.assertIn("HexSnapshotDue(last, nowMs)", log)
+        self.assertIn("HexWearerToLog(wearers, nowMs)", log)
+        self.assertIn("HexOffTankIndex(wearerTankIndex)", log)
         self.assertIn("sPlayerbotAIConfig.hasLog(\"bot_events.csv\")", log)
+
+    def test_the_wearer_is_found_by_aura_among_the_group_not_by_the_victim(self):
+        log = member(VALUES, "void LogHexSnapshot(", "\n}\n")
+        self.assertIn("ai->HasAura(kJindoHexSpellId, player)", log)
+        self.assertIn("for (Player* member : LiveGroupMembers(group))\n            consider(member);", log)
+        self.assertNotIn("GetVictim()", log)
+        self.assertIn("HexScanDue(lastScan, nowMs)", log)
 
     def test_no_flag_gates_the_row(self):
         log = member(VALUES, "void LogHexSnapshot(", "\n}\n")

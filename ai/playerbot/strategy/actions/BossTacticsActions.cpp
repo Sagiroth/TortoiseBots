@@ -3771,15 +3771,17 @@ void LogCarrierScanOver(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* over, Ki
 // its pick had known that Shade, so the walk can measure the reaction on the server clock instead of from 2 s frames.
 //   info1 = "reason=switch"
 //   info2 = "pick=<entry>:<guid low>,from=<entry|0>,since_ms=<ms since this bot's pick first saw the Shade>"
-// First sight is kept per (bot, Shade) in a bounded map. Every pick pass syncs it (SyncShadesSeen): a Shade that is no
-// longer among the fight's living units (dead, gone) and every entry of a bot that carries no open carrier row (the curse
-// ended, the fight is over) is erased. A pass with no Shade and an empty map costs one relaxed atomic load: no lock,
-// no allocation. The map is cleared outright past kShadeSeenMaxEntries (40 bots x a handful of Shades is well under it).
+// First sight is kept per (bot, Shade) in a bounded map. Every pick pass syncs it (SyncShadesSeen): a record is dropped
+// only once the bot's pick has not listed that Shade for kShadeSeenGraceMs (it died, left the fight, the curse ended or the
+// fight is over), never on a single missed pass, so a flickering attackers list does not reset `since_ms`. A pass with no
+// Shade and an empty map costs one relaxed atomic load: no lock, no allocation. Past kShadeSeenMaxEntries the oldest
+// quarter (by last sight) is dropped, so the `logged` flags of the live records survive.
 constexpr std::size_t kShadeSeenMaxEntries = 512;
 constexpr std::size_t kShadeSeenMaxPerPass = 16;
 struct ShadeSeen
 {
     uint32 firstMs = 0;
+    uint32 lastMs = 0;
     bool logged = false;
 };
 std::mutex g_shadeSeenMutex;
@@ -3796,7 +3798,12 @@ void SyncShadesSeen(Player* bot, const uint64* shades, std::size_t count)
     auto it = g_shadeSeen.lower_bound(std::make_pair(botKey, uint64(0)));
     while (it != g_shadeSeen.end() && it->first.first == botKey)
     {
-        if (std::find(shades, shades + count, it->first.second) == shades + count)
+        if (std::find(shades, shades + count, it->first.second) != shades + count)
+        {
+            it->second.lastMs = nowMs;
+            ++it;
+        }
+        else if (ShadeSeenExpired(it->second.lastMs, nowMs))
             it = g_shadeSeen.erase(it);
         else
             ++it;
@@ -3805,10 +3812,23 @@ void SyncShadesSeen(Player* bot, const uint64* shades, std::size_t count)
     {
         auto const inserted = g_shadeSeen.emplace(std::make_pair(botKey, shades[i]), ShadeSeen());
         if (inserted.second)
+        {
             inserted.first->second.firstMs = nowMs;
+            inserted.first->second.lastMs = nowMs;
+        }
     }
     if (g_shadeSeen.size() > kShadeSeenMaxEntries)
-        g_shadeSeen.clear();
+    {
+        std::vector<std::pair<uint32, std::pair<uint64, uint64>>> byAge;
+        byAge.reserve(g_shadeSeen.size());
+        for (auto const& entry : g_shadeSeen)
+            byAge.push_back(std::make_pair(nowMs - entry.second.lastMs, entry.first));
+        const std::size_t drop = g_shadeSeen.size() / 4;
+        std::nth_element(byAge.begin(), byAge.begin() + drop, byAge.end(),
+            [](auto const& a, auto const& b) { return a.first > b.first; });
+        for (std::size_t i = 0; i < drop; ++i)
+            g_shadeSeen.erase(byAge[i].second);
+    }
     g_shadeSeenCount.store(g_shadeSeen.size(), std::memory_order_relaxed);
 }
 

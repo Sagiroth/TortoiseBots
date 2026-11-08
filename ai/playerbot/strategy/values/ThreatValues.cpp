@@ -105,60 +105,92 @@ void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit*
 // BossTacticsHex: one row per Jin'do Hex (17172) on a member of the fight, so a walk can see who the boss turned to after
 // it. Hex lands on the boss's current victim and wipes that member's threat; the row is the state right after:
 //   info1 = "holder=<main|off|dps> ot_threat=<n> mt_threat=<n> top_dps=<name>:<threat>"
-// holder is who wore the Hex (-1 threat: that tank is not on the list). The aura-watch hook of the combat timeline
-// (host/CombatMonitorAdapter.cpp OnAuraApply) runs on a map thread behind AiPlayerbot.CombatTimeline and has no bot to
-// log under, so the snapshot is taken here, on the world thread, at the next read of the boss's tank threat (sub-second
-// while a damage dealer is in combat). One row per member and Hex (HexSnapshotDue); the throttle map holds one entry
-// per member that ever wore a Hex and is pruned past 256. Nothing runs without the log file, and the aura probe is one
-// lookup on at most the raid's tanks and the boss's victim.
+// `holder` is the member who WORE the Hex (the walk-report parser reads the field name; it is not the boss's victim).
+// ot_threat is the wearer's threat when an off-tank wore it, else the first off-tank's; mt_threat the main tank's; -1 when
+// the raid's tank order has no such tank (a dead tank reads what the boss still holds for it). top_dps is the highest
+// non-tank, non-healer member.
+// The wearer is found by its aura among the tanks and then the group's members, once per second per boss (HexScanDue):
+// the boss has turned to someone else by the time this runs, so the current victim is no clue. The aura-watch hook of
+// the combat timeline (host/CombatMonitorAdapter.cpp OnAuraApply) runs on a map thread behind AiPlayerbot.CombatTimeline
+// and has no bot to log under, so the snapshot is taken here, on the world thread, at the next read of the boss's tank
+// threat (sub-second while any bot with the threat value is in combat). One row per member and Hex (HexSnapshotDue); the
+// throttle maps are pruned past 256 / 64 entries. Nothing runs without the log file, and with no wearer the scan is one
+// aura lookup per member once a second.
 constexpr std::size_t kHexLogMaxEntries = 256;
+constexpr std::size_t kHexScanMaxBosses = 64;
 std::mutex g_hexLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_hexLog;
+std::unordered_map<std::uint64_t, std::uint32_t> g_hexScan;
 
 void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Group* group)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
-    Player* hexed = nullptr;
-    int hexedIndex = -1;
-    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
-    {
-        Player* const tank = roles.tanks[index];
-        if (tank && tank->IsInWorld() && ai->HasAura(kJindoHexSpellId, tank))
-        {
-            hexed = tank;
-            hexedIndex = static_cast<int>(index);
-            break;
-        }
-    }
-    if (!hexed)
-    {
-        // The Hex landed on a damage dealer or healer that held the boss.
-        Player* const victim = dynamic_cast<Player*>(boss->GetVictim());
-        if (victim && victim->IsInWorld() && ai->HasAura(kJindoHexSpellId, victim))
-            hexed = victim;
-    }
-    if (!hexed)
-        return;
     const std::uint32_t nowMs = WorldTimer::getMSTime();
     {
         std::lock_guard<std::mutex> lock(g_hexLogMutex);
-        std::uint32_t& last = g_hexLog[hexed->GetObjectGuid().GetRawValue()];
-        if (!HexSnapshotDue(last, nowMs))
+        std::uint32_t& lastScan = g_hexScan[boss->GetObjectGuid().GetRawValue()];
+        if (!HexScanDue(lastScan, nowMs))
             return;
-        last = nowMs;
+        lastScan = nowMs;
+        if (g_hexScan.size() > kHexScanMaxBosses)
+            g_hexScan.clear();
+    }
+    const auto tankIndexOf = [&roles](Player* player) -> int
+    {
+        for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+            if (roles.tanks[index] == player)
+                return static_cast<int>(index);
+        return -1;
+    };
+    std::vector<HexMember> wearers;
+    std::vector<Player*> wearerPlayers;
+    const auto consider = [&](Player* player)
+    {
+        if (!player || !player->IsInWorld() || !ai->HasAura(kJindoHexSpellId, player))
+            return;
+        for (Player* known : wearerPlayers)
+            if (known == player)
+                return;
+        HexMember member;
+        member.key = player->GetObjectGuid().GetRawValue();
+        member.tankIndex = tankIndexOf(player);
+        wearers.push_back(member);
+        wearerPlayers.push_back(player);
+    };
+    for (Player* tank : roles.tanks)
+        consider(tank);
+    if (group)
+        for (Player* member : LiveGroupMembers(group))
+            consider(member);
+    if (wearers.empty())
+        return;
+    int pickedIndex;
+    {
+        std::lock_guard<std::mutex> lock(g_hexLogMutex);
+        for (HexMember& member : wearers)
+        {
+            auto const known = g_hexLog.find(member.key);
+            member.lastLoggedMs = known == g_hexLog.end() ? 0 : known->second;
+        }
+        pickedIndex = HexWearerToLog(wearers, nowMs);
+        if (pickedIndex < 0)
+            return;
+        g_hexLog[wearers[pickedIndex].key] = nowMs;
         if (g_hexLog.size() > kHexLogMaxEntries)
         {
             for (auto it = g_hexLog.begin(); it != g_hexLog.end();)
                 it = nowMs - it->second > kHexSnapshotGapMs * 8 ? g_hexLog.erase(it) : std::next(it);
         }
     }
+    const int wearerTankIndex = wearers[pickedIndex].tankIndex;
+    const std::size_t offIndex = static_cast<std::size_t>(HexOffTankIndex(wearerTankIndex));
     auto const threatOf = [boss](Player* player) -> float
     {
         return player ? sServerFacade.GetThreatManager(boss).getThreat(player) : -1.0f;
     };
     Player* const mainTank = roles.tanks.size() >= 1 ? roles.tanks[0] : nullptr;
-    Player* const offTank = roles.tanks.size() >= 2 ? roles.tanks[1] : nullptr;
+    Player* const offTank = roles.tanks.size() > offIndex ? roles.tanks[offIndex] : nullptr;
     Player* topDps = nullptr;
     float topDpsThreat = 0.0f;
     if (group)
@@ -177,7 +209,7 @@ void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Gro
     }
     char info1[160];
     snprintf(info1, sizeof(info1), "holder=%s ot_threat=%.0f mt_threat=%.0f top_dps=%s:%.0f",
-             HexHolderWord(HexHolderOf(true, hexedIndex)), threatOf(offTank), threatOf(mainTank),
+             HexHolderWord(HexHolderOf(true, wearerTankIndex)), threatOf(offTank), threatOf(mainTank),
              topDps ? topDps->GetName() : "none", topDpsThreat);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsHex", info1, "");
 }
@@ -317,13 +349,6 @@ uint8 ThreatValue::Calculate(Unit* target)
     bool fleeing = motion == FLEEING_MOTION_TYPE || motion == TIMED_FLEEING_MOTION_TYPE ||
         motion == ASSISTANCE_MOTION_TYPE || motion == ASSISTANCE_DISTRACT_MOTION_TYPE;
 
-    // return high threat if tank has no threat
-    if (target->IsInCombat() && maxThreat == 0 && !fleeing)
-        return 100;
-
-    // return low threat if mob if fleeing
-    if (maxThreat > 0 && fleeing)
-        return 0;
-
-    return ThreatPctSaturated(botThreat, maxThreat);
+    // A reference of 0 on an engaged target reads 100 ("the tank has no threat": hold), see ThreatPctOf.
+    return ThreatPctOf(botThreat, maxThreat, target->IsInCombat(), fleeing);
 }

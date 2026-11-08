@@ -128,6 +128,17 @@ static void TestCarrierSwitchSinceMs()
     CHECK(CarrierSwitchSinceMs(0xFFFFFF00u, 0x00000100u) == 0x200u); // the clock wrapped between sight and switch
 }
 
+// t1106k R3 L3: a Shade missed by one pass (or two) keeps its first-sight record; it goes only after kShadeSeenGraceMs.
+static void TestShadeSeenGrace()
+{
+    CHECK(kShadeSeenGraceMs == 3000);
+    CHECK(!ShadeSeenExpired(10000, 10000));
+    CHECK(!ShadeSeenExpired(10000, 11000));  // one missed 1 s pass: kept (the old code erased here)
+    CHECK(!ShadeSeenExpired(10000, 13000));
+    CHECK(ShadeSeenExpired(10000, 13001));
+    CHECK(!ShadeSeenExpired(0xFFFFFF00u, 0x00000100u)); // clock wrap
+}
+
 // t1106b round 2: "current target" can already name the pick while the live victim is another unit (or none), and the
 // old current-target-only test left the trigger off for the rest of the fight. The trigger must fire and the action
 // must re-attack the pick, not only log.
@@ -489,6 +500,7 @@ int main()
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
     TestCarrierSwitchSinceMs();
+    TestShadeSeenGrace();
     TestKillFirstReattacksAStalePick();
     TestCarrierScanTakesGridShadeTheAttackersListMissed();
     TestCarrierScanRefusal();

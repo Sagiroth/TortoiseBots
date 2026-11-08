@@ -1,7 +1,7 @@
 # Changelog
 
-- New: two Jin'do log rows, BossTacticsKillFirst reason=switch (how long a carrier's pick had known a Shade when it turned on it) and BossTacticsHex (who wore the Hex and the tank and top-DPS threat right after).
-- New: behind AiPlayerbot.DungeonRunThreatSuccessorNotHolder (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers are capped against the tank the boss is not hitting, so a Hex on the holding off-tank no longer hands Jin'do to a damage dealer; the ThreatCap row says holder=.
+- New: two Jin'do log rows, BossTacticsKillFirst reason=switch (how long a carrier's pick had known a Shade when it turned on it) and BossTacticsHex (holder= is the member who wore the Hex, found among the group, with the tank and top-DPS threat right after).
+- New: behind AiPlayerbot.DungeonRunThreatSuccessorNotHolder (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers are capped against the real threat of a tank that is on the boss and is not the one it is hitting, so a Hex on the holding off-tank no longer hands Jin'do to a damage dealer; after a Hex on either tank the damage dealers wait on the wiped tank to rebuild, which can take tens of seconds.
 - New: behind AiPlayerbot.DungeonRunCarrierHold (default 0), a Delusions carrier on its Shade of Jin'do keeps it instead of being pulled to the boss, and the kill-first check runs every second.
 - Changed: with AiPlayerbot.DungeonRunTauntGate on, the main tank holding Jin'do no longer taunts a Shade (reason holding_boss), and each taunt-gate refusal word is logged once per bot per 5 s.
 - Changed: a Delusions carrier at Jin'do finds its Shade even when its attackers list misses it, and the kill-first row says why it did not switch (AiPlayerbot.DungeonRunCarrierScan).

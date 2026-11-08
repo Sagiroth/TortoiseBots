@@ -688,7 +688,7 @@ public:
     // "dps assist" no longer pulls it to Jin'do), and the kill-first trigger checks every second. Off = as before.
     bool dungeonRunCarrierHold = false;
     // Threat successor = the tank that does NOT hold the boss: on a `threat_successor` fight the damage dealers are capped
-    // against the highest threat among the tanks the boss is not hitting (a floor of 1 % / 100 threat applies), so an
+    // against the real threat of the highest tank that is on the boss and is not the one it is hitting, so an
     // off-tank holding Jin'do no longer caps them against itself while a Hexed main tank sits below. Off = as before.
     bool dungeonRunThreatSuccessorNotHolder = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or

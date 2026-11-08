@@ -37,6 +37,21 @@ namespace ai
         return static_cast<std::uint8_t>(pct);
     }
 
+    // The relative threat a damage dealer reads against `maxThreat` (ThreatValue::Calculate after its friendly/player/group
+    // checks). < 0: no reference, no cap (0). A reference of exactly 0 on a target in combat that is not fleeing reads 100:
+    // the damage dealers are held, never uncapped. That is what a successor whose threat a Hex just wiped gives under
+    // AiPlayerbot.DungeonRunThreatSuccessorNotHolder; with the key off nothing new reaches it.
+    inline std::uint8_t ThreatPctOf(float botThreat, float maxThreat, bool targetInCombat, bool fleeing)
+    {
+        if (maxThreat < 0)
+            return 0;
+        if (targetInCombat && maxThreat == 0 && !fleeing)
+            return 100;
+        if (maxThreat > 0 && fleeing)
+            return 0;
+        return ThreatPctSaturated(botThreat, maxThreat);
+    }
+
     // One tank on the target as the caller resolved it from the raid's tank order (GetRaidTankRoles): index 0 is the
     // main tank, every later one an assigned off-tank.
     struct ThreatCapTank
@@ -85,11 +100,14 @@ namespace ai
     // a tank stands, since the caller reads that as "the tank has no threat" and stops all damage.
     //
     // `notHolder` (AiPlayerbot.DungeonRunThreatSuccessorNotHolder, only with the successor cap): the successor is the
-    // tank that does NOT hold the boss. The reference is the highest threat among the tanks (main or off) whose
-    // `holdsBoss` is false, floored at max(1 % of the highest tank, 100) so it is never 0. When every tank holds the
-    // boss (no tank on the list that does not, or none alive, in the world and uncharmed: the caller leaves those out)
-    // the pick above stands. With no holder at all (the boss has no victim, or a damage dealer holds it) every tank is a
-    // non-holder, so the reference is the highest tank. Off, the code below runs exactly as before.
+    // tank that does NOT hold the boss. The reference is the highest threat among the tanks (main or off) that do not
+    // hold the boss (`holdsBoss` false) AND are hitting it (`onBoss`): a tank on a Son (Hakkar's off-tanks), held on a
+    // Shade, or away from the boss is no successor. The reference is that tank's real threat, 0 included: the caller
+    // (ThreatPctOf) reads a 0 reference on an engaged target as "hold the damage dealers", never as "no cap". When no tank
+    // qualifies (every tank holds the boss, is away, dead, out of the world or charmed: the caller leaves the dead and
+    // charmed off the list) the pick below stands exactly as with the key off, away share included. With no holder at all
+    // (the boss has no victim, or a damage dealer holds it) every tank that hits the boss is a non-holder, so the
+    // reference is the highest of them. Off, the code below runs exactly as before.
     inline ThreatCapPick ThreatCapPickReference(const std::vector<ThreatCapTank>& tanks, bool successorCap,
                                                 bool notHolder = false)
     {
@@ -111,15 +129,14 @@ namespace ai
             const ThreatCapTank* best = nullptr;
             for (const ThreatCapTank& tank : tanks)
             {
-                if (tank.holdsBoss)
+                if (tank.holdsBoss || !tank.onBoss)
                     continue;
                 if (!best || tank.threat > best->threat)
                     best = &tank;
             }
             if (best)
             {
-                const float floor = std::max(highest * kThreatCapOffTankMinShare, kThreatCapOffTankMinThreat);
-                pick.threat = std::max(best->threat, floor);
+                pick.threat = best->threat;
                 pick.offTank = best->offTank;
                 return pick;
             }
@@ -176,6 +193,40 @@ namespace ai
     inline bool HexSnapshotDue(std::uint32_t lastMs, std::uint32_t nowMs)
     {
         return lastMs == 0 || nowMs - lastMs >= kHexSnapshotGapMs;
+    }
+
+    // The member scan behind the Hex row: Hex wipes its wearer's threat and the boss turns to someone else within a
+    // tick, so the wearer is found by its aura among the group's members, never by being the boss's current victim.
+    // The scan runs at most once per kHexScanGapMs per boss. `tankIndex` as in HexHolderOf (-1: not in the tank order),
+    // `lastLoggedMs` is when this member's last Hex row was written (0: never).
+    constexpr std::uint32_t kHexScanGapMs = 1000;
+
+    inline bool HexScanDue(std::uint32_t lastScanMs, std::uint32_t nowMs)
+    {
+        return lastScanMs == 0 || nowMs - lastScanMs >= kHexScanGapMs;
+    }
+
+    struct HexMember
+    {
+        std::uint64_t key = 0;
+        int tankIndex = -1;
+        std::uint32_t lastLoggedMs = 0;
+    };
+
+    // Index of the first wearer in `wearers` (the members that carry the Hex now) whose Hex has no row yet, -1 for none.
+    inline int HexWearerToLog(const std::vector<HexMember>& wearers, std::uint32_t nowMs)
+    {
+        for (std::size_t i = 0; i < wearers.size(); ++i)
+            if (HexSnapshotDue(wearers[i].lastLoggedMs, nowMs))
+                return static_cast<int>(i);
+        return -1;
+    }
+
+    // The tank order's index whose threat the row's `ot_threat` shows: the wearer when an off-tank wore the Hex, else the
+    // first off-tank (1). The main tank is always `mt_threat`.
+    inline int HexOffTankIndex(int wearerTankIndex)
+    {
+        return wearerTankIndex >= 1 ? wearerTankIndex : 1;
     }
 
     inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap, bool notHolder = false)

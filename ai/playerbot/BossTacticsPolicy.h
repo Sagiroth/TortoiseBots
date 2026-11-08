@@ -2859,6 +2859,16 @@ namespace ai
         return firstSeenMs == 0 ? 0u : nowMs - firstSeenMs;
     }
 
+    // How long a bot's first-sight record of a Shade survives a pass that did not list it (the attackers list flickers,
+    // and a Shade out of reach is not listed for a moment): the record is dropped only once the bot's pick has not seen the
+    // Shade for this long, so `since_ms` stays the time since the FIRST sight.
+    constexpr std::uint32_t kShadeSeenGraceMs = 3000;
+
+    inline bool ShadeSeenExpired(std::uint32_t lastSeenMs, std::uint32_t nowMs)
+    {
+        return nowMs - lastSeenMs > kShadeSeenGraceMs;
+    }
+
     // A needs_aura entry (the Shade of Jin'do 14986) takes damage only from a carrier's direct hit: the core zeroes
     // every hit whose source lacks the aura, a DoT tick lands only while the caster still carries it, and a pet's hit
     // is credited to the pet and never counts. So a DoT cast at one and the pet sent at one only spend the caster's
