@@ -58,7 +58,7 @@ class JindoShadesWiring(unittest.TestCase):
         self.assertIn("return PickBossKillFirst(ai, bot, fight, mode, kCarrierHoldReachYd);", ACTIONS)
         self.assertIn("return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);",
                       ACTIONS)
-        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd)", ACTIONS)
+        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd,", ACTIONS)
         # The old gate is gone from the pick: an explicit order no longer returns before the carrier override.
         start = ACTIONS.index("Unit* ai::FindBossKillFirst(")
         self.assertNotIn("IsFreeDps", ACTIONS[start:ACTIONS.index("Unit* ai::FindBossCarrierPick(", start)])

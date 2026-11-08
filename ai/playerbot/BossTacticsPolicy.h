@@ -2729,6 +2729,9 @@ namespace ai
         std::uint8_t otherHealers;    // CarrierHealerCount: healers other than this bot that can heal the raid
         std::uint8_t manaPct;
         bool dispelNowPending;  // a `now` dispel_priority aura on a member in reach this class can cure
+        // AiPlayerbot.DungeonRunShadeHealerCover is on and the bot's pick is a Shade on a healer of ours within
+        // kShadeCoverReachYd: a free off-tank takes it even on a threat_successor fight (false = today's rules).
+        bool shadeCover = false;
     };
 
     // The carrier's own guards that no config key carries; the lowest-member line is the live AiPlayerbot.LowHealth the
@@ -2746,7 +2749,10 @@ namespace ai
             return CarrierStrikeVerdict::MainTank;
         // On a successor fight no off-tank may leave the boss, held or not: while no off-tank holds, the damage dealers'
         // cap is half the main tank's threat, and the next threat wipe hands the boss to a damage dealer.
-        if (in.role == CarrierStrikeRole::OffTank && in.threatSuccessor)
+        // The healer cover is the other side of that rule: a cursed off-tank the boss is not hitting takes a Shade that is
+        // eating a healer (an off-tank holding the boss stays: HoldsBoss below).
+        bool const offTankCover = in.role == CarrierStrikeRole::OffTank && in.shadeCover && in.cursed && !in.holdsBoss;
+        if (in.role == CarrierStrikeRole::OffTank && in.threatSuccessor && !offTankCover)
             return CarrierStrikeVerdict::ThreatSuccessor;
         if (!in.cursed)
             return CarrierStrikeVerdict::NotCarrier;
@@ -2769,7 +2775,8 @@ namespace ai
         }
         if (in.role == CarrierStrikeRole::OffTank)
         {
-            if (in.lowestMemberPct < lowHealthPct)
+            // Under the cover the low member is usually the healer the Shade is eating: killing the Shade is the rescue.
+            if (!offTankCover && in.lowestMemberPct < lowHealthPct)
                 return CarrierStrikeVerdict::GuardLowMember;
             if (in.tankPct < kCarrierStrikeTankPct)
                 return CarrierStrikeVerdict::GuardTank;
@@ -2878,9 +2885,21 @@ namespace ai
         return gateKeyOn && requiredAura != 0;
     }
 
+    // Healer cover (AiPlayerbot.DungeonRunShadeHealerCover): a Shade on a healer of ours ranks first within this reach,
+    // and the BossTacticsShadeCover row calls a carrier further from the Shade out_of_range.
+    constexpr float kShadeCoverReachYd = 30.0f;
+
+    // Whether a carrier candidate ranks in the healer-cover tier: its victim is a healer of ours, within the cover reach.
+    inline bool ShadeCoverTier(const TacticCandidate& c, bool preferHealerVictim)
+    {
+        return preferHealerVictim && c.victimHealer && c.distance <= kShadeCoverReachYd;
+    }
+
     // Index of the nearest pickable candidate of an open carrier row (CarrierKillFirstRow) within `reachYd`, or -1.
+    // With `preferHealerVictim` (the healer cover key) a candidate in the cover tier (ShadeCoverTier) wins over every
+    // other one, the nearer of them first; without it the pick is the nearest, exactly as before.
     inline int PickCarrierOverride(const ActiveBossRows& active, const std::vector<TacticCandidate>& candidates,
-                                   float reachYd)
+                                   float reachYd, bool preferHealerVictim = false)
     {
         int best = -1;
         for (std::size_t i = 0; i < candidates.size(); ++i)
@@ -2894,7 +2913,14 @@ namespace ai
                     carried = true;
             if (!carried)
                 continue;
-            if (best < 0 || c.distance < candidates[best].distance)
+            if (best < 0)
+            {
+                best = static_cast<int>(i);
+                continue;
+            }
+            bool const tier = ShadeCoverTier(c, preferHealerVictim);
+            bool const bestTier = ShadeCoverTier(candidates[best], preferHealerVictim);
+            if (tier > bestTier || (tier == bestTier && c.distance < candidates[best].distance))
                 best = static_cast<int>(i);
         }
         return best;
@@ -2904,7 +2930,6 @@ namespace ai
     // A Shade of Jin'do copies the boss's threat list, where heal threat is top, so it walks to a healer: 50 of 59
     // Shade-killed healers in walk 56 were not cursed and cannot hurt it. Only a Delusions carrier can. The cover row
     // (BossTacticsShadeCover) names each carrier that is asked to cover such a healer and is not on the Shade, and why.
-    constexpr float kShadeCoverReachYd = 30.0f;
 
     // Who the row asks about: a cursed damage dealer, or a cursed off-tank that does not hold the boss. A healer keeps its
     // own carrier-strike guards, the main tank never leaves the boss, and an uncursed bot cannot hit a Shade at all.
@@ -2983,10 +3008,11 @@ namespace ai
     }
 
     // The off-tank's successor rule as the cover row reads it: on a threat_successor fight the carrier strike keeps a
-    // free off-tank on the boss (CarrierStrikeAllowed's ThreatSuccessor verdict).
-    inline bool ShadeCoverThreatGate(CarrierStrikeRole role, bool threatSuccessor)
+    // free off-tank on the boss (CarrierStrikeAllowed's ThreatSuccessor verdict), unless the carrier strike is on and the
+    // healer cover key lets it take a Shade on a healer.
+    inline bool ShadeCoverThreatGate(CarrierStrikeRole role, bool threatSuccessor, bool coverOn = false)
     {
-        return role == CarrierStrikeRole::OffTank && threatSuccessor;
+        return role == CarrierStrikeRole::OffTank && threatSuccessor && !coverOn;
     }
 
     // One record per (carrier, Shade). A miss is logged only once it has lasted kShadeCoverGraceMs (a carrier turning

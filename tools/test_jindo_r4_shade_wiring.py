@@ -20,6 +20,11 @@ TRIGGERS = read("ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp")
 DOCS = read("docs/play/boss-tactics.md")
 DOCS_ROWS = read("docs/play/refusal-rows.md")
 CHANGELOG = read("CHANGELOG.md")
+POLICY = read("ai/playerbot/BossTacticsPolicy.h")
+CONFIG_H = read("ai/playerbot/PlayerbotAIConfig.h")
+CONFIG_CPP = read("ai/playerbot/PlayerbotAIConfig.cpp")
+CONF = read("ai/playerbot/aiplayerbot.conf.dist.in")
+DOCS_RUNS = read("docs/server/settings/dungeons-raids.md")
 
 
 def member(text, start, end):
@@ -75,10 +80,50 @@ class ShadeCoverRow(unittest.TestCase):
     def test_documented(self):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
-        self.assertIn("BossTacticsShadeCover", CHANGELOG.split("\n- ", 3)[1])
+        self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 4)[1:3]))
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
+
+
+class ShadeHealerCover(unittest.TestCase):
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunShadeHealerCover = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunShadeHealerCover", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunShadeHealerCover = 0", CONF)
+        self.assertIn("### `AiPlayerbot.DungeonRunShadeHealerCover`", DOCS_RUNS)
+        self.assertIn("Recommended on.", member(DOCS_RUNS, "### `AiPlayerbot.DungeonRunShadeHealerCover`", "</details>"))
+        self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
+        self.assertIn("DungeonRunShadeHealerCover", DOCS)
+        self.assertIn("DungeonRunShadeHealerCover", CHANGELOG.split("\n- ", 2)[1])
+
+    def test_the_carrier_pick_reads_the_key(self):
+        pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")
+        self.assertIn(
+            "PickCarrierOverride(fight.rows, candidates, carrierReachYd, sPlayerbotAIConfig.dungeonRunShadeHealerCover)",
+            pick)
+        self.assertIn(": PickKillFirst(fight.rows, candidates);", pick)
+
+    def test_the_strike_trigger_feeds_the_cover(self):
+        trigger = member(TRIGGERS, "bool BossTacticsCarrierStrikeTrigger::IsActive()", "\n}\n")
+        self.assertIn("in.shadeCover = sPlayerbotAIConfig.dungeonRunShadeHealerCover && shade && ShadeOnGroupHealer(bot, shade) &&", trigger)
+        self.assertIn("bot->GetDistance(shade) <= kShadeCoverReachYd;", trigger)
+        self.assertLess(trigger.index("in.shadeCover ="), trigger.index("CarrierStrikeAllowed(in,"))
+        # The main tank is still its own role, and the strike key still gates the whole node.
+        self.assertIn("role = tankRoles.BotIsMainTank() ? CarrierStrikeRole::MainTank : CarrierStrikeRole::OffTank;", trigger)
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunCarrierStrike)", trigger)
+
+    def test_the_policy_keeps_the_holder_and_the_main_tank(self):
+        allowed = member(POLICY, "inline CarrierStrikeVerdict CarrierStrikeAllowed(", "\n    }\n")
+        self.assertIn("in.role == CarrierStrikeRole::OffTank && in.shadeCover && in.cursed && !in.holdsBoss", allowed)
+        self.assertLess(allowed.index("return CarrierStrikeVerdict::MainTank;"), allowed.index("offTankCover"))
+        self.assertIn("return CarrierStrikeVerdict::GuardTank;", allowed)
+
+    def test_the_row_knows_the_cover(self):
+        body = member(ACTIONS, "void ai::LogShadeCover(", "\n}\n")
+        self.assertIn(
+            "sPlayerbotAIConfig.dungeonRunShadeHealerCover && sPlayerbotAIConfig.dungeonRunCarrierStrike", body)
+        self.assertIn("ShadeCoverThreatGate(role, successor, coverOn)", body)
 
 
 if __name__ == "__main__":

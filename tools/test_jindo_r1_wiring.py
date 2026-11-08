@@ -78,7 +78,7 @@ class JindoR1Wiring(unittest.TestCase):
         # (GridOwnerInFight, which the pass above also uses).
         self.assertIn("CollectCarrierScanHits(ai, bot, fight, facts, scanUnits);", body)
         self.assertIn("GridOwnerInFight(fight, hit.owner)", body)
-        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd)", body)
+        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd,", body)
         self.assertIn(": PickKillFirst(fight.rows, candidates);", body)
 
     def test_the_precedence_policy_is_pure(self):

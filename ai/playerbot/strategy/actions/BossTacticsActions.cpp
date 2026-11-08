@@ -4008,8 +4008,10 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                     shadeGuids[shadeCount++] = units[i]->GetObjectGuid().GetRawValue();
         SyncShadesSeen(bot, shadeGuids, shadeCount);
     }
+    // The healer cover key ranks a Shade on a healer of ours within 30 yd ahead of a nearer Shade (the free pick,
+    // PickKillFirst, already ranks it first).
     const int picked = mode == KillFirstPickMode::Carrier
-        ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
+        ? PickCarrierOverride(fight.rows, candidates, carrierReachYd, sPlayerbotAIConfig.dungeonRunShadeHealerCover)
         : PickKillFirst(fight.rows, candidates);
     Unit* const ordinary = picked < 0 ? nullptr : units[picked];
     // The carrier scan (walk 53): the carrier row's entry read off the grid, and the nearest hit that passes every
@@ -4885,6 +4887,8 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
     };
     Player* const mainTank = GetRaidTankRoles(ai).MainTank();
     bool const successor = HasThreatSuccessorRow(fight.rows);
+    // The off-tank's half of the healer cover rides the carrier strike.
+    bool const coverOn = sPlayerbotAIConfig.dungeonRunShadeHealerCover && sPlayerbotAIConfig.dungeonRunCarrierStrike;
     uint32 const nowMs = WorldTimer::getMSTime();
     for (Player* member : LiveGroupMembers(group))
     {
@@ -4922,7 +4926,7 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
             facts.alive = member->IsAlive();
             facts.charmed = !member->GetCharmerGuid().IsEmpty();
             facts.distanceYd = member->GetDistance(shade);
-            facts.threatGate = ShadeCoverThreatGate(role, successor);
+            facts.threatGate = ShadeCoverThreatGate(role, successor, coverOn);
             facts.onThisShade = target == shade;
             facts.onOtherShade = target && target != shade && target->GetEntry() == entry;
             facts.onBoss = isFightBoss(target);

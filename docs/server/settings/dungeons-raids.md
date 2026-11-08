@@ -909,6 +909,17 @@ Whether the boss tactics keep their `swap_on_aura` rows: the tanks of the row's 
 
 </details>
 
+### `AiPlayerbot.DungeonRunShadeHealerCover`
+Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
+**Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+A Shade of Jin'do copies the boss's threat list, where heal threat is top, so it walks to a healer; in walk 56 Shades were the first death in 5 of 11 wipes, 50 of 59 healers a Shade killed were not cursed (they cannot hurt it), and in 56 % of the frames with a live Shade no cursed bot attacked it. With the key on the carrier pick (`PickCarrierOverride`, used by a DPS under the run's own order, the carrier strike and the run's focus skip) ranks a Shade whose victim is a healer of the group and that stands within 30 yd ahead of any other Shade, the nearer one first; past 30 yd the nearest Shade wins as before. A free DPS already ranks a Shade on a healer first (`PickKillFirst`). On a fight with a `threat_successor` row the carrier strike keeps every off-tank on the boss; with the key on a cursed off-tank that does not hold the boss is let through when its pick is a Shade on a healer within 30 yd, and the lowest-member line (`AiPlayerbot.LowHealth`) does not hold it back there, since the low member is usually that healer; the main-tank line (60 %) still does. An off-tank the boss is hitting stays, the main tank never leaves, a cursed healer keeps all of its own guards, and an uncursed bot never picks a Shade. The `BossTacticsShadeCover` row ([Boss Tactics](../../play/boss-tactics.md#shade-cover-row)) names who still leaves such a Shade alone.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunCarrierHold`
 Whether a Delusions carrier standing on its Shade of Jin'do keeps it: the "not dps target active" trigger stays quiet for it, so "dps assist" no longer pulls it to the boss, and the kill-first trigger checks every second.
 **Default:** `0` · **Values:** `0` off (today's rules), `1` on (needs `AiPlayerbot.DungeonRunAuraTactics` for the needs_aura rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)

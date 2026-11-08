@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd ahead of other Shades.
 - New: Jin'do log row BossTacticsShadeCover names each cursed damage dealer or free off-tank that leaves a Shade on a healer alone, and why (dead, charmed, other_shade, out_of_range, threat_gate, on_boss, other_target, no_target).
 - New: two Jin'do log rows, BossTacticsKillFirst reason=switch (how long a carrier's pick had known a Shade when it turned on it) and BossTacticsHex (holder= is the member who wore the Hex, found among the group, with the tank and top-DPS threat right after).
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorNotHolder (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers are capped against the real threat of a tank that is on the boss and is not the one it is hitting, so a Hex on the holding off-tank no longer hands Jin'do to a damage dealer; after a Hex on either tank the damage dealers wait on the wiped tank to rebuild, which can take tens of seconds.

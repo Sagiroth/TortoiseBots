@@ -283,6 +283,10 @@ bool BossTacticsCarrierStrikeTrigger::IsActive()
     in.otherHealers = otherHealerCount;
     in.manaPct = AI_VALUE2(uint8, "mana", "self target");
     in.dispelNowPending = CarrierDispelNowPending(ai, bot, fight.rows);
+    // The healer cover (AiPlayerbot.DungeonRunShadeHealerCover): the pick already ranks a Shade on a healer within 30 yd
+    // first, so the cover holds when the pick is one.
+    in.shadeCover = sPlayerbotAIConfig.dungeonRunShadeHealerCover && shade && ShadeOnGroupHealer(bot, shade) &&
+        bot->GetDistance(shade) <= kShadeCoverReachYd;
 
     CarrierStrikeVerdict const verdict =
         CarrierStrikeAllowed(in, static_cast<uint8>(sPlayerbotAIConfig.lowHealth));
