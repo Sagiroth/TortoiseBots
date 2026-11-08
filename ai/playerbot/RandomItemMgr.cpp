@@ -658,21 +658,20 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
     {
         if (bot)
         {
-            bool const hasSwordSpec = bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R1) ||
-                                      bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R2);
-            bool const hasMaceSpec = bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R1) ||
-                                     bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R2) ||
-                                     bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R3) ||
-                                     bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R4) ||
-                                     bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R5);
-            bool const hasDaggerSpec = bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R1) ||
-                                       bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R2);
-            bool const hasFistSpec = false;
+            bool const hasHackAndSlash = bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R1) ||
+                                         bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R2);
+            bool const hasCloseQuartersCombat = bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R1) ||
+                                                bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R2);
+            bool const hasConcussiveBlows = bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R1) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R2) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R3) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R4) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R5);
 
             std::string_view const specName = m_weightScales[spec].info.name;
-            for (uint32 subclass : { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST })
+            for (uint32 subclass : { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_AXE })
             {
-                if (ai::RogueWeaponAllowed(specName, hasSwordSpec, hasMaceSpec, hasFistSpec, hasDaggerSpec, subclass))
+                if (ai::RogueWeaponAllowed(specName, hasHackAndSlash, hasCloseQuartersCombat, hasConcussiveBlows, subclass))
                 {
                     mh_weapons.insert(subclass);
                     oh_weapons.insert(subclass);
@@ -891,7 +890,9 @@ bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_GUN &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_CROSSBOW &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_BOW &&
-                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN)
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_FIST &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_AXE)
             return false;
         break;
     }
