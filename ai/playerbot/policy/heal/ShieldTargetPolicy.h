@@ -23,6 +23,14 @@ namespace ai
         return roleTank || (!explicitNonTankRole && (warriorInDefensiveStance || druidInBearForm));
     }
 
+    // A tank's own combat flag drops between chained pulls (and while another
+    // tank holds the next mob) though the group fight goes on; the healer's
+    // combat stands for the group's, so the rage-tank rule holds in that gap.
+    inline bool TankEngagedForShield(bool targetInCombat, bool healerInCombat)
+    {
+        return targetInCombat || healerInCombat;
+    }
+
     // A shield eats the hits a rage tank lives on; keep it for the save.
     inline bool ShouldShieldTarget(bool targetIsTank, bool targetUsesRage, bool targetInCombat,
                                    unsigned targetHealthPct, unsigned criticalHealthPct)
