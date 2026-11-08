@@ -189,9 +189,10 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   run("fdAurasSync(card, fd, 'live', f, o)", { card, fd: fdv, f: f1, o: { names: null } });
   assert.strictEqual(sec.hidden, false);
   assert.ok(slots["fd-aurest"].innerHTML.includes("fd-au-strip") && slots["fd-auslot"].innerHTML.includes("data-fd-ausid"));
-  const w0 = slots["fd-auslot"].writes;
+  const w0 = slots["fd-auslot"].writes, n0 = slots["fd-auslot"];
   const f2 = fight(); f2.dur_ms = 121000; // a tick: the strip moves, the options do not
   run("fdAurasSync(card, fd, 'live', f, o)", { f: f2 });
+  assert.strictEqual(slots["fd-auslot"], n0, "the selects' slot is the same node");
   assert.strictEqual(slots["fd-auslot"].writes, w0, "the selects were not rebuilt (an open list would close)");
   assert.notStrictEqual(slots["fd-aurest"]._h, undefined);
   run("fdAurasSync(card, fd, 'live', f, o)", { f: null });
