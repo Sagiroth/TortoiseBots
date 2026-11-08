@@ -90,16 +90,42 @@ int main()
     // The cap is only for the successor target: the plain max ignores the flag.
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, false}}, false) == 40000.0f);
 
-    // interrupt_exempt_behind_key: ThreatCapExempt is the call ThreatMultiplier::GetValue makes before its high-threat
-    // veto. Heals are always exempt. An interrupt (CastInterruptSpellAction whose IgnoresThreatCap() is true: Kick,
-    // Pummel, Shield Bash, Bash, Counterspell, Silence) is exempt only with AiPlayerbot.InterruptIgnoresThreat on; a
-    // rogue at the 80 % line stood idle at full energy in 21 of 50 Kick windows (Tortoise Trials DPS-ROG-KICK 0.42).
-    CHECK(ThreatCapExempt(false, true, true));
-    CHECK(!ThreatCapExempt(false, true, false));
-    CHECK(!ThreatCapExempt(false, false, true));
-    CHECK(!ThreatCapExempt(false, false, false));
-    CHECK(ThreatCapExempt(true, false, false));
-    CHECK(ThreatCapExempt(true, true, false));
+    // interrupt_exempt_behind_key: ThreatCapInterruptExempt is the call ThreatMultiplier::GetValue makes before its
+    // high-threat veto (heals are exempt beside it). A pure interrupt (Kick, Pummel, Shield Bash, Bash, Counterspell,
+    // Silence) is exempt only with AiPlayerbot.InterruptIgnoresThreat on: a rogue at the 80 % line stood idle at full
+    // energy in 21 of 50 Kick windows (Tortoise Trials DPS-ROG-KICK 0.42). Key off is never exempt, at any threat.
+    CHECK(ThreatCapInterruptExempt(true, true, 80.0f));
+    CHECK(!ThreatCapInterruptExempt(true, false, 80.0f));
+    CHECK(!ThreatCapInterruptExempt(true, false, 0.0f));
+    CHECK(!ThreatCapInterruptExempt(false, true, 80.0f));
+    CHECK(!ThreatCapInterruptExempt(false, false, 0.0f));
+
+    // interrupt_ceiling_at_tank_threat: at 100 % of the tank's threat or more the interrupt's own threat (Counterspell
+    // 300 flat, Shield Bash 180 plus damage) would pull the mob, so the veto stands again.
+    CHECK(kThreatCapInterruptCeilingPct == 100.0f);
+    CHECK(ThreatCapInterruptExempt(true, true, 99.9f));
+    CHECK(!ThreatCapInterruptExempt(true, true, 100.0f));
+    CHECK(!ThreatCapInterruptExempt(true, true, 300.0f));
+
+    // ThreatCapPercentOf: unsaturated (a uint8 percentage wraps above 255); a tank with no threat reads 100 (the bot
+    // is the one the mob turns to), no tank on the target (-1) reads 0 like the high-threat line.
+    CHECK(ThreatCapPercentOf(800.0f, 1000.0f) == 80.0f);
+    CHECK(ThreatCapPercentOf(1000.0f, 1000.0f) == 100.0f);
+    CHECK(ThreatCapPercentOf(3000.0f, 1000.0f) == 300.0f);
+    CHECK(ThreatCapPercentOf(50.0f, 0.0f) == 100.0f);
+    CHECK(ThreatCapPercentOf(0.0f, 0.0f) == 100.0f);
+    CHECK(ThreatCapPercentOf(50.0f, -1.0f) == 0.0f);
+    CHECK(!ThreatCapInterruptExempt(true, true, ThreatCapPercentOf(50.0f, 0.0f)));
+
+    // interrupt_uses_interrupt_target_ratio: the caster to kick is not always the current target. The bot sits at
+    // 120 % on its current target (tank 1000, bot 1200) and at 50 % on the caster (tank 1000, bot 500): the caster's
+    // ratio decides, so the Kick goes; the current target's ratio would have vetoed it.
+    float const currentTargetPct = ThreatCapPercentOf(1200.0f, 1000.0f);
+    float const interruptTargetPct = ThreatCapPercentOf(500.0f, 1000.0f);
+    CHECK(!ThreatCapInterruptExempt(true, true, currentTargetPct));
+    CHECK(ThreatCapInterruptExempt(true, true, interruptTargetPct));
+    // And the other way round: low on the current target, over the tank on the caster: vetoed.
+    CHECK(!ThreatCapInterruptExempt(true, true, ThreatCapPercentOf(1500.0f, 1000.0f)));
 
     std::cout << "threat cap policy: all tests passed\n";
     return 0;

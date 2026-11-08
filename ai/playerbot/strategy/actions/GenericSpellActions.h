@@ -134,7 +134,7 @@ namespace ai
         CastInterruptSpellAction(PlayerbotAI* ai, std::string spell) : CastSpellAction(ai, spell) {}
 
         // Whether this interrupt skips the damage threat back-off with AiPlayerbot.InterruptIgnoresThreat on
-        // (ThreatMultiplier, ThreatCapExempt): a pure interrupt (Kick, Pummel, Shield Bash, Bash, Counterspell,
+        // (ThreatMultiplier, ThreatCapInterruptExempt): a pure interrupt (Kick, Pummel, Shield Bash, Bash, Counterspell,
         // Silence) adds little threat and stopping the cast is the point. A row that is also a real nuke (Earth Shock,
         // Death Coil) overrides this to false and keeps the gate.
         virtual bool IgnoresThreatCap() const { return true; }

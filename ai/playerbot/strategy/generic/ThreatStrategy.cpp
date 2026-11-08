@@ -39,11 +39,20 @@ float ThreatMultiplier::GetValue(Action* action)
     // way.
     // An interrupt joins the heals behind AiPlayerbot.InterruptIgnoresThreat: Kick and the other pure interrupts are
     // SINGLE-threat spell actions, so a rogue at the high line had every Kick vetoed and stood idle at full energy
-    // while the caster finished (ThreatCapPolicy.h ThreatCapExempt). Earth Shock and Death Coil rows stay gated.
+    // while the caster finished. The ratio is read on the interrupt's own target (the "interrupt target" pick, which
+    // can be another mob than the current target), and at 100 % of the tank's threat there the veto stands
+    // (ThreatCapPolicy.h ThreatCapInterruptExempt). Earth Shock and Death Coil rows stay gated.
+    bool const heal = dynamic_cast<CastHealingSpellAction*>(action) != nullptr;
     CastInterruptSpellAction const* interruptAction = dynamic_cast<CastInterruptSpellAction*>(action);
-    if (ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
-                        interruptAction != nullptr && interruptAction->IgnoresThreatCap(),
-                        sPlayerbotAIConfig.interruptIgnoresThreat))
+    bool const interrupt = interruptAction != nullptr && interruptAction->IgnoresThreatCap();
+    float interruptThreatPct = 0.0f;
+    if (interrupt && sPlayerbotAIConfig.interruptIgnoresThreat)
+    {
+        Unit* const interruptTarget = action->GetTarget();
+        interruptThreatPct = ThreatCapPercentOf(ThreatValue::GetThreat(bot, interruptTarget),
+                                                ThreatValue::GetTankThreat(ai, interruptTarget));
+    }
+    if (heal || ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, interruptThreatPct))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
