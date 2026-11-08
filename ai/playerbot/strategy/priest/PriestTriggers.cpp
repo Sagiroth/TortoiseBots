@@ -195,7 +195,7 @@ bool PriestWandBlocksCastTrigger::IsActive()
     WandSpellProbe bestHeal = WandSpellProbe::Blocked;
     if (healTarget)
         bestHeal = BetterWandSpellProbe(ProbeSpell("flash heal", healTarget, false),
-            ProbeSpell(PriestShouldSuppressLesserHeal(ai) ? "heal" : "lesser heal", healTarget, false));
+            ProbeSpell(PriestSlowHealProbeSpell(PriestShouldSuppressLesserHeal(ai)), healTarget, false));
     else if (renewTarget)
         bestHeal = ProbeSpell("renew", renewTarget, false);
 

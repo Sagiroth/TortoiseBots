@@ -1,7 +1,7 @@
 # Changelog
 
-- Fixed: a priest that knows Heal rank 2 or higher no longer falls back to Lesser Heal while Heal is merely mid-cast or on cooldown; Lesser Heal is used only when the priest cannot pay for any known Heal rank 2+.
-- New: behind AiPlayerbot.DungeonRunSeekMeetNoHeal (default 0, recommended on), healers stop healing Hakkar's Son puller and returner while the meet is open unless they are under 40 % hp, so the heal's threat no longer peels the Son onto a healer.
+- Fixed: a priest that knows Heal rank 2 or higher no longer falls back to Lesser Heal while Heal is merely mid-cast or on cooldown; Lesser Heal is used only when the priest cannot pay for the Heal rank it would cast.
+- New: behind AiPlayerbot.DungeonRunSeekMeetNoHeal (default 0, recommended on), bots that heal members stop healing Hakkar's Son puller while the meet is open unless its health after the next hit is under 40 %, so the heal's threat no longer peels the Son onto a healer.
 - Changed: Hakkar's walk-out puller brings the Son of Hakkar to a waiting off-tank who taunts it on arrival, the Son is burned at once (its poison lasts 90 s), and new rows say why a take or a meet failed and who Hakkar turns to after Cause Insanity.
 
 - New: behind AiPlayerbot.DungeonRunSeekPullCycle (default 0), a raid boss with a seek_pull row (Hakkar) walks out a fresh Son every siphon cycle, retries a failed walk-out, and burns an engaged Son from 45 s before the siphon.

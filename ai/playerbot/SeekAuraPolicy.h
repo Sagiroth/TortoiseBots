@@ -255,15 +255,41 @@ namespace ai
         return meetOpen && sonIsMeetSon && !sonVictimIsTank;
     }
 
-    // Healers leave the open meet's puller and returner alone (DungeonRunSeekMeetNoHeal). Walk 55: 24 of 27 meets ended
-    // with the Son peeled onto a healer, because a heal on the puller adds threat on every mob that has the puller on
-    // its list (heal threat x0.5 split over Hakkar and the Son, a 1-1.5k heal about 250-375 on the Son against the one
-    // Auto Shot the puller holds). So while the meet is open a heal target that is the puller or returner is skipped,
-    // unless it is below kSeekMeetHealFloorPct hp (then the heal wins over the threat). `flagOn` is the key.
+    // Healers leave the open meet's puller alone (DungeonRunSeekMeetNoHeal). Walk 55: 24 of 27 meets ended with the Son
+    // peeled onto a healer, because a heal on the puller adds threat on every mob that has the puller on its list (heal
+    // threat x0.5 split over Hakkar and the Son, a 1-1.5k heal about 250-375 on the Son against the one Auto Shot the
+    // puller holds). So while the meet is open a heal target that is the puller is skipped, unless its hp after the
+    // incoming hits is below kSeekMeetHealFloorPct (then the heal wins over the threat). `flagOn` is the key.
     constexpr float kSeekMeetHealFloorPct = 40.0f;
-    inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPullerOrReturner, float hpPct)
+    constexpr std::uint32_t kSeekMeetHealMapId = 309; // Zul'Gurub, the only map with a pulled-Son meet
+    inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
     {
-        return flagOn && meetOpen && isPullerOrReturner && hpPct >= kSeekMeetHealFloorPct;
+        return flagOn && meetOpen && isPuller && hpPct >= kSeekMeetHealFloorPct;
+    }
+
+    // Whether the meet hold can apply at all: the key on and the bot on the map that has the meet. Checked before any
+    // lock, so every other map and the key off cost nothing.
+    inline bool SeekMeetHealScope(bool flagOn, std::uint32_t mapId)
+    {
+        return flagOn && mapId == kSeekMeetHealMapId;
+    }
+
+    // The walker a healer skips: the meet's own puller. The returner is the same bot in the normal path (the abort moves
+    // the puller to `returner`); a second walk-out inside the open meet makes an unrelated bot the returner, and that
+    // one is not held.
+    inline bool SeekMeetHealWalker(std::uint64_t guid, std::uint64_t meetPuller)
+    {
+        return guid != 0 && guid == meetPuller;
+    }
+
+    // The hp the floor is read against: current hp less the damage the target's attackers deal in one swing
+    // (`incoming`, the heal pick's own estimate). A puller at 45 % with 10 % incoming is at 35 %: healed.
+    inline float SeekMeetHealHpAfterIncoming(float hpPct, std::uint32_t incoming, std::uint32_t maxHp)
+    {
+        if (!maxHp)
+            return hpPct;
+        const float left = hpPct - 100.0f * static_cast<float>(incoming) / static_cast<float>(maxHp);
+        return left > 0.0f ? left : 0.0f;
     }
 
     // Why the hold rule leaves a Son alone or lets it go: the reason the seek logs with each release. `Held` is the

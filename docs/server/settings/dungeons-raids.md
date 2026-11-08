@@ -79,7 +79,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekPullCycle`](#aiplayerbotdungeonrunseekpullcycle) | `0` | `1`: the boss tactics keep their `seek_pull` rows — the seek walk-out pulls and kills one source in every cycle, up to the row's walk-outs a cycle (needs `DungeonRunSeekAura` and the rows). |
 | [`AiPlayerbot.DungeonRunSeekSonMeet`](#aiplayerbotdungeonrunseeksonmeet) | `0` | `1`: a pulled Son meets a waiting off-tank, so it lands on a tank and is taunted on arrival instead of chasing the ranged raid (needs `DungeonRunSeekPullCycle` and a `seek_pull` row). |
 | [`AiPlayerbot.DungeonRunSeekTakeEdge`](#aiplayerbotdungeonrunseektakeedge) | `0` | `1`: a tank takes a Son of Hakkar standing outside the raid's circle when the Son's victim stands inside it (plus 2 yd) and the Son is on the platform (z 46.5 or higher). |
-| [`AiPlayerbot.DungeonRunSeekMeetNoHeal`](#aiplayerbotdungeonrunseekmeetnoheal) | `0` (recommended `1`) | `1`: while a pulled Son of Hakkar's meet is open, healers skip its puller and returner as heal targets unless they are under 40 % hp, so a heal's threat does not peel the Son onto a healer (needs `DungeonRunSeekSonMeet`). |
+| [`AiPlayerbot.DungeonRunSeekMeetNoHeal`](#aiplayerbotdungeonrunseekmeetnoheal) | `0` (recommended `1`) | `1`: while a pulled Son of Hakkar's meet is open, bots that heal members (healers and off-heal hybrids) skip its puller as a heal target unless its health after the next hit is under 40 %, so a heal's threat does not peel the Son onto a healer (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -926,13 +926,17 @@ Whether a tank takes a Son of Hakkar that stands just outside the raid's circle 
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekMeetNoHeal`
-Whether healers leave the pulled Son's puller and returner alone while the Son's meet is open.
-**Default:** `0` (recommended `1`) · **Values:** `0` off (they are healed as any member), `1` on (needs `AiPlayerbot.DungeonRunSeekSonMeet`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+Whether healers leave the pulled Son's puller alone while the Son's meet is open.
+**Default:** `0` (recommended `1`) · **Values:** `0` off (the puller is healed as any member), `1` on (needs `AiPlayerbot.DungeonRunSeekSonMeet`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
-**Why:** walk 55 peeled 24 of 27 meet Sons onto a healer. The puller holds only one shot of threat; a heal on it adds threat on every mob that has it on its list (heal threat x0.5, split over Hakkar and the Son), 250-375 on the Son per 1-1.5k heal. **Rule:** while the meet is open, the heal-target pick (`party member to heal`, so every heal, HoT and Power Word: Shield a healer aims at a member) skips the meet's puller and returner unless that bot is under 40 % hp. The meet closing lifts it. Self-heals of the puller and heals by non-healers do not go through this value and are unchanged. **Limit:** a group heal centred on another member can still land on the puller.
+**Why:** walk 55 peeled 24 of 27 meet Sons onto a healer. The puller holds only one shot of threat; a heal on it adds threat on every mob that has it on its list (heal threat x0.5, split over Hakkar and the Son), 250-375 on the Son per 1-1.5k heal. **Rule:** while the meet is open (Zul'Gurub only, at most 20 s), the heal-target pick (`party member to heal`) skips the meet's puller, unless its health after the hits its attackers land in one swing is under 40 %. The pick reads the meet once, so every heal, HoT and Power Word: Shield a bot aims at a member is covered. The meet closing lifts it. The returner is the same bot as the puller in the normal path and is held with it; an unrelated walk-out puller is not.
+
+**Who is affected:** every bot that heals a member through this value, so off-heal hybrids (a retribution paladin with `offheal`, for one) skip the puller too, not only healers. A bot's own heal of itself does not go through this value and is unchanged.
+
+**Limits:** a group heal centred on another member (Prayer of Healing, Chain Heal bounces) can still land on the puller. A Renew already ticking on the puller before the meet opened keeps ticking, and each tick still adds threat. The puller's pet is not held. At the 40 % line the healers' triage picks its biggest heal, which carries the most threat; that is the trade.
 
 </details>
 

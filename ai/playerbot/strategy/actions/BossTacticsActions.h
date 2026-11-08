@@ -519,10 +519,10 @@ namespace ai
     };
     bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
 
-    // Whether a healer must skip `guid` as a heal target right now (DungeonRunSeekMeetNoHeal): the instance's pulled-Son
-    // meet is open, `guid` is its puller or returner and its hp is not below the floor (SeekMeetHealHeld). Returns false
-    // with the key off or the target hurt, before it touches the fight state; otherwise one locked lookup.
-    bool SeekMeetWalkerHealHeld(std::uint32_t instanceId, std::uint64_t guid, float hpPct);
+    // The puller of this instance's open pulled-Son meet, or 0 (DungeonRunSeekMeetNoHeal). The heal-target value reads it
+    // once per pick and skips that bot (SeekMeetHealHeld). Returns 0 before any lock with the key off or off the meet's
+    // map; otherwise one locked read of the meet's receiver, shot time and puller together.
+    std::uint64_t SeekMeetHealPuller(std::uint32_t mapId, std::uint32_t instanceId);
 
     // The seek_aura fight records' handoff across `.bot run reloadplans`: records whose stable row identity still
     // exists in the new tactic table with the same cycle spell, cycle length and dose window keep their engage, last

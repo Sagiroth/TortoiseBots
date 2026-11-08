@@ -1073,10 +1073,11 @@ AiPlayerbot.DungeonRunSeekSonMeet = 0
 # Off refuses every Son outside the circle as before.
 AiPlayerbot.DungeonRunSeekTakeEdge = 0
 
-# While a pulled Son of Hakkar's meet is open (needs DungeonRunSeekSonMeet), healers skip the Son's puller and returner
-# as heal targets unless they are under 40 % hp: a heal on the puller adds threat on the Son and walk 55 peeled 24 of 27
-# meet Sons onto a healer. A group heal centred on someone else can still land on the puller. Recommended on.
-# Off heals the puller and returner as before.
+# While a pulled Son of Hakkar's meet is open (needs DungeonRunSeekSonMeet), every bot that heals a member (healers and
+# off-heal hybrids) skips the Son's puller as a heal target unless its health after the next hit is under 40 %: a heal on
+# the puller adds threat on the Son and walk 55 peeled 24 of 27 meet Sons onto a healer. A group heal centred on someone
+# else, a Renew already ticking and the puller's pet are not covered. Recommended on.
+# Off heals the puller as before.
 AiPlayerbot.DungeonRunSeekMeetNoHeal = 0
 
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.

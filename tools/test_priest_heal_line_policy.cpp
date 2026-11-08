@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -17,7 +18,8 @@
     } \
 } while (0)
 
-using ai::PriestAnyHealRankAffordable;
+using ai::PriestProbedHealAffordable;
+using ai::PriestSlowHealProbeSpell;
 using ai::PriestSuppressLesserHeal;
 
 int main()
@@ -29,34 +31,43 @@ int main()
     CHECK(!PriestSuppressLesserHeal(false, true));
     CHECK(PriestSuppressLesserHeal(true, true));
 
-    // PriestAnyHealRankAffordable: mana against the cost of each KNOWN Heal rank 2+ (walk 55, Durgrim: Lesser Heal cast
-    // 13 and 6 times with Heal known, because CanCastSpell("heal") also fails while Heal is busy).
+    // PriestProbedHealAffordable: mana against the cost of the rank the "heal" action PROBES (the top known rank; "heal
+    // on party" clears the rank override and the downrank happens only in Execute, after the probe). Walk 55, Durgrim:
+    // Lesser Heal cast 13 and 6 times with Heal known, because CanCastSpell("heal") also fails while Heal is busy; the
+    // fix prices the probed rank by mana alone. Costs for a level-34 priest: Heal rank 2 (2055) 155, rank 3 (6063)
+    // 205, rank 4 (6064) 255. They are only inputs; the rule is "mana >= the probed rank's cost".
     {
-        // Costs as the core prices them for a level-34 priest: Heal rank 2 (2055) 155, rank 3 (6063) 205, rank 4 (6064) 255.
-        // These are only inputs; the rule is "mana >= the cheapest known cost".
-        const std::uint32_t knowsRank4Only[] = {255};
-        const std::uint32_t knowsAll[] = {155, 205, 255};
+        const std::uint32_t rank2 = 155;
+        const std::uint32_t rank4 = 255;
 
-        // Failing case: the priest knows 2055, 6063 and 6064, its mana (160) covers 2055 (155) but not 6064 (255) ->
-        // suppressed. Before the change "heal" resolved to 6064 alone, CanCastSpell failed on its price and Lesser Heal
-        // got through.
-        CHECK(PriestAnyHealRankAffordable(knowsAll, 3, 160));
-        CHECK(PriestSuppressLesserHeal(true, PriestAnyHealRankAffordable(knowsAll, 3, 160)));
-        // A priest whose only known rank 2+ is 6064 must pay 6064 itself.
-        CHECK(!PriestAnyHealRankAffordable(knowsRank4Only, 1, 160));
-        CHECK(PriestAnyHealRankAffordable(knowsRank4Only, 1, 255));
-        // Mana equal to the cost pays it (the core refuses only when power < cost).
-        CHECK(PriestAnyHealRankAffordable(knowsAll, 3, 155));
-        CHECK(!PriestAnyHealRankAffordable(knowsAll, 3, 154));
-        // Cannot pay even the cheapest known rank: Lesser Heal stays as the low-mana fallback.
-        CHECK(!PriestSuppressLesserHeal(true, PriestAnyHealRankAffordable(knowsAll, 3, 100)));
-        CHECK(!PriestSuppressLesserHeal(true, PriestAnyHealRankAffordable(knowsAll, 3, 0)));
-        // No Heal rank 2+ learned: nothing to afford, not suppressed.
-        CHECK(!PriestAnyHealRankAffordable(knowsAll, 0, 5000));
-        CHECK(!PriestSuppressLesserHeal(false, PriestAnyHealRankAffordable(knowsAll, 0, 5000)));
-        // The cheapest known rank decides, wherever it sits in the list.
-        const std::uint32_t unordered[] = {255, 155, 205};
-        CHECK(PriestAnyHealRankAffordable(unordered, 3, 155));
+        // top_rank_unaffordable_keeps_lesser_heal (the failing case): ranks 2-4 known, the probed rank is 6064 (255),
+        // mana 160 covers rank 2 but not the probed rank -> NOT suppressed. Heal is refused on its price in that band,
+        // so Lesser Heal must stay as the fallback; the first version of this fix priced rank 2 and left the priest
+        // with no heal at all.
+        CHECK(!PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 160)));
+        CHECK(160 >= rank2);
+        CHECK(!PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 254)));
+        // Mana covers the probed top rank -> suppressed (and equal to the cost pays it).
+        CHECK(PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 255)));
+        CHECK(PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 1000)));
+        // A priest whose top known rank is 2 (level 22-27) pays rank 2.
+        CHECK(!PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank2, 154)));
+        CHECK(PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank2, 155)));
+        // Cannot pay at all: Lesser Heal stays.
+        CHECK(!PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 0)));
+        // No Heal rank 2+ learned: not suppressed whatever the mana.
+        CHECK(!PriestSuppressLesserHeal(false, PriestProbedHealAffordable(rank2, 5000)));
+    }
+
+    // The wand probe asks for the same spell the multiplier lets through: "heal" while Lesser Heal is suppressed
+    // (mana covers the probed rank), "lesser heal" in the band below it, where the bot will cast Lesser Heal.
+    {
+        const std::uint32_t rank4 = 255;
+        CHECK(std::string(PriestSlowHealProbeSpell(PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 160)))) ==
+            "lesser heal");
+        CHECK(std::string(PriestSlowHealProbeSpell(PriestSuppressLesserHeal(true, PriestProbedHealAffordable(rank4, 255)))) ==
+            "heal");
+        CHECK(std::string(PriestSlowHealProbeSpell(PriestSuppressLesserHeal(false, true))) == "lesser heal");
     }
 
     std::cout << "All priest-heal-line policy tests passed.\n";

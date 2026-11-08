@@ -16,22 +16,22 @@ bool ai::PriestShouldSuppressLesserHeal(PlayerbotAI* ai)
     Player* bot = ai->GetBot();
     if (!bot)
         return false;
-    // The mana cost of each known Heal rank 2+, priced by the core (Spell::CalculatePowerCost, as the cast probe
-    // does). Not the full cast probe: it also fails on a cast in progress and on a cooldown, which let Lesser Heal
-    // through while Heal was merely busy (walk 55, Durgrim).
-    uint32 costs[sizeof(kHealRank2Plus) / sizeof(kHealRank2Plus[0])];
-    size_t known = 0;
+    bool knowsRank2Plus = false;
     for (uint32 spellId : kHealRank2Plus)
-    {
-        if (!bot->HasSpell(spellId))
-            continue;
-        SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId);
-        if (spellInfo)
-            costs[known++] = Spell::CalculatePowerCost(spellInfo, bot, nullptr, nullptr);
-    }
-    if (!known)
+        knowsRank2Plus = knowsRank2Plus || bot->HasSpell(spellId);
+    if (!knowsRank2Plus)
         return false;
-    return PriestSuppressLesserHeal(true, PriestAnyHealRankAffordable(costs, known, bot->GetPower(POWER_MANA)));
+    // Price the rank the "heal" action probes: the "spell id" value resolves "heal" to the top known rank, and
+    // "heal on party" clears the rank override, so that is the spell CanCastSpell("heal") checks the mana of
+    // (GenericSpellActions.cpp isUseful/isPossible). The cost is the core's price without a spell object, as the cast
+    // probe prices it. Mana only: a cast in progress or a cooldown on Heal no longer lets Lesser Heal through (walk 55,
+    // Durgrim), but a priest that cannot pay the probed rank keeps Lesser Heal as its low-mana fallback.
+    uint32 const probedId = ai->GetAiObjectContext()->GetValue<uint32>("spell id", "heal")->Get();
+    SpellEntry const* spellInfo = probedId ? sServerFacade.LookupSpellInfo(probedId) : nullptr;
+    if (!spellInfo)
+        return false;
+    uint32 const cost = Spell::CalculatePowerCost(spellInfo, bot, nullptr, nullptr);
+    return PriestSuppressLesserHeal(true, PriestProbedHealAffordable(cost, bot->GetPower(POWER_MANA)));
 }
 
 float PriestLesserHealMultiplier::GetValue(Action* action)

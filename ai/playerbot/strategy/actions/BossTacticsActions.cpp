@@ -3761,21 +3761,17 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
 }
 }  // namespace
 
-bool ai::SeekMeetWalkerHealHeld(std::uint32_t instanceId, std::uint64_t guid, float hpPct)
+std::uint64_t ai::SeekMeetHealPuller(std::uint32_t mapId, std::uint32_t instanceId)
 {
-    // The cheap exits first: the key off or a target under the floor never reaches the lock.
-    if (!SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, true, hpPct))
-        return false;
-    std::uint64_t receiver = 0;
-    std::uint64_t son = 0;
-    std::uint32_t meetMs = 0;
-    if (!SeekMeetSnapshot(instanceId, receiver, son, meetMs) || !SeekMeetOpen(receiver, meetMs, WorldTimer::getMSTime()))
-        return false;
-    std::uint64_t puller = 0;
-    std::uint64_t returner = 0;
-    SeekMeetWalkers(instanceId, puller, returner);
-    bool const walker = guid != 0 && (guid == puller || guid == returner);
-    return SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, walker, hpPct);
+    // The cheap exits first: the key off or another map never reaches the lock.
+    if (!SeekMeetHealScope(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, mapId))
+        return 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return 0;
+    const SeekWalkoutState& state = it->second.state;
+    return SeekMeetOpen(state.meetReceiver, state.meetMs, WorldTimer::getMSTime()) ? state.meetPuller : 0;
 }
 
 void ai::ReconcileSeekFightState(const BossTacticTable& next)

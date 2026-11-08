@@ -26,7 +26,7 @@ def body(text, signature):
 
 
 def query():
-    return body(ACTIONS, "bool ai::SeekMeetWalkerHealHeld(")
+    return body(ACTIONS, "std::uint64_t ai::SeekMeetHealPuller(")
 
 
 def candidates():
@@ -45,30 +45,52 @@ class MeetNoHealWiring(unittest.TestCase):
         self.assertIn("AiPlayerbot.DungeonRunSeekMeetNoHeal", CHANGELOG)
 
     def test_the_query_is_declared_for_the_heal_value(self):
-        self.assertIn("bool SeekMeetWalkerHealHeld(std::uint32_t instanceId, std::uint64_t guid, float hpPct);", ACTIONS_H)
+        self.assertIn("std::uint64_t SeekMeetHealPuller(std::uint32_t mapId, std::uint32_t instanceId);", ACTIONS_H)
 
-    def test_the_query_reads_the_meet_the_way_the_seek_does(self):
+    def test_the_query_reads_the_meet_under_one_lock(self):
         fn = query()
-        self.assertIn("SeekMeetSnapshot(instanceId, receiver, son, meetMs)", fn)
-        self.assertIn("SeekMeetOpen(receiver, meetMs, WorldTimer::getMSTime())", fn)
-        self.assertIn("SeekMeetWalkers(instanceId, puller, returner);", fn)
-        self.assertIn("guid == puller || guid == returner", fn)
+        # One lock for the receiver, the shot time and the puller together (no snapshot-then-walkers pair).
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
+        self.assertNotIn("SeekMeetSnapshot(", fn)
+        self.assertNotIn("SeekMeetWalkers(", fn)
+        self.assertIn("SeekMeetOpen(state.meetReceiver, state.meetMs, WorldTimer::getMSTime())", fn)
+        self.assertIn("state.meetPuller", fn)
+        # The returner is not read: an unrelated walk-out puller that became the returner is not held.
+        self.assertNotIn("returner", fn)
 
-    def test_the_query_returns_before_any_lookup_with_the_key_off_or_a_hurt_target(self):
+    def test_the_query_returns_before_the_lock_with_the_key_off_or_off_the_map(self):
         fn = query()
-        early = fn.index("sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, true, hpPct)")
-        self.assertLess(early, fn.index("SeekMeetSnapshot("))
-        self.assertLess(early, fn.index("SeekMeetWalkers("))
-        self.assertIn("return SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, walker, hpPct);", fn)
+        gate = fn.index("if (!SeekMeetHealScope(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, mapId))")
+        self.assertLess(gate, fn.index("std::lock_guard<std::mutex> lock(g_walkoutMutex);"))
+        self.assertIn("return 0;", fn[gate:gate + 160])
 
-    def test_the_heal_target_value_skips_held_targets(self):
+    def test_the_heal_value_reads_the_meet_once_per_pick(self):
+        fn = candidates()
+        self.assertEqual(fn.count("SeekMeetHealPuller("), 1)
+        read = fn.index("SeekMeetHealPuller(bot->GetMapId(), bot->GetInstanceId())")
+        # Before the candidate loops and before addTarget, never inside a per-candidate lambda.
+        self.assertLess(read, fn.index("auto addTarget = "))
+        self.assertLess(read, fn.index("for (Player* player : GetPartyMembers())"))
+
+    def test_the_hold_uses_the_helpers_and_the_incoming_damage(self):
+        fn = candidates()
+        held = fn[fn.index("auto const meetHealHeld = "):fn.index("std::vector<HealingCandidate> candidates;")]
+        self.assertIn("SeekMeetHealWalker(target->GetObjectGuid().GetRawValue(), meetPuller)", held)
+        self.assertIn("return SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, true,", held)
+        self.assertIn("SeekMeetHealHpAfterIncoming(target->GetHealthPercent(), getIncomingdamage(target),", held)
+        self.assertIn("target->GetMaxHealth())", held)
+        # A non-walker returns false before the incoming-damage scan.
+        self.assertLess(held.index("return false;"), held.index("getIncomingdamage"))
+
+    def test_the_heal_target_value_skips_held_targets_and_returns(self):
         fn = candidates()
         add = fn[fn.index("auto addTarget = "):fn.index("// A focus-heal list must not leak")]
-        self.assertIn("if (SeekMeetWalkerHealHeld(bot->GetInstanceId(), target->GetObjectGuid().GetRawValue(),", add)
-        self.assertIn("target->GetHealthPercent()))", add)
+        # The full shape: the check, the skip and nothing between them. Deleting the `return;` would let the `if` guard
+        # the next block (issue #904) and keep the target.
+        self.assertIn("        if (meetHealHeld(target))\n            return;\n", add)
         # After the plain validity check, before the candidate is built, so every pick through the value is covered.
-        self.assertLess(add.index("if (!Check(target))"), add.index("SeekMeetWalkerHealHeld("))
-        self.assertLess(add.index("SeekMeetWalkerHealHeld("), add.index("HealingCandidate candidate{"))
+        self.assertLess(add.index("if (!Check(target))"), add.index("if (meetHealHeld(target))"))
+        self.assertLess(add.index("if (meetHealHeld(target))"), add.index("HealingCandidate candidate{"))
         self.assertIn('#include "playerbot/strategy/actions/BossTacticsActions.h"', HEAL_VALUE)
 
     def test_every_candidate_source_goes_through_the_one_add(self):
@@ -79,9 +101,14 @@ class MeetNoHealWiring(unittest.TestCase):
         self.assertEqual(fn.count("candidates.push_back("), 1)
 
     def test_a_self_heal_does_not_go_through_the_hold(self):
-        # Check() drops the bot itself from this value, so a bot's own heal never reaches the query.
+        # Check() drops the bot itself from this value, so a bot's own heal never reaches the hold.
         check = body(HEAL_VALUE, "bool PartyMemberToHeal::Check(Unit* player)")
         self.assertIn("player == bot", check)
+
+    def test_the_docs_name_the_limits(self):
+        self.assertIn("offheal", SETTINGS.lower())
+        self.assertIn("Renew", SETTINGS)
+        self.assertIn("pet", SETTINGS[SETTINGS.index("### `AiPlayerbot.DungeonRunSeekMeetNoHeal`"):])
 
 
 if __name__ == "__main__":
