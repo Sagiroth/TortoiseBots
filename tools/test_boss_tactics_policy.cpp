@@ -291,11 +291,16 @@ static void TestCarrierScanWord()
 // taunt as it was.
 static void TestTauntGate()
 {
-    CHECK(TauntGateFor(false, 24306, true) == TauntGate::Allow);      // TestTauntGateOffAllows
-    CHECK(TauntGateFor(true, 24306, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura
-    CHECK(TauntGateFor(true, 0, true) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
-    CHECK(TauntGateFor(true, 24306, true) == TauntGate::NeedsAura);   // the aura is read first
-    CHECK(TauntGateFor(true, 0, false) == TauntGate::Allow);
+    // TauntGateFor(keyOn, requiredAura, botHasAura, tauntImmune)
+    CHECK(TauntGateFor(false, 24306, false, true) == TauntGate::Allow);   // TestTauntGateOffAllows
+    CHECK(TauntGateFor(false, 24306, true, true) == TauntGate::Allow);
+    CHECK(TauntGateFor(true, 24306, false, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura: no aura, refused
+    CHECK(TauntGateFor(true, 24306, true, false) == TauntGate::Allow);       // TestTauntGateCarrierAllowed: the carrier may
+    CHECK(TauntGateFor(true, 0, false, true) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
+    CHECK(TauntGateFor(true, 0, true, true) == TauntGate::TauntImmune);      // the aura does not lift immunity
+    CHECK(TauntGateFor(true, 24306, true, true) == TauntGate::TauntImmune);  // immune stays refused for a carrier
+    CHECK(TauntGateFor(true, 24306, false, true) == TauntGate::NeedsAura);   // no aura: the aura word comes first
+    CHECK(TauntGateFor(true, 0, false, false) == TauntGate::Allow);
     CHECK(std::strcmp(TauntGateWord(TauntGate::Allow), "allow") == 0);
     CHECK(std::strcmp(TauntGateWord(TauntGate::NeedsAura), "needs_aura") == 0);
     CHECK(std::strcmp(TauntGateWord(TauntGate::TauntImmune), "taunt_immune") == 0);

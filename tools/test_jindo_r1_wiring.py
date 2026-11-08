@@ -137,8 +137,9 @@ class JindoR1Wiring(unittest.TestCase):
         self.assertTrue(gate.split("{", 1)[1].lstrip().startswith(
             "if (!sPlayerbotAIConfig.dungeonRunTauntGate)\n        return false;"))
         self.assertIn("TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,", gate)
-        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry()), "
-                      "TargetTauntImmune(target))", gate)
+        self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());", gate)
+        # The gate is aura-aware like the value: a bot that carries the required aura may taunt the subject.
+        self.assertIn("requiredAura != 0 && bot->HasAura(requiredAura), TargetTauntImmune(target))", gate)
         self.assertIn('snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));', gate)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);', gate)
         self.assertIn('snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s"', gate)
@@ -197,7 +198,7 @@ class JindoR1Wiring(unittest.TestCase):
                      "inline const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, "
                      "bool pickable)",
                      "enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune };",
-                     "inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool tauntImmune)",
+                     "inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune)",
                      "inline const char* TauntGateWord(TauntGate gate)"):
             self.assertIn(name, POLICY)
         # The scan order is the policy's, and it is checked in order, never as one conjunction.

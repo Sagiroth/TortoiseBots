@@ -86,7 +86,7 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
 | `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. |
 | `no_taunt` | The tank's class has no taunt (a paladin in 1.12, a shaman, a hunter, ...). |
 | `attack` | The tank has a taunt but cannot cast it now (cooldown, range, silenced), so only the attack order goes out. |
-| `taunt_gated` | The tank could cast the taunt, but `AiPlayerbot.DungeonRunTauntGate` refused it at this Son (a taunt-immune creature or a needs_aura subject); the gate's own `BossTacticsTauntGate` row says which. |
+| `taunt_gated` | The tank could cast the taunt, but `AiPlayerbot.DungeonRunTauntGate` refused it at this Son (a taunt-immune creature, or a needs_aura subject at a bot that lacks the aura); the gate's own `BossTacticsTauntGate` row says which. |
 | `taunt` | Not a refusal: the taunt (Taunt or Growl) is cast this tick. |
 
 `meet=1` marks a take from the pulled Son's meet (`DungeonRunSeekSonMeet`); every other take is `meet=0`.
@@ -149,7 +149,7 @@ ref survives line drift.
 | 41 | `BossTacticsBurnMana` | `spell=<id>,boss_mana_pct=<pct>` | LogBurnMana | not a refusal (the cast went out) | document |
 | 42 | `BossTacticsRangedOnly` | `subject=<entry>,gap=%.1f` | ai::LogBossRangedOnly | not a refusal (the hold is active) | document |
 | 43 | `BossTacticsThreatCap` | `threat cap: ref=<main\|offtank> <threat> offtank_target=<name\|none>` | LogThreatCap (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the reference a cap is measured against) | document |
-| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune>`; info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
+| 44 | `BossTacticsTauntGate` | `reason=<needs_aura\|taunt_immune>` (`needs_aura`: the bot lacks the row's aura; a carrier of it is not refused); info2 `target=<entry>:<guid low>,spell=<spell>` | ai::TauntRefusedByGate (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | yes: `reason=` | keep |
 
 ### The pulled Son's meet (event `BossTacticsSonMeet`)
 
