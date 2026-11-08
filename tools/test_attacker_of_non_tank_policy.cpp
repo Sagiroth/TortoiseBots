@@ -107,25 +107,30 @@ int main()
         CHECK(AttackerOfNonTankPick(candidates) == 1);
     }
 
-    // The taunt gate drops a needs_aura unit from the scan (AttackerOfNonTankSkipsUnit) for both users of the value:
-    // a Shade of Jin'do on a healer plus a Voodoo Slave on a DPS picks the Slave with the gate on, the Shade (today's
-    // rule) with it off. TestShadeSkippedWithGateOn.
+    // The taunt gate drops a needs_aura unit from the scan (AttackerOfNonTankSkipsUnit) for both users of the value
+    // unless the bot carries the aura: a Shade of Jin'do on a healer plus a Voodoo Slave on a DPS picks the Slave for an
+    // uncursed tank with the gate on, the Shade for a cursed tank, and the Shade (today's rule) with the gate off.
+    // TestShadeSkippedForUncursedTankOnly.
     {
         constexpr std::uint32_t kDelusions = 24306;
         struct Seen { AttackerOfNonTankCandidate candidate; std::uint32_t requiredAura; };
         std::vector<Seen> seen = { { Mob(5.0f, true), kDelusions }, { Mob(20.0f, false), 0 } };
-        for (bool gateOn : { true, false })
+        struct Case { bool gateOn; bool botHasAura; bool shadePicked; };
+        for (const Case& c : { Case{ true, false, false }, Case{ true, true, true }, Case{ false, false, true },
+                               Case{ false, true, true } })
         {
             std::vector<AttackerOfNonTankCandidate> candidates;
             for (const Seen& s : seen)
-                if (!AttackerOfNonTankSkipsUnit(gateOn, s.requiredAura))
+                if (!AttackerOfNonTankSkipsUnit(c.gateOn, s.requiredAura, c.botHasAura && s.requiredAura != 0))
                     candidates.push_back(s.candidate);
             std::size_t const pick = AttackerOfNonTankPick(candidates);
             CHECK(pick < candidates.size());
-            CHECK(candidates[pick].victimIsHealer == !gateOn); // gate on: the Slave (DPS victim); off: the Shade
+            CHECK(candidates[pick].victimIsHealer == c.shadePicked);
         }
-        CHECK(!AttackerOfNonTankSkipsUnit(true, 0));  // an ordinary unit stays
-        CHECK(!AttackerOfNonTankSkipsUnit(false, kDelusions));
+        CHECK(!AttackerOfNonTankSkipsUnit(true, 0, false));  // an ordinary unit stays
+        CHECK(AttackerOfNonTankSkipsUnit(true, kDelusions, false));
+        CHECK(!AttackerOfNonTankSkipsUnit(true, kDelusions, true));  // a cursed tank keeps the Shade
+        CHECK(!AttackerOfNonTankSkipsUnit(false, kDelusions, false));
     }
 
     // Empty scan / nothing fighting: no pick.
