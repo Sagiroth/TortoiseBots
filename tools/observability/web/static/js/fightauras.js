@@ -48,28 +48,27 @@
     ok.sort((a, b) => a.r[0] - b.r[0] || a.i - b.i); // stable
     const clamp = (t) => Math.max(0, Math.min(dur, t));
     const sampled = !!(fight && fight.aura_src === "sampled");
-    // A list at the module's cap has lost its oldest rows: a removal with no apply in it says nothing about the time before it.
+    // A list at the module's cap has lost its oldest rows: nothing is known before the earliest kept row (capFrom), for any bot.
     const capped = rows.length >= CAP_ROWS && !sampled;
+    const capFrom = capped && ok.length ? clamp(ok[0].r[0]) : 0;
+    const rowGuids = {}; // sid -> guid -> true: the bots that have a kept row for the aura
     const open = {}; // "sid:guid" -> start
     const bySid = {};
-    const unknown = {}; // sid -> guid -> [[0, t]]: stretches whose state the capped list does not tell
-    const into = (map, sid, guid, from, to) => {
-      const s = map[sid] || (map[sid] = {});
-      (s[guid] || (s[guid] = [])).push([from, to]);
-    };
     const put = (sid, guid, from, to) => {
       if (!(to > from)) return; // an instant is not uptime
-      into(bySid, sid, guid, from, to);
+      const s = bySid[sid] || (bySid[sid] = {});
+      (s[guid] || (s[guid] = [])).push([from, to]);
     };
     ok.forEach(({ r }) => {
       const t = clamp(r[0]), guid = String(r[1]), sid = r[2], k = sid + ":" + guid;
+      (rowGuids[sid] || (rowGuids[sid] = {}))[guid] = true;
       if (r[3] > 0) {
         if (!(k in open)) open[k] = t;
       } else if (k in open) {
         put(sid, guid, open[k], Math.max(open[k], t));
         delete open[k];
       } else if (capped) {
-        if (t > 0) into(unknown, sid, guid, 0, t);
+        put(sid, guid, capFrom, t); // a removal with its apply lost: up from the earliest kept row (the time before is unknown)
       } else {
         put(sid, guid, 0, t);
       }
@@ -80,10 +79,18 @@
     });
     Object.keys(bySid).forEach((sid) => Object.keys(bySid[sid]).forEach((g) => bySid[sid][g].sort((a, b) => a[0] - b[0])));
     const seen = {};
-    Object.keys(bySid).concat(Object.keys(unknown)).forEach((k) => { seen[k] = true; });
+    Object.keys(bySid).concat(Object.keys(rowGuids)).forEach((k) => { seen[k] = true; });
     const sids = Object.keys(seen).map(Number).sort((a, b) => a - b);
     // A sampled live fight is not the module's capped list: its row count says nothing about dropped rows.
-    return { bySid, unknown, capped, sids };
+    return { bySid, rowGuids, capped, capFrom, sids };
+  }
+
+  // The stretches of the fight whose state for one bot and aura the list does not tell: for a capped list, everything before its
+  // earliest kept row, and for a bot with no kept row of that aura the whole fight (it may have held it throughout). None otherwise.
+  function unknownSpans(iv, sid, guid, fight) {
+    if (!iv || !iv.capped || !(iv.capFrom > 0)) return [];
+    const has = iv.rowGuids && iv.rowGuids[sid] && iv.rowGuids[sid][String(guid)];
+    return [[0, has ? iv.capFrom : durOf(fight)]];
   }
 
   // Where each bot is alive: from the pull to its first death in fight.deaths (else the end). The module records no
@@ -117,11 +124,11 @@
   // Uptime of one aura over a range ({from,to}, or null for the whole fight): the raid sums every bot of the fight (a bot that
   // never had it counts with 0), the list holds the bots that had it, best first.
   function uptime(iv, sid, fight, range) {
-    const dur = durOf(fight), spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {}, unk = (iv && iv.unknown && iv.unknown[sid]) || {};
+    const dur = durOf(fight), spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {};
     let up = 0, alive = 0, unknownMs = 0;
     const list = [];
     bots(fight).forEach((b) => {
-      const g = String(b.guid), u = botUptime(by[g], spans[g], range, dur, unk[g]);
+      const g = String(b.guid), u = botUptime(by[g], spans[g], range, dur, unknownSpans(iv, sid, g, fight));
       up += u.upMs;
       alive += u.aliveMs;
       unknownMs += u.unknownMs;
@@ -169,25 +176,32 @@
   // A victim's aura row can be logged just before its death row (an exact row), or fall in the same report interval (a sampled one).
   const heldAtDeath = (ivs, t, slack) => (ivs || []).some(([f, to]) => f <= t && to >= t - slack);
 
+  // Whether the window [from, to] touches a stretch the capped list does not tell.
+  const inUnknown = (spans, from, to) => spans.some(([f, t]) => f <= to && t > from);
+
   // Who had the aura at each marker. A cast marker: the bots alive then whose interval holds the time; a death marker: whether
-  // the dead bot itself had it.
+  // the dead bot itself had it. `unknown` counts the bots (0 or 1 for a death) that did not provably have it and whose state at the
+  // marker lies in an unknown stretch of a capped list: they are neither "had it" nor "did not".
   function atMarkers(iv, sid, fight, marks) {
     const spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {};
     const sampled = !!(fight && fight.aura_src === "sampled");
     return (marks || []).map((m) => {
       if (m.death) {
-        const on = m.guid != null && heldAtDeath(by[m.guid], m.t, sampled ? SAMPLE_SLACK_MS : DEATH_SLACK_MS) ? 1 : 0;
-        return { t: m.t, label: m.label, on, alive: 1, names: on ? [bots(fight).find((b) => String(b.guid) === m.guid).name] : [] };
+        const slack = sampled ? SAMPLE_SLACK_MS : DEATH_SLACK_MS;
+        const on = m.guid != null && heldAtDeath(by[m.guid], m.t, slack) ? 1 : 0;
+        const unknown = !on && m.guid != null && inUnknown(unknownSpans(iv, sid, m.guid, fight), m.t - slack, m.t) ? 1 : 0;
+        return { t: m.t, label: m.label, on, alive: 1, unknown, names: on ? [bots(fight).find((b) => String(b.guid) === m.guid).name] : [] };
       }
-      let on = 0, alive = 0;
+      let on = 0, alive = 0, unknown = 0;
       const names = [];
+      const win = m.after ? m.after + (sampled ? SAMPLE_SLACK_MS : 0) : 0;
       bots(fight).forEach((b) => {
         const g = String(b.guid);
         if (!(m.t < spans[g][1])) return;
         alive++;
-        if (holds(by[g], m.t, m.after ? m.after + (sampled ? SAMPLE_SLACK_MS : 0) : 0)) { on++; names.push(b.name); }
+        if (holds(by[g], m.t, win)) { on++; names.push(b.name); } else if (inUnknown(unknownSpans(iv, sid, g, fight), m.t, m.t + win)) unknown++;
       });
-      return { t: m.t, label: m.label, on, alive, names };
+      return { t: m.t, label: m.label, on, alive, unknown, names };
     });
   }
 
@@ -200,10 +214,12 @@
     const deathsIn = (from, to) => (fight && Array.isArray(fight.deaths) ? fight.deaths : []).filter((d) => d && num(d.t_ms) !== null && d.t_ms >= from && d.t_ms < to);
     const rows = casts.map((m, k) => {
       const from = k ? casts[k - 1].t : 0;
-      return { i: k + 1, from, to: m.t, raidPct: uptime(iv, sid, fight, { from, to: m.t }).raid.pct, on: at[k].on, alive: at[k].alive, deaths: deathsIn(from, m.t) };
+      const up = uptime(iv, sid, fight, { from, to: m.t }).raid;
+      return { i: k + 1, from, to: m.t, raidPct: up.pct, upMs: up.upMs, lower: up.lower, on: at[k].on, alive: at[k].alive, unknown: at[k].unknown, deaths: deathsIn(from, m.t) };
     });
     const last = casts[casts.length - 1].t;
-    rows.push({ i: "after", from: last, to: dur, raidPct: uptime(iv, sid, fight, { from: last, to: dur }).raid.pct, deaths: deathsIn(last, Infinity) });
+    const rest = uptime(iv, sid, fight, { from: last, to: dur }).raid;
+    rows.push({ i: "after", from: last, to: dur, raidPct: rest.pct, upMs: rest.upMs, lower: rest.lower, deaths: deathsIn(last, Infinity) });
     return rows;
   }
 
@@ -242,6 +258,6 @@
     return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
 
-  const api = { AURA_NAMES, PRESETS, CAP_ROWS, auraName, intervals, aliveSpans, uptime, markers, atMarkers, cycles, applications, defaults, castChoices };
+  const api = { AURA_NAMES, PRESETS, CAP_ROWS, auraName, intervals, unknownSpans, aliveSpans, uptime, markers, atMarkers, cycles, applications, defaults, castChoices };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightAuras = api;
 })(typeof self !== "undefined" ? self : this);

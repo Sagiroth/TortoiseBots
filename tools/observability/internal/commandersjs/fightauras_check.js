@@ -67,26 +67,54 @@ assert.deepStrictEqual(A.uptime(A.intervals(dead), 5, dead, null).bots[0], { gui
 const many = { dur_ms: 1000, bots: Array.from({ length: 40 }, (_, k) => ({ name: "b" + k, guid: k + 1, role: "dps" })), auras: Array.from({ length: 10 }, (_, k) => [0, k + 1, 3, 1]) };
 const manyU = A.uptime(A.intervals(many), 3, many, null);
 assert.deepStrictEqual([manyU.bots.length, manyU.bots.filter((b) => b.pct === 0).length], [40, 30]);
-// (r1 M1) a capped list: a removal with no apply in it is NOT on from the pull; the bot's uptime is a lower bound over a stretch of unknown state
+// (r2 M1) a capped list: the oldest rows are gone, so for EVERY bot nothing is known before the earliest kept row (T0); a removal whose apply
+// was lost means up from T0 to it; a bot with no kept row of the aura may have held it throughout (unknown for the whole fight)
+const capFix = () => {
+  const rows = Array.from({ length: 996 }, (_, k) => [20000 + k, 2, 8, k % 2 ? -1 : 1]); // filler: bot B, another aura (T0 = 20 s)
+  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1], [70000, 1, POISON, -1]); // A: a removal with no apply, then 50-70 s
+  rows.push([40000, 3, POISON, 1]); // C: first row an apply after T0, never removed
+  return { boss: 14834, dur_ms: 100000, aura_src: undefined,
+    bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "healer" }, { name: "C", guid: 3, role: "dps" }, { name: "D", guid: 4, role: "dps" }],
+    auras: rows, deaths: [{ name: "D", t_ms: 15000, killer: "k" }], log: [{ k: "cast", t: 10000, s: "Blood Siphon", sid: SIPHON }, { k: "cast", t: 25000, s: "Blood Siphon", sid: SIPHON }, { k: "cast", t: 35000, s: "Blood Siphon", sid: SIPHON }] };
+};
 {
-  const rows = Array.from({ length: 997 }, (_, k) => [60000 + k, 2, 8, k % 2 ? -1 : 1]); // filler for bot 2, another aura
-  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1], [70000, 1, POISON, -1]); // bot 1: removal with no apply, then 50-70 s
-  const cap = { boss: 14834, dur_ms: 100000, bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }], auras: rows };
-  assert.strictEqual(rows.length, 1000);
+  const cap = capFix();
+  assert.strictEqual(cap.auras.length, 1000);
   const civ = A.intervals(cap);
   assert.strictEqual(civ.capped, true);
-  assert.deepStrictEqual(civ.bySid[POISON][1], [[50000, 70000]], "no [0, 30000] was made up");
-  assert.deepStrictEqual(civ.unknown[POISON][1], [[0, 30000]], "the stretch before the removal is unknown");
+  assert.strictEqual(civ.capFrom, 20000, "T0 is the earliest kept row");
+  assert.deepStrictEqual(civ.bySid[POISON][1], [[20000, 30000], [50000, 70000]], "a leading removal at 30 s: up over [T0, 30 s] (known), no [0, 30 s] made up");
+  assert.deepStrictEqual(civ.bySid[POISON][3], [[40000, 100000]]);
   assert.deepStrictEqual(civ.sids, [8, POISON]);
+  assert.deepStrictEqual(A.unknownSpans(civ, POISON, 1, cap), [[0, 20000]], "A: unknown before T0");
+  assert.deepStrictEqual(A.unknownSpans(civ, POISON, 3, cap), [[0, 20000]], "C: its first row is an apply after T0, and it is unknown before T0 all the same");
+  assert.deepStrictEqual(A.unknownSpans(civ, POISON, 2, cap), [[0, 100000]], "B has no kept row of the aura: unknown throughout");
+  assert.deepStrictEqual(A.unknownSpans(A.intervals({ dur_ms: 1000, bots: [], auras: [[0, 1, 1, 1]] }), 1, 1, { dur_ms: 1000 }), [], "an uncapped list has no unknown stretch");
   const cu = A.uptime(civ, POISON, cap, null);
-  const ca = cu.bots.find((b) => b.name === "A");
-  assert.deepStrictEqual([ca.upMs, ca.lower, ca.pct], [20000, true, 20], "A: at least 20 %");
+  const by = (n) => cu.bots.find((b) => b.name === n);
+  assert.deepStrictEqual([by("A").upMs, by("A").lower, by("A").pct], [30000, true, 30], "A: at least 30 %");
+  assert.deepStrictEqual([by("C").upMs, by("C").lower], [60000, true], "C: an apply first still reads as a minimum");
+  assert.deepStrictEqual([by("B").upMs, by("B").lower], [0, true], "B: no rows, nothing known up: '-' (lower with 0 up)");
+  assert.strictEqual(by("D").lower, true);
   assert.strictEqual(cu.raid.lower, true);
-  assert.strictEqual(cu.bots.find((b) => b.name === "B").lower, false, "B has no unknown stretch");
-  // the same list under the cap is the old reading: on from the pull
-  const few = Object.assign({}, cap, { auras: rows.slice(-3) });
+  // the same rows under the cap are exact: on from the pull, no unknown stretch
+  const few = Object.assign(capFix(), { auras: capFix().auras.slice(-4) });
   assert.deepStrictEqual(A.intervals(few).bySid[POISON][1], [[0, 30000], [50000, 70000]]);
-  assert.strictEqual(A.intervals(few).unknown[POISON], undefined);
+  assert.strictEqual(A.uptime(A.intervals(few), POISON, few, null).raid.lower, false);
+  // (r2 Codex) a cast and a death inside the unknown stretch are "unknown", not "no"; a cast after T0 is known except for the bots with no rows
+  const marks = A.markers(cap, { sid: SIPHON });
+  const at = A.atMarkers(civ, POISON, cap, marks);
+  assert.deepStrictEqual([at[0].t, at[0].on, at[0].alive, at[0].unknown], [10000, 0, 4, 4], "10 s, before T0: every bot unknown");
+  assert.deepStrictEqual([at[1].t, at[1].on, at[1].alive, at[1].unknown, at[1].names], [25000, 1, 3, 1, ["A"]], "25 s: A had it; C is known not to; B is unknown (D is dead)");
+  assert.deepStrictEqual([at[2].on, at[2].unknown], [0, 1], "35 s: A's [20, 30 s] is over, C starts at 40 s: known no; only B unknown");
+  const dm = A.markers(cap, "deaths");
+  const atD = A.atMarkers(civ, POISON, cap, dm);
+  assert.deepStrictEqual([atD[0].on, atD[0].unknown], [0, 1], "D died at 15 s, inside the unknown stretch: '?', not no");
+  // cycles carry the lower bound; the after row too
+  const cy = A.cycles(civ, POISON, cap, marks);
+  assert.ok(cy.every((c) => c.lower === true), "every cycle of a capped fight is a minimum here: " + JSON.stringify(cy.map((c) => c.lower)));
+  assert.deepStrictEqual([cy[0].on, cy[0].unknown], [0, 4]);
+  assert.ok(A.cycles(A.intervals(fight()), POISON, fight(), A.markers(fight(), { sid: SIPHON })).every((c) => c.lower === false), "an exact fight's cycles are exact");
 }
 
 // ---- markers: the casts by spell id, or by name when the id is missing; deaths with their killer

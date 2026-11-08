@@ -98,15 +98,23 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(/<span class="fd-au-name r-dps">Zed<\/span><span class="fd-au-pct">0 %<\/span>/.test(html), "a bot with no uptime shows 0 %: " + html);
   assert.strictEqual(count(html, /class="fd-au-name/g), 6, "the raid row and the five bots");
 }
-// ---- (r1) a capped list: a removal with no apply is not on from the pull; the percentage is a minimum, the unknown stretch is drawn
+// ---- (r2) a capped list: minimums, a dash for a bot with no kept row, "?" for the bots unknown at a cast or death, "≥" on the cycles
 {
-  const rows = Array.from({ length: 998 }, (_, k) => [20000 + k, 2, 7, k % 2 ? -1 : 1]); // bot 2: 499 short applications
-  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1]); // bot 1: a removal with no apply in the list (1000 rows)
-  const f = { boss: 1, dur_ms: 100000, bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }], auras: rows, log: [], deaths: [] };
-  const html = draw(f, { key: "k", sid: POISON, marker: null });
-  assert.ok(html.includes("may be missing") && html.includes('class="fd-au-unk"'), "the unknown stretch before the first removal is drawn");
-  assert.ok(html.includes('<span class="fd-au-pct">≥ 50 %</span>'), "bot A: a minimum, 50 s known up of 100 s: " + html);
-  assert.ok(html.includes('<span class="fd-au-pct">≥ '), "the raid row is a minimum too");
+  const rows = Array.from({ length: 996 }, (_, k) => [20000 + k, 2, 8, k % 2 ? -1 : 1]); // T0 = 20 s
+  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1], [70000, 1, POISON, -1], [40000, 3, POISON, 1]);
+  const f = { boss: 1, dur_ms: 100000, bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }, { name: "C", guid: 3, role: "dps" }, { name: "D", guid: 4, role: "dps" }],
+    auras: rows, deaths: [{ name: "D", t_ms: 15000, killer: "k" }], log: [{ k: "cast", t: 10000, s: "Zap", sid: 3 }, { k: "cast", t: 35000, s: "Zap", sid: 3 }] };
+  const html = draw(f, { key: "k", sid: POISON, marker: { sid: 3 } });
+  assert.ok(html.includes("may be missing") && html.includes('class="fd-au-unk"'), "the unknown stretch is drawn");
+  assert.ok(html.includes('<span class="fd-au-name r-tank">A</span><span class="fd-au-pct">≥ 30 %</span>'), "bot A: a minimum (30 s known up): " + html);
+  assert.ok(html.includes('<span class="fd-au-name r-dps">B</span><span class="fd-au-pct">—</span>'), "a bot with no kept row: a dash, not 0 %");
+  assert.ok(html.includes('<span class="fd-au-name">Raid</span><span class="fd-au-pct">≥ '), "the raid row is a minimum too");
+  assert.ok(html.includes("<td>0 / 4 (4 ?)</td>"), "the cast at 10 s, before T0: nobody provably had it, four unknown: " + html);
+  assert.ok(html.includes("<td>0 / 3 (1 ?)</td>"), "the cast at 35 s: D is dead, A and C are known not to have it, B (no kept row) stays unknown");
+  const cycle = html.slice(html.indexOf("Each cycle"));
+  assert.ok(cycle.includes("≥ ") && !/<td>\d+ %<\/td>/.test(cycle), "every cycle's uptime is a minimum or a dash: " + cycle);
+  const dh = draw(f, { key: "k", sid: POISON, marker: "deaths" });
+  assert.ok(dh.includes("<td>?</td>"), "D died inside the unknown stretch: '?', not 'no'");
 }
 // ---- (r1) the hints while the track is out and for a raid past the track's limit
 {

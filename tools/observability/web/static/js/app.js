@@ -10585,7 +10585,7 @@
     if (fight.aura_src === 'sampled' && fight.aura_slots_full) {
       html += '<p class="empty-hint fd-au-note">A bot carried 4 boss debuffs at once; the report lists no more than 4, so a debuff may be missing here.</p>';
     }
-    if (iv.capped) html += '<p class="empty-hint fd-au-note">The earliest aura changes of this fight may be missing (the module keeps the newest 1000); where an aura\'s start is unknown the uptime is shown as a minimum (≥).</p>';
+    if (iv.capped) html += '<p class="empty-hint fd-au-note">The earliest aura changes of this fight may be missing (the module keeps the newest 1000); nothing is known before the earliest kept row, so uptimes there are minimums (≥, or a dash), and a cast or death in that stretch counts as unknown (?).</p>';
     if (!rows.length) {
       html += `<p class="empty-hint">${fight.aura_src === 'sampled' ? 'No boss debuff has been seen on a bot yet.'
         : opts && opts.pending ? 'Loading the aura data…'
@@ -10595,12 +10595,12 @@
       const sid = au.sid, up = FightAuras.uptime(iv, sid, fight, range), spans = FightAuras.aliveSpans(fight);
       const marks = FightAuras.markers(fight, au.marker);
       const pctOf = t => (dur > 0 ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0).toFixed(2);
-      const by = (iv.bySid && iv.bySid[sid]) || {}, unk = (iv.unknown && iv.unknown[sid]) || {};
+      const by = (iv.bySid && iv.bySid[sid]) || {};
       html += `<div class="fd-au-strip"><div class="fd-au-row fd-au-raid"><span class="fd-au-name">Raid</span><span class="fd-au-pct">${esc(fdAuPct(up.raid.pct, up.raid.lower, up.raid.upMs))}</span>`
         + `<span class="fd-au-bar"><i class="fd-au-fill" style="width:${Math.max(0, Math.min(100, up.raid.pct)).toFixed(2)}%"></i></span></div>`;
       up.bots.forEach(b => {
         const on = (by[b.guid] || []).map(([f, t]) => `<i class="fd-au-on" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
-        const unknownBars = (unk[b.guid] || []).map(([f, t]) => `<i class="fd-au-unk" title="not known: the module's list starts later" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
+        const unknownBars = FightAuras.unknownSpans(iv, sid, b.guid, fight).map(([f, t]) => `<i class="fd-au-unk" title="not known: the module's list starts later" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
         const died = spans[b.guid] && spans[b.guid][1] < dur ? `<i class="fd-au-death" style="left:${pctOf(spans[b.guid][1])}%"></i>` : '';
         html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct, b.lower, b.upMs))}</span><span class="fd-au-bar">${unknownBars}${on}${died}</span></div>`;
       });
@@ -10612,17 +10612,17 @@
         const at = FightAuras.atMarkers(iv, sid, fight, marks);
         if (au.marker === 'deaths') {
           html += '<table class="data-table fd-au-table"><caption>At each death</caption><thead><tr><th>Time</th><th>Victim</th><th>Had it</th></tr></thead><tbody>'
-            + at.map(a => `<tr><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${esc(a.label)}</td><td>${a.on ? 'yes' : 'no'}</td></tr>`).join('') + '</tbody></table>';
+            + at.map(a => `<tr><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${esc(a.label)}</td><td>${a.on ? 'yes' : a.unknown ? '?' : 'no'}</td></tr>`).join('') + '</tbody></table>';
         } else {
           const label = marks[0].label;
           html += `<table class="data-table fd-au-table"><caption>At each ${esc(label)}</caption><thead><tr><th>#</th><th>Time</th><th>Had it</th><th>Who</th></tr></thead><tbody>`
             + at.map((a, k) => {
               const who = a.names.slice(0, FD_AU_NAMES_MAX).map(esc).join(', ') + (a.names.length > FD_AU_NAMES_MAX ? ' +' + (a.names.length - FD_AU_NAMES_MAX) : '');
-              return `<tr><td>${k + 1}</td><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${a.on} / ${a.alive}</td><td>${who}</td></tr>`;
+              return `<tr><td>${k + 1}</td><td class="mono">${esc(fdLiveClock(a.t))}</td><td>${a.on} / ${a.alive}${a.unknown ? ` (${a.unknown} ?)` : ''}</td><td>${who}</td></tr>`;
             }).join('') + '</tbody></table>';
           html += '<table class="data-table fd-au-table"><caption>Each cycle</caption><thead><tr><th>#</th><th>From &ndash; to</th><th>Raid uptime</th><th>Had it at the cast</th><th>Deaths</th></tr></thead><tbody>'
-            + FightAuras.cycles(iv, sid, fight, marks).map(c => `<tr><td>${esc(c.i)}</td><td class="mono">${esc(fdLiveClock(c.from) + ' - ' + fdLiveClock(c.to))}</td><td>${esc(fdAuPct(c.raidPct))}</td>`
-              + `<td>${c.on == null ? '' : c.on + ' / ' + c.alive}</td><td>${c.deaths.map(d => esc(d.name)).join(', ')}</td></tr>`).join('') + '</tbody></table>';
+            + FightAuras.cycles(iv, sid, fight, marks).map(c => `<tr><td>${esc(c.i)}</td><td class="mono">${esc(fdLiveClock(c.from) + ' - ' + fdLiveClock(c.to))}</td><td>${esc(fdAuPct(c.raidPct, c.lower, c.upMs))}</td>`
+              + `<td>${c.on == null ? '' : c.on + ' / ' + c.alive + (c.unknown ? ' (' + c.unknown + ' ?)' : '')}</td><td>${c.deaths.map(d => esc(d.name)).join(', ')}</td></tr>`).join('') + '</tbody></table>';
         }
       }
       const apps = FightAuras.applications(iv, sid, fight);
