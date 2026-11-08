@@ -12,6 +12,9 @@ namespace ai
         bool isUseful() override { return true; }
         bool isUsefulWhenStunned() override { return true; }
         virtual bool Execute(Event& event) override;
+        // The navmesh-island unstick (MovementAction::TryPlaceUnstick, PlaceUnstickPolicy.h) moves the
+        // bot beside its master with the same teleport a summon uses.
+        bool TeleportBotToMaster(Player* master) { return Teleport(master, master, bot); }
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);

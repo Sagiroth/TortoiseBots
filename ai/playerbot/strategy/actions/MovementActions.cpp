@@ -30,6 +30,8 @@
 #include "playerbot/MagmaHazardPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
+#include "playerbot/PlaceUnstickPolicy.h"
+#include "UseMeetingStoneAction.h"
 #include "playerbot/BoundRunMapGuard.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "host/ModuleLog.h"
@@ -1833,15 +1835,98 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
     {
         // DispatchMovement stamps its own site (dispatch-short / hazard-short).
         lastMove.setPath(TravelPath());
+        // A dispatch-short with a NOPATH route feeds the navmesh-island clock (flag-gated inside).
+        TryPlaceUnstick(lastMove);
         return false; // nowhere to go: let the caller retry later or drop the target
     }
 
     lastMove.moveFailReason = MOVE_FAIL_NONE;
+    // A launched move ends any NOPATH streak.
+    if (sPlayerbotAIConfig.dungeonRunPlaceUnstick)
+        ai::PlaceUnstickOnMoveResult(lastMove.placeUnstick, WorldTimer::getMSTime(), true, MOVE_FAIL_NONE, 0);
 
     if (!idle)
         ClearIdleState();
 
     return true;
+}
+
+static_assert(ai::kPlaceUnstickFailDispatchShort == MOVE_FAIL_DISPATCH_SHORT, "PlaceUnstickPolicy.h mirrors MOVE_FAIL_DISPATCH_SHORT");
+static_assert(ai::kPlaceUnstickPathNoPath == ai::TRAVEL_PATHFIND_NOPATH, "PlaceUnstickPolicy.h mirrors PATHFIND_NOPATH");
+
+// The navmesh-island unstick (walk 55 FROZEN-REPRO): a bot on a piece of navmesh with no path
+// off it fails every move as dispatch-short with path type NOPATH and never moves again. After
+// 10 s of that, in a dungeon or raid, it is teleported beside its master with the summon
+// teleport (SummonAction::Teleport). The decision is PlaceUnstickPolicy.h.
+bool MovementAction::TryPlaceUnstick(LastMovement& lastMove)
+{
+    if (!sPlayerbotAIConfig.dungeonRunPlaceUnstick)
+        return false;
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+    ai::PlaceUnstickState& state = lastMove.placeUnstick;
+    ai::PlaceUnstickOnMoveResult(state, nowMs, false, lastMove.moveFailReason, lastMove.movePathType);
+    if (!ai::PlaceUnstickCountsFail(lastMove.moveFailReason, lastMove.movePathType))
+        return false;
+
+    // Cheap exits before any lookup: the clock must have run its 10 s first.
+    uint32 const streakMs = ai::PlaceUnstickStreakMs(state, nowMs);
+    if (streakMs < ai::kPlaceUnstickStreakMs)
+        return false;
+
+    Map* map = bot->GetMap();
+    if (!map || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->GetTransport() || bot->IsTaxiFlying())
+        return false;
+
+    // Its master: the player or bot it answers to, else the group's master (a bot leader it follows).
+    Player* master = ai->GetMaster();
+    if (!master || master == bot)
+        master = ai->GetGroupMaster();
+    bool const hasMaster = master && master != bot && master->IsInWorld() && !master->IsBeingTeleported() &&
+        master->GetMapId() == bot->GetMapId() && master->GetInstanceId() == bot->GetInstanceId() &&
+        sServerFacade.IsAlive(master);
+
+    Unit* target = AI_VALUE(Unit*, "current target");
+    bool const liveTarget = target && target->IsInWorld() && target->GetMapId() == bot->GetMapId() &&
+        sServerFacade.IsAlive(target);
+
+    ai::PlaceUnstickInputs in;
+    in.flagOn = true;
+    in.inInstance = map->IsDungeon();
+    in.inBattleground = bot->InBattleGround() || map->IsBattleGround();
+    in.hasMaster = hasMaster;
+    in.masterYd = hasMaster ? bot->GetDistance(master) : 0.0f;
+    in.botAlive = sServerFacade.IsAlive(bot);
+    in.botCharmed = !bot->GetCharmerGuid().IsEmpty();
+    in.botCasting = bot->IsNonMeleeSpellCasted(true);
+    in.masterFightNearBot = ai::PlaceUnstickIsFight(hasMaster && master->IsInCombat(), liveTarget,
+        liveTarget ? bot->GetDistance(target) : 0.0f);
+    in.streakMs = streakMs;
+    in.teleportedBefore = state.teleported;
+    in.sinceTeleportMs = nowMs - state.lastTeleportMs;
+
+    if (ai::PlaceUnstickDecide(in) != ai::PlaceUnstickVerdict::Teleport)
+        return false;
+
+    // The summon command's teleport: a spot beside the master on its own floor, in its sight.
+    SummonAction* summon = dynamic_cast<SummonAction*>(context->GetAction("summon"));
+    if (!summon)
+        return false;
+
+    ai::PlaceUnstickStamp(state, nowMs);
+    bool const moved = summon->TeleportBotToMaster(master);
+
+    // One row per attempt: the 30 s cooldown is the throttle.
+    std::ostringstream row;
+    row << "reason=nopath_island secs=" << (state.lastStreakMs / 1000) << " master_yd=" << static_cast<int>(in.masterYd)
+        << " result=" << (moved ? "teleported" : "refused");
+    sPlayerbotAIConfig.logEvent(ai, "BotUnstick", master->GetName(), row.str());
+    sLog.outDetail("BotUnstick %s reason=nopath_island secs=%u master_yd=%d result=%s",
+        bot->GetName(), state.lastStreakMs / 1000, static_cast<int>(in.masterYd), moved ? "teleported" : "refused");
+
+    if (moved)
+        lastMove.clear();
+    return moved;
 }
 
 bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)

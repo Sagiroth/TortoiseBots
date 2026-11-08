@@ -85,6 +85,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekWalkoutFaceCast`](#aiplayerbotdungeonrunseekwalkoutfacecast) | `0` | `1` (recommended): the Hakkar walk-out puller turns to the Son and casts in one tick, its per-update facing no longer turns it back to Hakkar, and the 6 s no-shot clock counts only the time in shot position. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandLog`](#aiplayerbotdungeonrunseekwalkoutstandlog) | `0` | `1` (diagnostic, safe on for test walks): one `seek pull: walk-out stand` row a second while the Hakkar walk-out puller walks out, and a `castrefused` row for every refused pull cast. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandSight`](#aiplayerbotdungeonrunseekwalkoutstandsight) | `0` | `1` (recommended): the Hakkar walk-out's stand search tests sight the way the bot does, and a refused move on the stand re-plans it instead of aborting. |
+| [`AiPlayerbot.DungeonRunPlaceUnstick`](#aiplayerbotdungeonrunplaceunstick) | `0` | `1` (recommended): a bot in a dungeon or raid cut off on a navmesh island (every move fails NOPATH for 10 s) is teleported to its master, at most once per 30 s. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
@@ -1025,6 +1026,23 @@ Whether the Hakkar walk-out's stand search tests sight the way the bot does. Rec
 - The stand search aims from the floor + the bot's collision height to the Son's z + the Son's own collision height, the core's own sight heights for two units.
 - The start scan plans the first stand with the eye height of whichever raid bot reads first (the puller is picked afterwards); the puller's own re-plan corrects it within 1 s.
 - A refused outbound move within 3 yd of the stand does not count toward the three refusals; the stand is re-planned at once instead. A task gets 3 such free re-plans; after that refusals at the stand count again, so a stand the re-plan keeps finding still ends in `move failed` and frees the Son. Real path failures farther out always count.
+
+</details>
+
+### `AiPlayerbot.DungeonRunPlaceUnstick`
+Whether a bot cut off on a navmesh island inside a dungeon or raid is teleported to its master. Recommended on.
+**Default:** `0` · **Values:** `0` off (such a bot stays where it is, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The snag:** a teleport, summon, knockback or a placement spread can put a bot on a small piece of navmesh with no path to the rest of the mesh (ZG walk 55: the second seat of group 1 and the fourth of group 4 at the Jin'do place point, every raid). Every move then asks the navmesh for a route, gets `NOPATH`, and the mover refuses the lone fallback point: the action log shows `why=dispatch-short ... path=0x8` every tick and the bot never moves. The follow's own rescue walks with the same mover and fails the same way.
+
+With the key on (`PlaceUnstickPolicy.h`):
+- Every refused move of the bot that is a dispatch-short with a `NOPATH` route feeds a clock. A move that launches stops it; any other refusal (a clipped real path, a hazard, already arrived) neither feeds nor stops it. A gap of more than 5 s between two such refusals starts the clock again.
+- After 10 s on the clock the bot is teleported beside its master (its player, or the bot it follows; else the group's master) with the same teleport `.bot summon` uses, when all of these hold: the bot is in a dungeon or raid (never a battleground), its master is alive on the same map more than 20 yd away, the bot is alive, not charmed and not casting, and the master is not fighting the bot's own target within 5 yd of the bot (a fight, not a snag).
+- At most one teleport per bot every 30 s; a refused teleport waits for the cooldown and a fresh 10 s clock too.
+- Each try writes one `BotUnstick` row (info1 the master's name, info2 `reason=nopath_island secs=<n> master_yd=<n> result=teleported|refused`).
 
 </details>
 

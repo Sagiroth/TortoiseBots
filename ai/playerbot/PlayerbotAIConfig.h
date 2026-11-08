@@ -692,6 +692,12 @@ public:
     // re-plans the stand (up to 3 times a walk-out) instead of counting toward the three-refusal abort; off, floor + 2
     // to z + 2 and every refusal counts (default off, recommended on).
     bool dungeonRunSeekWalkoutStandSight = false;
+    // The navmesh-island unstick (PlaceUnstickPolicy.h): on, a bot in a dungeon or raid whose moves have failed with
+    // dispatch-short / NOPATH for 10 s while its master is alive and more than 20 yd away is teleported to the master
+    // (the summon teleport), at most once per 30 s, never on a battleground, never while dead, charmed or casting, and
+    // never while the master fights the bot's own target within 5 yd of it; off, such a bot stays where it is (default
+    // off, recommended on).
+    bool dungeonRunPlaceUnstick = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
