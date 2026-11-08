@@ -44,10 +44,10 @@ int main()
     CHECK(!EquipUpgradeBetter(100, 100, 1.0f));
     std::cout << "  [PASS] worse never swaps; 1.0 restores any-gain\n";
 
-    // Future upgrades: only items the bot cannot wear yet, up to 10 levels ahead.
+    // Future upgrades: only items the bot cannot wear yet, up to 5 levels ahead.
     CHECK(ai::FutureUpgradeLevelOk(54, 58));
-    CHECK(ai::FutureUpgradeLevelOk(54, 64));
-    CHECK(!ai::FutureUpgradeLevelOk(54, 65));
+    CHECK(ai::FutureUpgradeLevelOk(54, 59));
+    CHECK(!ai::FutureUpgradeLevelOk(54, 60));
     CHECK(!ai::FutureUpgradeLevelOk(54, 54));
     CHECK(!ai::FutureUpgradeLevelOk(54, 40));
     std::cout << "  [PASS] future upgrade level window\n";
