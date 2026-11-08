@@ -67,6 +67,8 @@ cmake --build build -j"$(nproc)"
 
 Install puts `aiplayerbot.conf.dist` next to `mangosd.conf` and creates `aiplayerbot.conf` and `modules/tortoise_bots.conf` from their templates on the first install only; a reinstall keeps your edited files. Module SQL in the source-tree `data/sql/world` and `data/sql/character` is applied by the core auto-updater on startup. See [Configuration & Tuning](docs/server/configuration.md) for available settings.
 
+A startup line `Migration ... for module TortoiseBots exists in DB but not as file, old migration?` is harmless: the database remembers a migration whose file has since changed. The module cleans up its known old rows on its own. If the lines stay, or after editing world tables by hand, reload `tw_world` from the core's `sql/base` files and restart; the updater reapplies every migration on first launch.
+
 ## 🙏 Credit
 
 TortoiseBots is made by **Sagiroth**. Forks, repacks, Docker bundles, videos and
