@@ -129,40 +129,6 @@ int main()
     CHECK(RogueWeaponAllowed("", false, false, false, BOW) == false);
     std::cout << "  [PASS] [Turtle 1.18.1] fallback spec allows all rogue one-handers\n";
 
-    // 3. 4-boolean compatibility overload:
-    // RogueWeaponAllowed(specName, hasSwordSpec, hasMaceSpec, hasFistSpec, hasDaggerSpec, subclass)
-    for (auto spec : {"assas", "subtle"})
-    {
-        CHECK(RogueWeaponAllowed(spec, false, false, false, false, DAGGER) == true);
-        CHECK(RogueWeaponAllowed(spec, true, true, true, true, DAGGER) == true);
-        CHECK(RogueWeaponAllowed(spec, false, false, false, false, SWORD) == false);
-    }
-
-    CHECK(RogueWeaponAllowed("combat", false, false, false, false, DAGGER) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, false, false, SWORD) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, false, false, MACE) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, false, false, FIST) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, false, false, AXE) == true);
-
-    CHECK(RogueWeaponAllowed("combat", true, false, false, false, SWORD) == true);
-    CHECK(RogueWeaponAllowed("combat", true, false, false, false, AXE) == true);
-    CHECK(RogueWeaponAllowed("combat", true, false, false, false, DAGGER) == false);
-
-    CHECK(RogueWeaponAllowed("combat", false, true, false, false, MACE) == true);
-    CHECK(RogueWeaponAllowed("combat", false, true, false, false, SWORD) == false);
-
-    CHECK(RogueWeaponAllowed("combat", false, false, true, false, FIST) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, true, false, SWORD) == false);
-
-    CHECK(RogueWeaponAllowed("combat", false, false, false, true, DAGGER) == true);
-    CHECK(RogueWeaponAllowed("combat", false, false, false, true, SWORD) == false);
-
-    CHECK(RogueWeaponAllowed("combat", true, false, false, true, SWORD) == true);
-    CHECK(RogueWeaponAllowed("combat", true, false, false, true, AXE) == true);
-    CHECK(RogueWeaponAllowed("combat", true, false, false, true, DAGGER) == true);
-    CHECK(RogueWeaponAllowed("combat", true, false, false, true, MACE) == false);
-    std::cout << "  [PASS] 4-boolean compatibility overload behaves consistently\n";
-
     std::cout << "All rogue weapon policy checks PASSED!\n";
     return 0;
 }

@@ -86,45 +86,4 @@ namespace ai
                weaponSubclass == ROGUE_POLICY_WS_FIST ||
                weaponSubclass == ROGUE_POLICY_WS_AXE;
     }
-
-    // 4-boolean overload for the generic specialization matrix (Sword/Axe, Mace, Fist, Dagger).
-    inline bool RogueWeaponAllowed(std::string_view specName,
-                                   bool hasSwordSpec,
-                                   bool hasMaceSpec,
-                                   bool hasFistSpec,
-                                   bool hasDaggerSpec,
-                                   uint32_t weaponSubclass)
-    {
-        if (RogueSpecWantsDaggers(specName))
-            return weaponSubclass == ROGUE_POLICY_WS_DAGGER;
-
-        if (specName == "combat")
-        {
-            bool const hasAnySpec = hasSwordSpec || hasMaceSpec || hasFistSpec || hasDaggerSpec;
-            if (!hasAnySpec)
-            {
-                return weaponSubclass == ROGUE_POLICY_WS_DAGGER ||
-                       weaponSubclass == ROGUE_POLICY_WS_SWORD ||
-                       weaponSubclass == ROGUE_POLICY_WS_MACE ||
-                       weaponSubclass == ROGUE_POLICY_WS_FIST ||
-                       weaponSubclass == ROGUE_POLICY_WS_AXE;
-            }
-
-            if (hasSwordSpec && (weaponSubclass == ROGUE_POLICY_WS_SWORD || weaponSubclass == ROGUE_POLICY_WS_AXE))
-                return true;
-            if (hasMaceSpec && weaponSubclass == ROGUE_POLICY_WS_MACE)
-                return true;
-            if (hasFistSpec && weaponSubclass == ROGUE_POLICY_WS_FIST)
-                return true;
-            if (hasDaggerSpec && weaponSubclass == ROGUE_POLICY_WS_DAGGER)
-                return true;
-            return false;
-        }
-
-        return weaponSubclass == ROGUE_POLICY_WS_DAGGER ||
-               weaponSubclass == ROGUE_POLICY_WS_SWORD ||
-               weaponSubclass == ROGUE_POLICY_WS_MACE ||
-               weaponSubclass == ROGUE_POLICY_WS_FIST ||
-               weaponSubclass == ROGUE_POLICY_WS_AXE;
-    }
 }
