@@ -261,17 +261,22 @@ class ThreatSuccessorKeepsAway(unittest.TestCase):
         self.assertIn("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0", CONF)
 
     def test_the_pick_marks_cursed_tanks_behind_the_key(self):
-        tank = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        # The list is built by the shared helper (walk 57 F4 review M3), which GetTankThreat calls before the pick.
+        caller = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);", caller)
+        self.assertLess(caller.index("ThreatCapTanksOf("), caller.index("ThreatCapPickReference("))
+        tank = body(self.VALUES, "std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target,")
         self.assertIn("const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;", tank)
         self.assertIn("tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);", tank)
         self.assertIn("if (keepsAway)\n        ThreatCapCursedOnBoss(tanks);", tank)
-        self.assertLess(tank.index("ThreatCapCursedOnBoss(tanks);"), tank.index("ThreatCapPickReference("))
+        self.assertLess(tank.index("ThreatCapCursedOnBoss(tanks);"), tank.index("return tanks;"))
         self.assertIn("constexpr std::uint32_t kJindoDelusionsSpellId = 24306;", THREAT_POLICY)
         self.assertIn("return threat > 0.0f && threat >= highest * kThreatCapOffTankAwayShare;", THREAT_POLICY)
 
     def test_a_charmed_tank_is_still_skipped(self):
         # The charm half was dropped (round-1 review): a charmed tank's old threat would lift the cap on Hakkar.
-        tank = body(self.VALUES, "float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)")
+        tank = body(self.VALUES, "std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target,")
+        self.assertIn("!ai->IsSafe(player) || player == skip", tank)
         self.assertIn("if (!charmer.IsEmpty() && !charmer.IsPlayer())\n            continue;", tank)
         self.assertNotIn("CharmThreat" + "Memo", AI_TREE)
         self.assertNotIn("CharmMemo" + "Threat", AI_TREE)

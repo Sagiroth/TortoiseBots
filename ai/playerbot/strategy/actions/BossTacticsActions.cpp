@@ -2304,6 +2304,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 auto const it = g_walkouts.find(instanceId);
                 cleared = it != g_walkouts.end() &&
                     CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
+                // A `receiver_victim` close counts as a lost meet for the nearest take's reach.
+                if (cleared && !takenBy)
+                    WalkoutNoteMeetLost(it->second.state.lostMeets, lost, state.meetSon, nowMs,
+                                        kSeekNearestTakeMeetLostMs);
             }
             const std::uint64_t guid = state.meetSon;
             if (cleared && takenBy)
@@ -2432,6 +2436,13 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         meetRoles.tanks[static_cast<std::size_t>(pick)])
                     {
                         Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
+                        // The receiver's distance to its pre-place point at the shot (walk 57 F3; -1: not the
+                        // pre-placed tank, or no pre-place).
+                        float const receiverPointYd =
+                            it->second.state.prePlaceReceiver != 0 &&
+                                    it->second.state.prePlaceReceiver == receiver->GetObjectGuid().GetRawValue()
+                                ? receiver->GetDistance2d(it->second.state.prePlaceX, it->second.state.prePlaceY)
+                                : -1.0f;
                         bool const meetBefore = it->second.state.meetReceiver != 0;
                         it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
                         it->second.state.meetSon = guid;
@@ -2443,9 +2454,11 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                         state.meetMs = nowMs;
                         state.meetPuller = it->second.state.puller;
                         snprintf(info1, sizeof(info1),
-                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u",
+                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"
+                                 "receiver_point_yd=%.1f",
                                  ObjectGuid(guid).GetCounter(), receiver->GetName(), pick,
-                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000);
+                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000,
+                                 receiverPointYd);
                     }
                     else
                     {
@@ -2876,18 +2889,60 @@ void SeekMeetWalkers(std::uint32_t instanceId, std::uint64_t& puller, std::uint6
     returner = it->second.state.returner;
 }
 
-// The meet's pre-place for this bot (g_walkoutMutex, DungeonRunSeekMeetPrePlace): true with its point while a live
-// pre-place names this bot (WalkoutPrePlaceLive: its task unshot, or its meet still recorded).
-bool SeekMeetPrePlaceFor(std::uint32_t instanceId, std::uint64_t bot, float& x, float& y)
+// The pre-place's one snapshot for this bot (g_walkoutMutex, walk 57 F3; review: one lock for all of it): the point,
+// the walk-out's puller and stand, whether the puller is in position (WalkoutPullerInPos), whether the walk already
+// began, the pre-place's generation and its Son. False without a live pre-place naming this bot.
+struct SeekPrePlaceProgress
+{
+    float x = 0.0f, y = 0.0f;
+    std::uint64_t puller = 0;
+    float standX = 0.0f, standY = 0.0f;
+    bool standKnown = false;
+    bool pullerInPos = false;
+    bool walking = false;
+    std::uint32_t gen = 0;
+    std::uint64_t son = 0;
+};
+
+bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, SeekPrePlaceProgress& out)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
     if (it == g_walkouts.end() || it->second.state.prePlaceReceiver != bot ||
         !WalkoutPrePlaceLive(it->second.state))
         return false;
-    x = it->second.state.prePlaceX;
-    y = it->second.state.prePlaceY;
+    const SeekWalkoutState& s = it->second.state;
+    out.x = s.prePlaceX;
+    out.y = s.prePlaceY;
+    out.puller = s.prePlacePuller;
+    out.standKnown = WalkoutActive(s) && s.puller == s.prePlacePuller;
+    out.standX = s.standX;
+    out.standY = s.standY;
+    out.pullerInPos = WalkoutPullerInPos(s);
+    out.walking = s.prePlaceWalking;
+    out.gen = s.prePlaceGen;
+    out.son = s.son ? s.son : s.meetSon;
     return true;
+}
+
+// The snapshot's commit (WalkoutPrePlaceConfirm) under g_walkoutMutex: true while the snapshot's generation is still
+// this bot's live pre-place; `latchWalk` latches the walk's start too. False: the pre-place was replaced or ended.
+bool SeekMeetPrePlaceConfirm(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, bool latchWalk,
+                             std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceConfirm(it->second.state, bot, gen, latchWalk, nowMs);
+}
+
+// Claims the pre-place's one arrival row (WalkoutPrePlaceNoteArrive) under g_walkoutMutex.
+bool SeekMeetPrePlaceNoteArrive(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, std::uint32_t nowMs,
+                                std::uint32_t& afterMs)
+{
+    afterMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs);
 }
 
 // The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
@@ -2925,12 +2980,74 @@ bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& i
 }
 
 // Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
-// follows. The receiver, the Son and `meetMs` tell this meet from a later one.
-bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
+// follows. The receiver, the Son and `meetMs` tell this meet from a later one. A counted close word (`reason`,
+// WalkoutMeetLostCounts) records the Son as a lost meet for the nearest take's reach.
+bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs,
+                   const char* reason)
 {
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
-    return it != g_walkouts.end() && CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs);
+    if (it == g_walkouts.end() || !CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs))
+        return false;
+    WalkoutNoteMeetLost(it->second.state.lostMeets, reason, son, WorldTimer::getMSTime(), kSeekNearestTakeMeetLostMs);
+    return true;
+}
+
+// The cap take latch as one read sees it (WalkoutCapTakeLatched's inputs).
+struct SeekCapLatch
+{
+    std::uint64_t taker = 0;
+    std::uint64_t son = 0;
+    std::uint32_t ms = 0;
+};
+
+// The nearest take's reach read (g_walkoutMutex, DungeonRunSeekNearestTakeReach): the instance's walked Sons, its
+// recent lost meets (WalkoutNoteMeetLost) and the cap take latch. All empty with no record. A latched Son that is
+// dead, gone or on any tank ends the latch here (WalkoutCapTakeEnds, round 2), so a later peel of it checks again.
+void SeekWalkoutReachRead(Player* bot, std::vector<std::uint64_t>& walked,
+                          std::vector<std::pair<std::uint64_t, std::uint32_t>>& lostMeets, SeekCapLatch& latch)
+{
+    walked.clear();
+    lostMeets.clear();
+    latch = SeekCapLatch();
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it == g_walkouts.end())
+            return;
+        walked = it->second.state.walkedSons;
+        lostMeets = it->second.state.lostMeets;
+        latch.taker = it->second.state.capTaker;
+        latch.son = it->second.state.capTakeSon;
+        latch.ms = it->second.state.capTakeMs;
+    }
+    if (latch.son == 0)
+        return;
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(latch.son));
+    const bool alive = son && son->IsInWorld() && sServerFacade.IsAlive(son);
+    Player* const victim = alive ? dynamic_cast<Player*>(son->GetVictim()) : nullptr;
+    if (!WalkoutCapTakeEnds(alive, victim && PlayerbotAI::IsTank(victim)))
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it != g_walkouts.end() && it->second.state.capTakeSon == latch.son &&
+            it->second.state.capTakeMs == latch.ms)
+            WalkoutCapTakeClear(it->second.state);
+    }
+    latch = SeekCapLatch();
+}
+
+// A cap-guarded take's execution result (WalkoutCapTakeNoteExec) under g_walkoutMutex: latched once it really
+// started, cleared when refused or failed. No record (no walk-out yet): nothing to latch, and each tick checks again.
+void SeekCapTakeNoteExec(std::uint32_t instanceId, std::uint64_t taker, std::uint64_t son, bool started,
+                         std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it != g_walkouts.end())
+        WalkoutCapTakeNoteExec(it->second.state, taker, son, started, nowMs);
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -8331,13 +8448,55 @@ bool SeekTankTauntReady(Player* tank)
                                  SeekTauntFormOk(tank->GetClass(), defensiveStance, bearForm));
 }
 
+// Whether `bot` walking off `boss` would collapse the damage dealers' threat-cap reference (ThreatCapLeaveCollapses,
+// walk 57 F4 review H1/M2): the cap's own tank list (ThreatCapTanksOf, as ThreatValue::GetTankThreat builds it, read
+// with this tank's AI and nobody skipped) with this tank marked off the boss, whoever holds it. A boss without a
+// `threat_successor` row has no off-tank reference to collapse.
+bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot)
+{
+    if (!ai || !boss || !bot || !ThreatSuccessorTarget(boss))
+        return false;
+    std::vector<Player*> who;
+    const std::vector<ThreatCapTank> tanks = ThreatCapTanksOf(ai, boss, roles, nullptr, &who);
+    int selfPos = -1;
+    for (std::size_t i = 0; i < who.size(); ++i)
+    {
+        if (who[i] == bot)
+            selfPos = static_cast<int>(i);
+    }
+    return ThreatCapLeaveCollapses(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+}
+
+// The healer clock's cap guard (DungeonRunSeekNearestTakeReach only; the caller skips it with the key off): the take
+// of `son` goes ahead when the clock overrides the guard (it sat on that non-tank 6 s, or its victim is under 40 %
+// health: HealerClockOverridesCap), this tank's started take of it is still latched, or its leave does not collapse the
+// cap. False: the take is held back this tick. The latch is set by Execute once the take really starts.
+bool SeekHealerClockCapOk(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state, Unit* son)
+{
+    std::vector<std::uint64_t> walked;
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+    SeekCapLatch latch;
+    SeekWalkoutReachRead(bot, walked, lostMeets, latch);
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint64_t sonGuid = son->GetObjectGuid().GetRawValue();
+    const auto held = state.nonTankSince.find(sonGuid);
+    const std::uint32_t onNonTankMs = held != state.nonTankSince.end() ? state.nowMs - held->second.sinceMs : 0;
+    Unit* const victim = son->GetVictim();
+    const float victimHpPct = victim ? victim->GetHealthPercent() : 100.0f;
+    return SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot),
+                                      WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),
+                                      HealerClockOverridesCap(onNonTankMs, victimHpPct));
+}
+
 // The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
 // 3 s healer clock, the nearest of them (PickSeekNearestTake); null when the receiver can take it itself or this tank
 // cannot. Only Sons the fight's non-tank clock knows (it already leaves out the open meet's walkers), not the open
 // meet's Son, and only with the victim inside the live anchor's raid circle plus 2 yd. No live anchor: null, and the
 // 3 s rule stands.
-Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state,
+                          bool& viaReach)
 {
+    viaReach = false;
     if (!state.row || roles.tanks.size() < 3 || state.nonTankSince.empty())
         return nullptr;
     const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
@@ -8349,6 +8508,17 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     const bool receiverUp = receiver && receiver->IsInWorld() && sServerFacade.IsAlive(receiver);
     const bool selfIsBossVictim = state.boss && state.boss->GetVictim() == bot;
     const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+    // The reach (DungeonRunSeekNearestTakeReach, walk 57 F4): the walk-out record's walked Sons, lost meets and cap take
+    // latch, and whether this tank's leave would collapse the damage dealers' threat-cap reference.
+    const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::vector<std::uint64_t> walked;
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+    SeekCapLatch latch;
+    if (reachOn)
+        SeekWalkoutReachRead(bot, walked, lostMeets, latch);
+    const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot);
     std::vector<Unit*> units;
     std::vector<SeekNearestTakeCand> cands;
     for (const auto& entry : state.nonTankSince)
@@ -8363,6 +8533,13 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         c.victimInside = victim && InsideAnchor(raid, victim->GetPositionX(), victim->GetPositionY());
         c.selfYd = bot->GetDistance(son);
         c.receiverYd = receiverUp ? receiver->GetDistance(son) : std::numeric_limits<float>::max();
+        if (reachOn)
+        {
+            c.meetLost = WalkoutMeetLostWithin(lostMeets, entry.first, nowMs, kSeekNearestTakeMeetLostMs);
+            // A walked Son: walked this cycle, or its meet just lost (a Son that joined by itself is not the reach's).
+            c.reachKey = c.meetLost || std::find(walked.begin(), walked.end(), entry.first) != walked.end();
+            c.capLatched = WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, entry.first, nowMs);
+        }
         if (SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
         {
             // Readiness is read only for an eligible Son (it no longer depends on the Son: no cast check on it).
@@ -8373,7 +8550,8 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         cands.push_back(c);
     }
     const int pick = PickSeekNearestTake(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
-                                         selfIsBossVictim, selfHoldsSon, cands);
+                                         selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap, &viaReach);
+    // A reach take that passed the cap guard is latched by Execute once it really starts (round 2), not here.
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
 
@@ -8383,9 +8561,33 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
 // starts or the pre-place ends. False: no pre-place, the task is untouched.
 bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)
 {
-    float x = 0.0f, y = 0.0f;
-    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row ||
-        !SeekMeetPrePlaceFor(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), x, y))
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row)
+        return false;
+    // One locked snapshot: the point, the walk-out's progress and the pre-place generation (review: a second read could
+    // pair an old point with a new generation).
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    SeekPrePlaceProgress progress;
+    if (!SeekMeetPrePlaceProgressRead(instanceId, self, progress))
+        return false;
+    const float x = progress.x;
+    const float y = progress.y;
+    // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): until the walk is due the tank stays on Hakkar (the
+    // task is untouched, as with no pre-place). Key off: due at once, as before. The puller's walk left to its stand is
+    // weighed against this tank's own walk to its point.
+    if (!progress.walking)
+    {
+        Player* const puller = progress.puller ? bot->GetMap()->GetPlayer(ObjectGuid(progress.puller)) : nullptr;
+        const float pullerToStandYd = puller && puller->IsInWorld() && progress.standKnown
+            ? puller->GetDistance2d(progress.standX, progress.standY) : std::numeric_limits<float>::max();
+        if (!MeetPrePlaceWalkDue(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceLate, pullerToStandYd,
+                                 bot->GetDistance2d(x, y), progress.pullerInPos))
+            return false;
+    }
+    // The commit: the snapshot's generation must still be the live pre-place (and the first due read latches the walk's
+    // start for the arrival row); a pre-place replaced since the snapshot publishes no move toward the old point.
+    if (!SeekMeetPrePlaceConfirm(instanceId, self, progress.gen, true, nowMs))
         return false;
     task.row = row;
     task.source = nullptr;
@@ -8399,6 +8601,19 @@ bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& t
     const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) == MeetPrePlaceStep::Walk;
     task.walkToSpot = walk;
     task.prePlaceHold = !walk;
+    // The arrival row (always on with the pre-place): once per pre-place, when the tank first comes within
+    // kSeekMeetPrePlaceArriveYd of its point, with the time since its walk began. Walk 57 could not tell "pulled back
+    // by reach melee" from "still walking".
+    std::uint32_t afterMs = 0;
+    PlayerbotAI* const botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!walk && botAi && SeekMeetPrePlaceNoteArrive(instanceId, self, progress.gen, nowMs, afterMs))
+    {
+        const std::uint64_t guid = progress.son;
+        char info1[160];
+        snprintf(info1, sizeof(info1), "son=%u,event=preplace_arrive,receiver=%s,after_ms=%u,point_yd=%.1f",
+                 ObjectGuid(guid).GetCounter(), bot->GetName(), afterMs, bot->GetDistance2d(x, y));
+        LogSeekMeet(botAi, info1);
+    }
     return true;
 }
 }
@@ -8485,7 +8700,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     SeekMeetPrePlaceTask(bot, state.row, task);
                     return task;
                 }
-                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))
+                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs, "peeled"))
                     LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,
                                     bot->GetDistance(son));
                 task.row = nullptr;
@@ -8633,20 +8848,25 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     if (healerTaker)
     {
         // The nearest take: a Son on a non-tank that the receiver cannot taunt now (too far, or its taunt on cooldown)
-        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once.
+        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once. With
+        // DungeonRunSeekNearestTakeReach a walked Son is also taken from 20 yd (`src=nearest_reach`).
         if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
         {
-            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state))
+            bool viaReach = false;
+            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state, viaReach))
             {
                 task.valid = true;
                 task.source = nearestSon;
                 task.take = true;
-                task.takeSrc = "nearest";
+                task.takeSrc = viaReach ? "nearest_reach" : "nearest";
                 return task;
             }
         }
-        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot.
-        if (state.healerSon)
+        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot. With
+        // DungeonRunSeekNearestTakeReach the cap guard holds it back when this tank's leave would collapse the damage
+        // dealers' threat-cap reference (review H1); key off: today's take, no check.
+        if (state.healerSon && (!sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach ||
+                                SeekHealerClockCapOk(ai, bot, roles, state, state.healerSon)))
         {
             task.valid = true;
             task.source = state.healerSon;
@@ -9022,14 +9242,38 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             SET_AI_VALUE(Unit*, "current target", nullptr);
             ai->StopMoving();
         }
+        // A cap-guarded take (DungeonRunSeekNearestTakeReach: `nearest_reach`, `healer_clock`) is latched only once it
+        // really starts (the attack or chase command went out, the tank is already after it, or the taunt cast), and a
+        // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
+        const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
+            (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
+        bool started = false;
         if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
-            if (Attack(bot, task.source) && !canTaunt)
+            const bool attacked = Attack(bot, task.source);
+            started = attacked;
+            if (attacked && !canTaunt)
+            {
+                if (capGuarded)
+                    SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                        task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
                 return true;
+            }
         }
+        else if (!chaseRefused)
+            started = true; // already after it
         if (!canTaunt || gateRefused)
+        {
+            if (capGuarded)
+                SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                    task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
             return false;
-        return ai->CastSpell(taunt, task.source);
+        }
+        const bool cast = ai->CastSpell(taunt, task.source);
+        if (capGuarded)
+            SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
+        return cast;
     }
     if (task.pull)
     {

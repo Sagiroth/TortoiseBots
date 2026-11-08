@@ -525,6 +525,62 @@ int main()
         CHECK(SuccessorWhiteStopNow(latch, true, false, 95, false, SuccessorWhiteOnTarget(true, true, false, false)));
     }
 
+    // ThreatCapLeaveCollapses (the nearest take's reach and healer-clock guard, walk 57 F4 review H1/M2): the cap's pick
+    // re-run with the leaving tank marked off the boss. ThreatCapTank: {threat, offTank, onBoss, holdsBoss}.
+    {
+        // H1: the main tank holds, tanks[1] on the boss with 400 is the reference (over the small on-boss floor),
+        // tanks[2] away with 200. tanks[1] leaving: no off-tank on the boss, the away floor (half of 1000) is above 400,
+        // so the cap falls back to the main tank.
+        const std::vector<ThreatCapTank> h1 = {{1000.0f, false, true, true}, {400.0f, true, true, false},
+                                               {200.0f, true, false, false}};
+        CHECK(ThreatCapPickReference(h1, true).offTank);
+        CHECK(ThreatCapLeaveCollapses(h1, 1));        // the cap falls back to the main tank: collapse
+        CHECK(!ThreatCapLeaveCollapses(h1, 2));       // tanks[2] is away already: nothing changes
+        CHECK(!ThreatCapLeaveCollapses(h1, -1));
+        CHECK(!ThreatCapLeaveCollapses(h1, 3));
+        // The reference falls under half: tanks[1] 900 on the boss, tanks[2] 300 on the boss too. Leaving keeps an
+        // off-tank on the boss (tanks[2]) and the pick is the off-tanks' highest threat, still 900: no collapse.
+        const std::vector<ThreatCapTank> stays = {{1000.0f, false, true, true}, {900.0f, true, true, false},
+                                                  {300.0f, true, true, false}};
+        CHECK(!ThreatCapLeaveCollapses(stays, 1));
+        // With the not-holder pick the reference is the highest non-holder ON the boss: tanks[1] 900 leaving hands it
+        // to tanks[2] 300 (under half of 900): collapse; 600 (two thirds) is not.
+        CHECK(ThreatCapLeaveCollapses(stays, 1, true));
+        const std::vector<ThreatCapTank> stays2 = {{1000.0f, false, true, true}, {900.0f, true, true, false},
+                                                   {600.0f, true, true, false}};
+        CHECK(!ThreatCapLeaveCollapses(stays2, 1, true));
+        // M2, holder Off: tanks[2] holds the boss, tanks[1] on it. The holder still hits the boss, so the floor stays
+        // the small one and tanks[1]'s threat stays the pick: no collapse. With the not-holder pick the main tank
+        // (1000, on the boss, not the holder) is the reference: no off-tank reference to lose.
+        const std::vector<ThreatCapTank> offHolds = {{1000.0f, false, true, false}, {800.0f, true, true, false},
+                                                     {700.0f, true, true, true}};
+        CHECK(!ThreatCapLeaveCollapses(offHolds, 1));
+        CHECK(!ThreatCapLeaveCollapses(offHolds, 1, true));
+        // Holder Off with the main tank away: tanks[1] is the not-holder pick's reference; leaving leaves no
+        // non-holder on the boss, the pick falls to the plain rule, which still counts tanks[1]'s kept threat and has
+        // the holder on the boss (the small floor): no collapse.
+        const std::vector<ThreatCapTank> offHoldsMtAway = {{1000.0f, false, false, false}, {800.0f, true, true, false},
+                                                           {700.0f, true, true, true}};
+        CHECK(!ThreatCapLeaveCollapses(offHoldsMtAway, 1, true));
+        // M2, holder None (a damage dealer holds, or nobody): tanks[1] the only off-tank on the boss, 400 of 1000.
+        const std::vector<ThreatCapTank> none = {{1000.0f, false, true, false}, {400.0f, true, true, false},
+                                                 {100.0f, true, false, false}};
+        CHECK(ThreatCapLeaveCollapses(none, 1));
+        // With the not-holder pick the main tank (on the boss, not holding) is the reference already: nothing to lose.
+        CHECK(!ThreatCapLeaveCollapses(none, 1, true));
+        // A tie: two off-tanks on the boss with the same threat; either leaving keeps the other: no collapse.
+        const std::vector<ThreatCapTank> tie = {{1000.0f, false, true, true}, {600.0f, true, true, false},
+                                                {600.0f, true, true, false}};
+        CHECK(!ThreatCapLeaveCollapses(tie, 1));
+        CHECK(!ThreatCapLeaveCollapses(tie, 2));
+        CHECK(!ThreatCapLeaveCollapses(tie, 1, true));
+        // Today's pick has no off-tank reference (every off-tank away and low): nothing to collapse.
+        const std::vector<ThreatCapTank> low = {{1000.0f, false, true, true}, {400.0f, true, false, false}};
+        CHECK(!ThreatCapPickReference(low, true).offTank);
+        CHECK(!ThreatCapLeaveCollapses(low, 1));
+        CHECK(kThreatCapCollapseShare == 0.5f);
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

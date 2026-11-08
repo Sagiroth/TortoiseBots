@@ -370,4 +370,25 @@ namespace ai
     {
         return ThreatCapPickReference(tanks, successorCap, notHolder).threat;
     }
+
+    // The share of today's reference below which a leave counts as collapsing the cap (ThreatCapLeaveCollapses).
+    constexpr float kThreatCapCollapseShare = 0.5f;
+
+    // Whether the tank at `selfPos` in `tanks` (the cap's own tank list, ThreatCapTanksOf) leaving the boss would collapse
+    // the damage dealers' threat-cap reference (walk 57 F4 review H1/M2): the successor pick (ThreatCapPickReference,
+    // successorCap on, the cap's own `notHolder`) is re-run with that tank marked off the boss (its threat stays: it
+    // does not vanish when the tank walks off). Today's pick naming no off-tank reference has none to lose: false.
+    // Otherwise it collapses when the new pick names no off-tank reference, or one under kThreatCapCollapseShare of
+    // today's. The holder (main, an off-tank, nobody) is whatever the list says. A bad `selfPos` never collapses.
+    inline bool ThreatCapLeaveCollapses(std::vector<ThreatCapTank> tanks, int selfPos, bool notHolder = false)
+    {
+        if (selfPos < 0 || static_cast<std::size_t>(selfPos) >= tanks.size())
+            return false;
+        const ThreatCapPick now = ThreatCapPickReference(tanks, true, notHolder);
+        if (!now.offTank)
+            return false;
+        tanks[static_cast<std::size_t>(selfPos)].onBoss = false;
+        const ThreatCapPick after = ThreatCapPickReference(tanks, true, notHolder);
+        return !after.offTank || after.threat < now.threat * kThreatCapCollapseShare;
+    }
 }

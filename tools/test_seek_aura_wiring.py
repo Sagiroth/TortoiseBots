@@ -310,7 +310,7 @@ class SeekRolesWiring(unittest.TestCase):
         self.assertIn("out.healerSon = son;", read)
         find = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(")
         self.assertIn("roles.tanks.size() >= 3 && roles.tanks[1] == bot", find)
-        self.assertIn("if (state.healerSon)", find)
+        self.assertIn("if (state.healerSon && (!sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach ||", find)
         self.assertIn("SeekTakeFightingSonOnHealer(", POLICY)
         self.assertIn("healerHeldSince", STATE_POLICY)
 

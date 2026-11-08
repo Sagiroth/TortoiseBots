@@ -87,7 +87,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandSight`](#aiplayerbotdungeonrunseekwalkoutstandsight) | `0` | `1` (recommended): the Hakkar walk-out's stand search tests sight the way the bot does, and a refused move on the stand re-plans it instead of aborting. |
 | [`AiPlayerbot.DungeonRunPlaceUnstick`](#aiplayerbotdungeonrunplaceunstick) | `0` | `1` (recommended): a bot in a dungeon or raid cut off on a navmesh island (every move fails NOPATH for 10 s and a navmesh query proves its spot cut off) is teleported beside its master, combat kept, at most once per 30 s. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
+| [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
+| [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -1067,6 +1069,28 @@ Whether the first off-tank takes a Son of Hakkar off a non-tank at once when its
 
 </details>
 
+### `AiPlayerbot.DungeonRunSeekNearestTakeReach`
+Whether the first off-tank reaches a walked Son of Hakkar on a non-tank from up to 20 yd, not only 8 yd. Recommended on.
+**Default:** `0` · **Values:** `0` off (the 8 yd nearest take only, as before), `1` on (needs `DungeonRunSeekNearestTake` and the live `anchor` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Reach:** in walk 57 the identified Son kills were mostly walked Sons whose meet was peeled (1.02 a fight) or that were met and then sat on a non-tank (0.69 a fight), while the 8 yd nearest take fired only 20 times in 58 fights. With the key on, on top of the 8 yd rule, the first off-tank (tanks[1]) takes a Son at once when all of these hold:
+- the nearest take's own Son rules hold (on a non-tank, not the open meet's Son, its victim inside the raid circle plus 2 yd);
+- the Son is a walked one: the walk-out walked it this cycle, or its meet was just lost;
+- the receiver (tanks[2]) is more than 15 yd from the Son, or the Son's meet closed as `peeled` or `receiver_victim` in the last 10 s and the receiver cannot take it itself (it is not within 8 yd with its taunt ready: two tanks never taunt one Son);
+- the first off-tank is within 20 yd of the Son (the take's Attack closes the gap) with its taunt ready, is not Hakkar's victim and holds no Son;
+- its leaving Hakkar does not collapse the damage dealers' threat cap: the cap's own reference pick (the `threat_successor` pick, with `DungeonRunThreatSuccessorNotHolder` as set, read from the very tank list the cap uses) is re-run with the first off-tank marked off Hakkar, and the take is held back when that pick has no off-tank reference left, or one under half of today's. That holds whoever holds Hakkar (the main tank, an off-tank or nobody); a pick that has no off-tank reference today has none to lose.
+
+With the key on, the same cap guard also holds back the first off-tank's 3 s healer-clock take of a Son (the branch then has no take that tick), but only until the Son has sat on that non-tank for 6 s, or at once when its victim is under 40 % health: then the clock takes it whatever the cap; key off, the healer clock is unchanged. A guarded take (`nearest_reach` or `healer_clock`) that really started (its attack or chase command went out, the tank was already after it, or its taunt was cast) is latched for its Son in the fight's walk-out record, so it is not re-checked (and abandoned) mid-walk. The latch holds 10 s; a refused or failed take clears it, and so does that Son dying or reaching any tank, so a later peel of it checks again; another Son or another tank checks again too (with no walk-out record yet there is no latch, and each tick checks).
+
+The take row says `src=nearest_reach` when only the reach let the take through (`src=nearest` when the 8 yd rule did).
+
+Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon cycle (the walk-out record forgets the Sons of earlier cycles), so a Son walked last cycle and never lost counts as one that joined by itself.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunSeekMeetPrePlace`
 Whether the receiving third tank walks to the puller's way back when a Hakkar walk-out starts, so the pulled Son meets it sooner. Recommended on.
 **Default:** `0` · **Values:** `0` off (the receiver stands wherever its tank AI left it until the meet, as before), `1` on (needs `DungeonRunSeekSonMeet` and a `seek_pull` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -1090,6 +1114,21 @@ Known limits (not fixed):
 - a point on the north half of the circle stands up to 40 yd from the gather spot, so a Son fighting at the spot is a longer run for tanks[2] (the first off-tank's nearest take and healer clock still cover a Son on a non-tank);
 - a dodge (`avoid aoe`, `boss tactics avoid cast`) outranks the hold while the tank stands in the effect, but once it is just outside, the hold may stop the dodge's walk at the effect's edge, and a dodge that carried it more than 4 yd off is walked back toward the point;
 - the move's height is re-derived from the ground at the point (the walk's ground snap), not taken from the floor the start checked.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`
+Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's puller nears its stand, instead of walking when the walk-out starts. Recommended on (its value is still being tested on the A/B arm).
+**Default:** `0` · **Values:** `0` off (the walk starts with the walk-out, as before), `1` on (needs `DungeonRunSeekMeetPrePlace`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Late walk:** in walk 57 the pre-place started a median 11 s before the shot, the third tank's threat on Hakkar at Cause Insanity fell 24 %, and it still stood a median 42.8 yd from the puller at the shot. With the key on, the pre-placed tank keeps its normal tank work (the task is left as with no pre-place) until the puller's walk left to its stand is no longer than the tank's own walk to its point plus 4 yd (both walk at the same speed, so the tank reaches its point about when the shot lands; walk 57's median tank stood 31 yd from its point, so it walks with the puller still about 35 yd out), at the latest when the puller is within 10 yd of its stand, or when the puller is in position (it stood at its stand, reached shot position, or the shot landed); then it walks to its point as before. A stand not known (the puller's task not the pre-place's) waits for the puller to be in position. Once begun the walk is not undone. The point, the stand and the pre-place's generation come from one locked read, and the move is published only after the same generation is confirmed again under the lock, so a pre-place replaced in between never sends the tank to the old point.
+
+Limits (documented, not fixed): the late walk keeps tanks[2] on Hakkar longer, so it is Hakkar's victim more often when the pre-place starts or runs; walk 58 measures the `preplace_end` / meet `reason=receiver_victim` count against walk 57's 13.
+
+Diagnostics (always on with `DungeonRunSeekMeetPrePlace`, key or not): a `BossTacticsSonMeet` row `event=preplace_arrive,receiver=<name>,after_ms=<ms>,point_yd=<yd>` once per pre-place when the tank first comes within 4 yd of its point (`after_ms` since its walk began), and the shot's `event=meet` row gains `receiver_point_yd=` (the receiver's distance to its pre-place point; `-1.0` when the receiver is not the pre-placed tank). Walk 57 could not tell a tank pulled back by its melee reach from one still walking.
 
 </details>
 

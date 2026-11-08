@@ -466,13 +466,18 @@ namespace ai
         return victimNonTank && !openMeetSon && victimInsideRaidCircle;
     }
 
-    // Whether the tank at `selfIdx` (in the raid's tank order) is the nearest take's taker for one such Son. The main
-    // tank (0) never takes. The receiver (`receiverIdx`, the third tank) keeps its own take. tanks[1] takes at once,
-    // without the 3 s clock, only when the receiver cannot (more than 8 yd from the Son, or its taunt on cooldown;
-    // a dead receiver is passed as far and not ready) and tanks[1] itself can: within 8 yd, its taunt ready, not the
-    // boss's victim and holding no Son. Any other tank index is not a taker here.
-    inline bool SeekNearestTakerIs(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
-                                   float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon)
+    // The nearest take's reach (DungeonRunSeekNearestTakeReach, walk 57 F4): walk 57's identified Son kills were mostly
+    // walked Sons whose meet was peeled (1.02 a fight) or that were met and then sat on a non-tank (0.69), while the
+    // 8 yd nearest take fired 20 times in 58 fights. With the key, tanks[1] also takes a walked Son on a non-tank from
+    // up to kSeekNearestTakeReachYd (Attack closes the gap) when the receiver is more than kSeekNearestTakeReachRecvYd
+    // from it, or that Son's meet closed as `peeled` or `receiver_victim` within kSeekNearestTakeMeetLostMs.
+    constexpr float kSeekNearestTakeReachYd = 20.0f;
+    constexpr float kSeekNearestTakeReachRecvYd = 15.0f;
+    constexpr std::uint32_t kSeekNearestTakeMeetLostMs = 10000;
+
+    // Today's rule (the 8 yd nearest take): see SeekNearestTakerIs.
+    inline bool SeekNearestTakerNear(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
+                                     float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon)
     {
         if (selfIdx <= 0)
             return false;
@@ -483,6 +488,43 @@ namespace ai
         const bool receiverCannot = receiverYd > kSeekNearestTakeYd || !receiverTauntReady;
         const bool selfCan = selfYd <= kSeekNearestTakeYd && selfTauntReady && !selfIsBossVictim && !selfHoldsSon;
         return receiverCannot && selfCan;
+    }
+
+    // The reach rule alone (DungeonRunSeekNearestTakeReach): `reachKey` is the key on and the Son a walked one (the
+    // caller's read), `meetLost` its meet closed as peeled or receiver_victim in the last 10 s, `selfCollapsesCap`
+    // tanks[1] leaving the boss would collapse the damage dealers' threat-cap reference (ThreatCapLeaveCollapses; the
+    // caller passes false for a Son whose take already started, the take latch). tanks[1] only: within 20 yd, its
+    // taunt ready, not the boss's victim, holding no Son, its leave not collapsing the cap, and the receiver more than
+    // 15 yd from the Son, or the Son's meet lost while the receiver cannot take it itself (within 8 yd with its taunt
+    // ready, it can: two tanks would taunt the one Son).
+    inline bool SeekNearestTakerReach(int selfIdx, float receiverYd, bool receiverTauntReady, float selfYd,
+                                      bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon, bool reachKey,
+                                      bool meetLost, bool selfCollapsesCap)
+    {
+        if (!reachKey || selfIdx != 1)
+            return false;
+        const bool receiverCanTake = receiverYd <= kSeekNearestTakeYd && receiverTauntReady;
+        const bool receiverFar = receiverYd > kSeekNearestTakeReachRecvYd || (meetLost && !receiverCanTake);
+        const bool selfCan = selfYd <= kSeekNearestTakeReachYd && selfTauntReady && !selfIsBossVictim &&
+            !selfHoldsSon && !selfCollapsesCap;
+        return receiverFar && selfCan;
+    }
+
+    // Whether the tank at `selfIdx` (in the raid's tank order) is the nearest take's taker for one such Son. The main
+    // tank (0) never takes. The receiver (`receiverIdx`, the third tank) keeps its own take. tanks[1] takes at once,
+    // without the 3 s clock, only when the receiver cannot (more than 8 yd from the Son, or its taunt on cooldown;
+    // a dead receiver is passed as far and not ready) and tanks[1] itself can: within 8 yd, its taunt ready, not the
+    // boss's victim and holding no Son. With the reach (SeekNearestTakerReach) tanks[1] may also take from 20 yd. Any
+    // other tank index is not a taker here. The last three default off: today's rule.
+    inline bool SeekNearestTakerIs(int selfIdx, int receiverIdx, float receiverYd, bool receiverTauntReady,
+                                   float selfYd, bool selfTauntReady, bool selfIsBossVictim, bool selfHoldsSon,
+                                   bool reachKey = false, bool meetLost = false, bool selfCollapsesCap = false)
+    {
+        if (SeekNearestTakerNear(selfIdx, receiverIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady,
+                                 selfIsBossVictim, selfHoldsSon))
+            return true;
+        return SeekNearestTakerReach(selfIdx, receiverYd, receiverTauntReady, selfYd, selfTauntReady, selfIsBossVictim,
+                                     selfHoldsSon, reachKey, meetLost, selfCollapsesCap);
     }
 
     // The stance or form a tank's taunt needs (by class id): a warrior's Taunt needs Defensive Stance, a druid's Growl
@@ -518,27 +560,72 @@ namespace ai
         float receiverYd = 0.0f;
         bool receiverTauntReady = false;
         bool selfTauntReady = false;
+        // The reach's inputs (DungeonRunSeekNearestTakeReach): the key on and the Son a walked one, and its meet lost.
+        bool reachKey = false;
+        bool meetLost = false;
+        // This tank's cap-checked take of this Son already started (the walk-out state's take latch): the collapse is
+        // not re-checked for it (walk 57 F4 review L3).
+        bool capLatched = false;
     };
 
-    // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes
-    // (SeekNearestTakerIs), or -1. Flag off: always -1, so the 3 s healer clock is the only take.
-    inline int PickSeekNearestTake(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
-                                   const std::vector<SeekNearestTakeCand>& sons)
+    // The cap guard for one Son: the collapse holds the take back, unless that Son's take already started.
+    inline bool SeekCapGuardBlocks(bool selfCollapsesCap, bool capLatched)
     {
+        return selfCollapsesCap && !capLatched;
+    }
+
+    // The healer clock's override of the cap guard (round 2 NEW-1: a guarded take had no fallback, so a Son on a healer
+    // was never taken while the cap would collapse): the Son has sat on that non-tank for kSeekHealerClockOverrideMs,
+    // or its victim is under kSeekHealerClockOverrideHpPct health. Then the take goes, cap or not.
+    constexpr std::uint32_t kSeekHealerClockOverrideMs = 6000;
+    constexpr float kSeekHealerClockOverrideHpPct = 40.0f;
+
+    inline bool HealerClockOverridesCap(std::uint32_t onNonTankMs, float victimHpPct)
+    {
+        return onNonTankMs >= kSeekHealerClockOverrideMs || victimHpPct < kSeekHealerClockOverrideHpPct;
+    }
+
+    // Whether the healer clock's take goes ahead (walk 57 F4 review H1): key off (DungeonRunSeekNearestTakeReach) always,
+    // as today; key on, when the clock overrides the guard (HealerClockOverridesCap) or the cap guard does not block it
+    // (SeekCapGuardBlocks). A blocked take leaves the branch with no task this tick, until the override comes.
+    inline bool SeekHealerClockTakeAllowed(bool reachKey, bool selfCollapsesCap, bool capLatched,
+                                           bool clockOverrides = false)
+    {
+        return !reachKey || clockOverrides || !SeekCapGuardBlocks(selfCollapsesCap, capLatched);
+    }
+
+    // The nearest take's pick: the index of the nearest eligible Son (SeekNearestTakeSonOk) this tank takes
+    // (SeekNearestTakerIs), or -1. Flag off: always -1, so the 3 s healer clock is the only take. `viaReach` (when
+    // given) says the pick was taken only by the reach (SeekNearestTakerReach), not by the 8 yd rule: its row's
+    // `src=nearest_reach`.
+    inline int PickSeekNearestTake(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
+                                   const std::vector<SeekNearestTakeCand>& sons, bool selfCollapsesCap = false,
+                                   bool* viaReach = nullptr)
+    {
+        if (viaReach)
+            *viaReach = false;
         if (!flagOn)
             return -1;
         int best = -1;
+        bool bestReach = false;
         for (std::size_t i = 0; i < sons.size(); ++i)
         {
             const SeekNearestTakeCand& c = sons[i];
             if (!SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
                 continue;
             if (!SeekNearestTakerIs(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
-                                    c.selfTauntReady, selfIsBossVictim, selfHoldsSon))
+                                    c.selfTauntReady, selfIsBossVictim, selfHoldsSon, c.reachKey, c.meetLost,
+                                    SeekCapGuardBlocks(selfCollapsesCap, c.capLatched)))
                 continue;
             if (best < 0 || c.selfYd < sons[static_cast<std::size_t>(best)].selfYd)
+            {
                 best = static_cast<int>(i);
+                bestReach = !SeekNearestTakerNear(selfIdx, receiverIdx, c.receiverYd, c.receiverTauntReady, c.selfYd,
+                                                  c.selfTauntReady, selfIsBossVictim, selfHoldsSon);
+            }
         }
+        if (viaReach)
+            *viaReach = best >= 0 && bestReach;
         return best;
     }
 
@@ -563,9 +650,10 @@ namespace ai
     // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
     // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
     // The take's source word (walk 56 F4, the `src=` field of the `seek take` row): which take path produced the task.
-    // FindBossSeekTank names the path (`meet`, `nearest`, `healer_clock`, `receiver`, `pickup`, `pull_join`, else
-    // `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the circle, and only the
-    // edge rule allowed the chase) gets `+edge` after it, e.g. `nearest+edge`, so the path stays countable by prefix.
+    // FindBossSeekTank names the path (`meet`, `nearest`, `nearest_reach`, `healer_clock`, `receiver`, `pickup`,
+    // `pull_join`, else `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the
+    // circle, and only the edge rule allowed the chase) gets `+edge` after it, e.g. `nearest+edge`, so the path stays
+    // countable by prefix.
     inline std::string SeekTakeSrcWord(const char* path, bool edgeTake)
     {
         std::string out = path && *path ? path : "other";

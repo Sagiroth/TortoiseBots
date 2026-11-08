@@ -704,12 +704,28 @@ public:
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never
     // takes. Off, the 3 s rule stands as before (default off, recommended on).
     bool dungeonRunSeekNearestTake = false;
+    // The nearest take's reach (Hakkar's Sons, walk 57 F4; needs dungeonRunSeekNearestTake): on, the first off-tank
+    // also takes a walked Son on a non-tank from up to 20 yd when the receiver is more than 15 yd from it, or that Son's
+    // meet closed as peeled or receiver_victim in the last 10 s and the receiver cannot take it itself (within 8 yd,
+    // its taunt ready); never while it is Hakkar's victim or holds a Son, or when its leaving Hakkar would collapse the
+    // damage dealers' threat-cap reference (no off-tank reference left, or one under half of today's). The same cap
+    // guard then holds back its 3 s healer-clock take too, until the Son has sat 6 s on that non-tank or its victim is
+    // under 40 % health. A take that passed the guard and started is kept for its Son for 10 s. The take
+    // row says src=nearest_reach. Off, the 8 yd nearest take and the healer clock stand as before (default off,
+    // recommended on).
+    bool dungeonRunSeekNearestTakeReach = false;
     // The meet's pre-place (Hakkar's Sons): on, when a walk-out starts the third tank (alive, not charmed, not Hakkar's
     // victim, holding no Son, inside the tanks' circle) walks to a point 2 yd inside the tanks' circle edge on the line
     // from the anchor's centre toward the puller's stand and holds there for the meet. It ends when that meet closes,
     // the task ends without one, another tank is picked at the shot, or the tank dies, is charmed or becomes Hakkar's
     // victim. Off, the receiver stands wherever its tank AI left it, as before (default off, recommended on).
     bool dungeonRunSeekMeetPrePlace = false;
+    // The pre-place's late walk (Hakkar's Sons, walk 57 F3; needs dungeonRunSeekMeetPrePlace): on, the pre-placed third
+    // tank stays on Hakkar until the walk-out puller's walk left to its stand is no longer than the tank's own walk to
+    // its point plus 4 yd (never later than 10 yd from the stand), or the puller is in position (at its stand, in shot
+    // position or shot), then walks to its point. Off, it walks when the walk-out starts, as before (default off,
+    // recommended on; its value is still being tested).
+    bool dungeonRunSeekMeetPrePlaceLate = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;
