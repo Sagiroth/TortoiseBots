@@ -16,6 +16,21 @@ python3 tools/verify_command_docs.py
 echo "✓ Command table documented."
 
 echo ""
+echo "=== 1c. Verifying Released SQL Migrations Are Unchanged ==="
+# The core updater tracks migrations by content hash: a changed file runs again
+# and leaves its old row behind as "exists in DB but not as file" on every start.
+for base in origin/main origin/dev; do
+    git rev-parse -q --verify "${base}" >/dev/null 2>&1 || { echo "SKIPPED: ${base} not available"; continue; }
+    changed=$(git diff --name-only --diff-filter=MDR "$(git merge-base "${base}" HEAD)" -- data/sql)
+    if [[ -n "${changed}" ]]; then
+        echo "Migrations released on ${base} must not change; add a new migration instead:"
+        echo "${changed}"
+        exit 1
+    fi
+done
+echo "✓ Released migrations unchanged."
+
+echo ""
 echo "=== 2. Verifying Tortoise Core Module Surface ==="
 bash tools/verify_tortoise_surface.sh
 echo "✓ Module surface verified."

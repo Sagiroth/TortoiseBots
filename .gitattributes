@@ -1,0 +1,2 @@
+# The core updater hashes migration files, so every checkout must keep the same bytes.
+*.sql text eol=lf
