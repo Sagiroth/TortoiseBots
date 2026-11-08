@@ -459,12 +459,18 @@ static void TestTakeEdgeRefusal()
     raid.y = -1649.34f;
     raid.z = 54.1f;
     raid.radius = 30.0f;
-    // The pure rule: only a Son outside the circle is ever refused, and then unless victim inside AND z ok.
-    CHECK(!SeekTakeChaseRefused(true, false, false));
-    CHECK(!SeekTakeChaseRefused(true, true, true));
-    CHECK(SeekTakeChaseRefused(false, false, true));
-    CHECK(SeekTakeChaseRefused(false, true, false));
-    CHECK(!SeekTakeChaseRefused(false, true, true));
+    // The pure verdict: only a Son outside the circle is ever refused, and then unless the victim is inside, the z is
+    // ok, the Son is near the circle AND the Son is on its victim; only a distance failing alone is `Far`.
+    CHECK(SeekTakeEdgeVerdict(true, false, false, false, false) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeVerdict(true, true, true, true, true) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeVerdict(false, false, true, true, true) == SeekTakeEdge::Refused);
+    CHECK(SeekTakeEdgeVerdict(false, true, false, true, true) == SeekTakeEdge::Refused);
+    CHECK(SeekTakeEdgeVerdict(false, false, true, false, false) == SeekTakeEdge::Refused); // not only a distance
+    CHECK(SeekTakeEdgeVerdict(false, true, false, false, true) == SeekTakeEdge::Refused);
+    CHECK(SeekTakeEdgeVerdict(false, true, true, true, true) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeVerdict(false, true, true, false, true) == SeekTakeEdge::Far);
+    CHECK(SeekTakeEdgeVerdict(false, true, true, true, false) == SeekTakeEdge::Far);
+    CHECK(SeekTakeEdgeVerdict(false, true, true, false, false) == SeekTakeEdge::Far);
     // Named failing case from walk 54: the victim at 30.0 yd, the Son at 34 yd (outside) -> taken.
     CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 34.0f, raid.y, 54.0f, true, raid.x + 30.0f, raid.y));
     // The victim 31.9 yd out is inside the 2 yd slack; 32.5 yd is not.
@@ -481,6 +487,29 @@ static void TestTakeEdgeRefusal()
     // A Son inside the circle is never refused, whatever its victim or z do (today's rule).
     CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 25.0f, raid.y, 45.0f, true, raid.x + 40.0f, raid.y));
     CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 25.0f, raid.y, 54.0f, false, 0.0f, 0.0f));
+    // Codex round 1: the exemption is bounded. A Son at 50 yd with its victim inside is refused (`Far`): it is past the
+    // circle + 8 yd, and also 20 yd from the victim.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 50.0f, raid.y, 54.0f, true, raid.x + 30.0f, raid.y) == SeekTakeEdge::Far);
+    // Near the victim but too far from the circle: a victim on the edge (31.9 yd) and the Son 9.9 yd behind it at
+    // 41.8 yd is past radius + 8 (38) although within 10 yd of the victim.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 41.8f, raid.y, 54.0f, true, raid.x + 31.9f, raid.y) == SeekTakeEdge::Far);
+    // A Son at 36 yd but 15 yd from its inside victim is refused (not really on the victim).
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 21.0f, raid.y) == SeekTakeEdge::Far);
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 21.0f, raid.y));
+    // A Son at 34 yd and 4 yd from its inside victim is taken.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 34.0f, raid.y, 54.0f, true, raid.x + 30.0f, raid.y) == SeekTakeEdge::Allowed);
+    // The boundary at radius + 8 (38 yd): 37.9 is taken, 38.1 is not.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 37.9f, raid.y, 54.0f, true, raid.x + 31.0f, raid.y) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 38.1f, raid.y, 54.0f, true, raid.x + 31.0f, raid.y) == SeekTakeEdge::Far);
+    // The boundary at 10 yd from the victim: 9.9 is taken, 10.1 is not (the Son 36 yd out, the victim inside).
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 26.1f, raid.y) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 25.9f, raid.y) == SeekTakeEdge::Far);
+    // The distance basis is 2D from the circle's centre, whatever the bearing.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x, raid.y - 37.9f, 54.0f, true, raid.x, raid.y - 31.0f) == SeekTakeEdge::Allowed);
+    CHECK(SeekTakeEdgeCheck(raid, raid.x, raid.y - 38.1f, 54.0f, true, raid.x, raid.y - 31.0f) == SeekTakeEdge::Far);
+    // A refusal that is not only a distance stays `Refused` (z 45, victim outside): the log word stays chase_refused.
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 50.0f, raid.y, 45.0f, true, raid.x + 30.0f, raid.y) == SeekTakeEdge::Refused);
+    CHECK(SeekTakeEdgeCheck(raid, raid.x + 50.0f, raid.y, 54.0f, true, raid.x + 45.0f, raid.y) == SeekTakeEdge::Refused);
     // The victim's position is what counts, never the Son's: a Son far outside next to an inside victim is taken, a
     // Son just outside next to an outside victim is refused.
     CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 33.0f, raid.y, 54.0f, true, raid.x + 29.0f, raid.y));

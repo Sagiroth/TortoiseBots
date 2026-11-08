@@ -575,6 +575,12 @@ int main()
     CHECK(std::string(SeekTakeReasonWord(true, false, true)) == "no_taunt");
     CHECK(std::string(SeekTakeReasonWord(true, true, false)) == "chase_refused");
     CHECK(std::string(SeekTakeReasonWord(true, true, true)) == "taunt");
+    // The bounded take edge's own word, only for a refusal that could not taunt.
+    CHECK(std::string(SeekTakeReasonWord(true, true, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, false, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, true, true, true)) == "taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, true, false, true)) == "attack");
+    CHECK(std::string(SeekTakeReasonWord(false, false, false, true)) == "no_taunt");
 
     // The open meet's Son stays held until a tank has it (walk 54: released 2-6 s after the shot at 98 % hp, because the
     // puller counted as a non-tank for 5 s and the late-engaged burn was forced).

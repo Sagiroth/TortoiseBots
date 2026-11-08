@@ -416,11 +416,12 @@ namespace ai
 
     // Why a take this tick did or did not taunt: `chase_refused` (the Son stands outside the anchor and this class
     // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
-    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes.
-    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt)
+    // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
+    // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
+    inline const char* SeekTakeReasonWord(bool chaseRefused, bool hasTaunt, bool canTaunt, bool edgeFar = false)
     {
         if (chaseRefused && !canTaunt)
-            return "chase_refused";
+            return edgeFar ? "edge_far" : "chase_refused";
         if (!hasTaunt)
             return "no_taunt";
         if (canTaunt)

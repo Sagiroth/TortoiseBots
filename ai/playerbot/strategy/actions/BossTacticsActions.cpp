@@ -7801,22 +7801,28 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // it stands, and the Son comes in to it.
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
         bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
+        bool edgeFar = false;
         if (chaseRefused && sPlayerbotAIConfig.dungeonRunSeekTakeEdge)
         {
             // The take edge (DungeonRunSeekTakeEdge): a Son just outside the raid circle whose victim stands inside it
-            // (plus 2 yd) is taken; the victim outside the circle, or the Son below the platform, stays refused.
+            // (plus 2 yd) is taken, but only a bounded one: within 8 yd of the circle and within 10 yd of that victim,
+            // on the platform (SeekTakeEdgeCheck). Anything else stays refused (`edge_far` when only a distance fails),
+            // so Attack() below never walks the tank far off the circle or under Hakkar's evade line.
             // BossAnchorRefusesChase was true, so the anchor row is live and the Son stands outside the circle.
             if (const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot))
             {
                 Unit* const sonVictim = task.source->GetVictim();
-                chaseRefused = SeekTakeEdgeRefuses(AnchorCircleOf(*anchorRow, false),
+                const SeekTakeEdge edge = SeekTakeEdgeCheck(AnchorCircleOf(*anchorRow, false),
                     task.source->GetPositionX(), task.source->GetPositionY(), task.source->GetPositionZ(),
                     sonVictim != nullptr, sonVictim ? sonVictim->GetPositionX() : 0.0f,
                     sonVictim ? sonVictim->GetPositionY() : 0.0f);
+                chaseRefused = edge != SeekTakeEdge::Allowed;
+                edgeFar = edge == SeekTakeEdge::Far;
             }
         }
         const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
-        LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt), task.meet);
+        LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),
+                    task.meet);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.

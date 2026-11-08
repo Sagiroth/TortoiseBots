@@ -174,7 +174,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
         self.assertIn("LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr,"
-                      " canTaunt), task.meet);", take)
+                      " canTaunt, edgeFar),\n                    task.meet);", take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
         self.assertIn("bool meet = false;", ACTIONS_H)
 
@@ -263,10 +263,27 @@ class TakeEdgeWiring(unittest.TestCase):
         self.assertLess(base, edge)
         self.assertLess(edge, take.index("const bool canTaunt"))
         block = take[edge:take.index("const bool canTaunt")]
-        self.assertIn("SeekTakeEdgeRefuses(AnchorCircleOf(*anchorRow, false),", block)
+        self.assertIn("SeekTakeEdgeCheck(AnchorCircleOf(*anchorRow, false),", block)
+        self.assertIn("chaseRefused = edge != SeekTakeEdge::Allowed;", block)
+        self.assertIn("edgeFar = edge == SeekTakeEdge::Far;", block)
         # The raid circle (not the tanks'), and the victim's position, never the Son's, is the second point.
         self.assertIn("sonVictim ? sonVictim->GetPositionX() : 0.0f", block)
         self.assertIn("sonVictim != nullptr", block)
+        # The Attack() path is reached only after the bounded check: it needs !chaseRefused, which the check set, and
+        # no Attack() call sits anywhere before the check in the take.
+        self.assertNotIn("Attack(bot,", take[:edge])
+        after = take[take.index("const bool canTaunt"):]
+        self.assertIn("if (!chaseRefused && AI_VALUE(Unit*, \"current target\") != task.source)\n        {\n"
+                      "            if (Attack(bot, task.source) && !canTaunt)", after)
+        self.assertEqual(1, take.count("Attack(bot, task.source)"))
+        self.assertLess(take.index("edgeFar = edge == SeekTakeEdge::Far;"), take.index("Attack(bot, task.source)"))
+
+    def test_the_bounds_are_the_policys(self):
+        policy = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+        self.assertIn("constexpr float kSeekTakeEdgeMaxPastYd = 8.0f;", policy)
+        self.assertIn("constexpr float kSeekTakeEdgeOnVictimYd = 10.0f;", policy)
+        self.assertIn("sonFromCentre <= raid.radius + kSeekTakeEdgeMaxPastYd", policy)
+        self.assertIn("<= kSeekTakeEdgeOnVictimYd", policy)
 
 
 class PeeledRowWiring(unittest.TestCase):
@@ -334,7 +351,7 @@ class CauseInsanityRowWiring(unittest.TestCase):
 class RefusalDocWiring(unittest.TestCase):
     def test_every_new_word_is_documented(self):
         for word in ("dead", "charmed", "victim", "busy", "outside", "none", "son_dead", "receiver_dead",
-                     "timeout", "chase_refused", "no_taunt", "attack", "taunt", "peeled", "receiver_charmed",
+                     "timeout", "chase_refused", "edge_far", "no_taunt", "attack", "taunt", "peeled", "receiver_charmed",
                      "receiver_victim", "receiver_busy", "receiver_wait"):
             self.assertIn("`%s`" % word, DOC, word)
 

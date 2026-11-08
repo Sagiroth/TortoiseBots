@@ -83,7 +83,8 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0
 
 | Code | Meaning |
 | :--- | :--- |
-| `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. With `DungeonRunSeekTakeEdge` on a Son outside the circle is still chased when its victim stands inside the raid circle (plus 2 yd) and the Son's z is 46.5 or higher; the word then only comes for a Son whose victim is outside the circle or that stands below the platform. |
+| `chase_refused` | The anchored take refuses to chase the Son (it stands outside the raid's circle) and this take cannot taunt it from where it stands, so `Attack` alone is left. With `DungeonRunSeekTakeEdge` on a Son outside the circle is still chased when its victim stands inside the raid circle (plus 2 yd), the Son's z is 46.5 or higher, the Son is within 8 yd of the circle and within 10 yd of that victim; the word then only comes for a Son whose victim is outside the circle or that stands below the platform. |
+| `edge_far` | `DungeonRunSeekTakeEdge` is on, the Son's victim is inside the raid circle and the Son is on the platform, but the Son stands more than 8 yd past the circle or more than 10 yd from that victim, so the take does not chase it (`Attack` would walk the tank off the platform). Only distance failed; counted with `chase_refused` as a refusal. |
 | `no_taunt` | The tank's class has no taunt (a paladin in 1.12, a shaman, a hunter, ...). |
 | `attack` | The tank has a taunt but cannot cast it now (cooldown, range, silenced), so only the attack order goes out. |
 | `taunt` | Not a refusal: the taunt (Taunt or Growl) is cast this tick. |
@@ -117,7 +118,7 @@ ref survives line drift.
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
-| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's four words (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
+| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state) and `meet=` |
 
 ### Other boss-tactics rows
 
@@ -277,6 +278,7 @@ branch:
   `SeekTakeReasonWord` inputs and `SeekMeetHoldsSon` (the meet Son on its puller is held even with a 6 s non-tank clock and
   a forced burn; a Son on a tank is released as before; a closed meet or another Son changes nothing);
   `tools/test_seek_walkout_policy.cpp` also pins `WalkoutMeetArrived` (within 8 yd of the receiver, or at the old
-  circle-edge point) and `SeekTakeChaseRefused` / `SeekTakeEdgeRefuses` (a Son at 34 yd with its victim at 30 yd
-  is taken, a victim at 40 yd or a Son at z 45 is refused); `tools/test_seek_meet_wiring.py` pins the `peeled` row's
+  circle-edge point) and `SeekTakeEdgeVerdict` / `SeekTakeEdgeCheck` (a Son at 34 yd and 4 yd from its inside victim
+  is taken; a victim at 40 yd, a Son at z 45, a Son at 50 yd, or a Son at 36 yd but 15 yd from its victim is refused, the
+  last two as `edge_far`; the boundaries at circle + 8 yd and 10 yd from the victim); `tools/test_seek_meet_wiring.py` pins the `peeled` row's
   `victim=`, `victim_role=` and `son_yd=` fields.

@@ -660,8 +660,8 @@ public:
     // walk back is the circle edge as before (default off).
     bool dungeonRunSeekSonMeet = false;
     // The take's chase refusal for a Son at the raid's edge (Hakkar): on, a tank takes a Son standing outside the raid
-    // circle when its victim stands inside the circle (plus 2 yd) and the Son is on the platform (z >= 46.5); off, the
-    // take refuses every Son outside the circle as before (default off).
+    // circle when its victim stands inside the circle (plus 2 yd), the Son is on the platform (z >= 46.5), within 8 yd of the
+    // circle and within 10 yd of that victim; off, the take refuses every Son outside the circle as before (default off).
     bool dungeonRunSeekTakeEdge = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).

@@ -920,7 +920,7 @@ Whether a tank takes a Son of Hakkar that stands just outside the raid's circle 
 <details>
 <summary>How it works in detail</summary>
 
-**Take edge:** the anchored take never chased a Son out of the raid's 30 yd circle (Taunt and Growl are melee), but the bots a Son hits stand clamped on the circle's edge, so the Son stood at 31-45 yd and walk 54 refused 56 % of its take rows (`reason=chase_refused`). With the key on, the take chases a Son outside the circle when the Son's victim stands inside the raid circle (plus 2 yd) and the Son's z is 46.5 or higher (above Hakkar's 45.8 evade line); a Son whose victim is outside the circle, or that stands below the platform, is still refused. A Son inside the circle is never refused. Only a tank that is not Hakkar's victim takes. Applies to every take of a Son (the healer take, the pickup take, the meet's take).
+**Take edge:** the anchored take never chased a Son out of the raid's 30 yd circle (Taunt and Growl are melee), but the bots a Son hits stand clamped on the circle's edge, so the Son stood at 31-45 yd and walk 54 refused 56 % of its take rows (`reason=chase_refused`). With the key on, the take chases a Son outside the circle only when all of these hold: the Son's victim stands inside the raid circle (plus 2 yd), the Son's z is 46.5 or higher (above Hakkar's 45.8 evade line), the Son is within 8 yd of the circle (38 yd from the spawn) and within 10 yd of that victim. Anything else stays refused so the tank is never led far off the circle (`chase_refused`; `edge_far` when only a distance fails). A Son inside the circle is never refused. Only a tank that is not Hakkar's victim takes. Applies to every take of a Son (the healer take, the pickup take, the meet's take).
 
 </details>
 

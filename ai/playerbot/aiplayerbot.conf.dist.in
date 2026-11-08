@@ -1067,9 +1067,10 @@ AiPlayerbot.DungeonRunSeekPullCycle = 0
 # Off keeps the walk back at the tanks' circle edge.
 AiPlayerbot.DungeonRunSeekSonMeet = 0
 
-# A tank takes a Son of Hakkar that stands outside the raid's circle when the Son's victim stands inside it (plus 2 yd)
-# and the Son is on the platform (z 46.5 or higher): the bots a Son hits stand on the circle's edge, so the Son stood
-# just outside and the take refused 56 % of its chances. Off refuses every Son outside the circle as before.
+# A tank takes a Son of Hakkar that stands just outside the raid's circle when the Son's victim stands inside it (plus
+# 2 yd), the Son is on the platform (z 46.5 or higher), within 8 yd of the circle and within 10 yd of that victim: the
+# bots a Son hits stand on the circle's edge, so the Son stood just outside and the take refused 56 % of its chances.
+# Off refuses every Son outside the circle as before.
 AiPlayerbot.DungeonRunSeekTakeEdge = 0
 
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
