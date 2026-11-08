@@ -11,7 +11,7 @@
 //   refused for melee classes/specs (Warrior, Hunter, Rogue, Druid feral,
 //   Shaman enhance/tank, Paladin non-holy).
 // - Shields: allowed for specs whose weapon policy uses a shield off-hand
-//   (Protection Warrior, Protection/Holy Paladin, Shaman Tank, Resto/Elemental Shaman).
+//   (Protection Warrior, Protection/Holy Paladin, every Shaman spec).
 // - Relics: libram (Paladin), idol (Druid), totem (Shaman).
 // - Body armor material: spec-appropriate cloth/leather/mail/plate rules.
 //
@@ -105,8 +105,7 @@ namespace ai
 
     // True when the spec allows shields in armor checks.
     // Allowed for specs whose weapon policy uses a shield off-hand:
-    // Protection Warrior, Protection/Holy Paladin, Shaman Tank, Resto/Elemental Shaman.
-    // Enhancement Shaman shield handling is deferred to Package C.
+    // Protection Warrior, Protection/Holy Paladin, every Shaman spec.
     inline bool SpecAllowsShield(uint32_t playerClass, std::string_view specName)
     {
         switch (playerClass)
@@ -116,7 +115,8 @@ namespace ai
             case SPEC_ARMOR_CLASS_PALADIN:
                 return specName == "prot" || specName == "holy";
             case SPEC_ARMOR_CLASS_SHAMAN:
-                return specName == "shamantank" || specName == "resto" || specName == "elem";
+                return specName == "shamantank" || specName == "resto" || specName == "elem" ||
+                       specName == "enhance";
             default:
                 return false;
         }

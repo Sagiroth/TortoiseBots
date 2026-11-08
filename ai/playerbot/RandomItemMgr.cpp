@@ -522,7 +522,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
         }
         else if (m_weightScales[spec].info.name == "arms")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
             r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
         }
         else
@@ -539,6 +539,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_AXE2);
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_MACE2);
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_POLEARM);
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_STAFF);
             }
             oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
             r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
@@ -561,7 +562,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE };
             r_weapons = { ITEM_SUBCLASS_ARMOR_LIBRAM };
         }
         break;
@@ -569,6 +570,8 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
     case CLASS_HUNTER:
     {
         mh_weapons = { ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF };
+        if (canDualWield)
+            oh_weapons = { ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE };
         r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
         break;
     }
@@ -647,7 +650,8 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
         }
         else if (m_weightScales[spec].info.name == "enhance")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_AXE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
+            oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD };
             r_weapons = { ITEM_SUBCLASS_ARMOR_TOTEM };
         }
         else
@@ -670,25 +674,25 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclas
     {
         if (m_weightScales[spec].info.name == "feraltank")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else if (m_weightScales[spec].info.name == "resto")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else if (m_weightScales[spec].info.name == "feraldps")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_MACE };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
@@ -719,10 +723,9 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
 
 bool RandomItemMgr::ShouldEquipWeaponForSlot(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
 {
-    // Only shield specs have a slot-aware policy (protection warrior /
-    // paladin, shaman tank); every other class keeps the plain any-slot
-    // answer (fail-open).
-    if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN && playerclass != CLASS_SHAMAN)
+    // Shield specs and dual-wield/slot-constrained classes have a slot-aware
+    // policy; every other class keeps the plain any-slot answer (fail-open).
+    if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN && playerclass != CLASS_SHAMAN && playerclass != CLASS_HUNTER)
         return ShouldEquipWeaponForSpec(bot, playerclass, spec, proto, canDualWield);
 
     if (!spec)
@@ -3070,7 +3073,9 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
             specName = "elem";
         break;
     case CLASS_WARRIOR:
-        if (tab == 2)
+        if (player->GetLevel() < 10)
+            specName = "arms";
+        else if (tab == 2)
             specName = "prot";
         else if (tab == 1)
             specName = "fury";

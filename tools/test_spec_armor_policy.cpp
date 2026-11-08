@@ -87,7 +87,7 @@ int main()
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_WARRIOR, "arms") == false);
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_WARRIOR, "fury") == false);
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_PALADIN, "retrib") == false);
-    CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_SHAMAN, "enhance") == false);
+    CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_SHAMAN, "enhance") == true);
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_HUNTER, "marksman") == false);
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_ROGUE, "combat") == false);
     CHECK(SpecAllowsShield(SPEC_ARMOR_CLASS_DRUID, "resto") == false);
@@ -115,7 +115,7 @@ int main()
     CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_SHAMAN, "shamantank", SPEC_ARMOR_INVTYPE_SHIELD, SPEC_ARMOR_AS_SHIELD) == true);
     CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_SHAMAN, "resto", SPEC_ARMOR_INVTYPE_SHIELD, SPEC_ARMOR_AS_SHIELD) == true);
     CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_SHAMAN, "elem", SPEC_ARMOR_INVTYPE_SHIELD, SPEC_ARMOR_AS_SHIELD) == true);
-    CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_SHAMAN, "enhance", SPEC_ARMOR_INVTYPE_SHIELD, SPEC_ARMOR_AS_SHIELD) == false);
+    CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_SHAMAN, "enhance", SPEC_ARMOR_INVTYPE_SHIELD, SPEC_ARMOR_AS_SHIELD) == true);
 
     // Holdables:
     CHECK(SpecArmorSubClassAllowed(SPEC_ARMOR_CLASS_PRIEST, "holy", SPEC_ARMOR_INVTYPE_HOLDABLE, SPEC_ARMOR_AS_MISC) == true);
