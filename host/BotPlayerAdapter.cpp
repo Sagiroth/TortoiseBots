@@ -8,6 +8,8 @@
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/AltBotService.h"
 #include "../runtime/RandomBotService.h"
+#include "../runtime/UpdateCheck.h"
+#include "../runtime/policy/UpdateCheckPolicy.h"
 #include "../runtime/PlayerbotAIStorage.h"
 #include "../runtime/PetSpawnPolicy.h"
 #include "../ai/playerbot/AiFactory.h"
@@ -127,6 +129,15 @@ void BotPlayerAdapter::OnLogin(Player* player)
         RandomBotService::Instance().OnHumanLogin();
         HireLifecycle::Instance().OnMasterLogin(player);
         ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r %s", AttributionLine().c_str());
+        // Plain chat, so players with an old addon or none see it too.
+        std::string const latestModule = UpdateCheck::Instance().LatestModule();
+        if (UpdateCheckPolicy::IsNewer(latestModule, BuildVersion()))
+            ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Update available: TortoiseBots v%s (this server runs %s).",
+                latestModule.c_str(), BuildVersion().c_str());
+        std::string const latestAddon = UpdateCheck::Instance().LatestAddon();
+        if (!latestAddon.empty())
+            ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Newest addon: TortoiseBotsManager v%s - %s",
+                latestAddon.c_str(), kAddonSourceUrl);
         if (player->GetSession()->GetSecurity() >= SEC_DEVELOPER && sObservabilityEmitter.IsEnabled())
         {
             ChatHandler(player).PSendSysMessage("|cff00ff00[TortoiseBots]|r Observability dashboard active: http://localhost:8095/dashboard");

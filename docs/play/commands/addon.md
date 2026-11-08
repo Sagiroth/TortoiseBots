@@ -105,6 +105,8 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
 | `TBM:SERVICE\|<bot>\|<food>\|<water>\|<healthstone>\|<portals>` | Answers `.bot service <bot>`: 1 when the bot knows any rank of *Conjure Food* / *Conjure Water* / *Create Healthstone*, else 0; `<portals>` lists `spellId:City Name` pairs the mage knows, or `-` when none. |
 | `TBM:ALTSUM\|<name>\|<text>` / `TBM:ALTSUM_END\|<count>` | One away-summary line per autonomous alt from `.bot alts` (`<text>` the same plain line shown in chat; `<count>` the alt total). |
 | `TBM:VERSION\|<version>` | Handshakes server module version (e.g. `2026-10-20-v1` or `dev`). |
+| `TBM:PROTO\|<level>\|<minAddon>` | Addon protocol level this module speaks and the lowest addon level it works with, sent before `TBM:CAPS`. The addon warns once per session (with "Don't show again") and keeps an "outdated" note in its header when either side is too old. The levels change only when a change needs both sides updated; fields appended at the end of a line need no change, the addon ignores them. |
+| `TBM:LATEST\|<module>\|<addon>` | Newest TortoiseBots and TortoiseBotsManager releases found on GitHub at server start (`-` when unknown); sent only after a successful lookup (see `AiPlayerbot.UpdateCheck`). |
 | `TBM:VIEW` | Real-time perception frame lines for Remote Commander. |
 | `TBM:ACTION_ACK\|<intent>\|<scope>\|<count>\|<detail>` | Confirms action execution (`<scope>` is `party`, `raid`, or `bot:<Name>`). |
 | `TBM:ACTION_ERR\|<intent>\|<code>\|<message>` | Notifies action failure with structured error code. |
