@@ -42,15 +42,26 @@ namespace ai
 
     // A kill_first creature is alive and this DPS bot is not on it. Checked every second under
     // AiPlayerbot.DungeonRunTotemFocus (a totem's whole life is 1-2 s) or AiPlayerbot.DungeonRunCarrierHold (the
-    // re-pick after a Shade dies), every two seconds otherwise (KillFirstCheckSeconds).
+    // re-pick after a Shade dies), every two seconds otherwise. The base interval is 1 (the engine asks every tick) and
+    // Check() applies KillFirstCheckDue with both keys read at every check, so a `.reload config` changes the cadence
+    // of a trigger that is already built.
     class BossTacticsKillFirstTrigger : public Trigger
     {
     public:
-        BossTacticsKillFirstTrigger(PlayerbotAI* ai)
-            : Trigger(ai, "boss tactics kill first",
-                KillFirstCheckSeconds(sPlayerbotAIConfig.dungeonRunTotemFocus,
-                                      sPlayerbotAIConfig.dungeonRunCarrierHold)) {}
+        BossTacticsKillFirstTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics kill first", 1)
+        {
+            lastDueSec_ = static_cast<std::int64_t>(time(0)) - rand() % 2;
+        }
+        Event Check() override
+        {
+            if (!triggered && !KillFirstCheckDue(sPlayerbotAIConfig.dungeonRunTotemFocus,
+                    sPlayerbotAIConfig.dungeonRunCarrierHold, static_cast<std::int64_t>(time(0)), lastDueSec_))
+                return Event();
+            return Trigger::Check();
+        }
         bool IsActive() override;
+    private:
+        std::int64_t lastDueSec_ = 0;
     };
 
     // A cursed healer or off-tank whose Shade is in reach and whose raid can spare it (AiPlayerbot.DungeonRunCarrierStrike;

@@ -3062,11 +3062,41 @@ namespace ai
         return keyOn && currentIsNeedsAura && botHasRequiredAura;
     }
 
+    // Whether "not dps target active" fires, for a live non-player current target. The hostile player target is
+    // decided first and is never suppressed by the hold (a carrier on a Shade still switches to an enemy player);
+    // the hold (`holdsCurrent`) only suppresses the dps-target comparison. No enemy and no dps target: no fire.
+    inline bool NotDpsTargetFires(bool enemyKnown, bool targetIsEnemy, bool holdsCurrent, bool dpsKnown,
+                                  bool targetIsDps)
+    {
+        if (enemyKnown)
+            return !targetIsEnemy;
+        if (holdsCurrent)
+            return false;
+        if (dpsKnown)
+            return !targetIsDps;
+        return false;
+    }
+
     // The kill-first trigger's check interval in seconds: every second under TotemFocus (a totem lives 1-2 s) or
     // CarrierHold (the re-pick after a Shade dies took a median 2.0 s), every two seconds otherwise.
     inline std::uint32_t KillFirstCheckSeconds(bool totemFocus, bool carrierHold)
     {
         return (totemFocus || carrierHold) ? 1 : 2;
+    }
+
+    // Whether the kill-first trigger is due at `nowSec`, with both keys read by the caller at every check (so a
+    // `.reload config` takes effect on a trigger that is already built). `lastSec` is the last due time (0 = never);
+    // it is stamped whenever the check is due. Keys off this is the base Trigger::needCheck rule for interval 2:
+    // due when never checked or two seconds have passed.
+    inline bool KillFirstCheckDue(bool totemFocus, bool carrierHold, std::int64_t nowSec, std::int64_t& lastSec)
+    {
+        std::int64_t const gap = KillFirstCheckSeconds(totemFocus, carrierHold);
+        if (gap < 2 || lastSec == 0 || nowSec - lastSec >= gap)
+        {
+            lastSec = nowSec;
+            return true;
+        }
+        return false;
     }
 
     // tank_ignore (t1105h J2): a tank leaves a unit alone (no guard pick, no engage, no taunt, no tank target) while one

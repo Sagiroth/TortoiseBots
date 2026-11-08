@@ -349,6 +349,42 @@ static void TestCarrierHold()
     CHECK(KillFirstCheckSeconds(true, true) == 1);
 }
 
+// Fix round: the hold never beats a hostile player target, and only suppresses the dps-target comparison.
+static void TestNotDpsTargetFires()
+{
+    // NotDpsTargetFires(enemyKnown, targetIsEnemy, holdsCurrent, dpsKnown, targetIsDps)
+    CHECK(NotDpsTargetFires(true, false, true, true, false));    // carrier on a Shade, enemy player known: fires as before
+    CHECK(NotDpsTargetFires(true, false, false, false, false));  // enemy known, target is not it: fires
+    CHECK(!NotDpsTargetFires(true, true, true, true, false));    // already on the enemy player: quiet
+    CHECK(!NotDpsTargetFires(false, false, true, true, false));  // carrier on a Shade, dps target Jin'do: the hold keeps it
+    CHECK(NotDpsTargetFires(false, false, false, true, false));  // non-carrier on Jin'do's side: fires (today)
+    CHECK(!NotDpsTargetFires(false, false, false, true, true));  // on the dps target: quiet
+    CHECK(!NotDpsTargetFires(false, false, false, false, false));  // nothing to compare: quiet
+}
+
+// Fix round: the kill-first interval follows the keys at every check, so an already-built trigger flips between 1 s
+// and 2 s on a `.reload config`.
+static void TestKillFirstCheckDueFlips()
+{
+    std::int64_t last = 0;
+    // Keys off: the base interval-2 rule. First check is due, then every second tick is skipped.
+    CHECK(KillFirstCheckDue(false, false, 100, last));
+    CHECK(!KillFirstCheckDue(false, false, 101, last));
+    CHECK(KillFirstCheckDue(false, false, 102, last));
+    CHECK(!KillFirstCheckDue(false, false, 103, last));
+    // The key flips on (same trigger, same `last`): every second is due now.
+    CHECK(KillFirstCheckDue(false, true, 103, last));
+    CHECK(KillFirstCheckDue(false, true, 104, last));
+    CHECK(KillFirstCheckDue(false, true, 105, last));
+    CHECK(KillFirstCheckDue(true, false, 106, last));            // TotemFocus alone does the same
+    // The key flips off again: two seconds from the last due check.
+    CHECK(!KillFirstCheckDue(false, false, 107, last));
+    CHECK(KillFirstCheckDue(false, false, 108, last));
+    // Same second asked twice with the key on: still due (the base interval-1 rule asks every tick).
+    CHECK(KillFirstCheckDue(false, true, 108, last));
+    CHECK(KillFirstCheckDue(false, true, 108, last));
+}
+
 static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
 {
     SoleCandidate c;
@@ -452,6 +488,8 @@ int main()
     TestTauntGate();
     TestTauntGateLogThrottlePerWord();
     TestCarrierHold();
+    TestNotDpsTargetFires();
+    TestKillFirstCheckDueFlips();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

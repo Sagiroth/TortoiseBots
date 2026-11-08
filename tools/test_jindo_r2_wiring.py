@@ -42,23 +42,33 @@ class JindoR2Wiring(unittest.TestCase):
 
     def test_not_dps_target_active_calls_the_hold_helper(self):
         body = member(GENERIC, "bool NotDpsTargetActiveTrigger::IsActive()", "\nbool NotDpsAoeTargetActiveTrigger")
-        self.assertIn("if (CarrierHoldsCurrent(sPlayerbotAIConfig.dungeonRunCarrierHold, requiredAura != 0,", body)
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunCarrierHold)\n", body)
-        self.assertIn("requiredAura != 0 && bot->HasAura(requiredAura)))", body)
+        self.assertIn("if (!enemy && sPlayerbotAIConfig.dungeonRunCarrierHold)\n", body)
+        self.assertIn("holdsCurrent = CarrierHoldsCurrent(sPlayerbotAIConfig.dungeonRunCarrierHold, requiredAura != 0,", body)
+        self.assertIn("requiredAura != 0 && bot->HasAura(requiredAura));", body)
         self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());", body)
-        # The hold answers "not active" and runs before the dps-target comparison, so the carrier is never pulled.
+        self.assertIn("return NotDpsTargetFires(enemy != nullptr, target == enemy, holdsCurrent, dps != nullptr, "
+                      "target == dps);", body)
+        # Order: the enemy player target is read first, the hold only suppresses the dps-target read after it.
+        self.assertLess(body.index('AI_VALUE(Unit*, "enemy player target")'), body.index("CarrierHoldsCurrent("))
         self.assertLess(body.index("CarrierHoldsCurrent("), body.index('AI_VALUE(Unit*, "dps target")'))
-        self.assertIn("return false;", body[body.index("CarrierHoldsCurrent("):body.index('AI_VALUE(Unit*, "enemy player target")')])
+        self.assertIn('(!enemy && !holdsCurrent) ? AI_VALUE(Unit*, "dps target") : nullptr', body)
 
-    def test_the_kill_first_interval_reads_the_policy(self):
-        self.assertIn("KillFirstCheckSeconds(sPlayerbotAIConfig.dungeonRunTotemFocus,", TRIGGERS_H)
-        self.assertIn("sPlayerbotAIConfig.dungeonRunCarrierHold)) {}", TRIGGERS_H)
+    def test_the_kill_first_interval_follows_the_keys_per_check(self):
+        cls = member(TRIGGERS_H, "class BossTacticsKillFirstTrigger", "\n    };")
+        # Base interval 1 (asked every tick); the cadence is the policy's, with both keys read at every check.
+        self.assertIn('Trigger(ai, "boss tactics kill first", 1)', cls)
+        self.assertIn("Event Check() override", cls)
+        self.assertIn("KillFirstCheckDue(sPlayerbotAIConfig.dungeonRunTotemFocus,", cls)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunCarrierHold, static_cast<std::int64_t>(time(0)), lastDueSec_)", cls)
+        self.assertIn("if (!triggered && !KillFirstCheckDue(", cls)
+        self.assertIn("return Trigger::Check();", cls)
         self.assertIn("inline std::uint32_t KillFirstCheckSeconds(bool totemFocus, bool carrierHold)", POLICY)
         self.assertIn("return (totemFocus || carrierHold) ? 1 : 2;", POLICY)
 
     def test_the_policy_helpers_are_pure(self):
         self.assertIn("inline bool CarrierHoldsCurrent(bool keyOn, bool currentIsNeedsAura, bool botHasRequiredAura)", POLICY)
         self.assertIn("return keyOn && currentIsNeedsAura && botHasRequiredAura;", POLICY)
+        self.assertIn("inline bool NotDpsTargetFires(bool enemyKnown, bool targetIsEnemy, bool holdsCurrent, bool dpsKnown,", POLICY)
         self.assertIn("inline bool TauntGateLogDueFor(TauntGateLogTimes& lastMs, TauntGate gate, std::uint32_t nowMs,", POLICY)
 
     def test_the_taunt_gate_reads_the_boss_victim(self):
