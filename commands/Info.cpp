@@ -4,6 +4,7 @@
 #include "CommandShared.h"
 #include "BotCommandContext.h"
 #include "../runtime/BotManager.h"
+#include "../runtime/UpdateCheck.h"
 #include "../runtime/BotActivityLease.h"
 #include "../runtime/HireLifecycle.h"
 #include "../runtime/ClaimLifecycle.h"
@@ -550,6 +551,15 @@ bool HandleRoster(ChatHandler* handler, char const* /*args*/)
     // Version trailer: the addon shows "server <version>" from this line and
     // falls back to "server ?" when an older module never sends it.
     handler->PSendSysMessage("TBM:VERSION|%s", BuildVersion().c_str());
+    // Before the CAPS trailer: the addon runs its version check on CAPS.
+    handler->PSendSysMessage("TBM:PROTO|%u|%u", kAddonProtocol, kMinAddonProtocol);
+    {
+        std::string const latestModule = UpdateCheck::Instance().LatestModule();
+        std::string const latestAddon = UpdateCheck::Instance().LatestAddon();
+        if (!latestModule.empty() || !latestAddon.empty())
+            handler->PSendSysMessage("TBM:LATEST|%s|%s", latestModule.empty() ? "-" : latestModule.c_str(),
+                latestAddon.empty() ? "-" : latestAddon.c_str());
+    }
     // Capability trailer: pull-seconds = adjustable pull/pullback delays
     // (".bot action pull [seconds]", 0-60); flee = ".bot action flee";
     // inventory = ".bot inv" / ".bot item"; behavior = ".bot behavior" and the

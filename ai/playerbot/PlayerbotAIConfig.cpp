@@ -929,6 +929,7 @@ bool PlayerbotAIConfig::Initialize()
     raidBossDiagnostics = config.GetBoolDefault("AiPlayerbot.RaidBossDiagnostics", false);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.AllowedLogFiles", "bot_events.csv,deaths.csv"), allowedLogFiles);
     logRetentionDays = uint32(std::max(0, config.GetIntDefault("AiPlayerbot.LogRetentionDays", 3)));
+    updateCheck = config.GetBoolDefault("AiPlayerbot.UpdateCheck", true);
     LoadListString<std::list<std::string>>(config.GetStringDefault("AiPlayerbot.DebugFilter", "add gathering loot,check values,emote,check mount state,jump"), debugFilter);
 
     worldBuffs.clear();

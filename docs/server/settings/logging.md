@@ -23,6 +23,7 @@ The native module has its own independent logging system. This allows administra
 | [`AiPlayerbot.AllowedLogFiles`](#aiplayerbotallowedlogfiles) | `bot_events.csv,deaths.csv` | Comma-separated list of structured diagnostic CSV files enabled for writing. |
 | [`AiPlayerbot.RaidBossDiagnostics`](#aiplayerbotraidbossdiagnostics) | `0` | Opt-in raid boss threat snapshots and spell-hit observations in `bot_events.csv`. |
 | [`AiPlayerbot.LogRetentionDays`](#aiplayerbotlogretentiondays) | `3` | Days to keep compressed historical CSV logs before automatic deletion. |
+| [`AiPlayerbot.UpdateCheck`](#aiplayerbotupdatecheck) | `1` | Looks up the newest TortoiseBots and addon releases on GitHub once at server start. |
 | [`AiPlayerbot.EnableActionLog`](#aiplayerbotenableactionlog) | `1` | Writes dedicated per-bot execution logs under `logs/bots/`. |
 | [`AiPlayerbot.ActionLogScope`](#aiplayerbotactionlogscope) | `commanded` | Filters which bots generate action log files (`commanded`, `all`, `none`). |
 | [`AiPlayerbot.ActionLogMaxAgeDays`](#aiplayerbotactionlogmaxagedays) | `3` | Maximum age in days for per-bot action log files before cleanup. |
@@ -99,6 +100,17 @@ Active CSV logs are automatically compressed into `<filename>_<date>_<time>.csv.
 Compressed archives older than `LogRetentionDays` are automatically purged during background cleanup passes.
 
 Setting this to `0` disables automated deletion, preserving all archives permanently.
+
+</details>
+
+### `AiPlayerbot.UpdateCheck`
+Looks up the newest TortoiseBots and TortoiseBotsManager releases on GitHub once at server start.
+**Default:** `1` · **Values:** `0` (never connect), `1` · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+The lookup runs once in the background with `curl` (standard on Linux and Windows 10+) and a 5-second limit. When a newer module exists, the server log and every player's login message say so. Players also see the newest addon version at login, and the addon shows an "update available" note when theirs is older. Offline servers, a missing `curl` or a failed lookup change nothing.
 
 </details>
 
