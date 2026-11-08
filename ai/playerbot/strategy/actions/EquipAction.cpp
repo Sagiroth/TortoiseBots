@@ -712,7 +712,7 @@ bool EquipUpgradesAction::Execute(Event& event)
                 uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
                 uint16 ohDest;
                 if (ai::DualWieldCascade(true,
-                    sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, displacedProto, EQUIPMENT_SLOT_OFFHAND, true),
+                    sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, displacedProto, EQUIPMENT_SLOT_OFFHAND, true),
                     curOH == nullptr,
                     sRandomItemMgr.ItemStatWeight(bot, displacedMH),
                     curOH ? sRandomItemMgr.ItemStatWeight(bot, curOH) : 0) &&
@@ -746,8 +746,8 @@ bool EquipUpgradesAction::Execute(Event& event)
         {
             uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
 
-            if (sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, mh->GetProto(), EQUIPMENT_SLOT_MAINHAND, bot->CanDualWield())
-                && sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oh->GetProto(), EQUIPMENT_SLOT_OFFHAND, bot->CanDualWield()))
+            if (sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, mh->GetProto(), EQUIPMENT_SLOT_MAINHAND, bot->CanDualWield())
+                && sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, oh->GetProto(), EQUIPMENT_SLOT_OFFHAND, bot->CanDualWield()))
             {
                 float mhMaxDmg = mh->GetProto()->Damage[0].DamageMax;
                 float ohMaxDmg = oh->GetProto()->Damage[0].DamageMax;

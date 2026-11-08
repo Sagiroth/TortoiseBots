@@ -552,7 +552,7 @@ bool RandomItemMgr::CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPro
     //return CheckItemStats(clazz, sp, ap, tank);
 }
 
-bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
+bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
 {
     EquipmentSlots slot_mh = EQUIPMENT_SLOT_START;
     EquipmentSlots slot_oh = EQUIPMENT_SLOT_START;
@@ -656,23 +656,48 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     }
     case CLASS_ROGUE:
     {
-        if (RogueSpecWantsDaggers(m_weightScales[spec].info.name))
+        if (bot)
         {
-            // Backstab/Ambush need a dagger main hand; the off hand keeps a
-            // dagger for the spec's fast-off-hand damage.
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
-        }
-        else if (m_weightScales[spec].info.name == "combat")
-        {
-            // Rogues are taught fist skill; combat uses swords/maces + fists.
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            bool const hasHackAndSlash = bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R1) ||
+                                         bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R2);
+            bool const hasCloseQuartersCombat = bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R1) ||
+                                                bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R2);
+            bool const hasConcussiveBlows = bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R1) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R2) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R3) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R4) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R5);
+
+            std::string_view const specName = m_weightScales[spec].info.name;
+            for (uint32 subclass : { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_AXE })
+            {
+                if (ai::RogueWeaponAllowed(specName, hasHackAndSlash, hasCloseQuartersCombat, hasConcussiveBlows, subclass))
+                {
+                    mh_weapons.insert(subclass);
+                    oh_weapons.insert(subclass);
+                }
+            }
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            if (RogueSpecWantsDaggers(m_weightScales[spec].info.name))
+            {
+                // Backstab/Ambush need a dagger main hand; the off hand keeps a
+                // dagger for the spec's fast-off-hand damage.
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+            }
+            else if (m_weightScales[spec].info.name == "combat")
+            {
+                // Rogues are taught fist skill; combat uses swords/maces + fists.
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            }
+            else
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            }
         }
 
         r_weapons = { ITEM_SUBCLASS_WEAPON_THROWN, ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
@@ -769,13 +794,18 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     return false;
 }
 
-bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
+{
+    return ShouldEquipWeaponForSpec(nullptr, playerclass, spec, proto, canDualWield);
+}
+
+bool RandomItemMgr::ShouldEquipWeaponForSlot(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
 {
     // Only shield specs have a slot-aware policy (protection warrior /
     // paladin, shaman tank); every other class keeps the plain any-slot
     // answer (fail-open).
     if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN && playerclass != CLASS_SHAMAN)
-        return ShouldEquipWeaponForSpec(playerclass, spec, proto, canDualWield);
+        return ShouldEquipWeaponForSpec(bot, playerclass, spec, proto, canDualWield);
 
     if (!spec)
         spec = static_cast<uint8>(GetFallbackSpecId(playerclass));
@@ -788,6 +818,11 @@ bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, Item
     // Non-tank shaman specs stay fail-open inside the policy.
     return ai::SpecWeaponAllowed(playerclass, m_weightScales[spec].info.name,
         proto->Class, proto->SubClass, slot, canDualWield);
+}
+
+bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+{
+    return ShouldEquipWeaponForSlot(nullptr, playerclass, spec, proto, slot, canDualWield);
 }
 
 bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
@@ -855,7 +890,9 @@ bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_GUN &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_CROSSBOW &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_BOW &&
-                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN)
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_FIST &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_AXE)
             return false;
         break;
     }
