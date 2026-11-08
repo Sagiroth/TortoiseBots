@@ -286,8 +286,9 @@ static void TestPulledSonMeetsReceiver()
     float meetX = 0.0f, meetY = 0.0f;
     WalkoutMeetBackPoint(true, receiverX, receiverY, tank, pullerX, pullerY, meetX, meetY);
     CHECK(Near(meetX, receiverX) && Near(meetY, receiverY));
-    // ... and the arrival is measured against it: not arrived at the old edge, arrived 1.9 yd from the receiver.
-    CHECK(!WalkoutMeetArrived(true, meetX, meetY, tank, oldX, oldY));
+    // ... and the arrival is measured against it: arrived 1.9 yd from the receiver, and (walk 54) at the old circle-edge
+    // point too, whichever comes first (the receiver keeps moving, so a 2 yd stop timed the walk-out out).
+    CHECK(WalkoutMeetArrived(true, meetX, meetY, tank, oldX, oldY));
     CHECK(WalkoutMeetArrived(true, meetX, meetY, tank, receiverX + 1.9f, receiverY));
     // A receiver outside the circle is clamped onto it (30 yd out -> the circle's 20 yd walk-back reach).
     float clampX = 0.0f, clampY = 0.0f;
@@ -419,6 +420,85 @@ static void TestMeetCloseIsWonByOneReader()
 
 // The receiver waits only while the Son's victim is the walk-out puller, the returner or nobody; a Son on anyone else
 // (a DPS or a healer peeled it) ends the wait and the meet closes as `peeled`.
+// Walk 54, fix D: the meet's arrival is within kSeekMeetTakeYd (8 yd) of the receiver's clamped point OR at the old
+// circle-edge point.
+static void TestMeetArrivalNearReceiverOrOldPoint()
+{
+    BossAnchorCircle tank;
+    tank.x = -11787.4f;
+    tank.y = -1649.34f;
+    tank.z = 54.1f;
+    tank.radius = 25.0f;
+    // The Eleen case: the receiver stands 24.7 yd out (clamped to the 20 yd walk-back reach), the puller 6.8 yd from
+    // that point and beyond the old arrival radius (20 + 2 yd).
+    const float recvX = tank.x + 24.7f;
+    const float recvY = tank.y;
+    float meetX = 0.0f, meetY = 0.0f;
+    WalkoutMeetBackPoint(true, recvX, recvY, tank, tank.x + 40.0f, tank.y, meetX, meetY);
+    CHECK(Near(meetX, tank.x + 20.0f));
+    const float nearX = meetX + 6.8f;
+    CHECK(!WalkoutBackArrived(tank, nearX, tank.y));          // outside the old arrival radius
+    CHECK(WalkoutMeetArrived(true, meetX, meetY, tank, nearX, tank.y));      // 6.8 yd from the receiver: arrived
+    CHECK(WalkoutMeetArrived(true, meetX, meetY, tank, meetX + 8.0f, tank.y)); // the take reach itself
+    CHECK(!WalkoutMeetArrived(true, meetX, meetY, tank, meetX + 8.5f, tank.y)); // just past it: not yet
+    // The old point: at the circle edge point (20 yd) while the receiver walked far off the other way.
+    CHECK(WalkoutMeetArrived(true, tank.x - 40.0f, tank.y, tank, tank.x + 20.0f, tank.y));
+    // 30 yd out and 30 yd from the receiver: not arrived.
+    CHECK(!WalkoutMeetArrived(true, meetX, meetY, tank, tank.x + 50.0f, tank.y));
+    // No meet: the old rule, unchanged.
+    CHECK(WalkoutMeetArrived(false, 0.0f, 0.0f, tank, tank.x + 20.0f, tank.y) ==
+          WalkoutBackArrived(tank, tank.x + 20.0f, tank.y));
+    CHECK(!WalkoutMeetArrived(false, 0.0f, 0.0f, tank, nearX, tank.y));
+}
+
+// Walk 54, fix C: the take edge. The Son stands outside the raid circle; its victim stands on the circle's edge.
+static void TestTakeEdgeRefusal()
+{
+    BossAnchorCircle raid;
+    raid.x = -11787.4f;
+    raid.y = -1649.34f;
+    raid.z = 54.1f;
+    raid.radius = 30.0f;
+    // The pure rule: only a Son outside the circle is ever refused, and then unless victim inside AND z ok.
+    CHECK(!SeekTakeChaseRefused(true, false, false));
+    CHECK(!SeekTakeChaseRefused(true, true, true));
+    CHECK(SeekTakeChaseRefused(false, false, true));
+    CHECK(SeekTakeChaseRefused(false, true, false));
+    CHECK(!SeekTakeChaseRefused(false, true, true));
+    // Named failing case from walk 54: the victim at 30.0 yd, the Son at 34 yd (outside) -> taken.
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 34.0f, raid.y, 54.0f, true, raid.x + 30.0f, raid.y));
+    // The victim 31.9 yd out is inside the 2 yd slack; 32.5 yd is not.
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 31.9f, raid.y));
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 36.0f, raid.y, 54.0f, true, raid.x + 32.5f, raid.y));
+    // Victim at 40 yd: refused (a chase would leave the platform's raid).
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 45.0f, raid.y, 54.0f, true, raid.x + 40.0f, raid.y));
+    // The Son's z 45 is below Hakkar's evade line (and the 46.5 floor): refused although the victim is inside.
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 34.0f, raid.y, 45.0f, true, raid.x + 30.0f, raid.y));
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 34.0f, raid.y, kSeekWalkoutMinStandZ, true, raid.x + 30.0f,
+                                         raid.y));
+    // No victim: refused like today (nobody inside to protect).
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 34.0f, raid.y, 54.0f, false, 0.0f, 0.0f));
+    // A Son inside the circle is never refused, whatever its victim or z do (today's rule).
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 25.0f, raid.y, 45.0f, true, raid.x + 40.0f, raid.y));
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 25.0f, raid.y, 54.0f, false, 0.0f, 0.0f));
+    // The victim's position is what counts, never the Son's: a Son far outside next to an inside victim is taken, a
+    // Son just outside next to an outside victim is refused.
+    CHECK(!SeekTakeEdgeRefuses(raid, raid.x + 33.0f, raid.y, 54.0f, true, raid.x + 29.0f, raid.y));
+    CHECK(SeekTakeEdgeRefuses(raid, raid.x + 31.0f, raid.y, 54.0f, true, raid.x + 38.0f, raid.y));
+}
+
+// Fix A: the meet's walkers (puller, returner) are no non-tank victim.
+static void TestMeetWalkerHasSon()
+{
+    CHECK(SeekMeetWalkerHasSon(7, 7, 0));
+    CHECK(SeekMeetWalkerHasSon(8, 0, 8));
+    CHECK(SeekMeetWalkerHasSon(8, 7, 8));
+    CHECK(!SeekMeetWalkerHasSon(9, 7, 8));    // a damage dealer or healer: counts on the clock
+    CHECK(!SeekMeetWalkerHasSon(0, 0, 0));    // nobody
+    CHECK(!SeekMeetWalkerHasSon(0, 7, 8));
+    CHECK(!SeekMeetWalkerHasSon(5, 0, 0));    // no walker named
+}
+
 static void TestMeetReceiverWaitsOnlyForTheWalker()
 {
     const std::uint64_t puller = 11, returner = 12, dps = 77, healer = 88;
@@ -1270,6 +1350,9 @@ int main()
     TestEndsAndLimits();
     TestShotAndBackPoints();
     TestPulledSonMeetsReceiver();
+    TestMeetArrivalNearReceiverOrOldPoint();
+    TestTakeEdgeRefusal();
+    TestMeetWalkerHasSon();
     TestMeetReceiverWaitsOnlyForTheWalker();
     TestMeetReceiverLostWhy();
     TestMeetCloseIsWonByOneReader();

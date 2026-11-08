@@ -793,6 +793,11 @@ struct SeekFight
     std::map<std::uint64_t, SeekHeldSon> nonTankSince;
     // When each Son entered the hold (the hold clock): the 20 s cap releases it to the damage dealers.
     std::map<std::uint64_t, SeekHeldSon> holdSince;
+    // The pulled Son's meet is open (DungeonRunSeekSonMeet on and the receiver waiting) for this Son: the hold keeps it
+    // for the damage dealers until a tank has it (SeekMeetHoldsSon), and its puller and returner do not count on the
+    // non-tank clocks.
+    bool meetOpen = false;
+    std::uint64_t meetSon = 0;
     // The boss's anchor centre (its spawn), when the boss has an anchor row: the seek's reach is measured from it
     // too (SeekReachYd).
     bool anchored = false;
@@ -1444,11 +1449,25 @@ void LogSeekMeet(PlayerbotAI* ai, const char* info1)
 
 // The meet's end without a take: `reason` is one of son_dead, receiver_dead, receiver_charmed, receiver_victim,
 // receiver_busy, peeled, timeout (docs/play/refusal-rows.md), `afterMs` the time since the shot.
-void LogSeekMeetLost(PlayerbotAI* ai, std::uint64_t guid, const char* reason, std::uint32_t afterMs)
+//
+// `peeler` is the Son's victim on a `peeled` loss (null elsewhere): the row gains
+// `victim=<guid low>,victim_role=<tank|healer|dps|pet>,son_yd=<Son to its receiver>` so the next walk names who took
+// the Son off the puller (the frames are 7 s apart and left 8 of 33 peelers unknown in walk 54).
+void LogSeekMeetLost(PlayerbotAI* ai, std::uint64_t guid, const char* reason, std::uint32_t afterMs,
+                     Unit* peeler = nullptr, float sonYd = 0.0f)
 {
     char info1[192];
     snprintf(info1, sizeof(info1), "son=%u,event=lost,reason=%s,after_ms=%u", ObjectGuid(guid).GetCounter(), reason,
              afterMs);
+    if (peeler)
+    {
+        Player* const player = dynamic_cast<Player*>(peeler);
+        const char* const role = !player ? "pet" : PlayerbotAI::IsTank(player) ? "tank" :
+            PlayerbotAI::IsHeal(player) ? "healer" : "dps";
+        const size_t used = strlen(info1);
+        snprintf(info1 + used, sizeof(info1) - used, ",victim=%u,victim_role=%s,son_yd=%.1f", peeler->GetGUIDLow(),
+                 role, sonYd);
+    }
     LogSeekMeet(ai, info1);
 }
 
@@ -3014,6 +3033,24 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
         LiveBossAnchorRow(ai, bot);
     UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, fightSons, out);
+    // The pulled Son's open meet (DungeonRunSeekSonMeet): the hold keeps that Son until a tank has it, and its puller
+    // and returner count on neither non-tank clock (the 3 s healer take and the 5 s release), so neither the second
+    // tank nor the damage dealers take it off the puller before the receiver can act.
+    std::uint64_t meetPuller = 0;
+    std::uint64_t meetReturner = 0;
+    if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), row))
+    {
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSonGuid = 0;
+        std::uint32_t meetMs = 0;
+        if (SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSonGuid, meetMs) &&
+            SeekMeetOpen(meetReceiver, meetMs, nowMs))
+        {
+            out.meetOpen = true;
+            out.meetSon = meetSonGuid;
+            SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);
+        }
+    }
     std::vector<SeekSonSeen> seenSons;
     seenSons.reserve(fightSons.size());
     for (Unit* unit : fightSons)
@@ -3027,6 +3064,12 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
             seen.victimTank = victim && PlayerbotAI::IsTank(victim);
             seen.victimNonTank = victim && !seen.victimTank;
+            if (out.meetOpen && seen.guid == out.meetSon && victim &&
+                SeekMeetWalkerHasSon(victim->GetObjectGuid().GetRawValue(), meetPuller, meetReturner))
+            {
+                seen.victimTank = false;
+                seen.victimNonTank = false;
+            }
         }
         seenSons.push_back(seen);
     }
@@ -3059,7 +3102,15 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
                 GetBossTactics().SeekPullRow(bot->GetMapId(), row->bossEntry, row->targetEntry))
             lateLeadMs = static_cast<std::uint32_t>(pull->param * 1000.0f);
     }
-    if (SeekLateEngagedBurnWithin(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs, lateLeadMs))
+    // The meet Son is held until a tank has it, so no forced burn while the meet is open and it is not on a tank.
+    bool meetKeepsSon = false;
+    if (out.meetOpen && pickedSon && pickedSon->GetObjectGuid().GetRawValue() == out.meetSon)
+    {
+        Player* const pickedVictim = dynamic_cast<Player*>(pickedSon->GetVictim());
+        meetKeepsSon = !(pickedVictim && PlayerbotAI::IsTank(pickedVictim));
+    }
+    if (SeekLateEngagedBurnWithin(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs, lateLeadMs) &&
+        !meetKeepsSon)
         out.forceBurn = true;
     std::uint64_t healerTakeGuid = 0;
     {
@@ -3189,9 +3240,20 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
 }
 
+// The open meet's Son stays held until a tank has it (SeekMeetHoldsSon, DungeonRunSeekSonMeet): the state's meetOpen is
+// false with the flag off.
+bool SeekMeetHoldsUnit(const SeekFight& state, Unit* unit)
+{
+    Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
+    return SeekMeetHoldsSon(state.meetOpen, unit->GetObjectGuid().GetRawValue() == state.meetSon,
+                            victim && PlayerbotAI::IsTank(victim));
+}
+
 // The row's hold verdict for this source (SeekHoldWhyOf): the reason SeekHoldsUnit and the release log both read.
 SeekHoldWhy SeekHoldWhyOfUnit(const SeekFight& state, Unit* unit)
 {
+    if (SeekMeetHoldsUnit(state, unit))
+        return SeekHoldWhy::Held;
     const float holdPct = static_cast<float>(state.row->priority);
     return SeekHoldWhyOf(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
                          unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
@@ -3206,6 +3268,8 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 {
     if (!IsSeekSource(state, unit))
         return false;
+    if (SeekMeetHoldsUnit(state, unit))
+        return true;
     const float holdPct = static_cast<float>(state.row->priority);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
                             unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
@@ -7376,7 +7440,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                     return task;
                 }
                 if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs))
-                    LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs);
+                    LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,
+                                    bot->GetDistance(son));
                 task.row = nullptr;
             }
         }
@@ -7735,7 +7800,21 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
         // it stands, and the Son comes in to it.
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
-        const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
+        bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
+        if (chaseRefused && sPlayerbotAIConfig.dungeonRunSeekTakeEdge)
+        {
+            // The take edge (DungeonRunSeekTakeEdge): a Son just outside the raid circle whose victim stands inside it
+            // (plus 2 yd) is taken; the victim outside the circle, or the Son below the platform, stays refused.
+            // BossAnchorRefusesChase was true, so the anchor row is live and the Son stands outside the circle.
+            if (const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot))
+            {
+                Unit* const sonVictim = task.source->GetVictim();
+                chaseRefused = SeekTakeEdgeRefuses(AnchorCircleOf(*anchorRow, false),
+                    task.source->GetPositionX(), task.source->GetPositionY(), task.source->GetPositionZ(),
+                    sonVictim != nullptr, sonVictim ? sonVictim->GetPositionX() : 0.0f,
+                    sonVictim ? sonVictim->GetPositionY() : 0.0f);
+            }
+        }
         const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
         LogSeekTake(ai, bot, task.source, SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt), task.meet);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
