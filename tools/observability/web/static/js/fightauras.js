@@ -5,7 +5,9 @@
 // the application lengths. No DOM, no fetch, no markup: unit-tested by internal/commandersjs/fightauras_check.js under node.
 (function (root) {
   const CAP_ROWS = 1000; // the module keeps the newest 1000 aura rows of a fight
-  const MAX_BOT_ROWS = 40;
+  const MAX_BOT_ROWS = 80; // every bot of the fight is listed (a raid is at most 40); the cap only bounds a malformed fight
+  const SAMPLE_SLACK_MS = 2000; // a sampled aura edge is known to the report interval
+  const DEATH_SLACK_MS = 50;    // an exact aura row for a victim may be logged this much before its death row
 
   // Names of the auras the module watches (and of the debuffs the presets read); another id is "spell <id>" unless the caller
   // knows it (the live view learns names from the bots' debuff lists).
@@ -17,7 +19,8 @@
   // 24321; boss_jindo.cpp Hex 17172, Delusions of Jin'do 24306).
   const PRESETS = {
     14834: { auras: [24321], marker: { sid: 24324, name: "Blood Siphon" } },
-    11380: { auras: [17172, 24306], marker: { sid: 17172, name: "Hex" } },
+    // Hex lands when its cast finishes: "had it at the cast" looks 2 s past the cast start.
+    11380: { auras: [17172, 24306], marker: { sid: 17172, name: "Hex", after: 2000 } },
   };
 
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -44,11 +47,19 @@
     });
     ok.sort((a, b) => a.r[0] - b.r[0] || a.i - b.i); // stable
     const clamp = (t) => Math.max(0, Math.min(dur, t));
+    const sampled = !!(fight && fight.aura_src === "sampled");
+    // A list at the module's cap has lost its oldest rows: a removal with no apply in it says nothing about the time before it.
+    const capped = rows.length >= CAP_ROWS && !sampled;
     const open = {}; // "sid:guid" -> start
     const bySid = {};
-    const put = (sid, guid, from, to) => {
-      const s = bySid[sid] || (bySid[sid] = {});
+    const unknown = {}; // sid -> guid -> [[0, t]]: stretches whose state the capped list does not tell
+    const into = (map, sid, guid, from, to) => {
+      const s = map[sid] || (map[sid] = {});
       (s[guid] || (s[guid] = [])).push([from, to]);
+    };
+    const put = (sid, guid, from, to) => {
+      if (!(to > from)) return; // an instant is not uptime
+      into(bySid, sid, guid, from, to);
     };
     ok.forEach(({ r }) => {
       const t = clamp(r[0]), guid = String(r[1]), sid = r[2], k = sid + ":" + guid;
@@ -57,6 +68,8 @@
       } else if (k in open) {
         put(sid, guid, open[k], Math.max(open[k], t));
         delete open[k];
+      } else if (capped) {
+        if (t > 0) into(unknown, sid, guid, 0, t);
       } else {
         put(sid, guid, 0, t);
       }
@@ -66,9 +79,11 @@
       put(Number(k.slice(0, at)), k.slice(at + 1), open[k], dur);
     });
     Object.keys(bySid).forEach((sid) => Object.keys(bySid[sid]).forEach((g) => bySid[sid][g].sort((a, b) => a[0] - b[0])));
-    const sids = Object.keys(bySid).map(Number).sort((a, b) => a - b);
+    const seen = {};
+    Object.keys(bySid).concat(Object.keys(unknown)).forEach((k) => { seen[k] = true; });
+    const sids = Object.keys(seen).map(Number).sort((a, b) => a - b);
     // A sampled live fight is not the module's capped list: its row count says nothing about dropped rows.
-    return { bySid, capped: rows.length >= CAP_ROWS && !(fight && fight.aura_src === "sampled"), sids };
+    return { bySid, unknown, capped, sids };
   }
 
   // Where each bot is alive: from the pull to its first death in fight.deaths (else the end). The module records no
@@ -85,7 +100,7 @@
     return out;
   }
 
-  function botUptime(ivs, span, range, dur) {
+  function botUptime(ivs, span, range, dur, unk) {
     const r0 = range ? Math.max(0, Math.min(dur, range.from)) : 0, r1 = range ? Math.max(0, Math.min(dur, range.to)) : dur;
     const aliveMs = overlap(span[0], span[1], r0, r1);
     let upMs = 0, apps = 0;
@@ -93,23 +108,34 @@
       upMs += overlap(Math.max(f, span[0]), Math.min(t, span[1]), r0, r1);
       if (f >= r0 && f < r1) apps++;
     });
-    return { upMs, aliveMs, pct: aliveMs ? (upMs / aliveMs) * 100 : 0, apps };
+    // Unknown stretches (capped history): the bot's percentage is then a lower bound.
+    let unknownMs = 0;
+    (unk || []).forEach(([f, t]) => { unknownMs += overlap(Math.max(f, span[0]), Math.min(t, span[1]), r0, r1); });
+    return { upMs, aliveMs, pct: aliveMs ? (upMs / aliveMs) * 100 : 0, apps, unknownMs };
   }
 
   // Uptime of one aura over a range ({from,to}, or null for the whole fight): the raid sums every bot of the fight (a bot that
   // never had it counts with 0), the list holds the bots that had it, best first.
   function uptime(iv, sid, fight, range) {
-    const dur = durOf(fight), spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {};
-    let up = 0, alive = 0;
+    const dur = durOf(fight), spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {}, unk = (iv && iv.unknown && iv.unknown[sid]) || {};
+    let up = 0, alive = 0, unknownMs = 0;
     const list = [];
     bots(fight).forEach((b) => {
-      const g = String(b.guid), u = botUptime(by[g], spans[g], range, dur);
+      const g = String(b.guid), u = botUptime(by[g], spans[g], range, dur, unk[g]);
       up += u.upMs;
       alive += u.aliveMs;
-      if (u.upMs > 0 || u.apps > 0) list.push({ guid: g, name: b.name, role: b.role, upMs: u.upMs, aliveMs: u.aliveMs, pct: u.pct, apps: u.apps });
+      unknownMs += u.unknownMs;
+      list.push({ guid: g, name: b.name, role: b.role, upMs: u.upMs, aliveMs: u.aliveMs, pct: u.pct, apps: u.apps, lower: u.unknownMs > 0 });
     });
     list.sort((a, b) => b.pct - a.pct || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    return { raid: { upMs: up, aliveMs: alive, pct: alive ? (up / alive) * 100 : 0 }, bots: list.slice(0, MAX_BOT_ROWS) };
+    return { raid: { upMs: up, aliveMs: alive, pct: alive ? (up / alive) * 100 : 0, lower: unknownMs > 0 }, bots: list.slice(0, MAX_BOT_ROWS) };
+  }
+
+  // How long after a boss cast starts the aura it causes may land (Hex: its cast time), from the presets.
+  function afterOf(pick) {
+    const name = typeof pick.name === "string" ? pick.name.toLowerCase() : null;
+    const hit = Object.keys(PRESETS).map((k) => PRESETS[k].marker).find((m) => (pick.sid != null && m.sid === Number(pick.sid)) || (pick.sid == null && name !== null && m.name.toLowerCase() === name));
+    return hit && hit.after ? hit.after : 0;
   }
 
   // The markers drawn on the strip: a boss cast ({sid, name}: the log's casts by spell id or by name), or "deaths".
@@ -126,25 +152,31 @@
       });
     } else if (pick && typeof pick === "object") {
       const name = typeof pick.name === "string" && pick.name ? pick.name.toLowerCase() : null;
+      const after = afterOf(pick);
       (fight && Array.isArray(fight.log) ? fight.log : []).forEach((e) => {
         if (!e || e.k !== "cast" || num(e.t) === null) return;
         const bySid = pick.sid != null && e.sid != null && Number(e.sid) === Number(pick.sid);
-        const byName = name !== null && typeof e.s === "string" && e.s.toLowerCase() === name;
-        if (bySid || byName) out.push({ t: e.t, label: e.s || pick.name || "spell " + pick.sid });
+        // With a spell id the id decides; the name only stands in for an event that carries none.
+        const byName = name !== null && (pick.sid == null || e.sid == null) && typeof e.s === "string" && e.s.toLowerCase() === name;
+        if (bySid || byName) out.push({ t: e.t, label: e.s || pick.name || "spell " + pick.sid, after });
       });
     }
     return out.sort((a, b) => a.t - b.t);
   }
 
-  const holds = (ivs, t, closed) => (ivs || []).some(([f, to]) => f <= t && (closed ? t <= to : t < to));
+  // Whether one bot's intervals hold the aura at t. A window (a preset's after-the-cast time) asks for any overlap with [t, t + win].
+  const holds = (ivs, t, win) => (ivs || []).some(([f, to]) => (win ? f <= t + win && to > t : f <= t && t < to));
+  // A victim's aura row can be logged just before its death row (an exact row), or fall in the same report interval (a sampled one).
+  const heldAtDeath = (ivs, t, slack) => (ivs || []).some(([f, to]) => f <= t && to >= t - slack);
 
   // Who had the aura at each marker. A cast marker: the bots alive then whose interval holds the time; a death marker: whether
   // the dead bot itself had it.
   function atMarkers(iv, sid, fight, marks) {
     const spans = aliveSpans(fight), by = (iv && iv.bySid && iv.bySid[sid]) || {};
+    const sampled = !!(fight && fight.aura_src === "sampled");
     return (marks || []).map((m) => {
       if (m.death) {
-        const on = m.guid != null && holds(by[m.guid], m.t, true) ? 1 : 0;
+        const on = m.guid != null && heldAtDeath(by[m.guid], m.t, sampled ? SAMPLE_SLACK_MS : DEATH_SLACK_MS) ? 1 : 0;
         return { t: m.t, label: m.label, on, alive: 1, names: on ? [bots(fight).find((b) => String(b.guid) === m.guid).name] : [] };
       }
       let on = 0, alive = 0;
@@ -153,7 +185,7 @@
         const g = String(b.guid);
         if (!(m.t < spans[g][1])) return;
         alive++;
-        if (holds(by[g], m.t, false)) { on++; names.push(b.name); }
+        if (holds(by[g], m.t, m.after ? m.after + (sampled ? SAMPLE_SLACK_MS : 0) : 0)) { on++; names.push(b.name); }
       });
       return { t: m.t, label: m.label, on, alive, names };
     });

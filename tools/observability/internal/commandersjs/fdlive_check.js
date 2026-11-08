@@ -110,9 +110,16 @@ const bind = (t, db, extra) => Object.assign({
   assert.deepStrictEqual(s.bots[1], { hp: 50, a: 1, dps: 120, hps: 40, db: [24321] });
   assert.deepStrictEqual(s.mobs, [{ id: "99", e: 11502, hp: 80, v: "1" }]);
   assert.strictEqual(s.w, 10);
-  // an aura present before the start has no application row, and its removal row goes with it
+  // an aura applied before the start and still held at the first sample inside the fight is on from the pull (moved to 0), then removed
   const rows = F.auraRowsFrom(st.samples, T0 + 3000);
-  assert.deepStrictEqual(rows, [], "nothing applied after the start, no orphan removal");
+  assert.deepStrictEqual(rows, [[0, 1, 24321, 1], [3000, 1, 24321, -1]], "carried in: on from 0 until its removal");
+  // (r1 M1) carried in and removed at the first sample inside the fight (rel 4000): on [0, 4000]; applied and removed before the start: nothing
+  const smp = (t, db) => ({ t: T0 + t, bots: { 7: { db } }, mobs: [], w: 10 });
+  assert.deepStrictEqual(F.auraRowsFrom([smp(0, [5]), smp(5000, [])], T0 + 1000), [[0, 7, 5, 1], [4000, 7, 5, -1]], "carried in, removed at rel 4000: [0, 4000]");
+  assert.deepStrictEqual(F.auraRowsFrom([smp(0, [5]), smp(500, [])], T0 + 1000), [], "applied and removed before the start: nothing");
+  assert.deepStrictEqual(F.auraRowsFrom([smp(0, [5]), smp(2000, [5]), smp(4000, [])], T0 + 1000), [[0, 7, 5, 1], [3000, 7, 5, -1]], "held at the first sample inside the fight, removed later");
+  assert.strictEqual(F.slotsFull([smp(0, [1, 2, 3])]), false);
+  assert.strictEqual(F.slotsFull([smp(0, [1, 2, 3]), smp(2000, [1, 2, 3, 4])]), true, "a sample with 4 ids: the report's slots were full");
   // a bot missing from a sample keeps its state
   const keep = [{ t: T0 + 1000, bots: { 1: { db: [5] } } }, { t: T0 + 2000, bots: {} }, { t: T0 + 3000, bots: { 1: { db: [] } } }];
   assert.deepStrictEqual(F.auraRowsFrom(keep, T0), [[1000, 1, 5, 1], [3000, 1, 5, -1]]);

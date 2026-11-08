@@ -6605,7 +6605,12 @@
     fdLivePaintBar(card, fd, st);
     const lf = st.key ? FdLive.fight(st, bind, Date.now()) : null;
     fdSet(card.querySelector('.fd-tl'), fdLiveTimelineHtml(st, lf));
-    fdAurasSync(card, fd, 'live', lf, fdAuLiveOpts(st)); // only the panel's body is repainted, not the card
+    fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st)); // only the panel's body is repainted, not the card
+  }
+
+  // The Auras pick belongs to one live fight: its key carries the fight's own, so the next fight starts from its defaults.
+  function fdAuLiveKey(fight) {
+    return 'live:' + (fight && fight.key);
   }
 
   function fdAuLiveOpts(st) {
@@ -6622,7 +6627,7 @@
     const kept = !!(fd && fd.liveKey && fd.liveKey === summary.key && !fd.userSel);
     if (!(st && FdLive.handoff(st, summary)) && !kept && !(fd && fd.sel === 'live' && fd.liveKey === summary.key)) return;
     if (fd && (fd.sel === 'live' || kept)) {
-      fdAuCarry(fd, 'live', summary.key);
+      fdAuCarry(fd, 'live:' + fd.liveKey, summary.key);
       fd.sel = summary.key;
       fd.userSel = true;
       fd.death = null;
@@ -9624,7 +9629,7 @@
       // screen with its one-line note until the next fight.
       const filed = fdLiveFiledRow(fd, list);
       const short = fdLive[bind.commander] && fdLive[bind.commander].unkept;
-      if (filed) { fdAuCarry(fd, 'live', filed.key); fd.sel = filed.key; fd.userSel = true; fd.liveKey = null; }
+      if (filed) { fdAuCarry(fd, 'live:' + fd.liveKey, filed.key); fd.sel = filed.key; fd.userSel = true; fd.liveKey = null; }
       else if (!short) { fd.sel = null; fd.userSel = false; }
     }
     if (!fd.userSel) {
@@ -9818,8 +9823,14 @@
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death) : '');
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death) : '');
     // The Auras panel: the live fight's sampled rows, or the filed fight's own (else the track's sampled ones).
-    if (selLive) fdAurasSync(card, fd, 'live', liveFight, fdAuLiveOpts(liveSt));
-    else fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending: !!fight && track === 'loading' });
+    if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt));
+    else {
+      // No rows and no track yet: the aura data may still come (a past night's fight never fetches one). A raid past the track's
+      // 20 commanders has no samples to fall back on.
+      const pending = !!fight && !hist && (track === undefined || track === 'loading');
+      const untracked = !!(track && track !== 'loading' && track.raw && track.raw.tracked === false);
+      fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending, untracked });
+    }
     // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
     // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
     if (fight) {
@@ -10503,8 +10514,10 @@
       const st = FdLive.create(commander);
       FdLive.applyTrackX(st, track.raw);
       const seen = st.samples.some(s => Object.keys(s.bots).some(g => s.bots[g].db.length));
-      const rows = seen ? FdLive.auraRowsFrom(st.samples, (Number(fight.start) || 0) * 1000) : [];
-      track.auFight = { src: fight, out: rows.length ? Object.assign({}, fight, { auras: rows, aura_src: 'sampled' }) : fight };
+      // The track runs a few seconds past the fight's end: rows after it are not the fight's.
+      const dur = Number(fight.dur_ms) || 0;
+      const rows = seen ? FdLive.auraRowsFrom(st.samples, (Number(fight.start) || 0) * 1000).filter(r => r[0] <= dur) : [];
+      track.auFight = { src: fight, out: rows.length ? Object.assign({}, fight, { auras: rows, aura_src: 'sampled', aura_slots_full: FdLive.slotsFull(st.samples) }) : fight };
     }
     return track.auFight.out;
   }
@@ -10536,8 +10549,10 @@
     return null;
   }
 
-  function fdAuPct(p) {
-    return Math.round(Number(p) || 0) + ' %';
+  // A percentage; with `lower` (part of the time is unknown: a capped list) a minimum, or a dash when nothing is known to be up.
+  function fdAuPct(p, lower, upMs) {
+    const v = Math.round(Number(p) || 0) + ' %';
+    return lower ? (upMs > 0 ? '≥ ' + v : '—') : v;
   }
 
   // The two selects: the aura and the marker. Built apart from the strip so an open list is not rebuilt every second.
@@ -10567,22 +10582,27 @@
         ? "Sampled every 2 s from the bots' boss debuffs (up to 4 per bot). The exact rows replace this when the fight ends."
         : "This fight has no aura rows; sampled every 2 s from the bots' boss debuffs (up to 4 per bot)."}</p>`;
     }
-    if (iv.capped) html += '<p class="empty-hint fd-au-note">The earliest aura changes of this fight may be missing (the module keeps the newest 1000).</p>';
+    if (fight.aura_src === 'sampled' && fight.aura_slots_full) {
+      html += '<p class="empty-hint fd-au-note">A bot carried 4 boss debuffs at once; the report lists no more than 4, so a debuff may be missing here.</p>';
+    }
+    if (iv.capped) html += '<p class="empty-hint fd-au-note">The earliest aura changes of this fight may be missing (the module keeps the newest 1000); where an aura\'s start is unknown the uptime is shown as a minimum (≥).</p>';
     if (!rows.length) {
       html += `<p class="empty-hint">${fight.aura_src === 'sampled' ? 'No boss debuff has been seen on a bot yet.'
         : opts && opts.pending ? 'Loading the aura data…'
+        : opts && opts.untracked ? "This fight has no aura rows, and the dashboard's position track (the last 20 commanders) does not cover this raid, so there are no sampled debuffs either."
         : "No watched aura changed in this fight. Only the auras in the server's watch list are recorded."}</p>`;
     } else if (au.sid != null) {
       const sid = au.sid, up = FightAuras.uptime(iv, sid, fight, range), spans = FightAuras.aliveSpans(fight);
       const marks = FightAuras.markers(fight, au.marker);
       const pctOf = t => (dur > 0 ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0).toFixed(2);
-      const by = (iv.bySid && iv.bySid[sid]) || {};
-      html += `<div class="fd-au-strip"><div class="fd-au-row fd-au-raid"><span class="fd-au-name">Raid</span><span class="fd-au-pct">${esc(fdAuPct(up.raid.pct))}</span>`
+      const by = (iv.bySid && iv.bySid[sid]) || {}, unk = (iv.unknown && iv.unknown[sid]) || {};
+      html += `<div class="fd-au-strip"><div class="fd-au-row fd-au-raid"><span class="fd-au-name">Raid</span><span class="fd-au-pct">${esc(fdAuPct(up.raid.pct, up.raid.lower, up.raid.upMs))}</span>`
         + `<span class="fd-au-bar"><i class="fd-au-fill" style="width:${Math.max(0, Math.min(100, up.raid.pct)).toFixed(2)}%"></i></span></div>`;
       up.bots.forEach(b => {
         const on = (by[b.guid] || []).map(([f, t]) => `<i class="fd-au-on" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
+        const unknownBars = (unk[b.guid] || []).map(([f, t]) => `<i class="fd-au-unk" title="not known: the module's list starts later" style="left:${pctOf(f)}%;width:${(Number(pctOf(t)) - Number(pctOf(f))).toFixed(2)}%"></i>`).join('');
         const died = spans[b.guid] && spans[b.guid][1] < dur ? `<i class="fd-au-death" style="left:${pctOf(spans[b.guid][1])}%"></i>` : '';
-        html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct))}</span><span class="fd-au-bar">${on}${died}</span></div>`;
+        html += `<div class="fd-au-row"><span class="fd-au-name r-${esc(FightDebug.roleOf(b))}">${esc(b.name)}</span><span class="fd-au-pct">${esc(fdAuPct(b.pct, b.lower, b.upMs))}</span><span class="fd-au-bar">${unknownBars}${on}${died}</span></div>`;
       });
       html += '<div class="fd-au-marks">' + marks.map(m => {
         const label = m.label + ' at ' + fdLiveClock(m.t);
@@ -10888,7 +10908,9 @@
     if (Object.keys(fd.tracks).some(k => fd.tracks[k] === 'loading')) return;
     fd.tracks[key] = 'loading';
     const from = Math.floor(fight.start || 0) - 4, to = Math.ceil((fight.start || 0) + (fight.dur_ms || 0) / 1000) + 4;
-    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to + '&x=1', { credentials: 'same-origin' })
+    // x=1 (bots' boss debuffs and meters) only when the Auras panel needs it: a fight with its own aura rows reads the plain track.
+    const sampled = Array.isArray(fight.auras) && fight.auras.length ? '' : '&x=1';
+    fetch('/api/v1/commanders/track?commander=' + encodeURIComponent(bind.commander) + '&from=' + from + '&to=' + to + sampled, { credentials: 'same-origin' })
       .then(r => (r.ok ? r.json() : null))
       .then(json => {
         if (json && Array.isArray(json.frames)) { fd.tracks[key] = { raw: json, prep: FightReplay.prep(json) }; return; }

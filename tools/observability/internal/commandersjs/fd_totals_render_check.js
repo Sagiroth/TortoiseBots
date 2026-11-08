@@ -101,7 +101,7 @@ vm.runInContext([
   "var cmdPageHash = () => {};",
   "var fdPage = { open: null };",
   "var fdLive = {}, fdLivePaintBar = () => {}, fdLiveCatchUp = () => {}, fdLiveTickSync = () => {};",
-  "var fdAurasSync = () => {}, fdAuraFight = (f) => f, fdAuLiveOpts = () => null;", // the Auras panel has its own check (fightauras_ui_check.js)
+  "var fdAurasSync = () => {}, fdAuraFight = (f) => f, fdAuLiveOpts = () => null, fdAuLiveKey = () => 'live:k';", // the Auras panel has its own check (fightauras_ui_check.js)
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });

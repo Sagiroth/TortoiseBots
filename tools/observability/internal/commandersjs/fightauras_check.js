@@ -32,7 +32,9 @@ assert.strictEqual(Object.keys(iv.bySid[POISON]).length, 3, "the junk row made n
 // an apply while one is open is ignored; times clamp into the fight; rows sort by time
 const messy = A.intervals({ dur_ms: 1000, bots: [], auras: [[500, 1, 9, 1], [200, 1, 9, 1], [900, 1, 9, -1], [5000, 2, 9, 1], [-30, 2, 9, -1]] });
 assert.deepStrictEqual(messy.bySid[9][1], [[200, 900]], "the second apply while open is ignored; rows are sorted first");
-assert.deepStrictEqual(messy.bySid[9][2], [[0, 0], [1000, 1000]], "clamped to [0, dur]");
+assert.strictEqual(messy.bySid[9][2], undefined, "(r1 L1) rows clamped to the fight leave no interval of zero length: [0, 0] and [1000, 1000] are skipped");
+assert.deepStrictEqual(A.intervals({ dur_ms: 1000, bots: [], auras: [[400, 1, 9, 1], [2000, 1, 9, -1]] }).bySid[9][1], [[400, 1000]], "a time past the end clamps to dur");
+assert.strictEqual(A.intervals({ dur_ms: 1000, bots: [], auras: [[1000, 1, 9, 1]] }).bySid[9], undefined, "an apply at the very end is an instant");
 // the module's 1000-row cap shows as `capped`; a sampled fight is not that list
 const rows = Array.from({ length: 1000 }, (_, k) => [k, 1, 7, k % 2 ? -1 : 1]);
 assert.strictEqual(A.intervals({ dur_ms: 5000, bots: [], auras: rows }).capped, true, "1000 rows: capped");
@@ -48,21 +50,44 @@ const u = A.uptime(iv, POISON, f, null);
 assert.strictEqual(u.raid.upMs, 30000 + 90000 + 5000);
 assert.strictEqual(u.raid.aliveMs, 120000 * 3 + 60000);
 assert.ok(Math.abs(u.raid.pct - (125000 / 420000) * 100) < 1e-9, "raid pct " + u.raid.pct);
-assert.deepStrictEqual(u.bots.map((b) => b.name), ["B", "A", "C"], "pct desc: 75, 25, 4.2; D (no uptime, no applications) is not listed");
-assert.deepStrictEqual(u.bots.find((b) => b.name === "A"), { guid: "1", name: "A", role: "tank", upMs: 30000, aliveMs: 120000, pct: 25, apps: 1 });
+assert.deepStrictEqual(u.bots.map((b) => b.name), ["B", "A", "C", "D"], "(r1) every fight bot, pct desc: 75, 25, 4.2, then D at 0");
+assert.deepStrictEqual(u.bots.find((b) => b.name === "D"), { guid: "4", name: "D", role: "dps", upMs: 0, aliveMs: 60000, pct: 0, apps: 0, lower: false });
+assert.deepStrictEqual(u.bots.find((b) => b.name === "A"), { guid: "1", name: "A", role: "tank", upMs: 30000, aliveMs: 120000, pct: 25, apps: 1, lower: false });
 assert.strictEqual(A.uptime(iv, POISON, f, { from: 30000, to: 40000 }).bots.find((b) => b.name === "A").pct, 100, "A over 30-40 s");
 const ranged = A.uptime(iv, POISON, f, { from: 50000, to: 100000 });
-assert.strictEqual(ranged.bots.find((b) => b.name === "D"), undefined);
+assert.strictEqual(ranged.bots.find((b) => b.name === "D").pct, 0, "D is listed with 0");
 assert.strictEqual(ranged.raid.aliveMs, 50000 * 3 + 10000, "D is alive for 10 s of the range");
-assert.strictEqual(ranged.bots.find((b) => b.name === "A"), undefined, "A's interval ended before the range and starts no application in it");
+assert.deepStrictEqual([ranged.bots.find((b) => b.name === "A").upMs, ranged.bots.find((b) => b.name === "A").apps], [0, 0], "A's interval ended before the range and starts no application in it");
 assert.strictEqual(A.uptime(iv, 555, f, null).raid.pct, 0, "an aura nobody had");
 assert.strictEqual(A.uptime(iv, POISON, { dur_ms: 0, bots: [] }, null).raid.pct, 0, "no bots, no division by zero");
 // a bot that died with the aura on stops counting at its death
 const dead = { dur_ms: 100000, bots: [{ name: "X", guid: 9, role: "dps" }], deaths: [{ name: "X", t_ms: 40000, killer: "k" }], auras: [[10000, 9, 5, 1]] };
-assert.deepStrictEqual(A.uptime(A.intervals(dead), 5, dead, null).bots[0], { guid: "9", name: "X", role: "dps", upMs: 30000, aliveMs: 40000, pct: 75, apps: 1 });
-// at most 40 bots are listed
-const many = { dur_ms: 1000, bots: Array.from({ length: 50 }, (_, k) => ({ name: "b" + k, guid: k + 1, role: "dps" })), auras: Array.from({ length: 50 }, (_, k) => [0, k + 1, 3, 1]) };
-assert.strictEqual(A.uptime(A.intervals(many), 3, many, null).bots.length, 40);
+assert.deepStrictEqual(A.uptime(A.intervals(dead), 5, dead, null).bots[0], { guid: "9", name: "X", role: "dps", upMs: 30000, aliveMs: 40000, pct: 75, apps: 1, lower: false });
+// every bot of a raid is listed (40), those with nothing at 0 %
+const many = { dur_ms: 1000, bots: Array.from({ length: 40 }, (_, k) => ({ name: "b" + k, guid: k + 1, role: "dps" })), auras: Array.from({ length: 10 }, (_, k) => [0, k + 1, 3, 1]) };
+const manyU = A.uptime(A.intervals(many), 3, many, null);
+assert.deepStrictEqual([manyU.bots.length, manyU.bots.filter((b) => b.pct === 0).length], [40, 30]);
+// (r1 M1) a capped list: a removal with no apply in it is NOT on from the pull; the bot's uptime is a lower bound over a stretch of unknown state
+{
+  const rows = Array.from({ length: 997 }, (_, k) => [60000 + k, 2, 8, k % 2 ? -1 : 1]); // filler for bot 2, another aura
+  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1], [70000, 1, POISON, -1]); // bot 1: removal with no apply, then 50-70 s
+  const cap = { boss: 14834, dur_ms: 100000, bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }], auras: rows };
+  assert.strictEqual(rows.length, 1000);
+  const civ = A.intervals(cap);
+  assert.strictEqual(civ.capped, true);
+  assert.deepStrictEqual(civ.bySid[POISON][1], [[50000, 70000]], "no [0, 30000] was made up");
+  assert.deepStrictEqual(civ.unknown[POISON][1], [[0, 30000]], "the stretch before the removal is unknown");
+  assert.deepStrictEqual(civ.sids, [8, POISON]);
+  const cu = A.uptime(civ, POISON, cap, null);
+  const ca = cu.bots.find((b) => b.name === "A");
+  assert.deepStrictEqual([ca.upMs, ca.lower, ca.pct], [20000, true, 20], "A: at least 20 %");
+  assert.strictEqual(cu.raid.lower, true);
+  assert.strictEqual(cu.bots.find((b) => b.name === "B").lower, false, "B has no unknown stretch");
+  // the same list under the cap is the old reading: on from the pull
+  const few = Object.assign({}, cap, { auras: rows.slice(-3) });
+  assert.deepStrictEqual(A.intervals(few).bySid[POISON][1], [[0, 30000], [50000, 70000]]);
+  assert.strictEqual(A.intervals(few).unknown[POISON], undefined);
+}
 
 // ---- markers: the casts by spell id, or by name when the id is missing; deaths with their killer
 assert.deepStrictEqual(A.markers(f, { sid: SIPHON, name: "Blood Siphon" }).map((m) => [m.t, m.label]), [[35000, "Blood Siphon"], [95000, "Blood Siphon"]]);
@@ -71,6 +96,9 @@ assert.deepStrictEqual(A.markers(f, { sid: 24327 }).map((m) => m.t), [50000], "a
 const dm = A.markers(f, "deaths");
 assert.deepStrictEqual(dm.map((m) => [m.t, m.label, m.guid]), [[60000, "D (Hakkar)", "4"]]);
 assert.deepStrictEqual(A.markers(f, null), []);
+
+// ---- (r1 L5) with a spell id the id decides; the name only stands in for an event that carries no id
+assert.deepStrictEqual(A.markers({ log: [{ k: "cast", t: 1, s: "Blood Siphon", sid: 999 }, { k: "cast", t: 2, s: "Blood Siphon" }, { k: "cast", t: 3, s: "x", sid: SIPHON }] }, { sid: SIPHON, name: "Blood Siphon" }).map((m) => m.t), [2, 3], "another spell of the same name does not match; an event without an id matches by name");
 
 // ---- who had it at each marker
 const marks = A.markers(f, { sid: SIPHON, name: "Blood Siphon" });
@@ -81,6 +109,32 @@ const atD = A.atMarkers(iv, POISON, f, dm);
 assert.deepStrictEqual([atD[0].on, atD[0].alive], [0, 1], "the dead bot D did not have it when it died");
 const f2 = fight(); f2.auras.push([50000, 4, POISON, 1]);
 assert.strictEqual(A.atMarkers(A.intervals(f2), POISON, f2, dm)[0].on, 1, "an interval that runs to the death counts (from <= t <= to)");
+
+// ---- (r1 L2) the Hex preset looks 2 s past the cast (the aura lands when the cast finishes), 2 s more for sampled rows
+{
+  const hex = (src, applyAt) => ({ boss: 11380, dur_ms: 60000, aura_src: src, bots: [{ name: "T", guid: 1, role: "tank" }, { name: "H", guid: 2, role: "healer" }],
+    log: [{ k: "cast", t: 10000, n: "Jin'do", s: "Hex", sid: 17172, tn: "T" }], deaths: [], auras: [[applyAt, 1, 17172, 1], [applyAt + 8000, 1, 17172, -1]] });
+  const pick = A.defaults(hex(undefined, 10500), A.intervals(hex(undefined, 10500))).marker;
+  assert.deepStrictEqual(pick, { sid: 17172, name: "Hex" });
+  const check = (f) => A.atMarkers(A.intervals(f), 17172, f, A.markers(f, pick))[0];
+  assert.deepStrictEqual([check(hex(undefined, 10500)).on, check(hex(undefined, 10500)).alive, check(hex(undefined, 10500)).names], [1, 2, ["T"]], "Hex landed 0.5 s after the cast: the tank had it");
+  assert.strictEqual(check(hex(undefined, 12500)).on, 0, "an exact row 2.5 s after the cast is past the window");
+  assert.strictEqual(check(hex("sampled", 14000)).on, 1, "a sampled row up to 4 s after the cast counts");
+  assert.strictEqual(check(hex("sampled", 14500)).on, 0);
+  // Blood Siphon has no window: the aura must hold at the cast itself
+  const bs = { boss: 14834, dur_ms: 60000, bots: [{ name: "T", guid: 1, role: "tank" }], deaths: [], log: [{ k: "cast", t: 10000, s: "Blood Siphon", sid: SIPHON }], auras: [[10500, 1, POISON, 1]] };
+  assert.strictEqual(A.atMarkers(A.intervals(bs), POISON, bs, A.markers(bs, { sid: SIPHON }))[0].on, 0);
+  assert.strictEqual(A.cycles(A.intervals(hex(undefined, 10500)), 17172, hex(undefined, 10500), A.markers(hex(undefined, 10500), pick))[0].on, 1, "the cycle row uses the same window");
+}
+// ---- (r1 L3) a victim's aura may be logged just before its death row (50 ms for exact rows, 2 s for sampled ones)
+{
+  const dies = (src, removedAt) => ({ dur_ms: 60000, aura_src: src, bots: [{ name: "V", guid: 1, role: "dps" }], log: [], deaths: [{ name: "V", t_ms: 30000, killer: "k" }], auras: [[10000, 1, 5, 1], [removedAt, 1, 5, -1]] });
+  const had = (f) => A.atMarkers(A.intervals(f), 5, f, A.markers(f, "deaths"))[0].on;
+  assert.strictEqual(had(dies(undefined, 29970)), 1, "removed 30 ms before the death");
+  assert.strictEqual(had(dies(undefined, 29900)), 0, "100 ms is too long ago for an exact row");
+  assert.strictEqual(had(dies("sampled", 28500)), 1, "a sampled row: 2 s");
+  assert.strictEqual(had(dies("sampled", 27500)), 0);
+}
 
 // ---- cycles: [prev cast or 0, cast], the raid's uptime over it, the deaths in it, then "after"
 const cy = A.cycles(iv, POISON, f, marks);

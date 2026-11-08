@@ -252,8 +252,8 @@
 
   // Aura rows [t_ms from the fight's start, guid, spell id, 1 apply | -1 remove] from the sampled boss-debuff lists: an id
   // in a bot's list that the bot's previous sample did not have is applied at that sample's time, one that went missing is
-  // removed. A bot absent from a sample keeps its state. Rows before the start are dropped (with the removal of an aura
-  // whose application was dropped, so no removal is left without its application).
+  // removed. A bot absent from a sample keeps its state. An aura applied before the start is on from the pull: its
+  // application is moved to 0 at the first sample inside the fight that still holds it, or just before its removal.
   function auraRowsFrom(samples, startMs) {
     const state = {};   // guid -> { id: true }
     const skipped = {}; // guid:id -> an application before the start was dropped
@@ -265,18 +265,33 @@
         ((s.bots[g] && s.bots[g].db) || []).forEach((id) => { now[id] = true; });
         const prev = state[g] || {};
         Object.keys(now).forEach((id) => {
-          if (prev[id]) return;
+          if (prev[id]) {
+            // Held since before the start and still held at the first sample inside the fight: on from the pull.
+            if (rel >= 0 && skipped[g + ":" + id]) { delete skipped[g + ":" + id]; rows.push([0, Number(g), Number(id), 1]); }
+            return;
+          }
           if (rel < 0) skipped[g + ":" + id] = true; else rows.push([rel, Number(g), Number(id), 1]);
         });
         Object.keys(prev).forEach((id) => {
           if (now[id]) return;
-          if (skipped[g + ":" + id]) { delete skipped[g + ":" + id]; return; }
+          if (skipped[g + ":" + id]) {
+            // Carried in from before the start: it ran from the pull until this removal (a removal before the start is dropped whole).
+            delete skipped[g + ":" + id];
+            if (rel > 0) { rows.push([0, Number(g), Number(id), 1]); rows.push([rel, Number(g), Number(id), -1]); }
+            return;
+          }
           if (rel >= 0) rows.push([rel, Number(g), Number(id), -1]);
         });
         state[g] = now;
       });
     });
     return rows;
+  }
+
+  // Whether any sample of any bot listed the most boss debuffs the report carries (4 per bot): a debuff may have been left out.
+  const DB_SLOTS = 4;
+  function slotsFull(samples) {
+    return (Array.isArray(samples) ? samples : []).some((s) => Object.keys(s.bots || {}).some((g) => ((s.bots[g] && s.bots[g].db) || []).length >= DB_SLOTS));
   }
 
   function auraRows(st) {
@@ -311,7 +326,7 @@
     const out = {
       id: parts[2] || "", key: st.key, live: true, start: Math.floor(st.startMs / 1000), dur_ms: nowFightMs(st, nowMs),
       boss: st.boss, boss_name: st.bossName, outcome: st.ended ? st.outcome : "live", bots, log, deaths,
-      auras: auraRows(st), aura_src: "sampled", log_dropped: st.gap ? 1 : 0,
+      auras: auraRows(st), aura_src: "sampled", aura_slots_full: slotsFull(st.samples), log_dropped: st.gap ? 1 : 0,
     };
     st.memo = { version: st.version, sec, bind, fight: out };
     return out;
@@ -331,7 +346,7 @@
   const api = {
     TICK_MS, EVENTS_MAX, SAMPLES_MAX, POS_MAX, WINDOWS, DEFAULT_WINDOW, CATCHUP_MIN_MS, CLOCK_SLACK_MS,
     create, reset, applyEventsFrame, applyCatchUp, token, accepts, markCatchUp, needCatchUp, applySample, applyTrackX, applyPos,
-    nowFightMs, range, auraRowsFrom, auraRows, bossHp, fight, handoff,
+    nowFightMs, range, auraRowsFrom, auraRows, slotsFull, bossHp, fight, handoff,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdLive = api;
 })(typeof self !== "undefined" ? self : this);

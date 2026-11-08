@@ -25,7 +25,7 @@ const Fights = require(path.join(jsDir, "fights.js"));
 const ctx = { console, FightAuras, FdLive, FightDebug, Fights, document: { activeElement: null } };
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdAuIv", "fdAuraFight", "fdAuState", "fdAuCarry", "fdAuMarkVal", "fdAuMarkParse", "fdAuPct",
-  "fdAurasControlsHtml", "fdAurasRestHtml", "fdAurasParts", "fdAurasHtml", "fdAurasPaint", "fdAurasSync", "fdAuLiveOpts"];
+  "fdAurasControlsHtml", "fdAurasRestHtml", "fdAurasParts", "fdAurasHtml", "fdAurasPaint", "fdAurasSync", "fdAuLiveKey", "fdAuLiveOpts"];
 vm.runInContext(["var FD_AU_NAMES_MAX = 8; const fdAuMemo = new WeakMap();"].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
@@ -91,6 +91,35 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(draw(g).includes("No watched aura changed"), "missing rows read the same");
   assert.ok(draw(f, null, { pending: true }).includes("Loading the aura data"), "a track still loading says so rather than the empty hint");
 }
+// ---- (r1) every fight bot is listed, a bot that never had the aura with 0 %
+{
+  const f = fight(); f.bots.push({ name: "Zed", guid: 7, role: "dps" });
+  const html = draw(f);
+  assert.ok(/<span class="fd-au-name r-dps">Zed<\/span><span class="fd-au-pct">0 %<\/span>/.test(html), "a bot with no uptime shows 0 %: " + html);
+  assert.strictEqual(count(html, /class="fd-au-name/g), 6, "the raid row and the five bots");
+}
+// ---- (r1) a capped list: a removal with no apply is not on from the pull; the percentage is a minimum, the unknown stretch is drawn
+{
+  const rows = Array.from({ length: 998 }, (_, k) => [20000 + k, 2, 7, k % 2 ? -1 : 1]); // bot 2: 499 short applications
+  rows.push([30000, 1, POISON, -1], [50000, 1, POISON, 1]); // bot 1: a removal with no apply in the list (1000 rows)
+  const f = { boss: 1, dur_ms: 100000, bots: [{ name: "A", guid: 1, role: "tank" }, { name: "B", guid: 2, role: "dps" }], auras: rows, log: [], deaths: [] };
+  const html = draw(f, { key: "k", sid: POISON, marker: null });
+  assert.ok(html.includes("may be missing") && html.includes('class="fd-au-unk"'), "the unknown stretch before the first removal is drawn");
+  assert.ok(html.includes('<span class="fd-au-pct">≥ 50 %</span>'), "bot A: a minimum, 50 s known up of 100 s: " + html);
+  assert.ok(html.includes('<span class="fd-au-pct">≥ '), "the raid row is a minimum too");
+}
+// ---- (r1) the hints while the track is out and for a raid past the track's limit
+{
+  const f = fight(); f.auras = [];
+  assert.ok(draw(f, null, { pending: true }).includes("Loading the aura data"));
+  assert.ok(draw(f, null, { untracked: true }).includes("(the last 20 commanders)"), "an untracked raid has its own hint");
+  assert.ok(!draw(f, null, { untracked: true }).includes("No watched aura changed"));
+  const g = fight(); g.aura_src = "sampled"; g.aura_slots_full = true;
+  assert.ok(draw(g).includes("carried 4 boss debuffs at once"), "the full-slots note");
+  g.aura_slots_full = false;
+  assert.ok(!draw(g).includes("carried 4 boss debuffs"), "no note without a full slot");
+  assert.ok(!draw(fight()).includes("carried 4 boss debuffs"), "and none for exact rows");
+}
 // ---- LIVE: a live fight object (aura_src "sampled") draws the live hint and its one interval
 {
   const st = FdLive.create("Gbmage");
@@ -120,6 +149,15 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   const fd = { au: { key: null, sid: null, marker: null, userSid: false, userMark: false } };
   let au = run("fdAuState(fd, 'live', f, iv)", { fd, f, iv });
   assert.deepStrictEqual([au.key, au.sid, au.marker.sid], ["live", POISON, SIPHON], "the Hakkar default");
+  // (r1 L4) a live pick belongs to its fight: the next live fight (an unkept one leaves no hand-over) starts from the defaults
+  assert.strictEqual(run("fdAuLiveKey(lf1)", { lf1: { key: "K1" } }), "live:K1");
+  const fdl = { au: { key: null } };
+  run("fdAuState(fdl, fdAuLiveKey(a), f, iv)", { fdl, a: { key: "K1" } });
+  fdl.au.marker = null; fdl.au.userMark = true;
+  assert.strictEqual(run("fdAuState(fdl, fdAuLiveKey(a), f, iv)", { a: { key: "K2" } }).userMark, false, "the next live fight does not inherit the pick");
+  assert.strictEqual(run("fdAuState(fdl, fdAuLiveKey(a), f, iv)", { a: { key: "K2" } }).marker.sid, SIPHON);
+  run("fdAuCarry(fdl, 'live:K2', 'filed2')");
+  assert.strictEqual(fdl.au.key, "filed2", "a hand-over carries the pick of that live fight");
   au.marker = null; au.userMark = true;
   au = run("fdAuState(fd, 'live', f, iv)");
   assert.strictEqual(au.marker, null, "the reader's marker pick stays");
@@ -166,10 +204,24 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.strictEqual(run("fdAuraFight(f, tr, 'c')", { f, tr: trackOf(() => []) }), f, "no debuff in any frame");
   assert.strictEqual(run("fdAuraFight(f, null, 'c')"), f);
   assert.strictEqual(run("fdAuraFight(f, 'loading', 'c')"), f);
-  // a debuff that was on before the fight and ended in it is on from the pull
-  const early = trackOf((s) => (s < 2 ? [POISON] : []));
-  const ea = run("fdAuraFight(f, tr, 'c')", { f: { start: 1002, dur_ms: 4000, boss: 1, bots: f.bots, auras: [] }, tr: early });
-  assert.strictEqual(ea.aura_src, undefined, "a debuff that was gone before the pull gives no rows: " + JSON.stringify(ea.auras));
+  // a debuff carried in from before the pull is on from the pull: here held at the first frame inside the fight, gone 2 s later
+  const early = trackOf((s) => (s < 4 ? [POISON] : []));
+  const mk = (start) => ({ start, dur_ms: 4000, boss: 1, bots: f.bots, auras: [] });
+  const ea = run("fdAuraFight(f, tr, 'c')", { f: mk(1002), tr: early });
+  assert.strictEqual(ea.aura_src, "sampled");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ea.auras)), [[0, 1, POISON, 1], [2000, 1, POISON, -1]], "carried in: on [0, 2000], not lost");
+  assert.deepStrictEqual(FightAuras.intervals(ea).bySid[POISON][1], [[0, 2000]]);
+  // one that was already gone at the pull gives no rows at all
+  const gone = run("fdAuraFight(f, tr, 'c')", { f: mk(1004), tr: early });
+  assert.strictEqual(gone.aura_src, undefined, "gone at the pull: no rows: " + JSON.stringify(gone.auras));
+  // (r1 L1) the track runs past the fight's end: rows after dur_ms are not the fight's
+  const late = trackOf((s) => (s === 2 || s === 6 ? [POISON] : []));
+  const la = run("fdAuraFight(f, tr, 'c')", { f: { start: 1000, dur_ms: 3000, boss: 1, bots: f.bots, auras: [] }, tr: late });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(la.auras)), [[2000, 1, POISON, 1]], "the 6 s sample's rows lie past the 3 s fight and are dropped");
+  // (r1 L7) a bot that carried 4 debuffs at once: the note
+  const four = trackOf((s) => (s === 2 ? [1, 2, 3, POISON] : []));
+  assert.strictEqual(run("fdAuraFight(f, tr, 'c')", { f, tr: four }).aura_slots_full, true);
+  assert.strictEqual(run("fdAuraFight(f, tr, 'c')", { f, tr: trackOf((s) => (s === 2 ? [POISON] : [])) }).aura_slots_full, false);
 }
 // ---- painting: the selects keep their node while only the strip changes; no fight hides the section
 {
@@ -201,18 +253,20 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
 // ---- wiring pins: app.js as text
 {
   const track = grab("fdTrackLoad");
-  assert.ok(/'&x=1'/.test(track) && track.includes("/api/v1/commanders/track?commander="), "fdTrackLoad asks the track with x=1");
+  assert.ok(track.includes("/api/v1/commanders/track?commander=") && track.includes("'&x=1'") && /Array\.isArray\(fight\.auras\) && fight\.auras\.length \? '' : '&x=1'/.test(track), "fdTrackLoad asks for x=1 only when the fight has no aura rows");
+  assert.ok(/\+ '&to=' \+ to \+ sampled/.test(track), "and puts the choice on the url");
   const live = grab("fdLivePaintDebug");
-  assert.ok(live.includes("fdAurasSync(card, fd, 'live', lf, fdAuLiveOpts(st))"), "the 1 s live tick repaints the Auras panel (only its body)");
+  assert.ok(live.includes("fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st))"), "the 1 s live tick repaints the Auras panel (only its body)");
   const render = src.slice(src.indexOf("  function renderFightDebug("), src.indexOf("  // The window an underperf answer covers"));
-  assert.ok(render.includes("if (selLive) fdAurasSync(card, fd, 'live', liveFight, fdAuLiveOpts(liveSt));"), "the card render draws the live fight's panel");
+  assert.ok(render.includes("if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt));"), "the card render draws the live fight's panel");
+  assert.ok(render.includes("const pending = !!fight && !hist && (track === undefined || track === 'loading');") && render.includes("track.raw.tracked === false"), "an unasked track is pending (not for a past night); an untracked raid has its own hint");
   assert.ok(render.includes("fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander)"), "and the filed fight's, with the track fallback");
   assert.ok(render.includes(".fd-checks, .fd-timeline, .fd-auras, .fd-roles').forEach(el => { el.hidden = noWin; });"), "the panel hides with the other fight panels");
   assert.ok(src.includes(".fd-checks, .fd-timeline, .fd-auras, .fd-roles').forEach(el => { el.hidden = !debug; });"), "and outside the debug mode");
   assert.ok(src.includes('<section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>'), "the card template");
   assert.ok(src.includes("[data-fd-ausid], [data-fd-aumark]") && src.includes("fd.au.marker = fdAuMarkParse(e.target.value);"), "the selects' change handler");
-  assert.ok(grab("fdLiveHandoff").includes("fdAuCarry(fd, 'live', summary.key);"), "the hand-over carries the pick");
-  assert.ok(grab("fdSyncSel").includes("fdAuCarry(fd, 'live', filed.key);"), "and so does the list's own hand-over");
+  assert.ok(grab("fdLiveHandoff").includes("fdAuCarry(fd, 'live:' + fd.liveKey, summary.key);"), "the hand-over carries the pick of that live fight");
+  assert.ok(grab("fdSyncSel").includes("fdAuCarry(fd, 'live:' + fd.liveKey, filed.key);"), "and so does the list's own hand-over");
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   assert.ok(html.indexOf("/static/js/fightauras.js") > 0 && html.indexOf("/static/js/fightauras.js") < html.indexOf("/static/js/app.js"), "the module loads before app.js");
   assert.ok(fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8").includes(".fd-au-on {"), "the css is there");

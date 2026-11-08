@@ -3467,6 +3467,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-au-bar { position: relative; display: block; height: 10px; background: var(--border-color); border-radius: 2px; }
 .fd-au-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-yellow); border-radius: 2px; }
 .fd-au-on { position: absolute; top: 0; bottom: 0; min-width: 1px; background: var(--accent-yellow); }
+.fd-au-unk { position: absolute; top: 0; bottom: 0; background: var(--text-dim); opacity: 0.35; }
 .fd-au-death { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-red); }
 .fd-au-marks { position: absolute; top: 0; bottom: 0; left: 204px; right: 0; pointer-events: none; }
 .fd-au-mark { position: absolute; top: 0; bottom: 0; width: 6px; margin-left: -3px; cursor: pointer; pointer-events: auto; background: linear-gradient(var(--text-muted), var(--text-muted)) center / 1px 100% no-repeat; }

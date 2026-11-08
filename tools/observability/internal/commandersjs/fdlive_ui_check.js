@@ -198,7 +198,7 @@ assert.deepStrictEqual(Array.from(tileU.events), ["needs a bound commander"], "t
   assert.strictEqual(st.cmd, "Gbmage");
   assert.deepStrictEqual(Array.from(run("fdLiveStatesFor('Gbmage')")).map((x) => x.commander), ["raid#7"], "the commander's frames reach the alias view");
   FdLive.applyEventsFrame(st, { key: KEY, from: 0, cur: 1, events: [{ k: "cast", t: 1 }], fight: { start_ms: 1000, fight_ms: 10 } }, 5);
-  const fd = { sel: "live", userSel: false, liveKey: KEY, death: null, au: { key: "live", sid: 24321, marker: null, userSid: true, userMark: true } };
+  const fd = { sel: "live", userSel: false, liveKey: KEY, death: null, au: { key: "live:" + KEY, sid: 24321, marker: null, userSid: true, userMark: true } };
   ctx.cmdFd = { "raid#7": fd };
   st.wantCatchUp = true; // a resync
   run("fdLiveResync()");

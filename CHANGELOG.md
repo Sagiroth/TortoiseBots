@@ -1,5 +1,6 @@
 # Changelog
 
+- Jin'do's Hex and Brainwash are now in the combat timeline's aura watch (`ai_combat_aura_watch`), so a fight record lists when a bot gains or loses them; the list is read when the world server starts, so restart it to pick the new rows up.
 - Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.
@@ -399,6 +400,7 @@
 - Fixed: in a raid trash fight, the main tank joins in when the loose mobs outnumber what the off-tanks can take (five or more, and more than two per living off-tank), instead of picking one up at a time off the off-tanks while the rest beat the damage dealers and the healers; once per fight.
 
 ### Dashboard
+- New: the Fight debugger has an Auras panel: how long each bot kept a boss aura (Poisonous Blood on Hakkar, Hex on Jin'do), with the boss's casts marked on it, who had it at each cast and how long each application lasted; for a fight that is still running, or one without aura rows, it reads the bots' boss debuffs from the 2 s report instead.
 - New: a fight record can now show the boss's health every two seconds, each change of who it was hitting and every time a key aura landed on or left a bot; it stays off until enabled.
 - The Fight debugger shows the underperforming bots of a run: each flagged bot's numbers against its role's median, the rules that fired and links to those fights.
 - The fights panel and the debugger show a fight's boss phase after his name (`phase 2 (14509)`) when the module saw his unit change entry mid-fight, so a fight that killed a boss in a later form reads as that boss's kill.
