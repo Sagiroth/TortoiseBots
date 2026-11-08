@@ -46,16 +46,16 @@ class UnattackableFightWiringTest(unittest.TestCase):
 
     def test_engaged_units_feed_the_stale_test_and_the_fight_rule(self):
         party = body(CODE, "void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots,")
-        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
+        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
         self.assertIn("fact.attackable = GroupCanAttack(judge, other);", read)
         self.assertIn("out.push_back(fact);", read)
         self.assertIn("f.engagedRead = true;", party)
         # Both a bot's and its pet's attackers and victims, as the stale test read them.
         self.assertIn("for (Unit* attacker : unit->GetAttackers())", read)
         self.assertIn("add(unit->GetVictim());", read)
-        self.assertIn("ReadEngagedWith(lead, judge, bot, seen, f.engagedUnits, &ep);", party)
-        self.assertIn("ReadEngagedWith(lead, judge, pet, seen, f.engagedUnits, &ep);", party)
-        self.assertIn("sServerFacade.IsFriendlyTo(other, lead)", read)
+        self.assertIn("ReadEngagedWith(lead, judge, factLead, bot, seen, f.engagedUnits, &ep);", party)
+        self.assertIn("ReadEngagedWith(lead, judge, factLead, pet, seen, f.engagedUnits, &ep);", party)
+        self.assertIn("sServerFacade.IsFriendlyTo(other, factLead)", read)
         facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
         self.assertIn("ReadEngagedUnits(lead, bots, f);\n        f.staleCombat = f.engagedUnits.empty();", facts)
 
@@ -81,10 +81,10 @@ class UnattackableFightWiringTest(unittest.TestCase):
     def test_member_engaged_read_includes_threat_lists(self):
         member = body(CODE, "void ReadMemberEngaged(Player* lead, Player* judge, Player* bot,")
         self.assertIn("if (!MemberInCombat(bot))\n        return;", member)
-        self.assertIn("ReadEngagedWith(lead, judge, bot, seen, member.engaged, nullptr, true);", member)
-        self.assertIn("ReadEngagedWith(lead, judge, pet, seen, member.engaged, nullptr, true);", member)
+        self.assertIn("ReadEngagedWith(lead, judge, lead, bot, seen, member.engaged, nullptr, true);", member)
+        self.assertIn("ReadEngagedWith(lead, judge, lead, pet, seen, member.engaged, nullptr, true);", member)
         self.assertIn("member.engagedRead = true;", member)
-        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
+        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
         self.assertIn("if (threatRefs)", read)
         self.assertIn("sServerFacade.GetHostileRefManager(unit).getFirst(); ref; ref = ref->next()", read)
         self.assertIn("add(source->getOwner());", read)

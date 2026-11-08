@@ -34,10 +34,10 @@ class FightCeilingProgressWiringTest(unittest.TestCase):
         facts = body(CODE, "void ReadRunFacts(DungeonRunSlot const& slot, Player* lead,")
         self.assertIn("if (f.anyInCombat)\n    {\n        ReadEngagedUnits(lead, bots, f);", facts)
         units = body(CODE, "void ReadEngagedUnits(Player* lead, std::vector<Player*> const& bots,")
-        self.assertIn("ReadEngagedWith(lead, judge, bot, seen, f.engagedUnits, &ep);", units)
-        self.assertIn("ReadEngagedWith(lead, judge, pet, seen, f.engagedUnits, &ep);", units)
+        self.assertIn("ReadEngagedWith(lead, judge, factLead, bot, seen, f.engagedUnits, &ep);", units)
+        self.assertIn("ReadEngagedWith(lead, judge, factLead, pet, seen, f.engagedUnits, &ep);", units)
         self.assertIn("f.engagedRead = true;", units)
-        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
+        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
         self.assertLess(read.index("fact.health = other->GetHealth();"), read.index("out.push_back(fact);"))
         self.assertLess(read.index("fact.maxHealth = other->GetMaxHealth();"), read.index("out.push_back(fact);"))
         # Where it stands feeds the own-fight read (LaterStepOwnsEngagedUnit's claim).

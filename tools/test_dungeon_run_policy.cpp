@@ -27995,6 +27995,63 @@ static void TestCharmedMemberIsNoRunFact()
     CHECK(!RunFactSkipsMember(false, false));
 }
 
+// AiPlayerbot.DungeonRunFactJudgeCharmedLead (walk 57 F1): a lead tank Brain-Washed by Jin'do is friendly to Jin'do and
+// his Brain Wash Totem, so the fact read judged against him (ReadKillFirst) read the totem's owner as not engaged and the
+// totem focus went silent (16 of 19 main-tank charm windows of 10 s or more). With the key on, a charmed lead and an
+// uncharmed judge found, the judge replaces the lead (RunFactJudgeReplacesLead): Jin'do reads as engaged and the totem is
+// picked. The read below mirrors the glue's: the owner is engaged unless it is friendly to the fact lead, and only the
+// charmed lead finds it friendly. (The name stays the spec's, snake_case unlike its neighbours, so the spec finds it.)
+static void charmed_lead_totem_stays_a_fact()
+{
+    std::uint64_t const jindo = 500;
+    DungeonPlan plan;
+    plan.steps = {Step(PlanStepKind::Boss)};
+    plan.killFirst = {15112};
+    auto const read = [&](bool keyOn)
+    {
+        bool const leadCharmed = true;
+        bool const judgeFound = true;
+        bool const byJudge = RunFactJudgeReplacesLead(keyOn, leadCharmed, judgeFound);
+        bool const ownerFriendlyToFactLead = !byJudge; // the charmed lead is Jin'do's; the judge is not
+        Facts f = Party(0);
+        f.anyInCombat = true;
+        f.totemFocus = true;
+        UnitFact totem = Unit(501, 15112, 5);
+        totem.hostile = true;
+        totem.attackable = true;
+        totem.creatureType = kCreatureTotem;
+        totem.owner = jindo;
+        totem.engaged = false;                               // a wild summon in no attackers list
+        totem.ownerEngaged = !ownerFriendlyToFactLead;       // && EngagedWithParty(Jin'do): he is fighting the raid
+        f.killFirst = {totem};
+        return f;
+    };
+    Run on = Start(&plan);
+    Facts const judged = read(true);
+    const UnitFact* const pick = PickKillFirst(on, judged);
+    CHECK(pick && pick->guid == 501);
+    CHECK(Tick(on, judged) == "focus 501");
+    // Key off: the charmed lead judges, Jin'do reads as friendly, and the totem is no pick (today's silent focus).
+    Run off = Start(&plan);
+    Facts const leadJudged = read(false);
+    CHECK(PickKillFirst(off, leadJudged) == nullptr);
+    CHECK(Tick(off, leadJudged) != "focus 501");
+}
+
+// The helper's truth table: only key on, lead charmed and a judge found replace the lead; key off, a lead that is not
+// charmed, or no fit judge (the whole group charmed) keep the lead exactly as before.
+static void TestRunFactJudgeKeepsTheLeadOtherwise()
+{
+    CHECK(RunFactJudgeReplacesLead(true, true, true));
+    CHECK(!RunFactJudgeReplacesLead(false, true, true));   // key off: byte-identical
+    CHECK(!RunFactJudgeReplacesLead(false, true, false));
+    CHECK(!RunFactJudgeReplacesLead(false, false, true));
+    CHECK(!RunFactJudgeReplacesLead(false, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, false, true));   // the lead is not charmed: it judges itself
+    CHECK(!RunFactJudgeReplacesLead(true, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, true, false));   // no uncharmed member: today's behaviour
+}
+
 // A whelp 60 yd from the main tank (past kGuardYd, inside kRaidBossGuardYd) still goes to an off-tank.
 static void TestRaidBossFarAddGoesToAnOffTank()
 {
@@ -37452,6 +37509,8 @@ int main()
     TestGuardSkipsAuraGatedShade();
     TestTotemFocusBeatsGuard();
     TestCharmedMemberIsNoRunFact();
+    charmed_lead_totem_stays_a_fact();
+    TestRunFactJudgeKeepsTheLeadOtherwise();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();

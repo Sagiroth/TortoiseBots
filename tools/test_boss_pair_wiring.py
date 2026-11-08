@@ -39,7 +39,7 @@ class BossPairWiringTest(unittest.TestCase):
         party = body(CODE, "EngagedParty ReadEngagedParty(std::vector<Player*> const& bots,")
         self.assertIn("ep.party.insert(bot->GetObjectGuid().GetRawValue());", party)
         self.assertIn("ep.party.insert(pet->GetObjectGuid().GetRawValue());", party)
-        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
+        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
         self.assertIn("ep->party.count(other->GetObjectGuid().GetRawValue())", read)
         # A charmed party bot fighting the party is named for the note, never engaged.
         self.assertIn("ep->charmedFighting->push_back(other->GetName());", read)
@@ -52,7 +52,7 @@ class BossPairWiringTest(unittest.TestCase):
         party = body(CODE, "EngagedParty ReadEngagedParty(std::vector<Player*> const& bots,")
         self.assertIn("ep.victims.insert(victim->GetObjectGuid().GetRawValue());", party)
         self.assertIn("if (Unit* victim = pet->GetVictim())", party)
-        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Unit* unit,")
+        read = body(CODE, "void ReadEngagedWith(Player* lead, Player* judge, Player* factLead, Unit* unit,")
         self.assertIn("fact.health = other->GetHealth();", read)
         self.assertIn("fact.maxHealth = other->GetMaxHealth();", read)
         self.assertIn("fact.partyHits = ep && ep->victims.count(fact.guid) != 0;", read)

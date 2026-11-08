@@ -1246,6 +1246,19 @@ AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0
 
+# Fact judge for a charmed lead bot (recommended on). The run leader reads its fight (the kill-first units, their
+# owner's engagement, the engaged units, the crowd-control holds), anchors the raid guard and checks each order's target
+# against the lead bot. A charmed lead (Jin'do's Brain Wash, any Mind Control) is friendly to its charmer's side, so a
+# Brain Wash Totem was never a kill-first fact, the fight read as stale and the guard went blind while the main tank
+# stayed charmed (ZG walk 57: 16 of 19 main-tank charm windows of 10 s or more had no totem focus; median charm 86 s).
+# With the key on, while the lead is charmed, those tests use the first living, uncharmed commanded bot on its map
+# instead (real players are never the judge), and a dead lead's order judge is never a charmed bot. With the whole
+# party charmed nothing changes. Generic: any charm on the lead, every raid and dungeon. `.reload config` reads it
+# again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: the charmed lead judges as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunFactJudgeCharmedLead = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed

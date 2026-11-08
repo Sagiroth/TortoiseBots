@@ -10526,6 +10526,17 @@ inline bool RunFactSkipsMember(bool isPlayer, bool inLeadGroup)
     return isPlayer && inLeadGroup;
 }
 
+// AiPlayerbot.DungeonRunFactJudgeCharmedLead: whether the run judge (Commander.cpp RunJudge, the first fit uncharmed
+// member) replaces the lead bot in the fact read's friendliness and engagement tests (the kill_first read, its owner's
+// engagement, the crowd-control holds), in the order's target check and as the totem focus' selection owner. A charmed
+// lead (Brain Wash, Mind Control, Dominate Mind: any charm) is friendly to its charmer's side, so judged against him a
+// kill_first totem was never a fact (ZG walk 57: 16 of 19 main-tank charm windows of 10 s or more had no totem focus).
+// Key off, a lead that is not charmed, or no judge found (the whole group charmed): the lead, exactly as before.
+inline bool RunFactJudgeReplacesLead(bool keyOn, bool leadCharmed, bool judgeFound)
+{
+    return keyOn && leadCharmed && judgeFound;
+}
+
 // The kill_first focus order: the skull onto `k`, and the glue turns it into `focus <guid>` for every bot. The previous
 // skull stays until the new order lands, so it is remembered (FocusOrderRefused).
 // movesSkull false: the order leaves every raid mark where it is (the skull on the boss) and only sends the bots by
