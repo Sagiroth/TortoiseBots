@@ -22,6 +22,9 @@ func TestTrackRouteWired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(src), "combatStore.AnnotateRaids(&view)") {
+		t.Error("the raids route does not join the live rows' boss names")
+	}
 	for _, want := range []string{"GET /api/v1/commanders/track", "state.ParseTrackWindow(", "store.TrackWindow(", "state.TrackJSONX("} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("main.go does not contain %q", want)

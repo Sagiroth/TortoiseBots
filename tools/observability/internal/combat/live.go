@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
+
+	"tortoise-observability/internal/model"
 )
 
 // LiveEventsMax bounds the events one live fight keeps (and the deaths the
@@ -435,4 +437,23 @@ func (s *Store) LiveSince(commander string, since uint64, key string) (LiveDelta
 		d.From = d.Events[0].I
 	}
 	return d, true
+}
+
+// AnnotateRaids names, on each group of a RAIDS view, the boss its commander's live fight row names (the Raids list ranks its live
+// tiles by it without subscribing to every fighting group). The view is the caller's own copy; a group with no commander, no live
+// row or no boss yet is left as it is.
+func (s *Store) AnnotateRaids(v *model.RaidsView) {
+	if v == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range v.Runs {
+		for j := range v.Runs[i].Groups {
+			g := &v.Runs[i].Groups[j]
+			if row := s.live[g.Commander]; g.Commander != "" && row != nil {
+				g.BossName = row.header.BossName
+			}
+		}
+	}
 }

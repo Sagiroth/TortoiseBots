@@ -317,6 +317,9 @@ func (l *Listener) processPacket(data []byte) {
 		if l.store.ApplyRaids(&raids) {
 			// The applied rows: a cycle that arrived in parts applied everything.
 			view := l.store.Raids()
+			if l.combat != nil {
+				l.combat.AnnotateRaids(&view)
+			}
 			l.hub.Broadcast("raids", view)
 			// The live stream's raid rows: the open card's map draws member
 			// positions from the 2 s cycle, and the fight key's events strip

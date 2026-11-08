@@ -689,7 +689,9 @@ func main() {
 	// it, groups with their leaders, offline members and live combat window.
 	// Read-only: the tab draws, it never orders.
 	mux.HandleFunc("/api/v1/raids", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, store.Raids())
+		view := store.Raids()
+		combatStore.AnnotateRaids(&view) // the live rows' boss names, for the Raids list's tile ranking
+		writeJSON(w, view)
 	}))
 	mux.HandleFunc("GET /api/v1/plans/{plan}", requireAuth(plans.Handler(planSvc)))
 

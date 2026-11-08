@@ -67,7 +67,7 @@ const ctx = {
   cmdNoteMobTimes: () => {}, cmdApplyBossRanks: () => {}, CmdView: { note: () => {} }, UnitInfo: { noteEvents: () => {} }, cmdNotePaths: () => {},
   cmdTracker: {}, cmdEvents: {}, cmdPruneAll: () => {}, seedCmdTrails: () => {}, paintCommandersBadge: () => {},
   renderCommanders: () => {},
-  fdLive: {}, FdLive: {}, fdLiveEvents: () => {}, fdLiveHandoff: () => {}, fdLiveResync: () => {},
+  fdLive: {}, fdLiveStatesFor: () => [], FdLive: {}, fdLiveEvents: () => {}, fdLiveHandoffAll: () => {}, fdLiveResync: () => {},
 };
 ctx.cmdFindBind = (k) => (ctx.state.commanders.list || []).find((b) => b && b.commander === k);
 vm.createContext(ctx);

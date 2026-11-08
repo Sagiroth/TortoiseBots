@@ -300,4 +300,33 @@ const bind = (t, db, extra) => Object.assign({
   assert.deepStrictEqual(st.events.map((e) => e.i), [0, 1, 2]);
 }
 
+// ---- (review r2 N5) a placeholder for an unreadable element is not a log entry
+{
+  const st = F.create("C");
+  F.applyEventsFrame(st, { key: KEY, from: 0, cur: 3, fight: { start_ms: 1, fight_ms: 5 }, events: [ev(0), 7, ev(2)] }, NOW);
+  assert.deepStrictEqual(F.fight(st, null, NOW).log.map((e) => e.k), ["cast", "cast"], "the placeholder is not in the log");
+}
+
+// ---- (review r2 N4/N7) a catch-up answer dropped at a fight boundary is asked again after CATCHUP_MIN_MS, not at once and not never
+{
+  const st = F.create("C");
+  const T0 = 1000;
+  const tok = F.token(st);           // asked before the view held any fight
+  F.markCatchUp(st, T0);
+  F.applyEventsFrame(st, frame(3, 1), NOW);                                              // a first frame mid-fight: a hole, a catch-up is wanted
+  F.applyEventsFrame(st, frame(2, 1, { key: "Gbmage\u00007\u000055-9" }), NOW);          // and the fight changes under the request
+  assert.strictEqual(F.accepts(st, tok, { key: KEY }), false, "the answer of the first fight is dropped");
+  assert.ok(st.wantCatchUp, "the hole of the new fight still wants its catch-up");
+  assert.ok(!F.needCatchUp(st, T0 + F.CATCHUP_MIN_MS - 1), "not before the rate limit");
+  assert.ok(F.needCatchUp(st, T0 + F.CATCHUP_MIN_MS), "and asked again once it allows");
+  // an old fight's answer that nobody needs again: the new fight started from 0, so nothing is wanted
+  const b = F.create("C");
+  F.applyEventsFrame(b, frame(0, 4), NOW);
+  const t2 = F.token(b);
+  F.markCatchUp(b, T0);
+  F.applyEventsFrame(b, frame(0, 2, { key: "Gbmage\u00007\u000055-9" }), NOW);
+  assert.strictEqual(F.accepts(b, t2, { key: KEY }), false);
+  assert.ok(!F.needCatchUp(b, T0 + 10 * F.CATCHUP_MIN_MS), "a fight that began at 0 needs no catch-up");
+}
+
 console.log("fdlive_check.js ok");

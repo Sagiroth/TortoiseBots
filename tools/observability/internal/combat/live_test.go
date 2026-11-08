@@ -2,8 +2,11 @@ package combat
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
+
+	"tortoise-observability/internal/model"
 )
 
 var liveNow = time.Date(2026, 10, 28, 20, 0, 0, 0, time.UTC)
@@ -716,4 +719,29 @@ func TestLiveCursorCountsEveryElement(t *testing.T) {
 	if !ok || sum.EvFrom != 3 || sum.EvCur != 6 {
 		t.Fatalf("a not-kept end: ok=%v from=%d cur=%d, want 3/6 (the datagram's three elements)", ok, sum.EvFrom, sum.EvCur)
 	}
+}
+
+// TestAnnotateRaids: a group whose commander has a live fight row gets that row's boss name; one without a commander, without a
+// live row, or whose fight has no boss yet is left alone.
+func TestAnnotateRaids(t *testing.T) {
+	s := newLiveStore(t)
+	s.ApplyEvents(liveEvents(liveHeader(), `{"k":"start","t":0}`), liveNow) // Gbmage fights Magmadar
+	h := liveHeader()
+	h.BossName, h.Boss = "", 0
+	dg := liveEvents(h, `{"k":"start","t":0}`)
+	dg.Commander, dg.Group = "Trashy", 56
+	h.ID = "56-1"
+	s.ApplyEvents(dg, liveNow)
+	v := model.RaidsView{Runs: []model.RaidRun{{Groups: []model.RaidGroupView{
+		{Key: "Gbmage", Commander: "Gbmage"}, {Key: "raid#7"}, {Key: "Trashy", Commander: "Trashy"}, {Key: "Idle", Commander: "Idle"},
+	}}}}
+	s.AnnotateRaids(&v)
+	got := []string{}
+	for _, g := range v.Runs[0].Groups {
+		got = append(got, g.BossName)
+	}
+	if want := []string{"Magmadar", "", "", ""}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("boss names %q, want %q", got, want)
+	}
+	s.AnnotateRaids(nil) // no panic
 }

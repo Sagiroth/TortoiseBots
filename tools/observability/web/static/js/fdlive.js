@@ -72,12 +72,13 @@
   // st.cur is the contiguous cursor: every index below it is held (or dropped by a cap). Events held past it (frames that came
   // while a catch-up was out) join it once the indexes between are in.
   function absorb(st) {
-    for (let k = 0; k < st.events.length; k++) {
-      const i = st.events[k].i;
-      if (i < st.cur) continue;
-      if (i !== st.cur) break;
-      st.cur++;
+    // The list is in index order: start at the first event at or past the cursor (a binary search), not at the oldest held.
+    let lo = 0, hi = st.events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (st.events[mid].i < st.cur) lo = mid + 1; else hi = mid;
     }
+    for (let k = lo; k < st.events.length && st.events[k].i === st.cur; k++) st.cur++;
     if (st.top < st.cur) st.top = st.cur;
     st.wantCatchUp = st.cur < st.top;
   }

@@ -18,9 +18,10 @@ function grab(name) {
 
 const ctx = { console };
 vm.createContext(ctx);
-vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3;", grab("esc"), grab("fdLiveClock"), grab("fdLiveWinLabel"), grab("fdLiveHpOf"), grab("fdLiveNumsText"), grab("fdLiveTileHtml"), grab("fdLiveTilePatch"), grab("fdLiveGridSync"),
+vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3, FD_LIVE_TILES = 6, FD_LIVE_FETCH_MS = 10000, FD_LIVE_TRACK_EDGE = 4;", grab("esc"), grab("fdLiveClock"), grab("fdLiveWinLabel"), grab("fdLiveHpOf"), grab("fdLiveNumsText"), grab("fdLiveTileHtml"), grab("fdLiveTilePatch"), grab("fdLiveGridSync"),
   grab("fdLiveFiledRow"), grab("fdFightHash"), grab("fdLiveTimelineHtml"), grab("fdLiveHandoff"), grab("fdLiveReconcile"), grab("fdLiveResync"), grab("fdLiveDrop"),
-  grab("raidLiveGroups"), grab("raidLiveNames"), grab("fdLiveNoteBoss"), grab("cmdLiveNames")].join("\n"), ctx);
+  grab("raidLiveGroups"), grab("raidLiveKeys"), grab("dgnLiveGroups"), grab("dgnLiveKeys"), grab("cmdLiveNames"), grab("fdLiveDebugKey"),
+  grab("fdLiveCanon"), grab("fdLiveState"), grab("fdLiveStatesFor"), grab("fdLiveFetch"), grab("fdLiveCatchUp"), grab("fdLiveHandoffAll"), grab("fdLiveTileOf")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the tile escapes everything the game server names and links to the live view of its key
@@ -146,53 +147,113 @@ assert.deepStrictEqual(built, ["A", "B", "C"], "only the new tile was built");
 run("fdLiveGridSync(host, tiles, more, make)", { host, tiles: [T({ name: "C" })], more: 0, make });
 assert.deepStrictEqual(host.children.map((c) => c.dataset.fdTile), ["C"], "tiles that left are removed");
 
-// ---- (review L5) the tiles are ranked by the live rows' boss names; the list view subscribes every fighting group, so the stream's URL does not move when the top six reorder
-const grp = (key, fightMs) => ({ key, commander: key, combat: { fight_ms: fightMs } });
+// ---- (r2 N1) the list views subscribe only the shown tiles (six), the rest are a count; the ranking uses the group view's boss_name
+const grp = (key, fightMs, over) => Object.assign({ key, commander: key, combat: { fight_ms: fightMs } }, over || {});
 const raids = { activeTab: "raids", commanders: { list: [] }, dungeons: { openKey: null }, raids: { openKey: null, openGroup: null, runs: [{ key: "409:1", groups: [] }], binds: [] } };
-raids.raids.runs[0].groups = Array.from({ length: 9 }, (_, i) => grp("G" + i, 1000 * (i + 1)));
-Object.assign(ctx, { state: raids, fdLive: {}, fdLiveBoss: {}, LiveView: { MAX_COMMANDERS: 20 }, cmdPageMode: () => "live", fdPage: { open: null }, cmdFd: {} });
-assert.deepStrictEqual(Array.from(run("raidLiveGroups()"), (g) => g.name).slice(0, 3), ["G8", "G7", "G6"], "no boss named: the longest fight first");
-run("fdLiveNoteBoss('G1', 'Magmadar'); fdLiveNoteBoss('G0', '')");
-assert.deepStrictEqual(Array.from(run("raidLiveGroups()"), (g) => g.name).slice(0, 3), ["G1", "G8", "G7"], "a group whose live row names a boss ranks first");
+raids.raids.runs[0].groups = Array.from({ length: 10 }, (_, i) => grp("G" + i, 1000 * (i + 1)));
+Object.assign(ctx, { state: raids, fdLive: {}, cmdPageMode: () => "live", fdPage: { open: null }, cmdFd: {} });
+assert.deepStrictEqual(Array.from(run("raidLiveGroups()"), (g) => g.name).slice(0, 3), ["G9", "G8", "G7"], "no boss named: the longest fight first");
+raids.raids.runs[0].groups[1].boss_name = "Magmadar";
+assert.deepStrictEqual(Array.from(run("raidLiveGroups()"), (g) => g.name).slice(0, 3), ["G1", "G9", "G8"], "a group whose view names a boss ranks first");
 const names1 = Array.from(run("cmdLiveNames()"));
-assert.deepStrictEqual(names1.slice().sort(), Array.from({ length: 9 }, (_, i) => "G" + i), "every fighting group is subscribed, not just the top six");
-raids.raids.runs[0].groups[8].combat.fight_ms = 1; // the top six reorder
-assert.deepStrictEqual(Array.from(run("cmdLiveNames()")).sort(), names1.slice().sort(), "the subscription (and so the URL) does not change");
-Object.assign(ctx, { state: Object.assign({}, raids, { raids: Object.assign({}, raids.raids, { runs: [{ key: "k", groups: Array.from({ length: 25 }, (_, i) => grp("H" + i, i)) }] }) }) });
-assert.strictEqual(run("cmdLiveNames()").length, 20, "capped at the stream's 20 names");
+assert.strictEqual(names1.length, 6, "ten groups fight: six names are subscribed");
+assert.deepStrictEqual(names1, ["G1", "G9", "G8", "G7", "G6", "G5"], "the shown tiles, no others");
+raids.raids.runs[0].groups[9].combat.fight_ms = 1; // the top six reorder
+assert.ok(!Array.from(run("cmdLiveNames()")).includes("G9"), "the subscription follows the six shown");
 
-// ---- (review Codex H2, L3) a dropped `fight` frame: the resync looks the live key up in the filed fights and hands over
-{
+// ---- (Codex r2) a raid alias carries its commander; an unbound raid group says it needs one and asks for nothing
+const state2 = { activeTab: "commanders", commanders: { list: [] }, dungeons: { openKey: null },
+  raids: { openKey: null, openGroup: null, binds: [], runs: [{ key: "409:1", groups: [{ key: "raid#7", commander: "Gbmage", combat: {} }, { key: "raid#9", combat: {} }] }] } };
+Object.assign(ctx, { state: state2, fdLive: {} });
+assert.strictEqual(run("fdLiveCanon('raid#7')"), "Gbmage", "a raid alias resolves to its commander");
+assert.strictEqual(run("fdLiveCanon('raid#9')"), null, "an unbound raid group has none");
+assert.strictEqual(run("fdLiveCanon('Gbmage')"), "Gbmage");
+ctx.RaidView = require(path.join(path.dirname(appPath), "raids.js")); ctx.cmdLiveEventText = () => "e"; ctx.raidFightHash = (k, f) => "#" + k + f; ctx.Date = Date;
+const tileU = run("fdLiveTileOf('raid#9', 'MC', 'raid#9', { fight_ms: 5 }, [], null)");
+assert.deepStrictEqual(Array.from(tileU.events), ["needs a bound commander"], "the tile says so");
+
+(async () => {
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   const FdLive = require(path.join(path.dirname(appPath), "fdlive.js"));
-  const KEY = "G\u00007\u000055-6";
-  const st = FdLive.create("G");
+  const KEY = "Gbmage\u00007\u000055-6";
+  const calls = [];
+  const timers = [];
+  let fights = [{ key: "Gbmage\u00007\u000055-5", live: false }];
+  const fx = {
+    FdLive, jsonOrThrow: (r) => r, fdLiveReconciling: {}, cmdCards: { get: () => ({}) }, cmdFindBind: () => ({}),
+    fdLoad: () => calls.push("load"), fdRender: () => calls.push("render"), fdFightHash: () => calls.push("hash"),
+    fdLivePaintDebug: () => {}, fdLivePaintTiles: () => {}, fdLiveReconcileHook: null,
+    setTimeout: (f) => { timers.push(f); return timers.length; }, clearTimeout: () => {}, AbortController,
+    fetch: (url) => {
+      calls.push(url);
+      if (url.startsWith("/api/v1/combat/live")) return Promise.resolve({ status: 404 });
+      if (url.startsWith("/api/v1/combat/fights")) return Promise.resolve(fights);
+      return Promise.resolve({ frames: [] });
+    },
+  };
+  Object.assign(ctx, fx);
+
+  // a raid alias view: frames name the real commander, the routes are asked for it, never for the alias
+  const st = run("fdLiveState('raid#7')");
+  assert.strictEqual(st.cmd, "Gbmage");
+  assert.deepStrictEqual(Array.from(run("fdLiveStatesFor('Gbmage')")).map((x) => x.commander), ["raid#7"], "the commander's frames reach the alias view");
   FdLive.applyEventsFrame(st, { key: KEY, from: 0, cur: 1, events: [{ k: "cast", t: 1 }], fight: { start_ms: 1000, fight_ms: 10 } }, 5);
   const fd = { sel: "live", userSel: false, liveKey: KEY, death: null };
-  const calls = [];
-  Object.assign(ctx, {
-    FdLive, fdLive: { G: st }, cmdFd: { G: fd }, fdLiveReconciling: {}, cmdCards: { get: () => ({}) }, cmdFindBind: () => ({}),
-    fdLoad: () => calls.push("load"), fdRender: () => calls.push("render"), fdFightHash: () => calls.push("hash"), fdLiveCatchUp: () => {},
-    jsonOrThrow: (r) => r,
-    fetch: (url) => { calls.push(url); return Promise.resolve([{ key: "G\u00007\u000055-5", live: false }, { key: KEY, live: false, id: "55-6" }]); },
-  });
+  ctx.cmdFd = { "raid#7": fd };
+  st.wantCatchUp = true; // a resync
   run("fdLiveResync()");
-  setImmediate(() => setImmediate(() => {
-    assert.ok(calls.some((c) => c.startsWith("/api/v1/combat/fights?commander=G")), "the filed fights of that name are asked");
-    assert.strictEqual(fd.sel, KEY, "the view handed over to the filed fight");
-    assert.ok(fd.userSel && fd.liveKey === null, "and holds it");
-    assert.ok(!ctx.fdLive.G, "the live state is dropped");
-    assert.ok(calls.includes("load") && calls.includes("render") && calls.includes("hash"));
-    // L3: the pick left `live` when the window closed (the state is gone with it); the late `fight` frame still hands over by the card's liveKey
-    const fd2 = { sel: "5-5", userSel: false, liveKey: KEY, death: null };
-    ctx.cmdFd = { G: fd2 }; ctx.fdLive = {};
-    run("fdLiveHandoff('G', { key: k })", { k: KEY });
-    assert.strictEqual(fd2.sel, KEY, "a cleared pick is handed over by the liveKey");
-    const fd3 = { sel: "5-5", userSel: true, liveKey: KEY, death: null };
-    ctx.cmdFd = { G: fd3 };
-    run("fdLiveHandoff('G', { key: k })", { k: KEY });
-    assert.strictEqual(fd3.sel, "5-5", "a fight the reader picked stands");
-    console.log("fdlive_ui_check.js ok");
-  }));
-}
+  await settle();
+  assert.ok(calls.some((c) => c.startsWith("/api/v1/combat/live?commander=Gbmage&since=")), "the catch-up asks for the commander: " + calls.join(" | "));
+  assert.ok(!calls.some((c) => c.includes("raid%237")), "the alias is never sent to a route");
+  assert.ok(calls.some((c) => c === "/api/v1/combat/fights?commander=Gbmage&limit=50"), "the 404 and the resync look the filed fights up under the commander, newest 50");
+  assert.strictEqual(fd.sel, "live", "the fight is not filed yet: nothing handed over");
+  // the fight is filed and the `fight` frame was lost: the next resync hands over
+  fights = [{ key: KEY, live: false, id: "55-6" }];
+  ctx.fdLiveReconciling = {}; st.noLive = false; st.busy = false;
+  run("fdLiveResync()");
+  await settle();
+  assert.strictEqual(fd.sel, KEY, "the alias view handed over to the filed fight");
+  assert.ok(fd.userSel && fd.liveKey === null, "and forgot its live key");
+  assert.ok(!ctx.fdLive["raid#7"], "the live state is dropped");
+  assert.ok(calls.includes("load") && calls.includes("render") && calls.includes("hash"));
+  // (N2) with the live key gone a resync asks nothing
+  const before = calls.length;
+  run("fdLiveResync()");
+  await settle();
+  assert.strictEqual(calls.length, before, "no lookup once the card holds no live key");
+  // and a reader's own pick clears it for good (the click paths set fd.liveKey = null)
+  assert.ok(src.includes("if (fd.sel !== 'live') fd.liveKey = null;") && src.includes("fd.sel = fdDecodeKey(t.dataset.fdOpen);\n        fd.liveKey = null;"), "a pick clears the live key");
 
+  // an unbound raid group has no commander: nothing is asked
+  ctx.fdLive = {}; ctx.cmdFd = {};
+  const u = run("fdLiveState('raid#9')");
+  FdLive.applyEventsFrame(u, { key: "raid#9\u00007\u00001-1", from: 0, cur: 1, events: [{ k: "cast", t: 1 }] }, 5);
+  const n0 = calls.length;
+  run("fdLiveCatchUp('raid#9'); fdLiveReconcile('raid#9')");
+  await settle();
+  assert.strictEqual(calls.length, n0, "an unbound raid view asks for nothing");
 
+  // (N3) a hung catch-up gives up after the limit and frees the view
+  ctx.fdLive = {};
+  const h = run("fdLiveState('Gbmage')");
+  ctx.fetch = () => new Promise(() => {}); // never answers
+  timers.length = 0;
+  run("fdLiveCatchUp('Gbmage')");
+  assert.strictEqual(h.busy, true, "the catch-up is in flight");
+  assert.ok(timers.length >= 1, "with a timeout armed");
+  timers.forEach((f) => f());
+  await settle();
+  assert.strictEqual(h.busy, false, "the timeout freed the view");
+
+  // L3: the pick left `live` when the window closed (the state is gone with it); the late `fight` frame still hands over by the card's liveKey
+  ctx.fdLive = {};
+  const fd2 = { sel: "5-5", userSel: false, liveKey: KEY, death: null };
+  ctx.cmdFd = { Gbmage: fd2 };
+  run("fdLiveHandoffAll('Gbmage', { key: k })", { k: KEY });
+  assert.strictEqual(fd2.sel, KEY, "a cleared pick is handed over by the liveKey");
+  const fd3 = { sel: "5-5", userSel: true, liveKey: KEY, death: null };
+  ctx.cmdFd = { Gbmage: fd3 };
+  run("fdLiveHandoffAll('Gbmage', { key: k })", { k: KEY });
+  assert.strictEqual(fd3.sel, "5-5", "a fight the reader picked stands");
+  console.log("fdlive_ui_check.js ok");
+})().catch((e) => { console.error(e); process.exit(1); });
