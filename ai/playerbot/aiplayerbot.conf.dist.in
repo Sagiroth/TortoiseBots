@@ -942,6 +942,11 @@ AiPlayerbot.WarriorGapCloser = 0
 # 1 - Viper on low mana, Hawk again at 60 percent mana (Default)
 AiPlayerbot.HunterViperOnLowMana = 1
 
+# Survival hunters cast Carve only on a target already in melee reach, never walking in for it
+# (a tank-held boss pulled them into the shot's dead zone and the step-out carried them back, every 10 s).
+# Default: 0 (old behaviour: Carve walks to its target)
+AiPlayerbot.HunterCarveInReachOnly = 0
+
 # Paladin Judgement upkeep.
 # In a group, paladin bots keep Judgement of Wisdom / Judgement of Light up on a
 # boss or elite (or, inside a dungeon or raid, on the mob the tank is fighting),

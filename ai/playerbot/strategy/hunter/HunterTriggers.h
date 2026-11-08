@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/HunterSwitchPolicy.h"
+#include "playerbot/HunterAoePolicy.h"
 #include "playerbot/HunterKitePolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
@@ -549,6 +550,16 @@ private:
     {
     public:
         CarveTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "carve") {}
+
+        // AiPlayerbot.HunterCarveInReachOnly: no walk-in for Carve (HunterAoePolicy.h).
+        bool IsActive() override
+        {
+            if (!SpellCanBeCastedTrigger::IsActive())
+                return false;
+            Unit* target = GetTarget();
+            return target && ai::HunterCarveAllowed(sPlayerbotAIConfig.hunterCarveInReachOnly,
+                bot->GetDistance(target, SizeFactor::CombatReach));
+        }
     };
 
 

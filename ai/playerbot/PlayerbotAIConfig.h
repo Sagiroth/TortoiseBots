@@ -595,6 +595,8 @@ public:
     bool warriorGapCloser;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
+    // Hunters cast Carve only on a target already in melee reach, never walking in for it.
+    bool hunterCarveInReachOnly;
     // Paladin bots keep Judgement of Wisdom / Light up on the boss in groups (opt-in).
     bool paladinJudgementUpkeep;
     // Onyxia phase 2 whelp duty for AoE ranged DPS and egg-cave avoidance (opt-in).

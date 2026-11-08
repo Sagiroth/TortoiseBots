@@ -26,4 +26,17 @@ namespace ai
     {
         return !breakableCcInSplash && splashTargets >= kHunterMultiShotMinTargets;
     }
+
+    // Carve (Turtle 51575: Survival talent, melee cone, 10 s cooldown shared
+    // with Multi-Shot) never walks: it is cast only on a target already in
+    // melee reach (edge to edge, the same ATTACK_DISTANCE the melee action
+    // checks). Walking onto a tank-held boss for it put Survival hunters in
+    // the shot's dead zone, where the dead-zone step-out carried them back
+    // out, every 10 s (ZG walk 54 Hakkar: 0.10-0.18 casts per alive second,
+    // 28-41 % of the ranged median). Flag off keeps the old walk.
+    inline constexpr float kHunterCarveReachYd = 5.0f;
+    inline constexpr bool HunterCarveAllowed(bool inReachOnly, float edgeDistYd)
+    {
+        return !inReachOnly || edgeDistYd <= kHunterCarveReachYd;
+    }
 }

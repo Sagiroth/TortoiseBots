@@ -22,6 +22,7 @@ These settings configure class-specific artificial intelligence behaviors, abili
 | Setting | Default | What it does |
 | :--- | :---: | :--- |
 | [`AiPlayerbot.EnableOffSpecStrategies`](#aiplayerbotenableoffspecstrategies) | `1` | Gives hybrid bots their off-spec kit by default: healers deal damage, DPS specs off-heal. |
+| [`AiPlayerbot.HunterCarveInReachOnly`](#aiplayerbothuntercarveinreachonly) | `0` | Survival hunters cast Carve only on a target already in melee reach, never walking in for it. |
 | [`AiPlayerbot.HunterViperOnLowMana`](#aiplayerbothunterviperonlowmana) | `1` | Switches hunters to Aspect of the Viper when low on mana. |
 | [`AiPlayerbot.PaladinJudgementUpkeep`](#aiplayerbotpaladinjudgementupkeep) | `1` | Assigns paladins to maintain Judgements of Wisdom and Light on bosses. |
 | [`AiPlayerbot.RogueDungeonThreatDrops`](#aiplayerbotroguedungeonthreatdrops) | `1` | Causes dungeon rogues to cast Feint and Vanish when pulling high threat. |
@@ -42,6 +43,19 @@ When new bots are created, hybrid-class bots get their off-spec strategy on top 
 The toggle only sets the default on newly created bots. Players can still switch either kit on or off per bot at any time (`/w <BotName> co +offheal`, `/w <BotName> co -offdps`, or [`.bot strategy`](../../play/commands/party-actions.md#bot-strategy)), regardless of this setting.
 
 When set to `0`, hybrid bots fight with their spec kit only: healers cast no damage spells, and DPS specs never heal. This does not touch solo priest healers in the open-world pool, which keep `offdps` so they can fight alone.
+
+</details>
+
+### `AiPlayerbot.HunterCarveInReachOnly`
+Makes Survival hunters cast Carve only on a target that is already within melee reach, instead of walking onto it. Turn it on so a hunter at a tank-held boss stays at range.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Carve is a melee cone that shares its 10 second cooldown with Multi-Shot. With the setting at `0`, the Carve row walks the hunter to its target first. At a tank-held boss that put the hunter inside the shot's dead zone, where the dead-zone step-out carried it back out, and the loop repeated every 10 seconds, costing shots and Auto Shot time.
+
+With `1`, Carve is cast only when the target is within 5 yards edge to edge. A mob on the hunter stays in reach, so Carve still fires in the solo and dungeon melee case. A manual `carve` order can still walk.
 
 </details>
 
