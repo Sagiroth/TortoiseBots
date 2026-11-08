@@ -13,6 +13,7 @@
 
 #include "strategy/values/SharedValueContext.h"
 #include "policy/gear/SpecWeaponPolicy.h"
+#include "policy/gear/FeralSpecPolicy.h"
 #include "../../runtime/policy/provision/AmmoCachePolicy.h"
 
 char * strstri (const char* str1, const char* str2);
@@ -3135,9 +3136,7 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
             specName = "balance";
         else if (tab == 1)
         {
-            specName = "feraltank";
-            if (player->GetLevel() > 19 && urand(0, 100) > 50)
-                specName = "feraldps";
+            specName = ResolveDruidFeralSpecName(player->GetLevel(), PlayerbotAI::IsTank(player));
         }
         else if (tab == 2)
             specName = "resto";
