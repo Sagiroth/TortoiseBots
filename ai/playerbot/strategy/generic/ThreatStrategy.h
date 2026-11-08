@@ -20,6 +20,7 @@ namespace ai
         std::string getName() override { return "threat"; }
 
     private:
+        void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
         void InitCombatMultipliers(std::list<Multiplier*> &multipliers) override;
     };
 }

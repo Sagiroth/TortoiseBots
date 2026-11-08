@@ -21,6 +21,79 @@ namespace ai
     // back-off vetoes single-target attacks at or above it. Every target uses 80 %, successor bosses included.
     constexpr std::uint8_t kThreatHighLinePct = 80;
 
+    // Whether an action skips the damage threat back-off (ThreatMultiplier) whatever the bot's threat on its target.
+    // Heals always do: a heal pulls no mob off the tank. A party cure or dispel (CurePartyMemberAction: dispel magic,
+    // cure poison/disease, remove curse, cleanse, purify on a party member) is a SINGLE-threat CastSpellAction and was
+    // vetoed at the high line like a nuke, so a healer high on Jin'do's threat list left his Hex on the tank for its
+    // full 5 s (walk 56: 50 of 91 tank Hexes never cured, `dispel magic on party` result I in 10 of 12 frames). With
+    // AiPlayerbot.DungeonRunCureIgnoresThreat on, a party cure is exempt like a heal; off, as before.
+    inline bool ThreatCapExempt(bool heal, bool partyCure, bool cureIgnoresThreat)
+    {
+        return heal || (partyCure && cureIgnoresThreat);
+    }
+
+    // The high-threat trigger's projection escape (HighThreatTrigger::IsActive): at or over the high line a damage dealer
+    // is let through while its threat, rising at `delta` per second, projects under the reference tank's threat in
+    // kHighThreatProjectionSeconds. On a `threat_successor` boss that let the damage dealers ride just under a slowly
+    // climbing non-holding tank (walk 56: every tank-inherited Hex had the top damage dealer at 0.89-0.99 of the
+    // successor, every DPS-inherited one at 1.00 or more). With AiPlayerbot.DungeonRunThreatSuccessorStrict on there is
+    // no escape on such a boss; everywhere else, and with the key off, today's escape.
+    constexpr float kHighThreatProjectionSeconds = 5.0f;
+
+    inline bool HighThreatProjectionEscapes(bool successorTarget, bool strictKey, float current, float delta, float tank)
+    {
+        if (successorTarget && strictKey)
+            return false;
+        return delta > 0.0f && current + delta * kHighThreatProjectionSeconds < tank;
+    }
+
+    // The white-damage stop on a `threat_successor` boss (AiPlayerbot.DungeonRunThreatSuccessorStrict). The melee
+    // auto-attack and the wand's Shoot carry no threat type, and every running swing or auto-repeat (Auto Shot included)
+    // keeps going without passing the multiplier again, so the 80 % veto never bound them and a damage dealer kept
+    // climbing past the line on white damage alone. They stop at kSuccessorWhiteStopPct of the reference and may start
+    // again only under kSuccessorWhiteResumePct, so a read that wobbles around the stop line does not start and stop the
+    // auto-repeat every tick. Auto Shot is a SINGLE-threat action, so its restart also waits for the 80 % veto: a hunter
+    // resumes under 80 %, not 85 %. Specials keep the 80 % line. The lines are high on purpose: 405801e86 removed a 65 %
+    // stop that cost a fifth of the raid's damage; the aim is damage dealers at 80-92 % of the successor instead of
+    // 89-100 %+. DoT ticks already on the boss cannot be stopped.
+    constexpr std::uint8_t kSuccessorWhiteStopPct = 92;
+    constexpr std::uint8_t kSuccessorWhiteResumePct = 85;
+
+    // One bot's white-damage stop, kept across ticks. Every read advances it: a tank, or a target without the
+    // `threat_successor` row, clears it, so the next boss starts from the stop line again. `refZero`: the successor
+    // reference reads exactly 0 (a tank Hex just wiped it; ThreatPctOf then reads 100 % for everyone). White damage is
+    // not stopped then and the latch clears: the 0-reference hold already vetoes the specials, and stopping the white
+    // damage too would cost the whole raid's damage for every Hex window.
+    struct SuccessorWhiteLatch
+    {
+        bool stopped = false;
+
+        bool Update(bool successorTarget, bool isTank, std::uint8_t pct, bool refZero = false)
+        {
+            stopped = successorTarget && !isTank && !refZero &&
+                pct >= (stopped ? kSuccessorWhiteResumePct : kSuccessorWhiteStopPct);
+            return stopped;
+        }
+    };
+
+    // Whether the bot's white damage runs on the successor target itself: a melee swing whose victim is that target, or an
+    // auto-repeat (wand Shoot, Auto Shot) aimed at it. A swing an action moved onto a Shade, an add or a totem is left
+    // alone: the latch reads the threat on the successor, not on that unit.
+    inline bool SuccessorWhiteOnTarget(bool meleeAttacking, bool victimIsTarget, bool autoRepeat, bool autoRepeatOnTarget)
+    {
+        return (meleeAttacking && victimIsTarget) || (autoRepeat && autoRepeatOnTarget);
+    }
+
+    // The trigger's step (SuccessorWhiteCapTrigger::IsActive), run in the engine's trigger pass at the start of every
+    // decision cycle: advance the latch and say whether the bot's running white damage must be stopped right now. The
+    // trigger stops it on the spot instead of queueing an action, so no higher-relevance action picked in the same cycle
+    // (a heal, a move, an emergency) lets the swing or the auto-repeat run on past the line.
+    inline bool SuccessorWhiteStopNow(SuccessorWhiteLatch& latch, bool successorTarget, bool isTank, std::uint8_t pct,
+                                      bool refZero, bool whiteRunning)
+    {
+        return latch.Update(successorTarget, isTank, pct, refZero) && whiteRunning;
+    }
+
     // The percentage a damage dealer's threat reads against the reference tank's (ThreatValue::Calculate), saturated to
     // the uint8 the threat values carry. botThreat * 100 / maxThreat above 255 used to wrap (300 % read as 44 %), and
     // the cap then let the attack through exactly where the margin matters most. `maxThreat` <= 0 is the caller's "no
@@ -60,6 +133,7 @@ namespace ai
         bool offTank = false;
         bool onBoss = false; // this tank hits the boss (its victim is the boss); NOT "the boss hits this tank"
         bool holdsBoss = false; // the boss hits this tank (the boss's victim is this tank): it holds the boss right now
+        bool cursed = false; // wears Delusions of Jin'do, marked only under AiPlayerbot.DungeonRunThreatSuccessorKeepsAway
     };
 
     // The off-tank floor, as an absolute amount rather than a share of the highest tank's threat: the reference is
@@ -82,6 +156,30 @@ namespace ai
     inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)
     {
         return hitsBoss || wearsHex;
+    }
+
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions of Jin'do (24306) stands on its Shade by
+    // design while its Jin'do threat stays (walk 56: a cursed main tank on a Shade dropped out of the pick and the
+    // reference fell back to the holder). The caller marks such a tank `cursed`; it then counts as on the boss, but only
+    // while its threat is above 0 and at least kThreatCapOffTankAwayShare of the highest tank's: Delusions is never cured
+    // and the cursed tank's threat does not climb on its Shade, so a cursed tank with little or no Jin'do threat would
+    // otherwise sit as a 0 reference and hold every damage dealer for the whole curse. Off (no tank marked), nothing changes.
+    // A charmed tank is never kept: the caller leaves it off the list as before.
+    constexpr std::uint32_t kJindoDelusionsSpellId = 24306;
+
+    inline bool ThreatCapCursedCountsOnBoss(float threat, float highest)
+    {
+        return threat > 0.0f && threat >= highest * kThreatCapOffTankAwayShare;
+    }
+
+    inline void ThreatCapCursedOnBoss(std::vector<ThreatCapTank>& tanks)
+    {
+        float highest = 0.0f;
+        for (const ThreatCapTank& tank : tanks)
+            highest = std::max(highest, tank.threat);
+        for (ThreatCapTank& tank : tanks)
+            if (tank.cursed && !tank.onBoss && ThreatCapCursedCountsOnBoss(tank.threat, highest))
+                tank.onBoss = true;
     }
 
     // The reference and which kind of tank it is: `offTank` is the `threat_successor` cap standing on an assigned

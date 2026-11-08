@@ -71,7 +71,7 @@ struct Facade {
     ThreatManager GetThreatManager(Unit*) const { return {}; }
 } sServerFacade;
 std::vector<Player*> LiveGroupMembers(Group* g) { return g->members; }
-struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; } sPlayerbotAIConfig;
+struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; bool dungeonRunThreatSuccessorKeepsAway = false; } sPlayerbotAIConfig;
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
@@ -146,6 +146,35 @@ int main() {
 }
 """)
 
+
+    @unittest.skipUnless(shutil.which("g++"), "g++ unavailable")
+    def test_charmed_holder_does_not_lift_cap(self):
+        # charmed_holder_does_not_lift_cap: AiPlayerbot.DungeonRunThreatSuccessorKeepsAway keeps no charmed tank. The main
+        # tank held the boss at 10000 and is charmed (Cause Insanity / Brain Wash); the off-tank at 4000 now holds. With the
+        # keep-away and not-holder keys on, the reference stays the off-tank's 4000: a charmed tank's old threat must never
+        # lift the cap above what the boss can turn to (walk 41 on Hakkar).
+        self._compile_and_run(r"""
+int main() {
+    Player bot, main, off;
+    main.tank = true; main.assigned = true; main.threat = 10000;
+    off.assigned = true; off.threat = 4000;
+    Group group{{&bot, &main, &off}}; bot.group = &group;
+    PlayerbotAI ai{&bot};
+    Unit enemy;
+    main.victim = &enemy; off.victim = &enemy; enemy.victim = &main;
+    gThreatSuccessor = true;
+    sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway = true;
+    for (int notHolder = 0; notHolder < 2; ++notHolder)
+    {
+        sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder = notHolder == 1;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);  // free, holding main tank: the off-tank is the successor
+        main.charmer = Guid{false, false}; enemy.victim = &off;
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) <= 4000);  // charmed: skipped, never its old 10000
+        assert(ThreatValue::GetTankThreat(&ai, &enemy) == 4000);
+        main.charmer = Guid{}; enemy.victim = &main;
+    }
+}
+""")
 
 if __name__ == "__main__":
     unittest.main()

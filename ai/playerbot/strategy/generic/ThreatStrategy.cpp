@@ -4,11 +4,24 @@
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
 using namespace ai;
+
+namespace
+{
+// The white damage the threat multiplier exempts: the melee auto-attack, the wand's Shoot and the hunter's Auto Shot.
+// The successor white stop has to see them (AiPlayerbot.DungeonRunThreatSuccessorStrict, ThreatCapPolicy.h).
+bool AutoAttackAction(Action* action)
+{
+    return dynamic_cast<MeleeAction*>(action) || dynamic_cast<CastShootAction*>(action) ||
+        action->getName() == "auto shot";
+}
+}
 
 float ThreatMultiplier::GetValue(Action* action)
 {
@@ -18,7 +31,25 @@ float ThreatMultiplier::GetValue(Action* action)
     if (AI_VALUE(bool, "neglect threat"))
         return 1.0f;
 
-    if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+    if (action == NULL)
+        return 1.0f;
+
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the auto-attack, the wand's Shoot and
+    // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never; a 0 reference
+    // never stops them). The row decides before the percentage is read; a target without it clears the latch. Auto Shot
+    // is SINGLE-threat, so the 80 % veto below still gates its restart. Key off: the old exemption below.
+    if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))
+    {
+        Unit* const target = AI_VALUE(Unit*, "current target");
+        if (!ThreatSuccessorTarget(target))
+            ai->SuccessorWhiteCap().Update(false, false, 0);
+        else if (ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot),
+                     AI_VALUE2(uint8, "threat", "current target"),
+                     AI_VALUE2(float, "tank threat", "current target") == 0.0f))
+            return 0.0f;
+    }
+
+    if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     // Burn the raid's timed Fankriss Spawn before its enrage. Single-target
@@ -36,7 +67,12 @@ float ThreatMultiplier::GetValue(Action* action)
     // never the worse choice. mod-playerbots does not give its healers this
     // multiplier by default, and its FocusMultiplier exempts heals the same
     // way.
-    if (dynamic_cast<CastHealingSpellAction*>(action))
+    // A party cure or dispel joins the heals behind AiPlayerbot.DungeonRunCureIgnoresThreat: it is a SINGLE-threat
+    // CastSpellAction, so a healer whose own threat on its target sat at the high line had every cure vetoed and
+    // Jin'do's Hex stayed on the tank for its full 5 s (ThreatCapPolicy.h ThreatCapExempt).
+    if (ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+                        dynamic_cast<CurePartyMemberAction*>(action) != nullptr,
+                        sPlayerbotAIConfig.dungeonRunCureIgnoresThreat))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
@@ -84,6 +120,17 @@ float ThreatMultiplier::GetValue(Action* action)
     }
 
     return 1.0f;
+}
+
+// The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger stops the swing and the auto-repeat
+// itself in the trigger pass and is never active, so its handler is never queued. The handler is a no-op at
+// ACTION_PASSTROUGH only so the node's first relevance is 100: Engine::ProcessTriggers(minimal) checks just the nodes at
+// 100 or more, and an empty node (-1) was skipped on every minimal tick, letting a swing run on past the line. Key off:
+// the trigger returns at its first line.
+void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    triggers.push_back(new TriggerNode("successor white cap",
+        NextAction::array(0, new NextAction("successor white cap noop", ACTION_PASSTROUGH), NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)

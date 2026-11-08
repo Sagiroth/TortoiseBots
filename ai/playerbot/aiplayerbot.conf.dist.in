@@ -1190,6 +1190,46 @@ AiPlayerbot.DungeonRunCarrierHold = 0
 # 1 - on
 AiPlayerbot.DungeonRunThreatSuccessorNotHolder = 0
 
+# Party cures and dispels skip the damage threat back-off the way heals do. A cure on a party member (dispel magic,
+# cure poison/disease, remove curse, cleanse, purify on a party member) is a single-target spell action, so a healer
+# whose own threat on its target sat at the 80 % line had it vetoed like a nuke: at Jin'do the Hex on the tank was
+# never cured in 50 of 91 cases (walk 56), and the boss sat on a damage dealer for the Hex's full 5 s. A cure pulls no
+# mob off the tank. All bosses, every party cure; self cures and offensive dispels are unchanged. Range and line of
+# sight still stop a cure. Recommended on. `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: cures are vetoed at the high-threat line as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunCureIgnoresThreat = 0
+
+# A successor line that holds, on a boss with a `threat_successor` row (Jin'do, Hakkar) only. Two changes:
+# (a) the high-threat back-off's 5 s projection escape is off there: today a damage dealer at or over 80 % of the
+#     reference keeps attacking while its threat projects under the tank's in 5 s, so it rides just under a slowly
+#     climbing non-holding tank (walk 56: every Hex that went to a damage dealer found it at 1.00x the successor or more);
+# (b) white damage stops at 92 % of the reference: the running melee swing and auto-repeat (wand Shoot, Auto Shot) were
+#     never vetoed once started. The stop happens in the trigger pass of the same decision cycle (minimal ticks
+#     included), and only for a swing or shot on the successor itself, not one moved onto a Shade or an add. Melee and wand start
+#     again under 85 %; a hunter's Auto Shot under 80 %, because its restart is a single-target action the 80 % veto still
+#     gates. While the reference is 0 (a tank just Hexed) white damage is never stopped; the specials stay held as before.
+#     Specials keep the 80 % line. Tanks are never stopped. DoT ticks already on the boss cannot be stopped.
+# The 405801e86 commit removed a 65 % white stop that cost a fifth of the raid's damage; the walk-57 guard is raid damage
+# on Jin'do at 92 % or more of walk 56. The BossTacticsThreatCap row gains `white=held|free ref0=0|1`. Recommended on,
+# together with AiPlayerbot.DungeonRunThreatSuccessorNotHolder. `.reload config` reads it again with the other keys.
+# 0 - off: today's escape and no white stop (Default)
+# 1 - on
+AiPlayerbot.DungeonRunThreatSuccessorStrict = 0
+
+# The successor pick on a `threat_successor` boss keeps a tank cursed by Delusions of Jin'do (24306): it is on its Shade
+# by design and keeps its Jin'do threat, so it counts as on the boss like a Hexed one, but only while that threat is above
+# 0 and at least half the highest tank's (Delusions is never cured; a cursed tank with little threat would otherwise
+# hold every damage dealer for the whole curse). A charmed tank is still left out. Walk 56: a cursed main tank on a Shade
+# dropped out of the pick and the reference fell back to the holder. It acts through the not-holder pick
+# (AiPlayerbot.DungeonRunThreatSuccessorNotHolder): with that key off it changes practically nothing, since a cursed
+# off-tank at half the highest tank or more already passes the old away floor. Known limit: a cursed tank at half the
+# holder's threat or more holds the damage dealers at its line until the holder doubles it (walk 57 splits those rows,
+# ref=offtank holder=main offtank_target=Shade of Jin'do white=held, out of the damage guard). Recommended on. `.reload config` reads it.
+# 0 - off: a cursed tank that is not hitting the boss drops out of the pick (Default)
+# 1 - on
+AiPlayerbot.DungeonRunThreatSuccessorKeepsAway = 0
+
 # A tank does not taunt a creature it must not hold: a needs_aura subject (Jin'do's Shade, which only a Delusions
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed

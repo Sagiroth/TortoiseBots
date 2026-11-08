@@ -97,9 +97,18 @@ void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit*
     }
     // The first off-tank's current target: the cap reference stalls when that tank is stuck on a Son instead of the boss.
     // holder= is the tank the boss is hitting right now (none: a damage dealer, or nobody).
-    char info1[160];
-    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s", pick.offTank ? "offtank" : "main",
-             pick.threat, offTankTarget ? offTankTarget->GetName() : "none", ThreatCapHolderWord(pick.holder));
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict adds `white=held|free ref0=0|1`: whether this bot's white damage is
+    // stopped by the successor latch, and whether the reference is the 0 of a just-Hexed tank (white damage is never
+    // stopped then), so a walk can split the Hex-window hold from the 92 % stop. Key off: the row is unchanged.
+    char info1[192];
+    if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict)
+        snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s white=%s ref0=%d",
+                 pick.offTank ? "offtank" : "main", pick.threat, offTankTarget ? offTankTarget->GetName() : "none",
+                 ThreatCapHolderWord(pick.holder), ai->SuccessorWhiteCap().stopped ? "held" : "free",
+                 pick.threat == 0.0f ? 1 : 0);
+    else
+        snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s", pick.offTank ? "offtank" : "main",
+                 pick.threat, offTankTarget ? offTankTarget->GetName() : "none", ThreatCapHolderWord(pick.holder));
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatCap", info1, "");
 }
 
@@ -273,6 +282,9 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
     // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
     // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions (on its Shade by design) counts as on the
+    // boss while it keeps a real share of the Jin'do threat (ThreatCapPolicy.h ThreatCapCursedOnBoss).
+    const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     std::vector<ThreatCapTank> tanks;
     tanks.reserve(roles.tanks.size());
@@ -286,10 +298,14 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
             continue;
         // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
         // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
-        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
+        ThreatCapTank tank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
             ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
-            target->GetVictim() == player});
+            target->GetVictim() == player};
+        tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);
+        tanks.push_back(tank);
     }
+    if (keepsAway)
+        ThreatCapCursedOnBoss(tanks);
 
     const ThreatCapPick pick = ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
     LogHexSnapshot(ai, target, roles, group);

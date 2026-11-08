@@ -739,6 +739,20 @@ public:
     // against the real threat of the highest tank that is on the boss and is not the one it is hitting, so an
     // off-tank holding Jin'do no longer caps them against itself while a Hexed main tank sits below. Off = as before.
     bool dungeonRunThreatSuccessorNotHolder = false;
+    // Party cures and dispels (CurePartyMemberAction: dispel magic, cure poison/disease, remove curse, cleanse, purify on a
+    // party member) skip the damage threat back-off the way heals do, so a healer high on its own target's threat still
+    // cures Jin'do's Hex on the tank. Off = as before (the cure is vetoed at the high-threat line).
+    bool dungeonRunCureIgnoresThreat = false;
+    // A successor line that holds: on a `threat_successor` boss the high-threat trigger's 5 s projection escape is off
+    // (a damage dealer at or over 80 % is vetoed even while it projects under the tank), and the melee swing and the
+    // auto-repeat (wand Shoot, Auto Shot) are stopped in the trigger pass at 92 % of the reference; melee and wand start
+    // again under 85 %, Auto Shot under 80 % (its SINGLE veto). A 0 reference (a tank Hex) never stops them
+    // (ThreatCapPolicy.h SuccessorWhiteLatch). Off = as before.
+    bool dungeonRunThreatSuccessorStrict = false;
+    // The successor pick keeps a tank wearing Delusions of Jin'do (24306, on its Shade by design) as on the boss, like a
+    // Hexed one, while its threat is above 0 and at least half the highest tank's (ThreatCapPolicy.h
+    // ThreatCapCursedOnBoss). A charmed tank is still skipped. Off = as before.
+    bool dungeonRunThreatSuccessorKeepsAway = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;

@@ -17,6 +17,17 @@ namespace ai
         virtual bool isUseful() override;
     };
 
+    // The handler of the "successor white cap" trigger node (ThreatStrategy.cpp), there only to give the node relevance 100
+    // so the trigger is checked on minimal ticks too. The trigger is never active, so this is never queued; if it were,
+    // it is never useful and does nothing.
+    class SuccessorWhiteCapNoopAction : public Action
+    {
+    public:
+        SuccessorWhiteCapNoopAction(PlayerbotAI* ai) : Action(ai, "successor white cap noop") {}
+        virtual bool isUseful() override { return false; }
+        virtual bool Execute(Event& event) override { (void)event; return false; }
+    };
+
     class UseLightwellAction : public MovementAction
     {
     public:

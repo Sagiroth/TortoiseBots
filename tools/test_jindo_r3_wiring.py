@@ -44,7 +44,7 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
 
     def test_holds_boss_reads_the_bosses_victim(self):
         # onBoss stays "this tank hits the boss"; holdsBoss is the other way round: the boss hits this tank.
-        build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
+        build = member(VALUES, "ThreatCapTank tank{", "};")
         self.assertIn("player->GetVictim() == target", build)
         self.assertIn("target->GetVictim() == player", build)
 
@@ -55,7 +55,7 @@ class ThreatSuccessorNotHolder(unittest.TestCase):
         self.assertNotIn("floor", branch)
 
     def test_a_hexed_tank_counts_as_on_the_boss(self):
-        build = member(VALUES, "tanks.push_back(ThreatCapTank{", "});")
+        build = member(VALUES, "ThreatCapTank tank{", "};")
         self.assertIn("ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player))", build)
         self.assertIn("inline bool ThreatCapOnBoss(bool hitsBoss, bool wearsHex)", POLICY)
 

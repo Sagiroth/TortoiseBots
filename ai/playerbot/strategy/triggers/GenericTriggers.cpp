@@ -5,6 +5,7 @@
 #include "playerbot/BoostReadinessPolicy.h"
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/ThreatCapPolicy.h"
+#include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/GroupBuffPolicy.h"
 #include "playerbot/HealerManaPolicy.h"
@@ -765,6 +766,11 @@ bool HighThreatTrigger::IsActive()
 
     if (relativeThreat >= kThreatHighLinePct)
     {
+        // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the 5 s projection escape is off, so
+        // the 80 % line binds (ThreatCapPolicy.h HighThreatProjectionEscapes). The row is read only with the key on.
+        const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;
+        const bool successorTarget = strict && ThreatSuccessorTarget(target);
+
         //Watch delta.
         uint32 lastTime = MEM_AI_VALUE(float, "my threat::current target")->GetLastTime();
 
@@ -777,9 +783,8 @@ bool HighThreatTrigger::IsActive()
             {
                 float tankThreat = AI_VALUE2(float, "tank threat", "current target");
 
-                float newThreat = currentThreat + deltaThreat * 5.0f; //No agro in 5 seconds.
-
-                if (newThreat < tankThreat)
+                //No agro in 5 seconds.
+                if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))
                     return false;
             }
         }
@@ -796,6 +801,42 @@ bool MediumThreatTrigger::IsActive()
     if (AI_VALUE2(uint8, "threat", "current target") >= 60)
         return true;
 
+    return false;
+}
+
+// The successor white-damage stop (AiPlayerbot.DungeonRunThreatSuccessorStrict). The melee swing and the auto-repeat
+// (wand Shoot, Auto Shot) keep running once started, so over 92 % of the successor reference this trigger stops them on
+// the spot, in the engine's trigger pass at the start of the decision cycle (ThreatCapPolicy.h SuccessorWhiteStopNow):
+// a queued stop action could lose the cycle to any higher action (a heal, a move, an emergency) while the swing went on.
+// It stops them again on every pass while the latch holds (another attack action may restart the swing), and the
+// threat multiplier keeps the white-damage actions from starting until the threat is under 85 %. The trigger itself
+// never fires an action. Tanks are never stopped, a target without the row clears the latch, and a 0 reference (a tank
+// Hex) leaves the white damage running. Key off: returns at once and the latch is never read.
+bool SuccessorWhiteCapTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (FankrissBurnSpawn(ai, target)) return false;
+    if (!AI_VALUE(bool, "group")) return false;
+    if (AI_VALUE(bool, "neglect threat")) return false;
+    // The row decides before the percentage is read: a trash target never pays for the tank scan the threat value costs.
+    if (!ThreatSuccessorTarget(target))
+    {
+        ai->SuccessorWhiteCap().Update(false, false, 0);
+        return false;
+    }
+    // Only white damage on the successor itself is stopped: a swing or shot an action put on a Shade or an add is left alone.
+    Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
+    const bool whiteRunning = SuccessorWhiteOnTarget(bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING), bot->GetVictim() == target,
+        repeating, repeating && autoRepeat->m_targets.getUnitTarget() == target);
+    const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;
+    if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),
+            AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning))
+    {
+        bot->AttackStop();
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+    }
     return false;
 }
 
