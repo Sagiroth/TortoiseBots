@@ -614,6 +614,10 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // Pure interrupts (Kick, Pummel, Shield Bash, Bash, Counterspell, Silence) skip the damage threat back-off the way
+    // heals do, so a damage dealer at the 80 % high-threat line still stops a cast. Earth Shock and Death Coil interrupt
+    // rows stay gated. Off = as before (the interrupt is vetoed at the high line).
+    bool interruptIgnoresThreat = false;
     // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
     uint32 fankrissSwapStacks = 5;
     // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).

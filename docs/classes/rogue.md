@@ -67,7 +67,7 @@ When enabled via configuration, rogues in 5-man dungeons use the same threat-dro
 ## Utility & interrupts
 
 - **Poisons:** Automatically applies poisons based on context: raid and generic combat use Instant Poison (main hand) and Deadly Poison (off hand); general PvE uses Instant Poison on both hands; PvP uses Mind Poison (main hand) and Crippling Poison (off hand). Gated by poison item required level and stock.
-- **Interrupts:** Casts *Kick* immediately to lock out enemy spell casts. Uses *Kidney Shot* as a stun fallback.
+- **Interrupts:** Casts *Kick* immediately to lock out enemy spell casts. Uses *Kidney Shot* as a stun fallback. With `AiPlayerbot.InterruptIgnoresThreat = 1` (recommended) *Kick* also goes out while the rogue is over the threat back-off line, which otherwise holds it.
 - **Self-Defense CC:** Uses *Gouge* at medium health (50–70%) and *Blind* at critical health (below 20%) to disorient attackers.
 - **Hold Ground Opt-In:** When [PoolMeleeHoldGround](../server/settings/performance.md#aiplayerbotpoolmeleeholdground) is enabled, pool rogues stand their ground using *Evasion* and *Vanish* rather than fleeing when low on health.
 

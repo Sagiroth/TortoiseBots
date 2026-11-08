@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off like heals, so a damage dealer at the high-threat line still interrupts a cast.
 - Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.
 - Hakkar in Zul'Gurub: a Son of Hakkar brought to the far edge of his platform is now burned for the Poisonous Blood cloud, the walk-out may start as soon as the dose window opens, and a walk-out no longer stalls at the stand while the puller's auto-shot is still aimed at the boss: it shoots the Son at once, and a walk-out is not retried in the same Siphon cycle.

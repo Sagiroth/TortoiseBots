@@ -86,6 +86,18 @@ namespace ai
         return pick;
     }
 
+    // Whether an action skips the damage threat back-off (ThreatMultiplier) whatever the bot's threat on its target.
+    // Heals always do: a heal pulls no mob off the tank. An interrupt (CastInterruptSpellAction whose IgnoresThreatCap()
+    // is true: Kick, Pummel, Shield Bash, Bash, Counterspell, Silence) is a SINGLE-threat spell action and was vetoed at
+    // the 80 % high line like a nuke, so a rogue over the line stood idle at full energy while the caster finished its
+    // cast (Tortoise Trials DPS-ROG-KICK: 21 of 50 windows). With AiPlayerbot.InterruptIgnoresThreat on, such an
+    // interrupt is exempt like a heal; off, as before. Earth Shock and Death Coil interrupt rows stay gated: they are
+    // real nukes.
+    inline bool ThreatCapExempt(bool heal, bool interrupt, bool interruptIgnoresThreat)
+    {
+        return heal || (interrupt && interruptIgnoresThreat);
+    }
+
     inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap)
     {
         return ThreatCapPickReference(tanks, successorCap).threat;

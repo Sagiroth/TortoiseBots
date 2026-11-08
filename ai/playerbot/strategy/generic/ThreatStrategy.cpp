@@ -5,6 +5,7 @@
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/ThreatCapPolicy.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
@@ -36,7 +37,13 @@ float ThreatMultiplier::GetValue(Action* action)
     // never the worse choice. mod-playerbots does not give its healers this
     // multiplier by default, and its FocusMultiplier exempts heals the same
     // way.
-    if (dynamic_cast<CastHealingSpellAction*>(action))
+    // An interrupt joins the heals behind AiPlayerbot.InterruptIgnoresThreat: Kick and the other pure interrupts are
+    // SINGLE-threat spell actions, so a rogue at the high line had every Kick vetoed and stood idle at full energy
+    // while the caster finished (ThreatCapPolicy.h ThreatCapExempt). Earth Shock and Death Coil rows stay gated.
+    CastInterruptSpellAction const* interruptAction = dynamic_cast<CastInterruptSpellAction*>(action);
+    if (ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+                        interruptAction != nullptr && interruptAction->IgnoresThreatCap(),
+                        sPlayerbotAIConfig.interruptIgnoresThreat))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))

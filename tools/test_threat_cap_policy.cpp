@@ -90,6 +90,17 @@ int main()
     // The cap is only for the successor target: the plain max ignores the flag.
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, false}}, false) == 40000.0f);
 
+    // interrupt_exempt_behind_key: ThreatCapExempt is the call ThreatMultiplier::GetValue makes before its high-threat
+    // veto. Heals are always exempt. An interrupt (CastInterruptSpellAction whose IgnoresThreatCap() is true: Kick,
+    // Pummel, Shield Bash, Bash, Counterspell, Silence) is exempt only with AiPlayerbot.InterruptIgnoresThreat on; a
+    // rogue at the 80 % line stood idle at full energy in 21 of 50 Kick windows (Tortoise Trials DPS-ROG-KICK 0.42).
+    CHECK(ThreatCapExempt(false, true, true));
+    CHECK(!ThreatCapExempt(false, true, false));
+    CHECK(!ThreatCapExempt(false, false, true));
+    CHECK(!ThreatCapExempt(false, false, false));
+    CHECK(ThreatCapExempt(true, false, false));
+    CHECK(ThreatCapExempt(true, true, false));
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

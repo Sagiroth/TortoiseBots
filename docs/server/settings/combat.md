@@ -32,6 +32,7 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.AoeRadius`](#aiplayerbotaoeradius) | `5.0` | Default yard radius for area-of-effect spells and cluster targeting. |
 | [`AiPlayerbot.ShareTargets`](#aiplayerbotsharetargets) | `1` (built in) | Reuses nearby friendly bots' attacker lists for coordinated defense. |
 | [`AiPlayerbot.GlobalCooldown`](#aiplayerbotglobalcooldown) | `1500` | Pacing delay in milliseconds enforced between rapid spell casts. |
+| [`AiPlayerbot.InterruptIgnoresThreat`](#aiplayerbotinterruptignoresthreat) | `0` | Pure interrupts (Kick, Pummel, Counterspell...) skip the threat back-off like heals. Recommended on. |
 | [`AiPlayerbot.RangedPull`](#aiplayerbotrangedpull) | `1` | Enables automatic ranged openings for commanded tank pulls. |
 | [`AiPlayerbot.RangedPullMeleeApproach`](#aiplayerbotrangedpullmeleeapproach) | `20` | Walk-in approach threshold in yards before tank pulls open from range. |
 | [`AiPlayerbot.PullDpsJoinDelay`](#aiplayerbotpulldpsjoindelay) | `10` | Seconds party DPS wait after a tank pull before joining combat. |
@@ -236,6 +237,17 @@ Pacing delay in milliseconds enforced between rapid spell casts.
 Controls the delay between consecutive spell casts. Several item, potion and aura actions pace themselves on it.
 
 Prevents bot AI from queuing multiple instant abilities in the same engine tick. (The template comment calls it the delay between two short-time spell casts.)
+
+</details>
+
+### `AiPlayerbot.InterruptIgnoresThreat`
+Whether pure interrupts skip the damage threat back-off, the way heals already do. Recommended on.
+**Default:** `0` · **Values:** `0` off (an interrupt is vetoed at the 80 % high-threat line like any single-target spell), `1` on (Kick, Pummel, Shield Bash, Bash, Counterspell and Silence run whatever the bot's threat) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+A bot with the `threat` strategy in a group backs off single-target spell actions while its threat on the target reads at or above 80 % of the tank's (`ThreatMultiplier`, the `high threat` trigger); melee swings and heals are exempt. Interrupt rows are single-target spell actions too, so a damage dealer over the line let every enemy cast finish: in the Tortoise Trials Kick test a rogue stood idle at full energy in 21 of 50 interruptible-cast windows and kicked 0.42 of them (target 0.6). With the key on, every `CastInterruptSpellAction` whose `IgnoresThreatCap()` is true is exempt like a heal (`ThreatCapExempt`): Kick, Pummel, Shield Bash, Bash, Counterspell and Silence. The Earth Shock and Death Coil interrupt rows are real nukes and keep the back-off, and the `... on enemy healer` rows are unchanged. The AoE back-off is not touched. Range, line of sight and cooldowns still stop an interrupt.
 
 </details>
 
