@@ -682,6 +682,11 @@ public:
     // unshot, one `seek pull: walk-out stand` row a second names the branch its tick took, and every refused pull cast
     // logs `seek pull: walk-out castrefused` (at most 10 a walk-out); no behaviour changes (default off).
     bool dungeonRunSeekWalkoutStandLog = false;
+    // The walk-out stand's sight (Hakkar's seek pull): on, the stand search aims the way the bot's own sight test does
+    // (its collision height to the Son's z + 1), and a refused move within 3 yd of the stand re-plans the stand instead
+    // of counting toward the three-refusal abort; off, floor + 2 to z + 2 and every refusal counts (default off,
+    // recommended on).
+    bool dungeonRunSeekWalkoutStandSight = false;
     // The nearest take (Hakkar's Sons): on, the first off-tank takes a Son on a non-tank at once, without the 3 s
     // healer clock, when the receiver (the third tank) is more than 8 yd from it or its taunt is on cooldown and the
     // first off-tank is within 8 yd with its taunt ready, is not Hakkar's victim and holds no Son; the main tank never

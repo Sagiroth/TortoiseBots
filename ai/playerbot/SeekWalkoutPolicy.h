@@ -1152,6 +1152,45 @@ namespace ai
         return s.moveFails >= kSeekWalkoutMoveFails;
     }
 
+    // The stand's sight (DungeonRunSeekWalkoutStandSight, walk 56: 12 of 13 `abort move failed` rows stood on their
+    // stand, len <= 0.6, refused): the stand search aimed from floor + 2 at the Son's z + 2, the bot's own test
+    // (IsWithinLOSInMap -> GetLosCheckPosition) aims from its z + collision height at the Son's z + 1, so the ledge's lip
+    // blocked the bot's line at a stand the search had passed. With the flag on the search aims the core's way.
+    inline float WalkoutStandSightZ(bool flagOn, float sonZ)
+    {
+        return sonZ + (flagOn ? 1.0f : 2.0f);
+    }
+
+    // The stand search's eye: the floor plus the bot's collision height with the flag on, plus 2 off.
+    inline float WalkoutStandEyeZ(bool flagOn, float floorZ, float collisionHeight)
+    {
+        return floorZ + (flagOn ? collisionHeight : 2.0f);
+    }
+
+    // Whether a refused outbound move counts toward kSeekWalkoutMoveFails: with the flag on a refusal within
+    // kSeekWalkoutStandArriveYd of the stand is the bot standing on a stand it cannot shoot from, not a path failure; it
+    // re-plans the stand instead (WalkoutNoteOutboundMove). A move that went out never counts.
+    inline bool WalkoutMoveRefusalCounts(bool flagOn, bool moved, float standYd)
+    {
+        if (moved)
+            return false;
+        return !(flagOn && standYd <= kSeekWalkoutStandArriveYd);
+    }
+
+    // One outbound move of the task with the stand-sight rule: a refusal that does not count (WalkoutMoveRefusalCounts)
+    // leaves the fail count alone and makes the stand due a re-plan at once (the 5 s no-stand clock still bounds it);
+    // anything else is WalkoutNoteMove. True: the task aborts ("move failed").
+    inline bool WalkoutNoteOutboundMove(SeekWalkoutState& s, bool moved, bool counts, std::uint32_t nowMs)
+    {
+        if (!moved && !counts)
+        {
+            s.lastMoveOk = false;
+            s.standMs = nowMs - kSeekWalkoutReplanMs;
+            return false;
+        }
+        return WalkoutNoteMove(s, moved);
+    }
+
     // The puller whose moves failed sits out kSeekWalkoutExcludeMs, so the next pick takes another bot.
     inline void WalkoutExclude(SeekWalkoutState& s, std::uint64_t bot, std::uint32_t nowMs)
     {

@@ -1835,6 +1835,55 @@ static void TestWalkoutFaceCastWithoutRules()
     CHECK(!off.stop && !off.face && !off.force && !off.returnAfterFace);
 }
 
+
+static void TestWalkoutMoveRefusalCounts()
+{
+    // Named failing case: with StandSight on, a refusal 0.5 yd from the stand does not count.
+    CHECK(WalkoutMoveRefusalCounts(true, false, 0.5f) == false);
+    CHECK(WalkoutMoveRefusalCounts(true, false, kSeekWalkoutStandArriveYd) == false); // the `<=` edge
+    CHECK(WalkoutMoveRefusalCounts(true, false, 3.5f) == true);
+    CHECK(WalkoutMoveRefusalCounts(false, false, 0.5f) == true); // flag off: every refusal counts
+    CHECK(WalkoutMoveRefusalCounts(true, true, 0.5f) == false);  // moved
+    CHECK(WalkoutMoveRefusalCounts(false, true, 10.0f) == false);
+    // Three refusals on the stand: no abort, the stand due a re-plan each time, the fail count untouched.
+    SeekWalkoutState s;
+    WalkoutStart(s, 7, 100, 1000, 1);
+    WalkoutNoteStand(s, true, 10.0f, 10.0f, 50.0f, 1000);
+    CHECK(!WalkoutReplanDue(s, 1100));
+    for (std::uint32_t t = 1100; t <= 1300; t += 100)
+    {
+        CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 0.5f), t));
+        CHECK(WalkoutReplanDue(s, t)); // the re-plan reset
+        CHECK(!s.lastMoveOk);
+    }
+    CHECK(s.moveFails == 0);
+    // Real path failures farther out still count, and three abort.
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1400));
+    CHECK(!WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1500));
+    CHECK(WalkoutNoteOutboundMove(s, false, WalkoutMoveRefusalCounts(true, false, 12.0f), 1600));
+    // Flag off: three refusals on the stand abort, as before.
+    SeekWalkoutState o;
+    WalkoutStart(o, 7, 100, 1000, 1);
+    CHECK(!WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1100));
+    CHECK(!WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1200));
+    CHECK(WalkoutNoteOutboundMove(o, false, WalkoutMoveRefusalCounts(false, false, 0.5f), 1300));
+    // A move that went out resets the count.
+    SeekWalkoutState m;
+    WalkoutStart(m, 7, 100, 1000, 1);
+    WalkoutNoteOutboundMove(m, false, true, 1100);
+    CHECK(m.moveFails == 1);
+    WalkoutNoteOutboundMove(m, true, false, 1200);
+    CHECK(m.moveFails == 0 && m.lastMoveOk);
+}
+
+static void TestWalkoutStandSightZ()
+{
+    CHECK(Near(WalkoutStandSightZ(true, 30.0f), 31.0f));  // the core's GetLosCheckPosition: z + 1
+    CHECK(Near(WalkoutStandSightZ(false, 30.0f), 32.0f)); // flag off: z + 2, as before
+    CHECK(Near(WalkoutStandEyeZ(true, 50.0f, 1.8f), 51.8f)); // the bot's collision height
+    CHECK(Near(WalkoutStandEyeZ(false, 50.0f, 1.8f), 52.0f));
+}
+
 int main()
 {
     TestWalkoutRejectCodes();
@@ -1890,6 +1939,8 @@ int main()
     TestWalkoutHoldNeedsFocusAndAFight();
     TestWalkoutPullerRecordPerInstance();
     TestWalkoutFaceCastWithoutRules();
+    TestWalkoutMoveRefusalCounts();
+    TestWalkoutStandSightZ();
     TestWalkoutFocusHolds();
     TestWalkoutPullShotInFlight();
     TestWalkoutRunningCount();

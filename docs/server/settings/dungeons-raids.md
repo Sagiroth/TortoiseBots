@@ -83,6 +83,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekWalkoutHoldCombat`](#aiplayerbotdungeonrunseekwalkoutholdcombat) | `0` | `1` (recommended, needs `DungeonRunSeekWalkoutFocus`): the live, unshot Hakkar walk-out puller stays on the combat engine while Hakkar fights, and the pick skips a bot off the combat engine or eating or drinking. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutFaceCast`](#aiplayerbotdungeonrunseekwalkoutfacecast) | `0` | `1` (recommended): the Hakkar walk-out puller turns to the Son and casts in one tick, its per-update facing no longer turns it back to Hakkar, and the 6 s no-shot clock counts only the time in shot position. |
 | [`AiPlayerbot.DungeonRunSeekWalkoutStandLog`](#aiplayerbotdungeonrunseekwalkoutstandlog) | `0` | `1` (diagnostic, safe on for test walks): one `seek pull: walk-out stand` row a second while the Hakkar walk-out puller walks out, and a `castrefused` row for every refused pull cast. |
+| [`AiPlayerbot.DungeonRunSeekWalkoutStandSight`](#aiplayerbotdungeonrunseekwalkoutstandsight) | `0` | `1` (recommended): the Hakkar walk-out's stand search tests sight the way the bot does, and a refused move on the stand re-plans it instead of aborting. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -993,6 +994,19 @@ Whether the Hakkar walk-out writes its diagnostic stand rows. Diagnostic: change
 - One `seek pull: walk-out stand branch=<word> state=<c|n> inrange=<0|1> los=<0|1> front=<0|1> stopped=<0|1> cast=<spell id> refuse=<reason> tick_ms=<ms>` row a second (the walk-out's first read writes one at once, so a 25 s task writes at most 26). The branch is the one its tick took; `tick_ms` is the time since its previous walk-out tick, so a gap shows a tick that did not run.
 - Every pull cast that `CastSpell` refuses logs `seek pull: walk-out castrefused spell=<id> reason=<reason>` at once, at most 10 a walk-out.
 - The words are listed in [`refusal-rows.md`](../../play/refusal-rows.md).
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekWalkoutStandSight`
+Whether the Hakkar walk-out's stand search tests sight the way the bot does. Recommended on.
+**Default:** `0` · **Values:** `0` off (the search aims from the floor + 2 at the Son's z + 2, and every refused move counts toward the abort, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Stand sight:** 12 of walk 56's 13 `walk-out abort move failed` rows were pullers already standing on their stand (`len` 0.6 yd or less, `why=dispatch-short` or `arrived-recalc`). The stand search tested sight from the floor + 2 yd to the Son's z + 2, but the bot's own test (`IsWithinLOSInMap`) aims from its z + its collision height to the Son's z + 1; the Sons stand 11-18 yd below the ledge, so the lip blocked the lower line. Out of shot position on its own stand, the puller asked to move 0.5 yd, the mover refused, and three refusals aborted the walk-out. With the key on:
+- The stand search aims from the floor + the bot's collision height to the Son's z + 1, the core's own sight heights.
+- A refused outbound move within 3 yd of the stand does not count toward the three refusals; the stand is re-planned at once instead (the 5 s no-stand abort still bounds it). Real path failures farther out still count.
 
 </details>
 

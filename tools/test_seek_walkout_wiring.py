@@ -188,7 +188,7 @@ class SeekWalkoutLiveFixes(unittest.TestCase):
         walk = fn[fn.index("if (task.walkout)"):fn.index("if (task.take)")]
         self.assertIn("NoteSeekWalkoutMove(ai, bot, moved", walk)
         note = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved,")
-        self.assertIn("WalkoutNoteMove(", note)
+        self.assertIn("WalkoutNoteOutboundMove(", note)  # WalkoutNoteMove behind the stand-sight rule
         self.assertIn('"move failed"', note)
         self.assertIn('"seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s"', ACTIONS)
 
@@ -550,6 +550,37 @@ class SeekWalkoutRefusalReasons(unittest.TestCase):
         self.assertIn("tally->Add(WalkoutReject::HunterOnly);", pick)
         self.assertIn("if (!WalkoutEligible(c))\n                tally->Add(WalkoutRejectOf(c));", pick)
         self.assertIn("tally->Add(WalkoutReject::NoPath);", pick)
+
+
+
+class WalkoutStandSightWiring(unittest.TestCase):
+    """DungeonRunSeekWalkoutStandSight (walk 56 HAKKAR-WHY F1)."""
+
+    def test_the_flag_defaults_off(self):
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        config_h = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        settings = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandSight", false)', config)
+        self.assertIn("bool dungeonRunSeekWalkoutStandSight = false;", config_h)
+        self.assertIn("AiPlayerbot.DungeonRunSeekWalkoutStandSight = 0", template)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekWalkoutStandSight`", settings)
+
+    def test_the_stand_test_aims_the_core_way(self):
+        fn = body(ACTIONS, "bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd,")
+        self.assertIn("bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;", fn)
+        self.assertIn("WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight())", fn)
+        self.assertIn("WalkoutStandSightZ(standSight, son->GetPositionZ()), true);", fn)
+        self.assertNotIn("son->GetPositionZ() + 2.0f", fn)
+
+    def test_note_move_calls_the_refusal_rule(self):
+        fn = body(ACTIONS, "void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason,")
+        self.assertIn("WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd);", fn)
+        self.assertIn("abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());", fn)
+        self.assertNotIn("WalkoutNoteMove(it->second.state, moved)", fn)
+        walk = walkout_branch()
+        self.assertIn("lastMove.movePathType ? lastMove.movePathType : probeType, probeYd,\n"
+                      "                                bot->GetDistance2d(x, y));", walk)
 
 
 if __name__ == "__main__":

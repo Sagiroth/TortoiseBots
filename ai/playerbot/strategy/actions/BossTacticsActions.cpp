@@ -1717,9 +1717,10 @@ void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
 }
 
 // One move of the task (the walk to its stand): the result is noted, and kSeekWalkoutMoveFails refused moves in a row
-// abort the task unspent ("move failed"), its walk back starting.
+// abort the task unspent ("move failed"), its walk back starting. With DungeonRunSeekWalkoutStandSight a refusal within
+// 3 yd of the stand (`standYd`) does not count: it re-plans the stand (WalkoutMoveRefusalCounts, WalkoutNoteOutboundMove).
 void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason, std::uint32_t pathType,
-                         float pathYd)
+                         float pathYd, float standYd)
 {
     SeekWalkoutState state;
     bool abort = false;
@@ -1728,7 +1729,9 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
         auto const it = g_walkouts.find(bot->GetInstanceId());
         if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
             return;
-        abort = WalkoutNoteMove(it->second.state, moved);
+        bool const counts =
+            WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd);
+        abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());
         if (!moved)
         {
             it->second.state.failReason = failReason;
@@ -1914,9 +1917,13 @@ bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, flo
         float const dy = son->GetPositionY() - py;
         float const dz = son->GetPositionZ() - floor;
         float const toSon = std::sqrt(dx * dx + dy * dy + dz * dz);
+        // DungeonRunSeekWalkoutStandSight: aim the way the bot's own sight test does (its collision height to the
+        // Son's z + 1, IsWithinLOSInMap), so a stand that passes here passes at the stand too. Off: floor + 2 to z + 2.
+        bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;
         bool const sight = found && toSon <= rangeYd &&
-            map->isInLineOfSight(px, py, floor + 2.0f, son->GetPositionX(), son->GetPositionY(),
-                                 son->GetPositionZ() + 2.0f, true);
+            map->isInLineOfSight(px, py, WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight()),
+                                 son->GetPositionX(), son->GetPositionY(),
+                                 WalkoutStandSightZ(standSight, son->GetPositionZ()), true);
         if (!WalkoutStandOk(found, floor, toSon, rangeYd, sight))
             return false;
         x = px;
@@ -8178,7 +8185,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (!moved)
                 SeekWalkoutPathProbe(bot, x, y, z, probeType, probeYd);
             NoteSeekWalkoutMove(ai, bot, moved, lastMove.moveFailReason,
-                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd);
+                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd,
+                                bot->GetDistance2d(x, y));
         }
         if (!moved)
             return false;
