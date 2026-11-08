@@ -76,8 +76,18 @@ class ShieldTankStanceWiringTest(unittest.TestCase):
         self.assertRegex(
             body,
             r"target->GetPowerType\(\) == POWER_RAGE,\s*"
-            r"\(unsigned\)target->GetHealthPercent\(\),\s*"
-            r"sPlayerbotAIConfig\.criticalHealth",
+            r"target->GetHealthPercent\(\),\s*"
+            r"float\(sPlayerbotAIConfig\.criticalHealth\)",
+        )
+
+    def test_health_argument_not_truncated(self):
+        # The gate compares health as a float. An unsigned cast on the health
+        # argument reads a rage tank at 20.5 % as 20, so the shield lands
+        # above the critical band. Re-adding the cast breaks this pin.
+        body = shield_body()
+        self.assertNotRegex(
+            body,
+            r"\(\s*unsigned\s*\)\s*target->GetHealthPercent\(",
         )
 
 

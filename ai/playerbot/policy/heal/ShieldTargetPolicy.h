@@ -30,7 +30,7 @@ namespace ai
     // between pulls still absorbs the next pull's opening hits. Callers pass
     // tank role, rage, health percent and the config critical health.
     inline bool ShouldShieldTarget(bool targetIsTank, bool targetUsesRage,
-                                   unsigned targetHealthPct, unsigned criticalHealthPct)
+                                   float targetHealthPct, float criticalHealthPct)
     {
         if (targetIsTank && targetUsesRage)
             return targetHealthPct <= criticalHealthPct;

@@ -45,7 +45,7 @@ namespace ai
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_WARRIOR && ai->HasAura(71, target),
                 target->IsPlayer() && ((Player*)target)->GetClass() == CLASS_DRUID && (ai->HasAura(5487, target) || ai->HasAura(9634, target))),
                 target->GetPowerType() == POWER_RAGE,
-                (unsigned)target->GetHealthPercent(), sPlayerbotAIConfig.criticalHealth))
+                target->GetHealthPercent(), float(sPlayerbotAIConfig.criticalHealth)))
                 return false;
             return HealPartyMemberAction::isUseful();
         }
