@@ -5,6 +5,8 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -89,6 +91,74 @@ int main()
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, true}, {900.0f, true, false}}, true) == 2000.0f);
     // The cap is only for the successor target: the plain max ignores the flag.
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, false}}, false) == 40000.0f);
+
+    // ThreatSuccessorNotHolder (AiPlayerbot.DungeonRunThreatSuccessorNotHolder): the reference is the highest tank the
+    // boss is NOT hitting. Tanks are {threat, offTank, onBoss (hits the boss), holdsBoss (the boss hits it)}.
+    // successor_is_main_tank_when_offtank_holds (fails without the change: the pick is the holder's 6000): MT 300 does
+    // not hold, OT 6000 holds, key on -> 300 and not the off-tank.
+    {
+        const std::vector<ThreatCapTank> offTankHolds = {{300.0f, false, true, false}, {6000.0f, true, true, true}};
+        CHECK(ThreatCapReference(offTankHolds, true, true) == 300.0f);
+        CHECK(!ThreatCapPickReference(offTankHolds, true, true).offTank);
+        // Key off: today's pick, the holding off-tank's own threat.
+        CHECK(ThreatCapReference(offTankHolds, true, false) == 6000.0f);
+        CHECK(ThreatCapPickReference(offTankHolds, true, false).offTank);
+        // The key is only for the successor cap: without it the highest tank stands.
+        CHECK(ThreatCapReference(offTankHolds, false, true) == 6000.0f);
+        CHECK(ThreatCapPickReference(offTankHolds, true, true).holder == ThreatCapPick::Holder::Off);
+        CHECK(ThreatCapPickReference(offTankHolds, true, false).holder == ThreatCapPick::Holder::Off);
+    }
+    // The unchanged case: the main tank holds, the off-tank (3000) is the successor, key on or off.
+    {
+        const std::vector<ThreatCapTank> mainHolds = {{6000.0f, false, true, true}, {3000.0f, true, true, false}};
+        CHECK(ThreatCapReference(mainHolds, true, true) == 3000.0f);
+        CHECK(ThreatCapPickReference(mainHolds, true, true).offTank);
+        CHECK(ThreatCapReference(mainHolds, true, false) == 3000.0f);
+        CHECK(ThreatCapPickReference(mainHolds, true, true).holder == ThreatCapPick::Holder::Main);
+        CHECK(std::string(ThreatCapHolderWord(ThreatCapPick::Holder::Main)) == "main");
+        CHECK(std::string(ThreatCapHolderWord(ThreatCapPick::Holder::Off)) == "off");
+        CHECK(std::string(ThreatCapHolderWord(ThreatCapPick::Holder::None)) == "none");
+    }
+    // All non-holders under the floor: the floor, never 0. The holder 20000 puts the 1 % share at 200; a 50 main tank
+    // and a 0 off-tank read 200. With a huge holder the share floor wins over the fixed 100.
+    CHECK(ThreatCapReference({{50.0f, false, true, false}, {20000.0f, true, true, true}}, true, true) == 200.0f);
+    CHECK(ThreatCapReference({{0.0f, false, true, false}, {20000.0f, true, true, true}}, true, true) == 200.0f);
+    CHECK(ThreatCapReference({{0.0f, false, true, false}, {5000.0f, true, true, true}}, true, true) == 100.0f);
+    CHECK(ThreatCapReference({{0.0f, false, true, false}, {2000000.0f, true, true, true}}, true, true) == 20000.0f);
+    // Above the floor the non-holder's own threat stands.
+    CHECK(ThreatCapReference({{250.0f, false, true, false}, {20000.0f, true, true, true}}, true, true) == 250.0f);
+    // Two off-tanks and a main tank, the main tank holds: the higher off-tank.
+    CHECK(ThreatCapReference({{9000.0f, false, true, true}, {400.0f, true, true, false}, {700.0f, true, true, false}},
+                             true, true) == 700.0f);
+    // Edge: every tank on the list holds the boss (only the holder is alive, in the world and not charmed): the
+    // old pick stands, the holder's own threat. A dead off-tank, then a charmed main tank (Brain Wash), are left off
+    // the list by the caller: the lone holder is the reference and nothing falls to 0.
+    CHECK(ThreatCapReference({{6000.0f, false, true, true}}, true, true) == 6000.0f);
+    CHECK(!ThreatCapPickReference({{6000.0f, false, true, true}}, true, true).offTank);
+    CHECK(ThreatCapReference({{6000.0f, true, true, true}}, true, true) == 6000.0f);   // the off-tank is the lone holder
+    CHECK(ThreatCapPickReference({{6000.0f, true, true, true}}, true, true).offTank);
+    // A charmed main tank (left off the list): the off-tank not holding is the only reference, and a charmed tank is
+    // never read as the reference even when its stale threat would have been the highest.
+    CHECK(ThreatCapReference({{800.0f, true, true, false}}, true, true) == 800.0f);
+    CHECK(ThreatCapPickReference({{800.0f, true, true, false}}, true, true).offTank);
+    // The boss has no victim: nobody holds it, so every tank is a non-holder and the reference is the highest tank,
+    // whatever the key. Today's pick differs only when an off-tank above 50 % of the main tank is on the boss; it then
+    // picks that off-tank (MT 6000, OT 4000 -> 4000 today, 6000 with the key on).
+    CHECK(ThreatCapReference({{6000.0f, false, false, false}, {1000.0f, true, false, false}}, true, true) == 6000.0f);
+    CHECK(ThreatCapReference({{6000.0f, false, false, false}, {1000.0f, true, false, false}}, true, false) == 6000.0f);
+    CHECK(ThreatCapReference({{6000.0f, false, false, false}, {4000.0f, true, false, false}}, true, false) == 4000.0f);
+    CHECK(ThreatCapReference({{6000.0f, false, false, false}, {4000.0f, true, false, false}}, true, true) == 6000.0f);
+    CHECK(!ThreatCapPickReference({{6000.0f, false, false, false}, {4000.0f, true, false, false}}, true, true).offTank);
+    CHECK(ThreatCapPickReference({{6000.0f, false, false, false}, {4000.0f, true, false, false}}, true, true).holder ==
+          ThreatCapPick::Holder::None);
+    // A damage dealer holds the boss: no tank holds it, so the holder word reads none and the highest tank stands.
+    CHECK(ThreatCapPickReference({{300.0f, false, true, false}, {200.0f, true, true, false}}, true, true).holder ==
+          ThreatCapPick::Holder::None);
+    // A single tank in the raid: it is the reference whether it holds or not (a holder only has itself).
+    CHECK(ThreatCapReference({{1000.0f, false, true, false}}, true, true) == 1000.0f);
+    CHECK(ThreatCapReference({{1000.0f, false, true, true}}, true, true) == 1000.0f);
+    // No tanks at all: still -1, the caller's "no reference".
+    CHECK(ThreatCapReference({}, true, true) == -1.0f);
 
     // ThreatHighLineIsEightyEverywhere: every target vetoes at 80 % of the reference tank, successor bosses included.
     CHECK(kThreatHighLinePct == 80);

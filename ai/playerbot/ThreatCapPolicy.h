@@ -43,7 +43,8 @@ namespace ai
     {
         float threat = 0.0f;
         bool offTank = false;
-        bool onBoss = false; // the boss is this tank's victim (it holds the boss right now)
+        bool onBoss = false; // this tank hits the boss (its victim is the boss); NOT "the boss hits this tank"
+        bool holdsBoss = false; // the boss hits this tank (the boss's victim is this tank): it holds the boss right now
     };
 
     // The off-tank floor, as an absolute amount rather than a share of the highest tank's threat: the reference is
@@ -66,24 +67,63 @@ namespace ai
     {
         float threat = -1.0f;
         bool offTank = false;
+        // Who holds the boss among the tanks on the list: the log row's `holder=` word (a damage dealer or nobody
+        // holding reads `none`). Set whatever the key says.
+        enum class Holder { None, Main, Off };
+        Holder holder = Holder::None;
     };
+
+    inline const char* ThreatCapHolderWord(ThreatCapPick::Holder holder)
+    {
+        return holder == ThreatCapPick::Holder::Main ? "main" : holder == ThreatCapPick::Holder::Off ? "off" : "none";
+    }
 
     // -1 when no tank is on the target (the caller's own "no reference" answer, kept from the previous max scan).
     // Without the successor cap: the highest tank, as always. With it: the highest threat among the off-tanks that are
     // on the target (threat > 0) and stand above the absolute floor (kThreatCapOffTankMinThreat, or 1 % of the highest
     // tank when that is larger), and the highest tank when no off-tank does: a zero reference is never returned while
     // a tank stands, since the caller reads that as "the tank has no threat" and stops all damage.
-    inline ThreatCapPick ThreatCapPickReference(const std::vector<ThreatCapTank>& tanks, bool successorCap)
+    //
+    // `notHolder` (AiPlayerbot.DungeonRunThreatSuccessorNotHolder, only with the successor cap): the successor is the
+    // tank that does NOT hold the boss. The reference is the highest threat among the tanks (main or off) whose
+    // `holdsBoss` is false, floored at max(1 % of the highest tank, 100) so it is never 0. When every tank holds the
+    // boss (no tank on the list that does not, or none alive, in the world and uncharmed: the caller leaves those out)
+    // the pick above stands. With no holder at all (the boss has no victim, or a damage dealer holds it) every tank is a
+    // non-holder, so the reference is the highest tank. Off, the code below runs exactly as before.
+    inline ThreatCapPick ThreatCapPickReference(const std::vector<ThreatCapTank>& tanks, bool successorCap,
+                                                bool notHolder = false)
     {
         ThreatCapPick pick;
         if (tanks.empty())
             return pick;
         float highest = 0.0f;
         for (const ThreatCapTank& tank : tanks)
+        {
             highest = std::max(highest, tank.threat);
+            if (tank.holdsBoss && pick.holder == ThreatCapPick::Holder::None)
+                pick.holder = tank.offTank ? ThreatCapPick::Holder::Off : ThreatCapPick::Holder::Main;
+        }
         pick.threat = highest;
         if (!successorCap)
             return pick;
+        if (notHolder)
+        {
+            const ThreatCapTank* best = nullptr;
+            for (const ThreatCapTank& tank : tanks)
+            {
+                if (tank.holdsBoss)
+                    continue;
+                if (!best || tank.threat > best->threat)
+                    best = &tank;
+            }
+            if (best)
+            {
+                const float floor = std::max(highest * kThreatCapOffTankMinShare, kThreatCapOffTankMinThreat);
+                pick.threat = std::max(best->threat, floor);
+                pick.offTank = best->offTank;
+                return pick;
+            }
+        }
         bool haveOffTank = false;
         bool offTankOnBoss = false;
         float offTank = 0.0f;
@@ -107,8 +147,8 @@ namespace ai
         return pick;
     }
 
-    inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap)
+    inline float ThreatCapReference(const std::vector<ThreatCapTank>& tanks, bool successorCap, bool notHolder = false)
     {
-        return ThreatCapPickReference(tanks, successorCap).threat;
+        return ThreatCapPickReference(tanks, successorCap, notHolder).threat;
     }
 }

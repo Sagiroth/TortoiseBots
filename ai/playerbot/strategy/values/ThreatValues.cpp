@@ -95,9 +95,10 @@ void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit*
         }
     }
     // The first off-tank's current target: the cap reference stalls when that tank is stuck on a Son instead of the boss.
-    char info1[128];
-    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s", pick.offTank ? "offtank" : "main",
-             pick.threat, offTankTarget ? offTankTarget->GetName() : "none");
+    // holder= is the tank the boss is hitting right now (none: a damage dealer, or nobody).
+    char info1[160];
+    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s", pick.offTank ? "offtank" : "main",
+             pick.threat, offTankTarget ? offTankTarget->GetName() : "none", ThreatCapHolderWord(pick.holder));
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatCap", info1, "");
 }
 }
@@ -169,11 +170,12 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
         ObjectGuid const charmer = player->GetCharmerGuid();
         if (!charmer.IsEmpty() && !charmer.IsPlayer())
             continue;
+        // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
         tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
-            player->GetVictim() == target});
+            player->GetVictim() == target, target->GetVictim() == player});
     }
 
-    const ThreatCapPick pick = ThreatCapPickReference(tanks, true);
+    const ThreatCapPick pick = ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
     // roles.tanks[1] can be dead or out of the world: read its victim only when it stands in the world.
     Player* const offTankPlayer = roles.tanks.size() >= 2 ? roles.tanks[1] : nullptr;
     Unit* const offTankVictim = offTankPlayer && offTankPlayer->IsInWorld() ? offTankPlayer->GetVictim() : nullptr;

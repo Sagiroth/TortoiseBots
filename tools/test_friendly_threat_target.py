@@ -70,6 +70,7 @@ struct Facade {
     ThreatManager GetThreatManager(Unit*) const { return {}; }
 } sServerFacade;
 std::vector<Player*> LiveGroupMembers(Group* g) { return g->members; }
+struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; } sPlayerbotAIConfig;
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
