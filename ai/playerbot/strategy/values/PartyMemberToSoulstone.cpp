@@ -53,6 +53,7 @@ Unit* PartyMemberToSoulstone::Calculate()
     // SPELL_EFFECT_SELF_RESURRECT test matched the "Use Soulstone" spell,
     // which is never an aura, so the bot never saw its own buff.
     facts.botHasSoulstoneAura = ai->HasAura("soulstone resurrection", bot);
+    facts.ownStoneActive = ai->HasAura("soulstone resurrection", bot, false, false, -1, true);
 
     std::vector<TortoiseBots::SoulstoneCandidate> candidates;
     std::vector<Player*> players;
@@ -70,6 +71,10 @@ Unit* PartyMemberToSoulstone::Calculate()
             // bot started it again every few seconds (#1107).
             if (member->GetVisibility() == VISIBILITY_OFF)
                 continue;
+
+            if (!facts.ownStoneActive && member->IsAlive() &&
+                ai->HasAura("soulstone resurrection", member, false, false, -1, true))
+                facts.ownStoneActive = true;
 
             TortoiseBots::SoulstoneCandidate c;
             c.isHealer = ai->IsHeal(member);
