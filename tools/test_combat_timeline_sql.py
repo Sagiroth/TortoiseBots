@@ -1,4 +1,4 @@
-"""Guards the rows of data/sql/world/20261107110000_world.sql and 20261107210000_world.sql that fill ai_combat_aura_watch.
+"""Guards the rows of data/sql/world/20261107110000_world.sql and 20261108233000_world.sql that fill ai_combat_aura_watch.
 
 The combat timeline (AiPlayerbot.CombatTimeline) lists an aura's apply/remove only for the spell ids
 in this table (runtime/CombatMonitorService.cpp LoadTimelineWatch). A wrong or missing id silently
@@ -16,7 +16,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATION = os.path.join(ROOT, "data/sql/world/20261107110000_world.sql")
-MIGRATION2 = os.path.join(ROOT, "data/sql/world/20261107210000_world.sql")
+MIGRATION2 = os.path.join(ROOT, "data/sql/world/20261108233000_world.sql")
 
 # The seeds the ZG investigations need, and the spell_template name each one must carry.
 SEEDS = {
