@@ -164,6 +164,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
     dungeonRunCarrierStrike = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierStrike", false);
     dungeonRunCarrierScan = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierScan", false);
+    dungeonRunShadeHealerCover = config.GetBoolDefault("AiPlayerbot.DungeonRunShadeHealerCover", false);
     dungeonRunCarrierHold = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierHold", false);
     dungeonRunThreatSuccessorNotHolder = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorNotHolder", false);
     dungeonRunCureIgnoresThreat = config.GetBoolDefault("AiPlayerbot.DungeonRunCureIgnoresThreat", false);

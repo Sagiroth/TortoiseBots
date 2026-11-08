@@ -134,6 +134,11 @@ namespace ai
     // AiPlayerbot.DungeonRunCarrierStrike is on; the trigger and the action both go through here.
     Unit* FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
+    // The off-tank's healer-cover latch (AiPlayerbot.DungeonRunShadeHealerCover): the strike trigger updates it, and
+    // FindBossCarrierStrikePick keeps the latched Shade as the pick while ShadeCoverKeepsLatched holds.
+    ShadeCoverLatch GetShadeCoverLatch(Player* bot);
+    void SetShadeCoverLatch(Player* bot, const ShadeCoverLatch& latch);
+
     // Whether this bot carries the aura of an open aura-gated kill_first row right now (a Delusions carrier), whatever
     // its target: such a bot can hurt only the row's unit, so the totem focus never sends it at a totem and counts no
     // volley of it (t1106b). False on a map without rows and for a bot that lacks the aura (the fight scan drops a
@@ -146,6 +151,15 @@ namespace ai
     // (BossTacticsKillFirstAction's stale current target); nullptr derives it from the fight read.
     void LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick, Unit* current,
         const char* keptReason = nullptr);
+
+    // Whether `unit`'s victim is a healer of the bot's group (the bot itself included): a Shade of Jin'do on a healer.
+    bool ShadeOnGroupHealer(Player* bot, Unit* unit);
+
+    // The Shade cover row (walk 56 F3, no flag): run by a Delusions carrier, it names every cursed damage dealer, and
+    // every cursed off-tank that does not hold the boss, that is not on a Shade it can see attacking a healer of the
+    // group, with the reason word (ShadeCoverMissReason). The row is logged under the member it names, at most once per
+    // (member, Shade) per 5 s and only after a 2 s miss. A no-op without bot_events.csv and for an uncursed bot.
+    void LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
 
     // The taunt gate (AiPlayerbot.DungeonRunTauntGate): whether a taunt at `target` must not go out, because it is a
     // needs_aura subject (a Shade of Jin'do, which only a carrier may damage) or a taunt-immune creature. Logs one
