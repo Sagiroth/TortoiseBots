@@ -756,6 +756,10 @@ public:
     // Hexed one, while its threat is above 0 and at least half the highest tank's (ThreatCapPolicy.h
     // ThreatCapCursedOnBoss). A charmed tank is still skipped. Off = as before.
     bool dungeonRunThreatSuccessorKeepsAway = false;
+    // Fact judge for a charmed lead (ZG walk 57 F1): while the lead bot is charmed (Brain Wash, any charm) and an
+    // uncharmed member is fit to judge (RunJudge), the run's fact read, the order's target check and the totem focus'
+    // selection owner test friendliness and engagement against that member, not the charmed lead. Off = as before.
+    bool dungeonRunFactJudgeCharmedLead = false;
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;

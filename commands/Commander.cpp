@@ -3305,6 +3305,10 @@ static bool FocusIsTankHoldTarget(Unit* target)
     return false;
 }
 
+namespace {
+Player* RunJudge(Player* lead, std::vector<Player*> const& bots); // defined with the run's fact reads below
+} // namespace
+
 // `.bot action focus skull` on a GUID: Skull goes on the target in the bound
 // group, every bot attacks its Skull target. `automatedKillFirst`: the run leader's own kill-first order (an order the
 // run issued), the only focus the totem key may make DPS-only; a player's explicit focus arms every bot.
@@ -3321,6 +3325,17 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
         sPlayerbotAIConfig.dungeonRunTotemFocus);
     if (!totemFocus)
         order.group->SetTargetIcon(static_cast<uint8>(RtiTargetValue::GetRtiIndex("skull")), target->GetObjectGuid());
+    // The totem focus' selection owner (TotemFocusBot): the lead bot, or under
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead while it is charmed the run judge, since "attack my target" refuses a
+    // target friendly to a charmed owner.
+    Player* totemOwner = order.lead;
+    if (totemFocus)
+    {
+        Player* const charmJudge = RunJudge(order.lead, order.bots);
+        if (TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead,
+                order.lead->IsCharmed(), charmJudge != nullptr))
+            totemOwner = charmJudge;
+    }
     uint32 succeeded = 0;
     for (Player* bot : order.bots)
     {
@@ -3345,7 +3360,7 @@ static bool CommanderFocus(ChatHandler* handler, CommanderOrder const& order, Un
             continue;
         bool accepted;
         if (totemFocus)
-            accepted = TotemFocusBot(ai, bot, order.lead, target->GetObjectGuid());
+            accepted = TotemFocusBot(ai, bot, totemOwner, target->GetObjectGuid());
         else
         {
             bool const set = ExecuteQuietAction(ai, "rti", ai::Event("focus skull", "skull", order.lead));
@@ -6510,6 +6525,16 @@ bool HandleCommanderOrder(ChatHandler* handler, char const* args)
                 order.judge = bot;
                 break;
             }
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: a charmed lead is friendly to its charmer's side, so the run's own
+    // focus on a Brain Wash Totem was refused as "friendly" (ResolveOrderTarget). While the lead is charmed the order
+    // is judged by the first fit uncharmed member (RunJudge), when there is one.
+    if (order.lead->IsAlive())
+    {
+        Player* const charmJudge = RunJudge(order.lead, order.bots);
+        if (TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead,
+                order.lead->IsCharmed(), charmJudge != nullptr))
+            order.judge = charmJudge;
+    }
 
     std::vector<std::string> parts = RemoteCommander::SplitOrderArgs(rest);
     RemoteCommander::OrderTier const tier = RemoteCommander::TierForOrder(verb);
@@ -8840,6 +8865,9 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     if (!map)
         return;
     Player* const judge = RunJudge(lead, bots);
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: friendliness is judged by the run judge while the lead is charmed.
+    Player* const factLead = TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(
+        sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead, lead->IsCharmed(), judge != nullptr) ? judge : lead;
     std::unordered_set<uint64> party;
     for (Player* bot : bots)
     {
@@ -8853,7 +8881,7 @@ void ReadCcBreakFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Play
     for (auto const& hold : slot.run.ccHolds)
     {
         Unit* const unit = map->GetUnit(::ObjectGuid(hold.first));
-        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, lead) ||
+        if (!unit || !unit->IsAlive() || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(unit, factLead) ||
             !RunCcHeld(unit))
             continue;
         UnitFact fact;
@@ -9199,6 +9227,10 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
     std::vector<Creature*> engagedOwners; // engaged plan bosses whose kill_first totems the grid pass reads
     std::unordered_set<uint64> engagedOwnerSeen;
     Player* const judge = RunJudge(lead, bots);
+    // AiPlayerbot.DungeonRunFactJudgeCharmedLead: a charmed lead is friendly to the Brain Wash Totem and to Jin'do, so
+    // while it is charmed the kill_first friendliness and the owner's engagement are judged by the run judge.
+    Player* const factLead = TortoiseBots::DungeonRun::RunFactJudgeReplacesLead(
+        sPlayerbotAIConfig.dungeonRunFactJudgeCharmedLead, lead->IsCharmed(), judge != nullptr) ? judge : lead;
     // The aura a needs_aura kill_first row requires (Delusions 24306 on Jin'do's Shade, from the table the plan's
     // kill_first entries name): a bot that carries one hurts only the row's unit, so it is neither a volley on a totem
     // nor a body the totem re-send may count (t1106b).
@@ -9240,7 +9272,7 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         // is the focus' own.
         if (TortoiseBots::DungeonRun::RunFactSkipsMember(unit->IsPlayer(), InLeadGroup(lead, unit)))
             return;
-        if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, lead))
+        if (plan.KillFirstRank(unit->GetEntry()) < 0 || sServerFacade.IsFriendlyTo(unit, factLead))
             return;
         TortoiseBots::DungeonRun::UnitFact fact;
         fact.guid = unit->GetObjectGuid().GetRawValue();
@@ -9265,7 +9297,7 @@ void ReadKillFirst(ai::DungeonPlan const& plan, Player* lead, std::vector<Player
         {
             fact.owner = ownerRaw;
             Unit* summoner = lead->GetMap()->GetUnit(ObjectGuid(ownerRaw));
-            fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, lead) &&
+            fact.ownerEngaged = summoner && !sServerFacade.IsFriendlyTo(summoner, factLead) &&
                 EngagedWithParty(summoner, party);
         }
         // The damage dealers (not a tank, not a healer, not a carrier of an aura-gated row) of the party attacking it

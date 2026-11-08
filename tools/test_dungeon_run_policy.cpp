@@ -27995,6 +27995,28 @@ static void TestCharmedMemberIsNoRunFact()
     CHECK(!RunFactSkipsMember(false, false));
 }
 
+// AiPlayerbot.DungeonRunFactJudgeCharmedLead (walk 57 F1): a lead tank Brain-Washed by Jin'do is friendly to the Brain
+// Wash Totem, so the fact read judged against him dropped the totem and the totem focus went silent (16 of 19 main-tank
+// charm windows of 10 s or more). With the key on, a charmed lead and an uncharmed judge found, the judge replaces the
+// lead in every friendliness and engagement test of the fact read, and as the totem focus' selection owner.
+static void charmed_lead_totem_stays_a_fact()
+{
+    CHECK(RunFactJudgeReplacesLead(true, true, true));
+}
+
+// The rest of the truth table: key off, a lead that is not charmed, or no fit judge (the whole group charmed) keep the
+// lead exactly as before.
+static void TestRunFactJudgeKeepsTheLeadOtherwise()
+{
+    CHECK(!RunFactJudgeReplacesLead(false, true, true));   // key off: byte-identical
+    CHECK(!RunFactJudgeReplacesLead(false, true, false));
+    CHECK(!RunFactJudgeReplacesLead(false, false, true));
+    CHECK(!RunFactJudgeReplacesLead(false, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, false, true));   // the lead is not charmed: it judges itself
+    CHECK(!RunFactJudgeReplacesLead(true, false, false));
+    CHECK(!RunFactJudgeReplacesLead(true, true, false));   // no uncharmed member: today's behaviour
+}
+
 // A whelp 60 yd from the main tank (past kGuardYd, inside kRaidBossGuardYd) still goes to an off-tank.
 static void TestRaidBossFarAddGoesToAnOffTank()
 {
@@ -37452,6 +37474,8 @@ int main()
     TestGuardSkipsAuraGatedShade();
     TestTotemFocusBeatsGuard();
     TestCharmedMemberIsNoRunFact();
+    charmed_lead_totem_stays_a_fact();
+    TestRunFactJudgeKeepsTheLeadOtherwise();
     TestRaidBossFightDeathsPauseWhenOnlyAddsLoseHp();
     TestRaidBossWipeRegroupKeepsTheBossCeiling();
     TestRaidBossOffTankHoldingTheBossIsNotSentToAnAdd();

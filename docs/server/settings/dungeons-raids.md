@@ -1147,6 +1147,17 @@ With `AiPlayerbot.DungeonRunThreatSuccessorNotHolder` the reference is the highe
 
 </details>
 
+### `AiPlayerbot.DungeonRunFactJudgeCharmedLead`
+Whether the run leader judges its fight by an uncharmed member while the lead bot is charmed, so a Brain Wash Totem stays a kill-first fact and the totem focus keeps working while the main tank is Brain-Washed. Recommended on.
+**Default:** `0` · **Values:** `0` off (the charmed lead judges as before), `1` on (while the lead is charmed, the first living, uncharmed member of the party on its map judges) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+The run reads its fight against the lead bot. A charmed lead (Jin'do's Brain Wash, any Mind Control or Dominate Mind) is friendly to its charmer's side, so the kill-first read dropped the Brain Wash Totem as friendly, read its owner Jin'do as not engaged, and the run's own focus order was refused as "friendly"; the totem focus (`AiPlayerbot.DungeonRunTotemFocus`) went silent while the main tank stayed charmed (ZG walk 57: 16 of 19 main-tank charm windows of 10 s or more had no focus row; median charm 86 s, meleeing the raid). With the key on, while the lead is charmed and a fit judge exists (`RunJudge`: the first living, uncharmed member of the party on the lead's map, the judge `GroupCanAttack` already used), the judge replaces the lead (`RunFactJudgeReplacesLead`) in the kill-first friendliness test and the owner's engagement, the crowd-control hold read, the order's target check (`CommanderOrder::judge`, which also serves `cmd attack`, `cmd cc` and `cmd state` while the lead is charmed, as it already did while the lead was dead), and as the totem focus' selection owner. With the whole party charmed, or the lead not charmed, nothing changes. Generic: any charm on the lead, every raid and dungeon, no boss id. The rest of the fact read (the engaged units, the party's attackers) still judges against the lead.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunUseObject`
 Whether the boss tactics keep their `use_object` rows: one claimed bot clicks the boss's game object at the right moment, and mode `tank_anchor` also walks the boss over to it.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)

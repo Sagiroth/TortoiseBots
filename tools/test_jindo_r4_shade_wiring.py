@@ -79,7 +79,7 @@ class ShadeCoverRow(unittest.TestCase):
     def test_documented(self):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
-        self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 4)[1:3]))
+        self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 13)[1:13]))  # newest dozen
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
@@ -94,7 +94,7 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("Recommended on.", member(DOCS_RUNS, "### `AiPlayerbot.DungeonRunShadeHealerCover`", "</details>"))
         self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
         self.assertIn("DungeonRunShadeHealerCover", DOCS)
-        self.assertIn("DungeonRunShadeHealerCover", CHANGELOG.split("\n- ", 2)[1])
+        self.assertIn("DungeonRunShadeHealerCover", "".join(CHANGELOG.split("\n- ", 13)[1:13]))  # newest dozen
 
     def test_the_carrier_pick_reads_the_key(self):
         pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")
