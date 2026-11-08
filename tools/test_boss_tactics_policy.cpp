@@ -3532,7 +3532,7 @@ int main()
         }
     }
 
-    // T4 threat_successor: the boss itself (target_entry 0), no mode word and no gate. The row turns the damage
+    // T4 threat_successor: the boss itself (target_entry 0), no gate, and no mode word but `strict` (below). The row turns the damage
     // dealers' threat cap into the assigned off-tanks' highest (ThreatCapPolicy.h) and is read straight from the table
     // by ThreatValue::GetTankThreat, so a gate could never be answered.
     CHECK(ParseBossTacticKind("threat_successor") == BossTacticKind::ThreatSuccessor); // ParseThreatSuccessorKind
@@ -3570,6 +3570,44 @@ int main()
             CHECK(table.HasThreatSuccessor(309, 14834));  // ThreatSuccessorByEntry
             CHECK(!table.HasThreatSuccessor(309, 11357));
             CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
+        }
+        // threat_successor_strict_mode_word (t1106m): `strict` is the kind's one mode word, the row's opt-in to
+        // AiPlayerbot.DungeonRunThreatSuccessorStrict. Accepted on threat_successor only; every other kind refuses it
+        // (ParseTacticMode reads it as Invalid there, and Add skips an Invalid row). A plain row is not strict.
+        CHECK(static_cast<int>(TacticMode::Strict) == 13);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "strict") == TacticMode::Strict);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "") == TacticMode::Default);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "all") == TacticMode::Invalid);
+        for (BossTacticKind other : {BossTacticKind::AvoidCast, BossTacticKind::DispelPriority, BossTacticKind::DpsHoldAfter,
+                 BossTacticKind::TankIgnore, BossTacticKind::RangedOnly, BossTacticKind::KillFirst})
+            CHECK(ParseTacticMode(other, "strict") == TacticMode::Invalid); // StrictRefusedOnOtherKinds
+        {
+            BossTacticRow strictRow = cap;
+            strictRow.bossEntry = 11380;
+            strictRow.mode = TacticMode::Strict;
+            BossTacticTable table;
+            CHECK(table.Add(strictRow));                  // ThreatSuccessorStrictRowAccepted
+            CHECK(table.Add(cap));                        // Hakkar's plain row
+            CHECK(!table.HasStrictThreatSuccessor(309, 11380)); // not sealed yet
+            table.Seal();
+            CHECK(table.HasThreatSuccessor(309, 11380));
+            CHECK(table.HasStrictThreatSuccessor(309, 11380));  // StrictRowOptsIn
+            CHECK(table.HasThreatSuccessor(309, 14834));
+            CHECK(!table.HasStrictThreatSuccessor(309, 14834)); // PlainRowIsNotStrict (Hakkar)
+            CHECK(!table.HasStrictThreatSuccessor(509, 11380)); // another map's boss of the same entry
+        }
+        {
+            // A strict word on another kind makes the whole row unusable.
+            BossTacticRow strictAvoid = Row(309, 11380, BossTacticKind::AvoidCast);
+            strictAvoid.spellId = 24306;
+            strictAvoid.param = 10.0f;
+            {
+                BossTacticTable table;
+                CHECK(table.Add(strictAvoid));            // the row itself is usable
+            }
+            strictAvoid.mode = ParseTacticMode(BossTacticKind::AvoidCast, "strict");
+            BossTacticTable table;
+            CHECK(!table.Add(strictAvoid));               // StrictRowRefusedOnAvoidCast
         }
     }
 

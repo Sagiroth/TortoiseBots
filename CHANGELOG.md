@@ -1,5 +1,6 @@
 # Changelog
 
+- Changed: AiPlayerbot.DungeonRunThreatSuccessorStrict now applies only to a boss whose threat_successor row carries the mode word `strict`; the shipped data turns it on for Jin'do only, so Hakkar keeps the plain off-tank cap (walk 57: strict cost 17 % of the damage on Hakkar, 0 kills in 26 fights).
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorKeepsAway (default 0), the threat successor pick keeps a tank cursed by Delusions of Jin'do as on the boss while it holds at least half the top tank's threat, so the damage dealers' cap no longer falls back to the holding tank.
 - New: behind AiPlayerbot.DungeonRunThreatSuccessorStrict (default 0), on a threat_successor boss (Jin'do, Hakkar) the damage dealers lose the 5 s projection escape at the 80 % line, and their melee swing, wand and Auto Shot are stopped at once at 92 % of the successor tank's threat (melee and wand resume under 85 %, Auto Shot under 80 %; never while a Hex leaves the reference at 0).
 - New: behind AiPlayerbot.DungeonRunCureIgnoresThreat (default 0), cures and dispels on a party member skip the threat back-off like heals, so a healer high on Jin'do's threat still cures his Hex on the tank.

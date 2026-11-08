@@ -314,6 +314,36 @@ int main()
     CHECK(!HighThreatProjectionEscapes(false, false, 8500.0f, -20.0f, 10000.0f));
     CHECK(kHighThreatProjectionSeconds == 5.0f);
 
+    // strict_needs_the_row_opt_in (t1106m, fails while every `threat_successor` row is strict: walk 57 held Hakkar's
+    // white damage): with the key on, a successor target whose row lacks `strict` keeps the 5 s projection escape and
+    // never latches white damage. Its row carrying `strict` behaves as in t1106l; with the key off neither row changes.
+    {
+        // Key on, plain row (Hakkar).
+        const bool plain = StrictSuccessorTarget(true, false);
+        CHECK(!plain);
+        CHECK(HighThreatProjectionEscapes(plain, true, 8500.0f, 50.0f, 10000.0f));   // the escape stays
+        SuccessorWhiteLatch latch;
+        CHECK(!latch.Update(plain, false, 95));                                       // never latches
+        CHECK(!latch.Update(plain, false, 255));
+        CHECK(!SuccessorWhiteStopNow(latch, plain, false, 255, false, true));         // the swing is never stopped
+        // Key on, strict row (Jin'do): t1106l's behaviour.
+        const bool strictRow = StrictSuccessorTarget(true, true);
+        CHECK(strictRow);
+        CHECK(!HighThreatProjectionEscapes(strictRow, true, 8500.0f, 50.0f, 10000.0f));
+        SuccessorWhiteLatch jindo;
+        CHECK(jindo.Update(strictRow, false, 92));
+        CHECK(SuccessorWhiteStopNow(jindo, strictRow, false, 88, false, true));
+        // Key off: both rows as today.
+        for (bool optIn : {false, true})
+        {
+            const bool off = StrictSuccessorTarget(false, optIn);
+            CHECK(!off);
+            CHECK(HighThreatProjectionEscapes(off, false, 8500.0f, 50.0f, 10000.0f));
+            SuccessorWhiteLatch keyOff;
+            CHECK(!keyOff.Update(off, false, 255));
+        }
+    }
+
     // successor_white_stops_at_92_resumes_under_85: the white-damage latch on a successor target.
     CHECK(kSuccessorWhiteStopPct == 92);
     CHECK(kSuccessorWhiteResumePct == 85);

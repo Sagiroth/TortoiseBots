@@ -72,7 +72,8 @@ class ThreatSuccessorStrict(unittest.TestCase):
     def test_the_high_threat_trigger_calls_the_escape_helper(self):
         trigger = body(TRIGGERS, "bool HighThreatTrigger::IsActive()")
         self.assertIn("const bool strict = sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict;", trigger)
-        self.assertIn("const bool successorTarget = strict && ThreatSuccessorTarget(target);", trigger)
+        self.assertIn("const bool successorTarget = StrictSuccessorTarget(strict, strict && StrictThreatSuccessorRow(target));",
+                      trigger)
         self.assertIn(
             "if (HighThreatProjectionEscapes(successorTarget, strict, currentThreat, deltaThreat, tankThreat))", trigger)
         self.assertNotIn("newThreat < tankThreat", trigger)
@@ -80,6 +81,10 @@ class ThreatSuccessorStrict(unittest.TestCase):
     def test_the_white_stop_trigger_stops_in_the_trigger_pass(self):
         trigger = body(TRIGGERS, "bool SuccessorWhiteCapTrigger::IsActive()")
         self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict) return false;", trigger)
+        # t1106m: only a `threat_successor` row carrying `strict` latches; a plain row clears it like trash.
+        self.assertIn("if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, "
+                      "StrictThreatSuccessorRow(target)))", trigger)
+        self.assertNotIn("ThreatSuccessorTarget(target)", trigger.replace("StrictThreatSuccessorRow(target)", ""))
         self.assertIn('const bool refZero = AI_VALUE2(float, "tank threat", "current target") == 0.0f;', trigger)
         self.assertIn("if (SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true, PlayerbotAI::IsTank(bot),", trigger)
         stop = trigger[trigger.index("if (SuccessorWhiteStopNow("):]
@@ -143,6 +148,9 @@ class ThreatSuccessorStrict(unittest.TestCase):
         multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
         self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))", multiplier)
         self.assertIn("ai->SuccessorWhiteCap().Update(false, false, 0);", multiplier)
+        self.assertIn("if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, "
+                      "StrictThreatSuccessorRow(target)))", multiplier)
+        self.assertNotIn("!ThreatSuccessorTarget(target)", multiplier)
         self.assertIn('AI_VALUE2(float, "tank threat", "current target") == 0.0f))', multiplier)
         # The latch runs before the old ACTION_THREAT_NONE exemption, or a wand/melee restart would slip through.
         self.assertLess(multiplier.index("AutoAttackAction(action)"),
@@ -150,12 +158,24 @@ class ThreatSuccessorStrict(unittest.TestCase):
         self.assertIn("kSuccessorWhiteStopPct = 92;", THREAT_POLICY)
         self.assertIn("kSuccessorWhiteResumePct = 85;", THREAT_POLICY)
 
+    def test_the_row_opt_in_reads_the_strict_table(self):
+        # t1106m: the scope is the boss data's `strict` word, never a boss id in the code.
+        values = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+        row = body(values, "bool ai::StrictThreatSuccessorRow(Unit* target)")
+        self.assertIn("GetBossTactics().HasStrictThreatSuccessor(target->GetMapId(), target->GetEntry())", row)
+        self.assertIn("return strictKey && rowOptIn;", THREAT_POLICY)
+        for code in (TRIGGERS, STRATEGY):
+            self.assertNotIn("11380", code)
+            self.assertNotIn("14834", code)
+
     def test_docs_and_changelog(self):
         self.assertIn("### `AiPlayerbot.DungeonRunThreatSuccessorStrict`", SETTINGS)
         self.assertIn("DungeonRunThreatSuccessorStrict", DOC)
         self.assertIn("DoT ticks", DOC)
         self.assertIn("92 % of walk 56", DOC)
         self.assertIn("DungeonRunThreatSuccessorStrict", CHANGELOG)
+        for text in (SETTINGS, DOC, CONF, CHANGELOG):
+            self.assertIn("`strict`", text)
 
 
 class ThreatValueSaturation(unittest.TestCase):

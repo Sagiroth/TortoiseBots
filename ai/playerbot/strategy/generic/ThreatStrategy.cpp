@@ -34,14 +34,15 @@ float ThreatMultiplier::GetValue(Action* action)
     if (action == NULL)
         return 1.0f;
 
-    // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a `threat_successor` boss the auto-attack, the wand's Shoot and
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a boss whose `threat_successor` row carries `strict` (a plain
+    // successor row clears the latch and keeps the old exemption) the auto-attack, the wand's Shoot and
     // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never; a 0 reference
     // never stops them). The row decides before the percentage is read; a target without it clears the latch. Auto Shot
     // is SINGLE-threat, so the 80 % veto below still gates its restart. Key off: the old exemption below.
     if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))
     {
         Unit* const target = AI_VALUE(Unit*, "current target");
-        if (!ThreatSuccessorTarget(target))
+        if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, StrictThreatSuccessorRow(target)))
             ai->SuccessorWhiteCap().Update(false, false, 0);
         else if (ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot),
                      AI_VALUE2(uint8, "threat", "current target"),

@@ -40,6 +40,17 @@ namespace ai
     // no escape on such a boss; everywhere else, and with the key off, today's escape.
     constexpr float kHighThreatProjectionSeconds = 5.0f;
 
+    // Whether the strict successor line applies to a target: the key is on AND the target's `threat_successor` row carries
+    // the mode word `strict` (BossTacticTable::HasStrictThreatSuccessor). Strict was built for Jin'do's Hex; on Hakkar it
+    // held the damage dealers' white damage while he healed back (walk 57: 0 kills in 26 fights), so the boss data opts in
+    // per row, never a boss constant. A successor row without the word keeps the plain cap with the key on or off: the
+    // projection escape, no white-damage latch, the old multiplier exemption. The one gate of the whole Strict path (the
+    // escape, the white-stop trigger, the multiplier hold).
+    inline bool StrictSuccessorTarget(bool strictKey, bool rowOptIn)
+    {
+        return strictKey && rowOptIn;
+    }
+
     inline bool HighThreatProjectionEscapes(bool successorTarget, bool strictKey, float current, float delta, float tank)
     {
         if (successorTarget && strictKey)

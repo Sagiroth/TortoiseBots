@@ -63,7 +63,10 @@ RaidTankRoles GetRaidTankRoles(PlayerbotAI* ai)
     return roles;
 }
 bool gThreatSuccessor = false;
-struct BossTacticsStub { bool HasThreatSuccessor(unsigned, unsigned) const { return gThreatSuccessor; } };
+struct BossTacticsStub {
+    bool HasThreatSuccessor(unsigned, unsigned) const { return gThreatSuccessor; }
+    bool HasStrictThreatSuccessor(unsigned, unsigned) const { return false; }
+};
 BossTacticsStub GetBossTactics() { return {}; }
 struct Facade {
     bool IsFriendlyTo(Unit* unit, Player*) const { return unit->friendly; }
@@ -80,7 +83,7 @@ struct ThreatValue {
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.
 void LogThreatCap(PlayerbotAI*, Player*, const ai::ThreatCapPick&, Unit*) {}
 void LogHexSnapshot(PlayerbotAI*, Unit*, const RaidTankRoles&, Group*) {}
-namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); }
+namespace ai { bool TargetTauntImmune(Unit* target); bool ThreatSuccessorTarget(Unit* target); bool StrictThreatSuccessorRow(Unit* target); }
 using namespace ai;
 """
         return root, harness + methods
