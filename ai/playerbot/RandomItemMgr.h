@@ -14,6 +14,7 @@
 #include "playerbot/policy/raid/RaidQuestChainPolicy.h"
 #include "playerbot/policy/gear/GearDuplicateItemPolicy.h"
 #include "playerbot/policy/gear/TransmogClonePolicy.h"
+#include "playerbot/policy/loot/LootSpecPriorityPolicy.h"
 
 enum RandomItemType
 {
@@ -298,6 +299,9 @@ class RandomItemMgr
         // Scale id for a weightscale name of this class (0 when unknown) —
         // the lookup GetPlayerSpecId does, without needing a Player.
         uint32 GetSpecIdFor(uint8 playerclass, std::string const& specName);
+        // Primary stat family for a spec scale id derived from weight scales
+        // (ai_playerbot_weightscale_data).
+        ai::ItemStatFamily GetSpecStatFamily(uint32 specId);
     private:
         void BuildRandomItemCache();
         void BuildEquipCache();

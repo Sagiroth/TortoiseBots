@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "LootRollAction.h"
 #include "../../policy/loot/LootRollPolicy.h"
+#include "../../policy/loot/LootSpecPriorityPolicy.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/LootValues.h"
@@ -39,6 +40,122 @@ namespace
         std::string itemName = proto ? proto->Name1 : "unknown item";
         sPlayerbotAIConfig.logEvent(ai, "LootRoll", itemName,
             RollVoteName(vote) + ":" + std::to_string(itemQualifier.GetId()) + ":" + reason);
+    }
+
+    ai::ItemStatSummary SummarizeItemStats(ItemPrototype const* proto, int32 randomPropertyId)
+    {
+        ai::ItemStatSummary summary;
+        if (!proto)
+            return summary;
+
+        for (uint32 j = 0; j < MAX_ITEM_PROTO_STATS; ++j)
+        {
+            uint32 statType = proto->ItemStat[j].ItemStatType;
+            int32 val = proto->ItemStat[j].ItemStatValue;
+            if (val <= 0)
+                continue;
+
+            switch (statType)
+            {
+            case ITEM_MOD_AGILITY:
+                summary.agility += val;
+                break;
+            case ITEM_MOD_STRENGTH:
+                summary.strength += val;
+                break;
+            case ITEM_MOD_INTELLECT:
+            case ITEM_MOD_SPIRIT:
+            case ITEM_MOD_HIT_SPELL_RATING:
+            case ITEM_MOD_CRIT_SPELL_RATING:
+            case ITEM_MOD_HASTE_SPELL_RATING:
+                summary.spell += val;
+                break;
+            case ITEM_MOD_DEFENSE_SKILL_RATING:
+            case ITEM_MOD_DODGE_RATING:
+            case ITEM_MOD_PARRY_RATING:
+            case ITEM_MOD_BLOCK_RATING:
+                summary.tank += val;
+                break;
+            case ITEM_MOD_STAMINA:
+                summary.stamina += val;
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (proto->Block > 0)
+            summary.tank += proto->Block;
+
+        for (const auto& spellData : proto->Spells)
+        {
+            if (!spellData.SpellId)
+                continue;
+            if (!(spellData.SpellTrigger == ITEM_SPELLTRIGGER_ON_EQUIP ||
+                  (!proto->IsWeapon() && proto->InventoryType != INVTYPE_HOLDABLE &&
+                   (spellData.SpellTrigger == ITEM_SPELLTRIGGER_ON_USE || spellData.SpellTrigger == ITEM_SPELLTRIGGER_CHANCE_ON_HIT))))
+                continue;
+
+            SpellEntry const* spellproto = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
+            if (!spellproto)
+                continue;
+
+            for (uint8 j = 0; j < MAX_EFFECT_INDEX; ++j)
+            {
+                if (spellproto->Effect[j] != SPELL_EFFECT_APPLY_AURA || spellproto->EffectBasePoints[j] < 0)
+                    continue;
+
+                uint32 points = spellproto->EffectBasePoints[j] + 1;
+                uint32 auraName = spellproto->EffectApplyAuraName[j];
+
+                if (auraName == SPELL_AURA_MOD_DAMAGE_DONE ||
+                    auraName == SPELL_AURA_MOD_HEALING_DONE ||
+                    auraName == SPELL_AURA_MOD_SPELL_HIT_CHANCE ||
+                    auraName == SPELL_AURA_MOD_SPELL_CRIT_CHANCE ||
+                    auraName == SPELL_AURA_MOD_SPELL_CRIT_CHANCE_SCHOOL ||
+                    auraName == SPELL_AURA_MOD_TARGET_RESISTANCE)
+                {
+                    summary.spell += points;
+                }
+                else if (auraName == SPELL_AURA_MOD_SHIELD_BLOCKVALUE ||
+                         auraName == SPELL_AURA_MOD_PARRY_PERCENT ||
+                         auraName == SPELL_AURA_MOD_DODGE_PERCENT ||
+                         auraName == SPELL_AURA_MOD_BLOCK_PERCENT)
+                {
+                    summary.tank += points;
+                }
+            }
+        }
+
+        if (randomPropertyId)
+        {
+            if (ItemRandomPropertiesEntry const* randProp = sItemRandomPropertiesStore.LookupEntry(abs(randomPropertyId)))
+            {
+                for (uint32 i = PROP_ENCHANTMENT_SLOT_0; i < PROP_ENCHANTMENT_SLOT_0 + 3; ++i)
+                {
+                    uint32 enchantId = randProp->enchant_id[i - PROP_ENCHANTMENT_SLOT_0];
+                    if (!enchantId)
+                        continue;
+                    if (SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchantId))
+                    {
+                        for (int s = 0; s < 3; ++s)
+                        {
+                            if (pEnchant->type[s] == 5) // Stat
+                            {
+                                uint32 statMod = pEnchant->spellid[s];
+                                int32 amount = pEnchant->amount[s];
+                                if (statMod == ITEM_MOD_AGILITY) summary.agility += amount;
+                                else if (statMod == ITEM_MOD_STRENGTH) summary.strength += amount;
+                                else if (statMod == ITEM_MOD_INTELLECT || statMod == ITEM_MOD_SPIRIT) summary.spell += amount;
+                                else if (statMod == ITEM_MOD_STAMINA) summary.stamina += amount;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return summary;
     }
 }
 
@@ -272,7 +389,10 @@ bool RollAction::Execute(Event& event)
 
         RollVote doVote = vote;
         if (doVote == ROLL_NOT_VALID) //Auto
-            doVote = CalculateRollVote(itemQualifier, nullptr, nullptr, true);
+        {
+            rolledItems += RollWithEtiquette(roll.first, roll.second);
+            continue;
+        }
         else
         {
             std::string orderReason = std::string("ordered by ") + (requester ? requester->GetName() : "?");
@@ -629,6 +749,101 @@ bool RollAction::AllRealRollersVoted(ObjectGuid lootGuid, uint32 slot)
     return true;
 }
 
+// Issue Package E: find a group member whose spec fits the item better than this bot.
+Player* RollAction::FindBetterFittingMember(ObjectGuid lootGuid, uint32 slot, ItemQualifier& itemQualifier)
+{
+    Group* group = bot->GetGroup();
+    Map* map = bot->GetMap();
+    const ItemPrototype* itemProto = itemQualifier.GetProto();
+    if (!group || !map || !itemProto)
+        return nullptr;
+
+    bool sharedLoot = (group->GetLootMethod() == GROUP_LOOT || group->GetLootMethod() == NEED_BEFORE_GREED);
+    bool groupLootContext = sharedLoot || map->IsDungeon() || map->IsRaid();
+    if (!groupLootContext)
+        return nullptr;
+
+    ai::ItemStatSummary itemStats = SummarizeItemStats(itemProto, itemQualifier.GetRandomPropertyId());
+    ai::ItemStatFamily itemFamily = ai::DeriveItemStatFamily(itemStats);
+    if (itemFamily == ai::ItemStatFamily::None)
+        return nullptr;
+
+    uint32 botSpecId = sRandomItemMgr.GetPlayerSpecId(bot);
+    if (!botSpecId)
+        botSpecId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+    std::string botSpecName = sRandomItemMgr.GetSpecName(botSpecId);
+    ai::ItemStatFamily botFamily = sRandomItemMgr.GetSpecStatFamily(botSpecId);
+    if (botFamily == ai::ItemStatFamily::None)
+        botFamily = ai::GetFallbackClassStatFamily(bot->GetClass());
+
+    Creature* lootTarget = map->GetCreature(lootGuid);
+    bool isWeapon = itemProto->Class == ITEM_CLASS_WEAPON;
+    bool isRangedWeapon = isWeapon && itemProto->IsRangedWeapon();
+
+    Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
+    LootItem* item = (loot && slot < loot->items.size()) ? &loot->items[slot] : nullptr;
+
+    for (Player* member : ai->GetPlayersInGroup())
+    {
+        if (member == bot || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+            continue;
+
+        if (lootTarget && !member->IsWithinLootXPDist(lootTarget))
+            continue;
+
+        if (member->CanUseItem(itemProto) != EQUIP_ERR_OK)
+            continue;
+
+        PlayerbotAI* memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        bool isMemberBot = memberAi && !memberAi->IsRealPlayer();
+
+        if (isMemberBot)
+        {
+            uint32 memberSpecId = sRandomItemMgr.GetPlayerSpecId(member);
+            if (!memberSpecId)
+                memberSpecId = sRandomItemMgr.GetFallbackSpecId(member->GetClass());
+            std::string memberSpecName = sRandomItemMgr.GetSpecName(memberSpecId);
+
+            if (itemProto->Class == ITEM_CLASS_ARMOR &&
+                !sRandomItemMgr.ShouldEquipArmorForSpec(member->GetClass(), memberSpecId, itemProto))
+                continue;
+
+            if (itemProto->Class == ITEM_CLASS_WEAPON &&
+                !sRandomItemMgr.ShouldEquipWeaponForSpec(member, member->GetClass(), memberSpecId, itemProto, member->CanDualWield()))
+                continue;
+
+            ItemUsage memberUsage = memberAi->GetAiObjectContext()->GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->GetValue();
+            if (memberUsage != ItemUsage::ITEM_USAGE_EQUIP)
+                continue;
+
+            ai::ItemStatFamily memberFamily = sRandomItemMgr.GetSpecStatFamily(memberSpecId);
+            if (memberFamily == ai::ItemStatFamily::None)
+                memberFamily = ai::GetFallbackClassStatFamily(member->GetClass());
+
+            if (ai::MemberFitsBetter(botFamily, bot->GetClass(), botSpecName,
+                                     memberFamily, member->GetClass(), memberSpecName,
+                                     itemFamily, isWeapon, isRangedWeapon, false))
+            {
+                return member;
+            }
+        }
+        else
+        {
+            if (item && !item->AllowedForPlayer(member, lootTarget))
+                continue;
+
+            if (ai::MemberFitsBetter(botFamily, bot->GetClass(), botSpecName,
+                                     ai::ItemStatFamily::None, member->GetClass(), "",
+                                     itemFamily, isWeapon, isRangedWeapon, true))
+            {
+                return member;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 // Vote on one item the polite way: never roll need against a real player.
 bool RollAction::RollWithEtiquette(ObjectGuid lootGuid, uint32 slot, ObjectGuid seenVoter, uint8 seenVote)
 {
@@ -671,6 +886,22 @@ bool RollAction::RollWithEtiquette(ObjectGuid lootGuid, uint32 slot, ObjectGuid 
 
             LogLootRoll(ai, itemQualifier, vote, reason + " Stepped down to greed: a player in the group may need it.");
             return RollOnItemInSlot(vote, lootGuid, slot);
+        }
+
+        // Issue Package E: check if another group member fits the item better.
+        if (!forcedNeed)
+        {
+            Player* betterMember = FindBetterFittingMember(lootGuid, slot, itemQualifier);
+            if (betterMember)
+            {
+                vote = ROLL_GREED;
+
+                if (AI_VALUE2(bool, "manual bool", "roll feedback"))
+                    ai->TellPlayerNoFacing(ai->GetMaster(), "Rolling greed on " + ChatHelper::formatItem(itemQualifier) + " instead: " + betterMember->GetName() + " fits it better.");
+
+                LogLootRoll(ai, itemQualifier, vote, reason + " Stepped down to greed: " + betterMember->GetName() + " fits it better.");
+                return RollOnItemInSlot(vote, lootGuid, slot);
+            }
         }
     }
 

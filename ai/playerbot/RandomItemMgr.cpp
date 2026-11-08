@@ -3178,6 +3178,33 @@ uint32 RandomItemMgr::GetSpecIdFor(uint8 playerclass, std::string const& specNam
     return 0;
 }
 
+ai::ItemStatFamily RandomItemMgr::GetSpecStatFamily(uint32 specId)
+{
+    auto itr = m_weightScales.find(specId);
+    if (itr == m_weightScales.end())
+        return ai::ItemStatFamily::None;
+
+    ai::SpecWeightSummary w;
+    for (auto const& st : itr->second.stats)
+    {
+        if (st.stat == "str")
+            w.strWeight += st.weight;
+        else if (st.stat == "agi")
+            w.agiWeight += st.weight;
+        else if (st.stat == "int" || st.stat == "spi" || st.stat == "splpwr" ||
+                 st.stat == "splheal" || st.stat == "manargn" || st.stat == "arcsplpwr" ||
+                 st.stat == "frosplpwr" || st.stat == "firsplpwr" || st.stat == "shasplpwr" ||
+                 st.stat == "natsplpwr" || st.stat == "spellhitrtng" || st.stat == "spellcritstrkrtng" ||
+                 st.stat == "spellpenrtng")
+            w.spellWeight += st.weight;
+        else if (st.stat == "defrtng" || st.stat == "dodgertng" || st.stat == "parryrtng" ||
+                 st.stat == "blockrtng" || st.stat == "block" || st.stat == "armor")
+            w.tankWeight += st.weight;
+    }
+
+    return ai::DeriveSpecStatFamily(w);
+}
+
 uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, uint32 quality, uint32 itemId)
 {
     if (!player)
