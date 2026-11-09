@@ -3776,7 +3776,20 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
                     bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
 
                     bool const routeAllowed = ai::BotTaxiRouteAllowed(movement.taxiNodes);
-                    bool const activated = routeAllowed && bot->ActivateTaxiPathTo(movement.taxiNodes, flightMaster, 0);
+                    // The master already flew this route, so a companion follows it
+                    // without gold or learned stops: the core check is satisfied for
+                    // the call and the purse is put back to what it was.
+                    bool activated = false;
+                    if (routeAllowed)
+                    {
+                        bool const wasCheater = bot->IsTaxiCheater();
+                        uint32 const purse = bot->GetMoney();
+                        bot->SetTaxiCheater(true);
+                        bot->SetMoney(std::max<uint32>(purse, 500000));
+                        activated = bot->ActivateTaxiPathTo(movement.taxiNodes, flightMaster, 0);
+                        bot->SetTaxiCheater(wasCheater);
+                        bot->SetMoney(purse);
+                    }
                     if (activated)
                     {
                         ai::BotInstantFlightFinish(bot, movement.taxiNodes);
