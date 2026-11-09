@@ -211,6 +211,43 @@ class SeekSonMeetWiring(unittest.TestCase):
         # Read before the shot's hand-over can clear the pre-place.
         self.assertLess(meet.index("float const receiverPointYd ="), meet.index("WalkoutPrePlaceNoteMeet(it->second.state);"))
 
+    def test_the_shot_waits_for_the_pre_placed_receiver(self):
+        # Walk 58 F2: DungeonRunSeekShotWaitsReceiver, default off and documented; the walk-out shot reads the wait
+        # through one locked snapshot (SeekWalkoutShotWaitRead), waits before it faces and casts, and logs one
+        # shot_wait row per walk-out when the wait ends.
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekShotWaitsReceiver", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekShotWaitsReceiver = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekShotWaitsReceiver = 0", TEMPLATE)
+        execute = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        gate = execute.index("if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)")
+        wait = execute[gate:execute.index("// DungeonRunSeekWalkoutFaceCast: stop, turn", gate)]
+        self.assertIn("SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait)", wait)
+        self.assertIn("if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInMs,\n"
+                      "                                              wait.taskAgeMs))", wait)
+        self.assertIn("return true;", wait)
+        self.assertIn("SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs)", wait)
+        self.assertIn('"son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s"', wait)
+        self.assertIn("WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInMs,", wait)
+        self.assertIn("LogSeekMeet(ai, info1);", wait)
+        # The wait sits after the in-flight wait and before the face and the cast.
+        self.assertLess(execute.index("WalkoutPullShotWaits(task.walkoutPullCastMs"), gate)
+        self.assertLess(gate, execute.index("const bool pullCast = ai->CastSpell(spell, task.source);"))
+        # One lock for the snapshot and the latch; the end claims under the lock too.
+        read = body(ACTIONS, "bool SeekWalkoutShotWaitRead(")
+        self.assertEqual(read.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
+        self.assertIn("WalkoutPrePlaceLive(s) && s.prePlacePuller == puller && s.prePlaceGen == gen", read)
+        self.assertIn("return WalkoutShotWaitNote(s, puller, gen, nowMs, out.waitedMs);", read)
+        end = body(ACTIONS, "bool SeekWalkoutShotWaitEnd(")
+        self.assertIn("WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs)", end)
+        # The siphon's signed seconds reach the task; the no-shot stall is held while the wait runs.
+        # Review (Codex MED): the siphon time is passed in signed ms, never truncated to seconds; the task's age too.
+        self.assertIn("task.walkoutDueInMs = state.dueSignedMs;", ACTIONS)
+        self.assertNotIn("dueSignedMs / 1000", ACTIONS)
+        self.assertIn("out.taskAgeMs = nowMs - s.startMs;", read)
+        self.assertIn("!WalkoutStallHeldByShotWait(state, nowMs);", update())
+        # The late walk cannot wait on the waiting puller: a latched wait counts as in position.
+        self.assertIn("s.firstInShotMs != 0 || s.shotWaitSinceMs != 0;", inline_body(POLICY, "inline bool WalkoutPullerInPos("))
+
     def test_the_meet_rows(self):
         for row in ('"son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"\n'
                     '                                 "receiver_point_yd=%.1f"',
@@ -337,11 +374,29 @@ class CauseInsanityRowWiring(unittest.TestCase):
         return body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
 
     def test_the_row_is_built(self):
-        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s"',
+        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"\n'
+                      '             "top_dps_threat=%.0f"',
                       '"Cause Insanity on %s: Hakkar turned to %s (%s)"',
                       '"BossTacticsCharm"'):
             self.assertIn(field, ACTIONS)
         self.assertIn("LogSeekCharm(ai, bot, boss, charmRowGuid, roles);", ACTIONS)
+
+    def test_the_row_carries_the_cap_reference(self):
+        # Walk 58 F3: the cap's reference at the CI row, read from the cap's own tank list and pick (no copy of it).
+        log = body(ACTIONS, "void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, "
+                            "const RaidTankRoles& roles)\n{")
+        self.assertIn("ThreatCapTanksOf(ai, boss, roles, nullptr, &capWho);", log)
+        self.assertIn("ThreatCapPickReference(capTanks, ThreatSuccessorTarget(boss),", log)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder", log)
+        self.assertIn("capWho[static_cast<std::size_t>(capPick.index)]", log)
+        self.assertIn('std::strcmp(CharmRoleWord(entry.unit), "dps") == 0', log)
+        self.assertIn('capRef ? capRef->GetName() : "none",', log)
+        # Review M2: the reference's kind, from the pick itself.
+        self.assertIn('!capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, '
+                      'topDpsThreat);', log)
+        # The new fields come after `top=`, whose entries never hold a comma, so `top=([^,]*)` still parses it.
+        fmt = log[log.index('"charmed='):log.index("CharmRoleWord(charmed)")]
+        self.assertLess(fmt.index("top=%s"), fmt.index(",cap_ref=%s"))
 
     def test_the_scan_waits_500_ms_and_the_row_1500_ms(self):
         read = self.read()

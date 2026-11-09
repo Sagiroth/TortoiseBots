@@ -726,6 +726,11 @@ public:
     // position or shot), then walks to its point. Off, it walks when the walk-out starts, as before (default off,
     // recommended on; its value is still being tested).
     bool dungeonRunSeekMeetPrePlaceLate = false;
+    // The walk-out shot waits for the pre-placed receiver (walk 58 F2; runs with DungeonRunSeekMeetPrePlace): in shot
+    // position the puller holds its shot until the pre-placed third tank is within 5 yd of its point, at most 6 s, and
+    // never once the next Blood Siphon is 15 s or less away. No pre-place this cycle: no wait. Off, the shot goes at
+    // once, as before (default off, recommended on).
+    bool dungeonRunSeekShotWaitsReceiver = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

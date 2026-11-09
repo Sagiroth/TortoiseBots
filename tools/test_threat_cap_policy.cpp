@@ -581,6 +581,36 @@ int main()
         CHECK(kThreatCapCollapseShare == 0.5f);
     }
 
+    // Walk 58 F3: the pick's reference index and the leave read (ThreatCapLeaveReadOf) the `seek take held` row names.
+    {
+        const std::vector<ThreatCapTank> h1 = {{1000.0f, false, true, true}, {400.0f, true, true, false},
+                                               {200.0f, true, false, false}};
+        CHECK(ThreatCapPickReference(h1, false).index == 0);  // no successor cap: the highest tank
+        CHECK(ThreatCapPickReference(h1, true).index == 1);   // the off-tank reference
+        const ThreatCapLeaveRead r = ThreatCapLeaveReadOf(h1, 1);
+        CHECK(r.collapses && r.refIndex == 1);
+        CHECK(r.sharePct == 0.0f);                            // no off-tank reference left
+        // The not-holder pick: tanks[1] 900 leaving hands the reference to tanks[2] 300: one third, a collapse.
+        const std::vector<ThreatCapTank> stays = {{1000.0f, false, true, true}, {900.0f, true, true, false},
+                                                  {300.0f, true, true, false}};
+        CHECK(ThreatCapPickReference(stays, true, true).index == 1);
+        const ThreatCapLeaveRead n = ThreatCapLeaveReadOf(stays, 1, true);
+        CHECK(n.collapses && n.refIndex == 1);
+        CHECK(n.sharePct > 33.0f && n.sharePct < 34.0f);
+        // No collapse: the share is the kept reference's, the read agrees with ThreatCapLeaveCollapses.
+        const ThreatCapLeaveRead k = ThreatCapLeaveReadOf(stays, 1);
+        CHECK(!k.collapses && k.sharePct == 100.0f);
+        CHECK(ThreatCapLeaveReadOf(h1, -1).refIndex == -1);
+        // The highest off-tank wins the index; the first of a tie keeps it.
+        const std::vector<ThreatCapTank> tie = {{1000.0f, false, true, true}, {600.0f, true, true, false},
+                                                {600.0f, true, true, false}};
+        CHECK(ThreatCapPickReference(tie, true).index == 1);
+        const std::vector<ThreatCapTank> second = {{1000.0f, false, true, true}, {300.0f, true, true, false},
+                                                   {600.0f, true, true, false}};
+        CHECK(ThreatCapPickReference(second, true).index == 2);
+        CHECK(ThreatCapPickReference({}, true).index == -1);
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

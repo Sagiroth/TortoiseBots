@@ -1454,6 +1454,52 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bo
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
+// The cap guard's read for the `seek take held` row (walk 58 F3): today's cap reference tank and the reference left
+// after this tank's leave as a percent of today's (ThreatCapLeaveReadOf).
+struct SeekCapGuardInfo
+{
+    std::string refName = "none";
+    float sharePct = 100.0f;
+};
+
+// One `seek take held` row per tank and Son and 2 s (walk 58 F3: the collapse guard logged nothing, so its effect
+// could not be measured): the cap guard (ThreatCapLeaveCollapses) held back this tank's reach or healer-clock take of
+// `son`. `src` is the held take's path (nearest_reach or healer_clock); `onNonTankMs` the Son's time on its non-tank
+// victim (the fight's non-tank clock; 0 when unknown), logged with that victim and its health (review M2: the walk-59
+// measures). A no-op unless bot_events.csv is in AllowedLogFiles.
+constexpr std::uint32_t kSeekTakeHeldLogGapMs = 2000;
+std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint32_t> g_seekTakeHeldLog;
+
+void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuardInfo& info, const char* src,
+                     std::uint32_t onNonTankMs)
+{
+    if (!ai || !bot || !son || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        // A long fight's Sons are few, but every Son guid is new: drop stale keys so the map stays small.
+        if (g_seekTakeHeldLog.size() > 256)
+        {
+            for (auto it = g_seekTakeHeldLog.begin(); it != g_seekTakeHeldLog.end();)
+                it = nowMs - it->second >= kSeekTakeHeldLogGapMs ? g_seekTakeHeldLog.erase(it) : std::next(it);
+        }
+        std::uint32_t& last =
+            g_seekTakeHeldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), son->GetObjectGuid().GetRawValue())];
+        if (last != 0 && nowMs - last < kSeekTakeHeldLogGapMs)
+            return;
+        last = nowMs == 0 ? 1 : nowMs;
+    }
+    Unit* const victim = son->GetVictim();
+    char info1[288];
+    snprintf(info1, sizeof(info1),
+             "seek take held son=%u taker=%s reason=cap_guard ref=%s share=%.0f src=%s victim=%s on_nontank_ms=%u "
+             "victim_hp=%.0f",
+             son->GetGUIDLow(), bot->GetName(), info.refName.c_str(), info.sharePct, src,
+             victim ? victim->GetName() : "none", onNonTankMs, victim ? victim->GetHealthPercent() : 100.0f);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
 // One `BossTacticsSonMeet` row (the pulled Son's meet with a tank): built by its caller, logged here without a
 // throttle, because one meet is one event.
 void LogSeekMeet(PlayerbotAI* ai, const char* info1)
@@ -2346,7 +2392,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
         // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
         // With DungeonRunSeekWalkoutFaceCast the clock counts only the time in shot position (WalkoutStallDue).
-        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);
+        // DungeonRunSeekShotWaitsReceiver: a shot waiting for the pre-placed receiver is not a stalled one (the wait's
+        // latch is set only with the key, so off this reads as before).
+        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast) &&
+            !WalkoutStallHeldByShotWait(state, nowMs);
         if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))
         {
             {
@@ -2943,6 +2992,52 @@ bool SeekMeetPrePlaceNoteArrive(std::uint32_t instanceId, std::uint64_t bot, std
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
     return it != g_walkouts.end() && WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs);
+}
+
+// The walk-out shot's wait (DungeonRunSeekShotWaitsReceiver, walk 58 F2): one locked snapshot for the puller of task
+// `gen` of the pre-place's receiver and point (whether that pre-place is live and this task's) and the Son, and the
+// wait's latch (WalkoutShotWaitNote) with the time waited. False: no wait applies (no live pre-place and no wait
+// started, not this task, or the wait is already over), and the shot goes as today.
+struct SeekShotWaitSnapshot
+{
+    bool prePlaceLive = false;
+    std::uint64_t receiver = 0;
+    float x = 0.0f, y = 0.0f;
+    std::uint64_t son = 0;
+    std::uint32_t waitedMs = 0;
+    std::uint32_t taskAgeMs = 0; // since the walk-out task started (WalkoutShotReady's late clause)
+};
+
+bool SeekWalkoutShotWaitRead(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
+                             SeekShotWaitSnapshot& out)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return false;
+    SeekWalkoutState& s = it->second.state;
+    out.prePlaceLive = WalkoutPrePlaceLive(s) && s.prePlacePuller == puller && s.prePlaceGen == gen;
+    if (out.prePlaceLive)
+    {
+        out.receiver = s.prePlaceReceiver;
+        out.x = s.prePlaceX;
+        out.y = s.prePlaceY;
+    }
+    out.son = s.son;
+    out.taskAgeMs = nowMs - s.startMs;
+    // No live pre-place and no wait under way: nothing to wait for (and nothing latched, so the late walk and the
+    // stall read as without the key).
+    if (!out.prePlaceLive && s.shotWaitSinceMs == 0)
+        return false;
+    return WalkoutShotWaitNote(s, puller, gen, nowMs, out.waitedMs);
+}
+
+// The wait's end under g_walkoutMutex (WalkoutShotWaitEnd): true once per task, the one shot_wait row.
+bool SeekWalkoutShotWaitEnd(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs);
 }
 
 // The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
@@ -3939,10 +4034,31 @@ void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charme
         ? boss->GetThreatManager().getThreat(roles.tanks[1]) : -1.0f;
     float const ot2 = roles.tanks.size() > 2 && roles.tanks[2]
         ? boss->GetThreatManager().getThreat(roles.tanks[2]) : -1.0f;
+    // Walk 58 F3: the threat cap's reference at this moment (the cap's own tank list and pick, ThreatCapTanksOf and
+    // ThreatCapPickReference as ThreatValue::GetTankThreat reads them) and the top damage dealer's threat, so a walk
+    // can tell the main-tank fall-back from white damage past an off-tank reference. `none`/-1: no tank listed.
+    std::vector<Player*> capWho;
+    const std::vector<ThreatCapTank> capTanks = ThreatCapTanksOf(ai, boss, roles, nullptr, &capWho);
+    const ThreatCapPick capPick = ThreatCapPickReference(capTanks, ThreatSuccessorTarget(boss),
+                                                         sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    Player* const capRef = capPick.index >= 0 && static_cast<std::size_t>(capPick.index) < capWho.size()
+        ? capWho[static_cast<std::size_t>(capPick.index)] : nullptr;
+    float topDpsThreat = 0.0f;
+    for (const CharmThreat& entry : ranked)
+    {
+        if (std::strcmp(CharmRoleWord(entry.unit), "dps") == 0)
+        {
+            topDpsThreat = entry.threat;
+            break;
+        }
+    }
     char info1[512];
-    snprintf(info1, sizeof(info1), "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s",
+    snprintf(info1, sizeof(info1),
+             "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"
+             "top_dps_threat=%.0f",
              CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
-             ot1, ot2, top);
+             ot1, ot2, top, capRef ? capRef->GetName() : "none",
+             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat);
     char info2[160];
     snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
              CharmRoleWord(victim), CharmClassWord(victim));
@@ -8452,7 +8568,9 @@ bool SeekTankTauntReady(Player* tank)
 // walk 57 F4 review H1/M2): the cap's own tank list (ThreatCapTanksOf, as ThreatValue::GetTankThreat builds it, read
 // with this tank's AI and nobody skipped) with this tank marked off the boss, whoever holds it. A boss without a
 // `threat_successor` row has no off-tank reference to collapse.
-bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot)
+// `info` (when given) gets the reference tank's name and the share left for the `seek take held` row.
+bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot,
+                               SeekCapGuardInfo* info = nullptr)
 {
     if (!ai || !boss || !bot || !ThreatSuccessorTarget(boss))
         return false;
@@ -8464,7 +8582,16 @@ bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit
         if (who[i] == bot)
             selfPos = static_cast<int>(i);
     }
-    return ThreatCapLeaveCollapses(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    const ThreatCapLeaveRead read =
+        ThreatCapLeaveReadOf(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    if (info)
+    {
+        info->refName = read.refIndex >= 0 && static_cast<std::size_t>(read.refIndex) < who.size() &&
+                who[static_cast<std::size_t>(read.refIndex)]
+            ? who[static_cast<std::size_t>(read.refIndex)]->GetName() : "none";
+        info->sharePct = read.sharePct;
+    }
+    return read.collapses;
 }
 
 // The healer clock's cap guard (DungeonRunSeekNearestTakeReach only; the caller skips it with the key off): the take
@@ -8483,9 +8610,15 @@ bool SeekHealerClockCapOk(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     const std::uint32_t onNonTankMs = held != state.nonTankSince.end() ? state.nowMs - held->second.sinceMs : 0;
     Unit* const victim = son->GetVictim();
     const float victimHpPct = victim ? victim->GetHealthPercent() : 100.0f;
-    return SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot),
-                                      WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),
-                                      HealerClockOverridesCap(onNonTankMs, victimHpPct));
+    SeekCapGuardInfo capInfo;
+    const bool allowed =
+        SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo),
+                                   WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),
+                                   HealerClockOverridesCap(onNonTankMs, victimHpPct));
+    // Walk 58 F3: the held take is visible (the guard alone holds it: the caller skips this with the key off).
+    if (!allowed)
+        LogSeekTakeHeld(ai, bot, son, capInfo, "healer_clock", onNonTankMs);
+    return allowed;
 }
 
 // The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
@@ -8518,7 +8651,8 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     SeekCapLatch latch;
     if (reachOn)
         SeekWalkoutReachRead(bot, walked, lostMeets, latch);
-    const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot);
+    SeekCapGuardInfo capInfo;
+    const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo);
     std::vector<Unit*> units;
     std::vector<SeekNearestTakeCand> cands;
     for (const auto& entry : state.nonTankSince)
@@ -8551,6 +8685,20 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     }
     const int pick = PickSeekNearestTake(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
                                          selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap, &viaReach);
+    // Walk 58 F3: a reach take the cap guard held back logs its row (SeekCapGuardHeldPick: the guard alone stopped it).
+    if (pick < 0 && selfCollapsesCap)
+    {
+        const int held = SeekCapGuardHeldPick(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
+                                              selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap);
+        if (held >= 0)
+        {
+            Unit* const heldSon = units[static_cast<std::size_t>(held)];
+            const auto since = state.nonTankSince.find(heldSon->GetObjectGuid().GetRawValue());
+            const std::uint32_t heldOnNonTankMs =
+                since != state.nonTankSince.end() ? state.nowMs - since->second.sinceMs : 0;
+            LogSeekTakeHeld(ai, bot, heldSon, capInfo, "nearest_reach", heldOnNonTankMs);
+        }
+    }
     // A reach take that passed the cap guard is latched by Execute once it really starts (round 2), not here.
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
@@ -8716,6 +8864,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         task.walkoutShot = state.walkoutShot;
         task.walkoutPullCastMs = state.walkoutPullCastMs;
         task.walkoutGen = state.walkoutGen;
+        task.walkoutDueInMs = state.dueSignedMs; // signed ms, INT_MAX when unknown (compared in ms, never truncated)
         task.source = state.pullTarget;
         task.x = state.shotX;
         task.y = state.shotY;
@@ -9012,6 +9161,41 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 {
                     LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);
                     return true;
+                }
+                // DungeonRunSeekShotWaitsReceiver (walk 58 F2): with a live pre-place the shot waits until the
+                // pre-placed receiver is within 5 yd of its point, at most 6 s, never with the siphon 15 s or less
+                // away (WalkoutShotReady). The puller stands still meanwhile; one shot_wait row when the wait ends.
+                if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)
+                {
+                    const std::uint32_t waitNowMs = WorldTimer::getMSTime();
+                    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+                    SeekShotWaitSnapshot wait;
+                    if (SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait))
+                    {
+                        Player* const receiver =
+                            wait.receiver ? bot->GetMap()->GetPlayer(ObjectGuid(wait.receiver)) : nullptr;
+                        const bool live = wait.prePlaceLive && receiver && receiver->IsInWorld();
+                        const float pointYd = live ? receiver->GetDistance2d(wait.x, wait.y) : -1.0f;
+                        if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                              wait.taskAgeMs))
+                        {
+                            if (!bot->IsStopped())
+                                ai->StopMoving();
+                            return true;
+                        }
+                        if (SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs))
+                        {
+                            const std::uint64_t guid = wait.son;
+                            char info1[192];
+                            snprintf(info1, sizeof(info1),
+                                     "son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s",
+                                     ObjectGuid(guid).GetCounter(), receiver ? receiver->GetName() : "none",
+                                     pointYd, wait.waitedMs,
+                                     WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                                           wait.taskAgeMs));
+                            LogSeekMeet(ai, info1);
+                        }
+                    }
                 }
                 // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
                 // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).

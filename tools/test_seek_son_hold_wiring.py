@@ -170,11 +170,11 @@ class SeekSonRowReview(unittest.TestCase):
 
     def test_every_son_id_is_the_guid_low(self):
         # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
-        # a raw guid is a different number. Exactly 11 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
-        # no_meet, taken, lost, wait, preplace, preplace_arrive and the two preplace_end rows (the live check's and the
-        # floor's); a new one must be counted here, in the exact guid form.
+        # a raw guid is a different number. Exactly 12 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
+        # no_meet, taken, lost, wait, preplace, preplace_arrive, the two preplace_end rows (the live check's and the
+        # floor's) and the shot's shot_wait (walk 58 F2); a new one must be counted here, in the exact guid form.
         ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
-        self.assertEqual(len(ids), 11)
+        self.assertEqual(len(ids), 12)
         for match in ids:
             call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
             self.assertIn("ObjectGuid(guid).GetCounter()", call)
