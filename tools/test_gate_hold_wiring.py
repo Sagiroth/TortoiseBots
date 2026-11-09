@@ -56,6 +56,7 @@ class GateHoldWiring(unittest.TestCase):
         rule = add[add.index("if (row.kind == BossTacticKind::GateHold"):]
         rule = rule[:rule.index("return false;")]
         self.assertIn("row.targetEntry == 0", rule)
+        self.assertIn("row.targetEntry == row.bossEntry", rule)
         self.assertIn("row.spellId != 0", rule)
         self.assertIn("row.param >= 1.0f", rule)
         self.assertIn("row.param > 99.0f", rule)
@@ -66,6 +67,7 @@ class GateHoldWiring(unittest.TestCase):
         self.assertIn("gateHoldMaps_[row.map] = true;", add)
         self.assertIn("HasGateHoldMap", POLICY)
         self.assertIn("a gate_hold row it", MGR)
+        self.assertIn("a gate_hold row whose blocker is its own boss", MGR)
 
     def test_the_count_is_the_fighting_blocker_value(self):
         self.assertIn('class GateHoldFightingBlockersValue', VALUE_H)

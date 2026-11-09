@@ -547,10 +547,12 @@ namespace ai
                 return false;
             // gate_hold: the spared entry (boss_entry), its blocker (target_entry), the health gate (`param`, 1-99 %)
             // and the blockers that may still fight (`priority`). `window_s` is the blocker search radius (0: 200 yd,
-            // else 50-250). The row's own health gate is `param`, so the band columns, a spell, a spot and a mode word
-            // are refused.
+            // else 50-250). The blocker must be a different unit: the spared boss would count as its own blocker and
+            // hold itself forever. The row's own health gate is `param`, so the band columns, a spell, a spot and a
+            // mode word are refused.
             if (row.kind == BossTacticKind::GateHold &&
-                (row.targetEntry == 0 || row.spellId != 0 || !(row.param >= 1.0f) || row.param > 99.0f ||
+                (row.targetEntry == 0 || row.targetEntry == row.bossEntry || row.spellId != 0 ||
+                    !(row.param >= 1.0f) || row.param > 99.0f ||
                     !(row.windowSec == 0.0f || (row.windowSec >= 50.0f && row.windowSec <= 250.0f)) ||
                     RowGateSet(row) || row.mode != TacticMode::Default))
                 return false;

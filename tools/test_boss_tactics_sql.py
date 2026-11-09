@@ -261,6 +261,8 @@ def new_kind_problem(row):
         # gate is `param`, so the band columns, a spell, a spot, a mode word and the cycle columns are refused.
         if not row["target_entry"]:
             return "gate_hold without its blocker"
+        if row["target_entry"] == row["boss_entry"]:
+            return "gate_hold blocker is its own boss"
         if row["spell_id"]:
             return "gate_hold with a spell"
         if not 1.0 <= row["param"] <= 99.0:
@@ -1281,7 +1283,8 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIsNone(new_kind_problem(gate))
         self.assertIsNone(new_kind_problem(dict(gate, window_s=0.0)))    # 0 = the 200 yd default
         self.assertIsNone(new_kind_problem(dict(gate, priority=2)))      # blockers that may still fight
-        for broken in (dict(gate, target_entry=0), dict(gate, spell_id=33439), dict(gate, param=0.0),
+        for broken in (dict(gate, target_entry=0), dict(gate, target_entry=gate["boss_entry"]),
+                       dict(gate, spell_id=33439), dict(gate, param=0.0),
                        dict(gate, param=100.0), dict(gate, window_s=7.0), dict(gate, window_s=49.0),
                        dict(gate, window_s=251.0), dict(gate, hp_min=20), dict(gate, hp_max=50),
                        dict(gate, bot_aura=24306), dict(gate, tactic_mode="until_tank"), dict(gate, spot_x=1.0),

@@ -574,6 +574,7 @@ static void GateHold_RowShape()
     {
         std::vector<BossTacticRow> rows;
         BossTacticRow noTarget = good; noTarget.targetEntry = 0;
+        BossTacticRow selfTarget = good; selfTarget.targetEntry = good.bossEntry;
         BossTacticRow spell = good; spell.spellId = 33439;
         BossTacticRow lowGate = good; lowGate.param = 0.0f;
         BossTacticRow highGate = good; highGate.param = 100.0f;
@@ -585,6 +586,7 @@ static void GateHold_RowShape()
         BossTacticRow spot = good; spot.spotX = 1.0f;
         BossTacticRow cycle = good; cycle.cycleSec = 30.0f;
         rows.push_back(noTarget);
+        rows.push_back(selfTarget);
         rows.push_back(spell);
         rows.push_back(lowGate);
         rows.push_back(highGate);
