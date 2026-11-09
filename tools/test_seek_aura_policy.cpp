@@ -330,6 +330,17 @@ int main()
         CHECK(viaReach);
         c.capLatched = false;
         CHECK(SeekCapGuardBlocks(true, false));
+        // Walk 58 F3: the Son the guard held back (the `seek take held` row): the reach would take it, the guard
+        // stops it. No collapse, a latched take, or no takeable Son: nothing held.
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == 0);
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, false) == -1);
+        c.capLatched = true;
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == -1);
+        c.capLatched = false;
+        c.reachKey = false;
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == -1);
+        c.reachKey = true;
+        CHECK(SeekCapGuardHeldPick(false, 1, 2, false, false, {c}, true) == -1);
         // Review H1: tanks[1] is the cap's reference (main tank holds, tanks[1] 400 on the boss, tanks[2] away), the
         // healer clock fires for it: its leave collapses the cap, so with the reach key on the take is held back; key
         // off: today's take. A latched take goes on. Mutation: drop the collapse check and the key-on case fails.

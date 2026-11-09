@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 namespace ai
 {
@@ -223,6 +224,9 @@ namespace ai
         // holding reads `none`). Set whatever the key says.
         enum class Holder { None, Main, Off };
         Holder holder = Holder::None;
+        // The list index of the tank whose threat is the reference (walk 58 F3 diagnostics: the rows name it); -1 with
+        // an empty list.
+        int index = -1;
     };
 
     inline const char* ThreatCapHolderWord(ThreatCapPick::Holder holder)
@@ -252,13 +256,20 @@ namespace ai
         if (tanks.empty())
             return pick;
         float highest = 0.0f;
-        for (const ThreatCapTank& tank : tanks)
+        int highestIndex = 0;
+        for (std::size_t i = 0; i < tanks.size(); ++i)
         {
-            highest = std::max(highest, tank.threat);
+            const ThreatCapTank& tank = tanks[i];
+            if (tank.threat > highest)
+            {
+                highest = tank.threat;
+                highestIndex = static_cast<int>(i);
+            }
             if (tank.holdsBoss && pick.holder == ThreatCapPick::Holder::None)
                 pick.holder = tank.offTank ? ThreatCapPick::Holder::Off : ThreatCapPick::Holder::Main;
         }
         pick.threat = highest;
+        pick.index = highestIndex;
         if (!successorCap)
             return pick;
         if (notHolder)
@@ -275,19 +286,26 @@ namespace ai
             {
                 pick.threat = best->threat;
                 pick.offTank = best->offTank;
+                pick.index = static_cast<int>(best - tanks.data());
                 return pick;
             }
         }
         bool haveOffTank = false;
         bool offTankOnBoss = false;
         float offTank = 0.0f;
-        for (const ThreatCapTank& tank : tanks)
+        int offTankIndex = -1;
+        for (std::size_t i = 0; i < tanks.size(); ++i)
         {
+            const ThreatCapTank& tank = tanks[i];
             if (tank.offTank && tank.onBoss)
                 offTankOnBoss = true;
             if (!tank.offTank || tank.threat <= 0.0f)
                 continue;
-            offTank = haveOffTank ? std::max(offTank, tank.threat) : tank.threat;
+            if (!haveOffTank || tank.threat > offTank)
+            {
+                offTank = tank.threat;
+                offTankIndex = static_cast<int>(i);
+            }
             haveOffTank = true;
         }
         // An off-tank on the boss is the successor and the absolute floor applies; with every off-tank away the main
@@ -298,6 +316,7 @@ namespace ai
             return pick;
         pick.threat = offTank;
         pick.offTank = true;
+        pick.index = offTankIndex;
         return pick;
     }
 
@@ -380,15 +399,35 @@ namespace ai
     // does not vanish when the tank walks off). Today's pick naming no off-tank reference has none to lose: false.
     // Otherwise it collapses when the new pick names no off-tank reference, or one under kThreatCapCollapseShare of
     // today's. The holder (main, an off-tank, nobody) is whatever the list says. A bad `selfPos` never collapses.
-    inline bool ThreatCapLeaveCollapses(std::vector<ThreatCapTank> tanks, int selfPos, bool notHolder = false)
+    //
+    // ThreatCapLeaveReadOf is the same check with what the `seek take held` row (walk 58 F3) names: today's reference
+    // tank (`refIndex`, -1 when today's pick has none to lose) and the reference left after the leave as a percent of
+    // today's (`sharePct`; 0 when no off-tank reference is left, 100 when nothing collapses for want of a reference).
+    struct ThreatCapLeaveRead
     {
+        bool collapses = false;
+        int refIndex = -1;
+        float sharePct = 100.0f;
+    };
+
+    inline ThreatCapLeaveRead ThreatCapLeaveReadOf(std::vector<ThreatCapTank> tanks, int selfPos, bool notHolder = false)
+    {
+        ThreatCapLeaveRead read;
         if (selfPos < 0 || static_cast<std::size_t>(selfPos) >= tanks.size())
-            return false;
+            return read;
         const ThreatCapPick now = ThreatCapPickReference(tanks, true, notHolder);
         if (!now.offTank)
-            return false;
+            return read;
+        read.refIndex = now.index;
         tanks[static_cast<std::size_t>(selfPos)].onBoss = false;
         const ThreatCapPick after = ThreatCapPickReference(tanks, true, notHolder);
-        return !after.offTank || after.threat < now.threat * kThreatCapCollapseShare;
+        read.collapses = !after.offTank || after.threat < now.threat * kThreatCapCollapseShare;
+        read.sharePct = !after.offTank ? 0.0f : now.threat > 0.0f ? after.threat / now.threat * 100.0f : 100.0f;
+        return read;
+    }
+
+    inline bool ThreatCapLeaveCollapses(std::vector<ThreatCapTank> tanks, int selfPos, bool notHolder = false)
+    {
+        return ThreatCapLeaveReadOf(std::move(tanks), selfPos, notHolder).collapses;
     }
 }

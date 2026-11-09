@@ -165,6 +165,7 @@ ref survives line drift.
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
 | 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=` and `src=` (the take path) |
+| 18a | seek take held | `seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=<nearest_reach\|healer_clock>` | LogSeekTakeHeld (FindSeekNearestTake, SeekHealerClockCapOk) | yes: `cap_guard` (with `DungeonRunSeekNearestTakeReach`, the collapse guard held this tank's reach or healer-clock take of the Son back: its leave would collapse the damage dealers' threat cap; `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's, 0 when no off-tank reference is left); once per tank and Son per 2 s | new |
 
 ### Other boss-tactics rows
 
@@ -250,7 +251,10 @@ One row per charm, from `ReadSeekFight`: a group-wide aura scan at most every 50
 and the row is built 1500 ms after the charmed player is first seen (Hakkar has turned to his next victim by then,
 median 1.05 s after the cast). `charmed=<role>:<class>,victim=<role>:<class>,ot1=<threat>,ot2=<threat>,top=<role>:<class>:<threat>|...`
 (up to five threat entries, the charmed player left out; `ot1`/`ot2` are the second and third tanks' threat, or -1
-when absent), and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
+when absent), then `,cap_ref=<name>,cap_ref_threat=<threat>,top_dps_threat=<threat>` (walk 58 F3: the threat cap's
+reference tank and its threat at the row, from the cap's own tank list and pick, `none`/-1 with no tank listed; the
+highest damage dealer's threat, 0 with none; `top=` entries never hold a comma, so a parser reads it as `top=([^,]*)`),
+and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
 **Not a refusal:** it is a measurement of the threat successor's margin for the Cause Insanity work, and it carries no
 `reason=`.
 

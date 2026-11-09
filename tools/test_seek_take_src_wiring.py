@@ -56,5 +56,42 @@ class SeekTakeSrcWiring(unittest.TestCase):
             self.assertIn(word, ROWS)
 
 
+class SeekTakeHeldWiring(unittest.TestCase):
+    """Walk 58 F3: the cap guard's held take logs a `seek take held` row (it logged nothing before)."""
+
+    def test_the_row_format_and_throttle(self):
+        log = body(ACTIONS, "void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuardInfo& info,")
+        self.assertIn('"seek take held son=%u taker=%s reason=cap_guard ref=%s share=%.0f src=%s"', log)
+        self.assertIn('"BossTacticsSeekPull"', log)
+        # Throttled per tank and Son, 2 s.
+        self.assertIn("constexpr std::uint32_t kSeekTakeHeldLogGapMs = 2000;", ACTIONS)
+        self.assertIn("std::make_pair(bot->GetObjectGuid().GetRawValue(), son->GetObjectGuid().GetRawValue())", log)
+        self.assertIn("nowMs - last < kSeekTakeHeldLogGapMs", log)
+        # No colon after "seek take": the take parsers that match "seek take:" never read it as a take.
+        self.assertNotIn('"seek take held:', ACTIONS)
+
+    def test_the_reach_guard_logs_the_held_son(self):
+        fn = body(ACTIONS, "Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
+        self.assertIn("SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo);", fn)
+        held = fn[fn.index("if (pick < 0 && selfCollapsesCap)"):]
+        self.assertIn("SeekCapGuardHeldPick(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,", held)
+        self.assertIn('LogSeekTakeHeld(ai, bot, units[static_cast<std::size_t>(held)], capInfo, "nearest_reach");', held)
+
+    def test_the_healer_clock_guard_logs_the_held_son(self):
+        fn = body(ACTIONS, "bool SeekHealerClockCapOk(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
+        self.assertIn("SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo)", fn)
+        self.assertIn('if (!allowed)\n        LogSeekTakeHeld(ai, bot, son, capInfo, "healer_clock");', fn)
+        self.assertIn("return allowed;", fn)
+
+    def test_the_guard_names_the_reference(self):
+        fn = body(ACTIONS, "bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss,")
+        self.assertIn("ThreatCapLeaveReadOf(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);", fn)
+        self.assertIn("info->sharePct = read.sharePct;", fn)
+        self.assertIn("return read.collapses;", fn)
+
+    def test_the_row_is_documented(self):
+        self.assertIn("seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=", ROWS)
+
+
 if __name__ == "__main__":
     unittest.main()

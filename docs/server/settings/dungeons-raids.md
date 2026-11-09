@@ -1088,6 +1088,8 @@ With the key on, the same cap guard also holds back the first off-tank's 3 s hea
 
 The take row says `src=nearest_reach` when only the reach let the take through (`src=nearest` when the 8 yd rule did).
 
+Diagnostics (always on with the key, walk 58 F3: the guard logged nothing, so its effect could not be measured): a `BossTacticsSeekPull` row `seek take held son=<g> taker=<name> reason=cap_guard ref=<name> share=<pct> src=nearest_reach|healer_clock` whenever the collapse guard holds back a reach take (the reach would take the Son, the guard alone stops it) or a healer-clock take, once per tank and Son per 2 s. `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's (0: no off-tank reference left).
+
 Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon cycle (the walk-out record forgets the Sons of earlier cycles), so a Son walked last cycle and never lost counts as one that joined by itself.
 
 </details>

@@ -370,11 +370,26 @@ class CauseInsanityRowWiring(unittest.TestCase):
         return body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
 
     def test_the_row_is_built(self):
-        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s"',
+        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,cap_ref_threat=%.0f,'
+                      'top_dps_threat=%.0f"',
                       '"Cause Insanity on %s: Hakkar turned to %s (%s)"',
                       '"BossTacticsCharm"'):
-            self.assertIn(field, ACTIONS)
+            self.assertIn(field.replace("'\n                      '", ""), ACTIONS.replace('"\n             "', ""))
         self.assertIn("LogSeekCharm(ai, bot, boss, charmRowGuid, roles);", ACTIONS)
+
+    def test_the_row_carries_the_cap_reference(self):
+        # Walk 58 F3: the cap's reference at the CI row, read from the cap's own tank list and pick (no copy of it).
+        log = body(ACTIONS, "void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, "
+                            "const RaidTankRoles& roles)\n{")
+        self.assertIn("ThreatCapTanksOf(ai, boss, roles, nullptr, &capWho);", log)
+        self.assertIn("ThreatCapPickReference(capTanks, ThreatSuccessorTarget(boss),", log)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder", log)
+        self.assertIn("capWho[static_cast<std::size_t>(capPick.index)]", log)
+        self.assertIn('std::strcmp(CharmRoleWord(entry.unit), "dps") == 0', log)
+        self.assertIn('capRef ? capRef->GetName() : "none", capRef ? capPick.threat : -1.0f, topDpsThreat);', log)
+        # The new fields come after `top=`, whose entries never hold a comma, so `top=([^,]*)` still parses it.
+        fmt = log[log.index('"charmed='):log.index("CharmRoleWord(charmed)")]
+        self.assertLess(fmt.index("top=%s"), fmt.index(",cap_ref=%s"))
 
     def test_the_scan_waits_500_ms_and_the_row_1500_ms(self):
         read = self.read()

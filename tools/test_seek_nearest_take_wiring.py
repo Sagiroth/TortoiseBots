@@ -76,7 +76,8 @@ class SeekNearestTakeWiring(unittest.TestCase):
         fn = body(ACTIONS, "Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,")
         self.assertIn("const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;", fn)
         self.assertIn("if (reachOn)\n        SeekWalkoutReachRead(bot, walked, lostMeets, latch);", fn)
-        self.assertIn("const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot);", fn)
+        self.assertIn("const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo);",
+                      fn)
         # Review L3 / round 2: a latched (started, under 10 s) take of a Son skips the collapse re-check.
         self.assertIn("c.capLatched = WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, entry.first, nowMs);", fn)
         loop = fn[fn.index("for (const auto& entry : state.nonTankSince)"):fn.index("const int pick =")]
@@ -86,11 +87,12 @@ class SeekNearestTakeWiring(unittest.TestCase):
                       loop)
         self.assertIn("viaReach = false;", fn[:fn.index("if (!state.row")])
         # Review H1/M2/M3: the collapse check reads the cap's own list (the shared helper, nobody skipped).
-        ref = body(ACTIONS, "bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot)")
+        ref = body(ACTIONS, "bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot,")
         self.assertIn("if (!ai || !boss || !bot || !ThreatSuccessorTarget(boss))\n        return false;", ref)
         self.assertIn("ThreatCapTanksOf(ai, boss, roles, nullptr, &who);", ref)
-        self.assertIn("return ThreatCapLeaveCollapses(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);",
-                      ref)
+        # Walk 58 F3: the same check through ThreatCapLeaveReadOf, which also names the reference for the held row.
+        self.assertIn("ThreatCapLeaveReadOf(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);", ref)
+        self.assertIn("return read.collapses;", ref)
 
     def test_the_healer_clock_reads_the_cap_guard_only_with_the_reach_key(self):
         # Review H1: key off, the `||` short-circuits before any read (today's take); key on, the guard decides and a
@@ -99,7 +101,8 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn("if (state.healerSon && (!sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach ||\n"
                       "                                SeekHealerClockCapOk(ai, bot, roles, state, state.healerSon)))", find)
         ok = body(ACTIONS, "bool SeekHealerClockCapOk(")
-        self.assertIn("return SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot),", ok)
+        self.assertIn("SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo),", ok)
+        self.assertIn("return allowed;", ok)
         self.assertIn("WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),", ok)
         # Round 2 NEW-1: the clock's override (6 s on the non-tank, or the victim under 40 %) feeds the guard.
         self.assertIn("HealerClockOverridesCap(onNonTankMs, victimHpPct));", ok)

@@ -1,5 +1,6 @@
 # Changelog
 
+- New: Hakkar log rows show the threat-cap collapse guard: `seek take held ... reason=cap_guard ref= share=` when it holds back a reach or healer-clock take, and the Cause Insanity row gains `cap_ref=`, `cap_ref_threat=` and `top_dps_threat=`.
 - New: behind AiPlayerbot.DungeonRunSeekShotWaitsReceiver (default 0, recommended on), the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s and never with the next Blood Siphon 15 s or less away, and logs one `event=shot_wait` row per walk-out.
 - Fixed: behind AiPlayerbot.DungeonRunFactJudgeCharmedLead (default 0), a run whose lead bot is charmed (Jin'do's Brain Wash, any charm) judges its kill-first read, engaged units, crowd-control holds, raid guard anchor and order targets by an uncharmed bot, so the Brain Wash Totem focus and the guard no longer go silent while the main tank is Brain-Washed.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.

@@ -629,6 +629,18 @@ namespace ai
         return best;
     }
 
+    // The Son whose nearest take the cap guard held back this tick (walk 58 F3, the `seek take held ... reason=cap_guard`
+    // row): with the guard, no Son is picked; without it, one would be. -1: the guard held nothing (it did not collapse,
+    // no Son is takeable anyway, or another Son is taken instead).
+    inline int SeekCapGuardHeldPick(bool flagOn, int selfIdx, int receiverIdx, bool selfIsBossVictim, bool selfHoldsSon,
+                                    const std::vector<SeekNearestTakeCand>& sons, bool selfCollapsesCap)
+    {
+        if (!selfCollapsesCap ||
+            PickSeekNearestTake(flagOn, selfIdx, receiverIdx, selfIsBossVictim, selfHoldsSon, sons, true) >= 0)
+            return -1;
+        return PickSeekNearestTake(flagOn, selfIdx, receiverIdx, selfIsBossVictim, selfHoldsSon, sons, false);
+    }
+
     // The receiver's own pick of a fighting Son near the spot (the third tank's `fighting`): with the nearest take on it
     // skips only a Son whose victim is the first off-tank (`victimTankIdx` 1, the nearest taker that just took it), so
     // it does not walk over and taunt it back. A Son on the main tank (0), on any other tank or on a non-tank (-1) is
