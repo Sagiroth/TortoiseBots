@@ -1062,3 +1062,62 @@ func TestHistoryListPaging(t *testing.T) {
 		t.Errorf("limit=0: %d %s", code, body)
 	}
 }
+
+// TestFightMetersStoredBesideTheFight: a line written while the meters callback returns a series carries it back through
+// FightMeters (byte for byte, also after a reopen); a callback that returns nil leaves the field out of the line; and an old line
+// (one written with no meters field at all) still loads, FightMeters answering nil meters.
+func TestFightMetersStoredBesideTheFight(t *testing.T) {
+	dir := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: dir, Now: clock.Now})
+	series := json.RawMessage(`{"v":1,"step_ms":2000,"n":2,"src":"window","bots":[{"g":808,"d":[5,10],"h":[0,0]}]}`)
+	var asked []string
+	s.SetMeters(func(commander string, f combat.Fight) json.RawMessage {
+		asked = append(asked, commander+"/"+f.ID)
+		if f.ID == "with" {
+			return series
+		}
+		return nil
+	})
+	deliver(t, s, clock, Item{Session: 7, Fight: mkFight("with", "Glacienne", t0.Unix()-7200), At: clock.Now()})
+	deliver(t, s, clock, Item{Session: 7, Fight: mkFight("without", "Glacienne", t0.Unix()-3600), At: clock.Now()})
+	if len(asked) != 2 || asked[0] != "Glacienne/with" {
+		t.Fatalf("the callback was asked %v", asked)
+	}
+	check := func(s *Store) {
+		t.Helper()
+		f, _, m, ok := s.FightMeters(combat.Key("Glacienne", 7, "with"))
+		if !ok || f.ID != "with" || string(m) != string(series) {
+			t.Fatalf("with: ok=%v id=%q meters=%s", ok, f.ID, m)
+		}
+		f, _, m, ok = s.FightMeters(combat.Key("Glacienne", 7, "without"))
+		if !ok || f.ID != "without" || m != nil {
+			t.Fatalf("without: ok=%v id=%q meters=%s", ok, f.ID, m)
+		}
+		if _, _, ok := s.Fight(combat.Key("Glacienne", 7, "with")); !ok {
+			t.Fatal("Fight is the same lookup without the series")
+		}
+	}
+	check(s)
+	// The file: the series is on the first line only; the second line has no meters key (so an old file and a fight outside the
+	// kept track look the same).
+	var raw []byte
+	filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(p, ".jsonl") {
+			b, _ := os.ReadFile(p)
+			raw = append(raw, b...)
+		}
+		return nil
+	})
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], `"meters":{"v":1`) || strings.Contains(lines[1], `"meters"`) {
+		t.Fatalf("file lines: %q", lines)
+	}
+	s.Close(context.Background())
+	s2, err := Open(Config{Dir: dir, Now: clock.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	check(s2)
+}

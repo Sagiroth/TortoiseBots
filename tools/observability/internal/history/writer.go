@@ -288,10 +288,14 @@ func (s *Store) write(it Item) bool {
 			ntMs, longest = &a, &b
 		}
 	}
+	var meters json.RawMessage
+	if s.meters != nil {
+		meters = s.meters(f.Commander, f)
+	}
 	key := combat.Key(f.Commander, it.Session, f.ID)
 	stored := line{
 		V: 1, Session: it.Session, Key: key, SavedAt: now.Unix(), PackKey: packKey(f, pack), Pack: pack,
-		Engaged: engagedSorted(f.Engaged), NonTankMs: ntMs, NonTankLongestMs: longest, Warnings: it.Warnings, Fight: f,
+		Engaged: engagedSorted(f.Engaged), NonTankMs: ntMs, NonTankLongestMs: longest, Warnings: it.Warnings, Fight: f, Meters: meters,
 	}
 	data, err := json.Marshal(stored)
 	if err != nil {

@@ -70,7 +70,8 @@ func TestHistoryRoutesWired(t *testing.T) {
 		"TBDASH_FIGHT_HISTORY_DIR",
 		"history.Open(history.Config{Dir: *fightHistoryDir}",
 		"udpListener.SetHistory(historyStore)",
-		"historyStore.Fight(",
+		"combatFightDetailHandler(combatStore, historyStore, store)",
+		"historyStore.SetMeters(",
 		"historyStore.Lookup(",
 	} {
 		if !strings.Contains(string(src), want) {

@@ -391,6 +391,9 @@ func main() {
 			historyStore = nil
 		} else {
 			historyStore.SetMetrics(metricsRegistry)
+			// The fight's damage and healing series is built when the fight is written (the writer waits for the last reports) and kept
+			// in its history line, so a past night's fight still draws its meters.
+			historyStore.SetMeters(func(commander string, f combat.Fight) json.RawMessage { return metersJSON(store, f) })
 			log.Printf("[History] fights kept in %s (at most %d days, %d MiB)", *fightHistoryDir, history.HistoryDays, history.HistoryMaxBytes>>20)
 		}
 	}
@@ -709,41 +712,7 @@ func main() {
 	mux.HandleFunc("/api/v1/combat/run-totals", requireAuth(runTotalsHandler(combatStore, historyStore)))
 	// The live fight's catch-up: the held events at or after a cursor, bounded by the live row's own rings.
 	mux.HandleFunc("GET /api/v1/combat/live", requireAuth(combatLiveHandler(combatStore)))
-	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		// The detail key is (commander, session, id): fight ids repeat
-		// across commanders and sessions. The list rows carry the composed
-		// key; callers may also pass the three parts as query params.
-		q := r.URL.Query()
-		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
-		f, warnings, ok := combatStore.GetKey(key)
-		if !ok {
-			if commander, session, id, qok := combatFightKey(q); qok {
-				f, warnings, ok = combatStore.Get(commander, session, id)
-			}
-		}
-		if !ok {
-			// Not in memory: a past night's fight, re-read from its history file and judged now with the same rules.
-			if historyStore != nil {
-				if hf, row, hok := historyStore.Fight(key); hok {
-					writeJSON(w, struct {
-						Fight    combat.Fight     `json:"fight"`
-						Warnings []combat.Warning `json:"warnings"`
-						Hist     bool             `json:"hist,omitempty"`
-						PackKey  string           `json:"pack_key,omitempty"`
-					}{hf, combat.Judge(hf, combatStore.Rules()), true, row.PackKey})
-					return
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":"no such fight"}`))
-			return
-		}
-		writeJSON(w, struct {
-			Fight    combat.Fight     `json:"fight"`
-			Warnings []combat.Warning `json:"warnings"`
-		}{f, warnings})
-	}))
+	mux.HandleFunc("/api/v1/combat/fight/", requireAuth(combatFightDetailHandler(combatStore, historyStore, store)))
 
 	// The fight history across nights: the night picker's days, one day's fights, and the same pack across runs. Fights the
 	// daemon still remembers and ones only on disk answer alike; the history disabled answers the empty shapes.
