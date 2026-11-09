@@ -66,5 +66,9 @@ std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow);
 // only, never per-tick logic.
 uint32_t GuildBankTabCount(uint32_t guildId);
 
+// True when the guild has bought a bank. Cached for half a minute per guild,
+// so the supply planner can ask on every tick without a database read.
+bool GuildHasBank(uint32_t guildId);
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

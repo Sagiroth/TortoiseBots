@@ -10,6 +10,7 @@
 #include "playerbot/GuildOrderCraft.h"
 #include "playerbot/policy/guild/EnchantGatherPolicy.h"
 #include "runtime/EnchantCapital.h"
+#include "runtime/GuildOrderAccess.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderBringPolicy.h"
 #include "runtime/GuildOrderNeedPolicy.h"
@@ -544,7 +545,10 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
     // A banker visit that found none of this item skips the bank leg until
-    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId, snap.nowMs, order.bankEmptyMs);
+    // A guild that never bought a bank has nothing to take from: the bank
+    // leg is skipped from the start instead of sending the bot to a banker.
+    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId, snap.nowMs, order.bankEmptyMs) ||
+        !TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId());
     bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     FarmableVerdict localVerdict(bot, order, candidate);
