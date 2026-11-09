@@ -27,30 +27,33 @@
   }
 
   // Hakkar: for every Blood Siphon cast, whether a Son of Hakkar was on a member in the stretch before it ([the cast before or the
-  // pull, this cast)) by the samples. null for "unknown": no samples at all.
+  // pull, this cast)) by the samples. null for "unknown": no samples at all. A cycle whose stretch holds no sample at all is unknown
+  // too, so the count is then a lower bound ({n, lower: true}), not "not pulled".
   function sonPulled(fight, marks, samples) {
     if (!Array.isArray(samples) || !samples.length) return null;
     const members = {};
     botsOf(fight).forEach((b) => { members[String(b.guid)] = true; });
     const t0 = startMs(fight);
-    let n = 0;
+    let n = 0, lower = false;
     marks.forEach((m, k) => {
       const from = k ? marks[k - 1].t : 0;
-      const hit = samples.some((s) => {
-        if (!s || num(s.t) === null) return false;
+      let seen = false, hit = false;
+      samples.forEach((s) => {
+        if (hit || !s || num(s.t) === null) return;
         const rel = s.t - t0;
-        if (rel < from || rel >= m.t) return false;
-        return Array.isArray(s.mobs) && s.mobs.some((x) => x && x.e === SON && x.v != null && members[String(x.v)] === true);
+        if (rel < from || rel >= m.t) return;
+        seen = true;
+        if (Array.isArray(s.mobs) && s.mobs.some((x) => x && x.e === SON && x.v != null && members[String(x.v)] === true)) hit = true;
       });
-      if (hit) n++;
+      if (hit) n++; else if (!seen) lower = true;
     });
-    return n;
+    return { n, lower };
   }
 
   function hakkarRow(fight, iv, samples) {
     const A = FA();
     const marks = A.markers(fight, SIPHON).filter((m) => !m.death);
-    const parts = { cycles: marks.length, dosed: 0, sonPulled: null, lower: false };
+    const parts = { cycles: marks.length, dosed: 0, sonPulled: null, sonLower: false, lower: false };
     if (!marks.length) return { boss: HAKKAR, text: "Hakkar: no Blood Siphon yet", parts };
     const at = A.atMarkers(iv, POISON, fight, marks);
     at.forEach((a) => {
@@ -58,19 +61,22 @@
       // A capped list: a bot whose state was lost is neither "had it" nor "did not", so the count is a minimum.
       if (a.unknown > 0) parts.lower = true;
     });
-    parts.sonPulled = sonPulled(fight, marks, samples);
+    const son = sonPulled(fight, marks, samples);
+    parts.sonPulled = son === null ? null : son.n;
+    parts.sonLower = son !== null && son.lower;
     const m = parts.cycles;
     return {
       boss: HAKKAR,
-      text: "Hakkar: dosed " + (parts.lower ? "≥" : "") + parts.dosed + "/" + m + " cycles · Son pulled " + (parts.sonPulled === null ? "?" : parts.sonPulled) + "/" + m,
+      text: "Hakkar: dosed " + (parts.lower ? "≥" : "") + parts.dosed + "/" + m + " cycles · Son pulled " + (son === null ? "?" : (son.lower ? "≥" : "") + son.n) + "/" + m,
       parts,
     };
   }
 
-  // The main tank: the layout's name when set, else the tank-role bot with the largest damage taken (a filed fight), else the first tank by name.
+  // The main tank. One rule with the night table (internal/mechanics MainTank): the tank-role bot with the largest damage taken, ties by name.
+  // A running fight has no damage taken yet, and has no night table to disagree with: it reads the raid layout's tank first.
   function mainTank(fight, layout) {
     const bots = botsOf(fight);
-    if (layout && typeof layout.mt === "string" && layout.mt) {
+    if (fight && fight.live === true && layout && typeof layout.mt === "string" && layout.mt) {
       const hit = bots.find((b) => b.name === layout.mt);
       if (hit) return hit;
     }
@@ -90,12 +96,24 @@
     return { boss: JINDO, text: "Jin'do: Hex on MT " + (hexS === null ? "?" : Math.round(hexS) + " s") + " · Shade deaths " + shades, parts };
   }
 
+  // The entry a fight is filed under: one rule with the daemon (internal/mechanics BossOf): its boss, else the boss phase's entry, else
+  // the first preset entry among the engaged (a running fight carries no engaged list).
+  function bossOf(fight) {
+    const boss = num(fight && fight.boss) || 0;
+    if (boss) return boss;
+    const phase = num(fight && fight.boss_phase_entry) || 0;
+    if (phase) return phase;
+    const engaged = fight && Array.isArray(fight.engaged) ? fight.engaged.filter((g) => g && typeof g === "object") : [];
+    for (const e of [HAKKAR, JINDO]) if (engaged.some((g) => g.e === e)) return e;
+    return 0;
+  }
+
   // The row of one fight: `{boss, text, parts, title}`. iv = FightAuras.intervals(fight); samples = FdLive's samples (running) or the
   // x=1 track's (filed, may be empty); layout = the binding's raid layout or null.
   function row(fight, iv, samples, layout) {
     if (!fight || typeof fight !== "object") return { boss: 0, text: "", parts: {}, title: "" };
-    const boss = num(fight.boss) || 0, phase = num(fight.boss_phase_entry) || 0;
-    const kind = boss === HAKKAR || phase === HAKKAR ? HAKKAR : boss === JINDO || phase === JINDO ? JINDO : 0;
+    const boss = bossOf(fight);
+    const kind = boss === HAKKAR ? HAKKAR : boss === JINDO ? JINDO : 0;
     const note = fight.aura_src === "sampled" ? SAMPLE_NOTE : FILED_NOTE;
     const ivs = iv || FA().intervals(fight);
     let out;
@@ -110,6 +128,6 @@
     return out;
   }
 
-  const api = { DOSED_SHARE, HAKKAR, SON, JINDO, SHADE_NAME, SON_NAME, row, mainTank, startMs, SAMPLE_NOTE, FILED_NOTE };
+  const api = { DOSED_SHARE, HAKKAR, SON, JINDO, SHADE_NAME, SON_NAME, row, mainTank, bossOf, startMs, SAMPLE_NOTE, FILED_NOTE };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdMech = api;
 })(typeof self !== "undefined" ? self : this);

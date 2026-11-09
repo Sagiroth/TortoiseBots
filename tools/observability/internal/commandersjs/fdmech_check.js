@@ -3,12 +3,13 @@
 // Siphon at 35 s and 95 s; A, B, C, D alive; D dies at 60 s) gives `dosed 0/2` (2 of 4 alive at 35 s, 1 of 3 at 95 s); the same plus an
 // apply at 30 s for C and D gives `dosed 1/2` (4 of 4); Son samples in the second window only give `Son pulled 1/2`; no samples `?/2`;
 // Jin'do's Hex time on the layout's main tank, Shade deaths by killer, the other bosses' deaths, hostile input.
-// args: fdmech.js, fightauras.js, fdlive.js.
+// args: fdmech.js, fightauras.js, fdlive.js, internal/mechanics/testdata/mt-rule.json (the main-tank fixture the Go test reads too).
 const assert = require("assert");
 const path = require("path");
 const M = require(path.resolve(process.argv[2]));
 const A = require(path.resolve(process.argv[3]));
 const FdLive = require(path.resolve(process.argv[4]));
+const MT_FIXTURE = JSON.parse(require("fs").readFileSync(path.resolve(process.argv[5]), "utf8"));
 
 const POISON = 24321, SIPHON = 24324, HEX = 17172;
 const START_S = 1000, T0 = START_S * 1000; // fight start (unix s) and in ms
@@ -65,7 +66,15 @@ assert.strictEqual(row(hakkar(), [sample(10000, [son("2")]), sample(70000, [son(
 // a Son on a non-member (a Son nobody pulled), another mob entry on a member, a sample on the cast's instant, after the last cast: none
 assert.strictEqual(row(hakkar(), [sample(10000, [son("999")]), sample(20000, [{ id: "x", e: 5, hp: 1, v: "1" }]), sample(35000, [son("1")]), sample(100000, [son("1")])]).parts.sonPulled, 1,
   "the 35 s sample is in the second window ([35 s, 95 s)); 10 s non-member, 20 s other entry and 100 s (after the last cast) count for nothing");
-assert.strictEqual(row(hakkar(), [sample(10000, [son("999")]), sample(20000, [{ id: "x", e: 5, hp: 1, v: "1" }]), sample(100000, [son("1")])]).parts.sonPulled, 0, "samples but no Son pull: 0, not unknown");
+assert.strictEqual(row(hakkar(), [sample(10000, [son("999")]), sample(20000, [{ id: "x", e: 5, hp: 1, v: "1" }]), sample(50000, []), sample(100000, [son("1")])]).text, "Hakkar: dosed 0/2 cycles \u00b7 Son pulled 0/2", "samples in both windows but no Son pull: 0, exact, not unknown");
+// a cycle whose stretch holds no sample is unknown: the count is a lower bound, never "not pulled"
+r = row(hakkar(), [sample(10000, [son("999")]), sample(100000, [son("1")])]);
+assert.strictEqual(r.text, "Hakkar: dosed 0/2 cycles \u00b7 Son pulled \u22650/2", "no sample between 35 s and 95 s: " + r.text);
+assert.deepStrictEqual([r.parts.sonPulled, r.parts.sonLower], [0, true]);
+r = row(hakkar(), [sample(70000, [son("1")])]);
+assert.strictEqual(r.text, "Hakkar: dosed 0/2 cycles \u00b7 Son pulled \u22651/2", "a hit in the second window, none in the first: at least 1");
+assert.strictEqual(row(hakkar(), [sample(10000, [son("1")]), sample(70000, [son("1")])]).parts.sonLower, false, "a sample in each stretch: exact");
+assert.strictEqual(row(hakkar(), []).parts.sonLower, false, "no samples at all is unknown (?), not a lower bound");
 // the victim as a number (a track row) matches the member guid
 assert.strictEqual(row(hakkar(), [sample(10000, [son(1)])]).parts.sonPulled, 1);
 // no samples at all: unknown
@@ -105,15 +114,29 @@ const jindo = (extra) => Object.assign({
   auras: [[10000, 1, HEX, 1], [30000, 1, HEX, -1], [10000, 2, HEX, 1], [25000, 2, HEX, -1]],
   deaths: [{ name: "H", t_ms: 1, killer: "Shade of Jin'do" }, { name: "X", t_ms: 2, killer: "Shade of Jin'do" }, { name: "Y", t_ms: 3, killer: "Jin'do the Hexxer" }], log: [],
 }, extra || {});
+// a filed fight: one rule with the night table, the tank with the largest damage taken (T2), whatever the layout names
 r = row(jindo(), [], { mt: "T1" });
-assert.strictEqual(r.text, "Jin'do: Hex on MT 20 s · Shade deaths 2", "layout.mt names T1: 10-30 s");
-assert.deepStrictEqual([r.parts.mt, r.parts.hexS, r.parts.shades], ["T1", 20, 2]);
-r = row(jindo(), [], null);
-assert.strictEqual(r.text, "Jin'do: Hex on MT 15 s · Shade deaths 2", "no layout: the tank with the largest damage taken (T2), 10-25 s = 15 s");
-assert.strictEqual(row(jindo(), [], { mt: "Nobody" }).parts.mt, "T2", "a layout name that is not in the fight falls back");
-assert.strictEqual(row(jindo(), [], { mt: "T2" }).parts.hexS, 15);
+assert.strictEqual(r.text, "Jin'do: Hex on MT 15 s \u00b7 Shade deaths 2", "layout.mt names T1 but a filed fight reads T2 (10-25 s = 15 s): " + r.text);
+assert.deepStrictEqual([r.parts.mt, r.parts.hexS, r.parts.shades], ["T2", 15, 2]);
+assert.strictEqual(row(jindo(), [], null).parts.mt, "T2");
+// a running fight has no damage taken and no night table: the layout's tank first
+const runningJ = (extra) => jindo(Object.assign({ live: true }, extra || {}));
+r = row(runningJ(), [], { mt: "T1" });
+assert.strictEqual(r.text, "Jin'do: Hex on MT 20 s \u00b7 Shade deaths 2", "layout.mt names T1: 10-30 s");
+assert.strictEqual(row(runningJ(), [], { mt: "Nobody" }).parts.mt, "T2", "a layout name that is not in the fight falls back to the largest taken");
+assert.strictEqual(row(runningJ(), [], null).parts.mt, "T2");
+// ties go to the name
+assert.strictEqual(M.mainTank({ bots: [{ name: "B", guid: 2, role: "tank", taken: 7 }, { name: "A", guid: 1, role: "tank", taken: 7 }] }, null).name, "A");
+// the shared fixture the Go test reads: the layout names another tank than the one with the most damage taken
+{
+  const fx = MT_FIXTURE, f = Object.assign({}, fx.fight);
+  assert.notStrictEqual(fx.layout.mt, fx.want.mt, "the fixture's layout differs from the top-damage tank");
+  const out = row(f, [], fx.layout);
+  assert.deepStrictEqual([out.parts.mt, out.parts.hexS], [fx.want.mt, fx.want.hex_s], "the filed path gives the daemon's main tank and Hex seconds");
+  assert.strictEqual(row(Object.assign({}, f, { live: true }), [], fx.layout).parts.mt, fx.layout.mt, "only a running fight takes the layout's tank");
+}
 // a live fight has no damage taken: the first tank by name
-const liveJ = jindo({ bots: [{ name: "T9", guid: 9, role: "tank" }, { name: "T2", guid: 2, role: "tank" }], auras: [[10000, 2, HEX, 1], [25000, 2, HEX, -1]] });
+const liveJ = jindo({ live: true, bots: [{ name: "T9", guid: 9, role: "tank" }, { name: "T2", guid: 2, role: "tank" }], auras: [[10000, 2, HEX, 1], [25000, 2, HEX, -1]] });
 assert.strictEqual(row(liveJ, [], null).text, "Jin'do: Hex on MT 15 s · Shade deaths 2");
 // an open Hex runs to the end of the fight; a rounded number of seconds
 assert.strictEqual(row(jindo({ auras: [[100000, 2, HEX, 1]] }), [], null).text, "Jin'do: Hex on MT 20 s · Shade deaths 2");
@@ -124,6 +147,21 @@ assert.strictEqual(row(jindo({ auras: [[1000, 2, 24306, 1]] }), [], null).text, 
 assert.strictEqual(row(jindo({ bots: [{ name: "H", guid: 3, role: "healer" }] }), [], null).text, "Jin'do: Hex on MT ? · Shade deaths 2");
 // Shade deaths are by killer, exactly
 assert.strictEqual(row(jindo({ deaths: [{ name: "a", killer: "shade of jin'do" }, { name: "b", killer: "Shade of Jin'do " }] }), [], null).parts.shades, 0);
+
+// ---- one boss rule with the daemon: boss, else boss_phase_entry, else the first preset entry among engaged
+{
+  const base = { dur_ms: 120000, start: START_S, bots: [], deaths: [], log: [], auras: [] };
+  assert.strictEqual(M.bossOf({ boss: 4000, boss_phase_entry: 14834, engaged: [{ e: 11380 }] }), 4000, "the boss first");
+  assert.strictEqual(M.bossOf({ boss: 0, boss_phase_entry: 14834, engaged: [{ e: 11380 }] }), 14834, "the phase entry second");
+  assert.strictEqual(M.bossOf({ engaged: [{ e: 5 }, { e: 11380 }, { e: 14834 }] }), 14834, "then the first preset in the fixed order (Hakkar, Jin'do), not the engaged list's");
+  assert.strictEqual(M.bossOf({ engaged: [{ e: 5 }, { e: 11380 }] }), 11380);
+  assert.strictEqual(M.bossOf({ engaged: [{ e: 5 }] }), 0);
+  assert.strictEqual(M.bossOf(null), 0);
+  assert.ok(row(Object.assign({}, base, { boss: 0, engaged: [{ e: 14834 }], log: [{ k: "cast", t: 1000, s: "Blood Siphon", sid: SIPHON }] }), []).text.startsWith("Hakkar: dosed"), "boss 0 with Hakkar engaged is a Hakkar row");
+  assert.ok(row(Object.assign({}, base, { boss: 0, boss_phase_entry: 11380 }), [], null).text.startsWith("Jin'do:"), "a phase entry alone");
+  assert.strictEqual(row(Object.assign({}, base, { boss: 4000, boss_name: "Other", boss_phase_entry: 14834, deaths: [] }), []).text, "Other: deaths 0", "boss 4000 with a Hakkar phase entry is the generic row, as in the daemon");
+  assert.strictEqual(row({ engaged: [{ e: 5 }], deaths: [{ name: "a" }] }, []).text, "deaths 1", "trash");
+}
 
 // ---- any other boss, and trash
 assert.strictEqual(row({ boss: 4000, boss_name: "Some Boss", dur_ms: 1, deaths: [{ name: "a" }, { name: "b" }] }, []).text, "Some Boss: deaths 2");

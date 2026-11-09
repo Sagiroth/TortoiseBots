@@ -441,7 +441,8 @@ func TestWipeRecapUIJS(t *testing.T) {
 // 80 % boundary; Son pulled by the samples' windows, unknown without samples; Jin'do's Hex time on the layout's main tank; Shade deaths by
 // killer; any other boss's deaths; a capped aura list as a minimum; hostile input).
 func TestFdMechJS(t *testing.T) {
-	runCheck(t, "fdmech_check.js", "../../web/static/js/fdmech.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js")
+	runCheck(t, "fdmech_check.js", "../../web/static/js/fdmech.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js",
+		filepath.Join("..", "mechanics", "testdata", "mt-rule.json"))
 }
 
 // TestMechPanelUIJS runs mechpanel_ui_check.js: the Boss mechanics section in app.js (one row per boss with the worst fight's link, the

@@ -27,7 +27,7 @@ const ctx = { console, document: { activeElement: null }, FightAuras, FdMech, Fd
 vm.createContext(ctx);
 vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3; const fdAuMemo = new WeakMap(); var fdLive = {}; var cmdFindBind = () => null;",
   ["esc", "setHtml", "fdSet", "fdAuIv", "fdLiveClock", "fdLiveHpOf", "fdLiveNumsText", "fdLiveTileHtml", "fdLiveTilePatch", "fdMechLine", "fdMechSamples", "fdLiveMechOf", "fdMechTitleAttr",
-    "fdLiveMechBar", "fdMechRowHtml", "fdMechHtml", "fdMechSync"].map(grab).join("\n"), "const FD_MECH_POLL_MS = 30000; const FD_MECH_NO_ROWS = 'no aura rows: the watch row is not deployed';"].join("\n"), ctx);
+    "fdLiveMechBar", "fdMechRowHtml", "fdMechHtml", "fdMechSync"].map(grab).join("\n"), (src.match(/^  const FD_MECH_[A-Z_]+ = .*;$/gm) || []).join("\n")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const count = (s, re) => (s.match(re) || []).length;
 const EVIL = "<b>x</b>";
@@ -52,6 +52,11 @@ const rows = [
   // the worst-fight link: the fight's key and its night, the pack table's button the debugger's click handler opens
   const links = Array.from(html.matchAll(/<button type="button" class="fd-link fd-mechworst" data-fd-open="([^"]*)" data-fd-day="([^"]*)">/g), (m) => [decodeURIComponent(m[1]), m[2]]);
   assert.deepStrictEqual(links, [["Cmd\u00007\u0000h-1", "2026-11-08"], ["Cmd\u00007\u0000j-2", "2026-11-08"]], "a link for each boss that has a worst fight, none for the one without");
+  // the night table counts Son DEATHS and never says "pulled" (pulls need position samples: the fight line has them)
+  const table = html.slice(html.indexOf('<div class="fd-mechtable">'));
+  assert.ok(!/pulled/i.test(table), "no 'pulled' in the night table: " + table);
+  assert.ok(table.includes('<td title="Son pulls need position samples; the fight line shows them while the fight&#39;s track is held">Son deaths/fight 1.5</td>'), "the Son cell carries the title: " + table.slice(table.indexOf("Son deaths") - 150, table.indexOf("Son deaths") + 30));
+  assert.ok(html.includes("Son pulled 1/2") && html.indexOf("Son pulled") < html.indexOf("fd-mechtable"), "the fight line keeps 'Son pulled'");
   assert.ok(html.includes("<th>Worst fight</th>") && html.includes("<th>Key metric</th>") && html.includes("<th>Second metric</th>"));
 }
 // a null Hex or dose: the watch row is not deployed
@@ -169,6 +174,24 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
     assert.strictEqual(asked.length, 3, "another window: a new request at once");
     assert.ok(!body.innerHTML.includes("fd-mechrow"), "and the old window's table is not shown meanwhile");
     await settle();
+    // an answer for a window the card has left is dropped, and the new window is asked for
+    {
+      ctx.fdUnderWin = () => "w3";
+      let release;
+      ctx.fetch = (url) => { asked.push(url); return new Promise((res) => { release = () => res({ json: () => Promise.resolve({ rows: [rows[1]], fights: 1, window: {} }) }); }); };
+      now += 40000; sync(); // w3: a request is in flight
+      const inflight = asked.length;
+      ctx.fdUnderWin = () => "w4"; // the reader picks another night meanwhile
+      sync();
+      assert.strictEqual(asked.length, inflight, "one in flight at a time, even across a window change");
+      release(); await settle();
+      assert.ok(!body.innerHTML.includes("fd-mechrow"), "the old window's answer is not shown for the new one: " + body.innerHTML.slice(0, 160));
+      ctx.fetch = (url) => { asked.push(url); return Promise.resolve({ json: () => Promise.resolve({ rows: [rows[2]], fights: 1, window: {} }) }); };
+      sync(); await settle();
+      assert.strictEqual(asked.length, inflight + 1, "the next render asks for the new window");
+      assert.ok(body.innerHTML.includes("Some Boss") && !body.innerHTML.includes("Jin&#39;do"), "and shows its own answer");
+      ctx.fdUnderWin = () => "w2"; ctx.fetch = (url) => { asked.push(url); return Promise.resolve({ json: () => Promise.resolve(answer) }); };
+    }
     // a failing answer is said, and asked again only after 30 s
     ctx.fetch = (url) => { asked.push(url); return Promise.reject(new Error("HTTP 500")); };
     now += 40000; sync(); await settle();
@@ -185,7 +208,7 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
 {
   const tags = Array.from(indexHtml.matchAll(/<script src="\/static\/js\/([a-z]+\.js)\?v=(\d+)">/g), (m) => m[1]);
   assert.ok(tags.indexOf("fightauras.js") < tags.indexOf("fdmech.js") && tags.indexOf("fdmech.js") < tags.indexOf("fdlive.js") && tags.indexOf("fdmech.js") < tags.indexOf("app.js"), "fdmech.js loads after fightauras.js and before app.js: " + tags.join(","));
-  assert.ok(/fdmech\.js\?v=1/.test(indexHtml) && /fdlive\.js\?v=3/.test(indexHtml) && /static\/js\/app\.js\?v=55/.test(indexHtml) && /app\.css\?v=31/.test(indexHtml), "the changed assets carry new versions");
+  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=3/.test(indexHtml) && /static\/js\/app\.js\?v=56/.test(indexHtml) && /app\.css\?v=31/.test(indexHtml), "the changed assets carry new versions");
   assert.ok(src.includes('class="fd-mechbox"') && src.includes('class="fd-mechbody"') && src.includes('class="fd-livemech cell-muted"'), "the section and the live bar slot are in the card");
   assert.ok(src.indexOf('class="fd-mechbox"') > src.indexOf('class="fd-underbox"'), "directly under the underperforming bots");
   assert.ok(/fdMechSync\(card, bind, fd, /.test(src) && /fdLiveMechBar\(card, st, lf, bind\)/.test(src) && /fdLiveMechBar\(card, liveSt, liveFight, bind\)/.test(src), "rendered with the card and repainted by the live tick");

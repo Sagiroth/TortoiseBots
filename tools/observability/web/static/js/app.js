@@ -10439,6 +10439,7 @@
 
   const FD_MECH_POLL_MS = 30000;
   const FD_MECH_NO_ROWS = 'no aura rows: the watch row is not deployed';
+  const FD_MECH_SON_TITLE = "Son pulls need position samples; the fight line shows them while the fight's track is held";
 
   // The row of one fight object ({text, title}) or null when there is nothing to say. `samples` are FdLive's (or the track's).
   function fdMechLine(fight, samples, layout) {
@@ -10484,12 +10485,13 @@
   // the debugger's click handler picks that fight on its night and writes its hash). Every text is escaped.
   function fdMechRowHtml(r, day) {
     const n = v => (v == null || !isFinite(Number(v)) ? null : Number(v));
-    let key, second = '-';
+    let key, second = '-', secondTitle = '';
     if (r.kind === 'hakkar') {
       const p = n(r.dosed_pct);
       key = p === null ? FD_MECH_NO_ROWS : 'dosed at siphon ' + (r.lower ? '\u2265' : '') + Math.round(p) + ' % (' + (n(r.dosed_cycles) || 0) + '/' + (n(r.cycles) || 0) + ' cycles)';
       const s = n(r.son_deaths_per_fight);
-      if (s !== null) second = 'Son deaths/fight ' + s.toFixed(1);
+      // Deaths by Son of Hakkar, never "pulls": a filed fight carries no per-cycle Son targets, so the night table cannot count pulls.
+      if (s !== null) { second = 'Son deaths/fight ' + s.toFixed(1); secondTitle = FD_MECH_SON_TITLE; }
     } else if (r.kind === 'jindo') {
       const h = n(r.hex_mt_s_per_fight);
       key = h === null ? 'no Hex aura rows: the watch row is not deployed' : 'Hex on MT ' + (r.lower ? '\u2265' : '') + Math.round(h) + ' s/fight';
@@ -10501,7 +10503,7 @@
     const worst = typeof r.worst === 'string' && r.worst
       ? `<button type="button" class="fd-link fd-mechworst" data-fd-open="${esc(encodeURIComponent(r.worst))}" data-fd-day="${esc(day || '')}">Open</button>` : '-';
     return `<tr class="fd-mechrow"><td>${esc(r.name || ('boss ' + r.boss))}</td><td class="n">${esc(n(r.fights) || 0)}</td><td class="n">${esc(n(r.kills) || 0)}</td>`
-      + `<td class="n">${esc(n(r.wipes) || 0)}</td><td>${esc(key)}</td><td>${esc(second)}</td><td>${worst}</td></tr>`;
+      + `<td class="n">${esc(n(r.wipes) || 0)}</td><td>${esc(key)}</td><td${secondTitle ? ` title="${esc(secondTitle)}"` : ''}>${esc(second)}</td><td>${worst}</td></tr>`;
   }
 
   // The section's body: this fight's row, then the night's table (or why there is none). st = {res, err}.
@@ -10538,14 +10540,16 @@
     const qs = Underperf.query(bind, fd, Date.now(), null, fdNightParams()).replace(/&run=[^&]*/, '');
     if (st.qs === qs && Date.now() - st.at < FD_MECH_POLL_MS) return;
     st.pending = true;
+    // An answer is the window it was asked for: when the card moved to another night while it was in flight it is dropped, and the
+    // next render asks for the new window (the underperforming bots' request does not do this: a known limit).
+    const asked = st.win;
     fetch('/api/v1/combat/mechanics?commander=' + encodeURIComponent(bind.commander) + '&' + qs, { credentials: 'same-origin' })
       .then(jsonOrThrow)
-      .then(json => { st.res = json; st.err = ''; })
-      .catch(e => { st.err = (e && e.message) || 'request failed'; })
+      .then(json => { if (st.win === asked) { st.res = json; st.err = ''; } })
+      .catch(e => { if (st.win === asked) st.err = (e && e.message) || 'request failed'; })
       .then(() => {
         st.pending = false;
-        st.qs = qs;
-        st.at = Date.now();
+        if (st.win === asked) { st.qs = qs; st.at = Date.now(); }
         const c = cmdCards.get(bind.commander);
         if (c && c.classList.contains('fd-on')) paint();
       });
