@@ -39,6 +39,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
+| [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
 | [`AiPlayerbot.DungeonRunGiveItems`](#aiplayerbotdungeonrungiveitems) | `1` | A bot-only run gives the bots the keys and items its dungeon needs and takes them back when the run ends; `0` gives nothing. |
 | [`AiPlayerbot.DungeonRunKillFirstGrid`](#aiplayerbotdungeonrunkillfirstgrid) | `0` | `1`: the boss tactics find a kill-first unit (a ward on the boss, a Shade) by a grid search when no bot's attacker list shows it. |
@@ -732,6 +733,19 @@ Whether a bot a creature charms yields its AI, and no action lands on a charmed 
 <summary>How it works in detail</summary>
 
 **Charm yield:** while the key is on, a bot a creature has charmed yields its AI to the charmer (no engine runs, no move goes out), so nothing it does fights the core's own charm control; a bot a player charms is the core's business and is left alone. On any map, while a group member has a non-player charmer, every area action (class area damage, thrown explosives, a tank area such as Thunder Clap, the Sweeping Strikes and Blade Flurry toggles, and damage-dealer area damage) whose target point — or the bot itself, for a self-centred one — lies within 10 yd of such a member stands down. The same member is never a target: the damage-dealer and tank picks skip it (the attacker list, the possible targets, an explicit order and a raid mark), an attack order on it is refused, a pet is never sent at it, and every pet and guardian of the group's bots is parked passive with its attack stopped for as long as such a member is up (a pet that reacts to the member on its own, or keeps an attack started before the charm, cannot strike it; the stances come back when none is up), its cast is never interrupted, and a harmful single-target action aimed at it (a swing, a taunt, a damage, interrupt or crowd-control cast, a wand shot) stands down. A target already held is dropped on the next tick. Healing, buffing, curing and protecting the member stay allowed. Hakkar's Cause Insanity 24327 is why (his victim fights the raid for 10 s, and five charmed damage dealers were killed by their own raid within 3-7 s), and the same yield covers Will of Hakkar 24178, which only the Zul'Gurub trash-pile Guru casts.
+
+</details>
+
+### `AiPlayerbot.DungeonRunImmuneBossVictimEscape`
+Makes the victim of a boss that cannot be taunted escape at once when it is not a tank. Recommended on.
+**Default:** `0` · **Values:** `0` off (bots play as before), `1` on (needs no rows or tactics) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Victim escape:** a boss (a world boss, or a boss entry of a dungeon plan) the game makes immune to taunts cannot be taken back by a tank once it turns on a damage dealer or a healer, as Hakkar does after each Cause Insanity. With the key on, that victim escapes at once with its own ability when it has one ready: a hunter Feign Death, a rogue Vanish, a mage Ice Block, a paladin Divine Shield (no Forbearance). The bot breaks its own cast for it. With none ready (a warlock, a warrior, a druid, a shaman, a priest, or a cooldown), a paladin within 30 yd whose Blessing of Protection (Hand of Protection on this core) is ready casts it on the victim, unless the victim carries Forbearance. The game passes over a target immune to the boss's melee, so the boss turns to the next member on its threat list; Feign Death and Vanish drop the victim's threat. Fade is not used: on this core it moves no threat.
+
+The rules: never on a tank; one escape (own or protection) per victim per 6 s; never when the victim is the only living non-tank on the boss's threat list (the boss would come straight back); never on the Son walk-out puller or a member holding a pulled Son for its meet. No boss is named in the code. Each escape writes a `BossTacticsVictimEscape` row (`boss=<entry>,victim=<name>,class=<class>,spell=<id>,result=ok|refused`, `reason=own|protect|cast|duty|only_target`) to `bot_events.csv`; a refused row at most once per victim per 6 s.
 
 </details>
 
