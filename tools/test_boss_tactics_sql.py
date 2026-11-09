@@ -22,7 +22,7 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
@@ -368,6 +368,26 @@ def new_kind_problem(row):
             return "anchor tank radius wider than the radius"
         if row["tactic_mode"]:
             return "a mode word on anchor"
+        if row["cycle_spell"] or row["cycle_s"]:
+            return "cycle columns on another kind"
+        return None
+    if kind == "tank_post":
+        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-40 yd)
+        # and the longest hold (window_s 10-120 s). No spell, no mode word, no cycle columns.
+        if not row["target_entry"]:
+            return "tank_post without its awaited unit"
+        if row["spell_id"]:
+            return "tank_post with a spell"
+        if not 1 <= row["priority"] <= 7:
+            return "tank_post tank slot outside 1-7"
+        if not has_spot:
+            return "tank_post without its spot"
+        if not 5.0 <= row["param"] <= 40.0:
+            return "tank_post arrival radius outside [5, 40]"
+        if not 10.0 <= row["window_s"] <= 120.0:
+            return "tank_post window outside [10, 120]"
+        if row["tactic_mode"]:
+            return "a mode word on tank_post"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
         return None

@@ -798,6 +798,42 @@ namespace ai
         bool Execute(Event& event) override;
     };
 
+    // One read of the tank_post rows of the fight: the post the bot's raid tank slot holds, the awaited unit it waits
+    // for, and what the post does this tick. `valid` is true only for the row's own tank, only while the post runs and
+    // only when the tank may act; `holdingOtherHostile` means the tank keeps another hostile that attacks a group
+    // member, so the post waits and the action stands down. The post's state (start, arrival, window) is kept per bot
+    // in one record, written and read here alone, so each post logs one start, one arrival and one end.
+    struct BossTankPost
+    {
+        bool valid = false;
+        bool holdingOtherHostile = false;
+        TankPostDecision step = TankPostDecision::None;
+        Unit* boss = nullptr;
+        Unit* subject = nullptr;
+        const BossTacticRow* row = nullptr;
+        int tankIndex = -1;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        bool arrived = false;
+    };
+    // Gated by AiPlayerbot.DungeonRunTankPost, the map's tank_post rows and the "boss tactics" strategy.
+    BossTankPost FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The post's tank walks to the row's spot and holds there; on arrival it attacks the awaited unit. While walking or
+    // holding it drops only the row's boss (an airborne boss) or nothing, and it never drops another hostile that
+    // attacks a group member.
+    class BossTacticsTankPostAction : public AttackAction
+    {
+    public:
+        BossTacticsTankPostAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics tank post") {}
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+    };
+
     // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap
     // (param, yards) or more above it (RangedOnlyPolicy.h). Gated by AiPlayerbot.DungeonRunRangedOnly, the map's rows
     // and the "boss tactics" strategy; ranged bots and healers are never held, and an explicit attack order wins.

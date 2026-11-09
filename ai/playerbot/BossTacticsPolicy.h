@@ -68,6 +68,7 @@ namespace ai
         TankIgnore = 24,      // while the boss fights, tanks leave `target_entry` to the damage dealers (no guard, no taunt)
         SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
         GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
+        TankPost = 27,        // a named tank waits at a spot for a unit that is not in the fight yet, then attacks it
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -198,6 +199,8 @@ namespace ai
             return BossTacticKind::SeekPull;
         if (text == "gate_hold")
             return BossTacticKind::GateHold;
+        if (text == "tank_post")
+            return BossTacticKind::TankPost;
         return BossTacticKind::None;
     }
 
@@ -583,12 +586,20 @@ namespace ai
                     row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
                     row.mode != TacticMode::Default))
                 return false;
+            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
+            // radius and the longest hold. A fight-scan kind, so its health band arms the post. No spell, no mode.
+            if (row.kind == BossTacticKind::TankPost &&
+                (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
+                    row.param < 5.0f || row.param > 40.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
+                    row.spellId != 0 || row.mode != TacticMode::Default))
+                return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
-            // the spot columns the seek_aura and anchor kinds'.
+            // the spot columns the seek_aura, anchor and tank_post kinds'.
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
                 (row.cycleSpell != 0 || row.cycleSec != 0.0f))
                 return false;
-            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor && row.HasSpot())
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor &&
+                row.kind != BossTacticKind::TankPost && row.HasSpot())
                 return false;
             // A gate is a fight-scan question; these five answer it themselves or not at all (a pull gate already
             // decides the run).
@@ -637,6 +648,8 @@ namespace ai
                 spreadMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Anchor)
                 anchorMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::TankPost)
+                tankPostMaps_[row.map] = true;
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
             // The held entry is the row's target, or its boss when the row names the boss itself (target_entry 0).
@@ -768,6 +781,12 @@ namespace ai
         bool HasAnchorMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && anchorMaps_.find(map) != anchorMaps_.end();
+        }
+
+        // Whether the map has a tank_post row (the trigger runs only there). False before the seal.
+        bool HasTankPostMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && tankPostMaps_.find(map) != tankPostMaps_.end();
         }
 
         // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
@@ -967,6 +986,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
+        std::unordered_map<std::uint32_t, bool> tankPostMaps_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
@@ -3650,5 +3670,96 @@ namespace ai
             outX = rx;
             outY = ry;
         }
+    }
+
+    // --- tank_post --------------------------------------------------------------------------------------------------
+    // A named tank waits at a spot for a unit that is not in the fight yet (an unselectable second boss), then attacks
+    // it on arrival. The row's band arms the post, so the whole read is a fight scan. Every number comes from the row.
+    constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
+    constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
+
+    enum class TankPostDecision : std::uint8_t
+    {
+        None = 0,   // no post: the row is closed, or there is nobody to wait for yet
+        Walk = 1,   // the tank walks to the spot
+        Hold = 2,   // the tank is at the spot and waits
+        Engage = 3, // the unit arrived: attack it
+        End = 4,    // the post ends now: window, death, evade, band or tank
+    };
+
+    struct TankPostIn
+    {
+        bool live = false;          // the row is open for this bot: the boss stands in its health band
+        bool started = false;       // a post is already held
+        bool tankCanAct = true;     // alive and not creature-charmed
+        bool subjectFound = false;  // a unit of the awaited entry stands within kTankPostSearchYd
+        bool subjectAlive = false;
+        bool subjectSelectable = false; // no UNIT_FLAG_NOT_SELECTABLE
+        bool subjectEvading = false;
+        float subjectToSpotYd = 0.0f;
+        float arrivalRadiusYd = 0.0f; // the row's param
+        float botToSpotYd = 0.0f;
+        bool holdingOtherHostile = false; // the tank holds another hostile that attacks a group member
+        bool windowExpired = false;       // the row's window_s has passed since the post started
+    };
+
+    // The awaited unit has arrived when it stands within the row's radius of the spot, alive and selectable. Combat
+    // is not asked: a unit that lands and becomes targetable before it enters combat is attacked by the posted tank.
+    // An unselectable unit (a second boss still in the air) is not arrived, however close it circles.
+    inline bool TankPostArrived(bool found, bool alive, bool selectable, float subjectToSpotYd,
+                                float arrivalRadiusYd)
+    {
+        return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
+    }
+
+    // One creature of the awaited entry as the grid search saw it ("tank post units" value).
+    struct TankPostUnit
+    {
+        std::uint64_t guid = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        bool alive = false;
+        bool selectable = false;
+        bool evading = false;
+    };
+
+    // The unit the post waits for: the nearest living one to the spot (the nearest dead one when none lives, so its
+    // death still ends the post). -1 for an empty list.
+    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ)
+    {
+        int best = -1;
+        float bestYd = 0.0f;
+        bool bestAlive = false;
+        for (std::size_t i = 0; i < units.size(); ++i)
+        {
+            const TankPostUnit& unit = units[i];
+            const float dx = unit.x - spotX;
+            const float dy = unit.y - spotY;
+            const float dz = unit.z - spotZ;
+            const float yd = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (best < 0 || (unit.alive && !bestAlive) || (unit.alive == bestAlive && yd < bestYd))
+            {
+                best = static_cast<int>(i);
+                bestYd = yd;
+                bestAlive = unit.alive;
+            }
+        }
+        return best;
+    }
+
+    // What the post's tank does this tick. A post that was held and can no longer be held ends; a row that is not
+    // open (or has nothing to wait for) and holds no post does nothing. Another hostile on a group member keeps the
+    // tank on it and the post waits.
+    inline TankPostDecision TankPostStep(const TankPostIn& in)
+    {
+        if (!in.live || !in.tankCanAct || in.windowExpired)
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
+                in.subjectToSpotYd, in.arrivalRadiusYd))
+            return in.holdingOtherHostile ? TankPostDecision::Hold : TankPostDecision::Engage;
+        if (in.holdingOtherHostile)
+            return TankPostDecision::Hold;
+        return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
     }
 }

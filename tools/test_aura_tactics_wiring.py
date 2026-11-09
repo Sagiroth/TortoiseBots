@@ -72,7 +72,8 @@ class RowGateWiring(unittest.TestCase):
         # No row is gated on the loop's own unit any more (the old first-attacker pick).
         self.assertNotIn("int const bossHpPct = static_cast<int>(unit->GetHealthPercent());", scan)
         self.assertIn("bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;", scan)
-        self.assertIn("RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura))", scan)
+        self.assertIn("RowGateOpen(row, tankPostRow ? true : keyOn, bossHpPct,", scan)
+        self.assertIn("row.botAura != 0 && bot->HasAura(row.botAura)))", scan)
         self.assertIn("fight.rows.push_back(&row);", scan)
         self.assertNotIn("GetHealthPercent()) && !RowGateOpen", scan)
         # The six aura kinds are the key's own: with it off their rows never reach a consumer.

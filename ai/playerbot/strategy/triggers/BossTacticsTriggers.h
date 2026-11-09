@@ -224,6 +224,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A tank_post row names this bot's raid tank slot and a unit of its awaited entry is not in the fight yet: the
+    // tank walks to the row's spot and holds there until the unit arrives.
+    class BossTacticsTankPostTrigger : public Trigger
+    {
+    public:
+        BossTacticsTankPostTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tank post", 1) {}
+        bool IsActive() override;
+    };
+
     // A burn_mana row's boss is in the fight at or above the row's start % of mana and this bot is one of the row's
     // burners (FindBossBurnMana): it casts its longest drain spell on the boss.
     class BossTacticsBurnManaTrigger : public Trigger

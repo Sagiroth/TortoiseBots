@@ -605,6 +605,130 @@ static void GateHold_RowShape()
         CHECK(!table.Add(bad));
     }
 }
+static TankPostIn TankPostWaiting()
+{
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.tankCanAct = true;
+    in.subjectFound = true;
+    in.subjectAlive = true;
+    in.subjectSelectable = false; // a second boss still in the air
+    in.subjectEvading = false;
+    in.subjectToSpotYd = 30.0f;
+    in.arrivalRadiusYd = 15.0f;
+    in.botToSpotYd = 25.0f;
+    in.holdingOtherHostile = false;
+    in.windowExpired = false;
+    return in;
+}
+
+// The case that fails without the kind: nothing moves the slot tank to the post, so it stays on the boss it cannot
+// reach while the awaited unit is unselectable overhead.
+static void TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable()
+{
+    TankPostIn in = TankPostWaiting();
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+    // At the spot (within 3 yd) it holds.
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.botToSpotYd = 3.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.botToSpotYd = 3.5f;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+    // Within the arrival radius but still unselectable: still not arrived.
+    in.botToSpotYd = 1.0f;
+    in.subjectToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    // Selectable (combat is not asked): engage.
+    in.subjectSelectable = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // Another hostile on a group member keeps the tank on it and the post waits, on the ground and after arrival.
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.subjectSelectable = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// The case that fails if the combat requirement comes back: a unit that is alive, selectable and in range but not in
+// combat yet is arrived, so the posted tank engages it. (TankPostUnit and TankPostIn carry no combat flag any more.)
+static void TestTankPost_EngagesSelectableOutOfCombatSubject()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostArrived(true, true, true, 2.0f, 15.0f));
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // The not-selectable case still holds.
+    in.subjectSelectable = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// The mutation case: dropping the selectable check from TankPostArrived makes an unselectable unit "arrived", so this
+// check fails.
+static void TestTankPost_UnselectableSubjectNotArrived()
+{
+    CHECK(!TankPostArrived(true, true, false, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, false, true, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, true, true, 16.0f, 15.0f));
+    CHECK(!TankPostArrived(false, true, true, 1.0f, 15.0f));
+    CHECK(TankPostArrived(true, true, true, 15.0f, 15.0f));
+
+    // The grid pick: the nearest living unit to the spot; a dead one only when none lives. Three units: a dead one on
+    // the spot, a living one 20 yd away and a living one 5 yd away.
+    {
+        std::vector<TankPostUnit> units(3);
+        units[0].guid = 1;
+        units[0].x = 0.0f;
+        units[0].y = 0.0f;
+        units[0].z = 0.0f;
+        units[0].alive = false;
+        units[1].guid = 2;
+        units[1].x = 20.0f;
+        units[1].y = 0.0f;
+        units[1].z = 0.0f;
+        units[1].alive = true;
+        units[2].guid = 3;
+        units[2].x = 5.0f;
+        units[2].y = 0.0f;
+        units[2].z = 0.0f;
+        units[2].alive = true;
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 2);
+        units[2].alive = false;
+        units[1].alive = false;
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 0);  // the nearest, now that none lives
+        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f) == -1);
+    }
+
+    // The step closes a held post on each of the row's ends, and does nothing before a post exists.
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.subjectAlive = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.subjectAlive = true;
+    in.subjectEvading = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.subjectEvading = false;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.windowExpired = false;
+    in.tankCanAct = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.tankCanAct = true;
+    in.live = false; // the band closed
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.started = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    in.live = true;
+    in.subjectFound = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    in.started = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
 
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
@@ -639,6 +763,9 @@ int main()
     GateHold_EvadedBlockerReleases();
     GateHold_AboveGateNotHeld();
     GateHold_RowShape();
+    TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable();
+    TestTankPost_UnselectableSubjectNotArrived();
+    TestTankPost_EngagesSelectableOutOfCombatSubject();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
@@ -923,9 +1050,12 @@ int main()
     CHECK(ParseBossTacticKind("seek_aura") == BossTacticKind::SeekAura);
     CHECK(ParseBossTacticKind("pull_gate") == BossTacticKind::PullGate);
     CHECK(ParseBossTacticKind("spread") == BossTacticKind::Spread);
+    CHECK(ParseBossTacticKind("tank_post") == BossTacticKind::TankPost);
     CHECK(static_cast<int>(BossTacticKind::SeekAura) == 16);
     CHECK(static_cast<int>(BossTacticKind::PullGate) == 17);
     CHECK(static_cast<int>(BossTacticKind::Spread) == 18);
+    CHECK(static_cast<int>(BossTacticKind::GateHold) == 26);
+    CHECK(static_cast<int>(BossTacticKind::TankPost) == 27);
 
     // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
@@ -1153,6 +1283,48 @@ int main()
         never.mode = ParseTacticMode(never.kind, "never");             // a foreign word
         CHECK(never.mode == TacticMode::Invalid);
         CHECK(!table.Add(never));
+    }
+
+    // Loader: a tank_post row names the awaited unit, a tank slot 1-7, a spot, an arrival radius of 5-40 yd and a
+    // window of 10-120 s. No spell, no mode word, no cycle columns; its health band is the kind's own arming gate.
+    {
+        BossTacticTable table;
+        auto tankPost = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, float param,
+                           float window, bool spot)
+        {
+            BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, target, spell, priority, param);
+            row.windowSec = window;
+            if (spot)
+            {
+                row.spotX = -17.0f;
+                row.spotY = -212.75f;
+                row.spotZ = -88.3f;
+            }
+            return row;
+        };
+        CHECK(!table.Add(tankPost(0, 0, 1, 15.0f, 60.0f, true)));       // no awaited unit
+        CHECK(!table.Add(tankPost(50143, 33439, 1, 15.0f, 60.0f, true)));  // a spell
+        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 is the main tank, not a post
+        CHECK(!table.Add(tankPost(50143, 0, 8, 15.0f, 60.0f, true)));   // no such slot
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 60.0f, false)));  // no spot
+        CHECK(!table.Add(tankPost(50143, 0, 1, 4.0f, 60.0f, true)));    // radius below 5
+        CHECK(!table.Add(tankPost(50143, 0, 1, 41.0f, 60.0f, true)));   // radius above 40
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 9.0f, true)));    // window below 10
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 121.0f, true)));  // window above 120
+        BossTacticRow modeWord = tankPost(50143, 0, 1, 15.0f, 60.0f, true);
+        modeWord.mode = ParseTacticMode(modeWord.kind, "until_tank");
+        CHECK(modeWord.mode == TacticMode::Invalid);
+        CHECK(!table.Add(modeWord));
+        CHECK(table.Add(Gated(tankPost(50143, 0, 1, 15.0f, 60.0f, true), 41, 66)));  // the band arms it
+        CHECK(table.Add(tankPost(50143, 0, 2, 15.0f, 60.0f, true)));    // another slot, another key
+        CHECK(table.Size() == 2);
+        CHECK(!table.HasTankPostMap(249));                              // not sealed yet
+        table.Seal();
+        CHECK(table.HasTankPostMap(249));
+        CHECK(!table.HasTankPostMap(309));
+        CHECK(table.HasKindFor(249, 10184, BossTacticKind::TankPost));
+        CHECK(!table.HasKindFor(249, 10184, BossTacticKind::Interrupt));
+        CHECK(!table.HasKindFor(309, 10184, BossTacticKind::TankPost));
     }
 
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.

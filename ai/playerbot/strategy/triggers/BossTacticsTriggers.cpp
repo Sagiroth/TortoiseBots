@@ -549,6 +549,18 @@ bool BossTacticsTauntAfterTrigger::IsActive()
     return FindBossTauntAfter(ai, bot, ScanBossTactics(ai, bot)).valid;
 }
 
+bool BossTacticsTankPostTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Its own key and the map flag keep every other map and every key-off fight at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunTankPost || !GetBossTactics().HasTankPostMap(bot->GetMapId()) ||
+        !PlayerbotAI::IsTank(bot))
+        return false;
+    const BossTankPost post = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
+    return post.valid && !post.holdingOtherHostile;
+}
+
 bool BossTacticsBurnManaTrigger::IsActive()
 {
     if (!Ready(ai, bot) || !sPlayerbotAIConfig.dungeonRunBurnMana)

@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunTankPost (default 0, recommended on), a `tank_post` row has a named raid tank wait at a spot for a second unit that is not in the fight yet (an unselectable boss in the air) and attack it the moment it lands, dropping only the boss it cannot reach and keeping any other hostile; the post ends on the unit's death or evade, its window, the tank's death or charm, or the health band closing, with one `BossTacticsTankPost` row per start, arrival and end.
 - New: behind AiPlayerbot.DungeonRunGateHold (default 0, recommended on), a `gate_hold` boss-tactic row holds damage dealers off a boss at or below its health gate while more than the row's allowance of blockers still fight (in combat, not evading), dropping it from the picks, the assist and the raid mark and standing down area and DoT casts beside it.
 - New: Onyxia's Lair plan for the 1181dev fight (two legs, seven packs, the mouth pack fought in the corridor), Cindarion and Hatcher tactic rows, Warder stand seats.
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).

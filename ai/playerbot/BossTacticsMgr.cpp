@@ -87,8 +87,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
                     "a use_object without a target, a clicker role above 2, a boss range outside 0-60, a window that is "
                     "neither 0 nor at least 10 s, a row with neither aura nor timer, a seek_aura, pull_gate or spread "
                     "row it cannot use, an anchor row it cannot use, a seek_pull row it cannot use, a gate_hold row it "
-                    "cannot use, a gate_hold row whose blocker is its own boss, a cycle or spot column on another kind, "
-                    "or a second row of "
+                    "cannot use, a tank_post row it cannot use, a gate_hold row whose blocker is its own boss, a cycle "
+                    "or spot column on another kind, or a second row of "
                     "the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);
             }
