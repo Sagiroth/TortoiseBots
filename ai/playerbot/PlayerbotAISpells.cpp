@@ -6,6 +6,7 @@
 #include "playerbot/GroupMembers.h"
 #include "../../runtime/RemoteCommanderTasks.h"
 #include "playerbot/InterruptCastingPolicy.h"
+#include "playerbot/policy/combat/TargetFacingPolicy.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "strategy/values/PositionValue.h"
@@ -751,6 +752,28 @@ bool PlayerbotAI::CheckCanCastSpell(uint32 spellid, Unit* target, uint8 effectMa
             return false;
         }
 	}
+
+    // A cast the target's facing refuses (Gouge from behind, Backstab from the front) can never succeed, and no turn
+    // of the bot fixes it. CheckCast below answers it with SPELL_FAILED_NOT_INFRONT / NOT_BEHIND after broadcasting a
+    // spell failure to every client nearby, and NOT_INFRONT even reads as castable below, so a `behind` rogue probed
+    // Gouge about 20 times a second. With AiPlayerbot.SpellFacingPrecheck on, refuse it here without the probe
+    // (TargetFacingPolicy.h mirrors the core's two checks).
+    if (sPlayerbotAIConfig.spellFacingPrecheck)
+    {
+        bool const fromBehindOnly = spellInfo->IsFromBehindOnlySpell();
+        // Only the two facing rules read the arc; every other spell skips the angle math.
+        bool const facingMatters = fromBehindOnly || spellInfo->Attributes == ai::kTargetMustFaceCasterAttributes;
+        bool const targetFacesCaster = facingMatters && target->HasInArc(bot);
+        if (facingMatters && ai::TargetFacingRefuses(spellInfo->Attributes, fromBehindOnly, targetFacesCaster))
+        {
+            if (checkResult)
+            {
+                *checkResult = fromBehindOnly && targetFacesCaster ? SPELL_FAILED_NOT_BEHIND : SPELL_FAILED_NOT_INFRONT;
+            }
+
+            return false;
+        }
+    }
 
 	ObjectGuid oldSel = bot->GetSelectionGuid();
 	//bot->SetSelectionGuid(target->getObjectGuid());

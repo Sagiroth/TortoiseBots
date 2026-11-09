@@ -78,8 +78,9 @@ public:
 
 public:
     bool Initialize();
-    // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*), read from the loaded
-    // aiplayerbot.conf: by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
+    // The run leader's keys (AiPlayerbot.DungeonSelfClear and AiPlayerbot.DungeonRun*) and the `.reload`-able combat
+    // keys (AiPlayerbot.InterruptIgnoresThreat, AiPlayerbot.SpellFacingPrecheck), read from the loaded aiplayerbot.conf:
+    // by Initialize, and again by ReloadDungeonRunKeys after a `.reload config`.
     void LoadDungeonRunKeys();
     // The two-file gate's aiplayerbot.conf half (AiPlayerbot.ObservabilityRaids): read by Initialize, and again by
     // ReloadDungeonRunKeys, so the file that turned the feed on can turn it off on a `.reload config`.
@@ -614,6 +615,15 @@ public:
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;
+    // Pure interrupts (Kick, Pummel, Shield Bash, Bash, Counterspell, Silence) skip the damage threat back-off the way
+    // heals do, so a damage dealer at the 80 % high-threat line still stops a cast, while the interrupt would not pull
+    // its target off the tank (bot threat plus the spell's flat threat under 110 % of the tank's in melee, 130 %
+    // ranged). Earth Shock and Death Coil interrupt rows stay gated. Off = as before (vetoed at the high line).
+    bool interruptIgnoresThreat = false;
+    // PlayerbotAI::CanCastSpell refuses a unit-target cast the target's facing makes impossible (Gouge from behind,
+    // Backstab from the front) before it probes the core's CheckCast, which broadcasts a spell failure on every probe.
+    // Off = as before (the probe runs, and a Gouge from behind reads as castable and fails in the real cast).
+    bool spellFacingPrecheck = false;
     // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
     uint32 fankrissSwapStacks = 5;
     // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).
