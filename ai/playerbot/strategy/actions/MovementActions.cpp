@@ -3429,6 +3429,7 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
         }
     }
 
+    if (pathModified && !movePath.empty())
     {
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_COMBAT))
         {
