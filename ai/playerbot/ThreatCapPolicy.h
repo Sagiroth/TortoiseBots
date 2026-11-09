@@ -558,4 +558,37 @@ namespace ai
             return float(points + baseDice);
         return float(points) + (float(baseDice) + float(randomPoints)) / 2.0f;
     }
+
+    // The threat a cast adds when it lands, the core's arithmetic on plain numbers: the damage times the spell threat
+    // table's multiplier (Unit::DealDamage: damage * GetSpellThreatMultiplier; Mind Blast, Searing Pain, Earth Shock
+    // and Holy Shock are x2 in tw_world_spell_threat), plus the table's flat threat and AP bonus (Spell::
+    // HandleThreatSpells: threat + ap_bonus * attack power), each through the caster's SPELLMOD_THREAT percent and
+    // total threat modifier (ThreatCalcHelper::CalcThreat). Never below 0.
+    inline float ThreatCapCastThreat(float avgDamage, float threatMultiplier, float flatThreat, float apBonus,
+                                     float attackPower, float threatModPct, float totalThreatMod)
+    {
+        float threat = avgDamage > 0.0f ? avgDamage * threatMultiplier : 0.0f;
+        threat += flatThreat + apBonus * attackPower;
+        threat *= (1.0f + threatModPct / 100.0f) * totalThreatMod;
+        return threat > 0.0f ? threat : 0.0f;
+    }
+
+    // A channel's whole damage: one tick's damage times its ticks (duration / amplitude, as the aura ticks). A spell that
+    // is not channeled gives 0: a DoT's threat comes a tick at a time, and every later cast is checked again.
+    inline float ThreatCapChannelDamage(bool channeled, float perTick, int durationMs, int amplitudeMs)
+    {
+        if (!channeled || perTick <= 0.0f || durationMs <= 0 || amplitudeMs <= 0)
+            return 0.0f;
+        return perTick * float(durationMs / amplitudeMs);
+    }
+
+    // The threat the cast is measured against: the mob's victim's threat, capped by the top tank's (ThreatValue::
+    // GetTankThreat). The core turns the mob on whoever passes its current victim, so an off-tank above the victim is
+    // no cover. A victim without threat on the list leaves the top tank's.
+    inline float ThreatCapCastReference(float victimThreat, float tankThreat)
+    {
+        if (tankThreat <= 0.0f || victimThreat <= 0.0f)
+            return tankThreat;
+        return victimThreat < tankThreat ? victimThreat : tankThreat;
+    }
 }
