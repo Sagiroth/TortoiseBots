@@ -264,6 +264,7 @@ The core refuses two casts because of where the target faces: a from-behind-only
 </details>
 
 ### `AiPlayerbot.ThreatCapCountsCastThreat`
+Whether the threat back-off counts a single-target damage cast's own expected threat. Recommended on.
 **Default:** `0` · **Values:** `0` off (only the bot's threat at cast start is checked against the 80 % high-threat line), `1` on (a damage cast is also held while the bot's threat plus the cast's expected threat reaches the tank's) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
