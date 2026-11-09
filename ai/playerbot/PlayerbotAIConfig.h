@@ -887,8 +887,9 @@ public:
     uint32 poolTickBudgetUs = 10000;
     // Near-first turn priority (BotTurnScheduler.h): due pool bots on the same
     // map and instance as a real player and within this many yards run ahead
-    // of the rest when the budget cuts the pass. 0 turns the preference off.
-    float poolNearPlayerYd = 80.0f;
+    // of the rest when the budget cuts the pass. 0 (the default) keeps every bot
+    // equally late.
+    float poolNearPlayerYd = 0.0f;
     uint32 poolBudgetWhenTickOverMs = 0;
     uint32 combatTickBudgetUs = 15000;
     // Self-tuning tick budget: when nonzero, a controller moves the effective
