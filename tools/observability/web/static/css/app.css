@@ -3290,6 +3290,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .fd-checks,
 .cmd-card.fd-on .fd-timeline,
 .cmd-card.fd-on .fd-auras,
+.cmd-card.fd-on .fd-events,
 .cmd-card.fd-on .fd-t,
 .cmd-card.fd-on .cmd-mapbox {
   min-width: 0;
@@ -3300,6 +3301,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 }
 .cmd-card.fd-on .fd-timeline { padding-top: 10px; }
 .cmd-card.fd-on .fd-auras { padding-top: 10px; }
+.cmd-card.fd-on .fd-events { padding-top: 10px; }
 
 /* The page's own tiles and boxes belong to Live; every card in the debugger drops them. */
 #tab-commanders.cmd-debug-only > .kpi-row,
@@ -3349,7 +3351,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
@@ -3737,6 +3739,23 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-rangebar .fd-link { font-size: inherit; }
 .fd-whole { display: inline-block; margin-left: 6px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.66rem; font-weight: 400; vertical-align: middle; }
 .fd-whole[hidden] { display: none; }
+
+/* The Events panel: the filter builder (nested group boxes) over a compact table that scrolls inside its own box. */
+.fd-events { min-width: 0; }
+.fd-evcount { color: var(--text-muted); font-size: 0.72rem; font-weight: 400; }
+.fd-evfilter { margin-bottom: 8px; }
+.fd-evpresets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.fd-evbtn { padding: 1px 8px; font-size: 0.74rem; cursor: pointer; }
+.fd-evgroup { margin: 4px 0 4px 0; padding: 4px 0 4px 8px; border-left: 2px solid var(--border-color); }
+.fd-evghead, .fd-evcond { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 3px 0; font-size: 0.78rem; }
+.fd-evcond input[type="text"] { width: 11rem; max-width: 100%; }
+.fd-evcond option:disabled, .fd-evgroup option:disabled { color: var(--text-muted); }
+.fd-evdesc { margin: 4px 0 0; }
+.fd-evwhy { margin: 4px 0 0; color: var(--accent-red); font-size: 0.78rem; }
+.fd-evlist { max-height: 26rem; overflow: auto; min-width: 0; }
+.fd-evtable { width: 100%; font-size: 0.78rem; }
+.fd-evtable td, .fd-evtable th { padding-top: 1px; padding-bottom: 1px; white-space: nowrap; }
+.fd-evrow { cursor: pointer; }
 
 @media (max-width: 760px) {
   .fd-lane { grid-template-columns: 1fr; }

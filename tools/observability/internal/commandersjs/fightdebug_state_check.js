@@ -32,12 +32,13 @@ vm.runInContext(tabsSrc, ctx, { filename: "fdtabs.js" });
 vm.runInContext(fdSrc, ctx, { filename: "fightdebug.js" });
 vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdlive.js"), "utf8"), ctx, { filename: "fdlive.js" });
 vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdview.js"), "utf8"), ctx, { filename: "fdview.js" });
+vm.runInContext(fs.readFileSync(path.join(path.dirname(appPath), "fdfilter.js"), "utf8"), ctx, { filename: "fdfilter.js" });
 vm.runInContext([
   grab("cmdForgetCard"), grab("cmdRescueLayers"), grab("fdState"), grab("fdViewHandover"), grab("fdSyncSel"), grab("cmdRaidFights"), grab("fdFightsFeed"),
   grab("fdDetailFailed"), grab("fdDetailFail"), grab("fdDetailRow"), grab("fdLoad"), grab("fdDaysLoad"), grab("fdFightHist"),
   grab("fdMergeRows"), grab("numOr0"), grab("fdTodayDay"), grab("fdTonightRows"), grab("fdWinList"),
   grab("fdShowAllGet"), grab("fdWindowStart"), grab("fdOlderState"),
-  "var fdShowAllMem = null;",
+  "var fdShowAllMem = null, FD_EV_PAGE = 500;",
   grab("fdLiveFiledRow"), "var fdLive = {};",
   grabConst("FD_DETAIL_TRIES"), grabConst("FD_DAYS_MS"), grabConst("FD_WINDOW_S"), grabConst("FD_SHOWALL_KEY"),
   "var document = { getElementById: () => null };",

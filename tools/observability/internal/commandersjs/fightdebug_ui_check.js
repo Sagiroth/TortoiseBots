@@ -29,7 +29,7 @@ vm.runInContext(fs.readFileSync(path.join(dir, "fdview.js"), "utf8"), ctx, { fil
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.checks === "function", "fightdebug.js loads as the global FightDebug");
 vm.runInContext(
   [grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdFightMarksSvg"), grab("fdFramesHtml"),
-    grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdRangeBandHtml"), grab("fdOutCls"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
+    grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdRangeBandHtml"), grab("fdOutCls"), grab("fdMarkOut"), grab("fdTimelineHtml"), grab("fdRecapHtml"), grab("fdRolesHtml"),
     grab("fdLiveTableHtml"), grab("fdBotHtml")].join("\n") +
   "\nvar CmdView = { project: (x, y) => ({ x: -y, y: -x }) };" +
   "\nvar cmdBotLink = (guid, name) => '<a class=\"cmd-botlink\" href=\"#bot/' + guid + '\">' + esc(name) + '</a>';", ctx);

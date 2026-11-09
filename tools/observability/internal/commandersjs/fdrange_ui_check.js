@@ -26,7 +26,7 @@ const Fights = require(path.join(jsDir, "fights.js"));
 const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document: { activeElement: null }, fdLive: {}, cmdFindBind: () => null };
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdLiveWinLabel", "fdAuIv", "fdAuState", "fdAuMarkVal", "fdAuPct", "fdAurasControlsHtml", "fdAurasRestHtml",
-  "fdAurasParts", "fdAurasHtml", "fdAuLiveOpts", "fdRangeBandHtml", "fdOutCls", "fdTimelineHtml", "fdRecapHtml", "fdLanesHtml", "fdRangeBarHtml", "fdWholeTags",
+  "fdAurasParts", "fdAurasHtml", "fdAuLiveOpts", "fdRangeBandHtml", "fdOutCls", "fdMarkOut", "fdTimelineHtml", "fdRecapHtml", "fdLanesHtml", "fdRangeBarHtml", "fdWholeTags",
   "fdViewFight", "fdRangeAction", "fdDragDrop", "fdDragLostCapture", "fdDragStart", "fdDragMove", "fdDragEnd", "fdLiveRangeOf", "fdViewSync", "fdViewHandover", "fdLiveTimelineHtml"];
 vm.runInContext(["var FD_AU_NAMES_MAX = 8; const fdAuMemo = new WeakMap();"].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
@@ -304,12 +304,12 @@ assert.ok(src.includes("fd.view = FdView.clear(fd.view); // picking a window fol
 assert.ok(grab("fdLivePaintBar").includes("fdLiveRangeOf(fd, st, now);") && !grab("fdLivePaintBar").includes("FdLive.range("), "the bar works the range out once through the view (fd.liveRange), not around it");
 assert.ok(grab("fdLivePaintBar").includes("fdRangeBarHtml(fd.view, true, fd.liveWin)"), "the live bar draws the range bar");
 const paint = grab("fdLivePaintDebug");
-assert.ok(paint.includes("fdLiveTimelineHtml(st, lf, fd.liveRange)") && paint.includes("fdAuLiveOpts(st, fd.liveRange)") && paint.includes("fdDragBandSync(card, fd)"), "the 1 s repaint hands fd.liveRange to the timeline and the aura panel, and redraws a drag band");
+assert.ok(paint.includes("fdLiveTimelineHtml(st, lf, fd.liveRange, keep)") && paint.includes("fdAuLiveOpts(st, fd.liveRange)") && paint.includes("fdDragBandSync(card, fd)"), "the 1 s repaint hands fd.liveRange to the timeline and the aura panel, and redraws a drag band");
 assert.ok(grab("fdLiveHandoff").includes("fdViewHandover(fd, summary.key);") && grab("fdLiveHandoff").indexOf("fdViewHandover(") < grab("fdLiveHandoff").indexOf("fd.sel = summary.key;"), "the hand-over moves the view's key before the selection and the render");
 assert.ok(grab("fdSyncSel").includes("fdViewHandover(fd, filed.key);"), "so does the list's own hand-over");
 const render = grab("renderFightDebug");
 assert.ok(render.includes("fdViewSync(fd, fd.sel);") && render.includes("FdView.reclamp(fd.view, fight.dur_ms)"), "a new fight clears the range, a handed-over one is fitted on its first render");
-assert.ok(render.includes("fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range)") && render.includes("fdRecapHtml(recaps, fd.death, range)") && render.includes("fdLanesHtml(lanesRes, fight.dur_ms, range)"), "the timeline, recap and lanes get the range");
+assert.ok(render.includes("fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range, keep)") && render.includes("fdRecapHtml(recaps, fd.death, range)") && render.includes("fdLanesHtml(lanesRes, fight.dur_ms, range)"), "the timeline, recap and lanes get the range");
 assert.ok(render.includes("{ pending, untracked, range }") && render.includes("fdAuLiveOpts(liveSt, range)"), "and so does the Auras panel, live and filed");
 assert.ok(render.includes("fdWholeTags(card, fd.view, selLive)"), "the whole-fight tags follow the range");
 assert.ok(render.trimEnd().endsWith("fdDragBandSync(card, fd);\n  }"), "a full render ends by redrawing a drag in progress");

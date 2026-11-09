@@ -382,6 +382,27 @@ func TestFdRangeUIJS(t *testing.T) {
 	runCheck(t, "fdrange_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFightEventsJS runs fightevents_check.js: the Events panel's one normalised event list (the eight kinds from the log, the aura
+// rows, the boss's victim rows and each death's last hits, sorted by time, roles from the fight's bots, malformed rows skipped, the
+// 5000 cap, the value lists, and the running fight object of FdLive building without target or hit events).
+func TestFightEventsJS(t *testing.T) {
+	runCheck(t, "fightevents_check.js", "../../web/static/js/fightevents.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFdFilterJS runs fdfilter_check.js: the event filter's AND / OR / NOT tree (matching, the depth, condition and value limits,
+// the two fields the game server does not send, the ability id match, the URL-safe text form and its caps, the pure tree edits, the
+// range, the presets and the header line).
+func TestFdFilterJS(t *testing.T) {
+	runCheck(t, "fdfilter_check.js", "../../web/static/js/fdfilter.js", "../../web/static/js/fightevents.js")
+}
+
+// TestFdEventsUIJS runs fdevents_ui_check.js: the Events panel in app.js (500 rows then Show 500 more, escaped names, the seek on
+// every row, the filter builder with school and hit disabled, the edits and their refusals, the timeline marks the filter dims, a
+// running fight's newest-first list and live note, the 1 s repaint that leaves the builder alone, and the focus an edit gets back).
+func TestFdEventsUIJS(t *testing.T) {
+	runCheck(t, "fdevents_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {

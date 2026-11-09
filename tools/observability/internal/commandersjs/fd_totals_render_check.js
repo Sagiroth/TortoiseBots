@@ -38,7 +38,7 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "fdRunPlaySync", "fdRunSync", "fdRunLoad", "fdRunStop", "fdRunStopAll",
   "fdFightExtra", "fdPrevPackI", "fdFightHist",
   "fdRailFoldHtml", "fdRailCardHtml", "fdRailParts", "fdRailPatch",
-  "fdRangeBandHtml", "fdOutCls", "fdViewSync", "fdRangeBarHtml", "fdWholeTags", "fdDragBandSync", "fdBossPhase", "fdUnderSync", "fdCheckNum", "fdCheckTitle", "fdChecksHtml", "fdTimelineHtml", "fdRecapHtml",
+  "fdRangeBandHtml", "fdOutCls", "fdMarkOut", "fdViewSync", "fdRangeBarHtml", "fdWholeTags", "fdDragBandSync", "fdBossPhase", "fdUnderSync", "fdCheckNum", "fdCheckTitle", "fdChecksHtml", "fdTimelineHtml", "fdRecapHtml",
   "fdRolesHtml", "fdLiveTableHtml", "fdBotHtml",
   "fdPackLoad", "fdPackShow", "fdPackHtml", "fdDayOptionsHtml", "paintSeg",
   "fdPlayHtml", "fdPlayNote", "fdPlaySync", "fdLanesHtml", "fdCursorSync", "fdTrackLoad", "fdDayPaint",
@@ -86,6 +86,7 @@ const ctx = {
   FightDebug: require(path.join(dir, "fightdebug.js")),
   FdLive: require(path.join(dir, "fdlive.js")),
   FdView: require(path.join(dir, "fdview.js")),
+  FdFilter: require(path.join(dir, "fdfilter.js")),
   FdTabs: require(path.join(dir, "fdtabs.js")),
   FightReplay: require(path.join(dir, "fightreplay.js")),
   AggroLanes: require(path.join(dir, "aggrolanes.js")),
@@ -103,6 +104,7 @@ vm.runInContext([
   "var fdPage = { open: null };",
   "var fdLive = {}, fdLivePaintBar = () => {}, fdLiveCatchUp = () => {}, fdLiveTickSync = () => {};",
   "var fdAurasSync = () => {}, fdAuraFight = (f) => f, fdAuLiveOpts = () => null, fdAuLiveKey = () => 'live:k';", // the Auras panel has its own check (fightauras_ui_check.js)
+  "var fdEventsSync = () => {}, fdEvKeep = () => null, FD_EV_PAGE = 500;", // the Events panel has its own check (fdevents_ui_check.js)
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });
