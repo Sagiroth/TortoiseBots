@@ -6668,6 +6668,53 @@
     bar.appendChild(el);
   }
 
+  // The drag-select, in four steps the card's pointer listeners call (fd.drag holds the press until it ends).
+  function fdDragDrop(card, fd) {
+    fd.drag = null;
+    fdDragBandSync(card, fd);
+  }
+
+  function fdDragStart(card, key, fd, e) {
+    if (e.button != null && e.button !== 0) return;
+    if (e.target.closest && e.target.closest('button, select, input, a, summary')) return;
+    const bar = e.target.closest && e.target.closest(FD_DRAG_BARS.join(', '));
+    if (!bar) return;
+    const sel = FD_DRAG_BARS.find(q => bar.matches(q)), fight = fdViewFight(key, fd), rect = bar.getBoundingClientRect();
+    if (!sel || !fight || !(fight.dur_ms > 0) || !(rect.width > 0)) return;
+    fd.drag = { sel, idx: Array.from(card.querySelectorAll(sel)).indexOf(bar), x0: e.clientX, left: rect.left, width: rect.width, dur: fight.dur_ms, id: e.pointerId, moved: false, a: 0, b: 0 };
+  }
+
+  function fdDragMove(card, fd, e) {
+    const dr = fd.drag;
+    if (!dr || dr.id !== e.pointerId) return;
+    // No button held: the press ended where this card could not see it (outside the window), so a hover is not a drag.
+    if (!(e.buttons & 1)) { fdDragDrop(card, fd); return; }
+    if (!dr.moved) {
+      if (Math.abs(e.clientX - dr.x0) < FD_DRAG_PX) return;
+      dr.moved = true;
+      try { card.setPointerCapture(e.pointerId); } catch (err) { /* a pointer that is already gone */ }
+    }
+    dr.a = FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur);
+    dr.b = FdView.pxToMs(e.clientX - dr.left, dr.width, dr.dur);
+    fdDragBandSync(card, fd);
+  }
+
+  // The drag ends: a range that took holds the click guard (the click that follows a drag is not a seek). A drag too short to make a
+  // range (under 1 s) holds nothing, so its click seeks as a press would. (A drag that ends over a bar's edge stops at the bar's
+  // ends: the range is held inside the fight, so no pixel outside the bar means anything else.)
+  function fdDragEnd(card, key, fd, e) {
+    const dr = fd.drag;
+    if (!dr || dr.id !== e.pointerId) return;
+    fdDragDrop(card, fd);
+    try { card.releasePointerCapture(e.pointerId); } catch (err) { /* not captured */ }
+    if (!dr.moved) return;
+    const next = FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live');
+    if (next === fd.view) return;
+    fd.view = next;
+    fd.dragEnd = Date.now();
+    fdRender(key);
+  }
+
   // The view (range, follow) belongs to the picked fight: another fight starts with no range. A hand-over sets the key itself first.
   function fdViewSync(fd, key) {
     if (!fd.view || fd.view.key !== key) fd.view = FdView.create(key);
@@ -8815,7 +8862,7 @@
         // Escape drops the range (a live view follows the fight again), or the drag in progress; an open list keeps its own Escape.
         const fd = cmdFd[key];
         if (!fd || !card.classList.contains('fd-on') || (e.target.closest && e.target.closest('select, input, textarea'))) return;
-        if (fd.drag) { fd.drag = null; fdDragBandSync(card, fd); } else if (fd.view && (fd.view.range || fd.view.follow === false)) { fd.view = FdView.clear(fd.view); fdRender(key); }
+        if (fd.drag) fdDragDrop(card, fd); else if (fd.view && (fd.view.range || fd.view.follow === false)) { fd.view = FdView.clear(fd.view); fdRender(key); }
         return;
       }
       const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : 0;
@@ -8953,46 +9000,29 @@
       fdReplayStop(fd);
       fdReplaySync(key);
     });
-    // Drag-select a range on the timeline, a lane or the aura strip. A press that moves FD_DRAG_PX or more is a drag (the pointer is
-    // captured by the card then, so a repaint that rebuilds the bar cannot lose it); a shorter one stays a click and seeks as before.
+    // Drag-select a range on the timeline, a lane or the aura strip (the steps are fdDrag*, below). A press that moves FD_DRAG_PX or
+    // more is a drag (the pointer is captured by the card then, so a repaint that rebuilds the bar cannot lose it); a shorter one
+    // stays a click and seeks as before.
     card.addEventListener('pointerdown', e => {
       const fd = cmdFd[key];
-      if (!fd || !card.classList.contains('fd-on') || (e.button != null && e.button !== 0)) return;
-      if (e.target.closest && e.target.closest('button, select, input, a, summary')) return;
-      const bar = e.target.closest && e.target.closest(FD_DRAG_BARS.join(', '));
-      if (!bar) return;
-      const sel = FD_DRAG_BARS.find(q => bar.matches(q)), fight = fdViewFight(key, fd), rect = bar.getBoundingClientRect();
-      if (!sel || !fight || !(fight.dur_ms > 0) || !(rect.width > 0)) return;
-      fd.drag = { sel, idx: Array.from(card.querySelectorAll(sel)).indexOf(bar), x0: e.clientX, left: rect.left, width: rect.width, dur: fight.dur_ms, id: e.pointerId, moved: false, a: 0, b: 0 };
+      if (fd && card.classList.contains('fd-on')) fdDragStart(card, key, fd, e);
     });
     card.addEventListener('pointermove', e => {
-      const fd = cmdFd[key], dr = fd && fd.drag;
-      if (!dr || dr.id !== e.pointerId) return;
-      if (!dr.moved) {
-        if (Math.abs(e.clientX - dr.x0) < FD_DRAG_PX) return;
-        dr.moved = true;
-        try { card.setPointerCapture(e.pointerId); } catch (err) { /* a pointer that is already gone */ }
-      }
-      dr.a = FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur);
-      dr.b = FdView.pxToMs(e.clientX - dr.left, dr.width, dr.dur);
-      fdDragBandSync(card, fd);
+      const fd = cmdFd[key];
+      if (fd && fd.drag) fdDragMove(card, fd, e);
     });
     card.addEventListener('pointerup', e => {
-      const fd = cmdFd[key], dr = fd && fd.drag;
-      if (!dr || dr.id !== e.pointerId) return;
-      fd.drag = null;
-      fdDragBandSync(card, fd);
-      try { card.releasePointerCapture(e.pointerId); } catch (err) { /* not captured */ }
-      if (!dr.moved) return;
-      fd.dragEnd = Date.now();
-      fd.view = FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live');
-      fdRender(key);
+      const fd = cmdFd[key];
+      if (fd && fd.drag) fdDragEnd(card, key, fd, e);
     });
     card.addEventListener('pointercancel', e => {
       const fd = cmdFd[key];
-      if (!fd || !fd.drag || fd.drag.id !== e.pointerId) return;
-      fd.drag = null;
-      fdDragBandSync(card, fd);
+      if (fd && fd.drag) fdDragDrop(card, fd);
+    });
+    // A capture that ends without a pointerup (the press left the window, the element went away) ends the drag too.
+    card.addEventListener('lostpointercapture', e => {
+      const fd = cmdFd[key];
+      if (fd && fd.drag && fd.drag.moved) fdDragDrop(card, fd);
     });
     card.addEventListener('input', e => {
       if (!e.target.matches || !e.target.matches('.fd-scrub') || e.target.hasAttribute('data-fd-rtscrub')) return;

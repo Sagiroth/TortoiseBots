@@ -27,7 +27,7 @@ const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document:
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdLiveWinLabel", "fdAuIv", "fdAuState", "fdAuMarkVal", "fdAuPct", "fdAurasControlsHtml", "fdAurasRestHtml",
   "fdAurasParts", "fdAurasHtml", "fdAuLiveOpts", "fdRangeBandHtml", "fdOutCls", "fdTimelineHtml", "fdRecapHtml", "fdLanesHtml", "fdRangeBarHtml", "fdWholeTags",
-  "fdViewFight", "fdRangeAction", "fdLiveRangeOf", "fdViewSync", "fdViewHandover", "fdLiveTimelineHtml"];
+  "fdViewFight", "fdRangeAction", "fdDragDrop", "fdDragStart", "fdDragMove", "fdDragEnd", "fdLiveRangeOf", "fdViewSync", "fdViewHandover", "fdLiveTimelineHtml"];
 vm.runInContext(["var FD_AU_NAMES_MAX = 8; const fdAuMemo = new WeakMap();"].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const J = (v) => JSON.parse(JSON.stringify(v));
@@ -189,7 +189,7 @@ const tlOf = (f) => ({ durMs: f.dur_ms, ticks: [], hits: [], bossCasts: [{ t_ms:
   run("fdViewSync(f1, 'filed')");
   assert.strictEqual(f1.view.range.from, 30000, "the sync at the first render of the filed fight does not reset it");
   f1.view = FdView.reclamp(f1.view, 45000);
-  assert.deepStrictEqual(J(f1.view.range), { from: 30000, to: 45000 }, "and it is re-fitted to the filed fight's length on that render");
+  assert.deepStrictEqual(J(f1.view.range), { from: 15000, to: 45000 }, "and it is re-fitted to the filed fight's length on that render");
   const f2 = { view: { key: "live:" + key, range: { from: 0, to: 5000 }, follow: true, reclamp: false }, sel: "live" };
   run("fdViewHandover(f2, 'filed')", { f2 });
   assert.deepStrictEqual(J(f2.view), { key: "filed", range: null, follow: true, reclamp: false }, "a following view becomes the whole fight");
@@ -210,16 +210,76 @@ const tlOf = (f) => ({ durMs: f.dur_ms, ticks: [], hits: [], bossCasts: [{ t_ms:
   assert.strictEqual(fd.view.range, null, "Clear");
 }
 
+// ---- the drag, behaviourally: a pointer's down / move / up on a bar (stubbed DOM: the bar, the card, the fight, the render)
+{
+  const bar = { matches: (q) => q === ".fd-tl", getBoundingClientRect: () => ({ left: 100, width: 200 }) };
+  const target = { closest: (q) => (/button/.test(q) ? null : bar) };
+  let renders = 0, captured = 0, bands = 0;
+  const card = { querySelectorAll: () => [bar], setPointerCapture: () => { captured++; }, releasePointerCapture: () => {} };
+  const mk = () => ({ sel: "k", view: FdView.create("k"), dragEnd: 0, drag: null, details: { k: { fight: { dur_ms: 60000 } } } });
+  Object.assign(ctx, { fdRender: () => { renders++; }, fdDragBandSync: () => { bands++; }, FD_DRAG_BARS: [".fd-tl", ".fd-lanebar", ".fd-au-bar"], FD_DRAG_PX: 6 });
+  const ev = (x, o) => Object.assign({ target, clientX: x, pointerId: 1, button: 0, buttons: 1 }, o);
+  const call = (fn, fd, e) => { renders = 0; return run(fn, { card, fd, e, key: "k" }); };
+  // a drag of 6 px or more sets a range (pixel 50 of 200 = 15 s, pixel 150 = 45 s)
+  let fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  assert.ok(fd.drag && !fd.drag.moved, "a press on a bar starts a pending drag");
+  call("fdDragMove(card, fd, e)", fd, ev(156));
+  assert.ok(fd.drag.moved && captured === 1, "6 px is a drag: the card captures the pointer");
+  call("fdDragMove(card, fd, e)", fd, ev(250));
+  call("fdDragEnd(card, key, fd, e)", fd, ev(250));
+  assert.deepStrictEqual(J(fd.view.range), { from: 15000, to: 45000 }, "the dragged range: pixels 50 to 150 of a 200 px bar of 60 s (the end held inside the bar)");
+  assert.ok(fd.dragEnd > 0 && renders === 1 && fd.drag === null, "the drag ended with a render and the click guard held");
+  // a 5 px press is a click: no range, no guard, no render: the seek runs
+  fd = mk(); captured = 0;
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  call("fdDragMove(card, fd, e)", fd, ev(155));
+  call("fdDragEnd(card, key, fd, e)", fd, ev(155));
+  assert.strictEqual(fd.view.range, null, "a 5 px press sets no range");
+  assert.ok(fd.dragEnd === 0 && renders === 0 && captured === 0, "and holds no click guard, so the click seeks");
+  // a drag too short to make a range (under 1 s: 7 px of a 2000 px bar of 60 s is 0.2 s) falls through to the seek
+  const wide = { matches: (q) => q === ".fd-tl", getBoundingClientRect: () => ({ left: 100, width: 2000 }) };
+  const wtarget = { closest: (q) => (/button/.test(q) ? null : wide) };
+  card.querySelectorAll = () => [wide];
+  fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150, { target: wtarget }));
+  call("fdDragMove(card, fd, e)", fd, ev(157));
+  assert.ok(fd.drag.moved, "7 px is a drag");
+  call("fdDragEnd(card, key, fd, e)", fd, ev(157));
+  assert.ok(fd.view.range === null && fd.dragEnd === 0 && renders === 0, "but a range under 1 s changes nothing and holds no click guard, so the click seeks");
+  card.querySelectorAll = () => [bar];
+  // the ghost drag: a press, the button released outside the window, then a hover and a later click: no range
+  fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  call("fdDragMove(card, fd, e)", fd, ev(250, { buttons: 0 }));
+  assert.strictEqual(fd.drag, null, "a move with no button held drops the press");
+  call("fdDragEnd(card, key, fd, e)", fd, ev(250, { buttons: 0 }));
+  call("fdDragMove(card, fd, e)", fd, ev(260));
+  assert.ok(fd.view.range === null && fd.dragEnd === 0 && renders === 0, "no range is set by the hover or the click that follows");
+  // a press on a button (a death's skull) starts nothing; a press with another button starts nothing
+  fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150, { target: { closest: (q) => (/button/.test(q) ? {} : bar) } }));
+  call("fdDragStart(card, key, fd, e)", fd, ev(150, { button: 2 }));
+  assert.strictEqual(fd.drag, null);
+  // a cancel or a lost capture drops a drag in progress
+  fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  call("fdDragMove(card, fd, e)", fd, ev(200));
+  call("fdDragDrop(card, fd)", fd, null);
+  assert.strictEqual(fd.drag, null);
+}
+
 // ---- wiring pins on the text of app.js
 assert.ok(/card\.addEventListener\('pointerdown'/.test(src) && /card\.addEventListener\('pointermove'/.test(src) && /card\.addEventListener\('pointerup'/.test(src) && /card\.addEventListener\('pointercancel'/.test(src), "the card listens to the pointer for the drag");
 assert.ok(src.includes("FD_DRAG_BARS = ['.fd-tl', '.fd-lanebar', '.fd-au-bar']"), "a drag starts on the timeline, a lane's bar or an aura bar");
 assert.ok(src.includes("FD_DRAG_PX = 6"), "a drag is 6 px");
 assert.ok(src.includes("if (Date.now() - fd.dragEnd < 300) return;"), "the click seek skips the click that ends a drag");
 assert.ok(src.indexOf("fd.dragEnd < 300") < src.indexOf("const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');"), "and does so before it seeks");
-assert.ok(src.includes("fd.dragEnd = Date.now();"), "a drag records when it ended");
-assert.ok(/pointermove[\s\S]{0,700}setPointerCapture/.test(src), "the pointer is captured once the drag starts (never on a press, which would break the click)");
-assert.ok(!/pointerdown[\s\S]{0,900}setPointerCapture[\s\S]{0,40}\n    \}\);\n    card\.addEventListener\('pointermove'/.test(src), "not at the press");
-assert.ok(src.includes("FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur)") && src.includes("FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live')"), "the drag converts pixels with the fight's own length and sets the range through FdView");
+assert.ok(/if \(next === fd\.view\) return;\n    fd\.view = next;\n    fd\.dragEnd = Date\.now\(\);/.test(grab("fdDragEnd")), "the click guard is held only by a drag that made a range");
+assert.ok(grab("fdDragMove").includes("setPointerCapture") && !grab("fdDragStart").includes("setPointerCapture"), "the pointer is captured once the drag starts (never on a press, which would break the click)");
+assert.ok(/card\.addEventListener\('lostpointercapture'[\s\S]{0,200}fdDragDrop\(card, fd\)/.test(src) && /card\.addEventListener\('pointercancel'[\s\S]{0,200}fdDragDrop\(card, fd\)/.test(src), "a lost capture and a cancel both end the drag");
+assert.ok(grab("fdDragMove").includes("!(e.buttons & 1)"), "a move with no button held ends the press");
+assert.ok(grab("fdDragMove").includes("FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur)") && grab("fdDragEnd").includes("FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live')"), "the drag converts pixels with the fight's own length and sets the range through FdView");
 assert.ok(/e\.key === 'Escape'[\s\S]{0,700}FdView\.clear\(fd\.view\)/.test(src), "Escape clears the range (a live view follows again)");
 assert.ok(src.includes("[data-fd-range-clear], [data-fd-range-zoom], [data-fd-follow], [data-fd-range-set]"), "the range buttons share one click path");
 assert.ok(/fd\.sel !== 'live' && fd\.view && fd\.view\.range[\s\S]{0,300}fd\.rp\.t = zr\.from;[\s\S]{0,120}fd\.rp\.on = true;[\s\S]{0,120}fdReplaySync\(key\)/.test(src), "Zoom replay here sets the replay to the range's start, post-fight only");
@@ -244,6 +304,6 @@ const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8")
 assert.ok(html.indexOf("/static/js/fdview.js") > 0 && html.indexOf("/static/js/fdview.js") < html.indexOf("/static/js/fightauras.js"), "FdView loads before fightauras.js (and app.js)");
 const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
 assert.ok(css.includes(".fd-range {") && css.includes(".fd-out { opacity: .3; }") && css.includes(".fd-whole {"), "the css classes");
-assert.ok(/\[data-fd-seekbar\] \{[^}]*touch-action: none; user-select: none;/.test(css), "a seek bar takes no touch scrolling and no text selection");
+assert.ok(/\[data-fd-seekbar\] \{[^}]*touch-action: pan-y; user-select: none;/.test(css) && /\.fd-tl, \.fd-lanebar, \.fd-au-bar \{ touch-action: pan-y; user-select: none; \}/.test(css), "a bar takes a horizontal drag but keeps the page's vertical scroll, and no text selection");
 assert.ok(/\.fd-range \{[^}]*pointer-events: none;/.test(css), "the band takes no pointer");
 console.log("fdrange_ui_check.js ok");

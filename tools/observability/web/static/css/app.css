@@ -3723,13 +3723,13 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-seg.k-other { background: var(--text-dim); }
 .fd-seg.k-none, .fd-seg.k-dead { background: transparent; }
 .fd-lanesum { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-[data-fd-seekbar] { cursor: pointer; touch-action: none; user-select: none; }
+[data-fd-seekbar] { cursor: pointer; touch-action: pan-y; user-select: none; }
 
 /* The time range: a drag-select on the timeline, the lanes and the aura strip filters every panel that has time data. */
 .fd-range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent-blue) 15%, transparent); pointer-events: none; }
 .fd-range-live { background: color-mix(in srgb, var(--accent-blue) 28%, transparent); }
 .fd-out { opacity: .3; }
-.fd-tl, .fd-lanebar, .fd-au-bar { touch-action: none; user-select: none; }
+.fd-tl, .fd-lanebar, .fd-au-bar { touch-action: pan-y; user-select: none; }
 .fd-rangebar { min-height: 1.4em; margin-bottom: 6px; font-size: 0.78rem; color: var(--text-muted); }
 .fd-rangehint, .fd-recapout { color: var(--text-muted); }
 .fd-recapout { margin: 6px 0 0; }

@@ -69,9 +69,15 @@ const fixed = FdView.setRange(FdView.create("live:K"), 30000, 200000, 400000, tr
 let h = FdView.handover(fixed, "filed");
 eq(h, { key: "filed", range: { from: 30000, to: 200000 }, follow: false, reclamp: true });
 h = FdView.reclamp(h, 100000);
-eq(h, { key: "filed", range: { from: 30000, to: 100000 }, follow: false, reclamp: false }, "re-clamped to the filed fight's length");
+eq(h, { key: "filed", range: { from: 0, to: 100000 }, follow: false, reclamp: false }, "a range wider than the filed fight: its width cannot be kept, so it is held to the whole fight");
 assert.strictEqual(FdView.reclamp(h, 50000), h, "only once");
-eq(FdView.reclamp(FdView.handover(fixed, "f"), 30500), { key: "f", range: null, follow: false, reclamp: false }, "a range the filed fight cannot hold under 1 s is dropped");
+eq(FdView.reclamp(FdView.handover(fixed, "f"), 500), { key: "f", range: null, follow: false, reclamp: false }, "a filed fight shorter than 1 s cannot hold a range: dropped");
+// the live clock can lead the filed length: a range near the end keeps its width (shifted left), it is not clipped end by end
+const near = (a, b, dur) => FdView.reclamp(FdView.handover(FdView.setRange(FdView.create("live:K"), a, b, 100000, true), "f"), dur).range;
+eq(near(88000, 92000, 87000), { from: 83000, to: 87000 }, "the whole range past the filed end: shifted left, 4 s kept");
+eq(near(80000, 88000, 87000), { from: 79000, to: 87000 }, "only its end past the filed end: shifted left, 8 s kept");
+eq(near(86000, 87000, 86500), { from: 85500, to: 86500 }, "a 1 s range stays 1 s");
+eq(near(30000, 40000, 87000), { from: 30000, to: 40000 }, "a range inside the filed fight is unchanged");
 const waiting = FdView.handover(fixed, "f");
 assert.strictEqual(FdView.reclamp(waiting, 0), waiting, "no fight length yet: wait for the first render that has one");
 eq(FdView.handover(FdView.create("live:K"), "filed"), { key: "filed", range: null, follow: true, reclamp: false }, "a following view becomes the whole fight");

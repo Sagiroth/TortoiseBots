@@ -95,12 +95,19 @@
     return { key: filedKey, range: fixed ? { from: v.range.from, to: v.range.to } : null, follow: v.follow !== false, reclamp: fixed };
   }
 
-  // The first render of a handed-over view that has its fight: the fixed range is fitted to the fight's length.
+  // The first render of a handed-over view that has its fight: the fixed range is fitted to the fight's length. The live clock can
+  // lead the filed length by a few seconds, so a range that runs past the end is shifted left to keep its width (held at 0), not
+  // clipped end by end; it is dropped only when the fight is shorter than MIN_RANGE_MS.
   function reclamp(view, durMs) {
     const v = view || create(null);
     if (!v.reclamp) return v;
     if (!(durMs > 0)) return v;
-    const r = v.range ? clampRange(v.range.from, v.range.to, durMs) : null;
+    let r = null;
+    if (v.range) {
+      let from = v.range.from, to = v.range.to;
+      if (to > durMs) { const width = to - from; to = durMs; from = Math.max(0, to - width); }
+      r = clampRange(from, to, durMs);
+    }
     return { key: v.key, range: r, follow: v.follow !== false, reclamp: false };
   }
 
