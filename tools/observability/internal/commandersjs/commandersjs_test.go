@@ -411,6 +411,20 @@ func TestFdShareUIJS(t *testing.T) {
 	runCheck(t, "fdshare_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFightMetersJS runs fightmeters_check.js: the Meters panel's pure logic (at() inside a bucket, before 0 and after the end, window()
+// of a range, rank() top ten of twelve, deathsBy() and fromSamples(), the live series built with the daemon's rules on the same fixture
+// as internal/meters: a steady 100 dps for 20 s).
+func TestFightMetersJS(t *testing.T) {
+	runCheck(t, "fightmeters_check.js", "../../web/static/js/fightmeters.js")
+}
+
+// TestFdMetersUIJS runs fdmeters_ui_check.js: the Meters panel in app.js (ten damage rows of twelve, escaped names, the ~ on a ramp,
+// the deaths, a range, the "No meter data" text, the live note with no ~ and no Play button, a replay that needs no track once the
+// detail has meters, the play row's meters-only note, and the pins that the replay and the 1 s live tick repaint the body only).
+func TestFdMetersUIJS(t *testing.T) {
+	runCheck(t, "fdmeters_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestLoginTargetJS runs login_target_check.js: login.html's own dashboardTarget() on plain, hostile and over-long fragments (#//evil.example,
 // #javascript:alert(1), a route of 5000 characters): the target is always /dashboard on this origin with at most a #/ route.
 func TestLoginTargetJS(t *testing.T) {

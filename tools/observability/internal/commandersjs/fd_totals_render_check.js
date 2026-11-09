@@ -30,7 +30,7 @@ function take(name) {
 const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock", "cmdPlanName", "cmdPlanFor",
   "cmdBossTable", "cmdBossPanels", "cmdPaintBosses", "cmdLiveBossPanels", "cmdFightBossPanels", "cmdTrashBlockHtml",
   "fdState", "fdLiveState", "fdLiveTimelineHtml", "fdLiveFiledRow", "fdLiveClock", "fdLiveWinLabel", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
-  "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
+  "fdHasMeters", "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
   "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdTotalsSession", "fdTotalsLoad",
   "fdTotalChipsHtml", "fdTotalsSegHtml", "fdRunStartText", "fdTotalTitleHtml",
   "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
@@ -85,6 +85,7 @@ const ctx = {
   console, setTimeout, clearTimeout, Date, Math, JSON,
   FightDebug: require(path.join(dir, "fightdebug.js")),
   FdLive: require(path.join(dir, "fdlive.js")),
+  FightMeters: require(path.join(dir, "fightmeters.js")),
   FdView: require(path.join(dir, "fdview.js")),
   FdFilter: require(path.join(dir, "fdfilter.js")),
   FdTabs: require(path.join(dir, "fdtabs.js")),
@@ -105,6 +106,7 @@ vm.runInContext([
   "var fdLive = {}, fdLivePaintBar = () => {}, fdLiveCatchUp = () => {}, fdLiveTickSync = () => {};",
   "var fdAurasSync = () => {}, fdAuraFight = (f) => f, fdAuLiveOpts = () => null, fdAuLiveKey = () => 'live:k';", // the Auras panel has its own check (fightauras_ui_check.js)
   "var fdEventsSync = () => {}, fdEvKeep = () => null, FD_EV_PAGE = 500;", // the Events panel has its own check (fdevents_ui_check.js)
+  "var fdMetersSync = () => {}, fdMetersInputs = () => null;", // the Meters panel has its own check (fdmeters_ui_check.js)
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });

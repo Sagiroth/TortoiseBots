@@ -122,7 +122,7 @@ assert.strictEqual(run("fdCheckNum({ id: 'taken_outside', num: '6%' })"), "6% of
 const runSec = src.indexOf('class="fd-runtl"'), framesSec = src.indexOf('aria-label="Raid frames"');
 assert.ok(runSec > 0 && runSec < framesSec, "the run strip is above the raid frames");
 assert.ok(src.includes("card.querySelectorAll('.fd-runtl, .fd-raid,"), "the strip follows the debugger mode");
-assert.ok(src.includes("fdReplayActive(key) || fdRunActive(key)"), "the map draws the run replay when it is on");
+assert.ok(src.includes("act && act.track ? act : fdRunActive(key)"), "the map draws the run replay when it is on (a replay with no positions leaves the map alone)");
 assert.ok(src.includes("'&from=' + from + '&to=' + to"), "the run's kept positions are fetched once per run");
 assert.ok(src.includes("FD_TRACK_WINDOW_S"), "a run longer than the kept window is clamped");
 assert.ok(src.includes("setTimeout(() => fdRunTick(key)"), "the run plays as a setTimeout chain");

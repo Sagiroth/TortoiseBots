@@ -6926,6 +6926,7 @@
     const tl = (keep, f) => fdLiveTimelineHtml(st, f || lf, fd.liveRange, keep);
     fdSet(card.querySelector('.fd-tl'), tl(fdEvKeep(fd, lf, st)));
     fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange)); // only the panel's body is repainted, not the card
+    fdMetersSync(card, fdMetersInputs(fd, st, lf)); // the meters' body too: the estimate moves with the clock
     // The Events panel: its list and count only; the filter builder is the viewer's while the fight runs (it repaints on its own edits).
     fdEventsSync(card, fd, fdAuLiveKey(lf), lf, { range: fd.liveRange, st, tick: true, tl });
     fdDragBandSync(card, fd);
@@ -8395,7 +8396,9 @@
   function drawCmdMap(key) {
     const card = cmdCards.get(key);
     const liveBind = cmdBindForCard(key); // the card key resolves through cardKey; cmdFindBind keeps the fight key
-    const rp = liveBind ? (fdReplayActive(key) || fdRunActive(key)) : null;
+    // A replay with meters only (no kept positions) has no track: the map keeps its own picture then.
+    const act = liveBind ? fdReplayActive(key) : null;
+    const rp = liveBind ? (act && act.track ? act : fdRunActive(key)) : null;
     // Live: the positions are interpolated between samples (no glide during a fight replay, which has its own track).
     const bind = rp ? fdReplayBind(liveBind, rp.fight, rp.track, rp.tS) : Glide.apply(liveBind, cmdGlide[key] || (cmdGlide[key] = Glide.create()), performance.now());
     if (!card || !bind) return;
@@ -8925,6 +8928,7 @@
             <div class="cmd-feed" hidden></div>
             <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
+          <section class="fd-meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>
           <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
           <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
           <section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
@@ -9392,7 +9396,7 @@
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
-    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });
+    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });
     cmdPlaceLiveStrip(card, debug);
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.
@@ -10145,7 +10149,7 @@
     const noWin = !!emptyNote;
     const noWinEl = card.querySelector('.fd-nofight');
     if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
-    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = noWin; });
+    card.querySelectorAll('.fd-runtl, .fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = noWin; });
     // A read-only history card has no live party and no run of its own: the raid frames and the run strip would only be empty.
     if (bind.history) {
       card.querySelectorAll('.fd-runtl, .fd-raid').forEach(el => { el.hidden = true; });
@@ -10276,15 +10280,18 @@
       fdAurasSync(card, fd, fd.sel, fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander), { pending, untracked, range });
     }
     fdEventsSync(card, fd, evKey, evFight, { range, st: selLive ? liveSt : null, tl: tlHtml });
+    fdMetersSync(card, noWin ? null : fdMetersInputs(fd, liveSt, liveFight));
     // The replay row: a fight's kept positions are fetched once by the daemon's buffer, then played over the card's map. A
     // past night kept no positions (only the fight's numbers), so its row says so and no lanes are drawn.
     if (fight) {
       if (hist) {
-        fdPlayNote(card, fd.sel, 'No replay for past nights (positions are kept 30 min)');
+        // A past night kept no positions, but a fight the daemon saw while running kept its meters: those still play.
+        if (fdHasMeters(det)) fdPlaySync(card, fd, fight, null, true);
+        else fdPlayNote(card, fd.sel, 'No replay for past nights (positions are kept 30 min)');
         fdSet(card.querySelector('.fd-lanes'), '');
       } else {
         if (track === undefined) fdTrackLoad(card, bind, fd.sel, fight);
-        fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+        fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null, fdHasMeters(det));
         const lanes = card.querySelector('.fd-lanes');
         if (lanesUntracked) {
           fdSet(lanes, `<p class="empty-hint">${esc(FightReplay.UNTRACKED_TEXT)}</p>`); // this raid is past the dashboard's tracked set
@@ -11139,6 +11146,86 @@
     fdAurasPaint(card, fdAurasParts(fight, iv, fdAuState(fd, key, fight, iv), opts));
   }
 
+  // ---- The Meters panel (FightMeters, web/static/js/fightmeters.js): damage, healing and deaths up to the replay's place (a filed fight:
+  // the daemon's series, totals exact) or up to now (a running fight: the series built from the 2 s samples, an estimate). A range
+  // (dash-1) narrows it to what happened inside. The replay and the 1 s live tick repaint the body only: a string and fdSet.
+
+  const FD_MT_NOTE = 'Shape from the 10 s window, totals exact';
+  const FD_MT_LIVE_NOTE = 'Estimated live from the 10 s window; exact totals when the fight ends.';
+  const FD_MT_NONE = 'No meter data for this fight (the dashboard keeps it only for fights it saw while running)';
+
+  // What the panel draws from, or null (hidden): the card's selection, the series, the time it shows up to and the range. A running
+  // fight passes its live state and its synthetic fight object (built once per second by the caller).
+  function fdMetersInputs(fd, liveSt, liveFight) {
+    if (!fd || fd.mode !== 'debug') return null;
+    if (fd.sel === 'live') {
+      if (!liveSt || !liveFight) return null;
+      const now = liveFight.dur_ms || 0;
+      return { live: true, unbound: liveSt.cmd === null, fight: liveFight, series: FightMeters.fromSamples(liveSt.samples, liveSt.startMs, now),
+        tMs: now, endMs: now, range: fd.liveRange || null };
+    }
+    const det = fd.sel ? fd.details[fd.sel] : null;
+    const fight = det && det.fight;
+    if (!fight) return null;
+    const dur = Math.max(0, Math.round(fight.dur_ms || 0));
+    const replaying = !!fd.rp && fd.rp.on && fd.rp.key === fd.sel;
+    return { live: false, unbound: false, fight, series: fdHasMeters(det) ? det.meters : null,
+      tMs: replaying ? Math.max(0, Math.min(dur, Math.round(fd.rp.t))) : dur, endMs: dur, range: FdView.effective(fd.view, false, null) };
+  }
+
+  function fdMtRoleCls(role) {
+    const r = String(role || '').toLowerCase();
+    return r.charAt(0) === 'h' ? ' heal' : '';
+  }
+
+  // One column of bars: name, a bar as wide as its share of the top, the amount and its per-second rate. flat: guids whose curve is a ramp.
+  function fdMtColumn(title, rows, secs, flat, heal) {
+    let html = `<div class="fd-mtcol"><h4>${esc(title)}</h4>`;
+    if (!rows.length) return html + '<p class="empty-hint">Nothing yet.</p></div>';
+    html += '<ol class="fd-mtlist">';
+    rows.forEach(r => {
+      const rate = secs >= 1 ? ' · ' + FightDebug.fmtInt(Math.round(r.v / secs)) + (heal ? ' hps' : ' dps') : '';
+      html += `<li class="fd-mtrow"><span class="fd-mtname" title="${esc(r.name)}">${esc(r.name)}</span>`
+        + `<span class="fd-mtbar"><i class="fd-mtfill${heal ? ' heal' : ''}" style="width:${Math.max(0, Math.min(100, r.pct))}%"></i></span>`
+        + `<span class="fd-mtval">${FightDebug.fmtInt(r.v)}${flat && flat[r.g] ? '~' : ''}${esc(rate)}</span></li>`;
+    });
+    return html + '</ol></div>';
+  }
+
+  // The panel's note and body for one set of inputs (the pure step; fdMetersSync draws it).
+  function fdMetersParts(m) {
+    if (m.unbound) return { note: '', body: '<p class="empty-hint">Live meters need a bound commander.</p>' };
+    if (!m.series) return { note: '', body: `<p class="empty-hint">${m.live ? 'Waiting for the first report…' : esc(FD_MT_NONE)}</p>` };
+    const r = m.range;
+    const to = r ? Math.min(m.tMs, r.to) : m.tMs;
+    const from = r ? Math.min(r.from, to) : 0;
+    const rows = r ? FightMeters.window(m.series, from, to, m.endMs) : FightMeters.at(m.series, m.tMs, m.endMs);
+    const secs = (to - from) / 1000;
+    const flat = {};
+    if (!m.live) (m.series.bots || []).forEach(b => { if (b && b.flat) flat[b.g] = true; });
+    const deaths = FightMeters.deathsBy(m.fight, to).filter(d => !r || d.t_ms >= from).slice(0, FightMeters.TOP);
+    let dh = '<div class="fd-mtcol"><h4>Deaths</h4>';
+    if (!deaths.length) dh += '<p class="empty-hint">No deaths yet.</p>';
+    deaths.forEach(d => {
+      dh += `<p class="fd-mtdeath">${esc(fdLiveClock(d.t_ms))} ${esc(d.name || '?')}${d.killer ? ' · ' + esc(d.killer) : ''}</p>`;
+    });
+    const body = `<div class="fd-mtcols">${fdMtColumn('Damage', FightMeters.rank(m.fight, rows, 'dmg'), secs, flat, false)}`
+      + `${fdMtColumn('Healing', FightMeters.rank(m.fight, rows, 'heal'), secs, flat, true)}${dh}</div></div>`;
+    const note = (r ? 'in the range ' + fdLiveClock(from) + ' to ' + fdLiveClock(to) + ' · ' : '') + (m.live ? FD_MT_LIVE_NOTE : FD_MT_NOTE);
+    return { note, body };
+  }
+
+  // One paint of the panel's note and body; null inputs hide the section.
+  function fdMetersSync(card, m) {
+    const sec = card && card.querySelector('.fd-meters');
+    if (!sec) return;
+    sec.hidden = !m;
+    if (!m) return;
+    const p = fdMetersParts(m);
+    fdSet(sec.querySelector('.fd-mtnote'), esc(p.note));
+    fdSet(sec.querySelector('.fd-mtbody'), p.body);
+  }
+
   // ---- The Events panel (FightEvents, web/static/js/fightevents.js; FdFilter, web/static/js/fdfilter.js): one list of the fight's
   // casts, taunts, interrupts, deaths, aura changes, boss target changes and last hits, narrowed by the time range and an AND / OR / NOT
   // filter tree. A running fight lists the newest first. The filter belongs to the card (kept across fights); the 1 s live repaint
@@ -11502,16 +11589,16 @@
 
   // The play row of one fight. A fight whose window has fewer than two kept reports cannot be played: its three controls are
   // disabled and the coverage line says why.
-  function fdPlayHtml(win, durMs, rp) {
+  function fdPlayHtml(win, durMs, rp, meters) {
     const dur = Math.max(0, Math.round(durMs || 0));
-    const off = win && win.ok ? '' : ' disabled';
+    const off = (win && win.ok) || meters ? '' : ' disabled';
     const speed = rp && rp.speed ? rp.speed : 1;
     return `<button type="button" class="fd-playbtn" data-fd-play aria-pressed="false"${off}>Play</button>`
       + `<button type="button" class="fd-speed" data-fd-speed${off}>${speed}×</button>`
       + `<input type="range" class="fd-scrub" data-fd-scrub min="0" max="${dur}" step="100" value="0" aria-label="Replay time"${off}>`
       + `<span class="fd-clock">${esc(FightReplay.clock(0, dur))}</span>`
       + `<button type="button" class="fd-exit" data-fd-exit${rp && rp.on ? '' : ' hidden'}>Live map</button>`
-      + `<span class="fd-cov">${esc(FightReplay.coverageText(win))}</span>`;
+      + `<span class="fd-cov">${esc(FightReplay.coverageText(win, meters))}</span>`;
   }
 
   // A past night kept no positions: the play row says so instead of offering controls that cannot work.
@@ -11526,15 +11613,15 @@
 
   // Rebuilds the play row only when the fight (or the arrival of its positions) changes; otherwise it moves the values, so a
   // scrub the user is dragging keeps its focus and its thumb.
-  function fdPlaySync(card, fd, fight, track) {
+  function fdPlaySync(card, fd, fight, track, meters) {
     const node = card && card.querySelector('.fd-play');
     if (!node) return;
     const rp = fd.rp, dur = Math.max(0, Math.round((fight && fight.dur_ms) || 0));
     const win = FightReplay.window(track ? track.prep : null, fight || {});
-    const key = fd.sel + (track ? '|t' : '');
+    const key = fd.sel + (track ? '|t' : '') + (meters ? '|m' : '');
     if (node.dataset.fdKey !== key) {
       node.dataset.fdKey = key;
-      node.innerHTML = fdPlayHtml(win, dur, rp);
+      node.innerHTML = fdPlayHtml(win, dur, rp, meters);
     }
     const scrub = node.querySelector('[data-fd-scrub]');
     if (scrub && document.activeElement !== scrub) scrub.value = String(Math.min(dur, Math.max(0, Math.round(rp.t))));
@@ -11633,7 +11720,14 @@
     return Object.assign({}, bind, { bots, mobs, mobs_map: map, objects: [], orders: [], commander_pos: null });
   }
 
-  // What a replaying card draws, or null: the debugger is on, the selected finished fight's positions are kept and interpolate.
+  // Whether a fight's detail carries the daemon's meter series (a fight it saw while running; the answer's `meters`).
+  function fdHasMeters(det) {
+    const m = det && det.meters;
+    return !!m && Array.isArray(m.bots) && m.n > 0;
+  }
+
+  // What a replaying card draws, or null: the debugger is on and the selected finished fight either has kept positions that
+  // interpolate, or (no usable track) a meter series: then track is null, the meters step through the fight and the map is left alone.
   function fdReplayActive(key) {
     const fd = cmdFd[key];
     if (!fd || fd.mode !== 'debug' || !fd.rp || !fd.rp.on) return null;
@@ -11641,9 +11735,10 @@
     const fight = det && det.fight;
     if (!fight) return null;
     const track = fd.tracks[fd.sel];
-    if (!track || track === 'loading' || !FightReplay.window(track.prep, fight).ok) return null;
     const tMs = Math.max(0, Math.min(Math.round(fight.dur_ms || 0), Math.round(fd.rp.t)));
-    return { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
+    if (track && track !== 'loading' && FightReplay.window(track.prep, fight).ok) return { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
+    if (fdHasMeters(det)) return { tS: (fight.start || 0) + tMs / 1000, tMs, track: null, fight };
+    return null;
   }
 
   // Fetches a fight's kept positions once (the daemon keeps the last 30 min); a failure is asked for again after 30 s.
@@ -11692,8 +11787,9 @@
     const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
     const fight = det && det.fight;
     const track = fight ? fd.tracks[fd.sel] : null;
-    fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null);
+    fdPlaySync(card, fd, fight, track && track !== 'loading' ? track : null, fdHasMeters(det));
     fdCursorSync(card, fd);
+    if (fight) fdMetersSync(card, fdMetersInputs(fd, null, null)); // the meters follow the play head (their body only, no card render)
     drawCmdMap(key);
   }
 

@@ -20,7 +20,7 @@ const synthetic = {
 
 // ---- constants ------------------------------------------------------------------------------------------------------
 assert.strictEqual(R.TICK_MS, 250);
-assert.deepStrictEqual(R.SPEEDS, [0.5, 1, 2, 4]);
+assert.deepStrictEqual(R.SPEEDS, [0.5, 1, 2, 4, 8, 16]);
 assert.strictEqual(R.HOLD_S, 3);
 assert.strictEqual(R.jumpLimitYd(2), 52);
 assert.strictEqual(R.jumpLimitYd(0.2), 32);
@@ -98,7 +98,9 @@ assert.strictEqual(R.UNTRACKED_TEXT, "Replay kept for the first 20 commanders on
 assert.strictEqual(R.NO_TRACK_TEXT, "No positions kept for this fight");
 
 // ---- controls -------------------------------------------------------------------------------------------------------
-assert.strictEqual(R.nextSpeed(4), 0.5);
+assert.strictEqual(R.nextSpeed(4), 8);
+assert.strictEqual(R.nextSpeed(8), 16);
+assert.strictEqual(R.nextSpeed(16), 0.5, "the cycle wraps after 16");
 assert.strictEqual(R.nextSpeed(1), 2);
 assert.strictEqual(R.nextSpeed(0.5), 1);
 assert.strictEqual(R.nextSpeed(1.5), 1);

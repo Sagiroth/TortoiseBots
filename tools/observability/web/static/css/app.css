@@ -3288,6 +3288,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .fd-runtl,
 .cmd-card.fd-on .fd-raid,
 .cmd-card.fd-on .fd-checks,
+.cmd-card.fd-on .fd-meters,
 .cmd-card.fd-on .fd-timeline,
 .cmd-card.fd-on .fd-auras,
 .cmd-card.fd-on .fd-events,
@@ -3300,6 +3301,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   background: var(--bg-card);
 }
 .cmd-card.fd-on .fd-timeline { padding-top: 10px; }
+.cmd-card.fd-on .fd-meters { padding-top: 10px; }
 .cmd-card.fd-on .fd-auras { padding-top: 10px; }
 .cmd-card.fd-on .fd-events { padding-top: 10px; }
 
@@ -3351,7 +3353,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-meters[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
@@ -3458,6 +3460,23 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-timeline { min-width: 0; }
 /* The Auras panel: one row per bot (name | uptime | bar); the boss-cast lines cross every row from one overlay. */
 .fd-auras { min-width: 0; }
+/* The Meters panel: damage, healing and deaths side by side (one column on a narrow page); bars are plain divs whose width the
+   replay moves. */
+.fd-meters { min-width: 0; }
+.fd-mtbody { min-width: 0; }
+.fd-mtnote { font-weight: 400; font-size: 0.72rem; color: var(--text-muted); margin-left: 6px; }
+.fd-mtcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; }
+.fd-mtcol { min-width: 0; }
+.fd-mtcol h4 { margin: 0 0 4px; font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+.fd-mtlist { list-style: none; margin: 0; padding: 0; }
+.fd-mtrow { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 18px; font-size: 0.78rem; }
+.fd-mtname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-mtbar { display: block; height: 8px; background: var(--border-color); border-radius: 2px; overflow: hidden; }
+.fd-mtfill { display: block; height: 100%; background: var(--accent-blue); transition: width 200ms linear; }
+.fd-mtfill.heal { background: var(--accent-green); }
+.fd-mtval { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-mtdeath { font-size: 0.78rem; margin: 0 0 2px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .fd-mtfill { transition: none; } }
 .fd-aubody, .fd-auslot, .fd-aurest { min-width: 0; }
 .fd-au-raid { font-weight: 600; }
 .fd-auctl { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }

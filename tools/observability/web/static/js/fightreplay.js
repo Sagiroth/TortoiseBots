@@ -6,11 +6,14 @@
 // No DOM, no fetch, no markup: unit-tested by internal/commandersjs/fightreplay_check.js under node.
 (function (root) {
   const TICK_MS = 250;                 // one playback step; a setTimeout chain, never an interval
-  const SPEEDS = [0.5, 1, 2, 4];
+  const SPEEDS = [0.5, 1, 2, 4, 8, 16];
   const HOLD_S = 3;                    // how long a unit that left the report stays drawn
   // The daemon keeps positions for twenty commanders at once (TrackMaxCommanders); a 21st has none to replay.
   const UNTRACKED_TEXT = "Replay kept for the first 20 commanders only (dashboard limit)";
   const NO_TRACK_TEXT = "No positions kept for this fight";
+  // A fight with meters but no kept positions (a past night's, or one whose reports fell out of the buffer) still plays: the meters
+  // step through it while the map keeps its own picture.
+  const METERS_ONLY_TEXT = "Meters only, no positions kept";
   // Same trail-break numbers as the daemon's JumpLimitYd (internal/state/commanders.go): what a unit can walk in a gap.
   const TRAVEL_SLACK_YD = 12;
   const TRAVEL_MAX_YD_PER_SEC = 20;
@@ -147,8 +150,9 @@
       untracked: !!(track && track.untracked) };
   }
 
-  function coverageText(win) {
-    if (!win || !win.ok) return win && win.untracked ? UNTRACKED_TEXT : NO_TRACK_TEXT;
+  // meters: the fight has a meter series, so the replay can run without positions.
+  function coverageText(win, meters) {
+    if (!win || !win.ok) return meters ? METERS_ONLY_TEXT : win && win.untracked ? UNTRACKED_TEXT : NO_TRACK_TEXT;
     let s = "positions every 2 s · " + win.frames + " reports";
     if (win.gapMaxS > 3) s += " · gap " + Math.round(win.gapMaxS) + " s";
     return s;
@@ -233,7 +237,7 @@
   }
 
   const api = {
-    TICK_MS, SPEEDS, HOLD_S, UNTRACKED_TEXT, NO_TRACK_TEXT,
+    TICK_MS, SPEEDS, HOLD_S, UNTRACKED_TEXT, NO_TRACK_TEXT, METERS_ONLY_TEXT,
     jumpLimitYd, segOf, shapeOf, prep, window, botsAt, mobsAt, nextSpeed, clock, spanClock, coverageText,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FightReplay = api;
