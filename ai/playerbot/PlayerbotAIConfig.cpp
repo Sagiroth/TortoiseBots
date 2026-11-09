@@ -401,6 +401,7 @@ bool PlayerbotAIConfig::Initialize()
     poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 22000);
     if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
     if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
+    poolNearPlayerYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.PoolNearPlayerYd", 80.0f));
     poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 0);
     if (poolBudgetWhenTickOverMs > 10000) poolBudgetWhenTickOverMs = 10000;
     combatTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.CombatTickBudgetUs", 15000);
