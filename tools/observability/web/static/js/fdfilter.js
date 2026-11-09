@@ -104,9 +104,21 @@
     return false;
   }
 
+  // The label a kind is shown under in the Events table ("aura_on" is "Aura applied"): a kind condition takes either.
+  function kindLabel(k) {
+    const E = root.FightEvents || (typeof require === "function" ? require("./fightevents.js") : null);
+    const d = E && E.KINDS ? E.KINDS.find((x) => x.k === k) : null;
+    return d ? d.label : "";
+  }
+
   function matchCond(c, ev) {
     const val = ev[PROP[c.f]];
     let r = false;
+    if (c.f === "kind") {
+      const want = String(c.v).toLowerCase(), have = [typeof val === "string" ? val : "", kindLabel(val)].map((x) => x.toLowerCase());
+      r = c.op === "has" ? have.some((h) => h.indexOf(want) >= 0) : have.indexOf(want) >= 0;
+      return c.not ? !r : r;
+    }
     if (c.f === "amount") {
       const n = numOf(c.v);
       if (isNum(val) && n !== null) r = c.op === "is" ? val === n : c.op === "ge" ? val >= n : val <= n;
@@ -307,7 +319,8 @@
         if (n.not) return "not (" + joined + ")";
         return !top && items.length > 1 ? "(" + joined + ")" : joined;
       }
-      return (n.not ? "not " : "") + fieldWord(n.f) + " " + (n.op === "ge" ? "is at least" : n.op === "le" ? "is at most" : n.op) + " " + n.v;
+      const v = n.f === "kind" && kindLabel(n.v) ? kindLabel(n.v) : n.v; // a kind is described by the label the table shows
+      return (n.not ? "not " : "") + fieldWord(n.f) + " " + (n.op === "ge" ? "is at least" : n.op === "le" ? "is at most" : n.op) + " " + v;
     };
     return part(g, true) || "every event";
   }

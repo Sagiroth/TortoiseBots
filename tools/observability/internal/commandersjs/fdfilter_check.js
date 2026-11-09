@@ -171,12 +171,29 @@ function isGroup(n) { return Array.isArray(n.items); }
 }
 // describe: the short English line
 {
-  assert.strictEqual(F.describe(G("and", [C("kind", "is", "cast"), C("target", "has", "Hex", true)])), "kind is cast and not target has Hex");
+  assert.strictEqual(F.describe(G("and", [C("kind", "is", "cast"), C("target", "has", "Hex", true)])), "kind is Cast and not target has Hex", "a kind is described by the label the table shows");
   assert.strictEqual(F.describe(F.empty()), "every event");
   assert.strictEqual(F.describe(G("and", [C("kind", "is", "")])), "every event", "an incomplete row is not described");
-  assert.strictEqual(F.describe(G("or", [C("kind", "is", "death"), G("and", [C("amount", "ge", 100), C("srcRole", "is", "enemy")])])), "kind is death or (amount is at least 100 and source role is enemy)");
-  assert.strictEqual(F.describe(G("or", [C("kind", "is", "death"), C("kind", "is", "hit")], true)), "not (kind is death or kind is hit)");
+  assert.strictEqual(F.describe(G("or", [C("kind", "is", "death"), G("and", [C("amount", "ge", 100), C("srcRole", "is", "enemy")])])), "kind is Death or (amount is at least 100 and source role is enemy)");
+  assert.strictEqual(F.describe(G("or", [C("kind", "is", "death"), C("kind", "is", "hit")], true)), "not (kind is Death or kind is Hit before death)");
   assert.strictEqual(F.describe(null), "");
+}
+// kind: the visible label works as well as the id ("Aura applied" is aura_on), in is and has, case-insensitively
+{
+  const ev = (k) => ({ t: 1, k, ab: "", src: "", tgt: "" });
+  const is = (v, not) => G("and", [C("kind", "is", v, not)]);
+  assert.strictEqual(F.match(is("Aura applied"), ev("aura_on")), true, "the label");
+  assert.strictEqual(F.match(is("aura_on"), ev("aura_on")), true, "the id");
+  assert.strictEqual(F.match(is("aura APPLIED"), ev("aura_on")), true, "case-insensitive");
+  assert.strictEqual(F.match(is("Aura applied"), ev("aura_off")), false, "another kind");
+  assert.strictEqual(F.match(is("Aura applied", true), ev("aura_on")), false, "NOT");
+  assert.strictEqual(F.match(is("Hit before death"), ev("hit")), true);
+  assert.strictEqual(F.match(G("and", [C("kind", "has", "applied")]), ev("aura_on")), true, "has reads the label");
+  assert.strictEqual(F.match(G("and", [C("kind", "has", "aura_o")]), ev("aura_on")), true, "and the id");
+  assert.strictEqual(F.match(G("and", [C("kind", "has", "aura")]), ev("cast")), false);
+  assert.strictEqual(F.describe(is("aura_on")), "kind is Aura applied");
+  assert.strictEqual(F.describe(is("Aura applied")), "kind is Aura applied", "a label typed by the reader is printed as it is");
+  assert.strictEqual(F.describe(G("and", [C("target", "is", "aura_on")])), "target is aura_on", "only a kind is mapped");
 }
 // the field and operator tables the builder reads
 {

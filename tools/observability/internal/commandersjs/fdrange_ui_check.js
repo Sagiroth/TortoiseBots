@@ -304,7 +304,7 @@ assert.ok(src.includes("fd.view = FdView.clear(fd.view); // picking a window fol
 assert.ok(grab("fdLivePaintBar").includes("fdLiveRangeOf(fd, st, now);") && !grab("fdLivePaintBar").includes("FdLive.range("), "the bar works the range out once through the view (fd.liveRange), not around it");
 assert.ok(grab("fdLivePaintBar").includes("fdRangeBarHtml(fd.view, true, fd.liveWin)"), "the live bar draws the range bar");
 const paint = grab("fdLivePaintDebug");
-assert.ok(paint.includes("fdLiveTimelineHtml(st, lf, fd.liveRange, keep)") && paint.includes("fdAuLiveOpts(st, fd.liveRange)") && paint.includes("fdDragBandSync(card, fd)"), "the 1 s repaint hands fd.liveRange to the timeline and the aura panel, and redraws a drag band");
+assert.ok(paint.includes("fdLiveTimelineHtml(st, f || lf, fd.liveRange, keep)") && paint.includes("fdAuLiveOpts(st, fd.liveRange)") && paint.includes("fdDragBandSync(card, fd)"), "the 1 s repaint hands fd.liveRange to the timeline and the aura panel, and redraws a drag band");
 assert.ok(grab("fdLiveHandoff").includes("fdViewHandover(fd, summary.key);") && grab("fdLiveHandoff").indexOf("fdViewHandover(") < grab("fdLiveHandoff").indexOf("fd.sel = summary.key;"), "the hand-over moves the view's key before the selection and the render");
 assert.ok(grab("fdSyncSel").includes("fdViewHandover(fd, filed.key);"), "so does the list's own hand-over");
 const render = grab("renderFightDebug");

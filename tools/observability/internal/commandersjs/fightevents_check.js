@@ -50,6 +50,11 @@ const fixture = () => ({
   assert.deepStrictEqual([hit.t, hit.src, hit.tgt, hit.amt, hit.tgtRole], [39000, "Hakkar", "Dpsy", 1500, "dps"], "a last hit before a death");
   assert.strictEqual(E.build({ log: [{ k: "death", t: 1, n: "x", by: "y" }], victims: [[1, 5, "x", "tank"]] }).events[1].src, "boss", "no boss name: boss");
 }
+// the boss lane also draws "ab" log events (boss abilities): they are listed as casts, so a mark and its row agree
+{
+  const { events } = E.build({ log: [{ k: "ab", t: 1000, n: "Boss", e: 5, s: "Slam", sid: 9, tn: "Tanky" }, { k: "mystery", t: 2000 }] });
+  assert.deepStrictEqual(events.map((e) => [e.k, e.src, e.srcRole, e.ab, e.sid, e.tgt]), [["cast", "Boss", "enemy", "Slam", 9, "Tanky"]], "an ab event is a cast; an unknown kind is still skipped");
+}
 // an aura row for a bot that is not in the fight: "#<guid>"; names the live view learned are used
 {
   const { events } = E.build({ bots, auras: [[100, 999, 555, 1]] }, { names: { 555: "Learned" } });

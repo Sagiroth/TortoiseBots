@@ -55,7 +55,7 @@
 
     (Array.isArray(f.log) ? f.log : []).forEach((e) => {
       if (!e || typeof e !== "object" || !isNum(e.t)) return;
-      if (e.k === "cast") {
+      if (e.k === "cast" || e.k === "ab") { // "ab" is a boss ability cast the timeline's Boss lane also draws
         // The target is a bot only when its guid is one of the fight's bots; the name is shown either way.
         const tb = e.tg != null && byGuid.has(String(e.tg)) ? byGuid.get(String(e.tg)) : null;
         push(mk(e.t, "cast", {

@@ -6752,7 +6752,7 @@
     if (!fd || !st || !card || !bind || fd.sel !== 'live') return;
     fdLivePaintBar(card, fd, st);
     const lf = st.key ? FdLive.fight(st, bind, Date.now()) : null;
-    const tl = keep => fdLiveTimelineHtml(st, lf, fd.liveRange, keep);
+    const tl = (keep, f) => fdLiveTimelineHtml(st, f || lf, fd.liveRange, keep);
     fdSet(card.querySelector('.fd-tl'), tl(fdEvKeep(fd, lf, st)));
     fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange)); // only the panel's body is repainted, not the card
     // The Events panel: its list and count only; the filter builder is the viewer's while the fight runs (it repaints on its own edits).
@@ -8960,30 +8960,23 @@
       if (!e.target.matches || !e.target.matches('[data-fd-rtscrub]')) return;
       fdRunScrub(key, parseFloat(e.target.value) || 0);
     });
-    // The Events panel's filter builder and its Show more button (the tree is edited by path; see fdFilterEdit).
+    // The Events panel's filter builder, Show more and the way back to the newest (the tree is edited by path; see fdFilterEdit).
     card.addEventListener('click', e => {
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on')) return;
-      const b = e.target.closest && e.target.closest('[data-fd-fpreset], [data-fd-fclear], [data-fd-fadd], [data-fd-faddg], [data-fd-fdel], [data-fd-evmore]');
-      if (!b) return;
-      if (b.hasAttribute('data-fd-evmore')) fd.evShown = (fd.evShown || FD_EV_PAGE) + FD_EV_PAGE;
-      else if (!fdFilterEdit(fd, b)) return;
-      fdEvRepaint(key);
+      const b = e.target.closest && e.target.closest('[data-fd-fpreset], [data-fd-fclear], [data-fd-fadd], [data-fd-faddg], [data-fd-fdel], [data-fd-evmore], [data-fd-evnew]');
+      if (b) fdEvClick(key, fd, b);
     });
     card.addEventListener('change', e => {
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on') || !e.target.matches || !e.target.matches('[data-fd-fnot], [data-fd-fop], [data-fd-ffield], [data-fd-fcop], [data-fd-fval]')) return;
-      clearTimeout(fd.evTimer); // a pending typed edit is this one
-      fd.evTimer = 0;
-      if (fdFilterEdit(fd, e.target)) fdEvRepaint(key);
+      fdEvChange(key, fd, e.target);
     });
     // A typed value is applied 300 ms after the last key, so the list does not refilter on every letter.
     card.addEventListener('input', e => {
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on') || !e.target.matches || !e.target.matches('[data-fd-fval]')) return;
-      const el = e.target;
-      clearTimeout(fd.evTimer);
-      fd.evTimer = setTimeout(() => { fd.evTimer = 0; if (fdFilterEdit(fd, el)) fdEvRepaint(key); }, FD_EV_DEBOUNCE_MS);
+      fdEvTyped(key, fd, e.target);
     });
     // The replay: play, speed, exit and a click on the timeline or a lane bar to scrub. Every control leaves the row, the cursor
     // and the map in step with the one state (rp).
@@ -9355,7 +9348,7 @@
   }
 
   function fdState(key) {
-    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, view: FdView.create(null), dragEnd: 0, drag: null, au: { key: null, sid: null, marker: null, userSid: false, userMark: false }, filter: FdFilter.empty(), evShown: FD_EV_PAGE, evWhy: '', evFor: null, evCtx: null, evKeep: null, evTimer: 0, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
+    if (!cmdFd[key]) cmdFd[key] = { mode: 'live', sel: null, userSel: false, liveWin: FdLive.DEFAULT_WINDOW, liveKey: null, liveRange: null, view: FdView.create(null), dragEnd: 0, drag: null, au: { key: null, sid: null, marker: null, userSid: false, userMark: false }, filter: FdFilter.empty(), evShown: FD_EV_PAGE, evWhy: '', evFor: null, evCtx: null, evKeep: null, evTimer: 0, evPending: null, evPaintedT: -1, bot: null, death: null, readyOpen: false, details: {}, failed: {}, loading: false, loadingKey: null, list: [], day: '', days: [], daysAt: 0, hist: {}, histPending: {}, packs: {}, packPending: {}, packAll: false, tracks: {}, trackAt: {}, rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: null }, run: { on: false, t: null, playing: false, timer: 0, model: null, track: undefined, loading: false, key: null } };
     return cmdFd[key];
   }
 
@@ -9369,7 +9362,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark', 'data-fd-range-set', 'data-fd-range-clear', 'data-fd-range-zoom', 'data-fd-follow', 'data-fd-evmore'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark', 'data-fd-range-set', 'data-fd-range-clear', 'data-fd-range-zoom', 'data-fd-follow', 'data-fd-evmore', 'data-fd-evnew'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -10062,7 +10055,7 @@
     // timeline's marks follow the events filter.
     const evFight = selLive ? liveFight : fight ? fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander) : null;
     const evKey = selLive ? fdAuLiveKey(liveFight) : fd.sel;
-    const tlHtml = keep => (selLive ? fdLiveTimelineHtml(liveSt, liveFight, range, keep)
+    const tlHtml = (keep, f) => (selLive ? fdLiveTimelineHtml(liveSt, f || liveFight, fd.liveRange || range, keep)
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range, keep) : '');
     fdSet(card.querySelector('.fd-tl'), tlHtml(fdEvKeep(fd, evFight, selLive ? liveSt : null)));
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death, range) : '');
@@ -10721,10 +10714,11 @@
     return FdView.inRange(t, range) ? '' : ' fd-out';
   }
 
-  // A boss-cast or death mark is also dimmed when the Events filter is set and its event (the same kind and time) does not match.
-  // keep is null (no filter) or (kind, t) => whether an event of that kind and time matches.
-  function fdMarkOut(t, range, keep, kind) {
-    return FdView.inRange(t, range) && (!keep || keep(kind, t)) ? '' : ' fd-out';
+  // A boss-cast or death mark is also dimmed when the Events filter is set and its event does not match. A mark is matched to its
+  // event by everything that tells events apart (fdEvMarkKey), not by the time alone: two casts in one millisecond are two events.
+  // keep is null (no filter) or (mark) => whether the event of that mark matches; mark is { k, t, src, ab, sid, tgt } (a death: k, t, tgt).
+  function fdMarkOut(t, range, keep, mark) {
+    return FdView.inRange(t, range) && (!keep || keep(mark)) ? '' : ' fd-out';
   }
 
   function fdTimelineHtml(tl, recaps, selDeath, range, keep) {
@@ -10745,12 +10739,12 @@
       const slot = bossTable && typeof BossPanel !== 'undefined' && BossPanel.abilityBySpell ? BossPanel.abilityBySpell(bossTable, c.sid, c.e) : null;
       const ci = slot ? slot.index % 8 : 0;
       const label = c.n + ': ' + (c.s || 'a spell') + (c.target ? ' → ' + c.target : '');
-      html += `<button type="button" class="fd-bosscast bc-${ci}${fdMarkOut(c.t_ms, range, keep, 'cast')}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
+      html += `<button type="button" class="fd-bosscast bc-${ci}${fdMarkOut(c.t_ms, range, keep, { k: 'cast', t: c.t_ms, src: c.n, ab: c.s, sid: c.sid, tgt: c.target })}" data-fd-bosscast="${c.t_ms}" style="left:${c.pct.toFixed(2)}%" title="${esc(label + ' at ' + (c.t_ms / 1000).toFixed(1) + ' s')}" aria-label="${esc(label)}"></button>`;
     });
     if (!(tl.deaths || []).length) return html + '<p class="empty-hint">No deaths this fight.</p>';
     tl.deaths.forEach(d => {
       const r = (recaps || [])[d.i] || d;
-      html += `<button type="button" class="fd-skull fd-death${d.i === selDeath ? ' on' : ''}${fdMarkOut(d.t_ms, range, keep, 'death')}" data-fd-death="${d.i}" data-x="${r.x}" data-y="${r.y}" style="left:${d.pct.toFixed(2)}%" aria-label="${esc(d.name + ' died at ' + (d.t_ms / 1000).toFixed(1) + ' s')}">✕</button>`;
+      html += `<button type="button" class="fd-skull fd-death${d.i === selDeath ? ' on' : ''}${fdMarkOut(d.t_ms, range, keep, { k: 'death', t: d.t_ms, tgt: d.name })}" data-fd-death="${d.i}" data-x="${r.x}" data-y="${r.y}" style="left:${d.pct.toFixed(2)}%" aria-label="${esc(d.name + ' died at ' + (d.t_ms / 1000).toFixed(1) + ' s')}">✕</button>`;
     });
     return html;
   }
@@ -10949,12 +10943,12 @@
   const FD_EV_LISTMAX = 200; // options in one value list
   const fdEvMemo = new WeakMap();
 
-  // The events of a fight object, worked out once per object; a running fight's once per state version (its fight object is new
-  // every second, the state's version moves only when something arrived).
+  // The events of a fight object, worked out once per object; a running fight's once per fight object and state version.
   function fdEvBuilt(fight, st) {
     if (st) {
-      const nb = (fight.bots || []).length;
-      if (!st.evMemo || st.evMemo.version !== st.version || st.evMemo.nb !== nb) st.evMemo = { version: st.version, nb, built: FightEvents.build(fight, { names: st.auraNames }) };
+      // The live fight object is new at most once a second (FdLive.fight's memo), the version moves when something arrived: the list is
+      // rebuilt when either did, so a report's new bots (roles) are never read through an old build.
+      if (!st.evMemo || st.evMemo.version !== st.version || st.evMemo.fight !== fight) st.evMemo = { version: st.version, fight, built: FightEvents.build(fight, { names: st.auraNames }) };
       return st.evMemo.built;
     }
     let b = fdEvMemo.get(fight);
@@ -10962,17 +10956,24 @@
     return b;
   }
 
-  // The timeline's view of the filter: null with no filter, else (kind, time) => whether a matching event has that kind and time.
+  // What tells a timeline mark's event apart from another at the same time: a cast by its caster, spell, spell id and target, a death
+  // by its victim (the timeline's own defaults for a missing caster or text are applied to the event too).
+  function fdEvMarkKey(m) {
+    if (m.k === 'death') return JSON.stringify(['death', m.t, m.tgt || '']);
+    return JSON.stringify(['cast', m.t, m.src || 'boss', m.ab || '', m.sid == null ? null : m.sid, m.tgt || '']);
+  }
+
+  // The timeline's view of the filter: null with no filter, else (mark) => whether the event of that boss-cast or death mark matches.
   function fdEvKeep(fd, fight, st) {
     if (!fight || FdFilter.isEmpty(fd.filter)) return null;
     const built = fdEvBuilt(fight, st);
     if (!fd.evKeep || fd.evKeep.events !== built.events || fd.evKeep.filter !== fd.filter) {
       const set = new Set();
-      built.events.forEach(ev => { if ((ev.k === 'cast' || ev.k === 'death') && FdFilter.match(fd.filter, ev)) set.add(ev.k + '|' + ev.t); });
+      built.events.forEach(ev => { if ((ev.k === 'cast' || ev.k === 'death') && FdFilter.match(fd.filter, ev)) set.add(fdEvMarkKey(ev)); });
       fd.evKeep = { events: built.events, filter: fd.filter, set };
     }
     const set = fd.evKeep.set;
-    return (kind, t) => set.has((kind === 'ab' ? 'cast' : kind) + '|' + t);
+    return mark => set.has(fdEvMarkKey(mark));
   }
 
   // m:ss.s
@@ -10983,6 +10984,13 @@
 
   function fdEvCountText(n, m, live) {
     return n + ' of ' + m + ' events' + (live ? FD_EV_LIVE_NOTE : '');
+  }
+
+  // The count line's markup; while a running fight's list is paused (the reader paged back) it also says how many events came since
+  // and offers the way back to the newest.
+  function fdEvCountHtml(text, paused, fresh) {
+    if (!paused) return esc(text);
+    return esc(text) + ` · <button type="button" class="fd-link" data-fd-evnew>${fresh > 0 ? esc(fresh + ' new, back to the newest') : 'back to the newest'}</button>`;
   }
 
   // The table: the first `shown` rows (a running fight's are the newest, so nothing scrolls while it runs; Show more pages back in time).
@@ -11048,7 +11056,7 @@
       + fdFilterGroupHtml(g, [], 1)
       + `<p class="fd-evdesc empty-hint">Showing ${esc(FdFilter.describe(g))}</p>`
       + (why ? `<p class="fd-evwhy" role="alert">${esc(why)}</p>` : '')
-      + dl('kind', FightEvents.KINDS.map(k => k.k)) + dl('ability', FightEvents.distinct(events, 'ability')) + dl('source', FightEvents.distinct(events, 'source'))
+      + dl('kind', FightEvents.KINDS.map(k => k.label)) + dl('ability', FightEvents.distinct(events, 'ability')) + dl('source', FightEvents.distinct(events, 'source'))
       + dl('target', FightEvents.distinct(events, 'target')) + dl('role', roles);
   }
 
@@ -11075,7 +11083,8 @@
 
   // One paint of the panel for the picked fight (key: what the page size belongs to; fight null hides the section). opts: range,
   // st (the live state, for the memo and the learned aura names), tick (the 1 s repaint: the builder is left alone), force (an
-  // edit of the builder: it is repainted even while it has the keyboard), tl (the timeline slot's markup for a keep function).
+  // edit of the builder: it is repainted even while it has the keyboard, and a paused list is repainted), patch (a typed value:
+  // only the description line changes), tl ((keep function, fight) => the timeline slot's markup).
   function fdEventsSync(card, fd, key, fight, opts) {
     const sec = card.querySelector('.fd-events');
     if (!sec) return;
@@ -11086,10 +11095,36 @@
     fd.evCtx = { key, fight, opts: { range: o.range || null, st: o.st || null, tl: o.tl || null } };
     if (fd.evFor !== key) { fd.evFor = key; fd.evShown = FD_EV_PAGE; }
     const list = FdFilter.apply(fd.filter, built.events, o.range || null);
-    fdSet(sec.querySelector('.fd-evcount'), esc(fdEvCountText(list.length, built.events.length, !!fight.live)));
-    fdSet(sec.querySelector('.fd-evlist'), fdEventsHtml(list, fd.evShown, built.cut, !!fight.live));
-    if (!o.tick) fdEvFilterPaint(sec.querySelector('.fd-evfilter'), fdFilterHtml(fd.filter, built.events, fd.evWhy), !!o.force);
-    if (o.force && o.tl) fdSet(card.querySelector('.fd-tl'), o.tl(fdEvKeep(fd, fight, o.st || null)));
+    const live = !!fight.live;
+    // A running fight's list is frozen while the reader has paged back (Show more): rebuilding up to 5000 rows every second would
+    // also move the rows under them. Only the count is repainted, with the number of events that came since and a way back.
+    const paused = live && fd.evShown > FD_EV_PAGE && !o.force;
+    if (paused) {
+      const fresh = list.reduce((n, ev) => n + (ev.t > fd.evPaintedT ? 1 : 0), 0);
+      fdSet(sec.querySelector('.fd-evcount'), fdEvCountHtml(fdEvCountText(list.length, built.events.length, live), true, fresh));
+    } else {
+      fdSet(sec.querySelector('.fd-evcount'), fdEvCountHtml(fdEvCountText(list.length, built.events.length, live), false, 0));
+      fdSet(sec.querySelector('.fd-evlist'), fdEventsHtml(list, fd.evShown, built.cut, live));
+      fd.evPaintedT = list.length ? list[list.length - 1].t : -1;
+    }
+    if (!o.tick) {
+      const fnode = sec.querySelector('.fd-evfilter');
+      if (!(o.patch && fdEvDescPatch(fnode, fd))) fdEvFilterPaint(fnode, fdFilterHtml(fd.filter, built.events, fd.evWhy), !!o.force);
+    }
+    if (o.force && o.tl) fdSet(card.querySelector('.fd-tl'), o.tl(fdEvKeep(fd, fight, o.st || null), fight));
+  }
+
+  // After a typed value only the line that says what the filter shows changes: patched in place, so the builder's buttons stay the
+  // nodes the reader is pressing (a click that lands on a replaced button is lost). False when the markup itself has to change (a
+  // refusal appeared or went away).
+  function fdEvDescPatch(node, fd) {
+    if (!node || !node.querySelector) return false;
+    const d = node.querySelector('.fd-evdesc'), w = node.querySelector('.fd-evwhy');
+    if (!d || !!w !== !!fd.evWhy) return false;
+    d.textContent = 'Showing ' + FdFilter.describe(fd.filter);
+    if (w) w.textContent = fd.evWhy;
+    node._h = null; // the markup is no longer the string it was set from: the next full paint always replaces it
+    return true;
   }
 
   // One edit of the filter from a control, by the control's data attributes and path; the tree helpers return new trees. An invalid
@@ -11120,12 +11155,53 @@
     return true;
   }
 
-  // The panel after an edit: its builder, count and list, and the timeline's marks.
-  function fdEvRepaint(key) {
+  // The panel after an edit: its builder, count and list, and the timeline's marks. A running fight is taken fresh (the card's last
+  // paint may be a second old); valueOnly is a typed value (see fdEvDescPatch).
+  function fdEvRepaint(key, valueOnly) {
     const fd = cmdFd[key], card = cmdCards.get(key);
     if (!fd || !card || !fd.evCtx) return;
-    const c = fd.evCtx;
-    fdEventsSync(card, fd, c.key, c.fight, Object.assign({}, c.opts, { force: true }));
+    const c = fd.evCtx, st = c.opts.st, bind = st ? cmdFindBind(key) : null;
+    const fight = st && bind && st.key ? FdLive.fight(st, bind, Date.now()) : c.fight;
+    const range = st ? fd.liveRange || null : c.opts.range;
+    fdEventsSync(card, fd, c.key, fight, Object.assign({}, c.opts, { range, force: true, patch: !!valueOnly }));
+  }
+
+  // A key in a value box: the edit waits 300 ms for the next one (one pending edit per card).
+  function fdEvTyped(key, fd, el) {
+    clearTimeout(fd.evTimer);
+    fd.evPending = el;
+    fd.evTimer = setTimeout(() => { fdEvFlush(key, fd, true); }, FD_EV_DEBOUNCE_MS);
+  }
+
+  // Applies the typed value that is waiting, now. A control pressed before the timer fired must act on the tree the reader typed into:
+  // the typed edit goes first, by its own path, then the press. True when it changed the filter.
+  function fdEvFlush(key, fd, repaint) {
+    clearTimeout(fd.evTimer);
+    fd.evTimer = 0;
+    const el = fd.evPending;
+    fd.evPending = null;
+    if (!el || !fdFilterEdit(fd, el)) return false;
+    if (repaint) fdEvRepaint(key, true);
+    return true;
+  }
+
+  // A button of the panel (a preset, Clear, add, remove, Show more, back to the newest): true when it did something.
+  function fdEvClick(key, fd, b) {
+    fdEvFlush(key, fd, false);
+    if (b.hasAttribute('data-fd-evmore')) fd.evShown = (fd.evShown || FD_EV_PAGE) + FD_EV_PAGE;
+    else if (b.hasAttribute('data-fd-evnew')) fd.evShown = FD_EV_PAGE;
+    else if (!fdFilterEdit(fd, b)) return false;
+    fdEvRepaint(key);
+    return true;
+  }
+
+  // A select, a checkbox or a committed value box.
+  function fdEvChange(key, fd, el) {
+    if (fd.evPending === el) { clearTimeout(fd.evTimer); fd.evTimer = 0; fd.evPending = null; } // a pending typed value is this one
+    else fdEvFlush(key, fd, false); // another pending edit goes first
+    if (!fdFilterEdit(fd, el)) return false;
+    fdEvRepaint(key, el.hasAttribute('data-fd-fval'));
+    return true;
   }
 
   // The death recap: with a range, only deaths inside it (the picked one when it is inside, else the first inside) and a line that
