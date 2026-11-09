@@ -10,10 +10,10 @@
 // and so does arriving at the travel target (see TravelArrivalMakesDueAtOnce:
 // only the walk-to-work edge counts, never a failed move or a re-pick).
 //
-// Every tick the due bots visible to a real player run first (same map and
-// instance, within PoolNearPlayerYd), most overdue relative to tolerance
-// inside that group; the rest keep today's most-overdue order and run after,
-// never dropped. A bot left over keeps getting later and so climbs the order.
+// Every tick the due bots run most overdue first relative to tolerance. When
+// PoolNearPlayerYd is set (off by default), those within that distance of a
+// real player on the same map and instance run first as a group; the rest
+// keep the same order and run after, never dropped. A bot left over keeps getting later and so climbs the order.
 // Under load every bot is equally late relative to its tolerance: a fight
 // never waits behind a questing walk, and no bot is skipped for good.
 //

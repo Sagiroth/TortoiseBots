@@ -23,7 +23,7 @@ The total bot population is a major factor in server CPU and memory usage. When 
 | [`AiPlayerbot.botActiveAlone`](#aiplayerbotbotactivealone) | `10` | Percentage of isolated bots kept active when throttling is enabled. |
 | [`AiPlayerbot.ForceActiveWhenNearPlayer`](#aiplayerbotforceactivewhennearplayer) | `0` | Forces bots within human visibility range to remain fully active. |
 | [`AiPlayerbot.PoolTickBudgetUs`](#aiplayerbotpooltickbudgetus) | `22000` | Microsecond time budget per world tick for processing pool bots. |
-| [`AiPlayerbot.PoolNearPlayerYd`](#aiplayerbotpoolnearplayeryd) | `80` | Yards around a real player whose pool bots run first when the budget cuts. |
+| [`AiPlayerbot.PoolNearPlayerYd`](#aiplayerbotpoolnearplayeryd) | `0` | Yards around a real player whose pool bots run first when the budget cuts (off by default). |
 | [`AiPlayerbot.PoolBudgetWhenTickOverMs`](#aiplayerbotpoolbudgetwhentickoverms) | `0` | World tick latency threshold in milliseconds where budgets engage. |
 | [`AiPlayerbot.TargetWorldTickMs`](#aiplayerbottargetworldtickms) | `100` | Target world tick duration used by the self-tuning budget controller. |
 | [`AiPlayerbot.ValueRefreshAtInterval`](#aiplayerbotvaluerefreshatinterval) | `0` | Refreshes cached AI sensory values at full intervals to reduce CPU usage. |
@@ -109,7 +109,7 @@ Player-owned bots and companions hired by online players always update first, on
 
 ### `AiPlayerbot.PoolNearPlayerYd`
 Yards around a real player whose pool bots run ahead of the rest when the budget cuts the pass.
-**Default:** `80` · **Values:** yards (0..N; 0 off) · **Restart:** needed
+**Default:** `0` · **Values:** yards (0..N; 0 off) · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
@@ -118,7 +118,7 @@ Due pool bots on the same map and instance within this many yards of a real (net
 
 Costs nothing measurable: player spots per map are cached once per tick and the radius check is squared 2D distance from positions the server already tracks.
 
-If bots next to players still feel slow, raise `PoolTickBudgetUs` first. Set to `0` to turn the preference off.
+Off by default: with it off every bot is equally late, so distant bots act as smoothly as the ones you see. Turn it on (for example `80`) only for a large pool on a machine that cannot keep up; bots outside the radius then wait longer. If bots still feel slow, raise `PoolTickBudgetUs` first or run fewer bots.
 
 </details>
 ### `AiPlayerbot.CombatTickBudgetUs`
