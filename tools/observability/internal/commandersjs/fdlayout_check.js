@@ -49,11 +49,18 @@ const z = FdLayout.decode("ma.8~zz.3");
 eq(z.panels[0], { id: "map", span: 8, hide: false }, "ma.8~zz.3 keeps only the map ...");
 assert.strictEqual(z.panels.length, 15, "... plus the appended defaults");
 eq(z.panels.slice(1).map((e) => e.id), FdLayout.PANELS.map((p) => p.id).filter((id) => id !== "map"));
-assert.strictEqual(FdLayout.decode("x".repeat(401)), null, "a 401-character code is refused");
+const longCode = (n) => Array.from({ length: n }, () => "ma.12.h").join("~"); // well-formed items only: the length is the one thing wrong
+assert.strictEqual(longCode(58).length, 463);
+assert.strictEqual(FdLayout.decode(longCode(52)), null, "a 415-character code of well-formed items is refused for its length");
+assert.strictEqual(longCode(57).length, 455);
+assert.notStrictEqual(FdLayout.decode(longCode(50)), null, "399 characters are read (the cap is 400)");
+assert.strictEqual(FdLayout.decode("ma.8~".repeat(80) + "ma.8"), null, "a 404-character code is refused");
 assert.notStrictEqual(FdLayout.decode("ma.8~" + "tl.12~".repeat(5) + "au.6"), null, "a repeat inside the cap is read (and deduplicated)");
-const maxLen = ("ma.8~".repeat(80)).slice(0, 400);
-assert.strictEqual(maxLen.length, 400);
-assert.ok(FdLayout.decode(maxLen.replace(/~$/, "")) === null || FdLayout.decode(maxLen.replace(/~$/, "")).panels.length === 15, "a 400-character code is read or refused, never walked unbounded");
+const mk = (sevens, sixes) => [].concat(Array(sevens).fill("ma.12.h"), Array(sixes).fill("ma.3.h")).join("~"); // 7- and 6-character items
+assert.strictEqual(mk(44, 7).length, 400);
+assert.notStrictEqual(FdLayout.decode(mk(44, 7)), null, "exactly 400 characters are still read");
+assert.strictEqual(mk(45, 6).length, 401);
+assert.strictEqual(FdLayout.decode(mk(45, 6)), null, "401 characters are not");
 ["", "ma", "ma.", "ma.x", "ma.8.", "ma.8.x", "MA.8", "ma.8~", "~ma.8", "ma.8~~tl.6", "ma.800", "ma.8.h.h", "ma.8 ", "../..", "__proto__.3", "ma.8\u0000"].forEach((s) => {
   assert.strictEqual(FdLayout.decode(s), null, "bad syntax -> null: " + JSON.stringify(s));
 });
