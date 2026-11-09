@@ -17,6 +17,16 @@ void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A taunt-immune boss on a non-tank (AiPlayerbot.DungeonRunImmuneBossVictimEscape): the victim escapes with its own
+    // ability, else a paladin in reach protects it. Below the walk-outs and the bomb runout, above every heal and rotation.
+    triggers.push_back(new TriggerNode(
+        "immune boss victim",
+        NextAction::array(0, new NextAction("immune boss victim escape", ACTION_EMERGENCY + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "immune boss victim protect",
+        NextAction::array(0, new NextAction("bop immune boss victim", ACTION_EMERGENCY + 2), NULL)));
+
     // Custom Turtle raids (807/532/800) gate behind EnableCustomRaidTactics
     // in both paths, so a disabled custom gate cannot re-arm mid-fight.
     // Add this combat triggers in case the bot gets summoned into the dungeon and goes straight into combat

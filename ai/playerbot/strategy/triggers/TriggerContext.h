@@ -4,6 +4,7 @@
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/VictimEscapeActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
@@ -52,6 +53,8 @@ namespace ai
             creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
             creators["fankriss control needed"] = [](PlayerbotAI* ai) { return new FankrissControlTrigger(ai); };
             creators["fankriss focus needed"] = [](PlayerbotAI* ai) { return new FankrissFocusTrigger(ai); };
+            creators["immune boss victim"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimTrigger(ai); };
+            creators["immune boss victim protect"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimProtectTrigger(ai); };
             creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };

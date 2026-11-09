@@ -746,6 +746,9 @@ public:
     // The creature-charm yield (a bot charmed by a creature hands its AI to the charmer and runs no engine): off, a
     // charmed bot behaves as before (default off).
     bool dungeonRunCharmYield = false;
+    // The escape of a taunt-immune boss's non-tank victim (Feign Death, Vanish, Ice Block, Divine Shield, else a
+    // paladin's Blessing of Protection within 30 yd): off, nothing changes (default off).
+    bool dungeonRunImmuneBossVictimEscape = false;
     // A cursed healer or off-tank strikes its own Shade (a kill_first row gated by the curse) while the raid is safe:
     // the lowest member at or above 50 %, the main tank at or above 60 %, two other uncursed healers, 30 % mana and no
     // pending `now` dispel. The main tank never strikes and an off-tank only while the boss is not on it. Off, the

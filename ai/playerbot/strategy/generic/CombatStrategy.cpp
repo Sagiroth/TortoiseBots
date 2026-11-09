@@ -88,6 +88,18 @@ void AvoidAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void AvoidAoeStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     InitCombatTriggers(triggers);
+
+    // A taunt-immune boss on a non-tank (AiPlayerbot.DungeonRunImmuneBossVictimEscape), from the reaction engine too:
+    // the combat engine sleeps through the bot's own cast, and the boss's 2-4 k swings kill cloth inside one, so the
+    // escape breaks that cast (ShouldReactionInterruptCast). Every bot's reaction engine carries this strategy; the
+    // combat-engine copy is on the always-on dungeon strategy.
+    triggers.push_back(new TriggerNode(
+        "immune boss victim",
+        NextAction::array(0, new NextAction("immune boss victim escape", ACTION_EMERGENCY + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "immune boss victim protect",
+        NextAction::array(0, new NextAction("bop immune boss victim", ACTION_EMERGENCY + 2), NULL)));
 }
 
 void AvoidAoeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
