@@ -1182,7 +1182,7 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         init.SetTransport(bot->GetTransport()->GetGUIDLow());
     init.Launch();
     // The single-point walks above return early; here the route always walks
-    // as its own spline (usePath is always true). No MovePoint leg remains.
+    // as its own spline, never as a MovePoint leg.
     // The spline keeps walking server-side; wake the next turn a margin
     // BEFORE this leg ends so the travel action can chain the next leg in
     // the same Execute instead of standing still until a fresh turn.
