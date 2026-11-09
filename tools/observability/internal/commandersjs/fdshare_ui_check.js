@@ -33,7 +33,7 @@ vm.createContext(ctx);
 const routeSrc = src.slice(src.indexOf("  const TABS = {"), src.indexOf("  function openNavDrawer()"));
 const names = ["keepHash", "parseRoute", "routeHash", "go", "cmdPageHash", "cmdRouteTab", "fdRoutePick", "fdFightHash", "fdViewHash", "fdViewHashSoon",
   "fdApplyPending", "fdSetDay", "fdLinkTail", "fdCopyLink", "fdCopyPaint", "fdLiveHandoff", "fdViewHandover", "fdViewSync", "fdAuCarry", "fdLiveFiledRow",
-  "fdLiveDrop", "fdLiveRangeOf", "fdAuLiveKey", "fdAuIv", "fdSyncSel", "esc"];
+  "fdLiveDrop", "fdLiveRangeOf", "fdAuLiveKey", "fdAuIv", "fdSyncSel", "esc", "linkTooLong", "showLinkNote", "fdReplayTick", "fdReplayPlay"];
 vm.runInContext(["var FD_EV_PAGE = 500; const fdAuMemo = new WeakMap();", routeSrc].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const J = (v) => JSON.parse(JSON.stringify(v));
@@ -106,14 +106,38 @@ assert.strictEqual(loc._hash, "#/commanders/Tank?bot=5&p=gear", "back to Live: n
 assert.strictEqual(run("keepHash()", { window: { location: { hash: "#/commanders/Tank/fight/live?lw=120" } } }), "#/commanders/Tank/fight/live?lw=120", "a route is kept");
 assert.strictEqual(run("keepHash()", { window: { location: { hash: "" } } }), "", "no hash");
 assert.strictEqual(run("keepHash()", { window: { location: { hash: "#frag" } } }), "", "a fragment that is not a route");
-assert.strictEqual(run("keepHash()", { window: { location: { hash: "#/" + "a".repeat(4095) } } }), "", "past 4096 characters");
+assert.strictEqual(run("keepHash()", { window: { location: { hash: "#/" + "a".repeat(4095) } } }), "#/?toolong=1", "past 4096 characters: dropped, with the flag the dashboard turns into a hint");
 assert.strictEqual(run("keepHash()", { window: { location: { hash: "#/" + "a".repeat(4094) } } }).length, 4096, "exactly 4096 is kept");
 assert.strictEqual(run("keepHash()", { window: { location: { hash: undefined } } }), "", "no string at all");
 ctx.window = { location: loc };
 assert.strictEqual((src.match(/'\/login' \+ keepHash\(\)/g) || []).length, 2, "the logout and the 401 redirect carry the route");
 assert.ok(!/'\/login'(?! \+ keepHash)/.test(src.replace(/'\/login' \+ keepHash\(\)/g, "")), "no other redirect to /login drops it");
 const login = fs.readFileSync(path.join(jsDir, "..", "..", "login.html"), "utf8");
-assert.ok(login.includes("window.location.hash") && login.includes("h.startsWith('#/')") && login.includes("h.length <= 4096") && login.includes("'/dashboard' + keep"), "login.html keeps the route");
+assert.ok(login.includes("dashboardTarget(window.location.hash)") && login.includes("h.startsWith('#/')") && login.includes("h.length <= 4096") && login.includes("#/?toolong=1"), "login.html keeps the route (its behaviour is login_target_check.js)");
+
+// ---- a route too long for login: the flag, and the one-line hint it turns into
+{
+  assert.strictEqual(run("linkTooLong()", { window: { location: { hash: "#/?toolong=1" } } }), true);
+  for (const h of ["#/?toolong=2", "#/commanders?toolong=1", "#/?x=toolong=1", "", "#/", "toolong=1", undefined]) assert.strictEqual(run("linkTooLong()", { window: { location: { hash: h } } }), false, String(h));
+  ctx.window = { location: loc };
+  const note = { hidden: true, textContent: "", onclick: null };
+  const t = [];
+  Object.assign(ctx, { document: { getElementById: (id) => (id === "link-note" ? note : null) }, setTimeout: (f, ms) => { t.push({ f, ms }); } });
+  run("showLinkNote('The link was too long to keep through login.')");
+  assert.deepStrictEqual([note.hidden, note.textContent], [false, "The link was too long to keep through login."]);
+  assert.strictEqual(t[0].ms, 12000);
+  t[0].f();
+  assert.deepStrictEqual([note.hidden, note.textContent], [true, ""], "gone after 12 s");
+  run("showLinkNote('x')");
+  note.onclick();
+  assert.strictEqual(note.hidden, true, "or a click");
+  assert.strictEqual(run("showLinkNote('x')", { document: { getElementById: () => null } }), undefined, "no slot: nothing breaks");
+  assert.ok(!grab("showLinkNote").includes("innerHTML") && !grab("showLinkNote").includes("setHtml"), "plain text only");
+  assert.ok(src.includes("if (linkTooLong()) showLinkNote('The link was too long to keep through login.');") && src.indexOf("if (linkTooLong())") < src.indexOf("if (!parseRoute().tab) {"), "the first route reads the flag before it replaces the hash");
+  const idx = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
+  assert.ok(/<div id="link-note" class="health-banner warn" role="status" hidden><\/div>/.test(idx), "the slot is in the page");
+  ctx.setTimeout = (f, ms) => { timers.push({ f, ms }); return timers.length; };
+}
 
 // ---- a hostile link never breaks the page or carries markup into it
 {
@@ -152,7 +176,7 @@ assert.ok(login.includes("window.location.hash") && login.includes("h.startsWith
   // the same hash again (a hashchange from a profile opening): not a new link
   const first = ctx.fdPage.pending;
   ctx.fdPage.pending = null;
-  run("cmdRouteTab(r)", { r: route("#/commanders/Tank/fight/" + KENC + "?n=2026-11-06&r=1000-9000&au=3&sp=3") });
+  run("cmdRouteTab(r)", { r: route("#/commanders/Tank/fight/" + KENC + "?r=1000-9000&au=3&n=2026-11-06") });
   assert.strictEqual(ctx.fdPage.pending, null, "the view the page wrote itself is not applied again");
   // another fight's route with no view: no pending, and an older one for another fight is dropped
   ctx.fdPage.pending = first;
@@ -174,6 +198,42 @@ assert.ok(login.includes("window.location.hash") && login.includes("h.startsWith
   assert.strictEqual(ctx.fdPage.pending.q.lw, 120, "the live window waits");
   assert.strictEqual(states.Tank.liveLink, true, "a live link stays on its note when no fight runs");
   assert.strictEqual(states.Tank.sel, "live");
+}
+
+// ---- a link of only unreadable view keys is still a share link: it says so, opens with defaults, and its hash is rewritten
+{
+  const states = {};
+  const fs_ = (k) => states[k] || (states[k] = { sel: null, userSel: false, day: "", liveLink: false, death: null, linkBad: null });
+  Object.assign(ctx, { fdState: fs_, fdStopCard: () => {}, fdSeenWhenOpen: () => {}, cmdPageSetMode: () => {}, fdRunStopAll: () => {}, fdSetDay: realSetDay });
+  ctx.fdPage = { mode: "debug", explicit: true, loaded: true, open: null, fight: null, pending: null, hashQ: "" };
+  loc._hash = "#/commanders/Tank/fight/F1?bot=5&r=bad&sp=3";
+  run("cmdRouteTab(r)", { r: run("parseRoute()") });
+  assert.ok(ctx.fdPage.pending && ctx.fdPage.pending.key === "F1", "a link of only bad keys is a share-view request");
+  assert.deepStrictEqual(J(states.Tank.linkBad), { key: "F1", bad: ["r", "sp"] }, "its unreadable parts are recorded for the note");
+  assert.ok(run("fdLinkTail(fd)", { fd: Object.assign({ sel: "F1" }, states.Tank) }).includes("Some parts of the link could not be read: r, sp"), "and the note shows");
+  // once the fight is on screen the defaults are applied and the hash is rewritten to the view that stands
+  const fd = { sel: "F1", filter: FdFilter.empty(), liveWin: 60, evShown: 1, evWhy: "", view: FdView.create("F1"), au: { key: "F1", sid: null, marker: null, userSid: false, userMark: false },
+    rp: { on: false, t: 0, playing: false, speed: 1, timer: 0, key: "F1" }, day: "" };
+  ctx.cmdFd = { Tank: fd };
+  ctx.fdPage.open = "Tank";
+  writes.length = 0;
+  run("fdApplyPending(fd, { commander: 'Tank' }, { dur_ms: 100000, auras: [] }, null, null)", { fd });
+  assert.strictEqual(ctx.fdPage.pending, null);
+  run("fdViewHash('Tank')");
+  assert.strictEqual(loc._hash, "#/commanders/Tank/fight/F1?bot=5", "the bad keys are gone from the address, bot stays: " + loc._hash);
+  assert.deepStrictEqual(writes.map((w) => w[0]), ["replace"], "by replaceState");
+  // a second visit of the same bad link (a hashchange) is read again; a canonical hash is not a request
+  ctx.fdPage.pending = null;
+  loc._hash = "#/commanders/Tank/fight/F1?r=bad";
+  run("cmdRouteTab(r)", { r: run("parseRoute()") });
+  assert.ok(ctx.fdPage.pending, "the same bad link pasted again is read again");
+  ctx.fdPage.pending = null;
+  loc._hash = "#/commanders/Tank/fight/F1?bot=5";
+  run("cmdRouteTab(r)", { r: run("parseRoute()") });
+  assert.strictEqual(ctx.fdPage.pending, null, "a canonical hash is no request");
+  const rf = grab("renderFightDebug");
+  assert.ok(rf.includes("if (!fdPage.pending) fdViewHash(key);"), "the render canonicalises the hash once the link is applied");
+  assert.ok(grab("fdLoad").includes("fdPage.pending = null; fdViewHash(bind.commander); }"), "and when the fight cannot be loaded");
 }
 
 // ---- the live link: it parses as the debugger's live fight, with its window and filter
@@ -369,9 +429,40 @@ assert.strictEqual(r.fdq.follow, false, "a range in a live link is a fixed range
 }
 
 // ---- where the hash is written, and where it must never be
-for (const [fn, why] of [["fdReplayTick", "the 250 ms replay tick"], ["fdLivePaintDebug", "the 1 s live repaint"], ["fdLiveTickSync", "the live tick"], ["fdLivePaintBar", "the live bar paint"], ["fdReplaySync", "a replay sync"]]) {
+for (const [fn, why] of [["fdLivePaintDebug", "the 1 s live repaint"], ["fdLiveTickSync", "the live tick"], ["fdLivePaintBar", "the live bar paint"], ["fdReplaySync", "a replay sync"]]) {
   assert.ok(!grab(fn).includes("fdViewHash"), "never from " + why);
 }
+// the replay: nothing is written while it plays; the place is written when it stops by itself
+{
+  const fd = { sel: KEY, rp: { on: true, t: 0, playing: true, speed: 1, timer: 0, key: KEY } };
+  const card = { classList: { contains: () => true } };
+  const hashes = [];
+  let act = { fight: { dur_ms: 100000 } };
+  Object.assign(ctx, { cmdFd: { Tank: fd }, cmdCards: new Map([["Tank", card]]), fdReplayActive: () => act, fdReplaySync: () => {}, fdViewHash: (k) => hashes.push(k),
+    FightReplay: Object.assign({}, FightReplay, { TICK_MS: 250 }), fdRunStopAll: () => {}, fdRunSync: () => {} });
+  timers.length = 0;
+  for (let i = 0; i < 5; i++) run("fdReplayTick('Tank')");
+  assert.strictEqual(fd.rp.playing, true);
+  assert.strictEqual(hashes.length, 0, "a playing replay writes nothing, tick after tick");
+  fd.rp.t = 99900;
+  run("fdReplayTick('Tank')");
+  assert.deepStrictEqual([fd.rp.playing, fd.rp.t, hashes.length], [false, 100000, 1], "the end of the replay writes the place once");
+  fd.rp.playing = true; fd.rp.t = 5;
+  card.classList = { contains: () => false };
+  hashes.length = 0;
+  run("fdReplayTick('Tank')");
+  assert.strictEqual(hashes.length, 1, "a card that went away stops the chain and writes");
+  card.classList = { contains: () => true };
+  act = null; fd.rp.playing = true; hashes.length = 0;
+  run("fdReplayTick('Tank')");
+  assert.strictEqual(hashes.length, 1, "a replay that has nothing to play writes too");
+  fd.rp.playing = false; fd.rp.on = false; hashes.length = 0;
+  run("fdReplayPlay('Tank')");
+  assert.deepStrictEqual([fd.rp.on, hashes.length], [false, 1], "Play with nothing to play closes the replay and writes");
+  const src2 = src;
+  assert.ok(src2.includes("fdRunSync(cmdCards.get(key), fd);\n    drawCmdMap(key);\n    fdViewHash(key); // the replay is off") && src2.includes("fd.run.playing = true;\n    fdViewHash(key); // the replay is off"), "the run strip taking the replay over writes too");
+}
+
 const vh = grab("fdViewHash");
 assert.ok(vh.includes("history.replaceState(") && !vh.includes("pushState") && !vh.includes("applyRoute") && !/location\.hash = [^=]/.test(vh), "replaceState only: Back is not filled, nothing is re-applied");
 for (const [what, needle] of [

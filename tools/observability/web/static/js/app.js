@@ -841,10 +841,29 @@
   }
 
   // The page's own hash route, carried through the login page so a shared link survives a session that has expired: only a route
-  // (#/...) of sane length goes, nothing else is ever put on the login URL.
+  // (#/...) goes; one over 4096 characters becomes the flag #/?toolong=1 (the login page and linkTooLong know it), and nothing else is
+  // ever put on the login URL.
   function keepHash() {
     const h = window.location.hash;
-    return typeof h === 'string' && h.startsWith('#/') && h.length <= 4096 ? h : '';
+    if (typeof h !== 'string' || !h.startsWith('#/')) return '';
+    return h.length <= 4096 ? h : '#/?toolong=1';
+  }
+
+  // True when the page was opened with the too-long flag (the link was dropped at login).
+  function linkTooLong() {
+    const h = window.location.hash;
+    return typeof h === 'string' && h.startsWith('#/?') && new URLSearchParams(h.slice(3)).get('toolong') === '1';
+  }
+
+  // The one-line note over the page; plain text, gone after 12 s or a click.
+  function showLinkNote(text) {
+    const note = document.getElementById('link-note');
+    if (!note) return;
+    note.textContent = text;
+    note.hidden = false;
+    const hide = () => { note.hidden = true; note.textContent = ''; };
+    note.onclick = hide;
+    setTimeout(hide, 12000);
   }
 
   function parseRoute() {
@@ -5653,9 +5672,12 @@
       const fight = r.cmd ? (r.cmdFight || null) : null;
       // A link that carries a view (a hash that is not what this page last wrote): kept until that fight is on screen, then applied
       // once (fdApplyPending). The night comes first, the way the picker sets it, so the fight is looked for on its own night.
+      // Any recognised view key counts as a request, an unreadable one too: a link of only bad parts opens with defaults, says so, and
+      // its hash is rewritten to the view that was applied (fdViewHash, once the fight is on screen).
       const fq = fight && r.fdq && typeof FdView !== 'undefined' ? FdView.toQuery(r.fdq) : '';
+      const nbad = fight && r.fdq && r.fdq.bad ? r.fdq.bad.length : 0;
       let repick = fdPage.fight !== fight;
-      if (fq && (repick || fq !== fdPage.hashQ)) {
+      if ((fq || nbad) && (repick || fq !== fdPage.hashQ || nbad)) {
         fdPage.pending = { cmd: r.cmd, key: fight, q: r.fdq };
         fdPage.hashQ = fq;
         const fdp = fdState(r.cmd);
@@ -9970,7 +9992,7 @@
         fd.loading = false;
         fd.loadingKey = null;
         fdDetailFail(fd, row.key);
-        if (fdDetailFailed(fd, row.key) && fdPage.pending && fdPage.pending.cmd === bind.commander && fdPage.pending.key === row.key) fdPage.pending = null; // no fight, no view to apply
+        if (fdDetailFailed(fd, row.key) && fdPage.pending && fdPage.pending.cmd === bind.commander && fdPage.pending.key === row.key) { fdPage.pending = null; fdViewHash(bind.commander); } // no fight, no view to apply: the hash says what stands
         if (!card.classList.contains('fd-on')) return;
         renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
         fdLoad(card, bind);
@@ -10104,7 +10126,11 @@
     // The view a share link carries lands here, once the fight it names is on screen.
     if (fdPage.pending && fdPage.pending.cmd === key) {
       if (fdPage.pending.key !== fd.sel) fdPage.pending = null; // the reader went to another fight first
-      else if (fdApplyPending(fd, bind, fight, liveSt, liveFight)) fdReplaySync(key);
+      else {
+        const moved = fdApplyPending(fd, bind, fight, liveSt, liveFight);
+        if (!fdPage.pending) fdViewHash(key); // applied: the hash becomes the view that stands (a link's unreadable parts go)
+        if (moved) fdReplaySync(key);
+      }
     }
     const range = selLive ? (liveSt ? fd.liveRange : null) : FdView.effective(fd.view, false, null);
     // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
@@ -10631,6 +10657,7 @@
     fd.rp.on = false;
     fdRunSync(cmdCards.get(key), fd);
     drawCmdMap(key);
+    fdViewHash(key); // the replay is off: no rp in the address
   }
 
   // Play/pause the run; Play at the end starts again from the first kept report.
@@ -10644,6 +10671,7 @@
     fdReplayStop(fd);
     fd.rp.on = false;
     fd.run.playing = true;
+    fdViewHash(key); // the replay is off: no rp in the address
     fdRunTick(key);
   }
 
@@ -11683,7 +11711,7 @@
     fdRunSync(cmdCards.get(key), fd);
     fd.rp.on = true;
     const act = fdReplayActive(key);
-    if (!act) { fd.rp.on = false; fdReplaySync(key); return; }
+    if (!act) { fd.rp.on = false; fdReplaySync(key); fdViewHash(key); return; }
     if (fd.rp.t >= Math.round(act.fight.dur_ms || 0)) fd.rp.t = 0;
     fd.rp.playing = true;
     fdReplayTick(key);
@@ -11694,13 +11722,14 @@
     const fd = cmdFd[key];
     if (!fd || fd.rp.key !== fd.sel) { if (fd) fd.rp.playing = false; return; }
     const act = fdReplayActive(key);
-    if (!act) { fd.rp.playing = false; fdReplaySync(key); return; }
+    if (!act) { fd.rp.playing = false; fdReplaySync(key); fdViewHash(key); return; }
     const dur = Math.round(act.fight.dur_ms || 0);
     fd.rp.t = Math.min(dur, fd.rp.t + FightReplay.TICK_MS * fd.rp.speed);
     if (fd.rp.t >= dur) fd.rp.playing = false;
     fdReplaySync(key);
     const card = cmdCards.get(key);
-    if (!fd.rp.playing || !card || !card.classList.contains('fd-on')) return;
+    // The replay stopped by itself (the end, or the card went away): the address stops carrying a stale place. While it plays nothing is written.
+    if (!fd.rp.playing || !card || !card.classList.contains('fd-on')) { fdViewHash(key); return; }
     fd.rp.timer = setTimeout(() => fdReplayTick(key), FightReplay.TICK_MS);
   }
 
@@ -12956,6 +12985,7 @@
   requestAnimationFrame(cmdLiveFrame);
 
   // First route: the URL hash wins; without one, return to the last tab used.
+  if (linkTooLong()) showLinkNote('The link was too long to keep through login.');
   if (!parseRoute().tab) {
     let tab = 'overview';
     try {

@@ -411,6 +411,12 @@ func TestFdShareUIJS(t *testing.T) {
 	runCheck(t, "fdshare_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestLoginTargetJS runs login_target_check.js: login.html's own dashboardTarget() on plain, hostile and over-long fragments (#//evil.example,
+// #javascript:alert(1), a route of 5000 characters): the target is always /dashboard on this origin with at most a #/ route.
+func TestLoginTargetJS(t *testing.T) {
+	runCheck(t, "login_target_check.js", "../../web/login.html")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {
