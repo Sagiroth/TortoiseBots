@@ -26,7 +26,7 @@ const FdLive = require(path.join(jsDir, "fdlive.js"));
 const ctx = { console, FightMeters, FightReplay, FightDebug, FdView, FdLive, document: { activeElement: null } };
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdHasMeters", "fdReplayActive", "fdMetersInputs", "fdMtRoleCls", "fdMtColumn", "fdMetersParts",
-  "fdMetersSync", "fdPlayHtml", "fdPlaySync"];
+  "fdMetersSync", "fdMtShape", "fdMetersPaintBody", "fdPlayHtml", "fdPlaySync"];
 vm.runInContext(["var cmdFd = {};",
   "const FD_MT_NOTE = 'Shape from the 10 s window, totals exact';",
   "const FD_MT_LIVE_NOTE = 'Estimated live from the 10 s window; exact totals when the fight ends.';",
@@ -149,6 +149,67 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   run("fdMetersSync(null, m)", { m: inputs() }); // a missing card is a no-op
 }
 
+// ---- a tick under one second of elapsed time reads as one second (no huge rate from a few hits)
+{
+  const p = parts(inputs({ tMs: 500 }));
+  assert.ok(/750 · 750 dps/.test(p.body), "Bot12 has 750 at 0.5 s, shown over 1 s, not over 0.5 s: " + p.body.slice(0, 400));
+  assert.ok(!/1,500 dps/.test(p.body), "the rate is not doubled by the short span");
+}
+
+// ---- the body is patched in place when the rows are the same, so the nodes stay and the width transition runs
+{
+  const ab = { bots: [{ name: "A", guid: 1, role: "dps" }, { name: "B", guid: 2, role: "dps" }], deaths: [] };
+  const sr = { v: 1, step_ms: 2000, n: 4, src: "window", bots: [{ g: 1, d: [10, 20, 30, 40], h: [0, 0, 0, 0] }, { g: 2, d: [50, 50, 50, 50], h: [0, 0, 0, 0] }] };
+  const body = { sets: 0, _i: "", fills: [], vals: [], _h: undefined };
+  Object.defineProperty(body, "innerHTML", { get() { return this._i; }, set(v) {
+    this._i = v; this.sets++;
+    this.fills = (v.match(/class="fd-mtfill/g) || []).map(() => ({ style: { width: "" } }));
+    this.vals = (v.match(/class="fd-mtval"/g) || []).map(() => ({ textContent: "" }));
+  } });
+  body.querySelectorAll = (sel) => (sel === ".fd-mtfill" ? body.fills : body.vals);
+  const mk = (t, f, series) => ({ live: false, unbound: false, fight: f, series, tMs: t, endMs: 8000, range: null });
+  const paint = (m) => run("fdMetersPaintBody(body, fdMetersParts(m).body)", { body, m });
+  paint(mk(2000, ab, sr));
+  assert.strictEqual(body.sets, 1, "the first paint writes the markup");
+  const nodes = body.fills.slice(), vals = body.vals.slice();
+  assert.strictEqual(nodes.length, 2, "two bars in the damage column");
+  paint(mk(8000, ab, sr));
+  assert.strictEqual(body.sets, 1, "the same rows at another time do not rewrite the markup");
+  assert.ok(body.fills.every((n, i) => n === nodes[i]) && body.vals.every((n, i) => n === vals[i]), "the bar and value nodes are the same objects");
+  assert.deepStrictEqual(body.fills.map((n) => n.style.width), ["100%", "80%"], "B stays the top, A grew from 20% to 80%: the width was patched");
+  assert.ok(/^50/.test(body.vals[0].textContent) && /^40/.test(body.vals[1].textContent) && /dps/.test(body.vals[1].textContent), "and the value text: " + body.vals[1].textContent);
+  paint(mk(2000, ab, sr));
+  assert.deepStrictEqual(body.fills.map((n) => n.style.width), ["100%", "20%"], "and back");
+  assert.strictEqual(body.sets, 1);
+  // other rows (another fight's bots, a death) rebuild the markup
+  paint(mk(2000, { bots: [{ name: "C", guid: 1, role: "dps" }, { name: "B", guid: 2, role: "dps" }], deaths: [] }, sr));
+  assert.strictEqual(body.sets, 2, "another name is a new markup");
+  paint(mk(2000, { bots: ab.bots, deaths: [{ name: "A", t_ms: 1000, killer: "x" }] }, sr));
+  assert.strictEqual(body.sets, 3, "a new death is a new markup");
+  paint(mk(2000, ab, null));
+  assert.strictEqual(body.sets, 4, "no data is a new markup");
+}
+
+// ---- the live series is rebuilt when a sample arrived or the second moved, not on every repaint
+{
+  let calls = 0;
+  const orig = FightMeters.fromSamples;
+  FightMeters.fromSamples = (...a) => { calls++; return orig(...a); };
+  try {
+    const st = { cmd: "G", startMs: 1000000, version: 5, samples: [{ t: 1000000 + 6000, bots: { 3: { dps: 100, hps: 0 } }, w: 10 }] };
+    const lv = { mode: "debug", sel: "live", details: {}, liveRange: null };
+    const lf = (ms) => ({ dur_ms: ms, bots, deaths: [] });
+    const at = (f) => run("fdMetersInputs(lv, st, f)", { lv, st, f });
+    at(lf(8000)); at(lf(8400)); at(lf(8900));
+    assert.strictEqual(calls, 1, "three repaints inside one second build the series once");
+    at(lf(9000));
+    assert.strictEqual(calls, 2, "the next second rebuilds it");
+    st.version = 6; at(lf(9100));
+    assert.strictEqual(calls, 3, "a new sample rebuilds it");
+    assert.strictEqual(at(lf(9100)).series, st.mtMemo.series, "and the memo is the series handed out");
+  } finally { FightMeters.fromSamples = orig; }
+}
+
 // ---- the replay needs no track once the detail has meters
 {
   const KEY = "F1";
@@ -199,6 +260,7 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   assert.ok(tick.includes("fdMetersSync(card, fdMetersInputs(fd, null, null))") && tick.includes("fdHasMeters(det)"), "every replay step repaints the meters and tells the play row about them");
   assert.ok(!tick.includes("renderFightDebug"), "and never renders the card");
   const live = grab("fdLivePaintDebug");
+  assert.ok(grab("fdMetersSync").includes("fdMetersPaintBody(sec.querySelector('.fd-mtbody'), p.body)"), "the panel's body goes through the in-place patch");
   assert.ok(live.includes("fdMetersSync(card, fdMetersInputs(fd, st, lf))"), "the 1 s live tick repaints the meters' body");
   const render = src.slice(src.indexOf("  function renderFightDebug("), src.indexOf("  // The window an underperf answer covers"));
   assert.ok(render.includes("fdMetersSync(card, noWin ? null : fdMetersInputs(fd, liveSt, liveFight));"), "the card render draws the panel (live: from the live fight)");
@@ -217,6 +279,6 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightmeters.js") > 0 && at("fightmeters.js") < at("app.js"), "fightmeters.js loads before app.js");
-  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=3/.test(html) && /static\/js\/app\.js\?v=51/.test(html) && /app\.css\?v=29/.test(html), "the changed assets carry new versions");
+  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=3/.test(html) && /static\/js\/app\.js\?v=52/.test(html) && /app\.css\?v=29/.test(html), "the changed assets carry new versions");
 }
 console.log("fdmeters_ui_check.js ok");

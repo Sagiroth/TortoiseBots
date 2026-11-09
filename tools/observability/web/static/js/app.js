@@ -11161,7 +11161,10 @@
     if (fd.sel === 'live') {
       if (!liveSt || !liveFight) return null;
       const now = liveFight.dur_ms || 0;
-      return { live: true, unbound: liveSt.cmd === null, fight: liveFight, series: FightMeters.fromSamples(liveSt.samples, liveSt.startMs, now),
+      // The series is rebuilt when a sample arrived (the state's version) or the second moved, not on every repaint.
+      const mk = liveSt.version + ':' + Math.floor(now / 1000);
+      if (!liveSt.mtMemo || liveSt.mtMemo.key !== mk) liveSt.mtMemo = { key: mk, series: FightMeters.fromSamples(liveSt.samples, liveSt.startMs, now) };
+      return { live: true, unbound: liveSt.cmd === null, fight: liveFight, series: liveSt.mtMemo.series,
         tMs: now, endMs: now, range: fd.liveRange || null };
     }
     const det = fd.sel ? fd.details[fd.sel] : null;
@@ -11184,7 +11187,7 @@
     if (!rows.length) return html + '<p class="empty-hint">Nothing yet.</p></div>';
     html += '<ol class="fd-mtlist">';
     rows.forEach(r => {
-      const rate = secs >= 1 ? ' · ' + FightDebug.fmtInt(Math.round(r.v / secs)) + (heal ? ' hps' : ' dps') : '';
+      const rate = ' · ' + FightDebug.fmtInt(Math.round(r.v / secs)) + (heal ? ' hps' : ' dps');
       html += `<li class="fd-mtrow"><span class="fd-mtname" title="${esc(r.name)}">${esc(r.name)}</span>`
         + `<span class="fd-mtbar"><i class="fd-mtfill${heal ? ' heal' : ''}" style="width:${Math.max(0, Math.min(100, r.pct))}%"></i></span>`
         + `<span class="fd-mtval">${FightDebug.fmtInt(r.v)}${flat && flat[r.g] ? '~' : ''}${esc(rate)}</span></li>`;
@@ -11200,7 +11203,7 @@
     const to = r ? Math.min(m.tMs, r.to) : m.tMs;
     const from = r ? Math.min(r.from, to) : 0;
     const rows = r ? FightMeters.window(m.series, from, to, m.endMs) : FightMeters.at(m.series, m.tMs, m.endMs);
-    const secs = (to - from) / 1000;
+    const secs = Math.max(1, (to - from) / 1000); // a first second does not turn a few hits into a huge rate
     const flat = {};
     if (!m.live) (m.series.bots || []).forEach(b => { if (b && b.flat) flat[b.g] = true; });
     const deaths = FightMeters.deathsBy(m.fight, to).filter(d => !r || d.t_ms >= from).slice(0, FightMeters.TOP);
@@ -11223,7 +11226,34 @@
     if (!m) return;
     const p = fdMetersParts(m);
     fdSet(sec.querySelector('.fd-mtnote'), esc(p.note));
-    fdSet(sec.querySelector('.fd-mtbody'), p.body);
+    fdMetersPaintBody(sec.querySelector('.fd-mtbody'), p.body);
+  }
+
+  // The body's markup with the bars' widths and the values taken out: what makes two paints "the same rows".
+  function fdMtShape(html) {
+    return html.replace(/style="width:[\d.]+%"/g, 'style="width:#"').replace(/<span class="fd-mtval">[^<]*<\/span>/g, '<span class="fd-mtval"></span>');
+  }
+
+  // Draws the body. The same rows in the same order (the same bars, the same deaths) are patched in place, the bars' widths and the
+  // values, so the nodes stay and the CSS width transition runs; anything else is a new markup.
+  function fdMetersPaintBody(body, html) {
+    if (!body) return;
+    const shape = fdMtShape(html);
+    const fills = body._mtShape === shape && body.querySelectorAll ? body.querySelectorAll('.fd-mtfill') : [];
+    const vals = fills.length ? body.querySelectorAll('.fd-mtval') : [];
+    const widths = [], texts = [];
+    if (fills.length) {
+      html.replace(/style="width:([\d.]+)%"/g, (a, w) => { widths.push(w); return a; });
+      html.replace(/<span class="fd-mtval">([^<]*)<\/span>/g, (a, t) => { texts.push(t); return a; });
+    }
+    if (fills.length && widths.length === fills.length && texts.length === vals.length) {
+      fills.forEach((el, i) => { if (el.style.width !== widths[i] + '%') el.style.width = widths[i] + '%'; });
+      vals.forEach((el, i) => { if (el.textContent !== texts[i]) el.textContent = texts[i]; });
+      body._h = html;
+      return;
+    }
+    body._mtShape = shape;
+    fdSet(body, html);
   }
 
   // ---- The Events panel (FightEvents, web/static/js/fightevents.js; FdFilter, web/static/js/fdfilter.js): one list of the fight's
