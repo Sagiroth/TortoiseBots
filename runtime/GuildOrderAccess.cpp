@@ -22,6 +22,7 @@
 #include "Player.h"
 
 #include <ctime>
+#include <chrono>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -416,6 +417,25 @@ uint32_t GuildBankTabCount(uint32_t guildId)
 {
     std::optional<std::vector<uint32_t>> tabMinRanks = BankTabMinRanks(guildId);
     return tabMinRanks ? uint32_t(tabMinRanks->size()) : 0;
+}
+
+bool GuildHasBank(uint32_t guildId)
+{
+    if (!guildId)
+        return false;
+    static std::mutex lock;
+    static std::unordered_map<uint32_t, std::pair<bool, std::chrono::steady_clock::time_point>> cache;
+    auto const now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        auto it = cache.find(guildId);
+        if (it != cache.end() && now - it->second.second < std::chrono::seconds(30))
+            return it->second.first;
+    }
+    bool const has = GuildBankTabCount(guildId) > 0;
+    std::lock_guard<std::mutex> guard(lock);
+    cache[guildId] = { has, now };
+    return has;
 }
 
 } // namespace GuildOrders
