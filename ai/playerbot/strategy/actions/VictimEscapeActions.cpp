@@ -7,36 +7,44 @@
 #include "playerbot/VictimEscapePolicy.h"
 #include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
+#include "../../../../runtime/PlayerbotAIStorage.h"
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
 
 using namespace ai;
 
 namespace
 {
-// Every rank of each escape: readiness is read off the member itself, so a real player's victim reads the same way as
-// a bot's. The ranks share their cooldown; the cast goes through the bot's own "spell id" lookup (its highest rank).
-const uint32 kFeignDeathIds[] = { 5384 };
-const uint32 kVanishIds[] = { 1857, 1856 };
-const uint32 kIceBlockIds[] = { 11958 };
-const uint32 kDivineShieldIds[] = { 1020, 642 };
 const uint32 kForbearanceId = 25771;
+// The throttle maps keep at most this many victims; the oldest entry goes first.
+const std::size_t kVictimEscapeMapCap = 512;
+
+// One escape per victim: when it was cast, and whether a later read saw it land.
+struct EscapeRecord
+{
+    std::uint32_t castMs = 0;
+    bool landed = false;
+};
 
 std::mutex g_victimEscapeMutex;
-// victim guid -> the last escape (own or a protection) cast on it
-std::unordered_map<std::uint64_t, std::uint32_t> g_victimEscapeLast;
-// victim guid -> the last refused row
-std::unordered_map<std::uint64_t, std::uint32_t> g_victimEscapeRefusedLog;
+std::unordered_map<std::uint64_t, EscapeRecord> g_victimEscapeLast;
+// (victim guid, writer guid) -> the last refused row: the victim's own refusal and each paladin's have their own slot.
+std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint32_t> g_victimEscapeRefusedLog;
 
-template <std::size_t N>
-bool AnyRankReady(Player* member, const uint32 (&ids)[N])
+template <typename Map, typename Stamp>
+void EvictOldest(Map& map, Stamp stamp)
 {
-    for (uint32 id : ids)
-        if (member->HasSpell(id))
-            return sServerFacade.IsSpellReady(member, id);
-    return false;
+    if (map.size() < kVictimEscapeMapCap || map.empty())
+        return;
+    auto oldest = map.begin();
+    for (auto it = map.begin(); it != map.end(); ++it)
+        if (stamp(it->second) < stamp(oldest->second))
+            oldest = it;
+    map.erase(oldest);
 }
 
 bool IsBossCreature(Unit* unit)
@@ -47,18 +55,62 @@ bool IsBossCreature(Unit* unit)
     return creature->IsWorldBoss() || GetDungeonPlans().IsBossEntry(creature->GetMapId(), creature->GetEntry());
 }
 
+// The core's own cast check on its own (Spell::CheckCast: stun, silence, pacify, reagents, cooldowns, range and sight)
+// plus the power cost, without PlayerbotAI::CanCastSpell's in-progress gate: used only when that gate alone refused,
+// because the escape breaks the cast it saw. The cost is priced without spell mods (a probe must not spend a charge).
+bool CoreCastCheckOk(Player* caster, uint32 spellId, Unit* target)
+{
+    SpellEntry const* const info = sServerFacade.LookupSpellInfo(spellId);
+    if (!info)
+        return false;
+    if (info->powerType < MAX_POWERS &&
+        caster->GetPower(Powers(info->powerType)) < Spell::CalculatePowerCost(info, caster))
+        return false;
+    Spell* const spell = new Spell(caster, info, false);
+    spell->m_targets.setUnitTarget(target);
+    const SpellCastResult result = spell->CheckCast(true);
+    delete spell;
+    return result == SPELL_CAST_OK;
+}
+
+// Whether `caster` can cast `spell` on `target` now: the bot's full cast check, the path the real cast takes
+// (PlayerbotAI::CanCastSpell), its "spell id" lookup choosing the rank. Read before anything is interrupted.
+bool EscapeSpellReady(PlayerbotAI* casterAi, Player* caster, const char* spell, Unit* target)
+{
+    const uint32 spellId = casterAi->GetAiObjectContext()->GetValue<uint32>("spell id", spell)->Get();
+    if (!spellId)
+        return false;
+    SpellCastResult check = SPELL_CAST_OK;
+    const bool fullCheckOk = casterAi->CanCastSpell(spellId, target, 0, true, nullptr, false, false, false, &check);
+    const bool refusedOnlyByOwnCast = !fullCheckOk && check == SPELL_FAILED_SPELL_IN_PROGRESS &&
+        caster->IsNonMeleeSpellCasted(false);
+    const bool coreCheckOk = refusedOnlyByOwnCast && CoreCastCheckOk(caster, spellId, target);
+    return VictimEscapeCastReady(fullCheckOk, refusedOnlyByOwnCast, coreCheckOk);
+}
+
+// A real player (no bot AI) has no own escape here: the paladin protects them.
 VictimEscapeReady ReadyOf(Player* member)
 {
     VictimEscapeReady ready;
+    PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+    if (!memberAi)
+        return ready;
     // Ice Block and Divine Shield go out while stunned; Feign Death and Vanish do not.
     const bool inControl = !member->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
     switch (member->GetClass())
     {
-        case CLASS_HUNTER: ready.feignDeath = inControl && AnyRankReady(member, kFeignDeathIds); break;
-        case CLASS_ROGUE: ready.vanish = inControl && AnyRankReady(member, kVanishIds); break;
-        case CLASS_MAGE: ready.iceBlock = AnyRankReady(member, kIceBlockIds); break;
+        case CLASS_HUNTER:
+            ready.feignDeath = inControl && EscapeSpellReady(memberAi, member, VictimEscapeWord(VictimEscape::FeignDeath), member);
+            break;
+        case CLASS_ROGUE:
+            ready.vanish = inControl && EscapeSpellReady(memberAi, member, VictimEscapeWord(VictimEscape::Vanish), member);
+            break;
+        case CLASS_MAGE:
+            ready.iceBlock = EscapeSpellReady(memberAi, member, VictimEscapeWord(VictimEscape::IceBlock), member);
+            break;
         case CLASS_PALADIN:
-            ready.divineShield = !member->HasAura(kForbearanceId) && AnyRankReady(member, kDivineShieldIds);
+            ready.divineShield = !member->HasAura(kForbearanceId) &&
+                EscapeSpellReady(memberAi, member, VictimEscapeWord(VictimEscape::DivineShield), member);
             break;
         default: break;
     }
@@ -81,12 +133,32 @@ bool OtherNonTankTarget(Unit* boss, Player* victim)
     return false;
 }
 
-// The walk-out puller and a member holding a pulled Son for its meet keep their duty: an escape would drop it.
-bool HoldsBossDuty(Player* victim)
+// Live, engaged hostile creatures other than the boss whose current victim is this member (a Son, an add).
+int OtherCreaturesOnVictim(Unit* boss, Player* victim)
 {
-    if (IsLiveWalkoutPuller(victim))
-        return true;
-    return SeekMeetHealPuller(victim->GetInstanceId()) == victim->GetObjectGuid().GetRawValue();
+    int count = 0;
+    for (Unit* attacker : victim->GetAttackers())
+    {
+        if (!attacker || attacker == boss || !attacker->IsCreature() || !attacker->IsInWorld() ||
+            !sServerFacade.IsAlive(attacker) || !attacker->IsInCombat() || attacker->GetVictim() != victim)
+            continue;
+        ++count;
+    }
+    return count;
+}
+
+bool HoldsBossDuty(Unit* boss, Player* victim)
+{
+    return VictimHoldsDuty(IsLiveWalkoutPuller(victim),
+                           SeekMeetHealPuller(victim->GetInstanceId()) == victim->GetObjectGuid().GetRawValue(),
+                           OtherCreaturesOnVictim(boss, victim));
+}
+
+// The escape landed: the feign-death state, the boss on another victim, or the victim immune to the boss's melee.
+bool EscapeLanded(Unit* boss, Player* victim)
+{
+    return victim->HasUnitState(UNIT_STAT_FEIGN_DEATH) || boss->GetVictim() != victim ||
+        victim->IsImmuneToDamage(boss->GetMeleeDamageSchoolMask());
 }
 
 VictimEscapeGuards GuardsFor(Unit* boss, Player* victim, std::uint32_t nowMs)
@@ -95,27 +167,42 @@ VictimEscapeGuards GuardsFor(Unit* boss, Player* victim, std::uint32_t nowMs)
     {
         std::lock_guard<std::mutex> lock(g_victimEscapeMutex);
         auto it = g_victimEscapeLast.find(victim->GetObjectGuid().GetRawValue());
-        guards.escapedRecently = it != g_victimEscapeLast.end() && VictimEscapeRecent(true, nowMs - it->second);
+        if (it != g_victimEscapeLast.end())
+        {
+            EscapeRecord& record = it->second;
+            if (!record.landed && EscapeLanded(boss, victim))
+                record.landed = true;
+            guards.escapedRecently = VictimEscapeRecent(true, record.landed, nowMs - record.castMs);
+        }
     }
     guards.otherNonTankTarget = OtherNonTankTarget(boss, victim);
-    guards.holdsDuty = HoldsBossDuty(victim);
+    guards.holdsDuty = HoldsBossDuty(boss, victim);
     return guards;
+}
+
+bool BossInScope(Unit* boss)
+{
+    return VictimEscapeBossInScope(TargetTauntImmune(boss), ThreatSuccessorTarget(boss));
 }
 
 VictimEscape DecideFor(Unit* boss, Player* victim, std::uint32_t nowMs, VictimEscapeGuards& guards)
 {
     guards = GuardsFor(boss, victim, nowMs);
     return VictimEscapeFor(sPlayerbotAIConfig.dungeonRunImmuneBossVictimEscape, PlayerbotAI::IsTank(victim),
-                           boss->GetVictim() == victim, TargetTauntImmune(boss), victim->GetClass(), ReadyOf(victim),
+                           boss->GetVictim() == victim, BossInScope(boss), victim->GetClass(), ReadyOf(victim),
                            guards);
 }
 
+// The cast went out; whether it landed is read on a later tick (GuardsFor).
 void NoteEscape(Player* victim, std::uint32_t nowMs)
 {
     std::lock_guard<std::mutex> lock(g_victimEscapeMutex);
-    if (g_victimEscapeLast.size() > 512)
-        g_victimEscapeLast.clear();
-    g_victimEscapeLast[victim->GetObjectGuid().GetRawValue()] = nowMs;
+    const std::uint64_t key = victim->GetObjectGuid().GetRawValue();
+    if (g_victimEscapeLast.find(key) == g_victimEscapeLast.end())
+        EvictOldest(g_victimEscapeLast, [](const EscapeRecord& r) { return r.castMs; });
+    EscapeRecord& record = g_victimEscapeLast[key];
+    record.castMs = nowMs;
+    record.landed = false;
 }
 
 const char* ClassWord(uint8 cls)
@@ -136,7 +223,7 @@ const char* ClassWord(uint8 cls)
 }
 
 // One `ok` row per cast (the escape itself is throttled to one per victim per 6 s); a `refused` row at most once per
-// victim per 6 s.
+// victim and writer per 6 s.
 void LogVictimEscape(PlayerbotAI* ai, Unit* boss, Player* victim, uint32 spellId, bool ok, const char* reason,
                      std::uint32_t nowMs)
 {
@@ -145,9 +232,10 @@ void LogVictimEscape(PlayerbotAI* ai, Unit* boss, Player* victim, uint32 spellId
     if (!ok)
     {
         std::lock_guard<std::mutex> lock(g_victimEscapeMutex);
-        if (g_victimEscapeRefusedLog.size() > 512)
-            g_victimEscapeRefusedLog.clear();
-        std::uint32_t& last = g_victimEscapeRefusedLog[victim->GetObjectGuid().GetRawValue()];
+        const auto key = std::make_pair(victim->GetObjectGuid().GetRawValue(), ai->GetBot()->GetObjectGuid().GetRawValue());
+        if (g_victimEscapeRefusedLog.find(key) == g_victimEscapeRefusedLog.end())
+            EvictOldest(g_victimEscapeRefusedLog, [](std::uint32_t ms) { return ms; });
+        std::uint32_t& last = g_victimEscapeRefusedLog[key];
         if (last != 0 && nowMs - last < kVictimEscapeGapMs)
             return;
         last = nowMs;
@@ -189,8 +277,14 @@ bool IsOwnEscape(VictimEscape e)
     return e != VictimEscape::None && e != VictimEscape::AskProtection;
 }
 
-// The victim's own escape, if one is due now. A duty or the only-target guard that holds back an escape the victim
-// had ready writes the refused row (the throttle is the escape's own pace, not a refusal).
+uint32 SpellIdOf(PlayerbotAI* ai, VictimEscape e)
+{
+    return ai->GetAiObjectContext()->GetValue<uint32>("spell id", VictimEscapeWord(e))->Get();
+}
+
+// The victim's own escape, if one is due now (its full cast check already passed in ReadyOf). A duty or the
+// only-target guard that holds back an escape the victim had ready writes the refused row (the throttle is the
+// escape's own pace, not a refusal).
 bool PlanOwnEscape(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
 {
     Unit* const boss = ImmuneBossOnVictim(bot);
@@ -207,9 +301,7 @@ bool PlanOwnEscape(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
             const VictimEscape wanted = VictimEscapeFor(true, PlayerbotAI::IsTank(bot), true, true, bot->GetClass(),
                                                         ReadyOf(bot), VictimEscapeGuards());
             if (IsOwnEscape(wanted))
-                LogVictimEscape(ai, boss, bot,
-                                ai->GetAiObjectContext()->GetValue<uint32>("spell id", VictimEscapeWord(wanted))->Get(),
-                                false, why, nowMs);
+                LogVictimEscape(ai, boss, bot, SpellIdOf(ai, wanted), false, why, nowMs);
         }
         return false;
     }
@@ -221,21 +313,15 @@ bool PlanOwnEscape(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
     return true;
 }
 
-bool PaladinProtectionReady(PlayerbotAI* ai, Player* bot, uint32& spellId)
-{
-    spellId = ai->GetAiObjectContext()->GetValue<uint32>("spell id", VictimEscapeWord(VictimEscape::AskProtection))->Get();
-    return spellId && bot->HasSpell(spellId) && sServerFacade.IsSpellReady(bot, spellId) &&
-        !bot->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
-}
-
-// The first group member within 30 yd this paladin protects now.
+// The first group member within 30 yd this paladin protects now: its own full cast check of Blessing of Protection
+// on that member (range, sight, silence, cooldown) passes, and the member carries no Forbearance.
 bool PlanProtection(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
 {
     if (bot->GetClass() != CLASS_PALADIN || !bot->GetGroup() || !sServerFacade.IsAlive(bot))
         return false;
-    uint32 spellId = 0;
-    const bool bopReady = PaladinProtectionReady(ai, bot, spellId);
-    if (!bopReady)
+    const char* const bop = VictimEscapeWord(VictimEscape::AskProtection);
+    const uint32 bopId = SpellIdOf(ai, VictimEscape::AskProtection);
+    if (!bopId || !bot->HasSpell(bopId) || !sServerFacade.IsSpellReady(bot, bopId))
         return false;
     const std::uint32_t nowMs = WorldTimer::getMSTime();
     for (Player* member : LiveGroupMembers(bot->GetGroup()))
@@ -251,29 +337,37 @@ bool PlanProtection(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
             continue;
         VictimEscapeGuards guards;
         const VictimEscape victimEscape = DecideFor(boss, member, nowMs, guards);
-        if (ProtectorShouldBop(true, bopReady && !member->HasAura(kForbearanceId), false, victimEscape, distYd))
+        if (victimEscape == VictimEscape::AskProtection)
         {
-            plan.boss = boss;
-            plan.victim = member;
-            plan.escape = VictimEscape::AskProtection;
-            return true;
+            const bool bopReady = !member->HasAura(kForbearanceId) && EscapeSpellReady(ai, bot, bop, member);
+            if (ProtectorShouldBop(true, bopReady, false, victimEscape, distYd))
+            {
+                plan.boss = boss;
+                plan.victim = member;
+                plan.escape = VictimEscape::AskProtection;
+                return true;
+            }
+            continue;
         }
         const char* const why = guards.escapedRecently ? nullptr : GuardWord(guards);
         if (why && victimEscape == VictimEscape::None && !PlayerbotAI::IsTank(member))
-            LogVictimEscape(ai, boss, member, spellId, false, why, nowMs);
+            LogVictimEscape(ai, boss, member, bopId, false, why, nowMs);
     }
     return false;
 }
 
-// Casts the planned escape on the planned victim and writes the row.
+// Casts the planned escape on the planned victim and writes the row. The plan's cast check already passed, so the
+// bot's own cast is broken only for an escape that can go out.
 bool CastEscape(PlayerbotAI* ai, Player* bot, const EscapePlan& plan)
 {
     const char* const spell = VictimEscapeWord(plan.escape);
     const uint32 spellId = ai->GetAiObjectContext()->GetValue<uint32>("spell id", spell)->Get();
     const std::uint32_t nowMs = WorldTimer::getMSTime();
     const char* const how = plan.victim == bot ? "own" : "protect";
+    if (!spellId)
+        return false;
     StopOwnCast(bot);
-    if (!spellId || !ai->CastSpell(spell, plan.victim))
+    if (!ai->CastSpell(spell, plan.victim))
     {
         LogVictimEscape(ai, plan.boss, plan.victim, spellId, false, "cast", nowMs);
         return false;
@@ -292,7 +386,7 @@ Unit* ai::ImmuneBossOnVictim(Unit* member)
     {
         if (!attacker || !attacker->IsInWorld() || !sServerFacade.IsAlive(attacker) || attacker->GetVictim() != member)
             continue;
-        if (IsBossCreature(attacker) && TargetTauntImmune(attacker))
+        if (IsBossCreature(attacker) && BossInScope(attacker))
             return attacker;
     }
     return nullptr;

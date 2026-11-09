@@ -1167,11 +1167,12 @@ AiPlayerbot.DungeonRunPullGate = 0
 # A bot charmed by a creature yields its AI to the charmer, and no area action lands on a charmed group member.
 AiPlayerbot.DungeonRunCharmYield = 0
 
-# The escape of a taunt-immune boss's non-tank victim (recommended on): when a boss that cannot be taunted (Hakkar after
-# Cause Insanity) turns on a damage dealer or healer, the victim escapes at once with Feign Death, Vanish, Ice Block or
-# Divine Shield; with none ready, a paladin within 30 yd casts Blessing of Protection on it, so the boss turns to another
-# member. Never on a tank, at most once per victim per 6 s, never on the boss's only living non-tank target, and never
-# on the walk-out puller or a member holding a pulled Son.
+# The escape of a taunt-immune boss's non-tank victim (recommended on): when a boss that cannot be taunted and has a
+# threat_successor row (Hakkar after Cause Insanity, Jin'do) turns on a damage dealer or healer, the victim escapes at
+# once with Feign Death, Vanish, Ice Block or Divine Shield if its cast check passes; otherwise a paladin within 30 yd
+# casts Blessing of Protection on it, so the boss turns to another member. Never on a tank, at most once per victim per
+# 6 s, never on the boss's only living non-tank target, and never on the walk-out puller, a member holding a pulled Son
+# or a member another mob is attacking.
 AiPlayerbot.DungeonRunImmuneBossVictimEscape = 0
 
 # A cursed healer or off-tank strikes its own Shade (the kill_first row the curse gates, e.g. Jin'do's Shades) while the

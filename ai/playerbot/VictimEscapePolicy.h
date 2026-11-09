@@ -10,6 +10,10 @@
 // victim's threat. Fade is left out on purpose: on this core both its effects are SPELL_AURA_DUMMY with no handler
 // (spell_template 586-10942, SpellAuras.cpp HandleAuraDummy's empty priest case), so it moves no threat at all.
 //
+// Scope: a taunt-immune boss with a `threat_successor` row (Hakkar and Jin'do today). Many taunt-immune bosses fixate
+// or swap on purpose (Buru's fixate), so the escape is opt in by row data and names no boss; another boss opts in by
+// a `threat_successor` row.
+//
 // CLASS_* ids are kept literal so the header needs no core include: 2 paladin, 3 hunter, 4 rogue, 5 priest, 8 mage.
 
 #include <cstdint>
@@ -18,6 +22,9 @@ namespace ai
 {
     // One escape per victim in this window: a second one would spend a cooldown on a boss that just left.
     constexpr std::uint32_t kVictimEscapeGapMs = 6000;
+    // A self escape that has not landed (a resisted Feign Death: the boss is still on the victim, no feign-death state,
+    // no immunity to its melee) holds the victim's slot this long, then the paladin may protect.
+    constexpr std::uint32_t kVictimEscapeLandWaitMs = 1000;
     // The paladin's Blessing of Protection reach: the spell's own range (rangeIndex 4).
     constexpr float kVictimEscapeBopYd = 30.0f;
 
@@ -31,7 +38,8 @@ namespace ai
         AskProtection, // no own escape ready: a paladin in reach may protect the victim
     };
 
-    // Which of the victim's own escapes are ready (known, off cooldown, castable).
+    // Which of the victim's own escapes are ready: the full cast check passes (VictimEscapeCastReady). A real player
+    // (no bot AI) has none: a paladin protects them.
     struct VictimEscapeReady
     {
         bool feignDeath = false;
@@ -43,24 +51,50 @@ namespace ai
     // The restrictions every escape (own or a paladin's protection) answers to.
     struct VictimEscapeGuards
     {
-        bool escapedRecently = false;   // the victim had an escape inside kVictimEscapeGapMs (VictimEscapeRecent)
+        bool escapedRecently = false;   // the victim's last escape still holds its slot (VictimEscapeRecent)
         bool otherNonTankTarget = true; // another living non-tank stands on the boss's threat list
-        bool holdsDuty = false;         // the victim holds a boss-tactic duty (the walk-out puller, a held Son)
+        bool holdsDuty = false;         // the victim holds a boss-tactic duty (VictimHoldsDuty)
     };
 
-    // Whether the victim's last escape is still inside the window. `hasLast` false: none yet.
-    inline bool VictimEscapeRecent(bool hasLast, std::uint32_t sinceLastMs)
+    // Whether the victim's last escape still holds its slot. `hasLast` false: none yet. A landed escape (the feign-death
+    // state, the boss's victim changed, or the victim immune to its melee, read on a later tick) holds it for
+    // kVictimEscapeGapMs; one that has not landed only for kVictimEscapeLandWaitMs.
+    inline bool VictimEscapeRecent(bool hasLast, bool landed, std::uint32_t sinceLastMs)
     {
-        return hasLast && sinceLastMs < kVictimEscapeGapMs;
+        if (!hasLast)
+            return false;
+        return sinceLastMs < (landed ? kVictimEscapeGapMs : kVictimEscapeLandWaitMs);
+    }
+
+    // Whether one escape is ready: the bot's full cast check (PlayerbotAI::CanCastSpell: silence, pacify, stun,
+    // reagents such as Vanish's Flash Powder, category cooldowns, power) passes, or it refused only because the bot's
+    // own cast is in progress and the core's Spell::CheckCast passes on its own (the escape breaks that cast).
+    inline bool VictimEscapeCastReady(bool fullCheckOk, bool refusedOnlyByOwnCast, bool coreCheckOk)
+    {
+        return fullCheckOk || (refusedOnlyByOwnCast && coreCheckOk);
+    }
+
+    // Whether the boss is one the escape serves: immune to taunts and carrying a `threat_successor` row.
+    inline bool VictimEscapeBossInScope(bool tauntImmune, bool threatSuccessorRow)
+    {
+        return tauntImmune && threatSuccessorRow;
+    }
+
+    // Whether an escape would drop the victim's duty: it is the walk-out puller, the open meet's Son puller, or the
+    // current victim of another live, engaged hostile creature than the boss (a Son, an add): Feign Death or Vanish
+    // would wipe that creature's threat too, and a protected member would leave it loose.
+    inline bool VictimHoldsDuty(bool walkoutPuller, bool meetPuller, int otherCreaturesOnVictim)
+    {
+        return walkoutPuller || meetPuller || otherCreaturesOnVictim > 0;
     }
 
     // The gate shared by the victim's own escape and the paladin's protection: the key is on, the victim is no tank,
-    // the boss is taunt-immune and is on the victim, no escape inside the window, another non-tank target is left for
+    // the boss is in scope (VictimEscapeBossInScope) and is on the victim, no escape inside the window, another non-tank target is left for
     // the boss to turn to, and no duty would be dropped.
-    inline bool VictimEscapeAllowed(bool key, bool victimIsTank, bool onVictim, bool bossTauntImmune,
+    inline bool VictimEscapeAllowed(bool key, bool victimIsTank, bool onVictim, bool bossInScope,
                                     const VictimEscapeGuards& guards)
     {
-        if (!key || victimIsTank || !onVictim || !bossTauntImmune)
+        if (!key || victimIsTank || !onVictim || !bossInScope)
             return false;
         if (guards.escapedRecently || !guards.otherNonTankTarget || guards.holdsDuty)
             return false;
@@ -69,11 +103,11 @@ namespace ai
 
     // The victim's own escape, by its class: hunter Feign Death, rogue Vanish, mage Ice Block, paladin Divine Shield.
     // Any other class, or one whose escape is not ready, asks for protection.
-    inline VictimEscape VictimEscapeFor(bool key, bool victimIsTank, bool onVictim, bool bossTauntImmune,
+    inline VictimEscape VictimEscapeFor(bool key, bool victimIsTank, bool onVictim, bool bossInScope,
                                         std::uint8_t classId, const VictimEscapeReady& ready,
                                         const VictimEscapeGuards& guards = VictimEscapeGuards())
     {
-        if (!VictimEscapeAllowed(key, victimIsTank, onVictim, bossTauntImmune, guards))
+        if (!VictimEscapeAllowed(key, victimIsTank, onVictim, bossInScope, guards))
             return VictimEscape::None;
         switch (classId)
         {

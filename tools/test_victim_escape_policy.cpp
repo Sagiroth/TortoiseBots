@@ -87,18 +87,61 @@ int main()
     // The boss is not on this bot.
     CHECK(VictimEscapeFor(true, false, false, true, CLASS_MAGE, kAll) == VictimEscape::None);
 
-    // The 6 s throttle: one escape per victim per window.
-    CHECK(!VictimEscapeRecent(false, 0));
-    CHECK(VictimEscapeRecent(true, 0));
-    CHECK(VictimEscapeRecent(true, 5999));
-    CHECK(!VictimEscapeRecent(true, 6000));
-    CHECK(!VictimEscapeRecent(true, 60000));
+    // The 6 s throttle: one landed escape per victim per window.
+    CHECK(!VictimEscapeRecent(false, true, 0));
+    CHECK(VictimEscapeRecent(true, true, 0));
+    CHECK(VictimEscapeRecent(true, true, 5999));
+    CHECK(!VictimEscapeRecent(true, true, 6000));
+    CHECK(!VictimEscapeRecent(true, true, 60000));
     VictimEscapeGuards recent;
-    recent.escapedRecently = VictimEscapeRecent(true, 2000);
+    recent.escapedRecently = VictimEscapeRecent(true, true, 2000);
     CHECK(VictimEscapeFor(true, false, true, true, CLASS_MAGE, kAll, recent) == VictimEscape::None);
     VictimEscapeGuards past;
-    past.escapedRecently = VictimEscapeRecent(true, 6000);
+    past.escapedRecently = VictimEscapeRecent(true, true, 6000);
     CHECK(VictimEscapeFor(true, false, true, true, CLASS_MAGE, kAll, past) == VictimEscape::IceBlock);
+
+    // A resisted Feign Death (the boss is still on the hunter, no feign-death state) holds the slot for 1 s only; then
+    // Feign Death is on cooldown, the hunter asks for protection and a paladin in reach protects it.
+    CHECK(VictimEscapeRecent(true, false, 999));
+    CHECK(!VictimEscapeRecent(true, false, 1000));
+    VictimEscapeGuards resisted;
+    resisted.escapedRecently = VictimEscapeRecent(true, false, 500);
+    CHECK(!ProtectorShouldBop(true, true, false, VictimEscapeFor(true, false, true, true, CLASS_HUNTER, kNone, resisted), 10.0f));
+    resisted.escapedRecently = VictimEscapeRecent(true, false, 1200);
+    CHECK(ProtectorShouldBop(true, true, false, VictimEscapeFor(true, false, true, true, CLASS_HUNTER, kNone, resisted), 10.0f));
+
+    // Readiness is the full cast check, not the cooldown. A silenced mage (Ice Block off cooldown) fails it, so a
+    // paladin protects it; a rogue without Flash Powder the same; a mage mid-Frostbolt is refused only by its own cast,
+    // which the escape breaks, so Ice Block is ready; mid-cast and refused by the core check: not ready.
+    CHECK(!VictimEscapeCastReady(false, false, false));                 // silenced: SPELL_FAILED_SILENCED
+    CHECK(!VictimEscapeCastReady(false, false, true));                  // a refusal other than the own cast
+    CHECK(VictimEscapeCastReady(true, false, false));
+    CHECK(VictimEscapeCastReady(false, true, true));                    // own Frostbolt in progress
+    CHECK(!VictimEscapeCastReady(false, true, false));
+    VictimEscapeReady silencedMage;
+    silencedMage.iceBlock = VictimEscapeCastReady(false, false, false);
+    CHECK(ProtectorShouldBop(true, true, false, VictimEscapeFor(true, false, true, true, CLASS_MAGE, silencedMage), 20.0f));
+    VictimEscapeReady noFlashPowder;
+    noFlashPowder.vanish = VictimEscapeCastReady(false, false, false); // SPELL_FAILED_ITEM_NOT_READY / reagents
+    CHECK(ProtectorShouldBop(true, true, false, VictimEscapeFor(true, false, true, true, CLASS_ROGUE, noFlashPowder), 20.0f));
+    // A real player (no bot AI) reads no own escape: a paladin protects them.
+    CHECK(ProtectorShouldBop(true, true, false, VictimEscapeFor(true, false, true, true, CLASS_MAGE, kNone), 20.0f));
+
+    // Scope: a taunt-immune boss with a threat_successor row (Hakkar, Jin'do). A taunt-immune boss without one (a
+    // fixate boss such as Buru) gives no escape.
+    CHECK(VictimEscapeBossInScope(true, true));
+    CHECK(!VictimEscapeBossInScope(true, false));
+    CHECK(!VictimEscapeBossInScope(false, true));
+    CHECK(VictimEscapeFor(true, false, true, VictimEscapeBossInScope(true, false), CLASS_MAGE, kAll) == VictimEscape::None);
+    CHECK(VictimEscapeFor(true, false, true, VictimEscapeBossInScope(true, true), CLASS_MAGE, kAll) == VictimEscape::IceBlock);
+
+    // The duty rule: a hunter a Son of Hakkar is attacking gets no Feign Death (it would wipe the Son's threat too).
+    VictimEscapeGuards sonOnHunter;
+    sonOnHunter.holdsDuty = VictimHoldsDuty(false, false, 1);
+    CHECK(VictimEscapeFor(true, false, true, true, CLASS_HUNTER, kAll, sonOnHunter) == VictimEscape::None);
+    CHECK(VictimHoldsDuty(true, false, 0));
+    CHECK(VictimHoldsDuty(false, true, 0));
+    CHECK(!VictimHoldsDuty(false, false, 0));
 
     // The only living non-tank target: the boss would come straight back, so nothing is spent.
     VictimEscapeGuards alone;

@@ -96,7 +96,10 @@ class VictimEscapeWiring(unittest.TestCase):
     def test_the_gate_is_taunt_immunity_on_a_boss_no_ids(self):
         boss = body(ACTIONS, "Unit* ai::ImmuneBossOnVictim(")
         self.assertIn("attacker->GetVictim() != member", boss)
-        self.assertIn("IsBossCreature(attacker) && TargetTauntImmune(attacker)", boss)
+        self.assertIn("IsBossCreature(attacker) && BossInScope(attacker)", boss)
+        scope = body(ACTIONS, "bool BossInScope(")
+        # Opt in by row data: taunt-immune AND a threat_successor row (Hakkar, Jin'do), never a boss id.
+        self.assertIn("VictimEscapeBossInScope(TargetTauntImmune(boss), ThreatSuccessorTarget(boss))", scope)
         is_boss = body(ACTIONS, "bool IsBossCreature(")
         self.assertIn("creature->IsWorldBoss()", is_boss)
         self.assertIn("GetDungeonPlans().IsBossEntry(", is_boss)
@@ -107,19 +110,78 @@ class VictimEscapeWiring(unittest.TestCase):
     def test_the_decision_goes_through_the_policy(self):
         decide = body(ACTIONS, "VictimEscape DecideFor(")
         self.assertIn("VictimEscapeFor(sPlayerbotAIConfig.dungeonRunImmuneBossVictimEscape, PlayerbotAI::IsTank(victim),", decide)
-        self.assertIn("boss->GetVictim() == victim, TargetTauntImmune(boss)", decide)
+        self.assertIn("boss->GetVictim() == victim, BossInScope(boss)", decide)
         guards = body(ACTIONS, "VictimEscapeGuards GuardsFor(")
-        self.assertIn("VictimEscapeRecent(true, nowMs - it->second)", guards)
+        # The slot is held 6 s only once a later read saw the escape land; a resisted one holds it 1 s.
+        self.assertIn("if (!record.landed && EscapeLanded(boss, victim))", guards)
+        self.assertIn("VictimEscapeRecent(true, record.landed, nowMs - record.castMs)", guards)
         self.assertIn("OtherNonTankTarget(boss, victim)", guards)
-        self.assertIn("HoldsBossDuty(victim)", guards)
+        self.assertIn("HoldsBossDuty(boss, victim)", guards)
+        landed = body(ACTIONS, "bool EscapeLanded(")
+        self.assertIn("victim->HasUnitState(UNIT_STAT_FEIGN_DEATH)", landed)
+        self.assertIn("boss->GetVictim() != victim", landed)
+        self.assertIn("victim->IsImmuneToDamage(boss->GetMeleeDamageSchoolMask())", landed)
+        note = body(ACTIONS, "void NoteEscape(")
+        self.assertIn("record.landed = false;", note)
         duty = body(ACTIONS, "bool HoldsBossDuty(")
-        self.assertIn("IsLiveWalkoutPuller(victim)", duty)
+        self.assertIn("VictimHoldsDuty(IsLiveWalkoutPuller(victim),", duty)
         self.assertIn("SeekMeetHealPuller(victim->GetInstanceId()) == victim->GetObjectGuid().GetRawValue()", duty)
+        self.assertIn("OtherCreaturesOnVictim(boss, victim)", duty)
+        others = body(ACTIONS, "int OtherCreaturesOnVictim(")
+        for clause in ("attacker == boss", "!attacker->IsCreature()", "!sServerFacade.IsAlive(attacker)",
+                       "!attacker->IsInCombat()", "attacker->GetVictim() != victim"):
+            self.assertIn(clause, others)
         protect = body(ACTIONS, "bool PlanProtection(")
-        self.assertIn("ProtectorShouldBop(true, bopReady && !member->HasAura(kForbearanceId), false, victimEscape, distYd)", protect)
+        self.assertIn("!member->HasAura(kForbearanceId) && EscapeSpellReady(ai, bot, bop, member)", protect)
+        self.assertIn("ProtectorShouldBop(true, bopReady, false, victimEscape, distYd)", protect)
         self.assertIn("distYd > kVictimEscapeBopYd", protect)
+        self.assertIn("LogVictimEscape(ai, boss, member, bopId, false, why, nowMs)", protect)
+
+    def test_readiness_is_the_full_cast_check(self):
+        ready = body(ACTIONS, "bool EscapeSpellReady(")
+        self.assertIn('GetValue<uint32>("spell id", spell)', ready)
+        self.assertIn("casterAi->CanCastSpell(spellId, target, 0, true, nullptr, false, false, false, &check)", ready)
+        self.assertIn("check == SPELL_FAILED_SPELL_IN_PROGRESS", ready)
+        self.assertIn("VictimEscapeCastReady(fullCheckOk, refusedOnlyByOwnCast, coreCheckOk)", ready)
+        self.assertNotIn("Interrupt", ready)
+        core = body(ACTIONS, "bool CoreCastCheckOk(")
+        self.assertIn("spell->CheckCast(true)", core)
+        self.assertIn("Spell::CalculatePowerCost(info, caster)", core)
+        self.assertIn("return result == SPELL_CAST_OK;", core)
+        of = body(ACTIONS, "VictimEscapeReady ReadyOf(")
+        # A real player has no bot AI: no own escape, so a paladin protects them.
+        self.assertIn("if (!memberAi)\n        return ready;", of)
+        self.assertIn("const bool inControl = !member->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);", of)
+        self.assertIn("ready.feignDeath = inControl && EscapeSpellReady(", of)
+        self.assertIn("ready.vanish = inControl && EscapeSpellReady(", of)
+        self.assertIn("ready.iceBlock = EscapeSpellReady(", of)
+        self.assertIn("ready.divineShield = !member->HasAura(kForbearanceId) &&", of)
+        self.assertIn("const uint32 kForbearanceId = 25771;", ACTIONS)
+        for word in ('"feign death"', '"vanish"', '"ice block"', '"divine shield"', '"hand of protection"'):
+            self.assertIn(word, POLICY)
+
+    def test_other_non_tank_target_filters(self):
+        other = body(ACTIONS, "bool OtherNonTankTarget(")
+        self.assertIn("player == victim", other)
+        self.assertIn("!sServerFacade.IsAlive(player)", other)
+        self.assertIn("!player->GetCharmerGuid().IsEmpty() || PlayerbotAI::IsTank(player)", other)
+
+    def test_throttle_maps_evict_the_oldest(self):
+        self.assertNotIn(".clear()", ACTIONS)
+        self.assertIn("EvictOldest(g_victimEscapeLast,", ACTIONS)
+        self.assertIn("EvictOldest(g_victimEscapeRefusedLog,", ACTIONS)
+        log = body(ACTIONS, "void LogVictimEscape(")
+        # The refused row's slot is the victim and the writer: a paladin's refusal is not hidden by the victim's.
+        self.assertIn("std::make_pair(victim->GetObjectGuid().GetRawValue(), ai->GetBot()->GetObjectGuid().GetRawValue())", log)
 
     def test_cast_breaks_own_cast_and_notes_the_escape(self):
+        # The interrupt only follows a plan whose full cast check passed: the triggers and actions plan first.
+        for name in ("ImmuneBossVictimEscapeAction::Execute", "ImmuneBossVictimProtectAction::Execute"):
+            execute = body(ACTIONS, "bool " + name + "(")
+            self.assertLess(execute.index("Plan"), execute.index("CastEscape(ai, bot, plan)"))
+        self.assertEqual(ACTIONS.count("StopOwnCast(bot);"), 1)
+        self.assertNotIn("StopOwnCast", body(ACTIONS, "bool PlanOwnEscape("))
+        self.assertNotIn("StopOwnCast", body(ACTIONS, "bool PlanProtection("))
         cast = body(ACTIONS, "bool CastEscape(")
         self.assertIn('GetValue<uint32>("spell id", spell)', cast)
         stop = cast.index("StopOwnCast(bot);")

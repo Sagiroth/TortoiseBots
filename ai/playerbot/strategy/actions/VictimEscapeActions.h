@@ -4,11 +4,12 @@
 
 // The escape of a taunt-immune boss's non-tank victim (AiPlayerbot.DungeonRunImmuneBossVictimEscape; the rules are in
 // playerbot/VictimEscapePolicy.h). Every bot carries both triggers: the reaction engine's "avoid aoe" and the combat
-// engine's "dungeon" strategy. No boss is named: the gate is a boss (a world boss or a plan's boss entry) the game
-// makes immune to taunts, with a non-tank as its victim.
+// engine's "dungeon" strategy (a fight strategy that drops "avoid aoe" keeps only the combat copy). No boss is named:
+// the gate is a boss (a world boss or a plan's boss entry) the game makes immune to taunts that also has a
+// threat_successor row, with a non-tank as its victim.
 namespace ai
 {
-    // A boss the game makes immune to taunts whose victim is this member, or null.
+    // A boss in scope (immune to taunts, a threat_successor row) whose victim is this member, or null.
     Unit* ImmuneBossOnVictim(Unit* member);
 
     // This bot is such a boss's non-tank victim.
