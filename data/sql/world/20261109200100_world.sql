@@ -1,6 +1,6 @@
 -- Onyxia's Lair (map 249), core 1181dev b26c3cc: the boss list, the boss tactic rows for Cindarion 50143 and the
 -- Onyxian Hatcher 50144, and the Onyxian Warder 12129 stand set at the corridor junction where the room-mouth pack is
--- fought. Spec: TortoiseBots-audit briefs-omp/onyxia-fresh-spec.md section 2. Never edit once applied.
+-- fought.
 --
 -- ai_dungeon_boss: Onyxia 10184 keeps her row and Cindarion 50143 gets one, so the run and the wipe recovery know
 -- both bosses of the changed fight. The Hatcher 50144 gets none: it is summoned twice at the 40 % landing

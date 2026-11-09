@@ -4864,14 +4864,19 @@ class DungeonPlanSql(unittest.TestCase):
             self.assertNotRegex(text, r"(?m)^INSERT INTO `ai_dungeon_boss`", name)  # REPLACE, so a re-run keeps one row
             # The DELETE before the rows is scoped to exactly the maps the file seeds: a seeded map it leaves out keeps a
             # row a later file drops; a map it names beyond them loses rows it does not put back. A map shared by several
-            # plans (189, the four SM wings) scopes the DELETE to its own boss entries too.
-            seeded = {int(m) for m in re.findall(r"(?m)^\((\d+), \d+, '", text)}
-            seeded_entries = {(int(m), int(e)) for m, e in re.findall(r"(?m)^\((\d+), (\d+), '", text)}
+            # plans (189, the four SM wings) scopes the DELETE to its own boss entries too. The seeded rows come only from
+            # the REPLACE INTO `ai_dungeon_boss` statements themselves, each up to its `;`: the same file's other statements
+            # (a second boss REPLACE, or the ai_boss_tactic rows whose target_entry column shares the (map, entry) shape)
+            # do not count.
+            boss_text = " ".join(m.group(0) for m in re.finditer(r"(?s)REPLACE INTO `ai_dungeon_boss` \(.*?;", text))
+            self.assertTrue(boss_text, "no REPLACE INTO `ai_dungeon_boss` statement in %s" % name)
+            seeded = {int(m) for m in re.findall(r"(?m)^\((\d+), \d+, '", boss_text)}
+            seeded_entries = {(int(m), int(e)) for m, e in re.findall(r"(?m)^\((\d+), (\d+), '", boss_text)}
             scoped = re.findall(r"DELETE FROM `ai_dungeon_boss` WHERE `map` IN \(([\d, ]+)\)(?: AND `entry` IN \(([\d, ]+)\))?;", text)
             self.assertEqual(len(scoped), 1, name)
             if scoped[0][1]:
                 scoped_entries = {int(e) for e in scoped[0][1].split(",")}
-                self.assertEqual(scoped_entries, {e for _m, e in seeded_entries} - NOT_BOSSES, name)
+                self.assertEqual(scoped_entries, {e for _m, e in seeded_entries}, name)
             self.assertEqual({int(m) for m in scoped[0][0].split(",")}, seeded, name)
 
     def test_boss_tactic_inserts_delete_their_own_keys_first(self):
@@ -6263,15 +6268,16 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertNotIn("`ai_boss_tactic`", text)
 
     def test_onyxias_lair_is_the_fresh_two_leg_plan(self):
-        # 20261109200000 (turtle-agent plan/ony-fresh 770b1400, 2026-11-09): the 40-man Onyxia's Lair plan for the
+        # 20261109200000 (turtle-agent plan/ony-fresh 56275884, 2026-11-09): the 40-man Onyxia's Lair plan for the
         # 1181dev fight (Cindarion 50143, Hatchers 50144, Inciter 49016 and Flamespawn 49017 trash), two legs:
         # `tunnel` with seven packs and the boss leg `onyxia`. Packs 0, 2, 4, 5 and 6 are stand pulls (flag 8192,
         # param 0: the run leader's 40); the plan row carries kill_first '12129' (the Warder's instant Fire Nova
         # 20203). The boss row is Onyxia 10184 at her spawn; the stand row (-80, -211.4) ahead of it stands at
-        # least 75 yd 3D from her spawn (58 yd wake plus bounding radii, the raid ring and margin).
+        # least 75 yd 3D from her spawn (58 yd wake plus bounding radii, the raid ring and margin). Pack 0 stands
+        # on the entrance platform (30.9 -68.0 -5.8), outside the Warder lane and Fire Nova reach.
         name, text = newest_plan_text("onyxias_lair")
         self.assertEqual(name, "20261109200000_world.sql")
-        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent 770b1400", text)
+        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent 56275884", text)
         self.assertEqual([v[0] for v in leg_rows(text, "onyxias_lair").values()], ["tunnel", "onyxia"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
         leg0 = leg_steps(rows, 0)
@@ -6284,7 +6290,7 @@ class DungeonPlanSql(unittest.TestCase):
                           ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
         # Pulls 0, 2, 4, 5 and 6 carry the stand-pull flag with param 0; the rest carry no flag.
         flagged = {int(r["seq"]) for r in leg0 if r["kind"] == "pull" and int(r["flags"]) & 8192}
-        self.assertEqual(flagged, {2, 19, 29, 31, 33})
+        self.assertEqual(flagged, {2, 21, 28, 30, 32})
         for r in pulls:
             if int(r["flags"]) & 8192:
                 self.assertEqual(r["param"], "0", r["seq"])
