@@ -1078,6 +1078,9 @@ public:
             NoteAuctionLegEntered(it->second.auctionCycles[itemId], itemId);
         if (step == SupplyStep::Bank && returnStep == SupplyStep::AuctionHouse && goldCount)
             it->second.auctionGoldReturnItemId = itemId;
+        TB_LOG_DETAIL("TortoiseBots: order bot %u step %s -> %s item %u count %u reason %s",
+            botGuidLow, SupplyStepToken(record.supplyStep), SupplyStepToken(step), itemId, count,
+            ReasonToken(reason));
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
