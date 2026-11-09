@@ -2336,6 +2336,37 @@ static void TestMeetTakeReachCoversInterceptRange()
     CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
 }
 
+// The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, review round 2).
+static void TestMeetReceiverExemptWithinAllowance()
+{
+    // Args: key, meet open, is the receiver, Son alive, Son yd past the raid circle, receiver is the boss's victim,
+    // take due.
+    // Named failing case `meet_receiver_exempt_within_allowance`: 5 yd past the raid circle, everything else met.
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, 5.0f, false, true));
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, 12.0f, false, true));
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, -3.0f, false, true)); // inside the circle
+    CHECK(kSeekMeetTakeBeyondCircleYd == 12.0f);
+    // 13 yd past: not exempt (mutation: the allowance not bounded fails here).
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 13.0f, false, true));
+    // The receiver is the boss's victim (mutation: the exemption ignoring the victim check fails here).
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 5.0f, true, true));
+    // The meet closed (or taken) (mutation: the exemption outliving the meet fails here).
+    CHECK(!SeekMeetReceiverExempt(true, false, true, true, 5.0f, false, true));
+    // Not the receiver.
+    CHECK(!SeekMeetReceiverExempt(true, true, false, true, 5.0f, false, true));
+    // Key off.
+    CHECK(!SeekMeetReceiverExempt(false, true, true, true, 5.0f, false, true));
+    // The Son dead, or the take not due by the reach.
+    CHECK(!SeekMeetReceiverExempt(true, true, true, false, 5.0f, false, true));
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 5.0f, false, false));
+    // The receiver_exempt row: once per meet (Son and shot time); a new meet of the same Son writes again.
+    SeekWalkoutState s;
+    CHECK(WalkoutReceiverExemptNote(s, 22, 1000));
+    CHECK(!WalkoutReceiverExemptNote(s, 22, 1000));
+    CHECK(WalkoutReceiverExemptNote(s, 22, 5000));
+    CHECK(!WalkoutReceiverExemptNote(s, 0, 6000));
+}
+
 // The meet's taken state (DungeonRunSeekTakenSonThreatCap): noted at the taken close, over when the Son dies or is
 // gone, 15 s after the take, or when a new walk-out task starts.
 static void TestWalkoutTakenState()
@@ -2810,6 +2841,7 @@ int main()
     TestShotWaitAndLateWalkNoDeadlock();
     TestMeetTakeReachCoversInterceptRange();
     TestWalkoutTakenState();
+    TestMeetReceiverExemptWithinAllowance();
     TestMeetPrePlaceHoldsChase();
     TestMeetPrePlaceHoldOutlivesTheTask();
     std::cout << "seek walk-out policy: all checks passed\n";

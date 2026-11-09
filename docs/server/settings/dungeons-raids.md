@@ -1201,11 +1201,13 @@ Whether the waiting receiver takes the walked Son from 25 yd instead of 8 yd. Re
 
 **Why:** in walk 60 24 of 58 meets were lost to a peel, 22 of them to a healer about 7-8 s after the meet. In 19 of the 24 the Son stood 8-25 yd from the receiver (median 20 yd), because the receiver waited until the Son was within 8 yd.
 
-**The take:** with the key on, while the meet is open and the Son's victim is the puller, the returner or nobody, the receiver takes the Son once it is within 25 yd (`kSeekMeetTakeReachYd`, Intercept range): the same meet take as before (`src=meet`), its Attack and reach melee closing the gap and the taunt going out in melee. The live anchor's chase gate and the take edge apply as to any take. The pre-place hold (`DungeonRunSeekMeetPrePlaceHold`) holds only the boss as a chase target, so it never blocks this take. No boss is named in code.
+**The take:** with the key on, while the meet is open and the Son's victim is the puller, the returner or nobody, the receiver takes the Son once it is within 25 yd (`kSeekMeetTakeReachYd`, Intercept range): the same meet take as before (`src=meet`), its Attack and reach melee closing the gap and the taunt going out in melee. The pre-place hold (`DungeonRunSeekMeetPrePlaceHold`) holds only the boss as a chase target, so it never blocks this take. No boss is named in code.
 
-Diagnostics: the `seek take` row carries `reach_yd=<yd>`, the tank's distance to the Son on that tick.
+**The bounded anchor exemption:** a live boss anchor keeps every tank's chase within the tanks' circle plus 5 yd and clamps its moves onto that circle, so a Son 25 yd out on the outward line could not be reached. The receiver is therefore exempt from the anchor, as the walk-out puller is, only while all of: the key is on; the meet is open and its Son is on no tank yet; this tank is the meet's receiver; the meet's Son is alive and at most 12 yd past the raid circle (`kSeekMeetTakeBeyondCircleYd`, measured from the boss's anchor centre); the receiver is not the anchored boss's victim; and the take is due by the 25 yd reach. It ends at once when any of those fails, and at the taken close; the receiver, now holding the Son as its own source, is then walked back to the spot inside the circle by the seek tank's drag. With the key on the meet take is due only inside this exemption; otherwise the receiver keeps waiting (the wait rows and the pre-place hold stay). One `BossTacticsSonMeet` row per meet, `son=<g>,event=receiver_exempt,receiver=<name>,beyond_yd=<yd>`, marks the first take under the exemption.
 
-Limits (documented, not fixed): the receiver leaves its point to meet the Son, so the Son is taken up to 17 yd farther out than before.
+Diagnostics: the `seek take` row carries `reach_yd=<yd>`, the tank's distance to the Son on that tick, and `beyond_yd=<yd>`, the Son's distance past the raid circle (negative inside; `-99.0` with no anchor row).
+
+Limits (documented, not fixed): the receiver leaves its point to meet the Son, up to 12 yd past the raid circle, so the Son is taken farther out than before, and while exempt none of the receiver's moves are clamped to the anchor.
 
 </details>
 

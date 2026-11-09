@@ -51,7 +51,7 @@ class SeekSonHoldWiring(unittest.TestCase):
         self.assertIn("BossAnchorRefusesChase(ai, bot, task.source, true)", take)
         self.assertIn("LogSeekTake(ai, bot, task.source,", take)
         log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f"', log)
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f beyond_yd=%.1f"', log)
         refuse = body(ACTIONS, "bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)")
         self.assertIn("AnchorCircleOf(*row, false)", refuse)
 
@@ -172,10 +172,10 @@ class SeekSonRowReview(unittest.TestCase):
         # The Son rows join the HoldKill `held=11357:<low>`, `seek take: -> <low>` and walk-out rows by the guid low;
         # a raw guid is a different number. Exactly 13 rows carry a `son=` id: the 2 Son rows plus the meet's meet,
         # no_meet, taken, lost, wait, preplace, preplace_arrive, the two preplace_end rows (the live check's and the
-        # floor's), the shot's shot_wait (walk 58 F2) and the pre-place's preplace_hold (walk 59 F5); a new one must be
-        # counted here, in the exact guid form.
+        # floor's), the shot's shot_wait (walk 58 F2), the pre-place's preplace_hold (walk 59 F5) and the receiver's
+        # receiver_exempt (walk 60, DungeonRunSeekMeetTakeReach); a new one must be counted here, in the exact guid form.
         ids = list(re.finditer(r'"son=%u[^"]*"', ACTIONS))
-        self.assertEqual(len(ids), 13)
+        self.assertEqual(len(ids), 14)
         for match in ids:
             call = ACTIONS[ACTIONS.rfind("snprintf(", 0, match.start()):ACTIONS.index(";", match.end())]
             self.assertIn("ObjectGuid(guid).GetCounter()", call)

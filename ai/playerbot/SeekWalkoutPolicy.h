@@ -941,6 +941,22 @@ namespace ai
         return sonOnReceiver || sonToReceiverYd <= SeekMeetTakeReachYd(reachOn);
     }
 
+    // The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, review round 2): the live boss anchor
+    // keeps every tank's chase within its circle (ChaseTo, ClampMoveToBossAnchor), so a walked Son 25 yd out on the
+    // outward line could never be reached. The receiver is exempt from the anchor, as the walk-out puller is, only while
+    // ALL of: the key is on; the meet is open (and its Son not yet on a tank: the taken close ends it); this bot is the
+    // meet's receiver; the meet's Son is alive; the Son is at most kSeekMeetTakeBeyondCircleYd past the raid circle
+    // (`sonBeyondCircleYd`: its distance from the anchor centre less the raid radius, negative inside); the receiver is
+    // not the anchored boss's victim; and the take is due by the reach (SeekMeetTakeDue with the key). Any of them
+    // failing ends it at once, and the tank's own-source drag then brings it back inside with the Son.
+    constexpr float kSeekMeetTakeBeyondCircleYd = 12.0f;
+    inline bool SeekMeetReceiverExempt(bool reachOn, bool meetOpen, bool isReceiver, bool sonAlive,
+                                       float sonBeyondCircleYd, bool receiverIsBossVictim, bool takeDue)
+    {
+        return reachOn && meetOpen && isReceiver && sonAlive && sonBeyondCircleYd <= kSeekMeetTakeBeyondCircleYd &&
+            !receiverIsBossVictim && takeDue;
+    }
+
     // Whether the receiver keeps waiting for the Son: only while the Son's victim is the walk-out puller, the returner or
     // nobody (0). A Son on anyone else (a DPS or a healer peeled it) is the take branches' business, and the meet closes
     // as `peeled`.
@@ -1070,7 +1086,20 @@ namespace ai
         std::uint64_t takenSon = 0;
         std::uint64_t takenBy = 0;
         std::uint32_t takenMs = 0;
+        // The meet whose `event=receiver_exempt` row went out (DungeonRunSeekMeetTakeReach): its Son and shot time.
+        std::uint64_t exemptLogSon = 0;
+        std::uint32_t exemptLogMeetMs = 0;
     };
+
+    // Claims the one `event=receiver_exempt` row of the meet (son, meetMs): true the first time only.
+    inline bool WalkoutReceiverExemptNote(SeekWalkoutState& s, std::uint64_t son, std::uint32_t meetMs)
+    {
+        if (son == 0 || (s.exemptLogSon == son && s.exemptLogMeetMs == meetMs))
+            return false;
+        s.exemptLogSon = son;
+        s.exemptLogMeetMs = meetMs;
+        return true;
+    }
 
     // How long the taken Son's threat cap lasts after the take (the bound of SeekTakenSonDpsHeld, and the taken
     // state's own expiry).

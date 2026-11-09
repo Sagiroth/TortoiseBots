@@ -1436,8 +1436,10 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
 // why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
 // names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
 // pull_join, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance to the Son this
-// tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd).
-void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src)
+// tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
+// circle of the row's boss anchor (negative inside; -99.0 with no anchor row).
+void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src,
+                 float beyondYd)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
         return;
@@ -1451,9 +1453,9 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bo
     }
     Unit* const victim = son->GetVictim();
     char info1[224];
-    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f",
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f beyond_yd=%.1f",
              bot->GetName(), son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0, src.c_str(),
-             bot->GetDistance(son));
+             bot->GetDistance(son), beyondYd);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
@@ -1644,17 +1646,84 @@ void SweepSeekWalkouts(Map* map, std::uint32_t nowMs)
         it = nowMs - it->second.touchedMs > kSeekWalkoutStaleMs ? DropWalkoutRecord(it) : std::next(it);
 }
 
+// The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, SeekMeetReceiverExempt) from one meet
+// snapshot (receiver, Son, shot time) and the anchored boss: the raid circle is the boss's own anchor row (no boss
+// constant). `beyondYdOut` gets the Son's distance past the raid circle (0 when unknown). The meet counts as open only
+// while its Son is on no tank (the taken close ends the exemption).
+bool MeetReceiverExemptEval(Player* bot, std::uint64_t receiver, std::uint64_t sonGuid, std::uint32_t meetMs,
+                            Unit* boss, std::uint32_t nowMs, float* beyondYdOut)
+{
+    if (beyondYdOut)
+        *beyondYdOut = 0.0f;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !boss || sonGuid == 0)
+        return false;
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(sonGuid));
+    const bool sonAlive = son && son->IsInWorld() && sServerFacade.IsAlive(son);
+    BossAnchorCircle raid;
+    if (!sonAlive || !BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), false, raid))
+        return false;
+    Player* const sonVictim = dynamic_cast<Player*>(son->GetVictim());
+    const bool sonOnTank = sonVictim && PlayerbotAI::IsTank(sonVictim);
+    const bool meetOpen = SeekMeetOpen(receiver, meetMs, nowMs) && !sonOnTank;
+    const float beyondYd = BossAnchorDistance2d(raid, son->GetPositionX(), son->GetPositionY()) - raid.radius;
+    if (beyondYdOut)
+        *beyondYdOut = beyondYd;
+    return SeekMeetReceiverExempt(true, meetOpen, receiver == bot->GetObjectGuid().GetRawValue(), sonAlive, beyondYd,
+                                  boss->GetVictim() == bot, SeekMeetTakeDue(bot->GetDistance(son), false, true));
+}
+
 // Whether the anchor lets this bot go: the puller of its instance's running walk-out task, or of a timed-out or aborted
-// one walking back (SeekWalkoutExempts).
+// one walking back (SeekWalkoutExempts); with DungeonRunSeekMeetTakeReach also the open meet's receiver inside its
+// bounded exemption (MeetReceiverExemptEval), read from the same locked snapshot.
 bool SeekWalkoutExemptsBot(Player* bot)
 {
-    if (g_walkoutsActive.load(std::memory_order_relaxed) == 0)
+    const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;
+    if (g_walkoutsActive.load(std::memory_order_relaxed) == 0 &&
+        !(reachOn && g_walkoutMeetsOpen.load(std::memory_order_relaxed) > 0))
         return false;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
-    std::lock_guard<std::mutex> lock(g_walkoutMutex);
-    SweepSeekWalkouts(bot->GetMap(), nowMs);
-    auto const it = g_walkouts.find(bot->GetInstanceId());
-    return it != g_walkouts.end() && WalkoutExempts(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::uint64_t meetReceiver = 0;
+    std::uint64_t meetSon = 0;
+    std::uint32_t meetMs = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        SweepSeekWalkouts(bot->GetMap(), nowMs);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it == g_walkouts.end())
+            return false;
+        if (WalkoutExempts(it->second.state, self, nowMs))
+            return true;
+        // The receiver's exemption only behind its key, and only for the meet's own receiver.
+        if (!reachOn || it->second.state.meetReceiver != self)
+            return false;
+        meetReceiver = it->second.state.meetReceiver;
+        meetSon = it->second.state.meetSon;
+        meetMs = it->second.state.meetMs;
+        bossGuid = it->second.bossGuid;
+    }
+    Creature* const boss = bossGuid ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    return MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs, boss, nowMs, nullptr);
+}
+
+// The meet's one `event=receiver_exempt` row (WalkoutReceiverExemptNote under g_walkoutMutex), when the receiver
+// first takes its Son under the exemption.
+void NoteSeekReceiverExempt(PlayerbotAI* ai, Player* bot, std::uint64_t son, std::uint32_t meetMs, float beyondYd)
+{
+    bool claimed = false;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        claimed = it != g_walkouts.end() && WalkoutReceiverExemptNote(it->second.state, son, meetMs);
+    }
+    if (!claimed)
+        return;
+    const std::uint64_t guid = son;
+    char info1[160];
+    snprintf(info1, sizeof(info1), "son=%u,event=receiver_exempt,receiver=%s,beyond_yd=%.1f",
+             ObjectGuid(guid).GetCounter(), bot->GetName(), beyondYd);
+    LogSeekMeet(ai, info1);
 }
 
 void LogSeekWalkout(PlayerbotAI* ai, const char* text, const char* info2 = "")
@@ -9024,10 +9093,21 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                         task.walkToSpot = true;
                     return task;
                 }
-                // DungeonRunSeekMeetTakeReach: the take reaches 25 yd, not 8 (Attack closes the gap). The pre-place hold
+                // DungeonRunSeekMeetTakeReach: the take reaches 25 yd, not 8 (Attack closes the gap), and is due only
+                // while the receiver's bounded anchor exemption holds (MeetReceiverExemptEval: the Son at most 12 yd past
+                // the raid circle, the receiver not the boss's victim), so the anchor never refuses the chase. Not due:
+                // it falls through to the wait and the pre-place below, unchanged. The pre-place hold
                 // (DungeonRunSeekMeetPrePlaceHold) holds only the boss as a chase target, never this Son.
-                if (SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach))
+                const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;
+                float beyondYd = 0.0f;
+                const bool reachExempt = reachOn && MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs,
+                                                                           state.boss, WorldTimer::getMSTime(),
+                                                                           &beyondYd);
+                if (SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach) &&
+                    (!reachOn || reachExempt))
                 {
+                    if (reachExempt)
+                        NoteSeekReceiverExempt(ai, bot, meetSon, meetMs, beyondYd);
                     task.valid = true;
                     task.source = son;
                     task.take = true;
@@ -9621,9 +9701,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // The taunt gate (a taunt-immune boss, a Shade) is read before the row, so the row never says `taunt` for a
         // cast that the gate then refuses.
         const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);
+        float beyondYd = -99.0f;
+        BossAnchorCircle raidCircle;
+        if (task.row && BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, false, raidCircle))
+            beyondYd = BossAnchorDistance2d(raidCircle, task.source->GetPositionX(), task.source->GetPositionY()) -
+                raidCircle.radius;
         LogSeekTake(ai, bot, task.source,
                     gateRefused ? "taunt_gated" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),
-                    task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));
+                    task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake), beyondYd);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.

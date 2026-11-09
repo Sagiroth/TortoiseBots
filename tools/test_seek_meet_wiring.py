@@ -183,7 +183,7 @@ class SeekSonMeetWiring(unittest.TestCase):
         self.assertIn("const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);", take)
         self.assertIn("gateRefused ? \"taunt_gated\" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),",
                       take)
-        self.assertIn("task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));", take)
+        self.assertIn("task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake), beyondYd);", take)
         self.assertLess(take.index("const bool canTaunt ="), take.index("LogSeekTake("))
         # The taunt gate is read BEFORE the row is written (the row used to say `taunt` for a refused cast), once,
         # and the same verdict ends the take.
@@ -602,9 +602,73 @@ class MeetTakeReachWiring(unittest.TestCase):
 
     def test_the_take_row_carries_reach_yd(self):
         log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f"', log)
-        self.assertIn("bot->GetDistance(son));", log)
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f beyond_yd=%.1f"', log)
+        self.assertIn("bot->GetDistance(son), beyondYd);", log)
         self.assertIn("reach_yd=", DOC)
+
+
+class MeetReceiverExemptWiring(unittest.TestCase):
+    """Review round 2: the meet receiver's bounded anchor exemption (SeekMeetReceiverExempt, tested in
+    tools/test_seek_walkout_policy.cpp as meet_receiver_exempt_within_allowance) and the take's fall-through."""
+
+    def exempts(self):
+        return body(ACTIONS, "bool SeekWalkoutExemptsBot(Player* bot)")
+
+    def test_the_exemption_is_behind_the_key_and_one_snapshot(self):
+        fn = self.exempts()
+        self.assertIn("const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;", fn)
+        self.assertIn("!(reachOn && g_walkoutMeetsOpen.load(std::memory_order_relaxed) > 0))", fn)
+        # One lock: the puller's exemption first, then the receiver's only behind the key, from the same snapshot.
+        self.assertEqual(1, fn.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"))
+        self.assertLess(fn.index("if (WalkoutExempts(it->second.state, self, nowMs))"),
+                        fn.index("if (!reachOn || it->second.state.meetReceiver != self)"))
+        self.assertIn("meetSon = it->second.state.meetSon;", fn)
+        self.assertIn("return MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs, boss, nowMs, nullptr);", fn)
+
+    def test_the_eval_uses_the_pure_rule_with_every_bound(self):
+        fn = body(ACTIONS, "bool MeetReceiverExemptEval(Player* bot, std::uint64_t receiver, std::uint64_t sonGuid,")
+        self.assertTrue(fn.split("{", 1)[1].lstrip().split("\n", 2)[2].lstrip().startswith(
+            "if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !boss || sonGuid == 0)"))
+        self.assertIn("BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), false, raid)", fn)
+        self.assertIn("const bool meetOpen = SeekMeetOpen(receiver, meetMs, nowMs) && !sonOnTank;", fn)
+        self.assertIn("SeekMeetReceiverExempt(true, meetOpen, receiver == bot->GetObjectGuid().GetRawValue(), sonAlive, beyondYd,",
+                      fn)
+        self.assertIn("boss->GetVictim() == bot, SeekMeetTakeDue(bot->GetDistance(son), false, true));", fn)
+
+    def test_the_take_is_due_only_inside_the_exemption_and_falls_through(self):
+        fn = tank_pick()
+        call = "SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach) &&\n                    (!reachOn || reachExempt)"
+        self.assertIn(call, fn)
+        self.assertIn("MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs,", fn)
+        meet = fn[fn.index(call):]
+        # Not due: the same wait and pre-place branch as before (the hold and the wait rows stay).
+        self.assertLess(meet.index("task.take = true;"), meet.index("LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);"))
+        self.assertLess(meet.index("LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);"),
+                        meet.index("SeekMeetPrePlaceTask(bot, state.row, task);"))
+        self.assertIn("NoteSeekReceiverExempt(ai, bot, meetSon, meetMs, beyondYd);", meet[:meet.index("task.take = true;")])
+
+    def test_the_drag_back_applies_to_the_receiver_after_the_taken_close(self):
+        # After the taken close the exemption ends (the Son is on a tank) and the receiver (tanks[2], or tanks[1]) holds
+        # the Son as its own source: the drag back walks it to the spot inside the circle.
+        fn = tank_pick()
+        self.assertIn("const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;", fn)
+        self.assertIn("const bool healerTaker = roles.tanks.size() >= 3 && roles.tanks[1] == bot;", fn)
+        self.assertIn("const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;", fn)
+        drag = fn[fn.index("    if (thirdTank || pickupTank || healerTaker)\n    {\n        if (onTank)"):]
+        drag = drag[:drag.index("return task;")]
+        self.assertIn("task.source = onTank;", drag)
+        self.assertIn("if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)\n                task.walkToSpot = true;", drag)
+        self.assertIn("if (candidate->GetVictim() == bot)", fn)
+        # The receiver pick is tanks[2], else tanks[1]: both reach the drag-back branch.
+        self.assertIn("if (tanks.size() > 2 && MeetRefusalWhy(tanks[2]) == nullptr)\n            return 2;", POLICY)
+        self.assertIn("if (tanks.size() > 1 && MeetRefusalWhy(tanks[1]) == nullptr)\n            return 1;", POLICY)
+
+    def test_the_rows(self):
+        fn = body(ACTIONS, "void NoteSeekReceiverExempt(PlayerbotAI* ai, Player* bot, std::uint64_t son, std::uint32_t meetMs,")
+        self.assertIn('"son=%u,event=receiver_exempt,receiver=%s,beyond_yd=%.1f"', fn)
+        self.assertIn("WalkoutReceiverExemptNote(it->second.state, son, meetMs)", fn)
+        self.assertIn("event=receiver_exempt", SETTINGS_DOC)
+        self.assertIn("beyond_yd=", DOC)
 
 
 if __name__ == "__main__":
