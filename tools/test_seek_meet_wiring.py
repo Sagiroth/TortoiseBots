@@ -447,6 +447,12 @@ class PrePlaceHoldWiring(unittest.TestCase):
     def hold(self):
         return body(ACTIONS, "bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)")
 
+    def held_read(self):
+        return body(ACTIONS, "bool PrePlaceReceiverHeldRead(PlayerbotAI* ai, Player* bot, SeekPrePlaceProgress& progress)")
+
+    def note(self):
+        return body(ACTIONS, "void NotePrePlaceHold(PlayerbotAI* ai, Player* bot, const SeekPrePlaceProgress& progress, std::uint32_t bossEntry,")
+
     def test_the_flag_is_read_as_off_and_documented(self):
         self.assertIn('dungeonRunSeekMeetPrePlaceHold = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold", false)',
                       CONFIG)
@@ -458,17 +464,21 @@ class PrePlaceHoldWiring(unittest.TestCase):
     def test_the_hold_checks_the_flag_first(self):
         # Mutation: the hold ignoring the flag (drop the first check, or pass `true` to the policy) fails here.
         fn = self.hold()
-        first = fn.index("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)\n        return false;")
-        self.assertLess(first, fn.index("SeekMeetPrePlaceProgressRead("))
+        self.assertTrue(fn.split("{", 1)[1].lstrip().startswith("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)\n        return false;"))
         self.assertIn("MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss)",
                       fn)
         self.assertIn("!target->ToCreature()", fn)
+        self.assertLess(fn.index("!target->ToCreature()"), fn.index("if (!PrePlaceReceiverHeldRead(ai, bot, progress))"))
+        read = self.held_read()
+        first = read.index("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)\n        return false;")
+        self.assertLess(first, read.index("SeekMeetPrePlaceProgressRead("))
 
     def test_the_hold_outlives_the_walkout_task(self):
         # Review round 1: the walk-out counter drops at Back while the pre-place lives on through its meet (and is
         # process-wide); the hold reads only the map filter and the pre-place snapshot. Mutation: the counter gate back.
-        fn = self.hold()
+        fn = self.held_read()
         self.assertNotIn("g_walkoutsRunning", fn)
+        self.assertNotIn("g_walkoutsRunning", self.hold())
         self.assertIn("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())", fn)
         self.assertLess(fn.index("HasSeekAuraMap(bot->GetMapId())"), fn.index("SeekMeetPrePlaceProgressRead("))
 
@@ -482,10 +492,12 @@ class PrePlaceHoldWiring(unittest.TestCase):
                       inline_body(POLICY, "inline bool MeetPrePlaceHoldsChase(bool flagOn, bool prePlaceWalking, bool targetIsBoss)"))
 
     def test_the_hold_reads_the_snapshot_under_one_lock(self):
-        fn = self.hold()
+        fn = self.held_read()
         self.assertEqual(fn.count("SeekMeetPrePlaceProgressRead(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress)"), 1)
         self.assertNotIn("lock_guard", fn)
-        self.assertIn("if (!progress.walking)\n        return false;", fn)
+        self.assertIn("return progress.walking;", fn)
+        self.assertNotIn("SeekMeetPrePlaceProgressRead(", self.hold())
+        self.assertEqual(self.hold().count("PrePlaceReceiverHeldRead(ai, bot, progress)"), 1)
         read = body(ACTIONS, "bool SeekMeetPrePlaceProgressRead(")
         self.assertEqual(read.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
         self.assertIn("!WalkoutPrePlaceLive(it->second.state)", read)
@@ -504,9 +516,23 @@ class PrePlaceHoldWiring(unittest.TestCase):
         fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
         cast = fn.index("if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&\n"
                         "        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"charge\"))\n        return 0.0f;")
-        self.assertLess(fn.index("const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold;"), cast)
+        # Review round 2 (cost): the key and the map filter come before any target read.
+        self.assertLess(fn.index("const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold &&\n"
+                                 "        GetBossTactics().HasSeekAuraMap(bot->GetMapId());"), cast)
+        self.assertLess(fn.index("HasSeekAuraMap(bot->GetMapId())"), fn.index("action->GetTarget()"))
         self.assertLess(cast, fn.index("if (!dynamic_cast<MovementAction*>(action))"))
-        self.assertIn("action=<reach\\|charge\\|gapclose>", DOC)
+
+    def test_the_multiplier_holds_the_receivers_intervene(self):
+        # Review round 2: Intervene jumps to a friendly target; it is held on the receiver part alone. Mutation:
+        # remove the branch and this fails.
+        fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
+        branch = fn.index("if (prePlaceHold && dynamic_cast<CastInterveneAction*>(action) && "
+                          "SeekMeetPrePlaceReceiverHeld(ai, bot, \"intervene\"))\n        return 0.0f;")
+        self.assertLess(branch, fn.index("if (!dynamic_cast<MovementAction*>(action))"))
+        held = body(ACTIONS, "bool ai::SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind)")
+        self.assertIn("if (!PrePlaceReceiverHeldRead(ai, bot, progress))", held)
+        self.assertNotIn("GetTarget", held)
+        self.assertIn('#include "playerbot/strategy/warrior/WarriorActions.h"', ACTIONS)
 
     def test_the_gap_closer_checks_the_hold(self):
         # Mutation: the gap closer skipping its check fails here.
@@ -519,13 +545,15 @@ class PrePlaceHoldWiring(unittest.TestCase):
                       ACTIONS_H)
 
     def test_the_row_once_per_pre_place(self):
-        fn = self.hold()
+        fn = self.note()
         self.assertIn('"son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f"', fn)
         # Review round 1 (cost): no second lock once the snapshot says the row is out.
-        self.assertIn("if (!progress.holdLogged && SeekMeetPrePlaceNoteHold(", fn)
+        self.assertIn("if (progress.holdLogged ||\n        !SeekMeetPrePlaceNoteHold(", fn)
+        self.assertIn("NotePrePlaceHold(ai, bot, progress, target->GetEntry(), actionKind);", self.hold())
         self.assertIn("out.holdLogged = s.prePlaceHoldLogged;", body(ACTIONS, "bool SeekMeetPrePlaceProgressRead("))
         self.assertLess(fn.index("SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen)"),
                         fn.index("LogSeekMeet(ai, info1);"))
+        self.assertIn("action=<reach\\|charge\\|gapclose\\|intervene>", DOC)
         claim = body(ACTIONS, "bool SeekMeetPrePlaceNoteHold(")
         self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", claim)
         self.assertIn("WalkoutPrePlaceNoteHold(it->second.state, bot, gen)", claim)

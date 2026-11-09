@@ -39,6 +39,7 @@
 #include "PositionAction.h"
 #include "FollowActions.h"
 #include "ReachTargetActions.h"
+#include "playerbot/strategy/warrior/WarriorActions.h"
 #include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "EnemyAreaSpell.h"
@@ -8445,37 +8446,71 @@ const BossTacticRow* ai::LiveBossAnchorRow(PlayerbotAI* ai, Player* bot)
     return nullptr;
 }
 
-bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)
+namespace
+{
+// The receiver and liveness part of the chase hold (DungeonRunSeekMeetPrePlaceHold): the key, the cheap map filter and
+// the one locked snapshot (review: not the walk-out counter, which drops at the task's Back while the pre-place lives on
+// through its meet, and is process-wide), so the hold ends exactly when the pre-place clears. True: a live pre-place
+// names this bot and its walk began; `progress` is that snapshot.
+bool PrePlaceReceiverHeldRead(PlayerbotAI* ai, Player* bot, SeekPrePlaceProgress& progress)
 {
     // Key off: today's behaviour, nothing held (and no lock taken).
     if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
         return false;
-    // The cheap map filter only (review: not the walk-out counter, which drops at the task's Back while the pre-place
-    // lives on through its meet, and is process-wide): liveness is the snapshot's alone, so the hold ends exactly when
-    // the pre-place clears.
-    if (!ai || !bot || !target || !target->ToCreature() || !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+    if (!ai || !bot || !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
         return false;
-    // One locked snapshot (SeekMeetPrePlaceProgressRead): false unless a live pre-place names this bot.
-    SeekPrePlaceProgress progress;
     if (!SeekMeetPrePlaceProgressRead(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress))
         return false;
-    if (!progress.walking)
+    return progress.walking;
+}
+
+// The pre-place's one `event=preplace_hold` row, the first time any hold applies (no second lock once the snapshot
+// says it is out).
+void NotePrePlaceHold(PlayerbotAI* ai, Player* bot, const SeekPrePlaceProgress& progress, std::uint32_t bossEntry,
+                      const char* actionKind)
+{
+    if (progress.holdLogged ||
+        !SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
+        return;
+    const std::uint64_t guid = progress.son;
+    char info1[200];
+    snprintf(info1, sizeof(info1), "son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f",
+             ObjectGuid(guid).GetCounter(), bot->GetName(), bossEntry, actionKind ? actionKind : "reach",
+             bot->GetDistance2d(progress.x, progress.y));
+    LogSeekMeet(ai, info1);
+}
+}
+
+bool ai::SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind)
+{
+    SeekPrePlaceProgress progress;
+    if (!PrePlaceReceiverHeldRead(ai, bot, progress))
+        return false;
+    // The row's boss is the live anchor row's (0: none); read only for the one row.
+    if (!progress.holdLogged)
+    {
+        const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+        NotePrePlaceHold(ai, bot, progress, anchorRow ? anchorRow->bossEntry : 0, actionKind);
+    }
+    return true;
+}
+
+bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
+        return false;
+    if (!target || !target->ToCreature())
+        return false;
+    // The receiver and liveness part (the key, the map filter, one locked snapshot).
+    SeekPrePlaceProgress progress;
+    if (!PrePlaceReceiverHeldRead(ai, bot, progress))
         return false;
     // The boss is the live anchor row's own (no boss constant: every raid's anchored boss).
     const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
     const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;
     if (!MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss))
         return false;
-    // Once per pre-place: the first hold's row (no second lock once the snapshot says it is out).
-    if (!progress.holdLogged && SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
-    {
-        const std::uint64_t guid = progress.son;
-        char info1[200];
-        snprintf(info1, sizeof(info1), "son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f",
-                 ObjectGuid(guid).GetCounter(), bot->GetName(), target->GetEntry(),
-                 actionKind ? actionKind : "reach", bot->GetDistance2d(progress.x, progress.y));
-        LogSeekMeet(ai, info1);
-    }
+    NotePrePlaceHold(ai, bot, progress, target->GetEntry(), actionKind);
     return true;
 }
 
@@ -9651,9 +9686,15 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
     // Charge and every other CastReachTargetSpellAction move the caster but are no MovementAction, so they are held
     // here, before the movement check, on the anchored boss (no class or spell constant). The key is read first so
     // that with it off no action's target is read here (a gap closer's GetTarget runs its whole decision).
-    const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold;
+    // The map filter also comes before the target (review: no gap-closer decision off a seek map).
+    const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold &&
+        GetBossTactics().HasSeekAuraMap(bot->GetMapId());
     if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&
         SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "charge"))
+        return 0.0f;
+    // Intervene (review round 2) jumps the receiver to an ally, a friendly target, so it is held for the receiver
+    // whatever its target, while its pre-place walk runs.
+    if (prePlaceHold && dynamic_cast<CastInterveneAction*>(action) && SeekMeetPrePlaceReceiverHeld(ai, bot, "intervene"))
         return 0.0f;
     if (!dynamic_cast<MovementAction*>(action))
         return 1.0f;
