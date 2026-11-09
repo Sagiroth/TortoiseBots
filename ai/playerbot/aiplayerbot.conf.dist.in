@@ -1138,9 +1138,10 @@ AiPlayerbot.DungeonRunRaidHealerGuard = 0
 # Silence are single-target spell actions, so a damage dealer whose threat on its target sat at the 80 % line had them
 # vetoed like a nuke and let the cast finish: a rogue stood idle at full energy in 21 of 50 Kick windows (Tortoise
 # Trials DPS-ROG-KICK, 0.42 of casts kicked). An interrupt adds little threat and stopping the cast is the point. The
-# exemption holds only while the bot's threat on the mob it interrupts is under 100 % of the tank's; at or over it the
-# back-off applies again. The Earth Shock and Death Coil interrupt rows are real nukes and keep the back-off; the
-# "on enemy healer" rows stay gated too.
+# exemption holds while the interrupt would not pull the mob: the bot's threat on it plus the spell's flat threat
+# (Counterspell 300, Shield Bash 180) under 110 % of the tank's in melee reach, 130 % from range (the core's rule);
+# at or over that line the back-off applies again. The Earth Shock and Death Coil interrupt rows are real nukes and
+# keep the back-off; the "on enemy healer" rows stay gated too.
 # Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
 # 0 - off: interrupts are vetoed at the high-threat line as before (Default)
 # 1 - on
