@@ -30,7 +30,7 @@ const FdLive = require(path.join(jsDir, "fdlive.js"));
 const FdView = require(path.join(jsDir, "fdview.js"));
 const FightDebug = require(path.join(jsDir, "fightdebug.js"));
 const document = { activeElement: null };
-const ctx = { console, FightAuras, FightEvents, FdFilter, FdLive, FdView, FightDebug, document, setTimeout, clearTimeout, cmdFd: {}, cmdCards: new Map(), cmdFindBind: () => null, Date };
+const ctx = { console, FightAuras, FightEvents, FdFilter, FdLive, FdView, FightDebug, document, setTimeout, clearTimeout, cmdFd: {}, cmdCards: new Map(), cmdFindBind: () => null, Date, fdViewHash: () => {} }; // fdViewHash (the share link's hash write) is fdshare_ui_check.js's subject
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdEvBuilt", "fdEvKeep", "fdEvMarkKey", "fdEvTime", "fdEvCountText", "fdEvCountHtml", "fdEvDescPatch", "fdEvTyped", "fdEvFlush", "fdEvClick", "fdEvChange", "fdEventsHtml", "fdEvCutHint", "fdFilterCtl", "fdFilterCondHtml",
   "fdFilterGroupHtml", "fdFilterHtml", "fdEvFilterPaint", "fdEventsSync", "fdFilterEdit", "fdEvRepaint", "fdOutCls", "fdMarkOut", "fdRangeBandHtml", "fdTimelineHtml",
@@ -539,7 +539,7 @@ assert.ok(list.innerHTML.includes('data-fd-bosscast="69900"'), "the newest is on
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightevents.js") > 0 && at("fdfilter.js") > 0 && at("fightevents.js") < at("app.js") && at("fdfilter.js") < at("app.js") && at("fdview.js") < at("fdfilter.js"), "the modules load before app.js");
-  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=48/.test(html), "with their versions (bumped when round 1 changed them)");
+  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=49/.test(html), "with their versions (bumped when round 1 changed them)");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(css.includes(".fd-evgroup {") && css.includes("border-left: 2px solid var(--border-color)") && css.includes(".fd-events[hidden]"), "the css is there");
 }

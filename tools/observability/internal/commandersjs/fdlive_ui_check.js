@@ -16,7 +16,7 @@ function grab(name) {
   return src.slice(m.index, end + 4);
 }
 
-const ctx = { console };
+const ctx = { console, fdViewHash: () => {} }; // the share link's hash write is fdshare_ui_check.js's subject
 vm.createContext(ctx);
 vm.runInContext(["var FD_LIVE_TILE_EVENTS = 3, FD_LIVE_TILES = 6, FD_LIVE_FETCH_MS = 10000, FD_LIVE_TRACK_EDGE = 4;", grab("esc"), grab("fdLiveClock"), grab("fdLiveWinLabel"), grab("fdLiveHpOf"), grab("fdLiveNumsText"), grab("fdLiveTileHtml"), grab("fdLiveTilePatch"), grab("fdLiveGridSync"),
   grab("fdLiveFiledRow"), grab("fdFightHash"), grab("fdLiveTimelineHtml"), grab("fdLiveHandoff"), grab("fdLiveReconcile"), grab("fdLiveResync"), grab("fdLiveDrop"),

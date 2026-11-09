@@ -85,7 +85,10 @@
 
         const data = await res.json();
         if (res.ok && data.success) {
-          window.location.href = '/dashboard';
+          // A shared dashboard link survives the login: its #/... route (of sane length) goes on to the dashboard.
+          const h = window.location.hash;
+          const keep = typeof h === 'string' && h.startsWith('#/') && h.length <= 4096 ? h : '';
+          window.location.href = '/dashboard' + keep;
         } else {
           errorBox.textContent = data.error || 'Authentication failed';
           errorBox.style.display = 'block';

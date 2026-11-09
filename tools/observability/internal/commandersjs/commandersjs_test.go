@@ -403,6 +403,14 @@ func TestFdEventsUIJS(t *testing.T) {
 	runCheck(t, "fdevents_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFdShareUIJS runs fdshare_ui_check.js: the Fight debugger's share links in app.js (the route reads and writes the view after bot and
+// p, a new fight starts clean, the card writes its view with replaceState only and never from a tick, a link is applied once when its
+// fight is on screen, the live hand-over rewrites the hash to the filed fight, Copy link, the link kept through login, a hostile link
+// that carries no markup and breaks nothing).
+func TestFdShareUIJS(t *testing.T) {
+	runCheck(t, "fdshare_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
 // internal/plans/fightpack.go answer the same on the shared fixture (internal/plans/testdata/fightpack-cases.json).
 func TestFightPackParityJS(t *testing.T) {

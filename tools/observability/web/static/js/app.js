@@ -840,6 +840,13 @@
     if (el.hamburgerBtn) el.hamburgerBtn.setAttribute('aria-expanded', 'false');
   }
 
+  // The page's own hash route, carried through the login page so a shared link survives a session that has expired: only a route
+  // (#/...) of sane length goes, nothing else is ever put on the login URL.
+  function keepHash() {
+    const h = window.location.hash;
+    return typeof h === 'string' && h.startsWith('#/') && h.length <= 4096 ? h : '';
+  }
+
   function parseRoute() {
     const [path, query] = window.location.hash.replace(/^#\/?/, '').split('?');
     const segs = path.split('/');
@@ -876,10 +883,13 @@
     const q = new URLSearchParams(query || '');
     const bot = parseInt(q.get('bot'), 10);
     const map = parseInt(q.get('map'), 10);
+    // The debugger with a fight picked (a finished one, or the live view) carries its view in the query: range, filter, aura pick,
+    // night, replay place and speed, live window. Every part is checked alone and a bad one is dropped (FdView.fromQuery).
+    const fdq = cmdMode === 'debug' && cmdFight && typeof FdView !== 'undefined' ? FdView.fromQuery(q, { live: cmdFight === 'live' }) : null;
     // #/coverage[/<raid>][?missing=1][&boss=<entry>] is parsed by coverage.js, the one owner of the coverage route.
     const cov = tab === 'coverage' && typeof Coverage !== 'undefined' && Coverage.parseHash
       ? Coverage.parseHash(window.location.hash) : null;
-    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov, group: q.get('group') };
+    return { tab, bot: Number.isFinite(bot) ? bot : null, ptab: q.get('p'), demo: q.get('demo') === '1', run: q.get('run'), map: Number.isFinite(map) && map > 0 ? map : null, cmd, cmdMode, cmdFight, cov, group: q.get('group'), fdq };
   }
 
   function routeHash(r) {
@@ -893,7 +903,11 @@
     if (r.run) q.set('run', r.run);
     if (r.tab === 'raids' && r.group) q.set('group', r.group);
     if (r.demo && r.tab === 'commanders') q.set('demo', '1');
-    const qs = q.toString();
+    let qs = q.toString();
+    if (r.tab === 'commanders' && r.cmdMode === 'debug' && r.cmdFight && r.fdq && typeof FdView !== 'undefined') {
+      const fq = FdView.toQuery(r.fdq); // after bot and p, in FdView.KEYS order
+      if (fq) qs += (qs ? '&' : '') + fq;
+    }
     let hash = `#/${TABS[r.tab].hash}`;
     if (r.tab === 'commanders') {
       const debug = r.cmdMode === 'debug';
@@ -909,7 +923,7 @@
   // keeps the open raid tab it already shows, so a profile drawn over the Fight debugger closes back onto it.
   function go(partial, opts) {
     const cur = parseRoute();
-    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.activeTab === 'raids' ? state.raids.openKey : state.dungeons.openKey, group: state.raids.openGroup, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov }, partial);
+    const next = Object.assign({ tab: state.activeTab, bot: state.profileGuid, ptab: state.profileTab, run: state.activeTab === 'raids' ? state.raids.openKey : state.dungeons.openKey, group: state.raids.openGroup, demo: cur.demo, cmd: cur.cmd, cmdMode: cur.cmdMode, cmdFight: cur.cmdFight, cov: cur.cov, fdq: cur.fdq }, partial);
     if (partial.tab && !('bot' in partial)) next.bot = null;
     if (partial.tab && !('run' in partial)) next.run = null;
     if (partial.tab && partial.tab !== 'coverage' && !('cov' in partial)) next.cov = null;
@@ -918,6 +932,8 @@
       next.cmdMode = null;
       next.cmdFight = null;
     }
+    // The fight's view (range, filter, picks) belongs to that fight: another commander or another fight starts clean.
+    if (!('fdq' in partial) && (next.cmd !== cur.cmd || next.cmdFight !== cur.cmdFight)) next.fdq = null;
     const hash = routeHash(next);
     if (opts && opts.replace) {
       history.replaceState(null, '', hash);
@@ -942,12 +958,12 @@
     state.raids.openKey = tab === 'raids' && r.run ? r.run : null;
     state.raids.openGroup = tab === 'raids' && r.group ? r.group : null;
     // The Commanders page's Fight debugger mode, its open tab and its picked fight come from the hash before the tab renders.
-    const prevCmd = fdPage.open, prevFight = fdPage.fight;
+    const prevCmd = fdPage.open, prevFight = fdPage.fight, prevPending = fdPage.pending;
     if (tab === 'commanders') cmdRouteTab(r);
     if (tab !== state.activeTab || !routeApplied) showTab(tab);
     else if (tab === 'dungeons' && state.dungeons.openKey !== prevRunKey) renderDungeons();
     else if (tab === 'raids' && (state.raids.openKey !== prevRaidRun || state.raids.openGroup !== prevRaidGroup)) renderRaids();
-    else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight)) renderCommanders();
+    else if (tab === 'commanders' && (fdPage.open !== prevCmd || fdPage.fight !== prevFight || fdPage.pending !== prevPending)) renderCommanders();
     else if (tab === 'coverage') renderCoverage();
     routeApplied = true;
     if (r.map && tab === 'dungeon-runs') dgSelect(r.map); // #/dungeon-runs?map=209 (the glance panel's links)
@@ -1062,7 +1078,7 @@
       try {
         const resp = await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' });
         if (!resp.ok) throw new Error(`logout failed: HTTP ${resp.status}`);
-        window.location = '/login';
+        window.location = '/login' + keepHash();
       } catch (err) {
         console.error(err); // stay put: navigating now would leave the session cookie live
       }
@@ -5021,7 +5037,7 @@
   // non-2xx is an error the caller's catch handles.
   function jsonOrThrow(r) {
     if (r.status === 401) {
-      window.location.href = '/login';
+      window.location.href = '/login' + keepHash();
       throw new Error('unauthorized');
     }
     if (!r.ok) throw new Error(`http ${r.status}`);
@@ -5569,6 +5585,8 @@
     fight: null,                                         // the picked fight the hash names, so a repaint knows what changed
     gone: {}, known: {}, last: {}, openedAt: {},         // tabs of commanders that disappeared (5 min) and the seen clock
     gridQueued: false,
+    pending: null,                                       // the view a share link carries, until the fight it names is on screen
+    hashQ: '',                                           // the view query the hash holds, so a hashchange knows a link from our own write
   };
   const fdPageSeen = FdTabs.loadSeen(fdPageStore);
   // The commanders with saved fights (GET /api/v1/combat/history/commanders): the debugger's list while no raid is bound, and
@@ -5633,7 +5651,18 @@
       }
       // A fight id needs its commander's tab; All raids has no fight to pick.
       const fight = r.cmd ? (r.cmdFight || null) : null;
-      if (fdPage.fight !== fight) {
+      // A link that carries a view (a hash that is not what this page last wrote): kept until that fight is on screen, then applied
+      // once (fdApplyPending). The night comes first, the way the picker sets it, so the fight is looked for on its own night.
+      const fq = fight && r.fdq && typeof FdView !== 'undefined' ? FdView.toQuery(r.fdq) : '';
+      let repick = fdPage.fight !== fight;
+      if (fq && (repick || fq !== fdPage.hashQ)) {
+        fdPage.pending = { cmd: r.cmd, key: fight, q: r.fdq };
+        fdPage.hashQ = fq;
+        const fdp = fdState(r.cmd);
+        fdp.linkBad = r.fdq.bad && r.fdq.bad.length ? { key: fight, bad: r.fdq.bad.slice() } : null;
+        if (r.fdq.night && r.fdq.night !== fdp.day) { fdSetDay(cmdCards.get(r.cmd), r.cmd, r.fdq.night, { quiet: true }); repick = true; }
+      } else if (repick && fdPage.pending && (fdPage.pending.cmd !== r.cmd || fdPage.pending.key !== fight)) fdPage.pending = null;
+      if (repick) {
         fdPage.fight = fight;
         if (fight) fdRoutePick(r.cmd, fight);
       }
@@ -5649,6 +5678,7 @@
     const fd = fdState(name);
     if (fd.sel === key && fd.userSel) return;
     fd.sel = key;
+    fd.liveLink = key === 'live'; // a live link opened before the fight starts stays on "No live fight right now."
     if (key !== 'live') fd.liveKey = null;
     fd.userSel = true;
     fd.death = null;
@@ -5658,9 +5688,12 @@
   // The Commanders route's hash, with the debugger's fight segment when it is on: a reload, Back and Forward land on the same
   // tab, view and fight. The query (a profile's ?bot=, the demo flag) is kept.
   function cmdPageHash(name, mode, fightKey, replace) {
-    const q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+    let q = new URLSearchParams((window.location.hash.split('?')[1]) || '');
+    // The view of one fight (range, filter, picks, ...) does not follow the reader to another fight or commander; ?bot= and ?p= stay.
+    const cur = parseRoute(), nextFight = mode === 'debug' ? (fightKey || null) : null;
+    if (typeof FdView !== 'undefined' && (cur.cmdFight !== nextFight || cur.cmd !== (name || null))) { q = FdView.stripFd(q); fdPage.hashQ = ''; }
     const qs = q.toString();
-    const hash = routeHash({ tab: 'commanders', cmd: name || null, cmdMode: mode === 'debug' ? 'debug' : null, cmdFight: mode === 'debug' ? (fightKey || null) : null })
+    const hash = routeHash({ tab: 'commanders', cmd: name || null, cmdMode: mode === 'debug' ? 'debug' : null, cmdFight: nextFight })
       + (qs ? '?' + qs : '');
     if (window.location.hash === hash) return;
     try { (replace ? history.replaceState : history.pushState).call(history, null, '', hash); } catch (e) { window.location.hash = hash; }
@@ -5676,6 +5709,85 @@
     const key = fd.sel || null; // the live entry is a segment too: #/commanders/<name>/fight/live
     fdPage.fight = key;
     cmdPageHash(fdPage.open, 'debug', key, replace);
+    fdViewHash(fdPage.open); // a night's own fight keeps its night in the link
+  }
+
+  // The view of the open fight in the hash: range, filter, aura pick, night, replay place and speed (a running fight: its window and
+  // a fixed range), written with replaceState so Back is not filled with every edit and nothing is re-applied. Never called from
+  // a timer tick. A no-op when nothing changed, when the card is not the open debugger tab, and while a link's own view is still
+  // waiting to be applied (the link is not overwritten with defaults).
+  function fdViewHash(key) {
+    const fd = key != null ? cmdFd[key] : null;
+    if (!fd || fdPage.open !== key || !fd.sel || cmdPageMode() !== 'debug') return;
+    if (fdPage.pending && fdPage.pending.cmd === key && fdPage.pending.key === fd.sel) return;
+    const cur = parseRoute();
+    if (cur.cmd !== key || cur.cmdFight !== fd.sel) return; // the hash is not this fight's route (yet)
+    const live = fd.sel === 'live';
+    const vk = live ? 'live:' : fd.sel;
+    const view = fd.view && (live ? String(fd.view.key).indexOf('live:') === 0 : fd.view.key === fd.sel) ? fd.view : null;
+    const au = fd.au && (live ? String(fd.au.key).indexOf('live:') === 0 : fd.au.key === vk) ? fd.au : null;
+    const fq = FdView.toQuery({
+      live, follow: view ? view.follow : true, range: view ? view.range : null, filter: fd.filter,
+      au: au && au.userSid ? au.sid : null, marker: au && au.userMark ? au.marker : null,
+      night: fd.day || null, rp: fd.rp && fd.rp.on && fd.rp.key === fd.sel ? Math.round(fd.rp.t) : null, sp: fd.rp ? fd.rp.speed : 1,
+      lw: live ? fd.liveWin : null,
+    });
+    const q = FdView.stripFd(new URLSearchParams((window.location.hash.split('?')[1]) || '')).toString(); // bot, p and the rest stay first
+    const qs = q + (q && fq ? '&' : '') + fq;
+    const hash = routeHash({ tab: 'commanders', cmd: key, cmdMode: 'debug', cmdFight: fd.sel }) + (qs ? '?' + qs : '');
+    fdPage.hashQ = fq;
+    if (window.location.hash === hash) return;
+    try { history.replaceState(null, '', hash); } catch (e) { /* a browser that limits history writes keeps the last hash */ }
+  }
+
+  // A scrub drags through many values: the hash is written once it settles.
+  function fdViewHashSoon(key) {
+    const fd = cmdFd[key];
+    if (!fd) return;
+    clearTimeout(fd.vhTimer);
+    fd.vhTimer = setTimeout(() => { fd.vhTimer = 0; fdViewHash(key); }, 300);
+  }
+
+  // Applies the view a share link carries, once, when the fight it names is on screen: a finished fight's detail is loaded, or a live
+  // link's fight is running. Every part was checked by FdView.fromQuery; here the range is held inside the fight, an aura that the
+  // fight has no rows for is ignored, and the rest keeps its defaults. True when the replay was moved (the caller syncs it).
+  function fdApplyPending(fd, bind, fight, liveSt, liveFight) {
+    const p = fdPage.pending;
+    if (!p || p.cmd !== bind.commander || p.key !== fd.sel) return false;
+    const q = p.q || {};
+    const live = fd.sel === 'live';
+    let rpSet = false;
+    if (live) {
+      if (!(liveSt && liveSt.key && liveFight)) return false; // no live fight yet: the link waits
+      const vk = 'live:' + liveSt.key;
+      if (q.lw != null && FdLive.WINDOWS.indexOf(q.lw) >= 0) fd.liveWin = q.lw;
+      fd.view = FdView.create(vk);
+      if (q.range) {
+        const rg = FdView.clampRange(q.range.from, q.range.to, FdLive.nowFightMs(liveSt, Date.now()));
+        if (rg) fd.view = { key: vk, range: rg, follow: false, reclamp: false };
+      }
+      fdLiveRangeOf(fd, liveSt, Date.now());
+    } else {
+      if (!fight) return false;
+      fd.view = FdView.setRange(FdView.create(fd.sel), q.range ? q.range.from : null, q.range ? q.range.to : null, fight.dur_ms, false);
+      if (q.sp != null) fd.rp.speed = q.sp;
+      if (q.rp != null) {
+        fd.rp = { on: true, t: Math.min(q.rp, Math.max(0, Math.round(fight.dur_ms || 0))), playing: false, speed: fd.rp.speed, timer: 0, key: fd.sel };
+        rpSet = true;
+      }
+    }
+    if (q.filter) { fd.filter = q.filter; fd.evShown = FD_EV_PAGE; fd.evWhy = ''; }
+    if (q.au != null || q.marker) {
+      const akey = live ? fdAuLiveKey(liveFight) : fd.sel;
+      const af = live ? liveFight : fight;
+      const iv = af ? fdAuIv(af) : null;
+      const known = !iv || iv.sids.length === 0 || iv.sids.indexOf(q.au) >= 0;
+      fd.au = { key: akey, sid: null, marker: null, userSid: false, userMark: false };
+      if (q.au != null && known) { fd.au.sid = q.au; fd.au.userSid = true; }
+      if (q.marker) { fd.au.marker = q.marker; fd.au.userMark = true; }
+    }
+    fdPage.pending = null;
+    return rpSet;
   }
 
   function fdSeenWhenOpen(name) {
@@ -6587,7 +6699,7 @@
     if (sel && sel.value !== String(fd.liveWin)) sel.value = String(fd.liveWin);
     fdLiveRangeOf(fd, st, now);
     if (st.key) fd.liveKey = st.key;
-    fdSet(card.querySelector('.fd-rangebar'), st.key ? fdRangeBarHtml(fd.view, true, fd.liveWin) : '');
+    fdSet(card.querySelector('.fd-rangebar'), st.key ? fdRangeBarHtml(fd.view, true, fd.liveWin) + fdLinkTail(fd) : '');
     fdWholeTags(card, fd.view, true);
   }
 
@@ -6617,6 +6729,42 @@
         + ' &middot; <button type="button" class="fd-link" data-fd-range-zoom>Zoom replay here</button>';
     }
     return '<span class="fd-rangehint">Drag across the timeline to pick a range.</span>';
+  }
+
+  // What follows the range bar's own buttons: Copy link ("Copied" for 2 s; a browser that refuses the clipboard gets the link in a box
+  // to select), and one muted note when a link carried a part that could not be read. The names are the view's fixed keys, escaped anyway.
+  function fdLinkTail(fd) {
+    const c = fd && fd.copy;
+    let html = ' &middot; <button type="button" class="fd-link" data-fd-copylink>' + (c && c.ok ? 'Copied' : 'Copy link') + '</button>';
+    if (c && c.url) html += ` <input class="fd-linkbox" type="text" readonly value="${esc(c.url)}" aria-label="Link to this view">`;
+    const lb = fd && fd.linkBad;
+    if (lb && lb.key === fd.sel && lb.bad && lb.bad.length) html += ` <span class="fd-linkbad">Some parts of the link could not be read: ${esc(lb.bad.join(', '))}</span>`;
+    return html;
+  }
+
+  // The Copy link button: the hash is brought up to date, then the page's address is copied. A browser without clipboard access (or
+  // one that refuses it) shows the address in a read-only box, selected.
+  function fdCopyLink(key, fd) {
+    fdViewHash(key);
+    const url = String(window.location.href);
+    clearTimeout(fd.copyTimer);
+    const done = ok => {
+      fd.copy = ok ? { ok: true } : { url };
+      fdCopyPaint(key);
+      if (ok) fd.copyTimer = setTimeout(() => { fd.copy = null; fdCopyPaint(key); }, 2000);
+    };
+    try { navigator.clipboard.writeText(url).then(() => done(true), () => done(false)); } catch (e) { done(false); }
+  }
+
+  // The range bar again, after the copy button changed its state (only the bar, not the card).
+  function fdCopyPaint(key) {
+    const fd = cmdFd[key], card = cmdCards.get(key);
+    if (!fd || !card) return;
+    const bar = card.querySelector('.fd-rangebar');
+    if (!bar) return;
+    fdSet(bar, fd.sel === 'live' ? fdRangeBarHtml(fd.view, true, fd.liveWin) + fdLinkTail(fd) : fdRangeBarHtml(fd.view, false, 0) + fdLinkTail(fd));
+    const box = bar.querySelector('.fd-linkbox');
+    if (box && box.select) { try { box.select(); } catch (e) { /* not selectable here */ } }
   }
 
   // The "whole fight" tags of the panels that have no time data: shown while a range is set (in a live view, only a range the
@@ -6722,6 +6870,7 @@
     fd.view = next;
     fd.dragEnd = Date.now();
     fdRender(key);
+    fdViewHash(key);
   }
 
   // The view (range, follow) belongs to the picked fight: another fight starts with no range. A hand-over sets the key itself first.
@@ -6786,6 +6935,7 @@
       fd.death = null;
       fd.liveKey = null;
       fdFightHash(fd, true);
+      fdViewHash(key); // the filed fight's link: its filter, aura pick and a fixed range, no live window
       fdLiveDrop(key);
       const card = cmdCards.get(key), bind = cmdFindBind(key);
       if (card && bind) fdLoad(card, bind);
@@ -8898,6 +9048,7 @@
         fd.liveWin = FdLive.WINDOWS.indexOf(w) >= 0 ? w : FdLive.DEFAULT_WINDOW;
         fd.view = FdView.clear(fd.view); // picking a window follows the fight again
         if (fdLive[key]) fdLivePaintDebug(key);
+        fdViewHash(key);
         return;
       }
       if (e.target && e.target.matches && e.target.matches('[data-fd-ausid], [data-fd-aumark]')) {
@@ -8910,6 +9061,7 @@
           fd.au.userMark = true;
         }
         fdRender(key);
+        fdViewHash(key);
         return;
       }
       if (e.target && e.target.matches && e.target.matches('[data-fd-showall]')) {
@@ -8929,16 +9081,7 @@
       }
       const day = e.target && e.target.matches && e.target.matches('[data-fd-day]');
       if (!day) return;
-      fd.day = e.target.value || '';
-      delete fd.hist['night:' + fd.day];
-      fd.sel = null;
-      fd.userSel = false;
-      fd.death = null;
-      fd.list = [];
-      fdRunStopAll(fd);
-      const bind = cmdFindBind(key);
-      if (bind) fdLoad(card, bind);
-      fdRender(key);
+      fdSetDay(card, key, e.target.value || '');
     });
     // The run strip: a fight block selects that fight; the replay button plays the run from where the scrubber is.
     card.addEventListener('click', e => {
@@ -8984,6 +9127,7 @@
       const fd = cmdFd[key];
       if (!fd || !card.classList.contains('fd-on')) return;
       if (Date.now() - fd.dragEnd < 300) return; // the click that ends a drag is not a seek
+      if (e.target.closest && e.target.closest('[data-fd-copylink]')) { fdCopyLink(key, fd); return; }
       const rbtn = e.target.closest && e.target.closest('[data-fd-range-clear], [data-fd-range-zoom], [data-fd-follow], [data-fd-range-set]');
       if (rbtn) {
         if (rbtn.dataset.fdRangeZoom != null) {
@@ -8997,6 +9141,7 @@
           fdReplaySync(key);
         } else if (fdRangeAction(key, fd, rbtn)) {
           fdRender(key);
+          fdViewHash(key);
         }
         return;
       }
@@ -9005,6 +9150,7 @@
         if (hit.dataset.fdPlay != null) fdReplayPlay(key);
         else if (hit.dataset.fdSpeed != null) { fd.rp.speed = FightReplay.nextSpeed(fd.rp.speed); fdReplaySync(key); }
         else if (hit.dataset.fdExit != null) { fdReplayStop(fd); fd.rp.on = false; fdReplaySync(key); }
+        fdViewHash(key); // a pause, a new speed, leaving the replay (a playing replay writes nothing more until it stops)
         return;
       }
       // A boss-cast marker in the timeline scrubs the replay to that cast.
@@ -9015,6 +9161,7 @@
         fdRunStopAll(fd);
         fdReplayStop(fd);
         fdReplaySync(key);
+        fdViewHash(key);
         return;
       }
       const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');
@@ -9030,6 +9177,7 @@
       fdRunSync(card, fd);
       fdReplayStop(fd);
       fdReplaySync(key);
+      fdViewHash(key);
     });
     // Drag-select a range on the timeline, a lane or the aura strip (the steps are fdDrag*, below). A press that moves FD_DRAG_PX or
     // more is a drag (the pointer is captured by the card then, so a repaint that rebuilds the bar cannot lose it); a shorter one
@@ -9065,6 +9213,7 @@
       fdRunSync(card, fd);
       fdReplayStop(fd);
       fdReplaySync(key);
+      fdViewHashSoon(key); // a scrub passes through many places: the link follows once it settles
     });
     cmdWatchStage(card, key);
     // The role tables' "This fight | Total" switch: one seg per card, painted every render. The choice is kept per viewer.
@@ -9337,7 +9486,7 @@
   const FD_DAYS_MS = 300000;  // the night picker's list of stored days: asked once per card per 5 min
   const FD_HIST_MS = 10000;   // one past night's list, held as long as tonight's (the shared fights feed's window)
   const FD_PACK_MS = 60000;   // one pack's table, held a minute
-  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.', noSaved: 'No saved fights in this commander\'s history.' };
+  const FD_EMPTY = { noRaid: 'No raid bound right now.', noFight: 'No fight yet: the first pull shows here.', noSaved: 'No saved fights in this commander\'s history.', noLive: 'No live fight right now.' };
   const cmdFd = {};
 
   // The one line a debugger card shows in place of an empty fight view: no fight in the list and none live. Null once a fight
@@ -9345,6 +9494,23 @@
   function fdEmptyNote(list, fight, selLive, history) {
     if (selLive || fight || (Array.isArray(list) && list.length)) return '';
     return history ? FD_EMPTY.noSaved : FD_EMPTY.noFight;
+  }
+
+  // The night picker's choice (a link's night too): that night's stored fights are listed, nothing is picked yet. `quiet` (a link being
+  // restored) leaves the render to the route that is applying it.
+  function fdSetDay(card, key, day, opts) {
+    const fd = fdState(key);
+    fd.day = day || '';
+    delete fd.hist['night:' + fd.day];
+    fd.sel = null;
+    fd.userSel = false;
+    fd.death = null;
+    fd.list = [];
+    fdRunStopAll(fd);
+    if (opts && opts.quiet) return;
+    const bind = cmdFindBind(key);
+    if (bind && card) fdLoad(card, bind);
+    fdRender(key);
   }
 
   function fdState(key) {
@@ -9362,7 +9528,7 @@
     const act = document.activeElement;
     let attr = '', val = '';
     if (act && node.contains(act)) {
-      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark', 'data-fd-range-set', 'data-fd-range-clear', 'data-fd-range-zoom', 'data-fd-follow', 'data-fd-evmore', 'data-fd-evnew'].some(a => {
+      ['data-fd-bot', 'data-fd-fight', 'data-fd-death', 'data-fd-profile', 'data-fd-ready', 'data-fd-open', 'data-fd-totals', 'data-fd-livewin', 'data-fd-ausid', 'data-fd-aumark', 'data-fd-range-set', 'data-fd-range-clear', 'data-fd-range-zoom', 'data-fd-follow', 'data-fd-evmore', 'data-fd-evnew', 'data-fd-copylink'].some(a => {
         if (!act.hasAttribute || !act.hasAttribute(a)) return false;
         attr = a;
         val = act.getAttribute(a);
@@ -9804,6 +9970,7 @@
         fd.loading = false;
         fd.loadingKey = null;
         fdDetailFail(fd, row.key);
+        if (fdDetailFailed(fd, row.key) && fdPage.pending && fdPage.pending.cmd === bind.commander && fdPage.pending.key === row.key) fdPage.pending = null; // no fight, no view to apply
         if (!card.classList.contains('fd-on')) return;
         renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
         fdLoad(card, bind);
@@ -9845,7 +10012,9 @@
   function fdSyncSel(fd, bind, list, details, layout) {
     const live = FightDebug.liveSummary(bind); // null for a parked group: the LIVE checks panel belongs to a fight
     const before = fd.sel;
-    if (fd.sel === 'live' && !live) {
+    if (live) fd.liveLink = false;
+    let handed = false;
+    if (fd.sel === 'live' && !live && !fd.liveLink) {
       // The live fight ended: its filed row (by id and session) takes over the pick, and a fight too short to keep stays on
       // screen with its one-line note until the next fight.
       const filed = fdLiveFiledRow(fd, list);
@@ -9854,6 +10023,7 @@
         fdAuCarry(fd, 'live:' + fd.liveKey, filed.key);
         if (fd.view && fd.view.key === 'live:' + fd.liveKey) fdViewHandover(fd, filed.key); // the range follows the fight to its filed key
         fd.sel = filed.key; fd.userSel = true; fd.liveKey = null;
+        handed = true;
       }
       else if (!short) { fd.sel = null; fd.userSel = false; }
     }
@@ -9864,6 +10034,7 @@
     }
     // A pick the page made itself keeps the URL's fight segment current without adding a history entry per redraw.
     if (fd.sel !== before) fdFightHash(fd, true);
+    if (handed) fdViewHash(bind.commander);
   }
 
   // The plan facts a finished fight's checks read: the plan's ring strays on the walk to the fight's pack, and that pack and
@@ -9913,8 +10084,11 @@
     }
     const live = FightDebug.liveSummary(bind);
     const selLive = fd.sel === 'live';
+    // A live link opened while that commander has no live fight: the rail and one line, no panels and no live subscription yet; the
+    // link's view is applied when the fight starts. (No other fight is picked for it.)
+    const waitLive = selLive && !live && !!fd.liveLink;
     // The live view's state and its synthetic fight (the panels that read a fight read this one); only the open commander's card.
-    const liveSt = selLive && fdPage.open === key && state.activeTab === 'commanders' ? fdLiveState(key) : null;
+    const liveSt = selLive && !waitLive && fdPage.open === key && state.activeTab === 'commanders' ? fdLiveState(key) : null;
     const liveFight = liveSt && liveSt.key ? FdLive.fight(liveSt, bind, Date.now()) : null;
     const liveBar = card.querySelector('.fd-livebar');
     if (liveBar) liveBar.hidden = !liveSt;
@@ -9927,6 +10101,11 @@
       fdViewSync(fd, fd.sel);
       if (fight) fd.view = FdView.reclamp(fd.view, fight.dur_ms);
     }
+    // The view a share link carries lands here, once the fight it names is on screen.
+    if (fdPage.pending && fdPage.pending.cmd === key) {
+      if (fdPage.pending.key !== fd.sel) fdPage.pending = null; // the reader went to another fight first
+      else if (fdApplyPending(fd, bind, fight, liveSt, liveFight)) fdReplaySync(key);
+    }
     const range = selLive ? (liveSt ? fd.liveRange : null) : FdView.effective(fd.view, false, null);
     // A fight of an earlier night: its summary says so, or the detail came from the history file (hist: true). It has no kept
     // positions and no lanes; the pack table carries the stored non-tank seconds instead.
@@ -9936,7 +10115,7 @@
     const recaps = fight ? FightDebug.deathRecaps(fight) : [];
     // No fight yet: one line where the fight panels would be, and none of their empty boxes (the run strip, checks, timeline
     // and the role bars wait for a fight).
-    const emptyNote = fdEmptyNote(list, fight, selLive, !!bind.history);
+    const emptyNote = waitLive ? FD_EMPTY.noLive : fdEmptyNote(list, fight, selLive, !!bind.history);
     const noWin = !!emptyNote;
     const noWinEl = card.querySelector('.fd-nofight');
     if (noWinEl) { noWinEl.hidden = !noWin; noWinEl.textContent = emptyNote; }
@@ -10011,7 +10190,7 @@
     let chips = '';
     if (selLive) {
       const s = live || { fightMs: 0, winS: 0, dps: 0, hps: 0, active: 0, alive: 0 };
-      title = 'Live · ' + Math.floor(s.fightMs / 60000) + ':' + ('0' + Math.floor((s.fightMs % 60000) / 1000)).slice(-2);
+      if (waitLive) title = 'Live'; else title = 'Live · ' + Math.floor(s.fightMs / 60000) + ':' + ('0' + Math.floor((s.fightMs % 60000) / 1000)).slice(-2);
       chips = `<span class="fd-chip">${FightDebug.fmtInt(Math.round(s.dps))} dps</span><span class="fd-chip">${FightDebug.fmtInt(Math.round(s.hps))} hps</span>`
         + `<span class="fd-chip">${s.alive} alive · ${s.active} acting</span>`;
     } else if (fight) {
@@ -10059,7 +10238,7 @@
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range, keep) : '');
     fdSet(card.querySelector('.fd-tl'), tlHtml(fdEvKeep(fd, evFight, selLive ? liveSt : null)));
     fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death, range) : '');
-    if (!liveSt) fdSet(card.querySelector('.fd-rangebar'), !selLive && fight ? fdRangeBarHtml(fd.view, false, 0) : '');
+    if (!liveSt) fdSet(card.querySelector('.fd-rangebar'), !selLive && fight ? fdRangeBarHtml(fd.view, false, 0) + fdLinkTail(fd) : '');
     fdWholeTags(card, fd.view, selLive);
     // The Auras panel: the live fight's sampled rows, or the filed fight's own (else the track's sampled ones).
     if (selLive) fdAurasSync(card, fd, fdAuLiveKey(liveFight), liveFight, fdAuLiveOpts(liveSt, range));
@@ -11164,6 +11343,7 @@
     const fight = st && bind && st.key ? FdLive.fight(st, bind, Date.now()) : c.fight;
     const range = st ? fd.liveRange || null : c.opts.range;
     fdEventsSync(card, fd, c.key, fight, Object.assign({}, c.opts, { range, force: true, patch: !!valueOnly }));
+    fdViewHash(key); // an edit (a typed value only after its 300 ms wait) puts the filter in the link
   }
 
   // A key in a value box: the edit waits 300 ms for the next one (one pending edit per card).

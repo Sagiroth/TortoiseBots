@@ -23,7 +23,7 @@ const FdLive = require(path.join(jsDir, "fdlive.js"));
 const FdView = require(path.join(jsDir, "fdview.js"));
 const FightDebug = require(path.join(jsDir, "fightdebug.js"));
 const Fights = require(path.join(jsDir, "fights.js"));
-const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document: { activeElement: null }, fdLive: {}, cmdFindBind: () => null };
+const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document: { activeElement: null }, fdLive: {}, cmdFindBind: () => null, fdViewHash: () => {} }; // fdViewHash (the share link's hash write) is fdshare_ui_check.js's subject
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdLiveWinLabel", "fdAuIv", "fdAuState", "fdAuMarkVal", "fdAuPct", "fdAurasControlsHtml", "fdAurasRestHtml",
   "fdAurasParts", "fdAurasHtml", "fdAuLiveOpts", "fdRangeBandHtml", "fdOutCls", "fdMarkOut", "fdTimelineHtml", "fdRecapHtml", "fdLanesHtml", "fdRangeBarHtml", "fdWholeTags",
