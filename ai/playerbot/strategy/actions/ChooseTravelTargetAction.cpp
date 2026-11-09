@@ -2690,6 +2690,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         if (!mailRecord || mailRecord->state != TortoiseBots::GuildOrders::OrderState::Working)
             return false;
         bool ahSupply = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::AuctionHouse;
+        TB_LOG_DETAIL("TortoiseBots: order %s travel request: step %s item %u zone %u (travel order %s, farm item %u)",
+            bot->GetName(), TortoiseBots::GuildOrders::SupplyStepToken(mailRecord->supplyStep),
+            mailRecord->itemId, mailRecord->farmZoneId, order.IsTravelOrder() ? "yes" : "no", orderFarmItem);
 
         if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem) && !ahSupply &&
             (!mailRecord || mailRecord->type != TortoiseBots::GuildOrders::OrderType::Enchant))
