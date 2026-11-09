@@ -223,7 +223,38 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   run("fdLoad(card, hbind)", { card, hbind: { commander: "NL", history: true, bots: [] } });
   await settle();
   assert.strictEqual(fdNL.day, "2026-10-27", "no live pick: the history card still opens on its newest night");
-  assert.ok(grab("fdLoad").includes("!(fd.sel === 'live' && fd.userSel)"), "the guard is in fdLoad's wantDay");
+  assert.ok(/const wantDay = .*&& !fd\.userSel;/.test(grab("fdLoad")), "the guard is in fdLoad's wantDay");
+
+  // A filed-fight share link (no n= night) opened before the report: the history card keeps the pick (no newest night over it), the
+  // fight is fetched by its key, and the night that holds it (from its start) becomes the card's night.
+  {
+    const nightOf0 = ctx.FightHistory.nightOf;
+    ctx.FightHistory.nightOf = (ms) => (ms === 1760000000 * 1000 ? "2026-10-09" : "2026-10-29");
+    const asked2 = [];
+    ctx.fetch = (url) => { if (url.indexOf("/combat/fight/") < 0) return Promise.resolve({ days: [] }); asked2.push(decodeURIComponent(url.slice(url.indexOf("/fight/") + 7))); return Promise.resolve({ fight: { id: "x", start: 1760000000 } }); };
+    run("cmdFd = {}; fdPage.open = 'FF'");
+    const fdFF = run("fdState('FF')");
+    fdFF.days = [{ night: "2026-10-27", fights: 1 }, { night: "2026-10-09", fights: 2 }];
+    fdFF.daysAt = clock;
+    fdFF.sel = "old-1"; fdFF.userSel = true;
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "FF", history: true, bots: [] } });
+    await settle();
+    assert.strictEqual(fdFF.sel, "old-1", "a filed link's pick survives the history card's open");
+    assert.strictEqual(fdFF.userSel, true);
+    assert.deepStrictEqual(asked2, ["old-1"], "the fight is fetched by its key");
+    assert.strictEqual(fdFF.day, "2026-10-09", "and its own night is the card's night, not the newest one (2026-10-27)");
+    // A link with n= keeps working: the night is set by the link, so nothing is derived over it.
+    run("cmdFd = {}");
+    const fdN = run("fdState('FN')");
+    fdN.days = [{ night: "2026-10-27", fights: 1 }];
+    fdN.daysAt = clock;
+    fdN.day = "2026-10-20"; fdN.sel = "old-2"; fdN.userSel = true;
+    run("fdPage.open = 'FN'");
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "FN", history: true, bots: [] } });
+    await settle();
+    assert.deepStrictEqual([fdN.day, fdN.sel], ["2026-10-20", "old-2"], "a link with n= keeps its night and its fight");
+    ctx.FightHistory.nightOf = nightOf0;
+  }
 
   // ---- 2c. detail on demand: only the picked fight, whatever its age --------------------------------------------------
   const oldList = Array.from({ length: 60 }, (_, i) => ({ key: "k" + i }));
