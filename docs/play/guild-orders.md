@@ -72,9 +72,9 @@ An order on a fish sends the bot to a fishing spot in the planned zone. The bot 
 
 ## Where the bot gets items
 
-For the ordered item itself (a farm or buy order), the bot checks its own bags and mailbox, then the auction house, then farms it. It never takes the finished item from the guild bank: the bank holds crafting materials.
+For the ordered item itself, the bot checks its own bags and mailbox, then farms it when it has the skill to. It goes to the auction house only when it cannot farm it (a buy order starts there on purpose). It never takes the finished item from the guild bank: the bank holds crafting materials.
 
-For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing), then the auction house, then getting it itself (gathering, farming, crafting, or buying it from a shop), then asking another guild bot, and finally your need list (see below). Getting it itself means a craft step before a farm step.
+For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing, skipped when the guild has no bank), then making it itself (crafting, then gathering or farming, or buying it from a shop), then the auction house, then asking another guild bot, and finally your need list (see below). The bot spends gold at the auction house only when it cannot make or farm the material.
 
 Some materials every shop sells without limit (Empty Vial is one: the exact list comes from the vendor data). For those the bot skips the guild bank and the auction house and walks to a shop instead, paying with its own gold. It never asks another bot for those. If it cannot buy them, they land on your need list.
 
