@@ -133,6 +133,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
     interruptIgnoresThreat = config.GetBoolDefault("AiPlayerbot.InterruptIgnoresThreat", false);
     spellFacingPrecheck = config.GetBoolDefault("AiPlayerbot.SpellFacingPrecheck", false);
+    threatCapCountsCastThreat = config.GetBoolDefault("AiPlayerbot.ThreatCapCountsCastThreat", false);
     fankrissSwapStacks = std::min(9, std::max(1, config.GetIntDefault("AiPlayerbot.FankrissSwapStacks", 5)));
     {
         int const patchwerkDelay = config.GetIntDefault("AiPlayerbot.PatchwerkOpeningDelay", 4);

@@ -76,7 +76,7 @@ Specifies which structured CSV event log files are written to the server's logs 
 
 Defines the active CSV log streams:
 
-- `bot_events.csv`: Records high-level bot behavioral events, travel destination changes, vendor trips, and unstuck interventions.
+- `bot_events.csv`: Records high-level bot behavioral events, travel destination changes, vendor trips, and unstuck interventions. Threat back-off refusals carry their numbers: `ThreatCapCast` (`ThreatCap cast spell= pct= cast= bot= tank=`, a damage cast held by [`AiPlayerbot.ThreatCapCountsCastThreat`](combat.md#aiplayerbotthreatcapcountscastthreat), at most once every 2 s per bot; the same row goes to the per-bot action log under the tag `THREAT`).
 - `deaths.csv`: Records character deaths, death position, killer identity and level, other attackers, and travel destination.
 - `pvp_seek.csv`: Records open-world PvP seek-role grants and new seek engagements (bot, target, level, map, zone).
 - Additional diagnostic logs (such as `travel_route_gate.csv` and `ghost_moves.csv`) can be added to the list as needed.

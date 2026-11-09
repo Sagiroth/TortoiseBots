@@ -8,9 +8,13 @@
 #include <string>
 #include <vector>
 
+// The case a failing CHECK belongs to, printed with it (set by CASE).
+static const char* g_case = "(unnamed)";
+#define CASE(name) (g_case = (name))
+
 #define CHECK(x) do { \
     if (!(x)) { \
-        std::cerr << "Assertion failed at line " << __LINE__ << ": " #x "\n"; \
+        std::cerr << "Assertion failed at line " << __LINE__ << " in " << g_case << ": " #x "\n"; \
         std::exit(1); \
     } \
 } while (0)
@@ -712,6 +716,40 @@ int main()
     CHECK(ThreatCapPercentOf(3000.0f, 1000.0f) == 300.0f);
     CHECK(ThreatCapPercentOf(50.0f, 0.0f) == 100.0f);
     CHECK(ThreatCapPercentOf(50.0f, -1.0f) == 0.0f);
+
+
+    // AiPlayerbot.ThreatCapCountsCastThreat (ThreatCapCastOvershoots): the cast's own expected threat counts.
+    CASE("fireball_from_79_pct_vetoed");
+    // 79 % now, a cast worth 25 % of the tank's threat: 104 % when it lands. The 80 % high-threat line lets it
+    // through today; the cast cap holds it.
+    CHECK(ThreatCapCastOvershoots(true, 79.0f, 25.0f, 100.0f));
+    CHECK(ThreatCapCastOvershoots(true, 790.0f, 450.0f, 1000.0f));
+    CASE("cast_landing_exactly_on_the_tank_vetoed");
+    // 100 % is the line itself (the core's aggro point before the pull margin): equal is held.
+    CHECK(ThreatCapCastOvershoots(true, 75.0f, 25.0f, 100.0f));
+    CHECK(!ThreatCapCastOvershoots(true, 74.0f, 25.0f, 100.0f));
+    CASE("cast_under_the_line_passes");
+    CHECK(!ThreatCapCastOvershoots(true, 50.0f, 25.0f, 100.0f));
+    CHECK(!ThreatCapCastOvershoots(true, 500.0f, 280.0f, 1000.0f));
+    CASE("key_off_never_vetoes");
+    CHECK(!ThreatCapCastOvershoots(false, 79.0f, 25.0f, 100.0f));
+    CHECK(!ThreatCapCastOvershoots(false, 200.0f, 25.0f, 100.0f));
+    CASE("no_tank_threat_left_to_old_veto");
+    CHECK(!ThreatCapCastOvershoots(true, 79.0f, 25.0f, 0.0f));
+    CHECK(!ThreatCapCastOvershoots(true, 79.0f, 25.0f, -1.0f));
+    CASE("no_estimate_left_to_old_veto");
+    // A cast without direct damage (no estimate) is the old veto's business, even at or over the tank.
+    CHECK(!ThreatCapCastOvershoots(true, 120.0f, 0.0f, 100.0f));
+
+    // ThreatCapAverageEffectPoints: the core's CalculateSpellDamage without the roll.
+    CASE("average_points_is_the_middle_of_the_roll");
+    // Fireball-like row: base 392, dice 1, sides 107 -> roll 1..107, average 392 + 54 = 446 (not the max 499).
+    CHECK(ThreatCapAverageEffectPoints(392, 1, 107, 0.0f, 0.0f, 0) == 446.0f);
+    // No roll range (sides 0 or 1): base + dice, as the core's `case 0: case 1:`.
+    CHECK(ThreatCapAverageEffectPoints(99, 1, 1, 0.0f, 0.0f, 0) == 100.0f);
+    CHECK(ThreatCapAverageEffectPoints(99, 1, 0, 0.0f, 0.0f, 0) == 100.0f);
+    // Level growth: 4 levels at 0.5 per level adds 2 to the base and 4 levels at 1 per level widens the roll by 4.
+    CHECK(ThreatCapAverageEffectPoints(100, 1, 9, 0.5f, 1.0f, 4) == 102.0f + (1.0f + 13.0f) / 2.0f);
 
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
