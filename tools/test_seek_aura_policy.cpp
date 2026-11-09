@@ -5,6 +5,7 @@
 #include "../ai/playerbot/ThreatCapPolicy.h"
 
 #include <cstdlib>
+#include <limits>
 #include <iostream>
 
 #define CHECK(x) do { \
@@ -948,6 +949,76 @@ int main()
         CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 0, 1000)));
         CHECK(SeekMeetHealHpAfterIncoming(20.0f, 500, 1000) == 0.0f);
         CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 0) == 45.0f);
+    }
+
+    // taken_son_dps_held_at_85pct (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): a damage dealer at 85 % of the
+    // taking tank's threat on the just-taken Son is held off it; the base has no such function.
+    {
+        // Args: flag, on its taker, pct, Son hp, ms since the take, siphon known, siphon in ms, heal action, was held.
+        // Named failing case: at 85 % (and above) with the Son on its taker, healthy, 5 s after the take, siphon 30 s.
+        CHECK(SeekTakenSonDpsHeld(true, true, 85, 80.0f, 5000, true, 30000, false, false));
+        CHECK(SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, false, false));
+        CHECK(kSeekTakenSonCapPct == 85);
+        CHECK(kSeekTakenSonReleasePct == 75);
+        // 84 % passes.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 84, 80.0f, 5000, true, 30000, false, false));
+        // Key off passes.
+        CHECK(!SeekTakenSonDpsHeld(false, true, 99, 80.0f, 5000, true, 30000, false, false));
+        // The Son not on the tank that took it passes (mutation: the cap ignoring "taken by a tank" fails here).
+        CHECK(!SeekTakenSonDpsHeld(true, false, 99, 80.0f, 5000, true, 30000, false, false));
+        // Son health: 20 % is still held, 19 % passes.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 20.0f, 5000, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 19.0f, 5000, true, 30000, false, false));
+        // 15 s after the take or later passes; 16 s too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 14999, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 15000, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 16000, true, 30000, false, false));
+        // The siphon within 8 s passes (mutation: the siphon bound removed fails here); 7 s, due and overdue too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8001, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 7000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, -500, false, false));
+        // An unknown siphon clock releases (Codex round 1: it used to count as far), whatever the value.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, false, std::numeric_limits<int>::max(), false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, false, 30000, false, true));
+        // A heal is never held (mutation: the cap holding heals fails here), held before or not.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, true, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, true, true));
+        // Hysteresis: once held it stays held down to 75 %; 74 % releases; 80 % without a hold is not held.
+        CHECK(SeekTakenSonDpsHeld(true, true, 80, 80.0f, 5000, true, 30000, false, true));
+        CHECK(SeekTakenSonDpsHeld(true, true, 75, 80.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 74, 80.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 80, 80.0f, 5000, true, 30000, false, false));
+        // A held bot is still released by every bound.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 19.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 15000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, false, 90, 80.0f, 5000, true, 30000, false, true));
+        // A custom cap.
+        CHECK(SeekTakenSonDpsHeld(true, true, 70, 80.0f, 5000, true, 30000, false, false, 70));
+        // ThreatPctOf feeds it: 85 of 100 reads 85, a 0 reference on an engaged Son reads 100 (held).
+        CHECK(ThreatPctOf(85.0f, 100.0f, true, false) == 85);
+        CHECK(ThreatPctOf(10.0f, 0.0f, true, false) == 100);
+    }
+
+    // The per-bot latch of one take: the hysteresis and the one row are per take (Son and take time), so a re-take of
+    // the same Son guid starts clean and writes its own row (Codex round 1).
+    {
+        SeekTakenCapLatch latch;
+        SeekTakenCapLatchFor(latch, 22, 1000).held = true;
+        CHECK(SeekTakenCapRowDue(latch, true));
+        CHECK(!SeekTakenCapRowDue(latch, true)); // one row per take
+        CHECK(SeekTakenCapLatchFor(latch, 22, 1000).held); // same take: kept
+        CHECK(latch.logged);
+        // The same Son guid, taken again later: a new take, reset.
+        SeekTakenCapLatch& again = SeekTakenCapLatchFor(latch, 22, 9000);
+        CHECK(!again.held);
+        CHECK(!again.logged);
+        CHECK(SeekTakenCapRowDue(again, true)); // the second take writes its own row
+        // Not held: no row, and the row stays due for a later hold.
+        SeekTakenCapLatch& other = SeekTakenCapLatchFor(latch, 33, 9500);
+        CHECK(!SeekTakenCapRowDue(other, false));
+        CHECK(SeekTakenCapRowDue(other, true));
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

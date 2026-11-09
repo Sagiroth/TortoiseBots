@@ -54,6 +54,10 @@ namespace ai
     // range, so the puller has to bring the Son within the receiver's reach: the receiver takes it once it is this
     // close (Attack closes the last yards to the taunt's melee range), and the puller stops this close to the receiver.
     constexpr float kSeekMeetTakeYd = 8.0f;         // the receiver takes the Son once it is this close
+    // The meet take's reach (DungeonRunSeekMeetTakeReach, walk 60 lever 1): the receiver takes the walked Son from this
+    // far (Intercept range) instead of kSeekMeetTakeYd, its Attack closing the gap; 19 of 24 walk-60 peels came with the
+    // Son 8-25 yd from the waiting receiver.
+    constexpr float kSeekMeetTakeReachYd = 25.0f;
     constexpr std::uint32_t kSeekMeetMaxMs = 20000; // the meet is over 20 s after the shot (walk 52: start to back
                                                     // median 18 s, p90 23 s, and the shot lands mid-task)
 
@@ -925,10 +929,32 @@ namespace ai
     }
 
     // Whether the receiver takes the pulled Son now: it is on the receiver, or within the take reach (Attack closes
-    // the last yards to the taunt's melee range).
-    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver)
+    // the last yards to the taunt's melee range). `reachOn` (DungeonRunSeekMeetTakeReach) widens the reach from
+    // kSeekMeetTakeYd to kSeekMeetTakeReachYd; off, the 8 yd rule is unchanged.
+    inline float SeekMeetTakeReachYd(bool reachOn)
     {
-        return sonOnReceiver || sonToReceiverYd <= kSeekMeetTakeYd;
+        return reachOn ? kSeekMeetTakeReachYd : kSeekMeetTakeYd;
+    }
+
+    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver, bool reachOn = false)
+    {
+        return sonOnReceiver || sonToReceiverYd <= SeekMeetTakeReachYd(reachOn);
+    }
+
+    // The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, review round 2): the live boss anchor
+    // keeps every tank's chase within its circle (ChaseTo, ClampMoveToBossAnchor), so a walked Son 25 yd out on the
+    // outward line could never be reached. The receiver is exempt from the anchor, as the walk-out puller is, only while
+    // ALL of: the key is on; the meet is open (and its Son not yet on a tank: the taken close ends it); this bot is the
+    // meet's receiver; the meet's Son is alive; the Son is at most kSeekMeetTakeBeyondCircleYd past the raid circle
+    // (`sonBeyondCircleYd`: its distance from the anchor centre less the raid radius, negative inside); the receiver is
+    // not the anchored boss's victim; and the take is due by the reach (SeekMeetTakeDue with the key). Any of them
+    // failing ends it at once, and the tank's own-source drag then brings it back inside with the Son.
+    constexpr float kSeekMeetTakeBeyondCircleYd = 12.0f;
+    inline bool SeekMeetReceiverExempt(bool reachOn, bool meetOpen, bool isReceiver, bool sonAlive,
+                                       float sonBeyondCircleYd, bool receiverIsBossVictim, bool takeDue)
+    {
+        return reachOn && meetOpen && isReceiver && sonAlive && sonBeyondCircleYd <= kSeekMeetTakeBeyondCircleYd &&
+            !receiverIsBossVictim && takeDue;
     }
 
     // Whether the receiver keeps waiting for the Son: only while the Son's victim is the walk-out puller, the returner or
@@ -1054,7 +1080,89 @@ namespace ai
         std::uint64_t capTaker = 0;
         std::uint64_t capTakeSon = 0;
         std::uint32_t capTakeMs = 0;
+        // The meet's taken Son (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): the Son the meet's taken close saw on
+        // a tank, that tank, and when. The damage dealers' threat cap on it reads them (SeekTakenSonDpsHeld). Cleared
+        // when that Son is dead or gone, kSeekTakenSonHoldMs after the take, or when a new walk-out task starts.
+        std::uint64_t takenSon = 0;
+        std::uint64_t takenBy = 0;
+        std::uint32_t takenMs = 0;
+        // The meet whose `event=receiver_exempt` row went out (DungeonRunSeekMeetTakeReach): its Son and shot time.
+        std::uint64_t exemptLogSon = 0;
+        std::uint32_t exemptLogMeetMs = 0;
     };
+
+    // The exemption is target-aware (review round 2, Codex HIGH): only a chase of the open meet's CURRENT Son is let past
+    // the anchor, and only while the receiver's bounds hold (SeekMeetReceiverExempt); a chase of the boss or any other
+    // unit by the same receiver stays anchored.
+    inline bool SeekMeetSonChaseExempt(bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return targetIsMeetSon && receiverBoundsHold;
+    }
+
+    // Whether the live anchor applies to this chase: a live anchor, unless the chase is the meet Son's exempt one.
+    inline bool SeekAnchorAppliesToChase(bool anchorLive, bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return anchorLive && !SeekMeetSonChaseExempt(targetIsMeetSon, receiverBoundsHold);
+    }
+
+    // Whether the meet take is allowed now (DungeonRunSeekMeetTakeReach): due (SeekMeetTakeDue with the key's reach) and,
+    // under a boss anchor, inside the receiver's bounded exemption (SeekMeetReceiverExempt). With no anchor row nothing
+    // refuses the chase, so the reach alone decides (review round 2: the 8 yd take is never lost). Key off: the 8 yd
+    // rule, as before (`anchored` and `exempt` unread).
+    inline bool SeekMeetTakeAllowed(bool reachOn, bool anchored, bool takeDue, bool exempt)
+    {
+        return takeDue && (!reachOn || !anchored || exempt);
+    }
+
+    // Whether the receiver stops once when its exemption ends (review round 2): it was exempt, is no longer, stands
+    // outside the tanks' circle and is not on its meet Son, so a chase sent while exempt does not carry on.
+    inline bool SeekMeetExemptEndStop(bool wasExempt, bool exemptNow, bool outsideTankCircle, bool onMeetSon)
+    {
+        return wasExempt && !exemptNow && outsideTankCircle && !onMeetSon;
+    }
+
+    // Claims the one `event=receiver_exempt` row of the meet (son, meetMs): true the first time only.
+    inline bool WalkoutReceiverExemptNote(SeekWalkoutState& s, std::uint64_t son, std::uint32_t meetMs)
+    {
+        if (son == 0 || (s.exemptLogSon == son && s.exemptLogMeetMs == meetMs))
+            return false;
+        s.exemptLogSon = son;
+        s.exemptLogMeetMs = meetMs;
+        return true;
+    }
+
+    // How long the taken Son's threat cap lasts after the take (the bound of SeekTakenSonDpsHeld, and the taken
+    // state's own expiry).
+    constexpr std::uint32_t kSeekTakenSonHoldMs = 15000;
+
+    inline void WalkoutTakenClear(SeekWalkoutState& s)
+    {
+        s.takenSon = 0;
+        s.takenBy = 0;
+        s.takenMs = 0;
+    }
+
+    // The meet's taken close (g_walkoutMutex held, before the meet is cleared): records the Son, its taker and now.
+    inline void WalkoutTakenNote(SeekWalkoutState& s, std::uint64_t son, std::uint64_t by, std::uint32_t nowMs)
+    {
+        if (son == 0 || by == 0)
+            return;
+        s.takenSon = son;
+        s.takenBy = by;
+        s.takenMs = nowMs;
+    }
+
+    // The taken state's signed age (a reader a tick behind the writer reads a small negative age, never a wrapped one).
+    inline std::int64_t WalkoutTakenAgeMs(std::uint32_t nowMs, std::uint32_t takenMs)
+    {
+        return static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - takenMs));
+    }
+
+    // Whether the taken state is over: no Son recorded, the Son dead or gone, or kSeekTakenSonHoldMs since the take.
+    inline bool WalkoutTakenEnds(std::uint64_t takenSon, bool sonAlive, std::int64_t ageMs)
+    {
+        return takenSon == 0 || !sonAlive || ageMs >= static_cast<std::int64_t>(kSeekTakenSonHoldMs);
+    }
 
     // How long a started cap-checked take is honoured without a re-check (round 2: it never expired).
     constexpr std::uint32_t kSeekCapTakeLatchMs = 10000;
@@ -1611,6 +1719,8 @@ namespace ai
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
         s.walkedAt.emplace_back(son, cycleNo);
+        // A new walk-out task ends the last meet's taken state (DungeonRunSeekTakenSonThreatCap).
+        WalkoutTakenClear(s);
         ++s.startGen;
     }
 

@@ -2311,6 +2311,141 @@ static void TestWalkoutMeetLostRecord()
     CHECK(s.lostMeets.empty());
 }
 
+// The meet take's reach (DungeonRunSeekMeetTakeReach, walk 60 lever 1): with the key the receiver takes the walked Son
+// within Intercept range (25 yd), not 8 yd; off, the 8 yd rule is unchanged. The pre-place hold never holds the Son.
+static void TestMeetTakeReachCoversInterceptRange()
+{
+    // Named failing case `meet_take_reach_covers_intercept_range`: the walk-60 peels came with the Son a median 20 yd
+    // from the receiver, which the 8 yd take refused (the base has no 3-argument form).
+    CHECK(SeekMeetTakeDue(20.0f, false, true));
+    CHECK(SeekMeetTakeDue(25.0f, false, true));
+    // Past the reach: still waiting.
+    CHECK(!SeekMeetTakeDue(26.0f, false, true));
+    CHECK(!SeekMeetTakeDue(25.01f, false, true));
+    // Key off: the 8 yd rule (mutation: the reach ignoring the flag fails here).
+    CHECK(!SeekMeetTakeDue(20.0f, false, false));
+    CHECK(SeekMeetTakeDue(8.0f, false, false));
+    CHECK(!SeekMeetTakeDue(8.01f, false, false));
+    CHECK(SeekMeetTakeDue(30.0f, true, false));
+    CHECK(SeekMeetTakeDue(30.0f, true, true));
+    // The take row's reach_yd.
+    CHECK(SeekMeetTakeReachYd(true) == kSeekMeetTakeReachYd);
+    CHECK(SeekMeetTakeReachYd(false) == kSeekMeetTakeYd);
+    // The pre-place hold holds only the boss as a chase target: the Son the reach take chases is never held, so the
+    // hold cannot block this take.
+    CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
+}
+
+// The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, review round 2).
+static void TestMeetReceiverExemptWithinAllowance()
+{
+    // Args: key, meet open, is the receiver, Son alive, Son yd past the raid circle, receiver is the boss's victim,
+    // take due.
+    // Named failing case `meet_receiver_exempt_within_allowance`: 5 yd past the raid circle, everything else met.
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, 5.0f, false, true));
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, 12.0f, false, true));
+    CHECK(SeekMeetReceiverExempt(true, true, true, true, -3.0f, false, true)); // inside the circle
+    CHECK(kSeekMeetTakeBeyondCircleYd == 12.0f);
+    // 13 yd past: not exempt (mutation: the allowance not bounded fails here).
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 13.0f, false, true));
+    // The receiver is the boss's victim (mutation: the exemption ignoring the victim check fails here).
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 5.0f, true, true));
+    // The meet closed (or taken) (mutation: the exemption outliving the meet fails here).
+    CHECK(!SeekMeetReceiverExempt(true, false, true, true, 5.0f, false, true));
+    // Not the receiver.
+    CHECK(!SeekMeetReceiverExempt(true, true, false, true, 5.0f, false, true));
+    // Key off.
+    CHECK(!SeekMeetReceiverExempt(false, true, true, true, 5.0f, false, true));
+    // The Son dead, or the take not due by the reach.
+    CHECK(!SeekMeetReceiverExempt(true, true, true, false, 5.0f, false, true));
+    CHECK(!SeekMeetReceiverExempt(true, true, true, true, 5.0f, false, false));
+    // The receiver_exempt row: once per meet (Son and shot time); a new meet of the same Son writes again.
+    SeekWalkoutState s;
+    CHECK(WalkoutReceiverExemptNote(s, 22, 1000));
+    CHECK(!WalkoutReceiverExemptNote(s, 22, 1000));
+    CHECK(WalkoutReceiverExemptNote(s, 22, 5000));
+    CHECK(!WalkoutReceiverExemptNote(s, 0, 6000));
+}
+
+// The exemption is target-aware (review round 2, Codex HIGH), the take with no anchor row keeps its reach, and the
+// receiver stops once when the exemption ends outside the tanks' circle.
+static void TestMeetExemptionOnlyForTheMeetSon()
+{
+    // Named failing case `meet_exemption_only_for_the_meet_son`: the receiver's bounds hold (5 yd past the circle,
+    // not the victim, take due); the meet Son's chase is let past the anchor, Hakkar and an unrelated mob are not.
+    const bool bounds = SeekMeetReceiverExempt(true, true, true, true, 5.0f, false, true);
+    CHECK(bounds);
+    const bool meetSon = true;
+    const bool hakkar = false;    // the boss is not the meet Son
+    const bool otherMob = false;  // nor is any other unit
+    CHECK(SeekMeetSonChaseExempt(meetSon, bounds));
+    CHECK(!SeekMeetSonChaseExempt(hakkar, bounds));   // mutation: the exemption ignoring the target fails here
+    CHECK(!SeekMeetSonChaseExempt(otherMob, bounds));
+    CHECK(!SeekAnchorAppliesToChase(true, meetSon, bounds));
+    CHECK(SeekAnchorAppliesToChase(true, hakkar, bounds));
+    CHECK(SeekAnchorAppliesToChase(true, otherMob, bounds));
+    // Bounds failed (13 yd past): the meet Son is anchored again too.
+    CHECK(!SeekMeetSonChaseExempt(meetSon, SeekMeetReceiverExempt(true, true, true, true, 13.0f, false, true)));
+    CHECK(SeekAnchorAppliesToChase(true, meetSon, false));
+    // No live anchor: nothing to apply.
+    CHECK(!SeekAnchorAppliesToChase(false, hakkar, bounds));
+
+    // The take: key off, the 8 yd rule (anchor and exemption unread).
+    CHECK(SeekMeetTakeAllowed(false, true, SeekMeetTakeDue(8.0f, false, false), false));
+    CHECK(!SeekMeetTakeAllowed(false, true, SeekMeetTakeDue(20.0f, false, false), true));
+    // Key on, anchored: only inside the exemption.
+    CHECK(SeekMeetTakeAllowed(true, true, SeekMeetTakeDue(20.0f, false, true), true));
+    CHECK(!SeekMeetTakeAllowed(true, true, SeekMeetTakeDue(20.0f, false, true), false));
+    // Key on, the boss has no anchor row: the reach alone (Opus LOW 2: the 8 yd take is never lost).
+    CHECK(SeekMeetTakeAllowed(true, false, SeekMeetTakeDue(8.0f, false, true), false));
+    CHECK(SeekMeetTakeAllowed(true, false, SeekMeetTakeDue(20.0f, false, true), false));
+    CHECK(!SeekMeetTakeAllowed(true, false, SeekMeetTakeDue(26.0f, false, true), false));
+
+    // The stop when the exemption ends (Opus LOW 1): once, outside the tanks' circle, not on its meet Son.
+    CHECK(SeekMeetExemptEndStop(true, false, true, false));
+    CHECK(!SeekMeetExemptEndStop(true, true, true, false));   // still exempt
+    CHECK(!SeekMeetExemptEndStop(false, false, true, false)); // never was
+    CHECK(!SeekMeetExemptEndStop(true, false, false, false)); // inside the circle
+    CHECK(!SeekMeetExemptEndStop(true, false, true, true));   // on its meet Son: the drag back walks it home
+}
+
+// The meet's taken state (DungeonRunSeekTakenSonThreatCap): noted at the taken close, over when the Son dies or is
+// gone, 15 s after the take, or when a new walk-out task starts.
+static void TestWalkoutTakenState()
+{
+    SeekWalkoutState s;
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    WalkoutTakenNote(s, 22, 7, 1000);
+    CHECK(s.takenSon == 22 && s.takenBy == 7 && s.takenMs == 1000);
+    // No Son or no taker: nothing noted.
+    SeekWalkoutState n;
+    WalkoutTakenNote(n, 0, 7, 1000);
+    WalkoutTakenNote(n, 22, 0, 1000);
+    CHECK(n.takenSon == 0);
+    // Live and young: kept.
+    CHECK(!WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(15999, s.takenMs)));
+    // Son dead or gone: over.
+    CHECK(WalkoutTakenEnds(s.takenSon, false, WalkoutTakenAgeMs(2000, s.takenMs)));
+    // 15 s after the take: over (mutation: the state not cleared after 15 s fails here).
+    CHECK(WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(16000, s.takenMs)));
+    CHECK(kSeekTakenSonHoldMs == 15000);
+    // A reader a tick behind reads a small negative age: kept.
+    CHECK(WalkoutTakenAgeMs(990, 1000) == -10);
+    CHECK(!WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(990, 1000)));
+    // Nothing recorded: over.
+    CHECK(WalkoutTakenEnds(0, true, 0));
+    WalkoutTakenClear(s);
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    // A new walk-out task clears it.
+    WalkoutTakenNote(s, 22, 7, 1000);
+    WalkoutStart(s, 11, 33, 2000, 1);
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    // The meet clear leaves it (the taken close notes it before clearing the meet).
+    WalkoutTakenNote(s, 33, 7, 3000);
+    WalkoutMeetClear(s);
+    CHECK(s.takenSon == 33 && s.takenBy == 7);
+}
+
 // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5) and its one-row latch.
 static void TestMeetPrePlaceHoldsChase()
 {
@@ -2746,6 +2881,10 @@ int main()
     TestWalkoutCapTakeLatch();
     TestWalkoutShotWaitsReceiver();
     TestShotWaitAndLateWalkNoDeadlock();
+    TestMeetTakeReachCoversInterceptRange();
+    TestWalkoutTakenState();
+    TestMeetReceiverExemptWithinAllowance();
+    TestMeetExemptionOnlyForTheMeetSon();
     TestMeetPrePlaceHoldsChase();
     TestMeetPrePlaceHoldOutlivesTheTask();
     std::cout << "seek walk-out policy: all checks passed\n";

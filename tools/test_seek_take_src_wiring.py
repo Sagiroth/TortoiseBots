@@ -22,8 +22,8 @@ def body(text, signature):
 class SeekTakeSrcWiring(unittest.TestCase):
     def test_the_row_carries_src(self):
         log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
-        self.assertIn("const std::string& src)", log)
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s"', log)
+        self.assertIn("const std::string& src,\n                 float beyondYd)", log)
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f beyond_yd=%.1f"', log)
         self.assertIn("src.c_str()", log)
         self.assertIn('const char* takeSrc = "other";', ACTIONS_H)
 
@@ -48,7 +48,7 @@ class SeekTakeSrcWiring(unittest.TestCase):
         self.assertIn("bool edgeTake = false;", take)
         self.assertIn("edgeTake = !chaseRefused;", take)
         self.assertLess(take.index("chaseRefused = edge != SeekTakeEdge::Allowed;"), take.index("edgeTake = !chaseRefused;"))
-        self.assertIn("task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake));", take)
+        self.assertIn("task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake), beyondYd);", take)
 
     def test_the_field_is_documented(self):
         self.assertIn("meet=<0\\|1> src=<word>", ROWS)
