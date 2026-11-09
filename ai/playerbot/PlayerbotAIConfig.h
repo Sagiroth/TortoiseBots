@@ -879,12 +879,16 @@ public:
     uint32 iterationsPerTick;
     // Per-tick AI pass scheduling in BotManager::UpdateBots: bots owned by a
     // real player always run first and unbudgeted, the random pool runs after
-    // them from a round-robin cursor. The budget below applies to the pool
-    // pass only, and only while the previous world tick ran longer than
-    // poolBudgetWhenTickOverMs (0 = every tick; pair with a nonzero target
-    // below so healthy ticks reclaim the ceiling).
+    // them as one turn queue (BotTurnScheduler.h). The budget below applies
+    // to the pool pass only, and only while the previous world tick ran
+    // longer than poolBudgetWhenTickOverMs (0 = every tick; pair with a
+    // nonzero target below so healthy ticks reclaim the ceiling).
     // Microseconds of module work per tick; 0 disables the budget entirely.
     uint32 poolTickBudgetUs = 10000;
+    // Near-first turn priority (BotTurnScheduler.h): due pool bots on the same
+    // map and instance as a real player and within this many yards run ahead
+    // of the rest when the budget cuts the pass. 0 turns the preference off.
+    float poolNearPlayerYd = 80.0f;
     uint32 poolBudgetWhenTickOverMs = 0;
     uint32 combatTickBudgetUs = 15000;
     // Self-tuning tick budget: when nonzero, a controller moves the effective
