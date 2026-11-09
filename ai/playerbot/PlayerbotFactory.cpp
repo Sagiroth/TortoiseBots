@@ -2319,6 +2319,11 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                         continue;
                     if (sRandomItemMgr.IsForbiddenBotGear(fallbackId))
                         continue;
+                    // Armor material rule of the normal pass: an empty slot stays
+                    // empty rather than take cloth on a warrior.
+                    if (proto->Class == ITEM_CLASS_ARMOR &&
+                        !sRandomItemMgr.ShouldEquipArmorForSpec(bot->GetClass(), uint8(specId), proto))
+                        continue;
                     // Caster off-hand on a melee class (Issue #219), as in the normal pass.
                     if (slot == EQUIPMENT_SLOT_OFFHAND && proto->InventoryType == INVTYPE_HOLDABLE &&
                         (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_HUNTER))
