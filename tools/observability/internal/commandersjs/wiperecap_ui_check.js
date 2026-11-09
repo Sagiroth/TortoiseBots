@@ -151,6 +151,13 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   const calls5 = firstCalls;
   sync(Object.assign({}, liveFight, { log: [{ k: "cast", t: 11000, n: "Boss", s: "Shadow Bolt", tg: "5", tn: EVIL }] }));
   assert.ok(firstCalls > calls5, "a boss cast just before a shown death repaints");
+  // one cast replaced by another at the same count repaints (the likely spell follows it)
+  const castA = Object.assign({}, liveFight, { log: [{ k: "cast", t: 11000, n: "Boss", s: "Shadow Bolt", tg: "5", tn: EVIL }] });
+  sync(castA);
+  assert.ok(box.innerHTML.includes("Shadow Bolt"), "the likely spell is drawn");
+  const calls6 = firstCalls;
+  sync(Object.assign({}, liveFight, { log: [{ k: "cast", t: 11000, n: "Boss", s: "Frost Bolt", tg: "5", tn: EVIL }] }));
+  assert.ok(firstCalls > calls6 && box.innerHTML.includes("Frost Bolt") && !box.innerHTML.includes("Shadow Bolt"), "a cast replaced at the same count repaints with the new spell");
   sync(liveFight);
   void calls2;
   // a death count below the wipe line draws nothing and clears the box
@@ -227,7 +234,7 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("wiperecap.js") > 0 && at("wiperecap.js") < at("app.js"), "wiperecap.js loads before app.js");
-  assert.ok(/wiperecap.js\?v=2/.test(html) && /static\/js\/app\.js\?v=55/.test(html) && /app\.css\?v=31/.test(html), "the changed assets carry new versions");
+  assert.ok(/wiperecap.js\?v=3/.test(html) && /static\/js\/app\.js\?v=55/.test(html) && /app\.css\?v=31/.test(html), "the changed assets carry new versions");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(/\.fd-wipe \{/.test(css) && /\.fd-wiperow/.test(css), "the box has its styles");
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css.slice(css.indexOf(".fd-wipe {"), css.indexOf(".fd-wipe {") + 1500).split("\n").filter((l) => /\.fd-wipe/.test(l)).join("\n")), "its rules use the page's variables, no new colour");

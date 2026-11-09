@@ -11,6 +11,8 @@
   const PRE_PULL_MS = 4000;    // samples from this long before the pull still count (a bot's health at the pull)
   const FIRST_N = 3;
   const N_MAX = 10;
+  const CAST_KEEP = 20;        // casts per shown death that the signature reads
+  const FIELD_MAX = 80;        // characters of one cast field that the signature reads
 
   const finite = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   const isObj = (v) => v !== null && typeof v === "object";
@@ -122,7 +124,7 @@
   }
 
   // What the box would draw, in a short string: the outcome, whether it is a wipe, and for a wipe the first three deaths (index,
-  // name, time, killer, role) with the number of boss casts in the 3 s before each (the likely spell is read from them). The page
+  // name, time, killer, role) with the identity of the casts in the 3 s before each (the likely spell is read from them). The page
   // compares it between ticks, so a death or a role that changed with the same counts still repaints. Bounded like every read here.
   function signature(fight) {
     if (!isObj(fight)) return "";
@@ -137,9 +139,15 @@
     list.sort((a, b) => (a.t - b.t) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.i - b.i));
     const log = Array.isArray(fight.log) ? fight.log.slice(0, SCAN_MAX) : [];
     const parts = list.slice(0, FIRST_N).map((d) => {
-      let casts = 0;
-      log.forEach((e) => { if (isObj(e) && e.k === "cast" && finite(e.t) !== null && e.t <= d.t && e.t >= d.t - 3000) casts++; });
-      return [d.i, d.name, d.t, d.by, Object.prototype.hasOwnProperty.call(role, d.name) ? role[d.name] : "", casts].join("\u0001");
+      // The casts deathRecaps may pick the likely spell from: the 3 s before the death, each by its time, caster, target and spell (the
+      // newest CAST_KEEP of them, each field cut to FIELD_MAX), so a cast replaced by another at the same count still changes it.
+      const casts = [];
+      log.forEach((e) => {
+        if (!isObj(e) || e.k !== "cast" || finite(e.t) === null || e.t > d.t || e.t < d.t - 3000) return;
+        casts.push([e.t, e.n, e.tg, e.tn, e.s, e.sid].map((v) => (v == null ? "" : String(v).slice(0, FIELD_MAX))).join("\u0003"));
+        if (casts.length > CAST_KEEP) casts.shift();
+      });
+      return [d.i, d.name, d.t, d.by, Object.prototype.hasOwnProperty.call(role, d.name) ? role[d.name] : "", casts.join("\u0004")].join("\u0001");
     });
     return head + "|w|" + parts.join("\u0002");
   }

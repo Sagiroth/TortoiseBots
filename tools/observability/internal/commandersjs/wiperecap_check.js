@@ -129,6 +129,17 @@ assert.strictEqual(W.startMs(null), null);
   const cast = [{ k: "cast", t: f.deaths[0].t_ms - 500, n: "Boss", s: "X" }];
   assert.notStrictEqual(W.signature(Object.assign({}, f, { log: cast })), sig, "a boss cast just before a shown death");
   assert.strictEqual(W.signature(Object.assign({}, f, { log: [{ k: "cast", t: 99999999, n: "Boss" }] })), sig, "a cast far from every shown death changes nothing");
+  // a cast replaced by another at the same count (a catch-up corrected it): time, caster, target, spell name and id each count
+  const base = { k: "cast", t: f.deaths[0].t_ms - 500, n: "Boss", s: "Shadow Bolt", sid: 1, tg: "5", tn: "Bot1" };
+  const withCast = (c) => W.signature(Object.assign({}, f, { log: [c] }));
+  const sigCast = withCast(base);
+  assert.strictEqual(withCast(Object.assign({}, base)), sigCast, "the same cast, the same signature");
+  [{ s: "Frost Bolt" }, { sid: 2 }, { n: "Add" }, { tg: "6" }, { tn: "Bot9" }, { t: base.t - 100 }].forEach((d) => assert.notStrictEqual(withCast(Object.assign({}, base, d)), sigCast, "a cast with another " + Object.keys(d)[0] + ", same count"));
+  const two = [base, Object.assign({}, base, { t: base.t - 200, s: "Fire" })];
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { log: [two[0], Object.assign({}, two[1], { s: "Ice" })] })), W.signature(Object.assign({}, f, { log: two })), "one of two casts replaced");
+  const manyCasts = Array.from({ length: 5000 }, (_, i) => Object.assign({}, base, { t: base.t - (i % 100), s: "S" + i }));
+  assert.ok(W.signature(Object.assign({}, f, { log: manyCasts })).length < 3 * 21 * 200 + 2000, "the signature of a crowded window is bounded");
+  assert.ok(W.signature(Object.assign({}, f, { log: [Object.assign({}, base, { s: "x".repeat(100000) })] })).length < 3000, "a huge field is cut");
   [null, 5, "x", {}, { bots: "x", deaths: [null, 3] }, { outcome: "wipe", deaths: [null, { name: 4 }], log: [5, null] }].forEach((x) => assert.strictEqual(typeof W.signature(x), "string"));
 }
 
