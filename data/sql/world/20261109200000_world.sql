@@ -32,7 +32,7 @@ DELETE FROM `ai_dungeon_step` WHERE `plan` = 'onyxias_lair';
 DELETE FROM `ai_dungeon_leg` WHERE `plan` = 'onyxias_lair';
 DELETE FROM `ai_dungeon_plan` WHERE `plan` = 'onyxias_lair';
 INSERT INTO `ai_dungeon_plan` (`plan`, `map`, `cc_priority`, `cc_always`, `kill_first`, `source`, `comment`) VALUES
-('onyxias_lair', 249, '', '', '12129', 'turtle-agent 5627588465d293aca2ffaaf4a5daa2188ff919da dungeons/o', 'plan v1, draft (prepped 2026-11-09 for core 1181dev b26c3cc; not mapped, not live-checked)');
+('onyxias_lair', 249, '', '', '12129', 'turtle-agent 7489d2d74678d7daeecea8c524445bb767fae4a7 dungeons/o', 'plan v1, draft (prepped 2026-11-09 for core 1181dev b26c3cc; not mapped, not live-checked)');
 INSERT INTO `ai_dungeon_leg` (`plan`, `leg`, `name`, `comment`) VALUES
 ('onyxias_lair', 0, 'tunnel', 'leave (not read by the run leader yet): 12129 at -128.7 -41: the north-passage patrol Warder (guid 2593525): its line y~-34 runs 72 yd from the route (path 155 yd); 49016 at -90.2 -30.8: the north-passage Inciters (2593508, 2593511); 49017 at -230.1 -157.'),
 ('onyxias_lair', 1, 'onyxia', '');
