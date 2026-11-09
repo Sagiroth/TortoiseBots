@@ -10,6 +10,7 @@
 #include "playerbot/GuildOrderCraft.h"
 #include "playerbot/policy/guild/EnchantGatherPolicy.h"
 #include "runtime/EnchantCapital.h"
+#include "host/ModuleLog.h"
 #include "runtime/GuildOrderAccess.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderBringPolicy.h"
