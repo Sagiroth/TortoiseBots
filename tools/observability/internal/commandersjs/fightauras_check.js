@@ -42,6 +42,17 @@ assert.strictEqual(A.intervals({ dur_ms: 5000, bots: [], auras: rows.slice(1) })
 assert.strictEqual(A.intervals({ dur_ms: 5000, bots: [], auras: rows, aura_src: "sampled" }).capped, false, "sampled rows are not the module's capped list");
 assert.deepStrictEqual(A.intervals({ dur_ms: 1, bots: [] }).sids, [], "no rows at all");
 
+// only the first four values of a row are read (a fifth, of any kind, is ignored); a row whose first four are not all numbers is skipped (null is not a number)
+{
+  const iv5 = A.intervals({ dur_ms: 10000, bots: [], auras: [[1000, 1, 9, 1, "extra"], [5000, 1, 9, -1, null, {}], [1000, 2, 9, 1], [2000, 2, 9], [1000, 3, 9, "x"], [1000, null, 9, 1]] });
+  assert.deepStrictEqual(iv5.bySid[9][1], [[1000, 5000]], "extra values are ignored");
+  assert.deepStrictEqual(iv5.bySid[9][2], [[1000, 10000]], "the three-value row is skipped");
+  assert.strictEqual(iv5.bySid[9][3], undefined);
+  assert.deepStrictEqual(Object.keys(iv5.bySid[9]), ["1", "2"], "a null guid is no guid");
+}
+// a cast with a negative time is not a marker (the daemon drops them as well)
+assert.deepStrictEqual(A.markers({ log: [{ k: "cast", t: -5, s: "Blood Siphon", sid: 24324 }, { k: "cast", t: 0, s: "Blood Siphon", sid: 24324 }, { k: "cast", t: 7, s: "Blood Siphon", sid: 24324 }] }, { sid: 24324, name: "Blood Siphon" }).map((m) => m.t), [0, 7]);
+
 // ---- alive spans: a bot is alive until its first death in fight.deaths
 assert.deepStrictEqual(A.aliveSpans(f), { 1: [0, 120000], 2: [0, 120000], 3: [0, 120000], 4: [0, 60000] });
 

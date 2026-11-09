@@ -71,6 +71,17 @@ const rows = [
   const lower = run("fdMechRowHtml(r, '')", { r: { boss: 14834, name: "H", kind: "hakkar", fights: 1, kills: 0, wipes: 0, dosed_pct: 40, dosed_cycles: 1, cycles: 3, lower: true } });
   assert.ok(lower.includes("dosed at siphon ≥40 %"), "a capped aura list: a lower bound");
 }
+// a row a cap bit in: every death count is a minimum too (the dose and the Hex time already were)
+{
+  const lowRows = [{ boss: 14834, name: "Hakkar", kind: "hakkar", fights: 1, kills: 1, wipes: 0, dosed_pct: 50, dosed_cycles: 1, cycles: 2, son_deaths_per_fight: 3, lower: true },
+    { boss: 11380, name: "Jin'do", kind: "jindo", fights: 1, kills: 1, wipes: 0, hex_mt_s_per_fight: 4, shade_deaths_per_fight: 2, shade_share_pct: 40, lower: true },
+    { boss: 4000, name: "Gen", kind: "generic", fights: 1, kills: 1, wipes: 0, deaths_per_fight: 1000, lower: true }];
+  const html = run("fdMechHtml(null, st, '')", { st: { res: { rows: lowRows } } });
+  assert.ok(html.includes("Son deaths/fight \u22653.0") && html.includes("Shade deaths/fight \u22652.0 (\u226540 %)") && html.includes("deaths/fight \u22651000.0"), "death counts of a lower row carry the bound: " + html);
+  assert.ok(html.includes("dosed at siphon \u226550 %") && html.includes("Hex on MT \u22654 s/fight"));
+  const exact = run("fdMechHtml(null, st, '')", { st: { res: { rows } } });
+  assert.ok(!exact.includes("\u2265"), "an exact row has no bound");
+}
 // states: loading, an error, no boss fights, hostile rows
 assert.ok(run("fdMechHtml(null, { res: null, err: '' }, '')").includes("Loading the boss mechanics"));
 assert.ok(run("fdMechHtml(null, { res: null, err: 'HTTP 500 <b>' }, '')").includes("could not be loaded (HTTP 500 &lt;b&gt;)"));
@@ -208,7 +219,7 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
 {
   const tags = Array.from(indexHtml.matchAll(/<script src="\/static\/js\/([a-z]+\.js)\?v=(\d+)">/g), (m) => m[1]);
   assert.ok(tags.indexOf("fightauras.js") < tags.indexOf("fdmech.js") && tags.indexOf("fdmech.js") < tags.indexOf("fdlive.js") && tags.indexOf("fdmech.js") < tags.indexOf("app.js"), "fdmech.js loads after fightauras.js and before app.js: " + tags.join(","));
-  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=3/.test(indexHtml) && /static\/js\/app\.js\?v=56/.test(indexHtml) && /app\.css\?v=31/.test(indexHtml), "the changed assets carry new versions");
+  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=3/.test(indexHtml) && /static\/js\/app\.js\?v=57/.test(indexHtml) && /app\.css\?v=31/.test(indexHtml), "the changed assets carry new versions");
   assert.ok(src.includes('class="fd-mechbox"') && src.includes('class="fd-mechbody"') && src.includes('class="fd-livemech cell-muted"'), "the section and the live bar slot are in the card");
   assert.ok(src.indexOf('class="fd-mechbox"') > src.indexOf('class="fd-underbox"'), "directly under the underperforming bots");
   assert.ok(/fdMechSync\(card, bind, fd, /.test(src) && /fdLiveMechBar\(card, st, lf, bind\)/.test(src) && /fdLiveMechBar\(card, liveSt, liveFight, bind\)/.test(src), "rendered with the card and repainted by the live tick");

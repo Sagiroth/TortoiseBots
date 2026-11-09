@@ -161,7 +161,7 @@
       const name = typeof pick.name === "string" && pick.name ? pick.name.toLowerCase() : null;
       const after = afterOf(pick);
       (fight && Array.isArray(fight.log) ? fight.log : []).forEach((e) => {
-        if (!e || e.k !== "cast" || num(e.t) === null) return;
+        if (!e || e.k !== "cast" || num(e.t) === null || e.t < 0) return; // a cast before the pull is not a cast of the fight (the daemon drops them too)
         const bySid = pick.sid != null && e.sid != null && Number(e.sid) === Number(pick.sid);
         // With a spell id the id decides; the name only stands in for an event that carries none.
         const byName = name !== null && (pick.sid == null || e.sid == null) && typeof e.s === "string" && e.s.toLowerCase() === name;

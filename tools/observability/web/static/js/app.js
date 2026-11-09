@@ -10486,19 +10486,20 @@
   function fdMechRowHtml(r, day) {
     const n = v => (v == null || !isFinite(Number(v)) ? null : Number(v));
     let key, second = '-', secondTitle = '';
+    const lo = r.lower ? '\u2265' : ''; // a cap bit somewhere in the row: every number of it is a minimum
     if (r.kind === 'hakkar') {
       const p = n(r.dosed_pct);
       key = p === null ? FD_MECH_NO_ROWS : 'dosed at siphon ' + (r.lower ? '\u2265' : '') + Math.round(p) + ' % (' + (n(r.dosed_cycles) || 0) + '/' + (n(r.cycles) || 0) + ' cycles)';
       const s = n(r.son_deaths_per_fight);
       // Deaths by Son of Hakkar, never "pulls": a filed fight carries no per-cycle Son targets, so the night table cannot count pulls.
-      if (s !== null) { second = 'Son deaths/fight ' + s.toFixed(1); secondTitle = FD_MECH_SON_TITLE; }
+      if (s !== null) { second = 'Son deaths/fight ' + lo + s.toFixed(1); secondTitle = FD_MECH_SON_TITLE; }
     } else if (r.kind === 'jindo') {
       const h = n(r.hex_mt_s_per_fight);
       key = h === null ? 'no Hex aura rows: the watch row is not deployed' : 'Hex on MT ' + (r.lower ? '\u2265' : '') + Math.round(h) + ' s/fight';
       const s = n(r.shade_deaths_per_fight), pc = n(r.shade_share_pct);
-      if (s !== null) second = 'Shade deaths/fight ' + s.toFixed(1) + (pc === null ? '' : ' (' + Math.round(pc) + ' %)');
+      if (s !== null) second = 'Shade deaths/fight ' + lo + s.toFixed(1) + (pc === null ? '' : ' (' + lo + Math.round(pc) + ' %)');
     } else {
-      key = 'deaths/fight ' + (n(r.deaths_per_fight) || 0).toFixed(1);
+      key = 'deaths/fight ' + lo + (n(r.deaths_per_fight) || 0).toFixed(1);
     }
     const worst = typeof r.worst === 'string' && r.worst
       ? `<button type="button" class="fd-link fd-mechworst" data-fd-open="${esc(encodeURIComponent(r.worst))}" data-fd-day="${esc(day || '')}">Open</button>` : '-';
