@@ -1048,6 +1048,7 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         // checked launch; a noPath/fly/swim leg keeps its old MovePoint, as
         // before. The hazard rewrite is skipped: with no segment there is
         // nothing to bend around a hazard.
+        WorldPosition movePosition = path.back();
         if (!generatePath)
         {
             // A noPath/fly/swim leg keeps its old launch exactly (a MovePoint
