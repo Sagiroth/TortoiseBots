@@ -608,6 +608,7 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
             order.botGuidLow, candidate.itemId);
         options.auctionHouseAttempted = auctionUnaffordable ||
             (!auctionReentry && current != SupplyStep::AuctionHouse);
+        options.auctionHouseLive = current == SupplyStep::AuctionHouse;
         options.selfCanCraft = candidate.craft;
         options.selfCanFarm = verdict.CanFarm();
         // Enchant reagents are never delegated: the auction leg hands off to
