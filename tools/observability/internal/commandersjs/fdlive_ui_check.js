@@ -33,11 +33,37 @@ assert.ok(!html.includes("<b>x</b>"), "no raw markup from a name: " + html);
 assert.ok(html.includes("&lt;b&gt;x&lt;/b&gt;"), "the name is shown as text");
 assert.ok(html.includes('href="#/commanders/Gb%20mage%231/fight/live"'), "the link opens the live view of the key");
 assert.ok(html.includes("2:05") && html.includes("42%") && html.includes("9/10 alive") && html.includes("1200 dps") && html.includes("300 hps"));
-assert.ok(html.includes('class="fd-tile-mech"'), "the mechanics scorecard slot is there");
+assert.ok(html.includes('class="fd-livetile-mech"'), "the mechanics scorecard slot is there");
 assert.strictEqual((html.match(/"/g) || []).length % 2, 0, "balanced quotes");
 const noBoss = run("fdLiveTileHtml(t)", { t: Object.assign({}, tile, { boss: "", bossHp: null, events: [] }) });
-assert.ok(noBoss.includes("trash") && /class="fd-tile-hp"[^>]* hidden/.test(noBoss), "no boss: trash, the health bar hidden");
+assert.ok(noBoss.includes("trash") && /class="fd-livetile-hp"[^>]* hidden/.test(noBoss), "no boss: trash, the health bar hidden");
 assert.ok(run("fdLiveTileHtml(t)", { t: Object.assign({}, tile, { bossHp: 900 }) }).includes('width:100%'), "health is clamped");
+
+// ---- the live tile owns its class names: the raid frames' `.fd-tile` (a 46 px clipped button, fdFramesHtml) must never style it
+{
+  const classesOf = (markup) => { const out = new Set(); (markup.match(/class="([^"]*)"/g) || []).forEach((m) => m.slice(7, -1).split(/\s+/).filter(Boolean).forEach((c) => out.add(c))); return out; };
+  const live = new Set([...classesOf(html), ...classesOf(noBoss)]);
+  assert.ok(live.has("fd-livetile") && live.has("fd-livetile-head"), "the live tile is built with its own class: " + [...live].join(" "));
+  assert.ok(![...live].some((c) => c === "fd-tile" || c.startsWith("fd-tile-")), "the live tile builder never emits fd-tile or fd-tile-*: " + [...live].join(" "));
+  const patchSrc = grab("fdLiveTileHtml") + grab("fdLiveTilePatch");
+  assert.ok(!/fd-tile(?![\w])/.test(patchSrc.replace(/data-fd-tile/g, "")) && !/fd-tile-/.test(patchSrc), "neither the builder nor the patch names fd-tile or fd-tile-*");
+  // No class is used by both the raid frames and the live tiles (the frame builder's literal classes against the tile's).
+  const frameSrc = grab("fdFramesHtml");
+  const frameClasses = new Set((frameSrc.match(/class="([^"$]*)/g) || []).flatMap((m) => m.slice(7).split(/\s+/)).filter(Boolean));
+  assert.ok(frameClasses.has("fd-tile"), "the raid frames still use fd-tile (this check reads the right builder)");
+  const both = [...live].filter((c) => frameClasses.has(c));
+  assert.deepStrictEqual(both, [], "a class used by both the raid frames and the live tiles: " + both.join(" "));
+  // The stylesheet: no rule mixes the two families, and the live tile's own rules exist.
+  const css = fs.readFileSync(path.join(path.dirname(appPath), "..", "css", "app.css"), "utf8");
+  const sels = (css.match(/^[^{}\n]+(?=\{)/gm) || []);
+  assert.ok(sels.some((x) => /^\.fd-livetile\s*$/.test(x.trim())), "the live tile has its own rule");
+  assert.deepStrictEqual(sels.filter((x) => /\.fd-livetile/.test(x) && /\.fd-tile(?![-\w])/.test(x)), [], "no selector styles both families");
+  assert.ok(!sels.some((x) => /\.fd-tile-/.test(x)), "no rule is left for the old fd-tile-* parts of the live tile");
+  const own = sels.filter((x) => /^\.fd-livetile/.test(x.trim())).map((x) => x.trim());
+  const clip = css.split("\n").filter((l) => /^\.fd-livetile\s*\{/.test(l)).join(" ");
+  assert.ok(!/height:\s*\d+px|overflow:\s*hidden/.test(clip), "the live tile's rule does not clip it: " + clip);
+  assert.ok(own.length >= 5, "the live tile's parts are styled: " + own.length);
+}
 
 // ---- the window picker's labels and the filed-row match
 assert.deepStrictEqual([30, 60, 120, 300, 0].map((w) => run("fdLiveWinLabel(" + w + ")")), ["Last 30 s", "Last 60 s", "Last 2 min", "Last 5 min", "Whole fight"]);
@@ -97,33 +123,33 @@ function fakeNode(cls, tag) {
   return n;
 }
 function fakeTile(name) {
-  const el = fakeNode("fd-tile");
+  const el = fakeNode("fd-livetile");
   el.dataset.fdTile = name;
-  ["fd-tile-title", "fd-tile-group", "fd-tile-bossname", "fd-tile-time", "fd-tile-nums"].forEach((c) => el.add(fakeNode(c)));
-  const hp = el.add(fakeNode("fd-tile-hp")); hp.add(fakeNode("", "i")); hp.add(fakeNode("", "span"));
-  for (let k = 0; k < 3; k++) el.add(fakeNode("fd-tile-ev"));
-  el.add(fakeNode("fd-tile-open"));
+  ["fd-livetile-title", "fd-livetile-group", "fd-livetile-bossname", "fd-livetile-time", "fd-livetile-nums"].forEach((c) => el.add(fakeNode(c)));
+  const hp = el.add(fakeNode("fd-livetile-hp")); hp.add(fakeNode("", "i")); hp.add(fakeNode("", "span"));
+  for (let k = 0; k < 3; k++) el.add(fakeNode("fd-livetile-ev"));
+  el.add(fakeNode("fd-livetile-open"));
   return el;
 }
 ctx.document = { createElement: (tag) => fakeNode("", tag) };
 const T = (over) => Object.assign({ name: "Gbmage", title: "Molten Core", group: "Gbmage", boss: "Magmadar", ms: 5000, bossHp: 80, alive: 9, total: 10, dps: 100, hps: 20, events: ["cast a", "cast b"], href: "#/commanders/Gbmage/fight/live" }, over || {});
 const tileEl = fakeTile("Gbmage");
 run("fdLiveTilePatch(el, t)", { el: tileEl, t: T() });
-const link = tileEl.querySelector(".fd-tile-open");
-assert.strictEqual(tileEl.querySelector(".fd-tile-time").textContent, "0:05");
-assert.strictEqual(tileEl.querySelector(".fd-tile-nums").textContent, "9/10 alive · 100 dps · 20 hps");
-assert.deepStrictEqual(tileEl.querySelectorAll(".fd-tile-ev").map((n) => [n.textContent, n.hidden]), [["cast a", false], ["cast b", false], ["", true]]);
-assert.strictEqual(tileEl.querySelector(".fd-tile-hp").hidden, false);
+const link = tileEl.querySelector(".fd-livetile-open");
+assert.strictEqual(tileEl.querySelector(".fd-livetile-time").textContent, "0:05");
+assert.strictEqual(tileEl.querySelector(".fd-livetile-nums").textContent, "9/10 alive · 100 dps · 20 hps");
+assert.deepStrictEqual(tileEl.querySelectorAll(".fd-livetile-ev").map((n) => [n.textContent, n.hidden]), [["cast a", false], ["cast b", false], ["", true]]);
+assert.strictEqual(tileEl.querySelector(".fd-livetile-hp").hidden, false);
 assert.strictEqual(link.attrs.href, "#/commanders/Gbmage/fight/live");
 const writes = () => tileEl.kids.reduce((a, k) => a + k.writes, 0);
 const before = writes();
 run("fdLiveTilePatch(el, t)", { el: tileEl, t: T() });
 assert.strictEqual(writes(), before, "an unchanged tick writes nothing");
 run("fdLiveTilePatch(el, t)", { el: tileEl, t: T({ ms: 6000, bossHp: null, boss: "" }) });
-assert.strictEqual(tileEl.querySelector(".fd-tile-time").textContent, "0:06");
-assert.strictEqual(tileEl.querySelector(".fd-tile-bossname").textContent, "trash");
-assert.ok(tileEl.querySelector(".fd-tile-hp").hidden, "no boss health: the bar is hidden");
-assert.strictEqual(tileEl.querySelector(".fd-tile-open"), link, "the link node is the same one");
+assert.strictEqual(tileEl.querySelector(".fd-livetile-time").textContent, "0:06");
+assert.strictEqual(tileEl.querySelector(".fd-livetile-bossname").textContent, "trash");
+assert.ok(tileEl.querySelector(".fd-livetile-hp").hidden, "no boss health: the bar is hidden");
+assert.strictEqual(tileEl.querySelector(".fd-livetile-open"), link, "the link node is the same one");
 assert.strictEqual(link.writes, 1, "and its href was written once, not every tick");
 
 // the grid: tiles kept by name and reordered by moves, new ones built, gone ones removed, the note last

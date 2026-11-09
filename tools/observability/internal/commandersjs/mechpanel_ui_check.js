@@ -95,16 +95,16 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
   const tile = { name: "Cmd", title: "ZG", group: "Cmd", boss: "Hakkar", ms: 125000, bossHp: 42, alive: 9, total: 10, dps: 1, hps: 2, events: [], href: "#x",
     mech: { text: "Hakkar: dosed " + EVIL + "/2 cycles", title: "Live: \"2 s\"" } };
   const html = run("fdLiveTileHtml(t)", { t: tile });
-  assert.ok(/<div class="fd-tile-mech" title="Live: &quot;2 s&quot;">Hakkar: dosed &lt;b&gt;x&lt;\/b&gt;\/2 cycles<\/div>/.test(html), "escaped text and title: " + html);
+  assert.ok(/<div class="fd-livetile-mech" title="Live: &quot;2 s&quot;">Hakkar: dosed &lt;b&gt;x&lt;\/b&gt;\/2 cycles<\/div>/.test(html), "escaped text and title: " + html);
   assert.strictEqual(count(html, /"/g) % 2, 0, "balanced quotes");
   const bare = run("fdLiveTileHtml(t)", { t: Object.assign({}, tile, { mech: null }) });
-  assert.ok(bare.includes('<div class="fd-tile-mech"></div>'), "no row: the slot stays empty (CSS hides it)");
+  assert.ok(bare.includes('<div class="fd-livetile-mech"></div>'), "no row: the slot stays empty (CSS hides it)");
   // the 1 s patch: a text node is rewritten only when it changed, the title follows
   const node = () => { const n = { textContent: "", attrs: {}, writes: 0, kids: [], classList: { toggle() {} }, dataset: {} };
     Object.defineProperty(n, "textContent", { get() { return n._t || ""; }, set(v) { n._t = v; n.writes++; } });
     n.getAttribute = (k) => (k in n.attrs ? n.attrs[k] : null); n.setAttribute = (k, v) => { n.attrs[k] = v; n.writes++; }; n.removeAttribute = (k) => { delete n.attrs[k]; n.writes++; };
     return n; };
-  const mech = node(), tileEl = { querySelector: (s) => (s === ".fd-tile-mech" ? mech : null), querySelectorAll: () => [] };
+  const mech = node(), tileEl = { querySelector: (s) => (s === ".fd-livetile-mech" ? mech : null), querySelectorAll: () => [] };
   run("fdLiveTilePatch(el, t)", { el: tileEl, t: tile });
   assert.strictEqual(mech.textContent, tile.mech.text);
   assert.strictEqual(mech.attrs.title, tile.mech.title);
@@ -219,7 +219,7 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
 {
   const tags = Array.from(indexHtml.matchAll(/<script src="\/static\/js\/([a-z]+\.js)\?v=(\d+)">/g), (m) => m[1]);
   assert.ok(tags.indexOf("fightauras.js") < tags.indexOf("fdmech.js") && tags.indexOf("fdmech.js") < tags.indexOf("fdlive.js") && tags.indexOf("fdmech.js") < tags.indexOf("app.js"), "fdmech.js loads after fightauras.js and before app.js: " + tags.join(","));
-  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /static\/js\/app\.js\?v=62/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
+  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /static\/js\/app\.js\?v=63/.test(indexHtml) && /app\.css\?v=35/.test(indexHtml), "the changed assets carry new versions");
   assert.ok(src.includes('class="fd-mechbox"') && src.includes('class="fd-mechbody"') && src.includes('class="fd-livemech cell-muted"'), "the section and the live bar slot are in the card");
   assert.ok(src.indexOf('class="fd-mechbox"') > src.indexOf('class="fd-underbox"'), "directly under the underperforming bots");
   assert.ok(/fdMechSync\(card, bind, fd, /.test(src) && /fdLiveMechBar\(card, st, lf, bind\)/.test(src) && /fdLiveMechBar\(card, liveSt, liveFight, bind\)/.test(src), "rendered with the card and repainted by the live tick");

@@ -539,7 +539,7 @@ assert.ok(src.includes('<div class="fm-focus" hidden></div>\n            <div cl
 const indexHtml = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
 const ft = indexHtml.indexOf('<script src="/static/js/fightmap.js?v=2"></script>'), at = indexHtml.indexOf('<script src="/static/js/app.js?v=');
 assert.ok(ft > 0 && at > ft, "index.html loads fightmap.js before app.js");
-assert.ok(/fightreplay\.js\?v=4/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=62/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
+assert.ok(/fightreplay\.js\?v=4/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=63/.test(indexHtml) && /app\.css\?v=35/.test(indexHtml), "the changed assets carry new versions");
 const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
 const classes = new Set(src.match(/\bfm-[a-z-]+\b/g));
 ["fm-trail", "fm-cloud", "fm-anchor", "fm-puller", "fm-heat", "fm-pin", "fm-focus", "fm-stand", "fm-label", "fm-unfocus"].forEach((c) => assert.ok(classes.has(c), c + " is emitted"));

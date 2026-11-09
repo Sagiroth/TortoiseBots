@@ -539,7 +539,7 @@ assert.ok(list.innerHTML.includes('data-fd-bosscast="69900"'), "the newest is on
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightevents.js") > 0 && at("fdfilter.js") > 0 && at("fightevents.js") < at("app.js") && at("fdfilter.js") < at("app.js") && at("fdview.js") < at("fdfilter.js"), "the modules load before app.js");
-  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=62/.test(html), "with their versions (bumped when round 1 changed them)");
+  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=63/.test(html), "with their versions (bumped when round 1 changed them)");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(css.includes(".fd-evgroup {") && css.includes("border-left: 2px solid var(--border-color)") && css.includes(".fd-events[hidden]"), "the css is there");
 }

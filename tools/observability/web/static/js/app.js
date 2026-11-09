@@ -7247,27 +7247,27 @@
     const hp = fdLiveHpOf(t);
     const evs = t.events || [];
     let lis = '';
-    for (let k = 0; k < FD_LIVE_TILE_EVENTS; k++) lis += `<li class="fd-tile-ev"${evs[k] ? '' : ' hidden'}>${esc(evs[k] || '')}</li>`;
-    return `<article class="fd-tile" data-fd-tile="${esc(t.name)}">`
-      + `<div class="fd-tile-head"><b class="fd-tile-title">${esc(t.title)}</b> <span class="cell-muted fd-tile-group">${esc(t.group)}</span></div>`
-      + `<div class="fd-tile-boss"><span class="fd-tile-bossname${t.boss ? '' : ' cell-muted'}">${t.boss ? esc(t.boss) : 'trash'}</span> <span class="fd-tile-time">${esc(fdLiveClock(t.ms))}</span></div>`
-      + `<div class="fd-tile-hp" title="Boss health"${hp == null ? ' hidden' : ''}><i style="width:${hp == null ? 0 : hp}%"></i><span>${hp == null ? '' : hp + '%'}</span></div>`
-      + `<div class="fd-tile-nums">${esc(fdLiveNumsText(t))}</div>`
-      + `<div class="fd-tile-mech"${fdMechTitleAttr(t.mech)}>${t.mech ? esc(t.mech.text) : ''}</div>`
-      + `<ul class="fd-tile-events">${lis}</ul>`
-      + `<a class="btn fd-tile-open" href="${esc(t.href)}">Open live</a>`
+    for (let k = 0; k < FD_LIVE_TILE_EVENTS; k++) lis += `<li class="fd-livetile-ev"${evs[k] ? '' : ' hidden'}>${esc(evs[k] || '')}</li>`;
+    return `<article class="fd-livetile" data-fd-tile="${esc(t.name)}">`
+      + `<div class="fd-livetile-head"><b class="fd-livetile-title">${esc(t.title)}</b> <span class="cell-muted fd-livetile-group">${esc(t.group)}</span></div>`
+      + `<div class="fd-livetile-boss"><span class="fd-livetile-bossname${t.boss ? '' : ' cell-muted'}">${t.boss ? esc(t.boss) : 'trash'}</span> <span class="fd-livetile-time">${esc(fdLiveClock(t.ms))}</span></div>`
+      + `<div class="fd-livetile-hp" title="Boss health"${hp == null ? ' hidden' : ''}><i style="width:${hp == null ? 0 : hp}%"></i><span>${hp == null ? '' : hp + '%'}</span></div>`
+      + `<div class="fd-livetile-nums">${esc(fdLiveNumsText(t))}</div>`
+      + `<div class="fd-livetile-mech"${fdMechTitleAttr(t.mech)}>${t.mech ? esc(t.mech.text) : ''}</div>`
+      + `<ul class="fd-livetile-events">${lis}</ul>`
+      + `<a class="btn fd-livetile-open" href="${esc(t.href)}">Open live</a>`
       + '</article>';
   }
 
   // The 1 s update of a tile that is already on the page: only the texts that changed, so a link the reader focused stays focused.
   function fdLiveTilePatch(el, t) {
     const text = (sel, v) => { const n = el.querySelector(sel); if (n && n.textContent !== v) n.textContent = v; return n; };
-    text('.fd-tile-title', String(t.title));
-    text('.fd-tile-group', String(t.group));
-    const name = text('.fd-tile-bossname', t.boss ? String(t.boss) : 'trash');
+    text('.fd-livetile-title', String(t.title));
+    text('.fd-livetile-group', String(t.group));
+    const name = text('.fd-livetile-bossname', t.boss ? String(t.boss) : 'trash');
     if (name) name.classList.toggle('cell-muted', !t.boss);
-    text('.fd-tile-time', fdLiveClock(t.ms));
-    const hp = fdLiveHpOf(t), bar = el.querySelector('.fd-tile-hp');
+    text('.fd-livetile-time', fdLiveClock(t.ms));
+    const hp = fdLiveHpOf(t), bar = el.querySelector('.fd-livetile-hp');
     if (bar) {
       bar.hidden = hp == null;
       const fill = bar.querySelector('i');
@@ -7275,19 +7275,19 @@
       const label = bar.querySelector('span');
       if (label && hp != null && label.textContent !== hp + '%') label.textContent = hp + '%';
     }
-    text('.fd-tile-nums', fdLiveNumsText(t));
-    const mech = text('.fd-tile-mech', t.mech ? String(t.mech.text) : '');
+    text('.fd-livetile-nums', fdLiveNumsText(t));
+    const mech = text('.fd-livetile-mech', t.mech ? String(t.mech.text) : '');
     if (mech) {
       const ti = t.mech && t.mech.title ? String(t.mech.title) : '';
       if ((mech.getAttribute('title') || '') !== ti) { if (ti) mech.setAttribute('title', ti); else mech.removeAttribute('title'); }
     }
-    const lis = el.querySelectorAll('.fd-tile-ev');
+    const lis = el.querySelectorAll('.fd-livetile-ev');
     for (let k = 0; k < lis.length; k++) {
       const v = (t.events || [])[k] || '';
       if (lis[k].textContent !== v) lis[k].textContent = v;
       lis[k].hidden = !v;
     }
-    const link = el.querySelector('.fd-tile-open');
+    const link = el.querySelector('.fd-livetile-open');
     if (link && link.getAttribute('href') !== t.href) link.setAttribute('href', t.href);
   }
 
