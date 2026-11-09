@@ -438,7 +438,7 @@ namespace ai
             // and a bot already walking its approach never pays a second path
             // search. MoveTo relaunches the spline every call, so without this
             // the reach re-pathed and restarted the walk on every tick.
-            bool const partyHunter = bot->getClass() == CLASS_HUNTER && GetMaster() && bot->GetGroup();
+            bool const partyHunter = bot->GetClass() == CLASS_HUNTER && GetMaster() && bot->GetGroup();
             if (!UseRangedApproach(map->IsDungeon() || partyHunter, distance, ATTACK_DISTANCE))
                 return false;
 
