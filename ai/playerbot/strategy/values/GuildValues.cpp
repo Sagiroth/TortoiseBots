@@ -1276,7 +1276,11 @@ bool HasGuildTravelOrderValue::Calculate()
     // the bags: a farm or buy order whose last items wait in the mail still
     // walks to the mailbox (live: a sub-order sat 90 min on 4/2 in the mail).
     if (!mailLeg && !OrderStillNeedsWork(bot, order))
+    {
+        blocked("delivered plus bags plus mail already cover the amount");
         return false;
+    }
+    blocked("ok, order travel allowed");
     return true;
 }
 
