@@ -6,6 +6,19 @@
 // getElementById walks the document tree like the browser's, so an element inside a removed card is no longer found: that is
 // what the layer-panel check needs to see.
 
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+// An attribute as the browser's selectors see it: one setAttribute wrote (own properties only, so "constructor" is not an attribute), or a
+// data-* one that was written through el.dataset (data-fd-panel is dataset.fdPanel). null when there is none.
+function attrOf(el, k) {
+  if (hasOwn(el.attributes, k)) return el.attributes[k];
+  if (k.startsWith("data-")) {
+    const key = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    if (hasOwn(el.dataset, key)) return String(el.dataset[key]);
+  }
+  return null;
+}
+
 function simpleTest(sel) {
   const m = /^([a-zA-Z][\w-]*)?((?:[.#][\w-]+|\[[\w-]+(?:="[^"]*")?\])*)$/.exec(sel);
   if (!m) throw new Error("fakedom: unsupported selector " + sel);
@@ -15,7 +28,7 @@ function simpleTest(sel) {
   // [attr] and [attr="value"] read the attributes setAttribute wrote
   const attrs = Array.from(m[2].matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g), (x) => [x[1], x[2]]);
   return (el) => (!tag || el.tagName === tag) && (!id || el.id === id[1]) && classes.every((c) => el.classList.contains(c))
-    && attrs.every(([k, v]) => k in el.attributes && (v === undefined || el.attributes[k] === v));
+    && attrs.every(([k, v]) => { const got = attrOf(el, k); return got !== null && (v === undefined || got === v); });
 }
 
 function Element(tag) {
@@ -98,9 +111,9 @@ Element.prototype.setAttribute = function (k, v) { this.attributes[k] = String(v
 
 Element.prototype.removeAttribute = function (k) { delete this.attributes[k]; };
 
-Element.prototype.hasAttribute = function (k) { return k in this.attributes; };
+Element.prototype.hasAttribute = function (k) { return attrOf(this, k) !== null; };
 
-Element.prototype.getAttribute = function (k) { return k in this.attributes ? this.attributes[k] : null; };
+Element.prototype.getAttribute = function (k) { return attrOf(this, k); };
 
 Element.prototype.contains = function (el) {
   for (let n = el; n; n = n.parentElement) if (n === this) return true;

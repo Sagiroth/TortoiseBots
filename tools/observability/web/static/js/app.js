@@ -5619,7 +5619,7 @@
   // force is the unsaved edit, else the Shared layout a link carried, else the saved one picked, else none: the debugger's own grid, which
   // is drawn by the stylesheet alone and gets no class from here. Applying a layout is style-only (an order, a span and a hide mark on the
   // panels the template tags with data-fd-panel): no card is rebuilt, no request is made, and a running live view keeps its tick.
-  const fdLay = { state: FdLayout.load(fdPageStore), shared: null, sel: '', edit: null, note: '', armed: 0, armTimer: 0, focus: '' };
+  const fdLay = { state: FdLayout.load(fdPageStore), shared: null, sel: '', edit: null, note: '', armed: 0, armTimer: 0, focus: '', written: '' };
   fdLay.sel = fdLay.state.active ? 'n:' + fdLay.state.active : '';
 
   function fdLayCurrent() {
@@ -5669,6 +5669,15 @@
     });
   }
 
+  // The chip beside the Panels button: while a link's layout is in force the page says so, whether or not the dialog is open.
+  function fdLayChip() {
+    const chip = document.getElementById('cmd-fd-laychip');
+    if (!chip) return;
+    const on = fdLay.sel === '~' && !!fdLay.shared && cmdPageMode() === 'debug';
+    chip.hidden = !on;
+    chip.textContent = fdLay.edit ? 'Shared layout (edited)' : 'Shared layout';
+  }
+
   function fdLayOptionsHtml(state, shared, sel, edited) {
     const opt = (v, label, on, extra) => `<option value="${esc(v)}"${on ? ' selected' : ''}${extra || ''}>${esc(label)}</option>`;
     let h = opt('', 'Default', !edited && sel === '');
@@ -5679,7 +5688,7 @@
   }
 
   function fdLayRowsHtml(layout) {
-    const rows = FdLayout.normalize(layout).panels;
+    const rows = FdLayout.normalize(layout).panels, only = FdLayout.lastVisible(layout);
     const label = id => FdLayout.PANELS.find(p => p.id === id).label;
     return rows.map((e, i) => {
       const nm = esc(label(e.id)), id = esc(e.id);
@@ -5687,7 +5696,7 @@
         + `<button type="button" class="btn" data-fd-up="${id}" aria-label="Move ${nm} up"${i === 0 ? ' disabled' : ''}>↑</button>`
         + `<button type="button" class="btn" data-fd-down="${id}" aria-label="Move ${nm} down"${i === rows.length - 1 ? ' disabled' : ''}>↓</button>`
         + `<select data-fd-span="${id}" aria-label="${nm} width">${FdLayout.SPANS.map(n => `<option value="${n}"${n === e.span ? ' selected' : ''}>${esc(FdLayout.SPAN_LABELS[n])}</option>`).join('')}</select>`
-        + `<label class="fd-arr-show"><input type="checkbox" data-fd-show="${id}"${e.hide ? '' : ' checked'}> Show</label></li>`;
+        + `<label class="fd-arr-show"><input type="checkbox" data-fd-show="${id}"${e.hide ? '' : ' checked'}${e.id === only ? ' disabled title="The last shown panel cannot be hidden"' : ''}> Show</label></li>`;
     }).join('');
   }
 
@@ -5731,15 +5740,16 @@
 
   // The dialog follows the state; a control the viewer was on keeps the focus through the repaint.
   function fdLayPaint() {
+    fdLayChip(); // the chip is on the page whether or not the dialog was ever opened
     const d = document.getElementById('fd-arrange');
-    if (!d) return;
+    if (!d) { fdLay.focus = ''; return; }
     const cur = fdLayCurrent(), saved = fdLay.sel.indexOf('n:') === 0 && !fdLay.edit;
     d.querySelector('[data-fd-lay]').innerHTML = fdLayOptionsHtml(fdLay.state, fdLay.shared, fdLay.sel, !!fdLay.edit);
     d.querySelector('.fd-arr-list').innerHTML = fdLayRowsHtml(cur || FdLayout.defaults());
     const del = d.querySelector('[data-fd-del]');
     del.disabled = fdLay.sel.indexOf('n:') !== 0;
     del.textContent = fdLay.armed ? 'Click again to delete' : 'Delete';
-    d.querySelector('.fd-arr-note').textContent = fdLay.note || (saved ? '' : cur ? 'Not saved: name it and press Save as to keep it.' : 'The default grid.');
+    d.querySelector('.fd-arr-note').textContent = fdLay.note || (saved ? '' : fdLay.sel === '~' && !fdLay.edit ? 'Shared layout from a link: not saved. Name it and press Save as to keep it.' : cur ? 'Not saved: name it and press Save as to keep it.' : 'The default grid.');
     if (fdLay.focus) { const f = d.querySelector(fdLay.focus); if (f && !f.disabled && f.focus) f.focus(); fdLay.focus = ''; }
   }
 
@@ -5784,7 +5794,10 @@
     if (!next) return;
     fdLay.edit = next;
     fdLay.note = '';
-    fdLay.focus = '[data-fd-' + (op === 'show' ? 'show' : op) + '="' + String(id).replace(/[^a-z]/g, '') + '"]';
+    const sel = (o) => '[data-fd-' + o + '="' + String(id).replace(/[^a-z]/g, '') + '"]';
+    // a button that has just been disabled (the panel reached an end) cannot hold the focus: the other arrow of its row takes it
+    const at = next.panels.findIndex(e => e.id === id);
+    fdLay.focus = op === 'up' && at === 0 ? sel('down') : op === 'down' && at === next.panels.length - 1 ? sel('up') : sel(op);
     fdLayChanged();
   }
 
@@ -5828,12 +5841,11 @@
   }
 
   // A link's layout (FdView.fromQuery already decoded and bounded it) becomes the Shared layout, unsaved; a layout the viewer has saved is
-  // not touched. The layout already in force (a saved one, an edit or the same link again) is left as it is: the page's own hash carries it.
+  // not touched. Only the layout this page itself last wrote into the hash (fdLay.written), read back by the router, is skipped.
   function fdLaySetShared(layout) {
     if (!layout) return;
-    const cur = fdLayCurrent();
-    if (cur && FdLayout.encode(cur) === FdLayout.encode(layout)) return; // the layout in force (the page's own link carries it): nothing to switch
-    fdLay.shared = layout;
+    if (FdLayout.encode(layout) === fdLay.written) return; // what this page itself last wrote into the hash, read back: nothing to switch
+    fdLay.shared = layout; // any other link layout is the Shared layout, even when it equals a saved one
     fdLay.sel = '~';
     fdLay.edit = null;
     fdLay.note = '';
@@ -5883,6 +5895,7 @@
     el.querySelectorAll('[data-page-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pageMode === m ? 'true' : 'false'));
     const panels = document.getElementById('cmd-fd-panels');
     if (panels) panels.hidden = m !== 'debug'; // the Panels button arranges the debugger's panels only
+    fdLayChip();
   }
 
   // The hash decides the open tab and the Fight debugger mode: #/commanders/<name> (the old form) still opens the debugger,
@@ -5977,16 +5990,18 @@
     const vk = live ? 'live:' : fd.sel;
     const view = fd.view && (live ? String(fd.view.key).indexOf('live:') === 0 : fd.view.key === fd.sel) ? fd.view : null;
     const au = fd.au && (live ? String(fd.au.key).indexOf('live:') === 0 : fd.au.key === vk) ? fd.au : null;
+    const curLay = fdLayCurrent();
     const fq = FdView.toQuery({
       live, follow: view ? view.follow : true, range: view ? view.range : null, filter: fd.filter,
       au: au && au.userSid ? au.sid : null, marker: au && au.userMark ? au.marker : null,
       night: fd.day || null, rp: fd.rp && fd.rp.on && fd.rp.key === fd.sel ? Math.round(fd.rp.t) : null, sp: fd.rp ? fd.rp.speed : 1,
-      lw: live ? fd.liveWin : null, lay: fdLayCurrent(),
+      lw: live ? fd.liveWin : null, lay: curLay,
     });
     const q = FdView.stripFd(new URLSearchParams((window.location.hash.split('?')[1]) || '')).toString(); // bot, p and the rest stay first
     const qs = q + (q && fq ? '&' : '') + fq;
     const hash = routeHash({ tab: 'commanders', cmd: key, cmdMode: 'debug', cmdFight: fd.sel }) + (qs ? '?' + qs : '');
     fdPage.hashQ = fq;
+    fdLay.written = curLay ? FdLayout.encode(curLay) : ''; // the layout the router will read back from this hash is not a link's
     if (window.location.hash === hash) return;
     try { history.replaceState(null, '', hash); } catch (e) { /* a browser that limits history writes keeps the last hash */ }
   }
@@ -6504,6 +6519,8 @@
     });
     const arrange = document.getElementById('cmd-fd-panels');
     if (arrange) arrange.addEventListener('click', fdLayOpen);
+    const chip = document.getElementById('cmd-fd-laychip');
+    if (chip) chip.addEventListener('click', fdLayOpen);
   }
 
   function applyCommanders(view) {
@@ -9163,7 +9180,7 @@
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span> <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
-        <div class="fd-railwrap"><div class="fd-railbosses" data-fd-panel="bosses" aria-label="Boss abilities" hidden></div><div class="fd-railcol" data-fd-panel="rail" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div></div>
+        <div class="fd-railwrap" hidden><div class="fd-railbosses" data-fd-panel="bosses" aria-label="Boss abilities" hidden></div><div class="fd-railcol" data-fd-panel="rail" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div></div>
         <section class="cmd-live" data-fd-panel="live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
         <section class="fd-roles" data-fd-panel="roles" aria-label="Roles" hidden><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
         <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox" data-fd-panel="under"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details><div class="fd-mech" data-fd-panel="mech" role="region" aria-label="Boss mechanics"><details class="fd-mechbox"><summary class="cmd-h">Boss mechanics</summary><div class="fd-mechbody"></div></details></div></section>

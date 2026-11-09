@@ -168,4 +168,32 @@ assert.strictEqual(FdLayout.save(null, FdLayout.emptyState()), false);
   assert.strictEqual(FdLayout.remove(ok("a").state, "a").active, "", "deleting the active layout clears it");
 }
 
+
+// ---- the last shown panel (L1): show() refuses to hide it, normalize keeps one shown, lastVisible names it
+{
+  const allHidden = { panels: FdLayout.PANELS.map((p) => ({ id: p.id, hide: true })) };
+  const n = FdLayout.normalize(allHidden);
+  assert.deepStrictEqual(n.panels.map((e) => e.hide), [false].concat(Array(14).fill(true)), "a layout that hides everything keeps its first panel shown");
+  const dec = FdLayout.decode(FdLayout.PANELS.map((p) => p.code + "." + p.span + ".h").join("~"));
+  assert.strictEqual(dec.panels.filter((e) => !e.hide).length, 1, "so does a link's");
+  let l = FdLayout.defaults();
+  FdLayout.PANELS.slice(1).forEach((p) => { l = FdLayout.show(l, p.id, false); });
+  assert.strictEqual(FdLayout.lastVisible(l), "run");
+  eq(FdLayout.show(l, "run", false), l, "hiding the last shown panel changes nothing");
+  assert.strictEqual(FdLayout.show(FdLayout.show(l, "map", true), "run", false).panels[0].hide, true, "with another shown, the first can be hidden");
+  assert.strictEqual(FdLayout.lastVisible(FdLayout.defaults()), null);
+}
+
+// ---- names (L5): bidi overrides and isolates, zero-width characters and separators are refused like control characters
+["\u200b", "\u200c", "\u200d", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068", "\u2069", "\u2028", "\u2029", "\u2060", "\ufeff"].forEach((c) => {
+  assert.strictEqual(FdLayout.cleanName("ab" + c + "cd"), null, "refused: U+" + c.charCodeAt(0).toString(16));
+  if (c.trim() !== "") assert.strictEqual(FdLayout.cleanName(c + "x"), null, "also at the start (whitespace ones are trimmed there, like any space)");
+});
+assert.strictEqual(FdLayout.cleanName("Raid \u00e5\u00f8 night 2"), "Raid \u00e5\u00f8 night 2", "ordinary text with letters outside ASCII is fine");
+{
+  const s = { m: {}, getItem(k) { return k in this.m ? this.m[k] : null; }, setItem(k, v) { this.m[k] = v; } };
+  s.m[FdLayout.STORAGE_KEY] = JSON.stringify({ active: "", layouts: { ["ab\u202ecd"]: {}, ok: {} } });
+  assert.deepStrictEqual(Object.keys(FdLayout.load(s).layouts), ["ok"], "a stored name with an override is dropped when read");
+}
+
 console.log("fdlayout_check.js ok");

@@ -3343,7 +3343,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .cmd-maptools [data-act="layers"] { display: none; }
 
 .fd-raid { grid-area: frames; min-width: 0; }
-.fd-railwrap { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.cmd-card.fd-on .fd-railwrap { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.fd-railwrap[hidden], .cmd-card.fd-on .fd-railwrap[hidden] { display: none; }
 .fd-railcol { min-width: 0; display: grid; gap: 6px; align-content: start; }
 .fd-raidhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
 .fd-raidhead .cmd-h { margin: 0; }
@@ -3354,7 +3355,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railwrap[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-meters[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-meters[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
@@ -3611,7 +3612,8 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 @media (max-width: 760px) {
   .cmd-card.fd-on.fd-custom [data-fd-panel] { grid-column: 1 / -1; }
 }
-#cmd-fd-panels[hidden] { display: none; }
+#cmd-fd-panels[hidden], #cmd-fd-laychip[hidden] { display: none; }
+.fd-laychip { padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-card-subtle); color: var(--accent-yellow); font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .fd-arrange { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 14px 16px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); }
 .fd-arrange::backdrop { background: rgba(0, 0, 0, 0.5); }
 .fd-arr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

@@ -36,7 +36,20 @@ const J = (v) => JSON.parse(JSON.stringify(v));
   assert.ok(/<div class="fd-railbosses" data-fd-panel="bosses"/.test(src) && /<div class="fd-railcol" data-fd-panel="rail" hidden>/.test(src), "the boss abilities and the fight rail are two panels");
   assert.ok(/class="cmd-panel cmd-controls" data-fd-panel="controls"/.test(src), "the run controls are tagged where the debug paint moves them from");
   assert.ok(!/class="fd-livebar"[^>]*data-fd-panel/.test(src), "the live bar is not a panel");
-  assert.ok(/<div class="fd-railwrap">/.test(src), "the rail and the boss abilities share a wrapper the custom grid dissolves");
+  assert.ok(/<div class="fd-railwrap" hidden>/.test(src), "the rail and the boss abilities share a wrapper the custom grid dissolves; it is hidden until the debugger paint shows it");
+  assert.ok(/\.fd-runtl, \.fd-raid, \.fd-railwrap, \.fd-railcol,/.test(src) && src.includes("el.hidden = !debug"), "the debug paint shows and hides it with the rail");
+  // The Raids and Dungeons live cards are built from this template and never take the debugger paint: every element a CSS rule outside the
+  // debugger (no .fd-on) puts in a grid area must be hidden in the template, or it becomes a visible grid item and adds implicit tracks.
+  const cardTpl = src.slice(src.indexOf('  function newCmdCard(key)'), src.indexOf('bindCmdMap(card, key);', src.indexOf('  function newCmdCard(key)')));
+  assert.ok(cardTpl.includes('class="fd-railwrap"'), 'the template slice is the card');
+  const areaRules = Array.from(fs.readFileSync(path.join(path.dirname(appPath), "..", "css", "app.css"), "utf8").matchAll(/^((?:\.[\w-]+(?:, )?)+) \{[^}]*grid-area:/gm), (m) => m[1]).join(", ").split(", ");
+  assert.ok(areaRules.includes(".fd-railwrap") === false, "the wrapper's grid-area rule is scoped to .fd-on");
+  assert.ok(areaRules.length >= 3, "the scan sees the unscoped grid-area rules: " + areaRules.join(","));
+  areaRules.forEach((sel) => {
+    const cls = sel.slice(1), tag = new RegExp(`<[a-z]+ class="${cls}[ "][^>]*>`).exec(cardTpl);
+    if (!tag) return; // not part of a card (the overview's own markup)
+    assert.ok(/\shidden[\s>]/.test(tag[0]), cls + " has a grid-area outside .fd-on, so the card template must hide it: " + tag[0]);
+  });
 }
 
 // ---- the page's bits the layout code touches
@@ -44,19 +57,19 @@ const dom = createDocument();
 const memStore = () => { const m = {}; const writes = []; return { m, writes, getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { writes.push(k); m[k] = String(v); } }; };
 let store = memStore();
 const timers = [];
-const ctx = { console, Object, Math, Date, JSON, String, Number, Array, FdLayout, document: dom.document,
+const ctx = { cmdPageMode: () => "debug", console, Object, Math, Date, JSON, String, Number, Array, FdLayout, document: dom.document,
   setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: (h) => { if (h && timers[h - 1]) timers[h - 1].dead = true; },
-  fdPageStore: store, cmdCards: new Map(), fdPage: { open: null }, fdViewHash: (k) => { hashes.push(k); },
+  fdPageStore: store, cmdCards: new Map(), fdPage: { open: null }, fdViewHash: (k) => { hashes.push(k); vm.runInContext("fdLay.written = ((c) => (c ? FdLayout.encode(c) : ''))(fdLayCurrent())", ctx); }, // what the real one records
   cmdSched: { shown: (k) => k !== "off", mark: (k) => { marked.push(k); } }, drawCmdMap: (k) => { drawn.push(k); } };
 const hashes = [], drawn = [], marked = [];
 vm.createContext(ctx);
 vm.runInContext([grab("esc"), src.slice(src.indexOf("  const fdLay = {"), src.indexOf("\n", src.indexOf("  fdLay.sel = fdLay.state.active")))].concat(
   ["fdLayCurrent", "fdLayApply", "fdLayApplyAll", "fdLayOptionsHtml", "fdLayRowsHtml", "fdLayPaint", "fdLayChanged", "fdLayDisarm", "fdLayPersist", "fdLayPick",
-    "fdLayAct", "fdLaySave", "fdLayDelete", "fdLaySetShared"].map(grab)).join("\n"), ctx);
+    "fdLayAct", "fdLaySave", "fdLayDelete", "fdLaySetShared", "fdLayChip"].map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const reset = (st) => {
   store = memStore();
-  run("fdLay.state = FdLayout.load(fdPageStore); fdLay.shared = null; fdLay.sel = fdLay.state.active ? 'n:' + fdLay.state.active : ''; fdLay.edit = null; fdLay.note = ''; fdLay.armed = 0; fdLay.focus = '';", { fdPageStore: store });
+  run("fdLay.state = FdLayout.load(fdPageStore); fdLay.shared = null; fdLay.sel = fdLay.state.active ? 'n:' + fdLay.state.active : ''; fdLay.edit = null; fdLay.note = ''; fdLay.armed = 0; fdLay.focus = ''; fdLay.written = '';", { fdPageStore: store });
   if (st) { store.m[FdLayout.STORAGE_KEY] = JSON.stringify(st); run("fdLay.state = FdLayout.load(fdPageStore); fdLay.sel = fdLay.state.active ? 'n:' + fdLay.state.active : '';"); }
   hashes.length = 0; drawn.length = 0; marked.length = 0; timers.length = 0; store.writes.length = 0;
 };
@@ -281,14 +294,37 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   assert.strictEqual(JSON.parse(store.m[FdLayout.STORAGE_KEY]).active, "k", "the viewer's own active layout is kept");
   run("fdLayAct('down', 'events')");
   assert.strictEqual(run("fdLayCurrent().panels[0].id"), "run", "an edit of the shared layout is an unsaved edit of it");
+  // the router reads back what this page wrote (written = the layout of the last hash write): that is not a link, nothing switches
   run("fdLaySetShared(l)", { l: run("fdLay.edit") });
   assert.ok(run("fdLay.edit"), "the page's own hash (the edit's code) read again changes nothing");
+  assert.strictEqual(run("fdLay.written"), FdLayout.encode(run("fdLay.edit")), "the hash write recorded the layout it carried");
   run("fdLaySetShared(l)", { l: FdLayout.normalize({ panels: [{ id: "events", span: 12 }] }) });
   assert.strictEqual(run("fdLay.edit"), null, "a link opened again is that layout again");
   run("fdLaySetShared(null)");
   assert.strictEqual(run("fdLay.sel"), "~", "no layout in the link: nothing changes");
   run("fdLayPick('n:k')");
   assert.strictEqual(run("fdLay.sel"), "n:k", "the viewer can pick their own again");
+  run("fdLayPick('~')");
+  assert.strictEqual(run("fdLay.sel"), "~", "and the link's layout is still there to pick");
+  // a link whose layout equals the saved one in force (or the unsaved edit) is still the Shared layout, and stays selectable
+  run("fdLayPick('n:k'); fdLay.written = ''"); // a page just opened from the link has written nothing yet
+  run("fdLaySetShared(l)", { l: LAY });
+  assert.strictEqual(run("fdLay.sel"), "~", "a link equal to the saved layout in force is installed as Shared");
+  assert.strictEqual(FdLayout.encode(run("fdLay.shared")), FdLayout.encode(LAY));
+  run("fdLayPick('')");
+  assert.strictEqual(run("fdLay.sel"), "", "switching away ...");
+  run("fdLayPick('~')");
+  assert.strictEqual(run("fdLay.sel"), "~", "... the Shared layout can be picked again");
+  assert.deepStrictEqual(Object.keys(run("fdLay.state.layouts")), ["k"], "and no saved layout was added");
+  run("fdLayPick('n:k'); fdLayAct('down', 'run')");
+  const editCode = FdLayout.encode(run("fdLay.edit"));
+  run("fdLay.written = ''; fdLaySetShared(l)", { l: run("fdLay.edit") });
+  assert.strictEqual(run("fdLay.sel"), "~", "a link equal to the unsaved edit is installed as Shared too (the edit is dropped)");
+  assert.strictEqual(run("fdLay.edit"), null);
+  assert.strictEqual(FdLayout.encode(run("fdLay.shared")), editCode);
+  // the page's own hash of a saved layout read back does not flip it to Shared
+  run("fdLayPick('n:k')");
+  assert.strictEqual(run("fdLay.written"), FdLayout.encode(LAY), "the page wrote the saved layout's code");
   run("fdLaySetShared(l)", { l: LAY });
   assert.strictEqual(run("fdLay.sel"), "n:k", "the page's own link (the saved layout's code) does not turn it into a Shared layout");
   run("fdPage.open = null");
@@ -304,7 +340,8 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
 
 // ---- the page wiring: the route, the hash, the button, the order of the scripts, the versions
 {
-  assert.ok(/lw: live \? fd\.liveWin : null, lay: fdLayCurrent\(\),/.test(grab("fdViewHash")), "the hash writes the layout in force");
+  assert.ok(/lw: live \? fd\.liveWin : null, lay: curLay,/.test(grab("fdViewHash")) && /const curLay = fdLayCurrent\(\);/.test(grab("fdViewHash")), "the hash writes the layout in force");
+  assert.ok(/fdLay\.written = curLay \? FdLayout\.encode\(curLay\) : '';/.test(grab("fdViewHash")), "and records which layout it carried (the router skips only that one)");
   assert.ok(/if \(fight && r\.fdq && r\.fdq\.lay\) fdLaySetShared\(r\.fdq\.lay\);/.test(grab("cmdRouteTab")), "a link's layout is the page's Shared layout");
   assert.ok(/fdLayApply\(card\);[^\n]*\n\s*cmdPlaceLiveStrip\(card, debug\);/.test(grab("cmdRenderCard")), "every card render applies it before the map is drawn");
   assert.ok(grab("cmdRenderCard").indexOf("fdLayApply(card)") < grab("cmdRenderCard").indexOf("drawCmdMap(key)"), "and the map draw follows (it reads its new size)");
@@ -320,8 +357,8 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   const names = tags.map((t) => t[0]);
   assert.ok(names.indexOf("fdlayout.js") > names.indexOf("fdview.js") && names.indexOf("fdlayout.js") < names.indexOf("app.js"), "fdlayout.js loads before app.js: " + names.join(","));
   const ver = (n) => (tags.find((t) => t[0] === n) || [])[1];
-  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["1", "3", "59"], "the changed scripts carry new versions");
-  assert.ok(/app\.css\?v=33/.test(indexHtml), "and so does the stylesheet");
+  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["2", "3", "60"], "the changed scripts carry new versions");
+  assert.ok(/app\.css\?v=34/.test(indexHtml), "and so does the stylesheet");
 }
 
 // ---- the stylesheet
@@ -333,7 +370,7 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   assert.ok(/\.cmd-card\.fd-on\.fd-custom \[data-fd-hide\]\s*\{\s*display:\s*none !important/.test(css), "a hide mark hides");
   assert.ok(/@media \(max-width: 760px\)\s*\{\s*\.cmd-card\.fd-on\.fd-custom \[data-fd-panel\]\s*\{\s*grid-column:\s*1 \/ -1/.test(css), "on a phone every panel is full width");
   assert.ok(!/\.fd-custom[^{]*\{[^}]*\bhidden\b/.test(css.replace(/\[data-fd-hide\]/g, "")), "no custom rule un-hides anything");
-  assert.ok(/\.fd-railwrap \{ grid-area: rail;/.test(css) && !/\.fd-railcol \{ grid-area/.test(css), "the default grid's rail area is the wrapper's now (same place, same look)");
+  assert.ok(/\.cmd-card\.fd-on \.fd-railwrap \{ grid-area: rail;/.test(css) && !/\.fd-railcol \{ grid-area/.test(css), "the default grid's rail area is the wrapper's now (same place, same look)");
   assert.ok(/\.fd-railwrap\[hidden\]/.test(css), "the wrapper hides with the rail");
   assert.ok(/\.fd-arrange \{/.test(css) && /\.fd-arrange::backdrop/.test(css), "the dialog has its look");
 }
@@ -349,6 +386,92 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   run("fdLay.state = FdLayout.load(fdPageStore); fdLay.sel = '';");
   assert.deepStrictEqual(Object.keys(run("fdLay.state.layouts")), ["a"], "hostile names and layouts are cleaned when read");
   assert.strictEqual(run("fdLay.state.layouts.a.panels.length"), 15);
+}
+
+
+// ---- the last shown panel cannot be hidden: the edit changes nothing and the dialog disables its Show box
+{
+  reset();
+  let only = FdLayout.defaults();
+  FdLayout.PANELS.slice(1).forEach((p) => { only = FdLayout.show(only, p.id, false); });
+  const rows = run("fdLayRowsHtml(l)", { l: only });
+  assert.ok(/data-fd-show="run" checked disabled/.test(rows), "the one shown panel's Show box is disabled: " + rows.match(/data-fd-show="run"[^>]*>/));
+  assert.strictEqual((rows.match(/data-fd-show="[a-z]+" checked/g) || []).length, 1);
+  assert.ok(!/data-fd-show="map"[^>]*disabled/.test(rows), "the hidden ones can be shown");
+  assert.ok(!/data-fd-show="[a-z]+"[^>]*disabled/.test(run("fdLayRowsHtml(l)", { l: FdLayout.defaults() })), "with several shown none is disabled");
+  run("fdLay.edit = only", { only });
+  run("fdLayAct('show', 'run', false)");
+  assert.strictEqual(run("fdLayCurrent().panels.find((e) => e.id === 'run').hide"), false, "hiding the last shown panel changes nothing");
+}
+
+// ---- Up or Down that reaches an end disables its button: the focus goes to the other arrow of the row
+{
+  reset();
+  run("fdLay.edit = FdLayout.move(FdLayout.defaults(), 'frames', -1)"); // frames is now second ... run first? move once puts frames at 0
+  assert.strictEqual(run("fdLayCurrent().panels[0].id"), "frames");
+  run("fdLayAct('down', 'frames')");
+  assert.strictEqual(run("fdLay.focus"), "", "painted at once with no dialog open: the focus is spent");
+  reset();
+  run("fdLay.edit = FdLayout.move(FdLayout.defaults(), 'frames', -1)");
+  const dlg = dom.element("dialog", "fd-arrange", "fd-arrange");
+  dom.document.body.appendChild(dlg);
+  const focus = []; // the fake dialog has no rows to find: record the selector fdLayPaint is asked to focus
+  const stub = (sel) => (sel === "[data-fd-lay]" || sel === ".fd-arr-list" || sel === "[data-fd-del]" || sel === ".fd-arr-note") ? dlg.children[["[data-fd-lay]", ".fd-arr-list", "[data-fd-del]", ".fd-arr-note"].indexOf(sel)] : { disabled: false, focus() { focus.push(sel); } };
+  ["a", "b", "c", "d"].forEach(() => dlg.appendChild(dom.element("div")));
+  dlg.querySelector = stub;
+  run("fdLayAct('up', 'frames')");
+  assert.deepStrictEqual(focus, ['[data-fd-down="frames"]'], "frames reached the top: the Down arrow takes the focus");
+  focus.length = 0;
+  run("fdLayAct('down', 'frames')");
+  assert.deepStrictEqual(focus, ['[data-fd-down="frames"]'], "a move that stays inside keeps the focus on its own arrow");
+  run("fdLay.edit = FdLayout.move(FdLayout.defaults(), 'mech', 1)"); focus.length = 0;
+  run("fdLayAct('down', 'mech')");
+  assert.deepStrictEqual(focus, ['[data-fd-up="mech"]'], "the last row's Down arrow is disabled: the Up arrow takes the focus");
+  focus.length = 0;
+  run("fdLayAct('span', 'map', '12')");
+  assert.deepStrictEqual(focus, ['[data-fd-span="map"]'], "a width change keeps its own select");
+  dlg.remove();
+}
+
+// ---- the Shared layout chip: shown while a link's layout is in force (and the page is the debugger), gone for a saved or default one
+{
+  reset();
+  const chip = dom.element("button", "cmd-fd-laychip", "fd-laychip"); chip.hidden = true;
+  dom.document.body.appendChild(chip);
+  run("fdLayChip()");
+  assert.strictEqual(chip.hidden, true, "no link layout: no chip");
+  run("fdLaySetShared(l)", { l: LAY });
+  assert.strictEqual(chip.hidden, false, "a link's layout shows the chip");
+  assert.strictEqual(chip.textContent, "Shared layout");
+  run("fdLayAct('down', 'map')");
+  assert.strictEqual(chip.textContent, "Shared layout (edited)");
+  run("fdLayPick('')");
+  assert.strictEqual(chip.hidden, true, "back to the default grid: the chip goes");
+  run("fdLayPick('~')");
+  assert.strictEqual(chip.hidden, false);
+  run("cmdPageMode = () => 'live'; fdLayChip();");
+  assert.strictEqual(chip.hidden, true, "on the Live page there is no chip");
+  run("cmdPageMode = () => 'debug'");
+  chip.remove();
+  assert.ok(/id="cmd-fd-laychip"[^>]*hidden/.test(indexHtml) || /hidden[^>]*id="cmd-fd-laychip"/.test(indexHtml), "the chip is in the view bar, hidden to begin with");
+  assert.ok(/fdLayChip\(\);\s*\n\s*\}/.test(grab("cmdPaintPageMode")) || grab("cmdPaintPageMode").includes("fdLayChip()"), "the page mode paint updates it");
+  assert.ok(/getElementById\('cmd-fd-laychip'\);\s*\n\s*if \(chip\) chip\.addEventListener\('click', fdLayOpen\);/.test(src), "it opens the dialog");
+}
+
+// ---- the fake DOM's own selectors (L6): an own-property check, and dataset writes are attributes
+{
+  const d = dom.element("div");
+  assert.strictEqual(d.querySelector("[constructor]"), null);
+  const host = dom.element("div"); const kid = dom.element("div");
+  host.appendChild(kid);
+  assert.strictEqual(host.querySelectorAll("[constructor]").length + host.querySelectorAll("[toString]").length + host.querySelectorAll("[hasOwnProperty]").length, 0, "inherited names are not attributes");
+  kid.dataset.fdPanel = "map";
+  assert.strictEqual(host.querySelectorAll("[data-fd-panel]").length, 1, "a dataset write is visible to [data-x]");
+  assert.strictEqual(host.querySelectorAll('[data-fd-panel="map"]').length, 1);
+  assert.strictEqual(host.querySelectorAll('[data-fd-panel="x"]').length, 0);
+  assert.strictEqual(kid.getAttribute("data-fd-panel"), "map");
+  assert.strictEqual(kid.hasAttribute("data-fd-panel"), true);
+  assert.strictEqual(kid.hasAttribute("constructor"), false);
 }
 
 console.log("fdlayout_ui_check.js ok");

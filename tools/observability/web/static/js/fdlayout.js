@@ -55,6 +55,8 @@
       out.push({ id: p.id, span: spanOk(e.span) ? e.span : p.span, hide: e.hide === true });
     }
     PANELS.forEach((p) => { if (!has(seen, p.id)) out.push({ id: p.id, span: p.span, hide: false }); });
+    // A layout that hides every panel would leave an empty page: the first panel stays shown.
+    if (out.every((e) => e.hide)) out[0].hide = false;
     return { v: 1, panels: out };
   }
 
@@ -105,15 +107,23 @@
     return n;
   }
 
+  // The last visible panel cannot be hidden (the page would be empty): that edit changes nothing.
   function show(l, id, shown) {
     const n = normalize(l), e = n.panels.find((x) => x.id === id);
-    if (e) e.hide = !shown;
+    if (e && (shown || n.panels.some((x) => x !== e && !x.hide))) e.hide = !shown;
     return n;
+  }
+
+  // The id of the only visible panel, or null when two or more are shown (the dialog disables that one's Show box).
+  function lastVisible(l) {
+    const v = normalize(l).panels.filter((e) => !e.hide);
+    return v.length === 1 ? v[0].id : null;
   }
 
   // ---- the viewer's named layouts: { active: "" | name, layouts: { name: layout } }, kept in the browser (a storage that throws, or
   // junk in it, only means the layouts are not there).
-  const CTRL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+  // control characters, line separators, zero-width characters and the bidi overrides and isolates that make a name read as another one
+  const CTRL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/;
 
   // A layout name as the viewer typed it -> the trimmed name, or null when it is empty, longer than 40 characters, holds a control
   // character, or is the one name the layouts map cannot hold.
@@ -173,7 +183,7 @@
   // when 20 layouts are already kept; an existing name is replaced.
   function put(state, name, layout) {
     const nm = cleanName(name);
-    if (nm === null) return { ok: false, why: "A name is 1 to " + MAX_NAME + " characters, no control characters" };
+    if (nm === null) return { ok: false, why: "A name is 1 to " + MAX_NAME + " characters, no control, zero-width or bidi-override characters" };
     const cur = sanitize(state);
     if (!has(cur.layouts, nm) && Object.keys(cur.layouts).length >= MAX_LAYOUTS) return { ok: false, why: "At most " + MAX_LAYOUTS + " layouts" };
     cur.layouts[nm] = normalize(layout);
@@ -202,6 +212,6 @@
     return cur.active && has(cur.layouts, cur.active) ? cur.layouts[cur.active] : null;
   }
 
-  const api = { PANELS, SPANS, SPAN_LABELS, STORAGE_KEY, MAX_LAYOUTS, MAX_NAME, MAX_CODE, normalize, defaults, encode, move, resize, show, decode, apply, cleanName, emptyState, sanitize, load, save, put, remove, setActive, activeOf };
+  const api = { PANELS, SPANS, SPAN_LABELS, STORAGE_KEY, MAX_LAYOUTS, MAX_NAME, MAX_CODE, normalize, defaults, encode, move, resize, show, lastVisible, decode, apply, cleanName, emptyState, sanitize, load, save, put, remove, setActive, activeOf };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FdLayout = api;
 })(typeof self !== "undefined" ? self : this);
