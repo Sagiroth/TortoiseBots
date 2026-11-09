@@ -38,6 +38,11 @@ static_assert(ai::kLiquidTypeMagma == MAP_LIQUID_TYPE_MAGMA && ai::kLiquidTypeOc
     ai::kLiquidTypeSlime == MAP_LIQUID_TYPE_SLIME && ai::kLiquidTypeWater == MAP_LIQUID_TYPE_WATER &&
     ai::kSwimLiquidRequest == 0,
     "SwimPathPolicy.h liquid types out of step with the core's GridMapDefines.h");
+static_assert(ai::kNavGround == NAV_GROUND && ai::kNavMagma == NAV_MAGMA && ai::kNavSlime == NAV_SLIME &&
+    ai::kNavWater == NAV_WATER && ai::kNavSteepSlopes == NAV_STEEP_SLOPES,
+    "SteepSlopePolicy.h nav flags out of step with the core's MoveMapSharedDefines.h");
+static_assert(ai::kSteepPathNoPath == PATHFIND_NOPATH,
+    "SteepSlopePolicy.h NOPATH out of step with the core's PathFinder.h");
 
 namespace
 {
@@ -1365,6 +1370,12 @@ std::string WorldPosition::SwimLineWhy(const std::vector<WorldPosition>& path, c
 }
 
 //A single pathfinding attempt from one position to another. Returns pathfinding status and path.
+void WorldPosition::ExcludeSteepSlopes(PathFinder& pathfinder) { pathfinder.ExcludeSteepSlopes(); }
+bool WorldPosition::FellBackToPermissive(PathType strictType)
+{
+    return ai::ShouldRetryPermissive(static_cast<std::uint32_t>(strictType));
+}
+
 std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder, const Unit* bot, bool forceNormalPath) const
 {
     std::hash<std::thread::id> hasher;
@@ -1390,7 +1401,17 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
         end.CalculatePassengerOffset(bot->GetTransport());
     }
 
+    bool const grounded = !bot || (!bot->IsFlying() && !bot->IsTaxiFlying() && !bot->GetTransport());
+    if (grounded)
+        ExcludeSteepSlopes(*pathfinder);
     pathfinder->calculate(start.getVector3(), end.getVector3(), false);
+    PathType strictType = pathfinder->getPathType();
+    bool const fellBack = grounded && FellBackToPermissive(strictType);
+    if (fellBack)
+    {
+        pathfinder = std::make_unique<PathFinder>(bot);
+        pathfinder->calculate(start.getVector3(), end.getVector3(), false);
+    }
 
     points = pathfinder->getPath();
 
@@ -1599,13 +1620,10 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
     dtQueryFilter filter;
     dtPolyRef polyRef = INVALID_POLYREF;
 
-    uint16 includeFlags = 0;
-    uint16 excludeFlags = 0;
-
-    includeFlags |= (NAV_GROUND );
-    excludeFlags |= (NAV_MAGMA_SLIME | NAV_GROUND_STEEP | NAV_WATER);
-
-
+    uint16 includeFlags = NAV_GROUND;
+    // Walkable ground that is not steep, the same ground ExcludeSteepSlopes
+    // plans over: magma, slime and water were never walkable here either.
+    uint16 excludeFlags = NAV_MAGMA | NAV_SLIME | NAV_WATER | NAV_STEEP_SLOPES;
     filter.setIncludeFlags(includeFlags);
     filter.setExcludeFlags(excludeFlags);
 

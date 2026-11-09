@@ -650,6 +650,7 @@ static void ReadRunnerWay(Unit* target, Player* bot, bool& complete, bool& cliff
         }
     }
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(tx, ty, tz, false);
     complete = path.getPathType() == PATHFIND_NORMAL;
     std::vector<ai::RunnerPathPoint> points;

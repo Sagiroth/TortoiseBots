@@ -1264,6 +1264,7 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
         return SwimHandoffResult::NotTaken;
 
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(endPos.getX(), endPos.getY(), endPos.getZ(), false);
     f.coreType = static_cast<uint32>(path.getPathType());
     Vector3 const coreEnd = path.getActualEndPosition();
@@ -2083,6 +2084,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
                 if (waterLevel > -200000.0f && waterLevel > bottom)
                 {
                     PathFinder pathfinder(bot);
+                    WorldPosition::ExcludeSteepSlopes(pathfinder);
                     //Use standard pathfinder to find a route.
                     WorldPosition prevPoint = botPos;
                     pathfinder.calculate(moveToPos.GetVector3(), tarPos.GetVector3());
@@ -3153,6 +3155,7 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     goal.z = target->GetPositionZ();
 
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(goal.x, goal.y, goal.z, false);
     bool const incomplete = (path.getPathType() & PATHFIND_INCOMPLETE) != 0;
     float partialEndDistance = 0.0f;
@@ -3206,6 +3209,7 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     auto const pathFromLanding = [this, &goal](LedgePoint const& point)
     {
         PathFinder probe(bot);
+        WorldPosition::ExcludeSteepSlopes(probe);
         probe.calculate(Vector3(point.x, point.y, point.z), Vector3(goal.x, goal.y, goal.z), false);
         LedgePathProbe result;
         result.normal = probe.getPathType() == PATHFIND_NORMAL;

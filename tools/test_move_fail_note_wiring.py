@@ -79,7 +79,7 @@ class MoveFailNoteWiringTest(unittest.TestCase):
         # The path type is read in the shared check (CheckLeadMove) and captured by
         # `cmd move` only when it asked for a path (not "hold here").
         check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
-        self.assertIn("check.rawPathType = static_cast<uint32>(path.getPathType());", check)
+        self.assertIn("check.rawPathType = static_cast<uint32>(active->getPathType());", check)
         self.assertIn("check.facts.pathType = check.rawPathType;", check)
         fn = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
         self.assertIn("if (s_runOrderCapture.active && !RemoteCommander::IsAtLead(facts.distanceFromLead))\n    {\n"

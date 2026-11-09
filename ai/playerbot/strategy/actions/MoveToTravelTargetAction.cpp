@@ -119,6 +119,7 @@ static Creature* StuckHandInTaker(PlayerbotAI* ai, uint32 questId, int32 takerEn
 static bool TakerUnwalkable(Player* bot, Creature* taker)
 {
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(taker->GetPositionX(), taker->GetPositionY(), taker->GetPositionZ(), false);
 
     PathType const type = path.getPathType();
@@ -1311,6 +1312,7 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             else
             {
                 PathFinder probe(bot);
+                WorldPosition::ExcludeSteepSlopes(probe);
                 probe.calculate(location.getX(), location.getY(), location.getZ(), false);
                 pathTag = TravelMoveFailPathTag((uint32_t)probe.getPathType());
             }

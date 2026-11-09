@@ -61,6 +61,7 @@ bool ReachSapAction::ApproachAroundPack(Unit* target, float standDist)
         bool const fromBot = SapDist(from, here) < 0.01f;
         float const fromZ = fromBot ? botZ : SapGroundZ(map, from.x, from.y, targetZ);
         PathFinder path(bot);
+        WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(Vector3(from.x, from.y, fromZ), Vector3(to.x, to.y, SapGroundZ(map, to.x, to.y, targetZ)), false);
         if (path.getPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE))
             return false;

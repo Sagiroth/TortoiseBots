@@ -1654,6 +1654,7 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
 bool SeekWalkoutPathOk(Player* member, float x, float y, float z)
 {
     PathFinder path(member);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(path.getPathType());
     if (type & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE | PATHFIND_SHORTCUT | PATHFIND_NOT_USING_PATH))
@@ -1669,6 +1670,7 @@ bool SeekWalkoutPathOk(Player* member, float x, float y, float z)
 void SeekWalkoutPathProbe(Player* bot, float x, float y, float z, std::uint32_t& type, float& yd)
 {
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
     type = static_cast<std::uint32_t>(path.getPathType());
     yd = path.Length();

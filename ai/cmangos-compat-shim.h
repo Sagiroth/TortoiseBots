@@ -413,23 +413,6 @@ inline bool IsAreaAuraEffect(uint32 effect) {
         || effect == SPELL_EFFECT_APPLY_AREA_AURA_OWNER;
 }
 
-// === NAV_AREA_* / NAV_* (cmangos navmesh area types) ===
-#ifndef NAV_AREA_WATER
-#define NAV_AREA_WATER 7
-#endif
-#ifndef NAV_AREA_GROUND
-#define NAV_AREA_GROUND 4
-#endif
-#ifndef NAV_AREA_GROUND_STEEP
-#define NAV_AREA_GROUND_STEEP 3
-#endif
-#ifndef NAV_MAGMA_SLIME
-#define NAV_MAGMA_SLIME 0x18
-#endif
-#ifndef NAV_GROUND_STEEP
-#define NAV_GROUND_STEEP 0x02
-#endif
-
 // === CONDITION_FROM_AREATRIGGER_TELEPORT (cmangos) ===
 #ifndef CONDITION_FROM_AREATRIGGER_TELEPORT
 #define CONDITION_FROM_AREATRIGGER_TELEPORT 0

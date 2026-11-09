@@ -3818,7 +3818,7 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
     }
 
     std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-
+    WorldPosition::ExcludeSteepSlopes(*pathfinder);
     PointsArray points;
     PathType pathType;
     WorldPosition currentPos = startPos;
