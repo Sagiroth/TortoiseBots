@@ -305,6 +305,17 @@ func (s *Store) write(it Item) bool {
 	data = append(data, '\n')
 
 	size := s.fileSize[path]
+	// The meters are budgeted apart from the fight: a line that would cross the day file's cap with them is written without them, and
+	// only a fight too big even then is dropped (the rule before meters existed).
+	if len(stored.Meters) > 0 && size+int64(len(data)) > s.cfg.MaxFileBytes {
+		stored.Meters = nil
+		if data, err = json.Marshal(stored); err != nil {
+			log.Printf("[History] %s: %v", key, err)
+			return true
+		}
+		data = append(data, '\n')
+		s.logOnce(path+" (meters)", "the day file is nearly full; later fights of that day are kept without their meters")
+	}
 	if size+int64(len(data)) > s.cfg.MaxFileBytes {
 		s.logOnce(path, "the day file is full; later fights of that day are not kept")
 		s.dropped("file_cap")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 
 	"tortoise-observability/internal/combat"
 	"tortoise-observability/internal/history"
@@ -31,24 +32,90 @@ func metersSeries(src trackSource, f combat.Fight) *meters.Series {
 	return &s
 }
 
-// metersJSON is metersSeries as the history line stores it (nil: none).
+// metersJSON is the series as the history line stores it (compact, capped: meters.Encode); nil when there is none or it does not fit.
 func metersJSON(src trackSource, f combat.Fight) json.RawMessage {
 	s := metersSeries(src, f)
 	if s == nil {
 		return nil
 	}
-	b, err := json.Marshal(s)
-	if err != nil {
+	raw, ok := meters.Encode(*s)
+	if !ok {
 		return nil
 	}
-	return b
+	return raw
+}
+
+// meterCache keeps the series a fight's history line stored, decoded, so a detail request does not read the line from disk again.
+// A line is never rewritten, so an entry never goes stale; the cache is bounded (oldest entry out) and "no series" is cached too.
+type meterCache struct {
+	mu    sync.Mutex
+	m     map[string]*meters.Series
+	order []string
+}
+
+const meterCacheMax = 64
+
+func (c *meterCache) get(key string) (*meters.Series, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s, ok := c.m[key]
+	return s, ok
+}
+
+func (c *meterCache) put(key string, s *meters.Series) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]*meters.Series{}
+	}
+	if _, ok := c.m[key]; !ok {
+		c.order = append(c.order, key)
+		if len(c.order) > meterCacheMax {
+			delete(c.m, c.order[0])
+			c.order = c.order[1:]
+		}
+	}
+	c.m[key] = s
+}
+
+// storedMeters is the series the history wrote for this fight: found false while the fight is not written yet (still in the writer's
+// six-second wait), else the series or nil (the line carries none: no reports were kept, or it did not fit).
+func storedMeters(hs *history.Store, cache *meterCache, key string) (s *meters.Series, found bool) {
+	if hs == nil {
+		return nil, false
+	}
+	if s, ok := cache.get(key); ok {
+		return s, true
+	}
+	_, _, raw, ok := hs.FightMeters(key)
+	if !ok {
+		return nil, false
+	}
+	out := decodeMeters(raw)
+	cache.put(key, out)
+	return out, true
+}
+
+// decodeMeters is the stored series back in its served form; nil for a line with none or one that does not read.
+func decodeMeters(raw json.RawMessage) *meters.Series {
+	if len(raw) == 0 {
+		return nil
+	}
+	d, ok := meters.Decode(raw)
+	if !ok {
+		return nil
+	}
+	return &d
 }
 
 // combatFightDetailHandler serves GET /api/v1/combat/fight/<key>: the filed fight and its warnings, plus the damage and healing
-// series ("meters") for a fight the daemon watched. The detail key is (commander, session, id): fight ids repeat across commanders
-// and sessions. The list rows carry the composed key; callers may also pass the three parts as query params. A fight that is no
-// longer in memory is re-read from its history file and judged now with the same rules.
+// series ("meters") for a fight the daemon watched. The series is built once, when the history writes the fight (the writer waits for
+// the last reports), and every later request answers that stored one, so a track trimmed since changes nothing; only a fight not yet
+// written is built from the track, per request. The detail key is (commander, session, id): fight ids repeat across commanders and
+// sessions. The list rows carry the composed key; callers may also pass the three parts as query params. A fight that is no longer in
+// memory is re-read from its history file and judged now with the same rules.
 func combatFightDetailHandler(combatStore *combat.Store, historyStore *history.Store, src trackSource) http.HandlerFunc {
+	cache := &meterCache{}
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
@@ -56,17 +123,19 @@ func combatFightDetailHandler(combatStore *combat.Store, historyStore *history.S
 		if !ok {
 			if commander, session, id, qok := combatFightKey(q); qok {
 				f, warnings, ok = combatStore.Get(commander, session, id)
+				key = combat.Key(commander, session, id)
 			}
 		}
 		if !ok {
 			if historyStore != nil {
-				if hf, row, ms, hok := historyStore.FightMeters(key); hok {
+				if hf, row, raw, hok := historyStore.FightMeters(key); hok {
+					ms := decodeMeters(raw)
 					writeJSON(w, struct {
 						Fight    combat.Fight     `json:"fight"`
 						Warnings []combat.Warning `json:"warnings"`
 						Hist     bool             `json:"hist,omitempty"`
 						PackKey  string           `json:"pack_key,omitempty"`
-						Meters   json.RawMessage  `json:"meters,omitempty"`
+						Meters   *meters.Series   `json:"meters,omitempty"`
 					}{hf, combat.Judge(hf, combatStore.Rules()), true, row.PackKey, ms})
 					return
 				}
@@ -76,10 +145,14 @@ func combatFightDetailHandler(combatStore *combat.Store, historyStore *history.S
 			_, _ = w.Write([]byte(`{"error":"no such fight"}`))
 			return
 		}
+		ms, found := storedMeters(historyStore, cache, key)
+		if !found {
+			ms = metersSeries(src, f)
+		}
 		writeJSON(w, struct {
 			Fight    combat.Fight     `json:"fight"`
 			Warnings []combat.Warning `json:"warnings"`
 			Meters   *meters.Series   `json:"meters,omitempty"`
-		}{f, warnings, metersSeries(src, f)})
+		}{f, warnings, ms})
 	}
 }

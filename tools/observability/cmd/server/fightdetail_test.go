@@ -137,3 +137,64 @@ func TestFightDetailHistoryPassesStoredMeters(t *testing.T) {
 		t.Fatalf("a line without meters answers without the key: %s", got["meters"])
 	}
 }
+
+// TestFightDetailKeepsTheStoredSeriesWhenTheTrackIsTrimmed: a fight still in memory is answered with the series the history stored when
+// it wrote the fight, not one rebuilt from the track as it is now. Before the writer has it, the series is built from the track; once
+// written, a trimmed (here: emptied) track changes nothing.
+func TestFightDetailKeepsTheStoredSeriesWhenTheTrackIsTrimmed(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	clk := now
+	hs, err := history.Open(history.Config{Dir: t.TempDir(), Now: func() time.Time { return clk }},
+		func(context.Context, string, combat.Fight) int { return 0 }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hs.Close(context.Background()) })
+	trk := &fakeTrack{frames: meterFrames(1000, 3)}
+	hs.SetMeters(func(commander string, f combat.Fight) json.RawMessage { return metersJSON(trk, f) })
+	st := combat.NewStore(nil)
+	if !st.Add(1, meterFight("a")) {
+		t.Fatal("Add refused")
+	}
+	h := combatFightDetailHandler(st, hs, trk)
+	key := combat.Key("G", 1, "a")
+	endOf := func(got map[string]json.RawMessage) uint64 {
+		var m struct{ Bots []struct{ D []uint64 } }
+		if err := json.Unmarshal(got["meters"], &m); err != nil || len(m.Bots) != 1 || len(m.Bots[0].D) == 0 {
+			return 0
+		}
+		return m.Bots[0].D[len(m.Bots[0].D)-1]
+	}
+	// Not written yet: built from the track.
+	if _, got := getDetail(h, key); endOf(got) != 2000 {
+		t.Fatalf("before the write the series is built from the track: %s", got["meters"])
+	}
+	if !hs.Enqueue(history.Item{Session: 1, Fight: meterFight("a"), At: now}) {
+		t.Fatal("Enqueue refused")
+	}
+	clk = now.Add(7 * time.Second)
+	hs.Flush()
+	trk.frames = nil // the track has been trimmed
+	asked := len(trk.asked)
+	for i := 0; i < 2; i++ {
+		if _, got := getDetail(h, key); endOf(got) != 2000 {
+			t.Fatalf("request %d after the track was trimmed: %s", i, got["meters"])
+		}
+	}
+	if len(trk.asked) != asked {
+		t.Fatalf("a written fight's detail must not copy the track again (%d asks)", len(trk.asked)-asked)
+	}
+	// A fight written without meters (no frames then) stays without: it is not rebuilt now.
+	if !st.Add(1, meterFight("b")) {
+		t.Fatal("Add refused")
+	}
+	if !hs.Enqueue(history.Item{Session: 1, Fight: meterFight("b"), At: clk}) {
+		t.Fatal("Enqueue refused")
+	}
+	clk = clk.Add(7 * time.Second)
+	hs.Flush()
+	trk.frames = meterFrames(1000, 3) // frames appear later
+	if _, got := getDetail(h, combat.Key("G", 1, "b")); got["meters"] != nil {
+		t.Fatalf("written without meters, so answered without: %s", got["meters"])
+	}
+}

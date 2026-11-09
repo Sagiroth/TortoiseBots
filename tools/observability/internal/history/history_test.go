@@ -1121,3 +1121,77 @@ func TestFightMetersStoredBesideTheFight(t *testing.T) {
 	defer s2.Close(context.Background())
 	check(s2)
 }
+
+// TestMetersNeverCostAFight: the meters are budgeted apart from the fight. A fight whose line would cross the day file's cap with its
+// meters is written without them (and still listed); only a fight too big even without them is dropped, as before meters existed.
+func TestMetersNeverCostAFight(t *testing.T) {
+	blob := json.RawMessage(`{"v":2,"step_ms":2000,"n":1,"src":"window","bots":[{"g":808,"d":"` + strings.Repeat("z", 6000) + `"}]}`)
+	fileOf := func(dir string) int64 {
+		var n int64
+		filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() && strings.HasSuffix(p, ".jsonl") {
+				n += info.Size()
+			}
+			return nil
+		})
+		return n
+	}
+	// How big the day file is with f1 only, and with f1 and f2 (no meters).
+	base := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: base, Now: clock.Now})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-300), At: clock.Now()})
+	one := fileOf(base)
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f2", "Glacienne", t0.Unix()-200), At: clock.Now()})
+	two := fileOf(base)
+
+	// A store holding f1, capped so f2 fits only without the 6 KB of meters.
+	dir := t.TempDir()
+	clock2 := &fakeClock{t: t0}
+	s1, err := Open(Config{Dir: dir, Now: clock2.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver(t, s1, clock2, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-300), At: clock2.Now()})
+	s1.Close(context.Background())
+	st := &stats{dropped: map[string]int{}}
+	s2, err := Open(Config{Dir: dir, MaxFileBytes: two + 10, Now: clock2.Now}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	s2.SetMetrics(st)
+	s2.SetMeters(func(string, combat.Fight) json.RawMessage { return blob })
+	if fileOf(dir) != one {
+		t.Fatalf("setup: %d vs %d", fileOf(dir), one)
+	}
+	deliver(t, s2, clock2, Item{Session: 1, Fight: mkFight("f2", "Glacienne", t0.Unix()-200), At: clock2.Now()})
+	if len(s2.List("Glacienne", "2026-10-28")) != 2 {
+		t.Fatalf("f2 was dropped for its meters: %+v", s2.List("Glacienne", "2026-10-28"))
+	}
+	if got := st.get("file_cap"); got != 0 {
+		t.Fatalf("file_cap drops = %d, want 0", got)
+	}
+	f, _, m, ok := s2.FightMeters(combat.Key("Glacienne", 1, "f2"))
+	if !ok || f.ID != "f2" || m != nil {
+		t.Fatalf("f2 is kept without meters: ok=%v meters=%d bytes", ok, len(m))
+	}
+	if fileOf(dir) > two+10 {
+		t.Fatalf("the file grew past its cap: %d", fileOf(dir))
+	}
+	// A fight too big even without meters is still dropped by the old rule.
+	big := mkFight("f3", "Glacienne", t0.Unix()-100)
+	big.Bots[0].Name = strings.Repeat("N", 200)
+	deliver(t, s2, clock2, Item{Session: 1, Fight: big, At: clock2.Now()})
+	if len(s2.List("Glacienne", "2026-10-28")) != 2 || st.get("file_cap") != 1 {
+		t.Fatalf("a fight that does not fit even without meters is dropped: rows=%d file_cap=%d", len(s2.List("Glacienne", "2026-10-28")), st.get("file_cap"))
+	}
+	// With room the same callback's meters are stored.
+	dir3 := t.TempDir()
+	s3 := open(t, Config{Dir: dir3, Now: clock.Now})
+	s3.SetMeters(func(string, combat.Fight) json.RawMessage { return blob })
+	deliver(t, s3, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-300), At: clock.Now()})
+	if _, _, m, ok := s3.FightMeters(combat.Key("Glacienne", 1, "f1")); !ok || string(m) != string(blob) {
+		t.Fatalf("with room the meters are stored: ok=%v %d bytes", ok, len(m))
+	}
+}
