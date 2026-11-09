@@ -1682,6 +1682,16 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                         continue;
                     }
 
+                    if (ai::PurposeRemembersUnreachablePoints(destination->GetPurpose() == TravelDestinationPurpose::GatherFishing,
+                            destination->GetPurpose() == TravelDestinationPurpose::GenericRpg) &&
+                        sTravelMgr.IsUnreachablePointRefused(*position))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - point nobody can walk to", "debug travel");
+                        ++rejects["unreachable"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
+                        continue;
+                    }
+
                     // Death-spot avoidance (issue #398) at pick time, per point:
                     // a point inside a camp the bot keeps dying in is refused
                     // and the next candidate wins instead, while other camps of
