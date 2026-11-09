@@ -1041,14 +1041,17 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     if (singlePointMove)
     {
         // A single point ahead cannot seed a spline (path[0] is the current
-        // position), so it walks as a checked launch when the pathfinder
-        // asks for one (generatePath: a swim/fly/noPath leg walks its own
-        // MovePoint as before). The hazard rewrite is skipped: with no
-        // segment there is nothing to bend around a hazard.
-        WorldPosition movePosition = path.back();
+        // position). A leg the pathfinder owns (generatePath) walks as a
+        // checked launch; a noPath/fly/swim leg keeps its old MovePoint, as
+        // before. The hazard rewrite is skipped: with no segment there is
+        // nothing to bend around a hazard.
         if (!generatePath)
         {
+            // A noPath/fly/swim leg keeps its old launch exactly (a MovePoint
+            // with pathfinding, as before): these legs asked for no module
+            // route, so there is nothing checked to walk.
             uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
+            moveOptions |= MOVE_PATHFINDING;
             mm.MovePoint(movePosition.GetMapId(),
                 movePosition.getX(),
                 movePosition.getY(),
