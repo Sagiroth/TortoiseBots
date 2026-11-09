@@ -1161,6 +1161,12 @@ AiPlayerbot.DungeonRunSeekMeetPrePlace = 0
 # is in position (at its stand, in shot position or shot), then walks to its point. Off walks it when the walk-out starts.
 AiPlayerbot.DungeonRunSeekMeetPrePlaceLate = 0
 
+# The walk-out shot waits for the pre-placed receiver at Hakkar (recommended on; runs with DungeonRunSeekMeetPrePlace):
+# in shot position the puller holds its shot until the pre-placed third tank is within 5 yd of its point, at most 6 s,
+# and never once the next Blood Siphon is 15 s or less away. With no pre-place this cycle there is no wait. Off shoots
+# at once.
+AiPlayerbot.DungeonRunSeekShotWaitsReceiver = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
 #include "Objects/DynamicObject.h"
@@ -682,6 +683,8 @@ namespace ai
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
         std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
         std::uint32_t walkoutGen = 0;        // the task's start generation: the puller's own writes match it (WalkoutTaskIs)
+        // Seconds to the next Blood Siphon (signed; INT_MAX: unknown), for the shot's wait (WalkoutShotReady).
+        int walkoutDueInS = std::numeric_limits<int>::max();
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
         bool prePlaceHold = false; // the pre-placed tank stands at its point (x, y): stop a walk, leave the rotation free

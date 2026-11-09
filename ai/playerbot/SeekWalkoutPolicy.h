@@ -1036,6 +1036,11 @@ namespace ai
         bool prePlaceWalking = false;
         std::uint32_t prePlaceWalkMs = 0;
         bool prePlaceArrived = false;
+        // The walk-out shot's wait for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2): when this
+        // task's puller first stood in shot position with a live pre-place (0: no wait this task), and whether the wait
+        // is over (its one `event=shot_wait` row claimed; the task never waits again).
+        std::uint32_t shotWaitSinceMs = 0;
+        bool shotWaitDone = false;
         // The meets that closed as `peeled` or `receiver_victim` (WalkoutNoteMeetLost): the Son and the close time,
         // pruned to the last few seconds. The nearest take's reach (DungeonRunSeekNearestTakeReach) reads it.
         std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
@@ -1283,10 +1288,90 @@ namespace ai
     }
 
     // Whether the walk-out's puller is in position for MeetPrePlaceWalkDue: the pre-place's meet already handed over,
-    // the shot landed, the puller stood at its stand, or it reached shot position once this task.
+    // the shot landed, the puller stood at its stand, it reached shot position once this task, or its shot waits for
+    // the receiver (DungeonRunSeekShotWaitsReceiver: the waiting puller always makes the late walk due, so the two never
+    // wait for each other).
     inline bool WalkoutPullerInPos(const SeekWalkoutState& s)
     {
-        return s.prePlaceMeet || s.shot || s.atStandSinceMs != 0 || s.firstInShotMs != 0;
+        return s.prePlaceMeet || s.shot || s.atStandSinceMs != 0 || s.firstInShotMs != 0 || s.shotWaitSinceMs != 0;
+    }
+
+    // The walk-out shot waits for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2). Walk 58 (late
+    // walk on): at the shot the receiver stood a median 19.1 yd from its pre-place point, within 4 yd in 3 of 26, so the
+    // Son ran 43 yd past it. With the key and a live pre-place the puller, in shot position, holds its shot until the
+    // receiver is within kSeekShotReceiverArriveYd of its point; it shoots anyway after kSeekShotReceiverWaitMs of
+    // waiting, or once the next Blood Siphon is kSeekShotReceiverDueFloorS or less away (the dose must not be lost).
+    constexpr float kSeekShotReceiverArriveYd = 5.0f;
+    constexpr std::uint32_t kSeekShotReceiverWaitMs = 6000;
+    constexpr int kSeekShotReceiverDueFloorS = 15;
+    constexpr std::uint32_t kSeekShotWaitStallSlackMs = 2000; // the stall hold's bound past the wait (one slow tick)
+
+    // Whether the walk-out shot may go now. Key off, or no live pre-place this cycle: always (today). `siphonInS` is the
+    // signed seconds to the next siphon (0 or less: due or past).
+    inline bool WalkoutShotReady(bool flagOn, bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
+                                 int siphonInS)
+    {
+        if (!flagOn || !prePlaceLive)
+            return true;
+        if (receiverToPointYd <= kSeekShotReceiverArriveYd)
+            return true;
+        if (waitedMs >= kSeekShotReceiverWaitMs)
+            return true;
+        return siphonInS <= kSeekShotReceiverDueFloorS;
+    }
+
+    // The `reason=` of the shot_wait row once the wait is over: `ended` (the pre-place ended while the puller waited),
+    // `arrived`, `siphon` or `timeout`, in that order.
+    inline const char* WalkoutShotWaitReason(bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
+                                             int siphonInS)
+    {
+        if (!prePlaceLive)
+            return "ended";
+        if (receiverToPointYd <= kSeekShotReceiverArriveYd)
+            return "arrived";
+        if (siphonInS <= kSeekShotReceiverDueFloorS)
+            return "siphon";
+        (void)waitedMs;
+        return "timeout";
+    }
+
+    // The puller's in-shot read under the key: latches the wait's start once for this task (`puller`, `gen`) and says
+    // how long it has waited. False: not this task, or the wait is already over (the shot goes, as today).
+    inline bool WalkoutShotWaitNote(SeekWalkoutState& s, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
+                                    std::uint32_t& waitedMs)
+    {
+        waitedMs = 0;
+        if (!WalkoutActive(s) || s.shot || s.puller != puller || s.startGen != gen || s.shotWaitDone)
+            return false;
+        if (s.shotWaitSinceMs == 0)
+            s.shotWaitSinceMs = nowMs == 0 ? 1 : nowMs;
+        waitedMs = nowMs - s.shotWaitSinceMs;
+        return true;
+    }
+
+    // The wait is over (the shot goes this tick): true once per task (the one shot_wait row). The no-shot stall clocks
+    // restart here, so the 6 s no-shot abort measures the shot's own time after the wait, never the wait itself.
+    inline bool WalkoutShotWaitEnd(SeekWalkoutState& s, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs)
+    {
+        if (!WalkoutActive(s) || s.puller != puller || s.startGen != gen || s.shotWaitSinceMs == 0 || s.shotWaitDone)
+            return false;
+        s.shotWaitDone = true;
+        std::uint32_t const stamp = nowMs == 0 ? 1 : nowMs;
+        if (s.atStandSinceMs != 0)
+            s.atStandSinceMs = stamp;
+        if (s.firstInShotMs != 0)
+            s.firstInShotMs = stamp;
+        s.inShotMs = 0;
+        return true;
+    }
+
+    // Whether a running shot wait holds the no-shot stall abort off (the wait would otherwise be aborted as "no shot" at
+    // the same 6 s). Bounded: past kSeekShotReceiverWaitMs plus kSeekShotWaitStallSlackMs a wait whose puller stopped
+    // ticking no longer holds it.
+    inline bool WalkoutStallHeldByShotWait(const SeekWalkoutState& s, std::uint32_t nowMs)
+    {
+        return s.shotWaitSinceMs != 0 && !s.shotWaitDone &&
+            nowMs - s.shotWaitSinceMs < kSeekShotReceiverWaitMs + kSeekShotWaitStallSlackMs;
     }
 
     // The pre-placed tank came within kSeekMeetPrePlaceArriveYd of its point: true once per pre-place (the one
@@ -1486,6 +1571,8 @@ namespace ai
         s.inShotMs = 0;
         s.lastInShotMs = 0;
         s.firstInShotMs = 0;
+        s.shotWaitSinceMs = 0;
+        s.shotWaitDone = false;
         s.freeReplans = 0;
         s.cycleSpent = true;
         s.lastCycle = cycleNo;

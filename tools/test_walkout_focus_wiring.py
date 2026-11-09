@@ -248,7 +248,7 @@ class WalkoutInShotClockWiring(unittest.TestCase):
 
     def test_the_stall_reads_the_in_shot_clock_under_the_flag(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        self.assertIn("bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);",
+        self.assertIn("bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast) &&",
                       update)
         self.assertNotIn("WalkoutShotStalled(", update)
 
@@ -353,7 +353,8 @@ class WalkoutStartGenGuards(unittest.TestCase):
             self.assertIn("WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen)", fn, sig)
             self.assertNotIn("it->second.state.puller != bot->GetObjectGuid().GetRawValue()", fn, sig)
         walk = walkout_branch()
-        self.assertEqual(walk.count("task.walkoutGen"), 5)
+        # 5 writes plus the shot wait's read and end (walk 58 F2, SeekWalkoutShotWaitRead / SeekWalkoutShotWaitEnd).
+        self.assertEqual(walk.count("task.walkoutGen"), 7)
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
         self.assertIn("out.walkoutGen = state.startGen;", update)
         # The start branch hands over the new task's generation inside the start lock (review R2-M1).

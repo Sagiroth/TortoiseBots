@@ -211,6 +211,39 @@ class SeekSonMeetWiring(unittest.TestCase):
         # Read before the shot's hand-over can clear the pre-place.
         self.assertLess(meet.index("float const receiverPointYd ="), meet.index("WalkoutPrePlaceNoteMeet(it->second.state);"))
 
+    def test_the_shot_waits_for_the_pre_placed_receiver(self):
+        # Walk 58 F2: DungeonRunSeekShotWaitsReceiver, default off and documented; the walk-out shot reads the wait
+        # through one locked snapshot (SeekWalkoutShotWaitRead), waits before it faces and casts, and logs one
+        # shot_wait row per walk-out when the wait ends.
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekShotWaitsReceiver", false)', CONFIG)
+        self.assertIn("bool dungeonRunSeekShotWaitsReceiver = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekShotWaitsReceiver = 0", TEMPLATE)
+        execute = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        gate = execute.index("if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)")
+        wait = execute[gate:execute.index("// DungeonRunSeekWalkoutFaceCast: stop, turn", gate)]
+        self.assertIn("SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait)", wait)
+        self.assertIn("if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInS))", wait)
+        self.assertIn("return true;", wait)
+        self.assertIn("SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs)", wait)
+        self.assertIn('"son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s"', wait)
+        self.assertIn("WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInS)", wait)
+        self.assertIn("LogSeekMeet(ai, info1);", wait)
+        # The wait sits after the in-flight wait and before the face and the cast.
+        self.assertLess(execute.index("WalkoutPullShotWaits(task.walkoutPullCastMs"), gate)
+        self.assertLess(gate, execute.index("const bool pullCast = ai->CastSpell(spell, task.source);"))
+        # One lock for the snapshot and the latch; the end claims under the lock too.
+        read = body(ACTIONS, "bool SeekWalkoutShotWaitRead(")
+        self.assertEqual(read.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
+        self.assertIn("WalkoutPrePlaceLive(s) && s.prePlacePuller == puller && s.prePlaceGen == gen", read)
+        self.assertIn("return WalkoutShotWaitNote(s, puller, gen, nowMs, out.waitedMs);", read)
+        end = body(ACTIONS, "bool SeekWalkoutShotWaitEnd(")
+        self.assertIn("WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs)", end)
+        # The siphon's signed seconds reach the task; the no-shot stall is held while the wait runs.
+        self.assertIn("task.walkoutDueInS = state.dueSignedMs == std::numeric_limits<int>::max()", ACTIONS)
+        self.assertIn("!WalkoutStallHeldByShotWait(state, nowMs);", update())
+        # The late walk cannot wait on the waiting puller: a latched wait counts as in position.
+        self.assertIn("s.firstInShotMs != 0 || s.shotWaitSinceMs != 0;", inline_body(POLICY, "inline bool WalkoutPullerInPos("))
+
     def test_the_meet_rows(self):
         for row in ('"son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"\n'
                     '                                 "receiver_point_yd=%.1f"',

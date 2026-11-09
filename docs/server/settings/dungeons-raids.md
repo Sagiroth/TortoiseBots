@@ -90,6 +90,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
+| [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -1129,6 +1130,27 @@ Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's
 Limits (documented, not fixed): the late walk keeps tanks[2] on Hakkar longer, so it is Hakkar's victim more often when the pre-place starts or runs; walk 58 measures the `preplace_end` / meet `reason=receiver_victim` count against walk 57's 13.
 
 Diagnostics (always on with `DungeonRunSeekMeetPrePlace`, key or not): a `BossTacticsSonMeet` row `event=preplace_arrive,receiver=<name>,after_ms=<ms>,point_yd=<yd>` once per pre-place when the tank first comes within 4 yd of its point (`after_ms` since its walk began), and the shot's `event=meet` row gains `receiver_point_yd=` (the receiver's distance to its pre-place point; `-1.0` when the receiver is not the pre-placed tank). Walk 57 could not tell a tank pulled back by its melee reach from one still walking.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekShotWaitsReceiver`
+Whether the Hakkar walk-out puller waits with its shot until the pre-placed receiver stands at its point. Recommended on.
+**Default:** `0` · **Values:** `0` off (the shot goes as soon as the puller is in shot position, as before), `1` on (needs `DungeonRunSeekMeetPrePlace`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why:** in walk 58 (late walk on) the pre-placed third tank stood a median 19.1 yd from its point when the shot landed, within 4 yd in only 3 of 26 shots, and the Son ran a median 43 yd to its puller before a tank met it.
+
+**The wait:** with the key on and a live pre-place for this walk-out, the puller, once in shot range, sight and on the stand's floor, stops and holds its shot until the pre-placed tank is within 5 yd of its pre-place point. It shoots anyway after 6 s of waiting, or as soon as the next Blood Siphon is 15 s or less away (the cycle's dose comes first). With no pre-place this cycle (`DungeonRunSeekMeetPrePlace` off, no third tank fit to pre-place, or the pre-place skipped) there is no wait. A pre-place that ends during the wait (the tank dies, is charmed, becomes Hakkar's victim) lets the shot go at once. The wait happens once per walk-out: a shot refused after it does not wait again.
+
+**With the late walk** (`DungeonRunSeekMeetPrePlaceLate`): a waiting puller counts as in position, so the late tank's walk is due on the first tick of the wait; the two never wait for each other, and the 6 s cap bounds the wait in any case.
+
+**The no-shot stall:** the 6 s no-shot abort is held while the wait runs (at most 8 s, so a puller that stops ticking is still aborted), and its clock restarts when the wait ends, so it measures the shot's own time.
+
+Diagnostics (always on with the key): one `BossTacticsSonMeet` row per walk-out when the wait ends, `son=<g>,event=shot_wait,receiver=<name>,receiver_point_yd=<yd>,waited_ms=<ms>,reason=arrived|timeout|siphon|ended`.
+
+Limits (documented, not fixed): the walk-out's 25 s timeout still counts the wait; the wait adds up to 6 s to the cycle, so the Son lands up to 6 s closer to the siphon.
 
 </details>
 

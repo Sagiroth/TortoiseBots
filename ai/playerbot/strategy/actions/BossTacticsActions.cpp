@@ -2346,7 +2346,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
         // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
         // With DungeonRunSeekWalkoutFaceCast the clock counts only the time in shot position (WalkoutStallDue).
-        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast);
+        // DungeonRunSeekShotWaitsReceiver: a shot waiting for the pre-placed receiver is not a stalled one (the wait's
+        // latch is set only with the key, so off this reads as before).
+        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast) &&
+            !WalkoutStallHeldByShotWait(state, nowMs);
         if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))
         {
             {
@@ -2943,6 +2946,50 @@ bool SeekMeetPrePlaceNoteArrive(std::uint32_t instanceId, std::uint64_t bot, std
     std::lock_guard<std::mutex> lock(g_walkoutMutex);
     auto const it = g_walkouts.find(instanceId);
     return it != g_walkouts.end() && WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs);
+}
+
+// The walk-out shot's wait (DungeonRunSeekShotWaitsReceiver, walk 58 F2): one locked snapshot for the puller of task
+// `gen` of the pre-place's receiver and point (whether that pre-place is live and this task's) and the Son, and the
+// wait's latch (WalkoutShotWaitNote) with the time waited. False: no wait applies (no live pre-place and no wait
+// started, not this task, or the wait is already over), and the shot goes as today.
+struct SeekShotWaitSnapshot
+{
+    bool prePlaceLive = false;
+    std::uint64_t receiver = 0;
+    float x = 0.0f, y = 0.0f;
+    std::uint64_t son = 0;
+    std::uint32_t waitedMs = 0;
+};
+
+bool SeekWalkoutShotWaitRead(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
+                             SeekShotWaitSnapshot& out)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return false;
+    SeekWalkoutState& s = it->second.state;
+    out.prePlaceLive = WalkoutPrePlaceLive(s) && s.prePlacePuller == puller && s.prePlaceGen == gen;
+    if (out.prePlaceLive)
+    {
+        out.receiver = s.prePlaceReceiver;
+        out.x = s.prePlaceX;
+        out.y = s.prePlaceY;
+    }
+    out.son = s.son;
+    // No live pre-place and no wait under way: nothing to wait for (and nothing latched, so the late walk and the
+    // stall read as without the key).
+    if (!out.prePlaceLive && s.shotWaitSinceMs == 0)
+        return false;
+    return WalkoutShotWaitNote(s, puller, gen, nowMs, out.waitedMs);
+}
+
+// The wait's end under g_walkoutMutex (WalkoutShotWaitEnd): true once per task, the one shot_wait row.
+bool SeekWalkoutShotWaitEnd(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs);
 }
 
 // The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
@@ -8716,6 +8763,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         task.walkoutShot = state.walkoutShot;
         task.walkoutPullCastMs = state.walkoutPullCastMs;
         task.walkoutGen = state.walkoutGen;
+        task.walkoutDueInS = state.dueSignedMs == std::numeric_limits<int>::max()
+            ? std::numeric_limits<int>::max() : state.dueSignedMs / 1000;
         task.source = state.pullTarget;
         task.x = state.shotX;
         task.y = state.shotY;
@@ -9012,6 +9061,39 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 {
                     LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);
                     return true;
+                }
+                // DungeonRunSeekShotWaitsReceiver (walk 58 F2): with a live pre-place the shot waits until the
+                // pre-placed receiver is within 5 yd of its point, at most 6 s, never with the siphon 15 s or less
+                // away (WalkoutShotReady). The puller stands still meanwhile; one shot_wait row when the wait ends.
+                if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)
+                {
+                    const std::uint32_t waitNowMs = WorldTimer::getMSTime();
+                    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+                    SeekShotWaitSnapshot wait;
+                    if (SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait))
+                    {
+                        Player* const receiver =
+                            wait.receiver ? bot->GetMap()->GetPlayer(ObjectGuid(wait.receiver)) : nullptr;
+                        const bool live = wait.prePlaceLive && receiver && receiver->IsInWorld();
+                        const float pointYd = live ? receiver->GetDistance2d(wait.x, wait.y) : -1.0f;
+                        if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInS))
+                        {
+                            if (!bot->IsStopped())
+                                ai->StopMoving();
+                            return true;
+                        }
+                        if (SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs))
+                        {
+                            const std::uint64_t guid = wait.son;
+                            char info1[192];
+                            snprintf(info1, sizeof(info1),
+                                     "son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s",
+                                     ObjectGuid(guid).GetCounter(), receiver ? receiver->GetName() : "none",
+                                     pointYd, wait.waitedMs,
+                                     WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInS));
+                            LogSeekMeet(ai, info1);
+                        }
+                    }
                 }
                 // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
                 // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).
