@@ -29,8 +29,11 @@
 #include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
+#include "playerbot/TravelLegChainPolicy.h"
+#include "playerbot/MagmaHazardPolicy.h"
 // The shared checked step's verdict (WalkChecked below).
 #include "playerbot/LandWalkPolicy.h"
+#include "playerbot/BoundRunMapGuard.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "host/ModuleLog.h"
 #include "vmap/VMapFactory.h"
@@ -1091,6 +1094,7 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     // Hoisted for the magma floor guard below: the loop runs per path
     // point, the two liquid lookups only on a lowered point.
     TerrainInfo const* dispatchTerrain = bot->GetMap()->GetTerrain();
+    bool const dispatchMagmaGuard = ai::MagmaGuardApplies(bot->GetMap()->IsDungeon());
     LastMovement& dispatchMove = AI_VALUE(LastMovement&, "last movement");
 
     for (auto& p : pointPath)
