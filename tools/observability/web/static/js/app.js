@@ -10273,7 +10273,7 @@
     if (selLive) fdWipeLiveSync(card, fd, liveSt, liveFight);
     else {
       fd.wipe = null; // the hand-over draws the filed fight's box from scratch
-      const wipe = fight ? fdWipeHtml(fight, recaps, track && track !== 'loading' ? track.prep : null, fight.start * 1000, fd.death) : '';
+      const wipe = fight ? fdWipeHtml(fight, recaps, track && track !== 'loading' ? track.prep : null, WipeRecap.startMs(fight), fd.death) : '';
       fdSet(card.querySelector('.fd-recap'), fight ? wipe + fdRecapHtml(recaps, fd.death, range) : '');
     }
     if (!liveSt) fdSet(card.querySelector('.fd-rangebar'), !selLive && fight ? fdRangeBarHtml(fd.view, false, 0) + fdLinkTail(fd) : '');
@@ -11584,7 +11584,7 @@
       return `<tr class="fd-wiperow${r.i === selDeath ? ' on' : ''}"><td class="n">${n + 1}</td>`
         + `<td><button type="button" class="fd-botbtn" data-fd-death="${esc(r.i)}">${esc(r.name)}</button>${role}</td>`
         + `<td class="mono">${WipeRecap.clock(r.t_ms)}</td><td>${esc(r.killer)}</td><td class="fd-wsp">${spell}</td>`
-        + `<td class="fd-whp n">${hp === null ? '-' : esc(hp) + '%'}</td>`
+        + (hp === null ? '<td class="fd-whp n" title="no position sample within 10 s">-</td>' : `<td class="fd-whp n">${esc(hp)}%</td>`)
         + `<td class="fd-wdmg n">${r.hits ? FightDebug.fmtInt(r.total) : '-'}</td></tr>`;
     }).join('');
     const note = live ? '<p class="fd-wipenote empty-hint">Last hits come when the fight ends.</p>' : '';
@@ -11592,15 +11592,19 @@
       + `<table class="data-table fd-wipetbl"><thead><tr><th class="n">#</th><th>Who</th><th>At</th><th>Killed by</th><th>Spell</th><th class="n">HP before</th><th class="n">Last hits</th></tr></thead><tbody>${body}</tbody></table>${note}</div>`;
   }
 
-  // The running fight's wipe box. It is worked out again only when the number of deaths (or the outcome, the roster, the picked death
-  // or the fight itself) changed, and, while a health before a death is still missing, when a new 2 s sample arrived; the 1 s tick
-  // and the 2 s report otherwise leave it as it is. A fight too short to keep, or no live fight, leaves no box.
+  // The running fight's wipe box. It is worked out again only when what it would draw changed (WipeRecap.signature: the outcome and the
+  // first three deaths with their killer, role and the casts before them), the picked death or the fight itself changed, and, while a
+  // health before a death is still missing, when the samples changed; the 1 s tick and the 2 s report otherwise leave it as it is. A
+  // fight too short to keep, or no live fight, leaves no box.
   function fdWipeLiveSync(card, fd, st, lf) {
     const el = card && card.querySelector ? card.querySelector('.fd-recap') : null;
     if (!el || !fd) return;
     const key = lf && st && !st.unkept ? lf.key : null;
-    const sig = key ? (lf.deaths || []).length + '|' + lf.outcome + '|' + (lf.bots || []).length : '';
-    const ns = key && Array.isArray(st.samples) ? st.samples.length : 0;
+    // The memo key is what the box would draw (the first three deaths with their role and killer, the outcome), not the counts: a
+    // catch-up or a capped list can change a death or a role and leave every count as it was.
+    const sig = key ? WipeRecap.signature(lf) : '';
+    // A health still missing is looked for again when the samples changed (a new newest one, or older ones merged in by the catch-up).
+    const ns = key && Array.isArray(st.samples) ? st.samples.length + ':' + (st.samples.length ? st.samples[st.samples.length - 1].t : 0) : '';
     const w = fd.wipe;
     if (w && w.key === key && w.sig === sig && w.sel === fd.death && (!w.pending || w.ns === ns)) return;
     const out = { pending: false };

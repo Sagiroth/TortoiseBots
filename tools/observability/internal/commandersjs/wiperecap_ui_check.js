@@ -66,7 +66,9 @@ const track = { frames: [frame(9000, { 5: { hp: 40, alive: true } }), frame(1150
   assert.ok(!html.includes("Last hits come when the fight ends"), "no live note on a filed fight");
   // no track: the health cell is a dash
   const bare = run("fdWipeHtml(fight, recaps, null, startMs, null)", { recaps: recapsOf(fight) });
-  assert.ok(!/class="fd-whp[^"]*">\d+%</.test(bare) && count(bare, /class="fd-whp[^"]*">-</g) === 3, "no track: a dash in the health column");
+  assert.ok(!/class="fd-whp[^"]*">\d+%</.test(bare) && count(bare, /class="fd-whp[^"]*"[^>]*>-</g) === 3, "no track: a dash in the health column");
+  assert.strictEqual(count(bare, /class="fd-whp n" title="no position sample within 10 s">-</g), 3, "a missing health says why");
+  assert.ok(!/title="no position sample[^"]*">\d/.test(html), "a known health has no such title");
   // a picked death is marked
   const picked = run("fdWipeHtml(fight, recaps, track, startMs, 1)", { recaps: recapsOf(fight) });
   const onRows = picked.split("<tr").filter((r) => r.includes("fd-wiperow on"));
@@ -123,7 +125,34 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   assert.strictEqual(writes, 1, "and nothing is written");
   const more = Object.assign({}, liveFight, { deaths: liveDeaths.concat([{ name: "Bot20", t_ms: 16000, x: 1, y: 2, killer: "Boss", hits: [] }]) });
   sync(more);
-  assert.ok(firstCalls > calls, "a new death repaints");
+  assert.strictEqual(firstCalls, calls, "an eleventh death changes nothing the box draws: no repaint");
+  // the same count, other content: a death replaced (a catch-up repaired the list) repaints
+  const swapped = Object.assign({}, liveFight, { deaths: liveDeaths.map((d, i) => (i === 1 ? Object.assign({}, d, { name: "Bot20" }) : d)) });
+  sync(swapped);
+  assert.ok(firstCalls > calls && box.innerHTML.includes("Bot20"), "a death replaced with the count unchanged repaints");
+  sync(liveFight);
+  assert.ok(!box.innerHTML.includes("Bot20"), "and back");
+  // a role changed with the roster size unchanged
+  const calls2 = firstCalls;
+  const roleBots = bots.map((b) => (b.name === "Bot2" ? Object.assign({}, b, { role: "tank" }) : b));
+  const reroled = Object.assign({}, liveFight, { bots: roleBots, deaths: [{ name: "Bot2", t_ms: 11000, x: 1, y: 2, killer: "Boss", hits: [] }].concat(liveDeaths.slice(0, 9)) });
+  sync(Object.assign({}, reroled, { bots: bots }));
+  const calls3 = firstCalls;
+  sync(reroled);
+  assert.ok(firstCalls > calls3 && /Bot2<\/button> <span class="fd-wrole">\(tank\)/.test(box.innerHTML), "a role changed with the roster size unchanged repaints");
+  // an old event dropped as a new one arrives: the same count, a different first three
+  const slid = Object.assign({}, liveFight, { deaths: liveDeaths.slice(1).concat([{ name: "Bot19", t_ms: 17000, x: 1, y: 2, killer: "Boss", hits: [] }]) });
+  sync(liveFight);
+  const calls4 = firstCalls;
+  sync(slid);
+  assert.ok(firstCalls > calls4 && !box.innerHTML.includes("&lt;b&gt;x&lt;/b&gt;</button>"), "an old death dropped as a new one arrives (same count) repaints");
+  // a cast near a death arrives late (a catch-up): the likely spell is drawn
+  sync(liveFight);
+  const calls5 = firstCalls;
+  sync(Object.assign({}, liveFight, { log: [{ k: "cast", t: 11000, n: "Boss", s: "Shadow Bolt", tg: "5", tn: EVIL }] }));
+  assert.ok(firstCalls > calls5, "a boss cast just before a shown death repaints");
+  sync(liveFight);
+  void calls2;
   // a death count below the wipe line draws nothing and clears the box
   const fewer = Object.assign({}, liveFight, { deaths: liveDeaths.slice(0, 2) });
   sync(fewer);
@@ -156,6 +185,27 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   st2.samples.push({ t: START + 14000, bots: { 5: { hp: 0, a: 0 } }, mobs: [] });
   sync2();
   assert.strictEqual(writes2, w2, "every health known: a new sample repaints nothing");
+  // the samples at their cap: the list stops growing, its newest sample moves: a missing health is still looked for again
+  {
+    const el4 = { innerHTML: "", contains: () => false };
+    let writes4 = 0;
+    const box4 = { get innerHTML() { return el4.innerHTML; }, set innerHTML(v) { writes4++; el4.innerHTML = v; }, contains: () => false };
+    const card4 = { querySelector: (s) => (s === ".fd-recap" ? box4 : null) };
+    const fd4 = { death: null, wipe: null };
+    const cap = FdLive.SAMPLES_MAX;
+    const other = (t) => ({ t, bots: { 99: { hp: 50, a: 1 } }, mobs: [] });
+    const st4 = { startMs: START, samples: Array.from({ length: cap }, (_, i) => other(START - 100000 + i * 2000)), unkept: false, cmd: "c" };
+    const sync4 = () => run("fdWipeLiveSync(card4, fd4, st4, lf)", { card4, fd4, st4, lf: liveFight });
+    sync4();
+    const w0 = writes4;
+    sync4();
+    assert.strictEqual(writes4, w0, "nothing changed: no repaint");
+    st4.samples.shift();
+    st4.samples.push({ t: START + 10000, bots: { 5: { hp: 30, a: 1 } }, mobs: [] });
+    assert.strictEqual(st4.samples.length, cap, "the list is at its cap");
+    sync4();
+    assert.ok(/class="fd-whp n">30%</.test(box4.innerHTML), "a new newest sample at the cap fills the health in: " + box4.innerHTML.slice(0, 200));
+  }
   // a fight that was not kept, or no live fight, leaves no box
   const st3 = Object.assign({}, st, { unkept: true });
   sync(liveFight, st3);
@@ -171,13 +221,13 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   assert.ok(live.includes("fdWipeLiveSync(card, fd, st, lf);"), "the 1 s live tick offers the box (it repaints only on a new death)");
   const render = src.slice(src.indexOf("  function renderFightDebug("), src.indexOf("  // The window an underperf answer covers"));
   assert.ok(render.includes("fdWipeLiveSync(card, fd, liveSt, liveFight)"), "the card render draws the live box");
-  assert.ok(/fdWipeHtml\(fight, recaps, track && track !== 'loading' \? track\.prep : null, fight\.start \* 1000, fd\.death\)/.test(render), "the filed fight's box reads the replay's own track (no second fetch)");
+  assert.ok(/fdWipeHtml\(fight, recaps, track && track !== 'loading' \? track\.prep : null, WipeRecap\.startMs\(fight\), fd\.death\)/.test(render), "the filed fight's box reads the replay's own track (no second fetch)");
   assert.ok(/fd\.wipe = null;/.test(render), "a filed fight forgets the live box's memo, so the hand-over draws the post-fight box");
   assert.ok(!/fdWipe/.test(grab("fdTrackLoad")), "the track request is the one it was");
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("wiperecap.js") > 0 && at("wiperecap.js") < at("app.js"), "wiperecap.js loads before app.js");
-  assert.ok(/wiperecap\.js\?v=1/.test(html) && /static\/js\/app\.js\?v=53/.test(html) && /app\.css\?v=30/.test(html), "the changed assets carry new versions");
+  assert.ok(/wiperecap.js\?v=2/.test(html) && /static\/js\/app\.js\?v=54/.test(html) && /app\.css\?v=30/.test(html), "the changed assets carry new versions");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(/\.fd-wipe \{/.test(css) && /\.fd-wiperow/.test(css), "the box has its styles");
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css.slice(css.indexOf(".fd-wipe {"), css.indexOf(".fd-wipe {") + 1500).split("\n").filter((l) => /\.fd-wipe/.test(l)).join("\n")), "its rules use the page's variables, no new colour");

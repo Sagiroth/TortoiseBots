@@ -121,6 +121,36 @@
     return { frames, names: {} };
   }
 
+  // What the box would draw, in a short string: the outcome, whether it is a wipe, and for a wipe the first three deaths (index,
+  // name, time, killer, role) with the number of boss casts in the 3 s before each (the likely spell is read from them). The page
+  // compares it between ticks, so a death or a role that changed with the same counts still repaints. Bounded like every read here.
+  function signature(fight) {
+    if (!isObj(fight)) return "";
+    const head = String(fight.outcome);
+    if (!isWipe(fight)) return head + "|n";
+    const role = {};
+    botsOf(fight).forEach((b) => { if (typeof b.name === "string" && typeof b.role === "string") role[b.name] = b.role; });
+    const list = [];
+    (Array.isArray(fight.deaths) ? fight.deaths.slice(0, SCAN_MAX) : []).forEach((d, i) => {
+      if (isObj(d) && typeof d.name === "string" && finite(d.t_ms) !== null) list.push({ i, name: d.name, t: d.t_ms, by: d.killer == null ? "" : String(d.killer) });
+    });
+    list.sort((a, b) => (a.t - b.t) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.i - b.i));
+    const log = Array.isArray(fight.log) ? fight.log.slice(0, SCAN_MAX) : [];
+    const parts = list.slice(0, FIRST_N).map((d) => {
+      let casts = 0;
+      log.forEach((e) => { if (isObj(e) && e.k === "cast" && finite(e.t) !== null && e.t <= d.t && e.t >= d.t - 3000) casts++; });
+      return [d.i, d.name, d.t, d.by, Object.prototype.hasOwnProperty.call(role, d.name) ? role[d.name] : "", casts].join("\u0001");
+    });
+    return head + "|w|" + parts.join("\u0002");
+  }
+
+  // The fight's start in unix ms: its own start_ms when it has one (a running fight's header does), else its whole-second start.
+  function startMs(fight) {
+    if (!isObj(fight)) return null;
+    if (finite(fight.start_ms) !== null && fight.start_ms > 0) return fight.start_ms;
+    return finite(fight.start) !== null ? fight.start * 1000 : null;
+  }
+
   // m:ss of a fight time in ms.
   function clock(ms) {
     const v = finite(ms);
@@ -128,6 +158,6 @@
     return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
   }
 
-  const api = { FIRST_N, isWipe, firstDeaths, hpBefore, framesFromSamples, clock };
+  const api = { FIRST_N, isWipe, firstDeaths, hpBefore, framesFromSamples, signature, startMs, clock };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.WipeRecap = api;
 })(typeof self !== "undefined" ? self : this);

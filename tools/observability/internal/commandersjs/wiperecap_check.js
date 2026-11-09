@@ -99,6 +99,39 @@ assert.strictEqual(({}).hp, undefined, "no prototype was polluted");
 const many = Array.from({ length: 50000 }, (_, i) => ({ t: START + i, bots: { 7: { hp: 1, a: 1 } } }));
 assert.ok(W.framesFromSamples(many, START).frames.length <= 2000, "the frames made from a huge list are bounded");
 
+// ---- startMs: the fight's own start_ms when it has one, else the whole-second start
+assert.strictEqual(W.startMs({ start: 1000, start_ms: 1000450 }), 1000450, "start_ms wins");
+assert.strictEqual(W.startMs({ start: 1000 }), 1000000, "else start * 1000");
+assert.strictEqual(W.startMs({ start: 1000, start_ms: 0 }), 1000000, "a zero start_ms is none");
+assert.strictEqual(W.startMs({ start: 1000, start_ms: "x" }), 1000000);
+assert.strictEqual(W.startMs({}), null);
+assert.strictEqual(W.startMs(null), null);
+
+// ---- signature: what the box would draw
+{
+  const f = { outcome: "live", live: true, bots: botsOf(20), deaths: deathsOf(10), log: [] };
+  const sig = W.signature(f);
+  assert.strictEqual(W.signature(JSON.parse(JSON.stringify(f))), sig, "equal content, equal signature");
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { deaths: f.deaths.slice(0, 9) })), sig, "not a wipe any more");
+  const d2 = f.deaths.map((d, i) => (i === 1 ? Object.assign({}, d, { name: "Bot20" }) : d));
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { deaths: d2 })), sig, "a death replaced, same count");
+  const d3 = f.deaths.map((d, i) => (i === 2 ? Object.assign({}, d, { killer: "Other" }) : d));
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { deaths: d3 })), sig, "another killer");
+  const d4 = f.deaths.map((d, i) => (i === 0 ? Object.assign({}, d, { t_ms: d.t_ms + 1 }) : d));
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { deaths: d4 })), sig, "another time");
+  const b2 = f.bots.map((b) => (b.name === "Bot2" ? Object.assign({}, b, { role: "tank" }) : b));
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { bots: b2 })), sig, "a role changed, same roster size");
+  const slid = f.deaths.slice(1).concat([{ name: "Bot19", t_ms: 99000, killer: "Boss" }]);
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { deaths: slid })), sig, "the oldest dropped as a new one arrives, same count");
+  const later = f.deaths.concat([{ name: "Bot20", t_ms: 99000, killer: "Boss" }]);
+  assert.strictEqual(W.signature(Object.assign({}, f, { deaths: later })), sig, "an eleventh death changes nothing the box draws");
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { outcome: "wipe" })), sig, "the outcome");
+  const cast = [{ k: "cast", t: f.deaths[0].t_ms - 500, n: "Boss", s: "X" }];
+  assert.notStrictEqual(W.signature(Object.assign({}, f, { log: cast })), sig, "a boss cast just before a shown death");
+  assert.strictEqual(W.signature(Object.assign({}, f, { log: [{ k: "cast", t: 99999999, n: "Boss" }] })), sig, "a cast far from every shown death changes nothing");
+  [null, 5, "x", {}, { bots: "x", deaths: [null, 3] }, { outcome: "wipe", deaths: [null, { name: 4 }], log: [5, null] }].forEach((x) => assert.strictEqual(typeof W.signature(x), "string"));
+}
+
 // ---- the clock text
 assert.strictEqual(W.clock(0), "0:00");
 assert.strictEqual(W.clock(65000), "1:05");
