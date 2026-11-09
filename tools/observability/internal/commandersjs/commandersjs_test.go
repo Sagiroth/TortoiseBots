@@ -437,6 +437,20 @@ func TestWipeRecapUIJS(t *testing.T) {
 	runCheck(t, "wiperecap_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFdMechJS runs fdmech_check.js: the per-fight mechanic row (the dash-2 Hakkar fixture: dosed 0/2 and, with two more applies, 1/2; the
+// 80 % boundary; Son pulled by the samples' windows, unknown without samples; Jin'do's Hex time on the layout's main tank; Shade deaths by
+// killer; any other boss's deaths; a capped aura list as a minimum; hostile input).
+func TestFdMechJS(t *testing.T) {
+	runCheck(t, "fdmech_check.js", "../../web/static/js/fdmech.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js")
+}
+
+// TestMechPanelUIJS runs mechpanel_ui_check.js: the Boss mechanics section in app.js (one row per boss with the worst fight's link, the
+// "not deployed" text for a null Hex or dose, this fight's row above the table, escaping, one request per 30 s and per window and only while
+// open), the live tile's mechanic slot, the live bar's row, and the page's script order and versions.
+func TestMechPanelUIJS(t *testing.T) {
+	runCheck(t, "mechpanel_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestLoginTargetJS runs login_target_check.js: login.html's own dashboardTarget() on plain, hostile and over-long fragments (#//evil.example,
 // #javascript:alert(1), a route of 5000 characters): the target is always /dashboard on this origin with at most a #/ route.
 func TestLoginTargetJS(t *testing.T) {

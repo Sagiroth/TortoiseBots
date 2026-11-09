@@ -109,6 +109,7 @@ vm.runInContext([
   "var fdEventsSync = () => {}, fdEvKeep = () => null, FD_EV_PAGE = 500;", // the Events panel has its own check (fdevents_ui_check.js)
   "var fdMetersSync = () => {}, fdMetersInputs = () => null;", // the Meters panel has its own check (fdmeters_ui_check.js)
   "var fdWipeHtml = () => '', fdWipeLiveSync = () => {};", // the wipe box has its own check (wiperecap_ui_check.js)
+  "var fdMechSync = () => {}, fdMechLine = () => null, fdMechSamples = () => [], fdLiveMechBar = () => {};", // the boss mechanics have their own check (mechpanel_ui_check.js)
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });

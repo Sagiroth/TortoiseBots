@@ -1,5 +1,6 @@
 # Changelog
 
+- New: the dashboard's Fight debugger has a Boss mechanics section under the underperforming bots: one row per boss of the night (Hakkar's share of the raid carrying Poisonous Blood at each Blood Siphon and Son deaths, Jin'do's Hex time on the main tank and Shade deaths, deaths per fight for any other boss, each with a link to its worst fight), and one line for the fight in front of you (`Hakkar: dosed 3/4 cycles · Son pulled 2/4`) on the Raids and Dungeons live tiles, the debugger's live bar and above the table.
 - Jin'do's Hex and Brainwash are now in the combat timeline's aura watch (`ai_combat_aura_watch`), so a fight record lists when a bot gains or loses them; the list is read when the world server starts, so restart it to pick the new rows up.
 - Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
 - Fixed: removed Hakkar's taunt cover in Zul'Gurub, which could never take him back because he is immune to taunts; the off-tank still inherits him through the threat cap.

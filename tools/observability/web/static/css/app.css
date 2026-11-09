@@ -3436,6 +3436,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-tile-hp span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.68rem; }
 .fd-tile-nums { color: var(--text-muted); font-size: 0.74rem; }
 .fd-tile-hp[hidden], .fd-tile-ev[hidden] { display: none; }
+.fd-tile-mech { font-size: 0.74rem; overflow-wrap: anywhere; }
 .fd-tile-mech:empty { display: none; }
 .fd-tile-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-size: 0.74rem; color: var(--text-muted); }
 .fd-tile-events li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3516,6 +3517,20 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-wipenote { margin: 4px 0 0; }
 .fd-wsp { overflow-wrap: anywhere; }
 .fd-whp, .fd-wdmg { white-space: nowrap; }
+/* Boss mechanics: the row of the fight in the live bar and in the section under the underperforming bots, and the night's table. */
+.fd-livemech { margin-left: 8px; font-size: 0.78rem; overflow-wrap: anywhere; }
+.fd-livemech:empty { display: none; }
+.fd-under .fd-mech { border-top: 1px solid var(--border-color); }
+.fd-under .fd-mechbox > summary { cursor: pointer; }
+.fd-under .fd-mechbody { padding: 6px 0 10px; }
+.fd-mechnow { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+.fd-mechtable { overflow-x: auto; }
+.fd-mechtable table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.fd-mechtable th { color: var(--text-muted); font-weight: 600; text-align: left; padding: 4px 8px 4px 0; white-space: nowrap; }
+.fd-mechtable td { vertical-align: top; padding: 5px 8px 5px 0; border-top: 1px solid var(--border-color); }
+.fd-mechtable .n { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-mechrow:hover { background: var(--bg-card-subtle); }
+.fd-mechworst { white-space: nowrap; }
 
 .fd-roles { grid-area: roles; min-width: 0; display: grid; gap: 14px; align-content: start; }
 .fd-totalsseg:empty { display: none; }

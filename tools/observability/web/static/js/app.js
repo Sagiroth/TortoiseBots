@@ -6923,6 +6923,7 @@
     if (!fd || !st || !card || !bind || fd.sel !== 'live') return;
     fdLivePaintBar(card, fd, st);
     const lf = st.key ? FdLive.fight(st, bind, Date.now()) : null;
+    fdLiveMechBar(card, st, lf, bind); // the mechanic row after the clock
     const tl = (keep, f) => fdLiveTimelineHtml(st, f || lf, fd.liveRange, keep);
     fdSet(card.querySelector('.fd-tl'), tl(fdEvKeep(fd, lf, st)));
     fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange)); // only the panel's body is repainted, not the card
@@ -6998,7 +6999,7 @@
       + `<div class="fd-tile-boss"><span class="fd-tile-bossname${t.boss ? '' : ' cell-muted'}">${t.boss ? esc(t.boss) : 'trash'}</span> <span class="fd-tile-time">${esc(fdLiveClock(t.ms))}</span></div>`
       + `<div class="fd-tile-hp" title="Boss health"${hp == null ? ' hidden' : ''}><i style="width:${hp == null ? 0 : hp}%"></i><span>${hp == null ? '' : hp + '%'}</span></div>`
       + `<div class="fd-tile-nums">${esc(fdLiveNumsText(t))}</div>`
-      + '<div class="fd-tile-mech"></div>'
+      + `<div class="fd-tile-mech"${fdMechTitleAttr(t.mech)}>${t.mech ? esc(t.mech.text) : ''}</div>`
       + `<ul class="fd-tile-events">${lis}</ul>`
       + `<a class="btn fd-tile-open" href="${esc(t.href)}">Open live</a>`
       + '</article>';
@@ -7021,6 +7022,11 @@
       if (label && hp != null && label.textContent !== hp + '%') label.textContent = hp + '%';
     }
     text('.fd-tile-nums', fdLiveNumsText(t));
+    const mech = text('.fd-tile-mech', t.mech ? String(t.mech.text) : '');
+    if (mech) {
+      const ti = t.mech && t.mech.title ? String(t.mech.title) : '';
+      if ((mech.getAttribute('title') || '') !== ti) { if (ti) mech.setAttribute('title', ti); else mech.removeAttribute('title'); }
+    }
     const lis = el.querySelectorAll('.fd-tile-ev');
     for (let k = 0; k < lis.length; k++) {
       const v = (t.events || [])[k] || '';
@@ -7065,6 +7071,7 @@
       bossHp: st ? FdLive.bossHp(st) : null,
       alive: members.filter(m => m && !m.dead && !m.offline).length, total: members.length,
       dps: Math.round(win.dps), hps: Math.round(win.hps),
+      mech: canon ? fdLiveMechOf(name, st) : null,
       events: !canon ? ['needs a bound commander'] : st ? st.events.filter(e => e.ev.k !== '?').slice(-3).reverse().map(e => cmdLiveEventText(e)) : [],
       href: raidFightHash(name, 'live'),
     };
@@ -8899,7 +8906,7 @@
         <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
         <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
         <section class="fd-roles" aria-label="Roles" hidden><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
-        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details></section>
+        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details><div class="fd-mech" role="region" aria-label="Boss mechanics"><details class="fd-mechbox"><summary class="cmd-h">Boss mechanics</summary><div class="fd-mechbody"></div></details></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
@@ -8931,7 +8938,7 @@
           </div>
           <section class="fd-meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>
           <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
-          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><span class="fd-livemech cell-muted"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
           <section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
           <section class="fd-events" aria-label="Events" hidden><h3 class="cmd-h">Events <span class="fd-evcount"></span></h3><div class="fd-evfilter"></div><div class="fd-evlist"></div></section>
         </div>
@@ -10119,7 +10126,7 @@
     const liveFight = liveSt && liveSt.key ? FdLive.fight(liveSt, bind, Date.now()) : null;
     const liveBar = card.querySelector('.fd-livebar');
     if (liveBar) liveBar.hidden = !liveSt;
-    if (liveSt) { fdLivePaintBar(card, fd, liveSt); fdLiveCatchUp(key); fdLiveTickSync(); }
+    if (liveSt) { fdLivePaintBar(card, fd, liveSt); fdLiveMechBar(card, liveSt, liveFight, bind); fdLiveCatchUp(key); fdLiveTickSync(); }
     const det = !selLive && fd.sel ? fd.details[fd.sel] : null;
     const fight = det && det.fight;
     // The time range: a filed fight's own (a handed-over fixed range is fitted to this fight on its first render here), or the live
@@ -10353,6 +10360,9 @@
     botEl.hidden = !panel;
     fdSet(botEl, fdBotHtml(panel));
     fdUnderSync(card, bind, fd);
+    // Boss mechanics: this fight's row (the running fight's, or the picked filed fight's) above the night's table.
+    const mechFight = selLive ? liveFight : fight ? fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander) : null;
+    fdMechSync(card, bind, fd, mechFight ? fdMechLine(mechFight, selLive ? (liveSt ? liveSt.samples : []) : fdMechSamples(track, bind.commander), bind.layout) : null);
     fdDragBandSync(card, fd);
   }
 
@@ -10418,6 +10428,124 @@
         st.qs = qs;
         st.at = Date.now();
         st.drawn = true;
+        const c = cmdCards.get(bind.commander);
+        if (c && c.classList.contains('fd-on')) paint();
+      });
+  }
+
+  // ---- Boss mechanics: one row per fight (FdMech, web/static/js/fdmech.js) on the live tiles, the debugger's live bar and above the
+  // night's table; the table is the daemon's fold of the window's boss fights (GET /api/v1/combat/mechanics, internal/mechanics),
+  // asked once per card per 30 s or when the window changes, and only while the section is open (no cost without a viewer).
+
+  const FD_MECH_POLL_MS = 30000;
+  const FD_MECH_NO_ROWS = 'no aura rows: the watch row is not deployed';
+
+  // The row of one fight object ({text, title}) or null when there is nothing to say. `samples` are FdLive's (or the track's).
+  function fdMechLine(fight, samples, layout) {
+    if (!fight || typeof FdMech === 'undefined') return null;
+    const r = FdMech.row(fight, fdAuIv(fight), samples, layout || null);
+    return r && r.text ? { text: r.text, title: r.title || '' } : null;
+  }
+
+  // The samples a filed fight's row reads: the x=1 track's, converted once per track (none until the track is there).
+  function fdMechSamples(track, commander) {
+    if (!track || track === 'loading' || !track.raw) return [];
+    if (!track.mechSamples) {
+      const st = FdLive.create(commander);
+      FdLive.applyTrackX(st, track.raw);
+      track.mechSamples = st.samples;
+    }
+    return track.mechSamples;
+  }
+
+  // A running fight's row, for a tile: the live state's synthetic fight (built at most once a second) and its samples.
+  function fdLiveMechOf(name, st) {
+    if (!st || !st.key) return null;
+    const bind = cmdFindBind(name) || null;
+    return fdMechLine(FdLive.fight(st, bind, Date.now()), st.samples, bind ? bind.layout : null);
+  }
+
+  function fdMechTitleAttr(m) {
+    return m && m.title ? ` title="${esc(m.title)}"` : '';
+  }
+
+  // The debugger's live bar: the row after the clock, its text only when it changed.
+  function fdLiveMechBar(card, st, lf, bind) {
+    const el = card.querySelector('.fd-livemech');
+    if (!el) return;
+    const m = lf ? fdMechLine(lf, st.samples, bind ? bind.layout : null) : null;
+    const text = m ? '\u00b7 ' + m.text : '';
+    if (el.textContent !== text) el.textContent = text;
+    const ti = m ? m.title : '';
+    if ((el.getAttribute('title') || '') !== ti) { if (ti) el.setAttribute('title', ti); else el.removeAttribute('title'); }
+  }
+
+  // One boss's cells: the key metric, the second metric and the worst fight's link (the same data-fd-open button the pack table uses:
+  // the debugger's click handler picks that fight on its night and writes its hash). Every text is escaped.
+  function fdMechRowHtml(r, day) {
+    const n = v => (v == null || !isFinite(Number(v)) ? null : Number(v));
+    let key, second = '-';
+    if (r.kind === 'hakkar') {
+      const p = n(r.dosed_pct);
+      key = p === null ? FD_MECH_NO_ROWS : 'dosed at siphon ' + (r.lower ? '\u2265' : '') + Math.round(p) + ' % (' + (n(r.dosed_cycles) || 0) + '/' + (n(r.cycles) || 0) + ' cycles)';
+      const s = n(r.son_deaths_per_fight);
+      if (s !== null) second = 'Son deaths/fight ' + s.toFixed(1);
+    } else if (r.kind === 'jindo') {
+      const h = n(r.hex_mt_s_per_fight);
+      key = h === null ? 'no Hex aura rows: the watch row is not deployed' : 'Hex on MT ' + (r.lower ? '\u2265' : '') + Math.round(h) + ' s/fight';
+      const s = n(r.shade_deaths_per_fight), pc = n(r.shade_share_pct);
+      if (s !== null) second = 'Shade deaths/fight ' + s.toFixed(1) + (pc === null ? '' : ' (' + Math.round(pc) + ' %)');
+    } else {
+      key = 'deaths/fight ' + (n(r.deaths_per_fight) || 0).toFixed(1);
+    }
+    const worst = typeof r.worst === 'string' && r.worst
+      ? `<button type="button" class="fd-link fd-mechworst" data-fd-open="${esc(encodeURIComponent(r.worst))}" data-fd-day="${esc(day || '')}">Open</button>` : '-';
+    return `<tr class="fd-mechrow"><td>${esc(r.name || ('boss ' + r.boss))}</td><td class="n">${esc(n(r.fights) || 0)}</td><td class="n">${esc(n(r.kills) || 0)}</td>`
+      + `<td class="n">${esc(n(r.wipes) || 0)}</td><td>${esc(key)}</td><td>${esc(second)}</td><td>${worst}</td></tr>`;
+  }
+
+  // The section's body: this fight's row, then the night's table (or why there is none). st = {res, err}.
+  function fdMechHtml(line, st, day) {
+    let html = line ? `<p class="fd-mechnow"${fdMechTitleAttr(line)}>This fight: ${esc(line.text)}</p>` : '';
+    const res = st && st.res;
+    if (st && st.err) return html + `<p class="empty-hint">The boss mechanics could not be loaded (${esc(st.err)}).</p>`;
+    if (!res) return html + '<p class="empty-hint">Loading the boss mechanics…</p>';
+    const rows = Array.isArray(res.rows) ? res.rows.filter(r => r && typeof r === 'object') : [];
+    if (!rows.length) return html + '<p class="empty-hint">No boss fight of a minute or more in this window.</p>';
+    return html + '<div class="fd-mechtable"><table class="data-table"><thead><tr><th>Boss</th><th class="n">Fights</th><th class="n">Kills</th><th class="n">Wipes</th><th>Key metric</th><th>Second metric</th><th>Worst fight</th></tr></thead><tbody>'
+      + rows.map(r => fdMechRowHtml(r, day)).join('') + '</tbody></table></div>'
+      + (res.truncated ? '<p class="empty-hint">The window holds more fights than the dashboard reads at once: the oldest are left out.</p>' : '');
+  }
+
+  // The section under the underperforming bots: the body is painted on every render (a string, so an unchanged one costs nothing), the
+  // table is asked for while the box is open: one request per card per 30 s, or one when the window changes.
+  function fdMechSync(card, bind, fd, line) {
+    const box = card.querySelector('.fd-mechbox'), body = card.querySelector('.fd-mechbody');
+    if (!box || !body) return;
+    if (!fd.mech) fd.mech = { qs: '', at: 0, res: null, err: '', pending: false, win: '', line: null };
+    const st = fd.mech;
+    st.line = line;
+    const win = fdUnderWin(bind, fd);
+    if (st.win !== win) { st.win = win; st.err = ''; st.at = 0; st.res = null; }
+    if (!box.dataset.fdBound) {
+      box.dataset.fdBound = '1';
+      box.addEventListener('toggle', () => { if (box.open) fdMechSync(card, bind, fd, st.line); });
+    }
+    if (!box.open) return;
+    const paint = () => fdSet(body, fdMechHtml(st.line, st, fd.day || ''));
+    paint();
+    if (typeof Underperf === 'undefined' || st.pending) return;
+    const qs = Underperf.query(bind, fd, Date.now(), null, fdNightParams()).replace(/&run=[^&]*/, '');
+    if (st.qs === qs && Date.now() - st.at < FD_MECH_POLL_MS) return;
+    st.pending = true;
+    fetch('/api/v1/combat/mechanics?commander=' + encodeURIComponent(bind.commander) + '&' + qs, { credentials: 'same-origin' })
+      .then(jsonOrThrow)
+      .then(json => { st.res = json; st.err = ''; })
+      .catch(e => { st.err = (e && e.message) || 'request failed'; })
+      .then(() => {
+        st.pending = false;
+        st.qs = qs;
+        st.at = Date.now();
         const c = cmdCards.get(bind.commander);
         if (c && c.classList.contains('fd-on')) paint();
       });

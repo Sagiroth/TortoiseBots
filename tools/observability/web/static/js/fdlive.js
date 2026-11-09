@@ -324,7 +324,7 @@
     const parts = String(st.key || "").split("\u0000");
     const bots = (bind && Array.isArray(bind.bots) ? bind.bots : []).filter((b) => b && b.guid != null).map((b) => ({ name: b.name, guid: b.guid, role: b.role }));
     const out = {
-      id: parts[2] || "", key: st.key, live: true, start: Math.floor(st.startMs / 1000), dur_ms: nowFightMs(st, nowMs),
+      id: parts[2] || "", key: st.key, live: true, start: Math.floor(st.startMs / 1000), start_ms: st.startMs, dur_ms: nowFightMs(st, nowMs),
       boss: st.boss, boss_name: st.bossName, outcome: st.ended ? st.outcome : "live", bots, log, deaths,
       auras: auraRows(st), aura_src: "sampled", aura_slots_full: slotsFull(st.samples), log_dropped: st.gap ? 1 : 0,
     };
