@@ -392,6 +392,7 @@ enum class HoldReason
     Budget,
     Sole,
     DpsHold,
+    Gate,
 };
 
 // The subject of an active dps_hold_after row within `maxDistance` of `around`, or null: an area cast that lands
@@ -474,6 +475,29 @@ HoldReason HeldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFig
         if (subject)
             *subject = units[index];
         return budget ? HoldReason::Budget : HoldReason::Sole;
+    }
+    // gate_hold: an area cast beside the spared boss (or a DoT on it) would take it below its gate while the blocker
+    // still fights, so it is left alone like a held entry. The units are the same fight-wide grid read.
+    if (sPlayerbotAIConfig.dungeonRunGateHold)
+    {
+        for (const BossTacticRow* row : fight.rows)
+        {
+            if (row->kind != BossTacticKind::GateHold)
+                continue;
+            for (const SoleCandidate& candidate : SoleKillCandidates(ai, row->bossEntry))
+            {
+                Unit* unit = ai->GetUnit(ObjectGuid(candidate.guid));
+                if (!unit || !unit->IsAlive() || unit->GetEntry() != row->bossEntry)
+                    continue;
+                if (around->GetDistance(unit) > maxDistance)
+                    continue;
+                if (!GateHoldsUnit(ai, fight.rows, unit))
+                    continue;
+                if (subject)
+                    *subject = unit;
+                return HoldReason::Gate;
+            }
+        }
     }
     // dps_hold_after: the subject of an active hold is left alone too, so an area cast that lands beside it (or a
     // DoT on it) does not damage the boss/creature the hold exists to keep quiet.
@@ -696,6 +720,37 @@ std::uint32_t ai::HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry)
     return AI_VALUE2(uint32, "hold kill blockers", static_cast<int32>(entry));
 }
 
+std::uint32_t ai::GateHoldFighters(PlayerbotAI* ai, std::uint32_t entry, float radius)
+{
+    if (!ai || !entry)
+        return 0;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    char key[48];
+    snprintf(key, sizeof(key), "%u::%d", entry, static_cast<int>(radius + 0.5f));
+    return AI_VALUE2(uint32, "fighting blockers", key);
+}
+
+bool ai::GateHoldsUnit(PlayerbotAI* ai, const ActiveBossRows& rows, Unit* unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunGateHold || !ai || !unit)
+        return false;
+    const std::uint32_t entry = unit->GetEntry();
+    bool gateRow = false;
+    for (const BossTacticRow* row : rows)
+    {
+        if (row->kind == BossTacticKind::GateHold && row->bossEntry == entry)
+        {
+            gateRow = true;
+            break;
+        }
+    }
+    if (!gateRow)
+        return false;
+    return GateHeld(rows, entry, static_cast<int>(unit->GetHealthPercent()),
+        [ai](const BossTacticRow& row)
+        { return GateHoldFighters(ai, row.targetEntry, GateHoldRadius(row.windowSec)); });
+}
+
 // The living, fighting units of a one_at_a_time entry within kHoldKillRangeYd of the bot, crowd-controlled ones included
 // (`eligible` false): the "sole kill candidates" value, one cached grid search per bot and entry, the whole fight's units
 // of the entry, never the bot's own "attackers" list, which "focus rti targets" collapses to the raid mark. The one
@@ -901,6 +956,7 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
     bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
     bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
     bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
+    bool const gateHoldOn = sPlayerbotAIConfig.dungeonRunGateHold;
     auto const addRows = [&](const std::vector<BossTacticRow>& rows, int bossHpPct)
     {
         for (const BossTacticRow& row : rows)
@@ -917,6 +973,9 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
             if (!burnManaOn && row.kind == BossTacticKind::BurnMana)
                 continue;
             if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
+                continue;
+            // gate_hold is its own key's: with it off its rows are not read at all, so key-off is exactly today.
+            if (!gateHoldOn && row.kind == BossTacticKind::GateHold)
                 continue;
             if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
                 continue;
@@ -5402,6 +5461,10 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
                 return current;
         }
     }
+    // gate_hold: the spared boss at or below its gate with a blocker still fighting is dropped exactly like a held
+    // entry, so the bot switches to the kill_first blocker instead of feeding the boss.
+    if (GateHoldsUnit(ai, fight.rows, current))
+        return current;
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
 }
@@ -6588,8 +6651,8 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
         }
     }
     // Else the nearest creature this bot may attack, by the same candidate rules the kill_first pick applies
-    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds and,
-    // for a held seek source, every source entry.
+    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds, a
+    // unit a gate_hold row spares and, for a held seek source, every source entry.
     if (!seekHeld)
     {
         std::vector<TacticCandidate> candidates;
@@ -6599,7 +6662,7 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
             TacticCandidate c;
             c.entry = unit->GetEntry();
             c.distance = bot->GetDistance(unit);
-            c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+            c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot) && !GateHoldsUnit(ai, fight.rows, unit);
             candidates.push_back(c);
         }
         const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
@@ -6977,11 +7040,16 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     const bool seeksRow = sPlayerbotAIConfig.dungeonRunSeekAura &&
         ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
         GetBossTactics().HasSeekAuraMap(bot->GetMapId());
+    // gate_hold is the gate key's own: with it off its rows are not in the fight and the veto never runs.
+    const bool gateHold = sPlayerbotAIConfig.dungeonRunGateHold &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
+        GetBossTactics().HasGateHoldMap(bot->GetMapId());
     // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time,
-    // linked_death, dps_hold_after or seek_aura row: a map with only kill_first or interrupt rows (every other raid)
-    // pays for no scan here.
+    // linked_death, dps_hold_after, seek_aura or gate_hold row: a map with only kill_first or interrupt rows (every
+    // other raid) pays for no scan here.
     if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&
-        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && !seeksRow)
+        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && !seeksRow &&
+        !gateHold)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
@@ -6993,7 +7061,8 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     bool dpsHoldRows = false;
     for (const BossTacticRow* row : fight.rows)
     {
-        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
+        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime ||
+            (gateHold && row->kind == BossTacticKind::GateHold))
             holdsRows = true;
         if (auraHolds && row->kind == BossTacticKind::DpsHoldAfter)
             dpsHoldRows = true;
@@ -7127,7 +7196,8 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     if ((dpsAssist || aoe) && freeDps)
     {
         Unit* picked = aoe ? AI_VALUE(Unit*, "dps aoe target") : AI_VALUE(Unit*, "dps target");
-        if (picked && KillHeld(fight.rows, picked->GetEntry(), countNear))
+        if (picked && (KillHeld(fight.rows, picked->GetEntry(), countNear) ||
+                GateHoldsUnit(ai, fight.rows, picked)))
         {
             LogHoldKillVeto(ai, bot, veto, picked);
             return 0.0f;
@@ -7145,7 +7215,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         return 1.0f;
     if (!freeDps)
         return 1.0f;
-    if (KillHeld(fight.rows, current->GetEntry(), countNear))
+    if (KillHeld(fight.rows, current->GetEntry(), countNear) || GateHoldsUnit(ai, fight.rows, current))
     {
         LogHoldKillVeto(ai, bot, veto, current);
         return 0.0f;

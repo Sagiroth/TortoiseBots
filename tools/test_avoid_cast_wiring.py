@@ -442,7 +442,8 @@ class HoldLivesInTheTargetChoice(unittest.TestCase):
         self.assertIn('GetValue<ObjectGuid>("explicit attack target")', fn)
         # The rows of the candidate's own entry, and the blocker count: KillHeld on plain inputs.
         self.assertIn("table.Rows(bot->GetMapId(), unit->GetEntry())", fn)
-        self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), countNear)", fn)
+        self.assertIn("DpsLeavesAlone(true, active, unit->GetEntry(), static_cast<int>(unit->GetHealthPercent()), "
+                      "countNear,", fn)
         self.assertIn("HoldKillBlockers(ai, entry)", fn)
         # Every picker drops a held candidate: the three tournaments and the AoE pick, the group tank's victim and the
         # raid mark. With nothing unheld left the value returns null instead of the held pick.
@@ -639,7 +640,8 @@ class HeldSubjectVetoWiring(unittest.TestCase):
         # any-row HasMap.
         self.assertIn("if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&", fn)
         self.assertIn("!(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && "
-                      "!seeksRow)", fn)
+                      "!seeksRow &&", fn)
+        self.assertIn("!gateHold)", fn)
         self.assertNotIn("HasMap(bot->GetMapId())",
                          fn.replace("HasHoldMap(bot->GetMapId())", "").replace("HasLinkedDeathMap(bot->GetMapId())", ""))
         self.assertLess(fn.index("HasHoldMap(bot->GetMapId())"), fn.index("ScanBossTactics(ai, bot)"))

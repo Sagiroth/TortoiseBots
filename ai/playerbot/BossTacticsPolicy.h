@@ -67,6 +67,7 @@ namespace ai
         Anchor = 23,          // while the boss fights, every boss/raid move stays within `param` yd of the spot
         TankIgnore = 24,      // while the boss fights, tanks leave `target_entry` to the damage dealers (no guard, no taunt)
         SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
+        GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -195,6 +196,8 @@ namespace ai
             return BossTacticKind::TankIgnore;
         if (text == "seek_pull")
             return BossTacticKind::SeekPull;
+        if (text == "gate_hold")
+            return BossTacticKind::GateHold;
         return BossTacticKind::None;
     }
 
@@ -542,6 +545,15 @@ namespace ai
                     row.param < 10.0f || row.param > 85.0f || row.windowSec < 10.0f || row.windowSec > 85.0f ||
                     row.mode != TacticMode::Default))
                 return false;
+            // gate_hold: the spared entry (boss_entry), its blocker (target_entry), the health gate (`param`, 1-99 %)
+            // and the blockers that may still fight (`priority`). `window_s` is the blocker search radius (0: 200 yd,
+            // else 50-250). The row's own health gate is `param`, so the band columns, a spell, a spot and a mode word
+            // are refused.
+            if (row.kind == BossTacticKind::GateHold &&
+                (row.targetEntry == 0 || row.spellId != 0 || !(row.param >= 1.0f) || row.param > 99.0f ||
+                    !(row.windowSec == 0.0f || (row.windowSec >= 50.0f && row.windowSec <= 250.0f)) ||
+                    RowGateSet(row) || row.mode != TacticMode::Default))
+                return false;
             // anchor: the boss itself (target_entry 0, no spell); the centre is the spot (spot_x/y/z, the boss's home),
             // `param` the radius for everyone and `priority` the tanks' own radius (0: the shared one, never wider).
             // It takes no mode word.
@@ -583,6 +595,8 @@ namespace ai
                 avoidCastMaps_[row.map] = true;
             if (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::OneAtATime)
                 holdMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::GateHold)
+                gateHoldMaps_[row.map] = true;
             if (IsAuraTacticKind(row.kind))
                 auraTacticMaps_[row.map] = true;
             if (row.kind == BossTacticKind::DispelPriority)
@@ -657,6 +671,13 @@ namespace ai
         bool HasHoldMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && holdMaps_.find(map) != holdMaps_.end();
+        }
+
+        // Whether the map has a gate_hold row (the hold multiplier's area and DoT veto runs there too). Its own flag
+        // keeps a map with only hold_kill rows from paying for the gate read. False before the seal.
+        bool HasGateHoldMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && gateHoldMaps_.find(map) != gateHoldMaps_.end();
         }
 
         // Whether the map has a linked_death row (the hold multiplier's area and DoT veto runs there: a map without a
@@ -896,6 +917,7 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> maps_;
         std::unordered_map<std::uint32_t, bool> avoidCastMaps_;
         std::unordered_map<std::uint32_t, bool> holdMaps_;
+        std::unordered_map<std::uint32_t, bool> gateHoldMaps_;
         std::unordered_map<std::uint32_t, bool> linkedDeathMaps_;
         std::unordered_map<std::uint32_t, bool> auraTacticMaps_;
         std::unordered_map<std::uint32_t, bool> dispelMaps_;
@@ -1473,15 +1495,61 @@ namespace ai
         return inCombat || notSelectable;
     }
 
-    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
-    // (KillHeld). The dps target, the dps AoE target, the group tank's victim and the raid mark all drop such a
-    // candidate, so with nothing unheld left the bot has no target and waits for the blocker to die instead of
-    // feeding the pile. The role gate is the hold-kill action's: a tank or a healer keeps its own pick (the caller
-    // passes false for them), and an explicit attack order is taken long before this runs.
-    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry,
-                               const std::function<std::uint32_t(std::uint32_t)>& countNear)
+    // gate_hold's blocker search radius when `window_s` is 0: wide enough to see a second boss fighting anywhere in
+    // the room, narrow enough to stay one encounter.
+    constexpr float kGateHoldRadiusYd = 200.0f;
+
+    inline float GateHoldRadius(float windowSec)
     {
-        return freeDpsBot && KillHeld(rows, entry, countNear);
+        return windowSec > 0.0f ? windowSec : kGateHoldRadiusYd;
+    }
+
+    // Whether a unit of a gate_hold row's blocker entry counts while it fights: alive (the caller checks), in combat
+    // and not evading. Unlike a hold_kill blocker (CountsAsBlocker) an unselectable unit that is not fighting never
+    // counts: an evaded second boss back in the air is out of the encounter and must not stall the spared one's kill.
+    // Selectability is handed in so the rule can state that it never decides on its own.
+    inline bool CountsAsFightingBlocker(bool inCombat, bool evading, bool notSelectable)
+    {
+        (void)notSelectable;
+        return inCombat && !evading;
+    }
+
+    // Whether DPS leave `entry` alone under a gate_hold row: the entry is at or below the row's gate percent (`param`)
+    // and more than `priority` of the row's blockers still fight. `countFighting` counts the row's living, in-combat,
+    // non-evading blockers within GateHoldRadius of the bot (the "fighting blockers" value). The spared unit is the
+    // row's boss_entry; the blocker its target_entry. An evaded or out-of-combat blocker releases the hold, so a
+    // living boss with an unkillable blocker is never left to stand.
+    inline bool GateHeld(const ActiveBossRows& rows, std::uint32_t entry, int hpPct,
+                         const std::function<std::uint32_t(const BossTacticRow&)>& countFighting)
+    {
+        for (const BossTacticRow* row : rows)
+        {
+            if (row->kind != BossTacticKind::GateHold || row->bossEntry != entry)
+                continue;
+            if (hpPct > static_cast<int>(row->param))
+                continue;
+            if (countFighting(*row) > row->priority)
+                return true;
+        }
+        return false;
+    }
+
+    // Whether a free DPS bot leaves `entry` alone right now: a hold_kill row holds it while its blocker lives
+    // (KillHeld), and a gate_hold row spares it at its health gate while a blocker fights (GateHeld). The dps target,
+    // the dps AoE target, the group tank's victim and the raid mark all drop such a candidate, so with nothing held
+    // left the bot has no target and waits for the blocker to die instead of feeding the pile. `hpPct` is the
+    // candidate's health; `countFighting` counts a gate row's fighting blockers. The role gate is the hold-kill
+    // action's: a tank or a healer keeps its own pick (the caller passes false for them), and an explicit attack order
+    // is taken long before this runs.
+    inline bool DpsLeavesAlone(bool freeDpsBot, const ActiveBossRows& rows, std::uint32_t entry, int hpPct,
+                               const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                               const std::function<std::uint32_t(const BossTacticRow&)>& countFighting)
+    {
+        if (!freeDpsBot)
+            return false;
+        if (KillHeld(rows, entry, countNear))
+            return true;
+        return GateHeld(rows, entry, hpPct, countFighting);
     }
 
     // A living unit of the paced entry that fights, as the one_at_a_time pick sees it: health first, guid as the

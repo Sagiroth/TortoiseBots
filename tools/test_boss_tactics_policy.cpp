@@ -484,6 +484,126 @@ static int ThekalRaises(const std::vector<std::pair<std::uint32_t, int>>& deaths
     return raises;
 }
 
+// gate_hold (brief C): DPS spare a boss at or below its health gate while a second unit still fights. The modal case:
+// Onyxia 10184 at 42 % with Cindarion 50143 up: the row spares her while more than `priority` blockers fight.
+static void GateHold_HoldsSparedAtGateWhileBlockerFights()
+{
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const ActiveBossRows active = Active(rows);
+    const auto fighters = [](std::uint32_t n)
+    {
+        return [n](const BossTacticRow&) -> std::uint32_t { return n; };
+    };
+    CHECK(ParseBossTacticKind("gate_hold") == BossTacticKind::GateHold);
+    CHECK(static_cast<int>(BossTacticKind::GateHold) == 26);
+    CHECK(GateHoldRadius(0.0f) == kGateHoldRadiusYd);
+    CHECK(GateHoldRadius(200.0f) == 200.0f);
+    CHECK(GateHeld(active, 10184, 42, fighters(1)));     // at the gate, one blocker fighting: spared
+    CHECK(GateHeld(active, 10184, 20, fighters(1)));
+    CHECK(!GateHeld(active, 10184, 42, fighters(0)));    // no blocker fighting: the boss is free
+    CHECK(!GateHeld(active, 50143, 42, fighters(1)));    // the blocker is never spared itself
+}
+
+static void GateHold_EvadedBlockerReleases()
+{
+    // The count keeps only living, in-combat, non-evading blockers. An evaded Cindarion is out of combat, evading and
+    // back in the air (unselectable): he must release the hold so the raid can finish Onyxia.
+    CHECK(!CountsAsFightingBlocker(false, true, true));
+    CHECK(!CountsAsFightingBlocker(false, false, true));   // out of combat and unselectable: not a fight
+    CHECK(CountsAsFightingBlocker(true, false, true));     // unselectable but fighting: still a blocker
+    CHECK(!CountsAsFightingBlocker(true, true, false));    // evading: never
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const auto count = [](bool inCombat, bool evading, bool notSelectable) -> std::uint32_t
+    { return CountsAsFightingBlocker(inCombat, evading, notSelectable) ? 1u : 0u; };
+    const std::uint32_t evaded = count(false, true, true);
+    CHECK(evaded == 0);
+    CHECK(!GateHeld(Active(rows), 10184, 42, [evaded](const BossTacticRow&) { return evaded; }));
+    const std::uint32_t fighting = count(true, false, false);
+    CHECK(fighting == 1);
+    CHECK(GateHeld(Active(rows), 10184, 42, [fighting](const BossTacticRow&) { return fighting; }));
+}
+
+static void GateHold_AboveGateNotHeld()
+{
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const auto fighters = [](const BossTacticRow&) -> std::uint32_t { return 1; };
+    CHECK(!GateHeld(Active(rows), 10184, 43, fighters));   // one point above the gate: full damage
+    CHECK(!GateHeld(Active(rows), 10184, 100, fighters));
+    CHECK(GateHeld(Active(rows), 10184, 42, fighters));    // the gate is inclusive
+    // The row is about its own boss_entry; its target_entry is the blocker, never spared itself.
+    CHECK(!GateHeld(Active(rows), 50143, 20, fighters));
+    CHECK(!GateHeld(ActiveBossRows(), 10184, 20, fighters));
+    // priority is how many blockers may still fight (0 = not one more).
+    BossTacticRow budget = row;
+    budget.priority = 1;
+    const std::vector<BossTacticRow> budgetRows = { budget };
+    const auto n = [](std::uint32_t count)
+    { return [count](const BossTacticRow&) -> std::uint32_t { return count; }; };
+    CHECK(!GateHeld(Active(budgetRows), 10184, 42, n(1)));
+    CHECK(GateHeld(Active(budgetRows), 10184, 42, n(2)));
+    // The picker rule: a free DPS bot drops the spared entry, a tank or healer never does.
+    const auto countNear = [](std::uint32_t) -> std::uint32_t { return 0; };
+    CHECK(DpsLeavesAlone(true, Active(rows), 10184, 42, countNear, fighters));
+    CHECK(!DpsLeavesAlone(true, Active(rows), 10184, 43, countNear, fighters));
+    CHECK(!DpsLeavesAlone(false, Active(rows), 10184, 42, countNear, fighters));
+}
+
+static void GateHold_RowShape()
+{
+    BossTacticRow good = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    good.windowSec = 200.0f;
+    {
+        BossTacticTable table;
+        CHECK(table.Add(good));
+        CHECK(!table.Add(good));                       // same key
+        table.Seal();
+        CHECK(table.HasGateHoldMap(249));
+        CHECK(!table.HasGateHoldMap(250));
+        BossTacticRow defaultRadius = good;
+        defaultRadius.windowSec = 0.0f;                // 0 means the 200 yd default
+        BossTacticTable other;
+        CHECK(other.Add(defaultRadius));
+    }
+    const std::vector<BossTacticRow> refused = [&good]()
+    {
+        std::vector<BossTacticRow> rows;
+        BossTacticRow noTarget = good; noTarget.targetEntry = 0;
+        BossTacticRow spell = good; spell.spellId = 33439;
+        BossTacticRow lowGate = good; lowGate.param = 0.0f;
+        BossTacticRow highGate = good; highGate.param = 100.0f;
+        BossTacticRow shortRadius = good; shortRadius.windowSec = 49.0f;
+        BossTacticRow dbDefaultRadius = good; dbDefaultRadius.windowSec = 7.0f;
+        BossTacticRow wideRadius = good; wideRadius.windowSec = 251.0f;
+        BossTacticRow band = good; band.hpMax = 50;
+        BossTacticRow mode = good; mode.mode = TacticMode::UntilTank;
+        BossTacticRow spot = good; spot.spotX = 1.0f;
+        BossTacticRow cycle = good; cycle.cycleSec = 30.0f;
+        rows.push_back(noTarget);
+        rows.push_back(spell);
+        rows.push_back(lowGate);
+        rows.push_back(highGate);
+        rows.push_back(shortRadius);
+        rows.push_back(dbDefaultRadius);
+        rows.push_back(wideRadius);
+        rows.push_back(band);
+        rows.push_back(mode);
+        rows.push_back(spot);
+        rows.push_back(cycle);
+        return rows;
+    }();
+    for (const BossTacticRow& bad : refused)
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(bad));
+    }
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -513,6 +633,10 @@ int main()
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();
+    GateHold_HoldsSparedAtGateWhileBlockerFights();
+    GateHold_EvadedBlockerReleases();
+    GateHold_AboveGateNotHeld();
+    GateHold_RowShape();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
@@ -1207,7 +1331,8 @@ int main()
                                const std::function<std::uint32_t(std::uint32_t)>& count) -> std::uint32_t
         {
             for (std::uint32_t entry : entries)
-                if (!DpsLeavesAlone(true, r, entry, count))
+                if (!DpsLeavesAlone(true, r, entry, 100, count,
+                        [](const BossTacticRow&) -> std::uint32_t { return 0; }))
                     return entry;
             return 0;
         };
@@ -1216,7 +1341,8 @@ int main()
         CHECK(firstUnheld(active, { 15111 }, countOf(15146, 1)) == 0);
         CHECK(firstUnheld(ActiveBossRows(), both, countOf(15146, 1)) == 15111);
         CHECK(firstUnheld(active, both, countOf(15146, 0)) == 15111);       // no blocker: the Servant is free again
-        CHECK(!DpsLeavesAlone(false, active, 15111, countOf(15146, 1)));    // a tank or healer is not a free DPS bot
+        CHECK(!DpsLeavesAlone(false, active, 15111, 100, countOf(15146, 1),
+            [](const BossTacticRow&) -> std::uint32_t { return 0; }));       // a tank or healer is not a free DPS bot
 
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);

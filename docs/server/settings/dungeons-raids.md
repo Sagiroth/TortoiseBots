@@ -97,6 +97,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunGateHold`](#aiplayerbotdungeonrungatehold) | `0` | `1` (recommended on): the boss tactics keep their `gate_hold` rows — damage dealers stop on a boss at or below the row's health gate while its second unit still fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
 | [`AiPlayerbot.RunTeleportReturnYd`](#aiplayerbotrunteleportreturnyd) | `0` (recommended `120`) | A party bot the run brings back from farther than this (yards) is teleported to the lead bot with its combat dropped, never summoned by portal or left to walk back; `0` off. |
@@ -727,6 +728,16 @@ Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subje
 <summary>How it works in detail</summary>
 
 **Ranged only:** a boss tactic row of the `ranged_only` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the subject (`target_entry`, `0` = the row's boss) and the vertical gap in yards (`param`, 3 to 40). A melee bot (melee damage or a tank) standing `param` yd or more below the subject skips it in the free-damage and tank picks and drops it if it already holds it, then takes a `kill_first` pick or the nearest attacker that is not held; a ranged bot and a healer are never held. An explicit attack order beats the hold: an ordered bot keeps the subject until the order is cleared (as for `hold_kill`). The heights are the two units' own z, never the navmesh. When the subject lands the gap closes and the hold ends by itself. The `BossTacticsRangedOnly` row (`subject=<entry>, gap=<yd>`) goes to `bot_events.csv` at most once per 5 s per bot. Ayamiss climbs 20 yd for her air phase (boss_ayamiss.cpp:193-205).
+
+</details>
+### `AiPlayerbot.DungeonRunGateHold`
+Whether the boss tactics keep their `gate_hold` rows: damage dealers leave a boss alone at or below its health gate while a second unit still fights.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Gate hold:** a boss tactic row of the `gate_hold` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the spared unit (`boss_entry`), the blocker that must not be left alive (`target_entry`), the health gate in percent (`param`, 1 to 99), how many blockers may still fight (`priority`, 0 = not one more) and the blocker search radius in yards (`window_s`, 0 = 200, else 50 to 250). While the spared unit is at or below the gate and more than `priority` units of the blocker within the radius are alive, in combat and not evading, a free damage dealer leaves it alone: the damage-dealer and area picks, the group tank's victim and the raid mark drop it, and an area cast or a DoT within 10 yd of it is stood down (DoTs already ticking keep ticking). Tanks and healers keep their own pick, and an explicit attack order wins. An evaded, out-of-combat or dead blocker never counts, so a second boss that leaves the encounter cannot stall the spared one's kill. The rows are read by the fight scan; the band columns are refused because the kind's own gate is `param`. The `BossTacticsHoldKill` row records the drop like a `hold_kill` one.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`
