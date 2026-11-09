@@ -6927,6 +6927,7 @@
     fdSet(card.querySelector('.fd-tl'), tl(fdEvKeep(fd, lf, st)));
     fdAurasSync(card, fd, fdAuLiveKey(lf), lf, fdAuLiveOpts(st, fd.liveRange)); // only the panel's body is repainted, not the card
     fdMetersSync(card, fdMetersInputs(fd, st, lf)); // the meters' body too: the estimate moves with the clock
+    fdWipeLiveSync(card, fd, st, lf); // the wipe box: repainted only when a death was added
     // The Events panel: its list and count only; the filter builder is the viewer's while the fight runs (it repaints on its own edits).
     fdEventsSync(card, fd, fdAuLiveKey(lf), lf, { range: fd.liveRange, st, tick: true, tl });
     fdDragBandSync(card, fd);
@@ -10267,7 +10268,14 @@
     const tlHtml = (keep, f) => (selLive ? fdLiveTimelineHtml(liveSt, f || liveFight, fd.liveRange || range, keep)
       : fight ? fdTimelineHtml(FightDebug.timeline(fight), recaps, fd.death, range, keep) : '');
     fdSet(card.querySelector('.fd-tl'), tlHtml(fdEvKeep(fd, evFight, selLive ? liveSt : null)));
-    fdSet(card.querySelector('.fd-recap'), !selLive && fight ? fdRecapHtml(recaps, fd.death, range) : '');
+    // The wipe box (the first three deaths) sits above the picked death's recap: a filed fight reads the replay's own track for the
+    // health before each death; the running fight's box has its own gate (it repaints on a new death only).
+    if (selLive) fdWipeLiveSync(card, fd, liveSt, liveFight);
+    else {
+      fd.wipe = null; // the hand-over draws the filed fight's box from scratch
+      const wipe = fight ? fdWipeHtml(fight, recaps, track && track !== 'loading' ? track.prep : null, fight.start * 1000, fd.death) : '';
+      fdSet(card.querySelector('.fd-recap'), fight ? wipe + fdRecapHtml(recaps, fd.death, range) : '');
+    }
     if (!liveSt) fdSet(card.querySelector('.fd-rangebar'), !selLive && fight ? fdRangeBarHtml(fd.view, false, 0) + fdLinkTail(fd) : '');
     fdWholeTags(card, fd.view, selLive);
     // The Auras panel: the live fight's sampled rows, or the filed fight's own (else the track's sampled ones).
@@ -11555,6 +11563,50 @@
     return `<p class="fd-recaphead">Died ${who} at ${(r.t_ms / 1000).toFixed(1)} s, killed by ${esc(r.killer)}${sp} · `
       + `<span class="mono">${FightDebug.fmtInt(r.total)}</span> damage in <span class="mono">${(r.spanMs / 1000).toFixed(1)}</span> s</p>`
       + `<table class="data-table fd-recaptbl"><thead><tr><th>Time</th><th>From</th><th>Spell</th><th class="n">Damage</th></tr></thead><tbody>${rows}</tbody></table>` + note;
+  }
+
+  // The wipe box above the death recap (WipeRecap, web/static/js/wiperecap.js): on a wipe, the first three deaths as a table (who and
+  // role, when, killed by, the spell, the bot's health a second before, the damage of the hits since its last death). Each row's name
+  // is a button with data-fd-death (the debugger's own death pick, which also seeks the replay of a filed fight). A running fight
+  // has no hits yet, so its spell and damage cells say `-` and the box says when they come. `track` is the replay's prepared track
+  // (or framesFromSamples' frames); startMs is the fight's start on the track's clock; out.pending says a health was missing.
+  function fdWipeHtml(fight, recaps, track, startMs, selDeath, out) {
+    if (out) out.pending = false;
+    if (typeof WipeRecap === 'undefined' || !WipeRecap.isWipe(fight)) return '';
+    const rows = WipeRecap.firstDeaths(fight, recaps, WipeRecap.FIRST_N);
+    if (!rows.length) return '';
+    const live = !!fight.live;
+    const body = rows.map((r, n) => {
+      const hp = WipeRecap.hpBefore(track, r.name, r.t_ms, startMs, r.guid);
+      if (hp === null && out) out.pending = true;
+      const spell = r.spell ? esc(r.spell) + (r.likely ? ' <span class="fd-wlikely" title="the newest boss cast in the 3 s before the death aimed at this bot or at nobody">(likely)</span>' : '') : '-';
+      const role = r.role ? ` <span class="fd-wrole">(${esc(r.role)})</span>` : '';
+      return `<tr class="fd-wiperow${r.i === selDeath ? ' on' : ''}"><td class="n">${n + 1}</td>`
+        + `<td><button type="button" class="fd-botbtn" data-fd-death="${esc(r.i)}">${esc(r.name)}</button>${role}</td>`
+        + `<td class="mono">${WipeRecap.clock(r.t_ms)}</td><td>${esc(r.killer)}</td><td class="fd-wsp">${spell}</td>`
+        + `<td class="fd-whp n">${hp === null ? '-' : esc(hp) + '%'}</td>`
+        + `<td class="fd-wdmg n">${r.hits ? FightDebug.fmtInt(r.total) : '-'}</td></tr>`;
+    }).join('');
+    const note = live ? '<p class="fd-wipenote empty-hint">Last hits come when the fight ends.</p>' : '';
+    return `<div class="fd-wipe" role="group" aria-label="${live ? 'Wiping' : 'Wipe'}: first 3 deaths"><h4>${live ? 'Wiping' : 'Wipe'}: first 3 deaths</h4>`
+      + `<table class="data-table fd-wipetbl"><thead><tr><th class="n">#</th><th>Who</th><th>At</th><th>Killed by</th><th>Spell</th><th class="n">HP before</th><th class="n">Last hits</th></tr></thead><tbody>${body}</tbody></table>${note}</div>`;
+  }
+
+  // The running fight's wipe box. It is worked out again only when the number of deaths (or the outcome, the roster, the picked death
+  // or the fight itself) changed, and, while a health before a death is still missing, when a new 2 s sample arrived; the 1 s tick
+  // and the 2 s report otherwise leave it as it is. A fight too short to keep, or no live fight, leaves no box.
+  function fdWipeLiveSync(card, fd, st, lf) {
+    const el = card && card.querySelector ? card.querySelector('.fd-recap') : null;
+    if (!el || !fd) return;
+    const key = lf && st && !st.unkept ? lf.key : null;
+    const sig = key ? (lf.deaths || []).length + '|' + lf.outcome + '|' + (lf.bots || []).length : '';
+    const ns = key && Array.isArray(st.samples) ? st.samples.length : 0;
+    const w = fd.wipe;
+    if (w && w.key === key && w.sig === sig && w.sel === fd.death && (!w.pending || w.ns === ns)) return;
+    const out = { pending: false };
+    const html = key ? fdWipeHtml(lf, FightDebug.deathRecaps(lf), WipeRecap.framesFromSamples(st.samples, st.startMs), st.startMs, fd.death, out) : '';
+    fd.wipe = { key, sig, sel: fd.death, ns, pending: out.pending };
+    fdSet(el, html);
   }
 
   // Three tables: tanks (main first), healers (by healing), damage (by damage). The name cell opens the bot's profile.

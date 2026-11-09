@@ -1,0 +1,133 @@
+"use strict";
+// WipeRecap: the pure logic behind the Fight debugger's "first 3 deaths" box (no DOM, no fetch). It reads what the page already
+// has: the fight object (a filed fight's, or FdLive.fight's running one), the death recaps FightDebug.deathRecaps drew from it, and
+// the positions track's frames (FightReplay.prep, or framesFromSamples for a running fight) for the health a bot had before it died.
+// Everything here may be fed history or telemetry the daemon did not vet: every read is type-checked and every loop is bounded.
+(function (root) {
+  const SCAN_MAX = 5000;       // entries of a death list or a frame list looked at (a fight holds 200 deaths, a track 900 frames)
+  const FRAMES_MAX = 2000;     // frames framesFromSamples makes (the page keeps 900 samples)
+  const LEAD_MS = 1000;        // the health is read this long before the death: what the bot had before the hits that killed it
+  const REACH_MS = 10000;      // and no older than this before that point
+  const PRE_PULL_MS = 4000;    // samples from this long before the pull still count (a bot's health at the pull)
+  const FIRST_N = 3;
+  const N_MAX = 10;
+
+  const finite = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const isObj = (v) => v !== null && typeof v === "object";
+
+  // The fight's bots by name, role kept; the number of bots.
+  function botsOf(fight) {
+    return isObj(fight) && Array.isArray(fight.bots) ? fight.bots.slice(0, SCAN_MAX).filter(isObj) : [];
+  }
+
+  // A wipe: the fight's outcome says so, or at least half of its bots (distinct names) died. A running fight has no outcome yet
+  // ("live"), and a filed fight's outcome can be wrong, so the count decides there too. With no bots known the count says nothing.
+  function isWipe(fight) {
+    if (!isObj(fight)) return false;
+    if (fight.outcome === "wipe") return true;
+    const bots = botsOf(fight);
+    if (!bots.length) return false;
+    const known = {};
+    bots.forEach((b) => { if (typeof b.name === "string") known[b.name] = true; });
+    const dead = {};
+    let n = 0;
+    (Array.isArray(fight.deaths) ? fight.deaths.slice(0, SCAN_MAX) : []).forEach((d) => {
+      if (!isObj(d) || typeof d.name !== "string" || !known[d.name] || dead[d.name]) return;
+      dead[d.name] = true;
+      n++;
+    });
+    return n >= Math.ceil(bots.length / 2);
+  }
+
+  // The first n deaths by time (ties by name, then by the recap's own order), each as one row. `i` is the recap's index, so the
+  // page's death handler (which selects fight.deaths[i]) works on it. `hits` is the number of hits the recap holds (a running
+  // fight's deaths have none), `spell` the name of its killing spell ("" when none) and `likely` whether that is a guess.
+  function firstDeaths(fight, recaps, n) {
+    const want = finite(n) === null ? FIRST_N : Math.max(1, Math.min(N_MAX, Math.floor(n)));
+    const role = {};
+    botsOf(fight).forEach((b) => { if (typeof b.name === "string" && typeof b.role === "string") role[b.name] = b.role; });
+    const rows = [];
+    (Array.isArray(recaps) ? recaps.slice(0, SCAN_MAX) : []).forEach((r, at) => {
+      if (!isObj(r) || typeof r.name !== "string" || finite(r.t_ms) === null) return;
+      const sp = isObj(r.spell) && typeof r.spell.name === "string" ? r.spell : null;
+      rows.push({
+        i: finite(r.i) !== null ? r.i : at,
+        name: r.name,
+        role: Object.prototype.hasOwnProperty.call(role, r.name) ? role[r.name] : "",
+        t_ms: r.t_ms,
+        killer: typeof r.killer === "string" && r.killer ? r.killer : "unknown",
+        spell: sp ? sp.name : "",
+        likely: !!(sp && (r.likely || sp.likely)),
+        total: finite(r.total) !== null ? r.total : 0,
+        hits: Array.isArray(r.hits) ? r.hits.length : 0,
+        guid: finite(r.guid) !== null ? r.guid : undefined,
+      });
+    });
+    rows.sort((a, b) => (a.t_ms - b.t_ms) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.i - b.i));
+    return rows.slice(0, want);
+  }
+
+  // The bot's health in percent at the last frame at or before tMs - 1 s (tMs is fight time; fightStartMs is the fight's start on
+  // the frames' own clock, unix ms), no older than 10 s before that point, and only a frame where the bot was alive. Frames are the
+  // replay's: { t: unix seconds, bots: { guid: { hp, alive } } }; the bot is found by `guid`, else by name through track.names.
+  // null when no frame qualifies.
+  function hpBefore(track, name, tMs, fightStartMs, guid) {
+    const t = finite(tMs), s = finite(fightStartMs);
+    if (t === null || s === null) return null;
+    const frames = Array.isArray(track) ? track : isObj(track) && Array.isArray(track.frames) ? track.frames : null;
+    if (!frames) return null;
+    let g = finite(guid) !== null && guid !== 0 ? String(guid) : null;
+    if (g === null && isObj(track) && isObj(track.names) && typeof name === "string") {
+      const ks = Object.keys(track.names);
+      for (let k = 0; k < ks.length && k < SCAN_MAX; k++) if (track.names[ks[k]] === name) { g = ks[k]; break; }
+    }
+    if (g === null) return null;
+    const target = s + t - LEAD_MS;
+    let best = null, bestAt = -Infinity;
+    const lim = Math.min(frames.length, SCAN_MAX);
+    for (let k = 0; k < lim; k++) {
+      const f = frames[k];
+      if (!isObj(f)) continue;
+      const ft = finite(f.t);
+      if (ft === null) continue;
+      const at = ft * 1000;
+      if (at > target || at < target - REACH_MS || at <= bestAt) continue;
+      const row = isObj(f.bots) && Object.prototype.hasOwnProperty.call(f.bots, g) ? f.bots[g] : null;
+      if (!isObj(row) || row.alive === false || finite(row.hp) === null) continue;
+      best = Math.round(row.hp);
+      bestAt = at;
+    }
+    return best;
+  }
+
+  // dash-0's live samples (t in unix ms; bots by guid with hp % and a = 1 alive / 0 dead) as the frames hpBefore reads. Samples older
+  // than 4 s before the pull are left out; at most the newest FRAMES_MAX are made. A row without a number is dropped.
+  function framesFromSamples(samples, startMs) {
+    const s = finite(startMs);
+    const list = Array.isArray(samples) ? samples.slice(-FRAMES_MAX) : [];
+    const frames = [];
+    list.forEach((sm) => {
+      if (!isObj(sm)) return;
+      const t = finite(sm.t);
+      if (t === null || (s !== null && s > 0 && t < s - PRE_PULL_MS) || !isObj(sm.bots)) return;
+      const bots = {};
+      Object.keys(sm.bots).slice(0, SCAN_MAX).forEach((g) => {
+        const b = sm.bots[g];
+        if (g === "__proto__" || !isObj(b) || finite(b.hp) === null) return;
+        bots[g] = { hp: b.hp, alive: b.a !== 0 };
+      });
+      frames.push({ t: t / 1000, bots });
+    });
+    return { frames, names: {} };
+  }
+
+  // m:ss of a fight time in ms.
+  function clock(ms) {
+    const v = finite(ms);
+    const s = v === null || v < 0 ? 0 : Math.floor(v / 1000);
+    return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+  }
+
+  const api = { FIRST_N, isWipe, firstDeaths, hpBefore, framesFromSamples, clock };
+  if (typeof module !== "undefined" && module.exports) module.exports = api; else root.WipeRecap = api;
+})(typeof self !== "undefined" ? self : this);

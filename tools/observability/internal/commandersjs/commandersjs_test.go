@@ -425,6 +425,18 @@ func TestFdMetersUIJS(t *testing.T) {
 	runCheck(t, "fdmeters_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestWipeRecapJS runs wiperecap_check.js: the pure logic of the "first 3 deaths" box (isWipe by outcome or half the bots dead, firstDeaths
+// in time order with ties by name, hpBefore from the replay's frames, framesFromSamples for a live fight, hostile input).
+func TestWipeRecapJS(t *testing.T) {
+	runCheck(t, "wiperecap_check.js", "../../web/static/js/wiperecap.js")
+}
+
+// TestWipeRecapUIJS runs wiperecap_ui_check.js: the box in app.js (a wipe draws three rows that select a death, a calm fight draws
+// nothing, a live wipe is headed "Wiping" with dashes and its note, the live box repaints only on a new death, escaping, the wiring).
+func TestWipeRecapUIJS(t *testing.T) {
+	runCheck(t, "wiperecap_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestLoginTargetJS runs login_target_check.js: login.html's own dashboardTarget() on plain, hostile and over-long fragments (#//evil.example,
 // #javascript:alert(1), a route of 5000 characters): the target is always /dashboard on this origin with at most a #/ route.
 func TestLoginTargetJS(t *testing.T) {

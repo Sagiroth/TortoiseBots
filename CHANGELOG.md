@@ -72,6 +72,7 @@
 - A hired bot keeps its gear item-level limit after logging out and back in. [#1514](https://github.com/Sagiroth/TortoiseBots/pull/1514)
 
 ### Dashboard
+- New: on a wipe the Fight debugger lists the first three deaths above the death recap (who, when, killed by, the spell, the bot's health a second before and the damage of its last hits; click a row to pick that death); a wipe still in progress shows the same box from the live deaths, with the spell and damage filled in when the fight ends.
 - The dashboard has a new Raids tab. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
 - You can record a bot's decisions to see why it did something. [#1506](https://github.com/Sagiroth/TortoiseBots/pull/1506)
 - Signing in now works when your server's login database runs on MySQL 8. [#1502](https://github.com/Sagiroth/TortoiseBots/pull/1502)
