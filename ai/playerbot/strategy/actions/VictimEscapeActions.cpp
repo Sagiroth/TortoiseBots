@@ -52,7 +52,7 @@ VictimEscapeReady ReadyOf(Player* member)
     VictimEscapeReady ready;
     // Ice Block and Divine Shield go out while stunned; Feign Death and Vanish do not.
     const bool inControl = !member->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL);
-    switch (member->getClass())
+    switch (member->GetClass())
     {
         case CLASS_HUNTER: ready.feignDeath = inControl && AnyRankReady(member, kFeignDeathIds); break;
         case CLASS_ROGUE: ready.vanish = inControl && AnyRankReady(member, kVanishIds); break;
@@ -106,7 +106,7 @@ VictimEscape DecideFor(Unit* boss, Player* victim, std::uint32_t nowMs, VictimEs
 {
     guards = GuardsFor(boss, victim, nowMs);
     return VictimEscapeFor(sPlayerbotAIConfig.dungeonRunImmuneBossVictimEscape, PlayerbotAI::IsTank(victim),
-                           boss->GetVictim() == victim, TargetTauntImmune(boss), victim->getClass(), ReadyOf(victim),
+                           boss->GetVictim() == victim, TargetTauntImmune(boss), victim->GetClass(), ReadyOf(victim),
                            guards);
 }
 
@@ -154,7 +154,7 @@ void LogVictimEscape(PlayerbotAI* ai, Unit* boss, Player* victim, uint32 spellId
     }
     char info1[160];
     snprintf(info1, sizeof(info1), "boss=%u,victim=%s,class=%s,spell=%u,result=%s",
-             boss->GetEntry(), victim->GetName(), ClassWord(victim->getClass()), spellId, ok ? "ok" : "refused");
+             boss->GetEntry(), victim->GetName(), ClassWord(victim->GetClass()), spellId, ok ? "ok" : "refused");
     char info2[48];
     snprintf(info2, sizeof(info2), "reason=%s", reason);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsVictimEscape", info1, info2);
@@ -204,7 +204,7 @@ bool PlanOwnEscape(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
         const char* const why = guards.escapedRecently ? nullptr : GuardWord(guards);
         if (why)
         {
-            const VictimEscape wanted = VictimEscapeFor(true, PlayerbotAI::IsTank(bot), true, true, bot->getClass(),
+            const VictimEscape wanted = VictimEscapeFor(true, PlayerbotAI::IsTank(bot), true, true, bot->GetClass(),
                                                         ReadyOf(bot), VictimEscapeGuards());
             if (IsOwnEscape(wanted))
                 LogVictimEscape(ai, boss, bot,
@@ -231,7 +231,7 @@ bool PaladinProtectionReady(PlayerbotAI* ai, Player* bot, uint32& spellId)
 // The first group member within 30 yd this paladin protects now.
 bool PlanProtection(PlayerbotAI* ai, Player* bot, EscapePlan& plan)
 {
-    if (bot->getClass() != CLASS_PALADIN || !bot->GetGroup() || !sServerFacade.IsAlive(bot))
+    if (bot->GetClass() != CLASS_PALADIN || !bot->GetGroup() || !sServerFacade.IsAlive(bot))
         return false;
     uint32 spellId = 0;
     const bool bopReady = PaladinProtectionReady(ai, bot, spellId);
@@ -310,7 +310,7 @@ bool ImmuneBossVictimTrigger::IsActive()
 
 bool ImmuneBossVictimProtectTrigger::IsActive()
 {
-    if (!sPlayerbotAIConfig.dungeonRunImmuneBossVictimEscape || bot->getClass() != CLASS_PALADIN)
+    if (!sPlayerbotAIConfig.dungeonRunImmuneBossVictimEscape || bot->GetClass() != CLASS_PALADIN)
         return false;
     EscapePlan plan;
     return PlanProtection(ai, bot, plan);
