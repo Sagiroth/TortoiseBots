@@ -611,6 +611,47 @@ int main()
         CHECK(ThreatCapPickReference({}, true).index == -1);
     }
 
+    // DungeonRunThreatResetWindow (t1106k): the reference is the best tank that does NOT hold the boss, on it or away.
+    // The cap's own successor pick requires `onBoss` and would read the third tank (6000), not the away off-tank (9000).
+    {
+        const std::vector<ThreatCapTank> tanks = {{10000.0f, false, true, true}, {9000.0f, true, false, false},
+                                                  {6000.0f, true, true, false}};
+        CHECK(ThreatResetReference(tanks) == 9000.0f);
+        CHECK(ThreatCapPickReference(tanks, true, true).threat == 6000.0f);
+
+        ThreatResetLatch latch;
+        CHECK(latch.Update(true, true, 8600.0f, 9000.0f, 95));       // 95.5 %: held
+        CHECK(latch.held);
+        CHECK(!latch.Update(false, true, 8600.0f, 9000.0f, 95));     // the window shuts: cleared
+        CHECK(!latch.held);
+        CHECK(latch.Update(true, true, 8600.0f, 9000.0f, 95));
+        CHECK(latch.Update(true, true, 8200.0f, 9000.0f, 95));       // 91 %: still held (above 90)
+        CHECK(latch.held);
+        CHECK(!latch.Update(true, true, 8000.0f, 9000.0f, 95));      // 88 %: released
+        CHECK(!latch.held);
+        // Never a tank or healer (dps false), never a reference under the floor, never with no tank.
+        CHECK(!latch.Update(true, false, 10000.0f, 9000.0f, 95));
+        CHECK(!latch.Update(true, true, 99.0f, 99.0f, 95));
+        CHECK(ThreatResetReference({}) == -1.0f);
+        CHECK(!latch.Update(true, true, 500.0f, -1.0f, 95));
+    }
+
+    // The window: [k*19, k*26] s for k = 1..3 (the double and triple gaps included).
+    {
+        CHECK(!ThreatResetWindowOpen(18999, 19000, 26000));
+        CHECK(ThreatResetWindowOpen(19000, 19000, 26000));
+        CHECK(ThreatResetWindowOpen(26000, 19000, 26000));
+        CHECK(!ThreatResetWindowOpen(26001, 19000, 26000));
+        CHECK(ThreatResetWindowOpen(40000, 19000, 26000));   // the 40-48 s double gap
+        CHECK(!ThreatResetWindowOpen(37999, 19000, 26000));
+        CHECK(ThreatResetWindowOpen(57000, 19000, 26000));
+        CHECK(!ThreatResetWindowOpen(78001, 19000, 26000));
+        // Before the first reset: the fight's age plus 3 s.
+        CHECK(ThreatResetSince(100000, 0, 50000) == 53000);
+        CHECK(ThreatResetSince(100000, 40000, 50000) == 60000);
+        CHECK(ThreatResetSince(100000, 0, 0) == 0);
+    }
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

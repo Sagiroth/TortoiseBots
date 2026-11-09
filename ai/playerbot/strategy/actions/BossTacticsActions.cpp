@@ -3411,7 +3411,8 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
                        std::uint32_t nowMs, std::vector<SeekLogRow>& rows);
 
 // Defined after the Son rows (it reads the boss's threat list); ReadSeekFight hands it a charm after the 1.5 s wait.
-void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles);
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles);
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
@@ -3448,6 +3449,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint64_t pullGuid = 0;
     std::uint32_t pullStartMs = 0;
     std::uint64_t charmRowGuid = 0;
+    std::uint32_t charmPrevResetMs = 0;
+    std::uint32_t charmSeenMs = 0;
+    std::uint32_t charmEngageMs = 0;
     std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
@@ -3968,13 +3972,18 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             SeekCharmScan(record, charmed, nowMs);
         }
         if (SeekCharmRowDue(record, nowMs))
+        {
             charmRowGuid = record.charmGuid;
+            charmPrevResetMs = record.prevResetMs;
+            charmSeenMs = record.charmSeenMs;
+            charmEngageMs = record.engageMs;
+        }
     }
     // The hold and death rows were built under the lock; logEvent runs without it.
     for (const SeekLogRow& row : seekRows)
         sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);
     if (charmRowGuid != 0)
-        LogSeekCharm(ai, bot, boss, charmRowGuid, roles);
+        LogSeekCharm(ai, bot, boss, charmRowGuid, charmPrevResetMs, charmSeenMs, charmEngageMs, roles);
     if (healerTakeGuid)
     {
         // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
@@ -4255,7 +4264,8 @@ const char* CharmClassWord(Unit* unit)
 // The Cause Insanity row, built once per charm after its 1.5 s wait: the charmed player, Hakkar's new victim, the two
 // off-tanks' threat on him and the five highest threat entries (the charmed player left out). Logged without the
 // fight's lock; it measures who the threat cap had to hold back, so the next brief can read the margin.
-void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles)
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles)
 {
     if (!ai || !bot || !boss)
         return;
@@ -4316,13 +4326,26 @@ void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charme
             break;
         }
     }
+    char extra[64];
+    extra[0] = '\0';
+    if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+    {
+        // The reset window's state when this charm was first seen, counted from the reset before it (or the fight's
+        // start): the A/B walk reads how many charms land inside the window.
+        const ThreatResetWindow* const win = GetBossTactics().ThreatResetWindowOf(boss->GetMapId(), boss->GetEntry());
+        const bool open = win && ThreatResetWindowOpen(ThreatResetSince(charmSeenMs, prevResetMs, engageMs),
+                                                       win->minGapMs, win->maxGapMs);
+        snprintf(extra, sizeof(extra), ",win=%d,since_prev_ms=%u", open ? 1 : 0,
+                 prevResetMs ? charmSeenMs - prevResetMs : 0);
+    }
     char info1[512];
     snprintf(info1, sizeof(info1),
              "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"
-             "top_dps_threat=%.0f",
+             "top_dps_threat=%.0f%s",
              CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
              ot1, ot2, top, capRef ? capRef->GetName() : "none",
-             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat);
+             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat,
+             extra);
     char info2[160];
     snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
              CharmRoleWord(victim), CharmClassWord(victim));
@@ -8916,6 +8939,8 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;
+        out.lastResetMs = record.lastResetMs;
+        out.engageMs = record.engageMs;
         out.gathering = record.gatherSourceGuid != 0;
         out.gatherReady = record.ready;
         out.missing = record.missing;

@@ -471,6 +471,9 @@ public:
     // (AiPlayerbot.DungeonRunThreatSuccessorStrict,
     // ThreatCapPolicy.h SuccessorWhiteLatch): stops at 92 % of the reference, resumes under 85 %.
     ai::SuccessorWhiteLatch& SuccessorWhiteCap() { return successorWhiteCap_; }
+    // This bot's hold around a boss's Cause Insanity reset window (AiPlayerbot.DungeonRunThreatResetWindow,
+    // ThreatCapPolicy.h ThreatResetLatch): holds at stopPct of the reset reference, resumes 5 points under it.
+    ai::ThreatResetLatch& ThreatResetCap() { return threatResetCap_; }
     bool IsRanged(Player* player, bool inGroup = true);
     bool IsMelee(Player* player, bool inGroup = true);
     Creature* GetCreature(ObjectGuid guid) const;
@@ -1177,6 +1180,8 @@ protected:
     bool m_chatGateOnlyOrders = false;
     // The successor white-damage stop the last read decided (per bot, so the 85-92 % band holds across ticks).
     ai::SuccessorWhiteLatch successorWhiteCap_;
+    // The Cause Insanity reset-window hold the last read decided (per bot, so the 5-point resume band holds).
+    ai::ThreatResetLatch threatResetCap_;
     time_t m_chatGatePublishedAt = 0;
     void PublishChatGate();
     std::vector<std::string> m_recordedMessages;

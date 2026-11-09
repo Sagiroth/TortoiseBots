@@ -287,5 +287,66 @@ class ThreatSuccessorKeepsAway(unittest.TestCase):
         self.assertIn("DungeonRunThreatSuccessorKeepsAway", CHANGELOG)
 
 
+class ThreatResetWindow(unittest.TestCase):
+    """AiPlayerbot.DungeonRunThreatResetWindow: a damage dealer holds around Hakkar's Cause Insanity."""
+
+    VALUES = (ROOT / "ai/playerbot/strategy/values/ThreatValues.cpp").read_text()
+    TRIGGER_CPP = (ROOT / "ai/playerbot/strategy/triggers/GenericTriggers.cpp").read_text()
+
+    def test_the_key_ships_off(self):
+        self.assertIn("bool dungeonRunThreatResetWindow = false;", CONFIG_H)
+        self.assertIn('config.GetBoolDefault("AiPlayerbot.DungeonRunThreatResetWindow", false)', CONFIG_CPP)
+        self.assertIn("AiPlayerbot.DungeonRunThreatResetWindow = 0", CONF)
+
+    def test_the_multiplier_holds_damage_behind_the_key(self):
+        multiplier = body(STRATEGY, "float ThreatMultiplier::GetValue(Action* action)")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)", multiplier)
+        self.assertIn("ThreatResetHolds(ai, bot, resetTarget)", multiplier)
+        self.assertIn("ThreatCapExempt(", multiplier)
+        # After the null-action return and before the strict block: a held action stops before the 80 % line reads.
+        self.assertLess(multiplier.index("if (action == NULL)"), multiplier.index("ThreatResetHolds("))
+        self.assertLess(multiplier.index("ThreatResetHolds("), multiplier.index("dungeonRunThreatSuccessorStrict"))
+        # Only the action's own target is held.
+        self.assertIn("(!action->GetTarget() || action->GetTarget() == resetTarget)", multiplier)
+
+    def test_the_white_stop_trigger_stops_in_the_trigger_pass(self):
+        trigger = body(self.TRIGGER_CPP, "bool ThreatResetWhiteStopTrigger::IsActive()")
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunThreatResetWindow)", trigger)
+        self.assertIn("if (!ThreatResetHolds(ai, bot, target))", trigger)
+        self.assertIn("SuccessorWhiteStopsOf(true, meleeOnTarget, autoRepeatOnTarget)", trigger)
+        self.assertIn("    if (stops.melee)\n        bot->AttackStop();\n", trigger)
+        self.assertIn("    if (stops.autoRepeat)\n        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);\n", trigger)
+        self.assertTrue(trigger.rstrip().endswith("return false;"))
+        self.assertNotIn("ClearTarget", trigger)
+        triggers = body(STRATEGY, "void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)")
+        self.assertIn('"threat reset white stop"', triggers)
+        self.assertIn('new NextAction("threat reset white stop noop", ACTION_PASSTROUGH)', triggers)
+        self.assertIn('creators["threat reset white stop"]',
+                      (ROOT / "ai/playerbot/strategy/triggers/TriggerContext.h").read_text())
+        self.assertIn('creators["threat reset white stop noop"]',
+                      (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text())
+
+    def test_the_reset_reference_reads_the_shared_tank_list(self):
+        fn = body(self.VALUES, "float ThreatValue::GetResetSuccessorThreat(PlayerbotAI* ai, Unit* target)")
+        self.assertIn("ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);", fn)
+        self.assertIn("ai::ThreatResetReference(tanks)", fn)
+        self.assertIn("ai::ThreatSuccessorTarget(target)", fn)
+        self.assertLess(fn.index("ThreatCapTanksOf("), fn.index("ThreatResetReference("))
+
+    def test_the_charm_scan_records_the_reset_time(self):
+        scan = body(SEEK_FIGHT, "inline void SeekCharmScan(SeekCycleRecord& record, std::uint64_t charmed,")
+        self.assertIn("record.prevResetMs = record.lastResetMs;", scan)
+        self.assertIn("record.lastResetMs = nowMs;", scan)
+        self.assertIn("std::uint32_t lastResetMs = 0;", SEEK_FIGHT)
+        view = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
+        self.assertIn("std::uint32_t lastResetMs = 0, engageMs = 0;", view)
+        self.assertIn("out.lastResetMs = record.lastResetMs;", BOSS)
+
+    def test_docs_and_changelog(self):
+        self.assertIn("### `AiPlayerbot.DungeonRunThreatResetWindow`", SETTINGS)
+        self.assertIn("DungeonRunThreatResetWindow", DOC)
+        self.assertIn("DungeonRunThreatResetWindow", CHANGELOG)
+
+
 if __name__ == "__main__":
     unittest.main()

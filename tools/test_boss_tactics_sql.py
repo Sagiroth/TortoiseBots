@@ -300,6 +300,11 @@ def new_kind_problem(row):
             return "threat_successor with a target"
         if row["tactic_mode"] not in ("", "strict"):
             return "a mode word threat_successor does not take (only strict)"
+        if row["cycle_s"]:
+            return "cycle_s on threat_successor"
+        if row["cycle_spell"] and not (5.0 <= row["param"] < row["window_s"] <= 60.0
+                                       and 50 <= row["priority"] <= 100):
+            return "a reset window outside 5 <= param < window_s <= 60 or priority outside 50-100"
         return None
     if kind == "seek_pull":
         # The seek source (target_entry), the most walk-outs in one cycle (priority), the kill lead (param) and the
@@ -1261,14 +1266,26 @@ class BossTacticsSql(unittest.TestCase):
     def test_hakkar_threat_successor_row_is_live(self):
         # 20261105210000: Hakkar alone asks for a threat successor, so his damage dealers stay below the assigned
         # off-tank and a Cause Insanity reset hands him to it. Every other taunt-immune boss keeps the highest tank.
+        # 20261109120000: the row also carries his Cause Insanity timer (cycle_spell 24327, 19-26 s apart, 95 %),
+        # read only with AiPlayerbot.DungeonRunThreatResetWindow.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         cap = live.get((309, 14834, "threat_successor", 0, 0))
         self.assertIsNotNone(cap, "the Hakkar threat_successor row is missing")
-        self.assertEqual("20261105210000_world.sql", cap["file"], "the threat_successor migration owns the row")
-        self.assertEqual((0, 0, 0.0, "", 0, 100, 0),
-                         (cap["priority"], cap["spell_id"], cap["param"], cap["tactic_mode"], cap["hp_min"],
-                          cap["hp_max"], cap["bot_aura"]))
+        self.assertEqual("20261109120000_world.sql", cap["file"], "the reset window migration owns the row")
+        self.assertEqual((95, 0, 19.0, 26.0, 24327, "", 0, 100, 0),
+                         (cap["priority"], cap["spell_id"], cap["param"], cap["window_s"], cap["cycle_spell"],
+                          cap["tactic_mode"], cap["hp_min"], cap["hp_max"], cap["bot_aura"]))
         self.assertIsNone(new_kind_problem(cap))
+        # The new file writes one row and deletes the exact (map, boss, kind, target, spell, band) key.
+        name = "20261109120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the threat reset window migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'threat_successor' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         # One row only: a second taunt-immune boss naming itself here would change its cap too.
         # Hakkar's and Jin'do's (20261106120000) only: another taunt-immune boss naming itself here would change its cap.
         successors = sorted(key for key in live if key[2] == "threat_successor")

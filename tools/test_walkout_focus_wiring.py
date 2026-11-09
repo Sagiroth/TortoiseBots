@@ -337,8 +337,8 @@ class WalkoutStartGenGuards(unittest.TestCase):
 
     def test_the_readers_snapshot_guards_compare_the_generation(self):
         update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
-        # The no-shot abort, the shot/end write-back and the no-stand re-plan: all three by the whole snapshot.
-        self.assertEqual(update.count("!WalkoutSnapshotCurrent(it->second.state, state)"), 3)
+        # The no-shot abort, the no-sight cut, the shot/end write-back and the no-stand re-plan: all by the whole snapshot.
+        self.assertEqual(update.count("!WalkoutSnapshotCurrent(it->second.state, state)"), 4)
         self.assertNotIn("it->second.state.startMs != state.startMs", update)
         self.assertIn("WalkoutReturnCurrent(it->second.state, state)", update)
         self.assertNotIn("it->second.state.returner == state.returner", update)

@@ -63,9 +63,11 @@ RaidTankRoles GetRaidTankRoles(PlayerbotAI* ai)
     return roles;
 }
 bool gThreatSuccessor = false;
+namespace ai { struct ThreatResetWindow; }
 struct BossTacticsStub {
     bool HasThreatSuccessor(unsigned, unsigned) const { return gThreatSuccessor; }
     bool HasStrictThreatSuccessor(unsigned, unsigned) const { return false; }
+    const ai::ThreatResetWindow* ThreatResetWindowOf(unsigned, unsigned) const { return nullptr; }
 };
 BossTacticsStub GetBossTactics() { return {}; }
 struct Facade {
@@ -78,6 +80,7 @@ struct ConfigStub { bool dungeonRunThreatSuccessorNotHolder = false; bool dungeo
 struct ThreatValue {
     static float GetThreat(Player*, Unit*);
     static float GetTankThreat(PlayerbotAI*, Unit*);
+    static float GetResetSuccessorThreat(PlayerbotAI*, Unit*);
 };
 #include "ThreatCapPolicy.h"
 // The bot_events row of the successor cap is not part of these stubs: the extracted method only has to compile it.

@@ -18,6 +18,7 @@
 #include "playerbot/SurvivePolicy.h"
 #include "playerbot/ForceRebuffPolicy.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/generic/ThreatStrategy.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -839,6 +840,35 @@ bool SuccessorWhiteCapTrigger::IsActive()
     const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(SuccessorWhiteStopNow(ai->SuccessorWhiteCap(), true,
             PlayerbotAI::IsTank(bot), AI_VALUE2(uint8, "threat", "current target"), refZero, whiteRunning),
         meleeOnSuccessor, autoRepeatOnSuccessor);
+    if (stops.melee)
+        bot->AttackStop();
+    if (stops.autoRepeat)
+        bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+    return false;
+}
+
+// The reset-window white stop (AiPlayerbot.DungeonRunThreatResetWindow). The same trigger-pass shape as the successor
+// white stop: a swing or auto-repeat aimed at the boss stops on the spot while the hold against the best non-holding
+// tank fires, and it stops them again on the next pass while the hold lasts. The target is never cleared (walk 57's
+// target strip cost about 3 points) and the trigger never queues an action. Key off: returns at once.
+bool ThreatResetWhiteStopTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+        return false;
+    Unit* const target = AI_VALUE(Unit*, "current target");
+    if (!target || target->IsPlayer())
+        return false;
+    if (!AI_VALUE(bool, "group"))
+        return false;
+    if (AI_VALUE(bool, "neglect threat"))
+        return false;
+    if (!ThreatResetHolds(ai, bot, target))
+        return false;
+    Spell* const autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    const bool repeating = autoRepeat && autoRepeat->m_spellInfo;
+    const bool meleeOnTarget = bot->HasUnitState(UNIT_STAT_MELEE_ATTACKING) && bot->GetVictim() == target;
+    const bool autoRepeatOnTarget = repeating && autoRepeat->m_targets.getUnitTarget() == target;
+    const SuccessorWhiteStops stops = SuccessorWhiteStopsOf(true, meleeOnTarget, autoRepeatOnTarget);
     if (stops.melee)
         bot->AttackStop();
     if (stops.autoRepeat)

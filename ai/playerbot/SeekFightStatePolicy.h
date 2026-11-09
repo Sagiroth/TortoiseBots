@@ -304,6 +304,10 @@ namespace ai
         std::uint32_t charmSeenMs = 0;
         bool charmLogged = false;
         std::uint32_t charmScanMs = 0;
+        // The Cause Insanity reset clock (DungeonRunThreatResetWindow): when the last new charmed guid was seen, and the
+        // reset before it (the charm row's window state is read against that one).
+        std::uint32_t lastResetMs = 0;
+        std::uint32_t prevResetMs = 0;
     };
 
     // Cause Insanity's scan result for one fight: a charmed guid that differs from the last one starts its clock (seen
@@ -319,6 +323,8 @@ namespace ai
         }
         else if (charmed != record.charmGuid)
         {
+            record.prevResetMs = record.lastResetMs;
+            record.lastResetMs = nowMs;
             record.charmGuid = charmed;
             record.charmSeenMs = nowMs;
             record.charmLogged = false;

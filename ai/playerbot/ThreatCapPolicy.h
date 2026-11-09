@@ -430,4 +430,57 @@ namespace ai
     {
         return ThreatCapLeaveReadOf(std::move(tanks), selfPos, notHolder).collapses;
     }
+
+    // AiPlayerbot.DungeonRunThreatResetWindow (Hakkar's Cause Insanity): the boss's `threat_successor` row carries his
+    // reset timer (`cycle_spell`), and a damage dealer holds its damage on him around each expected reset, so the
+    // threat wipe hands him to a tank. Before the first reset the time since is the fight's age plus a small offset
+    // (the first CI lands at 16.2-18.3 s), and the window is `[k*minGapMs, k*maxGapMs]` for k = 1..3, which covers
+    // the 40-48 s double gaps (walk 61-62: gaps p5 20.4 s, median 23.1 s).
+    constexpr std::uint32_t kThreatResetFirstOffsetMs = 3000;
+    constexpr std::uint8_t kThreatResetResumeGapPct = 5;
+
+    inline bool ThreatResetWindowOpen(std::uint32_t sinceMs, std::uint32_t minGapMs, std::uint32_t maxGapMs)
+    {
+        for (std::uint32_t k = 1; k <= 3; ++k)
+            if (sinceMs >= k * minGapMs && sinceMs <= k * maxGapMs)
+                return true;
+        return false;
+    }
+
+    inline std::uint32_t ThreatResetSince(std::uint32_t nowMs, std::uint32_t lastResetMs, std::uint32_t engageMs)
+    {
+        return lastResetMs ? nowMs - lastResetMs : (engageMs ? nowMs - engageMs + kThreatResetFirstOffsetMs : 0);
+    }
+
+    // The reset successor: the highest threat among the listed tanks that do not hold the boss, on it or away (a tank on
+    // a Son keeps its boss threat and is who the boss turns to). -1: none.
+    inline float ThreatResetReference(const std::vector<ThreatCapTank>& tanks)
+    {
+        float best = -1.0f;
+        for (const ThreatCapTank& t : tanks)
+            if (!t.holdsBoss && t.threat > best)
+                best = t.threat;
+        return best;
+    }
+
+    // One bot's hold around the reset window, kept across ticks like SuccessorWhiteLatch: held at or above stopPct of
+    // the reference, released under stopPct - kThreatResetResumeGapPct, so a read that wobbles at the line does not
+    // start and stop the damage every tick. Tanks, healers and a reference under the absolute floor are never held.
+    struct ThreatResetLatch
+    {
+        bool held = false;
+
+        // open: the window; dps: not a tank, not a healer; ref: ThreatResetReference.
+        bool Update(bool open, bool dps, float botThreat, float ref, std::uint8_t stopPct)
+        {
+            if (!open || !dps || ref < kThreatCapOffTankMinThreat)
+            {
+                held = false;
+                return false;
+            }
+            std::uint8_t const pct = ThreatPctSaturated(botThreat, ref);
+            held = pct >= (held ? static_cast<std::uint8_t>(stopPct - kThreatResetResumeGapPct) : stopPct);
+            return held;
+        }
+    };
 }

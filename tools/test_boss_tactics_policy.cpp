@@ -3609,6 +3609,54 @@ int main()
             BossTacticTable table;
             CHECK(!table.Add(strictAvoid));               // StrictRowRefusedOnAvoidCast
         }
+        // The reset window (DungeonRunThreatResetWindow): a threat_successor row with cycle_spell carries the boss's
+        // reset timer - param/window_s the gap bounds in seconds, priority the stop percent. Refused outside
+        // 5 <= param < window_s <= 60 and 50 <= priority <= 100; a row without cycle_spell is today's plain cap.
+        {
+            BossTacticRow timed = cap;
+            timed.cycleSpell = 24327;
+            timed.param = 19.0f;
+            timed.windowSec = 26.0f;
+            timed.priority = 95;
+            BossTacticTable table;
+            CHECK(table.ThreatResetWindowOf(309, 14834) == nullptr); // not sealed
+            CHECK(table.Add(timed));                                 // ThreatResetRowAccepted
+            table.Seal();
+            const ThreatResetWindow* const win = table.ThreatResetWindowOf(309, 14834);
+            CHECK(win != nullptr);                                   // ThreatResetWindowOf
+            CHECK(win->spell == 24327u);
+            CHECK(win->minGapMs == 19000u && win->maxGapMs == 26000u);
+            CHECK(win->stopPct == 95);
+            CHECK(table.ThreatResetWindowOf(509, 14834) == nullptr); // another map's boss
+            CHECK(table.ThreatResetWindowOf(309, 11357) == nullptr);
+        }
+        {
+            BossTacticRow timed = cap;
+            timed.cycleSpell = 24327;
+            timed.param = 19.0f;
+            timed.windowSec = 26.0f;
+            timed.priority = 95;
+            BossTacticTable table;
+            timed.param = 30.0f;                                     // param above window_s
+            CHECK(!table.Add(timed));
+            timed.param = 19.0f;
+            timed.windowSec = 61.0f;
+            CHECK(!table.Add(timed));
+            timed.windowSec = 19.0f;                                 // param == window_s
+            CHECK(!table.Add(timed));
+            timed.windowSec = 26.0f;
+            timed.priority = 49;
+            CHECK(!table.Add(timed));
+            timed.priority = 101;
+            CHECK(!table.Add(timed));
+        }
+        {
+            // cycle_spell 0 is today's Hakkar row: no window.
+            BossTacticTable table;
+            CHECK(table.Add(cap));
+            table.Seal();
+            CHECK(table.ThreatResetWindowOf(309, 14834) == nullptr);
+        }
     }
 
     // t1105h J1: a Delusions 24306 carrier turns on its Shade of Jin'do 14986 even under an explicit attack order (the

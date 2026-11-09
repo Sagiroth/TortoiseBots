@@ -1202,6 +1202,18 @@ AiPlayerbot.DungeonRunSeekSiphonClock = 0
 # last real sighting left it. One `BossTacticsSeekCycleRoll` row says cycle=<n>,rolls=<n>,due_in=<s>.
 AiPlayerbot.DungeonRunSeekCycleRoll = 0
 
+# The Cause Insanity threat window (Hakkar; A/B only, default off): a threat_successor row carrying the reset spell
+# (cycle_spell 24327) also carries its timer, `param` = the earliest gap in seconds (19) and `window_s` = the latest
+# (26), `priority` = the hold percent (95). Around each expected reset (since the last one in [19, 26], [38, 52] or
+# [57, 78] s, counting the first from the fight's start plus 3 s) a damage dealer at or above 95 % of the best tank
+# that does not hold Hakkar stops every damage action on him (specials and white damage, the swing and the auto-repeat),
+# resuming under 90 %; heals and cures are never held and the target is never cleared. Walk 62: 49 of 83 non-tank turns
+# were a DPS above the best remaining tank, and a non-tank turn cost 0.69 deaths in the next 15 s against 0.28 after a
+# tank turn; the expected tank-turn gain is +7-12 points for about 3-5 % of the damage on Hakkar, so it ships as an A/B
+# and turns on only after the siphon clock has a walk. Stop rule: tank-turn share up less than 8 points, or Hakkar
+# %/s per alive member down 3 % or more.
+AiPlayerbot.DungeonRunThreatResetWindow = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

@@ -228,6 +228,17 @@ namespace ai
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
 
+    // A threat_successor row's Cause Insanity timer (`cycle_spell`): the reset window is open when the time since the
+    // last reset lies in [k*minGapMs, k*maxGapMs] for k = 1..3 (the double gaps included), and a damage dealer at or
+    // above stopPct of the reset reference holds its damage on the boss. `param` and `window_s` hold the gap bounds.
+    struct ThreatResetWindow
+    {
+        std::uint32_t spell = 0;
+        std::uint32_t minGapMs = 0;
+        std::uint32_t maxGapMs = 0;
+        std::uint8_t stopPct = 0;
+    };
+
     // An anchor row's circle for one bot: the row's spot, and the tanks' radius (`priority`, 0: the shared one) or the
     // shared radius (`param`).
     inline BossAnchorCircle AnchorCircleOf(const BossTacticRow& row, bool tank)
@@ -529,6 +540,14 @@ namespace ai
             if (row.kind == BossTacticKind::ThreatSuccessor &&
                 (row.targetEntry != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::Strict)))
                 return false;
+            // A threat_successor row with a cycle_spell carries the boss's reset window too: `param` and `window_s` the
+            // earliest and latest gaps in seconds (5 <= param < window_s <= 60), `priority` the damage dealers' stop
+            // percent (50-100). A row without one is today's plain successor cap; cycle_s is never used.
+            if (row.kind == BossTacticKind::ThreatSuccessor &&
+                (row.cycleSec != 0.0f ||
+                 (row.cycleSpell != 0 && (!(row.param >= 5.0f) || !(row.param < row.windowSec) ||
+                                          !(row.windowSec <= 60.0f) || row.priority < 50 || row.priority > 100))))
+                return false;
             // tank_ignore: the entry the tanks leave alone while the row's boss fights, and nothing else. It is read
             // straight from the table (the tank pickers, the run guard), so it carries no gate (see above) and no mode.
             if (row.kind == BossTacticKind::TankIgnore &&
@@ -550,8 +569,10 @@ namespace ai
                     row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
                     row.mode != TacticMode::Default))
                 return false;
-            // The cycle columns are the seek_aura kind's, the spot columns the seek_aura and anchor kinds'.
-            if (row.kind != BossTacticKind::SeekAura && (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+            // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
+            // the spot columns the seek_aura and anchor kinds'.
+            if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
+                (row.cycleSpell != 0 || row.cycleSec != 0.0f))
                 return false;
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor && row.HasSpot())
                 return false;
@@ -610,6 +631,10 @@ namespace ai
                 threatSuccessors_[row.map].insert(TacticSubjectEntry(row));
                 if (row.mode == TacticMode::Strict)
                     strictThreatSuccessors_[row.map].insert(TacticSubjectEntry(row));
+                if (row.cycleSpell != 0)
+                    resetWindows_[row.map][TacticSubjectEntry(row)] = ThreatResetWindow{row.cycleSpell,
+                        static_cast<std::uint32_t>(row.param * 1000.0f),
+                        static_cast<std::uint32_t>(row.windowSec * 1000.0f), row.priority};
             }
             if (row.kind == BossTacticKind::TankIgnore)
                 tankIgnoreBosses_[row.map][row.targetEntry].push_back(row.bossEntry);
@@ -771,6 +796,19 @@ namespace ai
             return byMap != strictThreatSuccessors_.end() && byMap->second.find(entry) != byMap->second.end();
         }
 
+        // The threat_successor row's Cause Insanity timer (`cycle_spell` != 0): null when the row carries none (today's
+        // Hakkar row), which is also what the key-off path reads as no window. False before the seal.
+        const ThreatResetWindow* ThreatResetWindowOf(std::uint32_t map, std::uint32_t entry) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || resetWindows_.empty())
+                return nullptr;
+            auto const byMap = resetWindows_.find(map);
+            if (byMap == resetWindows_.end())
+                return nullptr;
+            auto const it = byMap->second.find(entry);
+            return it == byMap->second.end() ? nullptr : &it->second;
+        }
+
         // The bosses whose tank_ignore row names the entry on this map (empty: none): while one of them fights, the
         // tanks leave the entry to the damage dealers (TankIgnoresUnit). Empty before the seal.
         const std::vector<std::uint32_t>& TankIgnoreBosses(std::uint32_t map, std::uint32_t entry) const
@@ -909,6 +947,8 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> strictThreatSuccessors_;
+        // threat_successor with a cycle_spell: map -> the subject entry -> its reset window.
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, ThreatResetWindow>> resetWindows_;
         // tank_ignore: map -> the ignored entry -> the bosses whose row names it.
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>> tankIgnoreBosses_;
         std::unordered_map<std::uint32_t, std::vector<LinkedDeathGroupKey>> linkedDeathGroups_;
