@@ -135,6 +135,8 @@ bool FollowAction::isUseful()
     // portal, not to the master, and both would re-issue a MovePoint each tick.
     if (ai->PortalFollowActive())
         return false;
+    if (ai->PartyFlightActive())
+        return false;
     float distance = 0;
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Formation* formation = AI_VALUE(Formation*, "formation");
