@@ -61,6 +61,30 @@ class SeekWalkoutWiring(unittest.TestCase):
         # A re-pull or an evade ends any walk-out with the seek record.
         self.assertGreaterEqual(read.count("ForgetSeekWalkout(ai, bot->GetInstanceId(),"), 2)
 
+    def test_the_siphon_clock_cuts_a_no_sight_task(self):
+        # DungeonRunSeekSiphonClock: the rules are lowered after the row's own, and an unshot task that never stood in
+        # shot position aborts "no sight" inside the active branch, before the no-shot stall.
+        update = body(ACTIONS, "void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss,")
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekSiphonClock)", update)
+        self.assertLess(update.index("WalkoutRulesFromRow("), update.index("WalkoutSiphonClockRules("))
+        active = update[update.index("if (WalkoutActive(state))"):]
+        self.assertIn("WalkoutNoSightCutDue(state, nowMs, rules, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast)",
+                      active)
+        self.assertLess(active.index("WalkoutNoSightCutDue("), active.index("bool const stallDue"))
+        self.assertIn('LogSeekWalkoutAbort(ai, "no sight"', active)
+        self.assertIn("WalkoutSiphonClockRules(rules)", update)
+        self.assertIn("floor=%u", ACTIONS)
+        # Round-1 L2/L3: the cut also needs the focus (it writes the pull cast) and a puller and Son that can still
+        # act, so a dead puller or Son ends as gone and is never benched as no sight.
+        self.assertIn("if (pullerOk && sonOk && sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus &&\n", active)
+        self.assertLess(active.index("if (pullerOk && sonOk"), active.index("LogSeekWalkoutAbort(ai, \"no sight\""))
+        # Round-1 L1: the shared state decides the cut again under its own lock, before the abort changes it.
+        cut_block = active[:active.index("bool const stallDue")]
+        self.assertIn("WalkoutNoSightCutDue(it->second.state, nowMs, rules,", cut_block)
+        self.assertLess(cut_block.index("WalkoutSnapshotCurrent(it->second.state, state)"),
+                        cut_block.index("WalkoutAbortUnspent(it->second.state, nowMs, rules);"))
+        self.assertGreater(cut_block.index("if (cut)"), cut_block.index("WalkoutAbortUnspent(it->second.state, nowMs, rules);"))
+
     def test_the_task_shoots_once_and_walks_back(self):
         self.assertIn("bool walkout = false;", ACTIONS_H)
         tank = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")

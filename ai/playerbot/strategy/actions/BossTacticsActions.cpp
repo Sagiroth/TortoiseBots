@@ -1017,12 +1017,6 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting and again two seconds later, and the boss's health is read once
-// more nine seconds after it: the 8 s heal has run its course by then, so that read sees the heal the +1 s and +3 s
-// reads under-count. The first two settle a heal the counts alone cannot explain (a pet, the boss's own stack count).
-const std::uint32_t kSeekSiphonReadMs = 1000;
-const std::uint32_t kSeekSiphonSecondMs = 3000;
-const std::uint32_t kSeekSiphonThirdMs = 9000;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -1838,6 +1832,30 @@ Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)
     return current;
 }
 
+// The no-shot abort row's cast state: the puller's sight, range, facing and movement to its Son, and the cast it is
+// running. The no-sight cut writes the same fields.
+void WalkoutShotStateInfo(Player* puller, Creature* son, char* out, std::size_t size)
+{
+    if (puller && son)
+    {
+        bool castOnSon = false;
+        Spell* const cast = WalkoutCurrentCast(puller, son, castOnSon);
+        std::uint32_t const spellId = cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0;
+        float const sonYd = puller->GetDistance(son);
+        bool const los = puller->IsWithinLOSInMap(son);
+        bool const inRange = sonYd <= WalkoutShotRangeYd(puller->GetClass() == CLASS_HUNTER);
+        bool const front = sServerFacade.isInFront(puller, son, sPlayerbotAIConfig.sightDistance,
+                                                   CAST_ANGLE_IN_FRONT);
+        bool const moving = sServerFacade.isMoving(puller);
+        float const dz = puller->GetPositionZ() - son->GetPositionZ();
+        snprintf(out, size, " los=%d inrange=%d spell=%u onson=%d front=%d moving=%d dz=%.1f", los ? 1 : 0,
+                 inRange ? 1 : 0, static_cast<unsigned>(spellId), castOnSon ? 1 : 0, front ? 1 : 0,
+                 moving ? 1 : 0, dz);
+    }
+    else
+        snprintf(out, size, " los=-1 inrange=-1 spell=-1 onson=-1 front=-1 moving=-1 dz=-1.0");
+}
+
 // A timeout's row: whether the shot landed (the Son joined the fight), the puller's distance to its Son (-1: unknown),
 // whether the cycle stays open for one more walk-out, the cast that was running (0: none), its target being the Son,
 // and the puller's height and distance to the stand it was given.
@@ -2426,6 +2444,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         if (const BossTacticRow* const pull =
                 GetBossTactics().SeekPullRow(bot->GetMapId(), row.bossEntry, row.targetEntry))
             rules = WalkoutRulesFromRow(pull->priority, pull->windowSec, row.windowSec);
+        if (sPlayerbotAIConfig.dungeonRunSeekSiphonClock)
+            rules = WalkoutSiphonClockRules(rules);
     }
     const bool meetOn = SeekPullRulesOn(bot->GetMapId(), &row) && sPlayerbotAIConfig.dungeonRunSeekSonMeet;
     SeekWalkoutState state;
@@ -2546,6 +2566,41 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         bool const shotNow = sonOk && (son->IsInCombat() || son->GetVictim() == puller);
         if (shotNow)
             WalkoutNoteShot(state);
+        // The no-sight cut (DungeonRunSeekSiphonClock): a task that sent no cast and never stood in shot position is
+        // aborted after kSeekWalkoutNoSightCutMs, freeing its Son and the cycle, so a later start still doses. Only
+        // with the focus (which writes the pull cast) and the in-shot clock (which writes firstInShotMs), and never
+        // for a vanished Son or a puller that can no longer pull: that task ends as gone, and nothing blames or
+        // benches it here.
+        if (pullerOk && sonOk && sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus &&
+            WalkoutNoSightCutDue(state, nowMs, rules, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+        {
+            bool cut = false;
+            {
+                std::lock_guard<std::mutex> lock(g_walkoutMutex);
+                auto const it = g_walkouts.find(instanceId);
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
+                    return; // another read closed or replaced it
+                // A read between the snapshot and this lock may have landed the shot or the in-shot read: the cut is
+                // decided again on the shared state, the one the abort would change.
+                if (WalkoutNoSightCutDue(it->second.state, nowMs, rules,
+                                         sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+                {
+                    WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                    WalkoutAbortUnspent(it->second.state, nowMs, rules);
+                    WalkoutExclude(it->second.state, state.puller, nowMs);
+                    it->second.scanned = false;
+                    NoteWalkoutBusy(before, it->second.state);
+                    cut = true;
+                }
+            }
+            if (cut)
+            {
+                char info2[160];
+                WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
+                LogSeekWalkoutAbort(ai, "no sight", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
+                return;
+            }
+        }
         // A shot that does not come: the puller has stood at its stand 6 s unshot (a blocked sight line, a cast the
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
         // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
@@ -2568,26 +2623,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 NoteWalkoutBusy(before, it->second.state);
             }
             char info2[160];
-            if (puller && son)
-            {
-                bool castOnSon = false;
-                Spell* const cast = WalkoutCurrentCast(puller, son, castOnSon);
-                std::uint32_t const spellId = cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0;
-                float const sonYd = puller->GetDistance(son);
-                bool const los = puller->IsWithinLOSInMap(son);
-                bool const inRange = sonYd <= WalkoutShotRangeYd(puller->GetClass() == CLASS_HUNTER);
-                bool const front = sServerFacade.isInFront(puller, son, sPlayerbotAIConfig.sightDistance,
-                                                           CAST_ANGLE_IN_FRONT);
-                bool const moving = sServerFacade.isMoving(puller);
-                float const dz = puller->GetPositionZ() - son->GetPositionZ();
-                snprintf(info2, sizeof(info2),
-                         " los=%d inrange=%d spell=%u onson=%d front=%d moving=%d dz=%.1f", los ? 1 : 0,
-                         inRange ? 1 : 0, static_cast<unsigned>(spellId), castOnSon ? 1 : 0, front ? 1 : 0,
-                         moving ? 1 : 0, dz);
-            }
-            else
-                snprintf(info2, sizeof(info2),
-                         " los=-1 inrange=-1 spell=-1 onson=-1 front=-1 moving=-1 dz=-1.0");
+            WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
             LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
             return;
         }
@@ -3035,9 +3071,15 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         float const topThreat = LiveTopTankThreat(bot->GetGroup(), boss, nullptr);
         float const tr = topThreat > 0.0f ? boss->GetThreatManager().getThreat(bot) / topThreat : -1.0f;
-        snprintf(info1, sizeof(info1),
-                 "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f", bot->GetName(),
-                 scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr);
+        if (sPlayerbotAIConfig.dungeonRunSeekSiphonClock)
+            snprintf(info1, sizeof(info1),
+                     "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f floor=%u",
+                     bot->GetName(), scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr,
+                     rules.firstStartMinMs / 1000);
+        else
+            snprintf(info1, sizeof(info1),
+                     "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f", bot->GetName(),
+                     scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr);
     }
     else
         snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), scan.son->GetGUIDLow());
@@ -3377,7 +3419,8 @@ void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fi
                        std::uint32_t nowMs, std::vector<SeekLogRow>& rows);
 
 // Defined after the Son rows (it reads the boss's threat list); ReadSeekFight hands it a charm after the 1.5 s wait.
-void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles);
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles);
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
@@ -3404,6 +3447,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint32_t dueMs = 0;
     std::uint32_t cycleNo = 0;
     std::uint32_t fightMs = 0;
+    std::uint32_t rolled = 0;
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
     std::uint32_t pendingSiphonElapsedMs = 0;
@@ -3413,6 +3457,9 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint64_t pullGuid = 0;
     std::uint32_t pullStartMs = 0;
     std::uint64_t charmRowGuid = 0;
+    std::uint32_t charmPrevResetMs = 0;
+    std::uint32_t charmSeenMs = 0;
+    std::uint32_t charmEngageMs = 0;
     std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
@@ -3452,17 +3499,28 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (record.engageMs != 0)
             fightMs = nowMs - record.engageMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
-        // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
-        if (bot->HasAura(row->cycleSpell) && SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs))
+        // accepted once per half cycle so the raid's sightings of one siphon move the clock once. A sighting of a cycle
+        // the roll already counted as missed re-anchors the clock instead: the roll's estimate was a few seconds early
+        // or late, and counting another cycle would move the one it already counted.
+        const SeekCycleSighting sighting =
+            SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,
+                                record.lastCycleEstimated);
+        if (sighting == SeekCycleSighting::Next)
         {
             record.lastCycleMs = nowMs;
             ++record.cycleNo;
+            record.lastCycleEstimated = false;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
             record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
             record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
             record.siphonCycle = record.cycleNo;
+        }
+        else if (sighting == SeekCycleSighting::Resync)
+        {
+            SeekCycleResync(record, nowMs);
+            record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
         {
@@ -3493,6 +3551,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         }
         // A due time nobody saw the siphon for is stale: past the overdue grace it rolls a cycle at a time, so the
         // window and the forced burn follow the estimate instead of the missed siphon's past due.
+        // DungeonRunSeekCycleRoll also moves the record's cycle number, so the walk-out's closed cycle does not stay
+        // closed for the rest of the fight after a missed sighting.
+        if (sPlayerbotAIConfig.dungeonRunSeekCycleRoll && record.engageMs != 0)
+            rolled = SeekRollMissedCycles(record, nowMs);
         dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs), cycleMs);
         cycleNo = record.cycleNo;
     }
@@ -3509,6 +3571,13 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.windowOpen = dueMs != 0 && SeekWindowOpen(nowMs, dueMs, leadMs);
     out.forceBurn = dueMs != 0 && SeekForceBurn(nowMs, dueMs);
     out.cycleNo = cycleNo;
+    if (rolled != 0)
+    {
+        // The roll mutated the shared record, so exactly the reader that rolled it writes the row.
+        char info1[96];
+        snprintf(info1, sizeof(info1), "cycle=%u,rolls=%u,due_in=%u", out.cycleNo, rolled, out.dueInMs / 1000);
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekCycleRoll", info1, "");
+    }
     if (pendingSiphon)
     {
         int dosed = 0;
@@ -3922,13 +3991,18 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             SeekCharmScan(record, charmed, nowMs);
         }
         if (SeekCharmRowDue(record, nowMs))
+        {
             charmRowGuid = record.charmGuid;
+            charmPrevResetMs = record.prevResetMs;
+            charmSeenMs = record.charmSeenMs;
+            charmEngageMs = record.engageMs;
+        }
     }
     // The hold and death rows were built under the lock; logEvent runs without it.
     for (const SeekLogRow& row : seekRows)
         sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);
     if (charmRowGuid != 0)
-        LogSeekCharm(ai, bot, boss, charmRowGuid, roles);
+        LogSeekCharm(ai, bot, boss, charmRowGuid, charmPrevResetMs, charmSeenMs, charmEngageMs, roles);
     if (healerTakeGuid)
     {
         // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
@@ -4209,7 +4283,8 @@ const char* CharmClassWord(Unit* unit)
 // The Cause Insanity row, built once per charm after its 1.5 s wait: the charmed player, Hakkar's new victim, the two
 // off-tanks' threat on him and the five highest threat entries (the charmed player left out). Logged without the
 // fight's lock; it measures who the threat cap had to hold back, so the next brief can read the margin.
-void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, const RaidTankRoles& roles)
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles)
 {
     if (!ai || !bot || !boss)
         return;
@@ -4270,13 +4345,26 @@ void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charme
             break;
         }
     }
+    char extra[64];
+    extra[0] = '\0';
+    if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+    {
+        // The reset window's state when this charm was first seen, counted from the reset before it (or the fight's
+        // start): the A/B walk reads how many charms land inside the window.
+        const ThreatResetWindow* const win = GetBossTactics().ThreatResetWindowOf(boss->GetMapId(), boss->GetEntry());
+        const bool open = win && ThreatResetWindowOpen(ThreatResetSince(charmSeenMs, prevResetMs, engageMs),
+                                                       win->minGapMs, win->maxGapMs);
+        snprintf(extra, sizeof(extra), ",win=%d,since_prev_ms=%u", open ? 1 : 0,
+                 prevResetMs ? charmSeenMs - prevResetMs : 0);
+    }
     char info1[512];
     snprintf(info1, sizeof(info1),
              "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"
-             "top_dps_threat=%.0f",
+             "top_dps_threat=%.0f%s",
              CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
              ot1, ot2, top, capRef ? capRef->GetName() : "none",
-             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat);
+             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat,
+             extra);
     char info2[160];
     snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
              CharmRoleWord(victim), CharmClassWord(victim));
@@ -8870,6 +8958,8 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;
+        out.lastResetMs = record.lastResetMs;
+        out.engageMs = record.engageMs;
         out.gathering = record.gatherSourceGuid != 0;
         out.gatherReady = record.ready;
         out.missing = record.missing;

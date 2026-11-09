@@ -28,6 +28,16 @@ namespace ai
         virtual bool Execute(Event& event) override { (void)event; return false; }
     };
 
+    // The handler of the "threat reset white stop" trigger node (ThreatStrategy.cpp): relevance 100 on minimal ticks,
+    // never queued, never useful.
+    class ThreatResetWhiteStopNoopAction : public Action
+    {
+    public:
+        ThreatResetWhiteStopNoopAction(PlayerbotAI* ai) : Action(ai, "threat reset white stop noop") {}
+        virtual bool isUseful() override { return false; }
+        virtual bool Execute(Event& event) override { (void)event; return false; }
+    };
+
     class UseLightwellAction : public MovementAction
     {
     public:

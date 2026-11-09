@@ -300,6 +300,11 @@ def new_kind_problem(row):
             return "threat_successor with a target"
         if row["tactic_mode"] not in ("", "strict"):
             return "a mode word threat_successor does not take (only strict)"
+        if row["cycle_s"]:
+            return "cycle_s on threat_successor"
+        if row["cycle_spell"] and not (5.0 <= row["param"] < row["window_s"] <= 60.0
+                                       and 50 <= row["priority"] <= 100):
+            return "a reset window outside 5 <= param < window_s <= 60 or priority outside 50-100"
         return None
     if kind == "seek_pull":
         # The seek source (target_entry), the most walk-outs in one cycle (priority), the kill lead (param) and the
@@ -1261,14 +1266,26 @@ class BossTacticsSql(unittest.TestCase):
     def test_hakkar_threat_successor_row_is_live(self):
         # 20261105210000: Hakkar alone asks for a threat successor, so his damage dealers stay below the assigned
         # off-tank and a Cause Insanity reset hands him to it. Every other taunt-immune boss keeps the highest tank.
+        # 20261109120000: the row also carries his Cause Insanity timer (cycle_spell 24327, 19-26 s apart, 95 %),
+        # read only with AiPlayerbot.DungeonRunThreatResetWindow.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         cap = live.get((309, 14834, "threat_successor", 0, 0))
         self.assertIsNotNone(cap, "the Hakkar threat_successor row is missing")
-        self.assertEqual("20261105210000_world.sql", cap["file"], "the threat_successor migration owns the row")
-        self.assertEqual((0, 0, 0.0, "", 0, 100, 0),
-                         (cap["priority"], cap["spell_id"], cap["param"], cap["tactic_mode"], cap["hp_min"],
-                          cap["hp_max"], cap["bot_aura"]))
+        self.assertEqual("20261109120000_world.sql", cap["file"], "the reset window migration owns the row")
+        self.assertEqual((95, 0, 19.0, 26.0, 24327, "", 0, 100, 0),
+                         (cap["priority"], cap["spell_id"], cap["param"], cap["window_s"], cap["cycle_spell"],
+                          cap["tactic_mode"], cap["hp_min"], cap["hp_max"], cap["bot_aura"]))
         self.assertIsNone(new_kind_problem(cap))
+        # The new file writes one row and deletes the exact (map, boss, kind, target, spell, band) key.
+        name = "20261109120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the threat reset window migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'threat_successor' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         # One row only: a second taunt-immune boss naming itself here would change its cap too.
         # Hakkar's and Jin'do's (20261106120000) only: another taunt-immune boss naming itself here would change its cap.
         successors = sorted(key for key in live if key[2] == "threat_successor")
@@ -1277,6 +1294,47 @@ class BossTacticsSql(unittest.TestCase):
         for key in ((309, 14834, "seek_aura", 11357, 24321), (309, 14834, "pull_gate", 0, 24692),
                     (309, 14834, "spread", 0, 24328)):
             self.assertIn(key, live)
+
+    def test_hakkar_reset_window_rollback_restores_the_plain_row(self):
+        # Round-1 review: a binary from before 20261109120000 refuses a non-seek_aura row with a nonzero cycle_spell,
+        # so on the migrated database it drops Hakkar's whole threat_successor row, not only the timer. The rollback
+        # script (outside data/sql, so the updater never runs it) must leave the row exactly as 20261105210000 wrote it.
+        # Replay every migration, then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261109120000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the reset window rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        key = (309, 14834, "threat_successor", 0, 0)
+
+        def row_of(paths):
+            rows = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows(paths)}
+            row = rows[key]
+            row.pop("file")  # the rollback re-inserts, so its file name differs from the original insert's
+            return row
+
+        before = [path for path in migration_paths() if os.path.basename(path) < "20261109120000_world.sql"]
+        plain = row_of(before)
+        migrated = row_of(migration_paths())
+        rolled = row_of(migration_paths() + [rollback])
+        self.assertEqual(0, plain["cycle_spell"])
+        self.assertEqual(24327, migrated["cycle_spell"])
+        self.assertEqual(plain, rolled)
+        self.assertEqual((0, 0.0, 0.0, 0, "", 0),
+                         (rolled["priority"], rolled["param"], rolled["window_s"], rolled["cycle_spell"],
+                          rolled["tactic_mode"], rolled["hp_min"]))
+        # An older binary's loader (a non-seek_aura row takes no cycle_spell) accepts the rolled-back row again.
+        self.assertIsNone(new_kind_problem(rolled))
+        with open(rollback, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'threat_successor' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        # The comment goes back to the one 20261105210000 inserted.
+        old_comment = ("'Hakkar: Cause Insanity 24327 zeroes the main tank and taunts cannot land; the damage dealers "
+                       "keep below the off-tank so a threat reset hands him to it'")
+        with open(os.path.join(ROOT, "data/sql/world/20261105210000_world.sql"), encoding="utf-8") as handle:
+            self.assertIn(old_comment + ");", handle.read())
+        self.assertIn(old_comment + ");", text)
 
     def test_jindo_t1105h_migration(self):
         # 20261106120000: Jin'do is taunt-immune (creature_template 11380 immunity_flags 6), so his two taunt_after_cast

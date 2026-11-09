@@ -30,6 +30,11 @@ namespace ai
 	virtual uint8 Calculate() override;
         static float GetThreat(Player* player, Unit* target);
         static float GetTankThreat(PlayerbotAI* ai, Unit* target);
+        // The reset successor's threat (DungeonRunThreatResetWindow): the highest threat among the assigned tanks that
+        // do NOT hold the target, on it or away (a tank on a Son keeps its boss threat and is who the boss turns to on a
+        // reset). The cap's own successor pick requires `onBoss` and would drop that away tank. -1 when the target has
+        // no `threat_successor` row, no group or no such tank.
+        static float GetResetSuccessorThreat(PlayerbotAI* ai, Unit* target);
 
     protected:
 	uint8 Calculate(Unit* target);

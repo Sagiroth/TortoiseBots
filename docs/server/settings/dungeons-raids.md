@@ -94,6 +94,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekMeetTakeReach`](#aiplayerbotdungeonrunseekmeettakereach) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): the waiting receiver takes the walked Son within 25 yd (Intercept range) instead of 8 yd, so a healer cannot peel it on its last yards. |
 | [`AiPlayerbot.DungeonRunSeekTakenSonThreatCap`](#aiplayerbotdungeonrunseektakensonthreatcap) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): a damage dealer at 85 % of the taking tank's threat on the just-taken Son holds its attacks on it (until under 75 %) for up to 15 s, so the burn does not pull it off the tank. |
+| [`AiPlayerbot.DungeonRunSeekSiphonClock`](#aiplayerbotdungeonrunseeksiphonclock) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle` and `DungeonRunSeekWalkoutFaceCast`): a Hakkar walk-out that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s, and the `seek_pull` row's start and retry floors drop to 50 s, so an undosed siphon gets another pull. |
+| [`AiPlayerbot.DungeonRunSeekCycleRoll`](#aiplayerbotdungeonrunseekcycleroll) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle`): a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time, so the walk-out's spent cycle reopens instead of staying shut for the rest of the fight (one `BossTacticsSeekCycleRoll` row per roll). |
+| [`AiPlayerbot.DungeonRunThreatResetWindow`](#aiplayerbotdungeonrunthreatresetwindow) | `0` | A/B only, **not recommended** until the siphon clock has a walk (needs `DungeonRunSeekAura`): around Hakkar's expected Cause Insanity, a damage dealer at 95 % of the best tank that does not hold him holds its damage on him (resuming under 90 %), so the reset hands him to a tank. Stop rule: tank-turn share up less than 8 points, or Hakkar %/s per alive member down 3 % or more. |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -1227,6 +1230,65 @@ Whether the damage dealers cap their threat on the meet's just-taken Son. Recomm
 Diagnostics: one `BossTacticsSeekPull` row per bot and take (a re-take of the same Son writes its own), `seek take capped son=<son> bot=<name> pct=<pct> since_take_ms=<ms>`.
 
 Limits (documented, not fixed): only the meet's take is covered (a Son taken by the nearest or healer-clock take is not); like every dps hold it holds the pick and the attack, so area damage, damage over time already ticking and pets still hit the held Son; and the Son dies later, up to the 15 s bound.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekSiphonClock`
+Whether Hakkar's walk-out gets the siphon clock. Recommended on with `DungeonRunSeekPullCycle` and `DungeonRunSeekWalkoutFaceCast`.
+**Default:** `0` · **Values:** `0` off (the 25 s task timeout and the `seek_pull` row's own 60 s floors, as before), `1` on (needs `DungeonRunSeekPullCycle`; the cut also needs `DungeonRunSeekWalkoutFocus` and `DungeonRunSeekWalkoutFaceCast`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why (walk 62, SIPHON-WHY):** 42 of 144 siphon cycles in the standing raid were undosed, and 22 of them — 52 % — were one cause: a walk-out started, never shot, ran the full 25 s timeout, and the siphon arrived before a retry could. Every no-shot timeout was an undosed siphon; every walk-out that shot dosed 92-98 % of the time. The trap is the clock: a cycle-2 start arrives at due 79 s, the 25 s timeout lands at due 54 s, and the `seek_pull` row's 60 s start/retry floor refuses any retry. Shot tasks shoot a median 11 s, p90 18 s, after the start; never-shot tasks reach no shot position at all (their stand rows read `los=0`), so the 6 s in-shot stall never fires.
+
+**The no-sight cut:** a running task that is unshot, sent no pull cast (`pullCastMs == 0`), never had an in-shot read (`firstInShotMs == 0`) and started at least 15 s ago aborts with reason `no sight` through the no-shot abort's own path: the Son is freed for the cycle and the puller sits out the picks for 60 s. Only with `DungeonRunSeekWalkoutFocus`, which is what writes `pullCastMs`, and `DungeonRunSeekWalkoutFaceCast`, which is what writes `firstInShotMs`: without either every task reads "never in shot" and the cut stays off. It is also skipped for a puller that can no longer pull and for a Son that died or left, so a blameless puller is never benched as `no sight` (the task ends as gone instead). And it fires only while the siphon stays more than the row's retry floor plus 5 s away (`siphonDueMs - nowMs > retryMinMs + 5000`): with less left no retry can start, so the task runs to its 25 s timeout as before.
+
+**The floor:** a `seek_pull` row's `firstStartMinMs` and `retryMinMs` are lowered to 50 s when they are higher, never raised; a row at 0 keeps 0. Nothing else needs a guard: a start already needs the dose window open, three or more seekers without the poison, two or more living tanks, no Son in combat or inside the anchor, an open cycle and a puller that is not dead, charmed, insane, the boss's victim or at threat. So the floor only allows a late first start (after `no puller` or `late`) or a retry after an unshot end, in a cycle with no dose yet.
+
+**Expected (walk 62 model):** about 19.5 of the 42 standing-raid undosed cycles dose (no-sight 15.4, missed sighting 2.5, aborts 1.6), taking the undosed share from 29 % to about 16 %. The cut's cost is a shot task that would have shot after 15 s with no in-shot read before it: an upper bound of 11 % of shot tasks, which get a retry at due about 59 s instead.
+
+**Rows:** `seek pull: walk-out abort no sight ...` (the no-shot row's fields, `los=` `inrange=` `spell=` `onson=` `front=` `moving=` `dz=`), and the start row gains `floor=<s>` while the key is on.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekCycleRoll`
+Whether a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time. Recommended on with `DungeonRunSeekPullCycle`.
+**Default:** `0` · **Values:** `0` off (only the due time rolls; the cycle number stays where the last sighting left it), `1` on (needs `DungeonRunSeekPullCycle`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why (walk 62, SIPHON-WHY cause C):** when a sighting is missed, the due time rolls forward one cycle at a time past the 8 s overdue grace, but the fight record's cycle number did not move. The walk-out's spent cycle therefore stayed closed for the rest of the fight, and three cycles had no walk-out row at all.
+
+**The roll:** with the key on, a read whose due time is past its grace counts the cycles it rolled (`SeekRolledCycles`) and moves the record with them: `cycleNo += rolls`, and `lastCycleMs = rawDue + (rolls - 1) × cycleMs`, the estimated sighting time of the last missed siphon, flagged as an estimate (`lastCycleEstimated`). The next real sighting about 90 s later is accepted as usual (an accepted sighting needs half a cycle since the last). The roll mutates the shared fight record, so exactly the reader that rolled it writes one `BossTacticsSeekCycleRoll` row, `cycle=<n>,rolls=<n>,due_in=<s>`.
+
+**A late sighting re-anchors the clock:** the roll can put the estimate a few seconds early or late, and a real sighting of that same siphon arrives 8-45 s after it, too close to count as the next cycle (`SeekCycleAccepts` false). While `lastCycleEstimated` is set, such a sighting moves `lastCycleMs` to the sighting and arms its siphon reads without adding a cycle: the cycle number the roll counted stays, and the estimated sighting is replaced by the real one. The first read that sees it clears the flag, so the raid's other sightings of the same siphon change nothing.
+
+**No key, no change:** without it the due time rolls and the cycle number does not.
+
+</details>
+
+### `AiPlayerbot.DungeonRunThreatResetWindow`
+Whether the damage dealers hold their damage on Hakkar around each expected Cause Insanity. A/B only, **not recommended** until the siphon clock has a walk.
+**Default:** `0` · **Values:** `0` off (today's successor cap only), `1` on (needs `AiPlayerbot.DungeonRunSeekAura` and a `threat_successor` row with a nonzero `cycle_spell`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why (walk 61-62):** after a tank is charmed Hakkar turns to a tank 58-61 % of the time (85 % in the kill); of the 83 non-tank turns in walk 62's m910q, 49 were a damage dealer above the best remaining tank's threat. A non-tank turn cost 0.69 non-tank deaths to Hakkar in the next 15 s against 0.28 after a tank turn, with 6.2 tank-charm CIs before 180 s per fight.
+
+**The timer comes from the data:** the boss's `threat_successor` row carries a nonzero `cycle_spell` (which arms the window), `param` and `window_s` (the earliest and latest gap in seconds, 19 and 26), and `priority` (the hold percent, 95). The clock itself is the code's Cause Insanity scan, and it needs `AiPlayerbot.DungeonRunSeekAura`: that fight read runs the group-wide charm scan (`SeekCharmScan`, every 500 ms) that looks for the Cause Insanity aura 24327 on a group member and sets `lastResetMs` on a new charmed guid. Without the seek read there is no scan, so the window never opens; the config load logs one line naming both keys when `ThreatResetWindow = 1` meets `SeekAura = 0`. The window is open when the time since the last reset lies in `[k × 19 s, k × 26 s]` for k = 1, 2 or 3 (the 40-48 s double gaps included); before the first reset it is `fight age + 3 s`, so the first window is fight time 16-23 s. It is open about 7 of every 22.5 s.
+
+**The reference:** the highest threat on Hakkar among the listed tanks that do not hold him (`holdsBoss` false), whether or not they are hitting him: a tank on a Son keeps its boss threat and is who Hakkar turns to. The cap's own successor pick requires `onBoss` and would drop that away tank (walk 62: the cap's reference read a median 0.93 of this one). Below 100 threat, or with no such tank, there is no hold: freezing the damage for a turn that goes to a non-tank anyway only costs damage.
+
+**The hold:** only damage dealers (never a tank or a healer), at or above `priority` % of the reference, stop every damage action on Hakkar: specials and white damage, the melee swing and the auto-repeat (the `threat reset white stop` trigger stops the running ones in the trigger pass; the target is never cleared). They resume under `priority − 5` % (90 %). Heals and cures are never held, an action aimed at another target keeps its damage, and DoT ticks already on Hakkar cannot be stopped.
+
+**Expected, honestly:** best case tank turns 61 → 84 % if every flippable turn flips; realistic +7-12 points (a DPS already above the reference when the window opens cannot be brought down, threat does not decay, and healers fill part of the gap). That is 0.45-0.75 more tank turns before 180 s per fight, about 0.2-0.3 fewer non-tank deaths. The cost is about 3-5 % of the damage on Hakkar (the window's 31 % share × 1.2-2 held DPS of 11); walk 57's counterfactual (×0.90 damage) removed every walk-56 kill. **Net: uncertain, possibly negative**, so it ships off and turns on only on one server as an A/B after the siphon clock has a walk.
+
+**Stop rule for the A/B walk:** tank-turn share up less than 8 points, or Hakkar %/s per alive member down 3 % or more.
+
+**Rows:** one `BossTacticsThreatReset` row per bot per window (the k = 1, 2 and 3 gaps after one reset each log their own), `reset hold: pct=<pct> ref=<threat> since_ms=<ms>`, when the hold first holds; the `BossTacticsCharm` row gains `win=<0|1>,since_prev_ms=<ms>`.
 
 </details>
 

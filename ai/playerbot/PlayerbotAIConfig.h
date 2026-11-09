@@ -734,6 +734,21 @@ public:
     bool dungeonRunSeekMeetPrePlaceHold = false;
     bool dungeonRunSeekMeetTakeReach = false;
     bool dungeonRunSeekTakenSonThreatCap = false;
+    // The siphon clock (Hakkar's seek pull; needs dungeonRunSeekPullCycle and dungeonRunSeekWalkoutFaceCast): a walk-out
+    // that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s rather than timing out at
+    // 25 s, and a seek_pull row's start and retry floors are lowered to 50 s (never raised; defaults off, recommended
+    // on). Off keeps today's clock: the 25 s timeout and the row's own 60 s floors.
+    bool dungeonRunSeekSiphonClock = false;
+    // The rolled cycle number (Hakkar's seek pull; needs DungeonRunSeekPullCycle): when a due time rolls past a
+    // missed sighting, the record's cycle number advances by the rolls too, so the walk-out's spent cycle reopens and a
+    // later Son can still be pulled; the estimated sighting time moves with it (default off, recommended on).
+    bool dungeonRunSeekCycleRoll = false;
+    // The Cause Insanity threat window (Hakkar; needs a threat_successor row carrying the reset spell, cycle_spell):
+    // around each expected reset, a damage dealer at or above the row's priority % of the best tank that does not hold
+    // him stops its damage on him (specials and white damage), resuming 5 points under, so the threat wipe hands him to
+    // a tank. Off by default: the walk shows an uncertain net (DPS cost against fewer non-tank deaths), so it ships as
+    // an A/B and turns on only after the siphon clock has a walk.
+    bool dungeonRunThreatResetWindow = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

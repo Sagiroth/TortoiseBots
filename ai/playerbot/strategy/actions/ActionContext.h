@@ -137,6 +137,7 @@ namespace ai
             creators["attack"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
             creators["melee"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
             creators["successor white cap noop"] = [](PlayerbotAI* ai) { return new SuccessorWhiteCapNoopAction(ai); };
+            creators["threat reset white stop noop"] = [](PlayerbotAI* ai) { return new ThreatResetWhiteStopNoopAction(ai); };
             creators["switch to melee"] = [](PlayerbotAI* ai) { return new SwitchToMeleeAction(ai); };
             creators["switch to ranged"] = [](PlayerbotAI* ai) { return new SwitchToRangedAction(ai); };
             creators["reach spell"] = [](PlayerbotAI* ai) { return new ReachSpellAction(ai); };

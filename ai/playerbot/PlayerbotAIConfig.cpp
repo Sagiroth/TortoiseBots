@@ -163,6 +163,9 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunSeekMeetPrePlaceHold = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold", false);
     dungeonRunSeekMeetTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetTakeReach", false);
     dungeonRunSeekTakenSonThreatCap = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekTakenSonThreatCap", false);
+    dungeonRunSeekSiphonClock = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekSiphonClock", false);
+    dungeonRunSeekCycleRoll = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekCycleRoll", false);
+    dungeonRunThreatResetWindow = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatResetWindow", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
@@ -228,6 +231,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     botLfgChat = config.GetBoolDefault("AiPlayerbot.BotLfgChat", true);
     if (botLfgGroups && !dungeonSelfClear)
         sLog.outString("TortoiseBots: AiPlayerbot.BotLfgGroups = 1 needs AiPlayerbot.DungeonSelfClear = 1: bot LFG groups stay dormant.");
+    if (dungeonRunThreatResetWindow && !dungeonRunSeekAura)
+        sLog.outString("TortoiseBots: AiPlayerbot.DungeonRunThreatResetWindow = 1 needs AiPlayerbot.DungeonRunSeekAura = 1: the reset clock is the seek fight's charm scan, so the window stays shut.");
 }
 
 void PlayerbotAIConfig::LoadObservabilityRaids()

@@ -1187,6 +1187,34 @@ AiPlayerbot.DungeonRunSeekMeetTakeReach = 0
 # after the take, or the next Blood Siphon is 8 s or less away or unknown. Off burns it as soon as a tank has it.
 AiPlayerbot.DungeonRunSeekTakenSonThreatCap = 0
 
+# The siphon clock for Hakkar's seek pull (recommended on; needs DungeonRunSeekPullCycle and the walk-out's in-shot
+# clock, DungeonRunSeekWalkoutFaceCast): a walk-out task that sent no pull cast and never stood in shot position aborts
+# `no sight` 15 s after its start instead of running the full 25 s, so its Son and its cycle are free for a later start;
+# and a seek_pull row's first-start and retry floors drop to 50 s (never raised; a row at 0 stays 0). Walk 62: 22 of the
+# 42 standing-raid undosed cycles were no-shot timeouts, every one of them an undosed siphon. Off keeps the 25 s timeout
+# and the row's own floors.
+AiPlayerbot.DungeonRunSeekSiphonClock = 0
+
+# The rolled cycle number for Hakkar's seek pull (recommended on; needs DungeonRunSeekPullCycle): when a due time rolls
+# past a missed Blood Siphon sighting, the fight's cycle number advances with it and the estimated sighting time moves
+# to the rolled cycle's own, so the walk-out's spent cycle reopens instead of staying shut for the rest of the fight.
+# Walk 62: three full cycles had no walk-out row at all after a missed sighting. Off keeps the cycle number where the
+# last real sighting left it. One `BossTacticsSeekCycleRoll` row says cycle=<n>,rolls=<n>,due_in=<s>.
+AiPlayerbot.DungeonRunSeekCycleRoll = 0
+
+# The Cause Insanity threat window (Hakkar; A/B only, default off): a threat_successor row carrying the reset spell
+# (cycle_spell 24327) also carries its timer, `param` = the earliest gap in seconds (19) and `window_s` = the latest
+# (26), `priority` = the hold percent (95). Around each expected reset (since the last one in [19, 26], [38, 52] or
+# [57, 78] s, counting the first from the fight's start plus 3 s) a damage dealer at or above 95 % of the best tank
+# that does not hold Hakkar stops every damage action on him (specials and white damage, the swing and the auto-repeat),
+# resuming under 90 %; heals and cures are never held and the target is never cleared. Walk 62: 49 of 83 non-tank turns
+# were a DPS above the best remaining tank, and a non-tank turn cost 0.69 deaths in the next 15 s against 0.28 after a
+# tank turn; the expected tank-turn gain is +7-12 points for about 3-5 % of the damage on Hakkar, so it ships as an A/B
+# and turns on only after the siphon clock has a walk. Needs AiPlayerbot.DungeonRunSeekAura: the reset clock is that
+# fight read's charm scan, so with the seek off the window never opens (the config load logs one line saying so).
+# Stop rule: tank-turn share up less than 8 points, or Hakkar %/s per alive member down 3 % or more.
+AiPlayerbot.DungeonRunThreatResetWindow = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

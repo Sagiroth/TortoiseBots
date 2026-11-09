@@ -528,6 +528,9 @@ namespace ai
         std::uint32_t dueInMs = 0;  // max(0, dueMs - now)
         bool windowOpen = false;
         std::uint32_t cycleNo = 0;
+        // The Cause Insanity reset clock (DungeonRunThreatResetWindow): when the fight's last new charm was seen, and
+        // the fight's combat start (the first reset is counted from it plus an offset).
+        std::uint32_t lastResetMs = 0, engageMs = 0;
         bool gathering = false;     // a source stands at the spot and the gather is under way
         bool gatherReady = false;
         int missing = 0;            // seekers still outside the gather radius

@@ -536,6 +536,49 @@ int main()
         CHECK(record.charmGuid == 43 && record.charmSeenMs == 10000 && !record.charmLogged);
     }
 
+    // DungeonRunSeekCycleRoll: a missed sighting rolls the cycle count with the due time. kSeekOverdueGraceMs is 8000.
+    CHECK(SeekRolledCycles(9000 + 8000, 9000, 90000) == 0);
+    CHECK(SeekRolledCycles(9000 + 8001, 9000, 90000) == 1);
+    CHECK(SeekRolledCycles(9000 + 90000 + 8001, 9000, 90000) == 2);
+    CHECK(SeekRolledCycles(9000, 0, 90000) == 0);
+    CHECK(SeekRolledCycles(9000, 9000, 0) == 0);
+    {
+        SeekCycleRecord rolled;
+        rolled.engageMs = 1000;
+        rolled.cycleMs = 90000;
+        CHECK(SeekRollMissedCycles(rolled, 1000 + 90000 + 9000) == 1);
+        CHECK(rolled.cycleNo == 1);
+        CHECK(rolled.lastCycleMs == 91000); // the estimated sighting, not left at 0 nor moved to now
+        CHECK(SeekCycleAccepts(rolled.lastCycleMs, 181000, 90000));
+        // A due time inside the grace rolls nothing.
+        CHECK(SeekRollMissedCycles(rolled, 181000 + 8000) == 0);
+        CHECK(rolled.cycleNo == 1 && rolled.lastCycleMs == 91000);
+    }
+    // A real sighting after the roll: the estimate was a few seconds off, so the clock re-anchors on the sighting and
+    // the cycle number the roll counted stays. due = engage 1000 + 90000; roll at due + 8001, sighting at due + 9000.
+    {
+        SeekCycleRecord late;
+        late.engageMs = 1000;
+        late.cycleMs = 90000;
+        CHECK(SeekRollMissedCycles(late, 91000 + 8001) == 1);
+        CHECK(late.cycleNo == 1 && late.lastCycleMs == 91000 && late.lastCycleEstimated);
+        CHECK(SeekCycleSightingOf(true, late.lastCycleMs, 100000, late.cycleMs, late.lastCycleEstimated) ==
+              SeekCycleSighting::Resync);
+        SeekCycleResync(late, 100000);
+        CHECK(late.cycleNo == 1); // no second cycle
+        CHECK(late.lastCycleMs == 100000);
+        CHECK(!late.lastCycleEstimated);
+        CHECK(late.siphonAtMs == 101000 && late.siphonSecondAtMs == 103000 && late.siphonThirdAtMs == 109000);
+        CHECK(late.siphonSeenMs == 100000 && late.siphonCycle == 1);
+        // The raid's second sighting 300 ms later changes nothing.
+        CHECK(SeekCycleSightingOf(true, late.lastCycleMs, 100300, late.cycleMs, late.lastCycleEstimated) ==
+              SeekCycleSighting::None);
+    }
+    // Only a sighting of the row's spell on the rolled clock re-syncs; a real next cycle still counts.
+    CHECK(SeekCycleSightingOf(false, 91000, 100000, 90000, true) == SeekCycleSighting::None);
+    CHECK(SeekCycleSightingOf(true, 91000, 100000, 90000, false) == SeekCycleSighting::None);
+    CHECK(SeekCycleSightingOf(true, 91000, 136000, 90000, false) == SeekCycleSighting::Next);
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

@@ -107,6 +107,31 @@ class SeekWalkWiring(unittest.TestCase):
         self.assertNotIn("MovementAction::isUseful()", action)
         self.assertIn("ai->CanMove()", action)
 
+    def test_the_rolled_cycle_number_moves_the_record(self):
+        # DungeonRunSeekCycleRoll: the roll runs before the due time is read and moves the shared record, and the one
+        # reader that rolled it logs the row.
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekCycleRoll", read)
+        self.assertIn("SeekRollMissedCycles(record, nowMs)", read)
+        self.assertLess(read.index("SeekRollMissedCycles("), read.index("dueMs = SeekRolledDueMs("))
+        self.assertIn('"BossTacticsSeekCycleRoll"', read)
+        self.assertIn('"cycle=%u,rolls=%u,due_in=%u"', ACTIONS)
+
+    def test_a_late_sighting_reanchors_the_rolled_clock(self):
+        # Round-1 review: the roll sets lastCycleEstimated, so a real sighting of that same siphon 8-45 s later (too
+        # close to count) moves the clock to the sighting without counting a second cycle.
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,",
+                      read)
+        self.assertIn("record.lastCycleEstimated);", read)
+        self.assertLess(read.index("SeekCycleSightingOf("), read.index("SeekRollMissedCycles("))
+        self.assertIn("else if (sighting == SeekCycleSighting::Resync)", read)
+        self.assertIn("SeekCycleResync(record, nowMs);", read)
+        resync = read[read.index("else if (sighting == SeekCycleSighting::Resync)"):]
+        resync = resync[:resync.index("}")]
+        self.assertNotIn("++record.cycleNo", resync)
+        self.assertIn("++record.cycleNo", read)
+
     def test_the_move_hold_stands_the_other_moves_down(self):
         hold = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(")
         self.assertIn("dynamic_cast<MovementAction*>(action)", hold)
@@ -127,7 +152,7 @@ class SeekWalkWiring(unittest.TestCase):
 
     def test_the_policy_rules_all_have_a_live_caller(self):
         seek = body(ACTIONS, "namespace\n{\n// The seek_aura fight state")
-        for rule in ("SeekCycleDueMs(", "SeekCycleAccepts(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
+        for rule in ("SeekCycleDueMs(", "SeekCycleSightingOf(", "SeekWindowOpen(", "SeekForceBurn(", "SeekWanted(",
                      "IsSoughtCloud(", "SeekCloudReachable(", "SeekGatherReady(", "SeekHoldDecision(", "SeekFinishableInReach(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekTankPullDue(", "SeekActionConsumesTick(", "SeekLatchedGatherSource(", "SeekClassPetMustLeave(",
                      "SeekSourceSearchYd(", "SeekClockStartOver(", "SeekTankPullStep(", "SeekPullLatchKeeps(",
@@ -168,7 +193,9 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("kSeekRecordIdleMs = 120000", ACTIONS)
         self.assertIn("nowMs - it->second.lastSeenMs > kSeekRecordIdleMs", ACTIONS)
         # The clock: the engage, the accepted siphon and the gather latch.
-        self.assertIn("SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs)", ACTIONS)
+        self.assertIn("SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,",
+                      ACTIONS)
+        self.assertIn("if (SeekCycleAccepts(lastCycleMs, seenMs, cycleMs))", STATE_POLICY)
         self.assertIn("++record.cycleNo;", ACTIONS)
         # The latch: a heal on the Son after the gather was ready does not hold it again.
         self.assertIn("record.ready = record.ready || SeekGatherReady(record.missing, record.gatherStartMs, nowMs, "
@@ -215,7 +242,7 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("hakkar_dmg=%u", ACTIONS)
         self.assertIn("kSeekSiphonSecondMs", ACTIONS)
         # A third read nine seconds after the sighting sees the whole 8 s heal, which the +1/+3 reads under-count.
-        self.assertIn("kSeekSiphonThirdMs = 9000", ACTIONS)
+        self.assertIn("kSeekSiphonThirdMs = 9000", STATE_POLICY)
         self.assertIn("record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;", ACTIONS)
         self.assertIn("pendingSiphonAtSec = 9;", ACTIONS)
         # The note's clock is the real elapsed time since the cycle's first sighting, and the +3 s read is kept beside

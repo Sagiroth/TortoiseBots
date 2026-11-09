@@ -151,6 +151,7 @@ ref survives line drift.
 | 5 | abort cast failed | same shape, `reason` = `cast failed` | AbortSeekWalkoutUnspent | yes | keep |
 | 6 | abort move failed | same shape, `reason` = `move failed` | NoteSeekWalkoutMove | yes | keep |
 | 7 | abort no shot | same shape, `reason` = `no shot`; info2 ` los=<0\|1> inrange=<0\|1> spell=<id> onson=<0\|1> front=<0\|1> moving=<0\|1> dz=<yd>` | UpdateSeekWalkout | yes | keep |
+| 7a | abort no sight | same shape, `reason` = `no sight`; info2 as the no-shot row | UpdateSeekWalkout | yes: with `DungeonRunSeekSiphonClock`, an unshot walk-out that sent no pull cast and never stood in shot position is cut 15 s after its start | new |
 | 8 | abort puller problem / son gone | same shape, `reason` ∈ `dead,charmed,insanity,victim,threat,gone,son gone` | UpdateSeekWalkout | yes | keep |
 | 9 | abort no stand | same shape, `reason` = `no stand` | UpdateSeekWalkout | yes | keep |
 | 10 | late | `seek pull: walk-out late due=%u need=%u` | UpdateSeekWalkout | implicit (the start needs `firstStartMinMs`) | now `need=<firstStartMinMs/1000>` |
@@ -160,7 +161,7 @@ ref survives line drift.
 | 13a | walk-out preempted | `seek pull: walk-out preempted action=<name>` | BossTacticsWalkoutFocusMultiplier | yes: `action=` names the first combat action the walk-out focus held (`DungeonRunSeekWalkoutFocus`): the action the engine was about to run that tick; one row per walk-out | new |
 | 13b | walk-out stand | `seek pull: walk-out stand branch=<word> state=<c\|n> inrange=<0\|1> los=<0\|1> front=<0\|1> stopped=<0\|1> cast=<spell id> refuse=<reason> tick_ms=<ms>` | LogSeekWalkoutStand | yes: `branch=` and `refuse=` (below); one a second per walk-out (its first tick at once, at most 26 a task), only with `DungeonRunSeekWalkoutStandLog` | new |
 | 13c | walk-out castrefused | `seek pull: walk-out castrefused spell=<id> reason=<reason>` | BossTacticsSeekTankAction (walk-out) | yes: `reason=` (below); every refused pull cast, at most 10 a walk-out, only with `DungeonRunSeekWalkoutStandLog` | new |
-| 14 | ranged walk-out start | `seek pull: ranged walk-out <name> -> <son> due=%u try=%d reach=%.0f ray=%.0f` (with a `seek_pull` row also ` tr=%.2f`, the bot's threat over the live top tank's) | UpdateSeekWalkout | not a refusal (the decision to act) | document |
+| 14 | ranged walk-out start | `seek pull: ranged walk-out <name> -> <son> due=%u try=%d reach=%.0f ray=%.0f` (with a `seek_pull` row also ` tr=%.2f`, the bot's threat over the live top tank's, and with `DungeonRunSeekSiphonClock` also ` floor=%u`, the lowered start floor in seconds) | UpdateSeekWalkout | not a refusal (the decision to act) | document |
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
@@ -182,6 +183,7 @@ ref survives line drift.
 | 26 | `BossTacticsSonHold` end | `son=<e>,event=end,reason=<died\|gone\|unticked\|unseen>,...` | PushSonHoldRow | yes: `reason=` | keep |
 | 27 | `BossTacticsSonDeath` | `son=..,event=death,phase=<phase>,...` | PushSonDeathRow | yes: `phase=` names the hold state | keep |
 | 28 | `BossTacticsSiphon` | `cycle=..,at=..,dosed=..,undosed=..,...` | LogSiphon | not a refusal (a measurement) | document |
+| 28a | `BossTacticsSeekCycleRoll` | `cycle=%u,rolls=%u,due_in=%u` | ReadSeekFight (`ai/playerbot/strategy/actions/BossTacticsActions.cpp`) | not a refusal: with `DungeonRunSeekCycleRoll`, one row from the one reader whose due time rolled past a missed sighting (the record's cycle number moved with it) | new |
 | 29 | `BossTacticsSeek` | `phase=<cloud\|hold\|gather>,aura=..,dist=..,due_in=..,cycle=..` | LogSeek | not a refusal (the seek task's phase) | document |
 | 30 | `BossTacticsLinkedWindow` | `first_ms=..,last_ms=..,window_ms=..,inside=%d` | ScanBossLinkedDeath | not a refusal (the window fired) | document |
 | 31 | `BossTacticsFreeze` | `aura=<id>`; info2 `ms=<n>,moved_yd=<d>` | LogFreeze | not a refusal (an episode's end) | document |
@@ -201,6 +203,7 @@ ref survives line drift.
 | 44a | `BossTacticsHex` | `holder=<main\|off\|dps> ot_threat=<n> mt_threat=<n> top_dps=<name>:<threat>` (`holder` = the member who wore the Hex, found by aura among the group once per second per boss; `ot_threat` = the wearer's when an off-tank wore it, else the first off-tank's; `-1` = the raid's tank order has no such tank; top_dps the highest non-tank, non-healer) | LogHexSnapshot (`ai/playerbot/strategy/values/ThreatValues.cpp`) | not a refusal (the state right after Jin'do's Hex 17172; one row per member and Hex, no flag) | document |
 | 44b | `BossTacticsShadeCover` | `reason=<dead\|charmed\|other_shade\|out_of_range\|threat_gate\|guard\|on_boss\|other_target\|no_target>,role=<dps\|offtank>`; info2 `shade=<entry>:<guid low>,healer=<name>,dist=<yd>,target=<entry>:<guid low>\|none` (a Shade of Jin'do 14986 on a healer of the group, and a cursed damage dealer or a cursed off-tank that does not hold the boss that is not on it; `threat_gate` = an off-tank kept on the boss by the `threat_successor` rule of the carrier strike (never while `AiPlayerbot.DungeonRunShadeHealerCover` and `AiPlayerbot.DungeonRunCarrierStrike` are both on), `guard` = with both keys on, an off-tank the carrier strike's guards hold back (the main tank under 60 % or its own health under `AiPlayerbot.LowHealth`), `out_of_range` = more than 30 yd from the Shade or more than 6 yd above or below it, `dead` only for a member that was already missing the Shade when it died, since the curse drops at death, and once per Shade; run by a Delusions carrier over the whole group and logged under the member it names, after a 2 s miss and at most once per member and Shade per 5 s) | ai::LogShadeCover | yes: `reason=` (no flag) | document |
 | 44c | `BossTacticsVictimEscape` | `boss=<entry>,victim=<name>,class=<class>,spell=<id>,result=<ok\|refused>`; info2 `reason=<own\|protect\|cast\|duty\|only_target>` (`own`/`protect`: the victim's own escape or a paladin's Blessing of Protection went out; `cast`: the cast was refused; `duty`: the victim is the walk-out puller, holds a pulled Son, or is the victim of another live, engaged hostile creature that is not a boss; `only_target`: no other living non-tank is on the boss's threat list; a refused row at most once per victim and writer per 6 s) | VictimEscapeActions.cpp LogVictimEscape | yes: `result=` and `reason=` | added |
+| 44d | `BossTacticsThreatReset` | `reset hold: pct=%u ref=%.0f since_ms=%u` (`pct` the bot's threat as a percent of `ref`, the best tank that does not hold the boss; `since_ms` since the reset before this window) | `ThreatResetHolds` (`ai/playerbot/strategy/generic/ThreatStrategy.cpp`) | not a refusal: with `AiPlayerbot.DungeonRunThreatResetWindow`, once per bot per reset window when the hold first holds a damage dealer | new |
 
 ### The pulled Son's meet (event `BossTacticsSonMeet`)
 
@@ -259,6 +262,8 @@ cap's reference tank, whether the pick named an off-tank reference or fell back 
 listed), and its threat at the row, from the cap's own tank list and pick, `none`/-1 with no tank listed; this is the
 cap's reference only on a boss with a `threat_successor` row (Hakkar); elsewhere it is the plain highest tank; the
 highest damage dealer's threat, 0 with none; `top=` entries never hold a comma, so a parser reads it as `top=([^,]*)`),
+then, only with `AiPlayerbot.DungeonRunThreatResetWindow`, `,win=<0|1>,since_prev_ms=<ms>` (the reset window's state
+when this charm was first seen, and the time since the previous reset; `since_prev_ms` is 0 on the first charm),
 and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
 **Not a refusal:** it is a measurement of the threat successor's margin for the Cause Insanity work, and it carries no
 `reason=`.

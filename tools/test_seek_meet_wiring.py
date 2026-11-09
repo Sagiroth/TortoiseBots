@@ -377,16 +377,18 @@ class CauseInsanityRowWiring(unittest.TestCase):
 
     def test_the_row_is_built(self):
         for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"\n'
-                      '             "top_dps_threat=%.0f"',
+                      '             "top_dps_threat=%.0f%s"',
                       '"Cause Insanity on %s: Hakkar turned to %s (%s)"',
                       '"BossTacticsCharm"'):
             self.assertIn(field, ACTIONS)
-        self.assertIn("LogSeekCharm(ai, bot, boss, charmRowGuid, roles);", ACTIONS)
+        self.assertIn("LogSeekCharm(ai, bot, boss, charmRowGuid, charmPrevResetMs, charmSeenMs, charmEngageMs, roles);",
+                      ACTIONS)
 
     def test_the_row_carries_the_cap_reference(self):
         # Walk 58 F3: the cap's reference at the CI row, read from the cap's own tank list and pick (no copy of it).
         log = body(ACTIONS, "void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, "
-                            "const RaidTankRoles& roles)\n{")
+                            "std::uint32_t prevResetMs,\n                  std::uint32_t charmSeenMs, "
+                            "std::uint32_t engageMs, const RaidTankRoles& roles)\n{")
         self.assertIn("ThreatCapTanksOf(ai, boss, roles, nullptr, &capWho);", log)
         self.assertIn("ThreatCapPickReference(capTanks, ThreatSuccessorTarget(boss),", log)
         self.assertIn("sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder", log)
@@ -395,7 +397,7 @@ class CauseInsanityRowWiring(unittest.TestCase):
         self.assertIn('capRef ? capRef->GetName() : "none",', log)
         # Review M2: the reference's kind, from the pick itself.
         self.assertIn('!capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, '
-                      'topDpsThreat);', log)
+                      'topDpsThreat,\n             extra);', log)
         # The new fields come after `top=`, whose entries never hold a comma, so `top=([^,]*)` still parses it.
         fmt = log[log.index('"charmed='):log.index("CharmRoleWord(charmed)")]
         self.assertLess(fmt.index("top=%s"), fmt.index(",cap_ref=%s"))

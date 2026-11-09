@@ -164,6 +164,7 @@ namespace ai
             creators["high threat"] = [](PlayerbotAI* ai) { return new HighThreatTrigger(ai); };
             creators["medium threat"] = [](PlayerbotAI* ai) { return new MediumThreatTrigger(ai); };
             creators["successor white cap"] = [](PlayerbotAI* ai) { return new SuccessorWhiteCapTrigger(ai); };
+            creators["threat reset white stop"] = [](PlayerbotAI* ai) { return new ThreatResetWhiteStopTrigger(ai); };
             creators["low tank threat"] = [](PlayerbotAI* ai) { return new LowTankThreatTrigger(ai); };
             creators["some threat"] = [](PlayerbotAI* ai) { return new SomeThreatTrigger(ai); };
             creators["no threat"] = [](PlayerbotAI* ai) { return new NoThreatTrigger(ai); };
