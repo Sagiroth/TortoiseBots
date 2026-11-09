@@ -37,6 +37,7 @@ import (
 	"tortoise-observability/internal/live"
 	zoneproject "tortoise-observability/internal/map"
 	"tortoise-observability/internal/mapdir"
+	"tortoise-observability/internal/mechanics"
 	"tortoise-observability/internal/metrics"
 	"tortoise-observability/internal/model"
 	"tortoise-observability/internal/plans"
@@ -730,6 +731,12 @@ func main() {
 	}
 	mux.HandleFunc("GET /api/v1/combat/underperformers", requireAuth(underperf.Handler(underperf.Sources{
 		Mem: combatStore, Hist: histSource, Rules: combatStore.Rules, Specs: armoryService.SpecsFor, Now: time.Now,
+	})))
+
+	// The night's boss scorecard, one row per boss (Hakkar's dosed share at each Blood Siphon, Jin'do's Hex on the main tank and
+	// Shade deaths): the same sources and window parameters as the underperforming bots above.
+	mux.HandleFunc("GET /api/v1/combat/mechanics", requireAuth(mechanics.Handler(underperf.Sources{
+		Mem: combatStore, Hist: histSource, Now: time.Now,
 	})))
 
 	// The bound bots' recent paths (a short bounded history kept in memory), so a page opened mid-run starts with the trails drawn:
