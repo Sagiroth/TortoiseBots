@@ -15,8 +15,6 @@ const (
 	MaxEncodedBytes = 24 << 10
 	// StoredV is the stored form's version (the served form, Series, stays V 1).
 	StoredV = 2
-	// maxStoredBots bounds what Decode accepts (a corrupt line cannot ask for a huge allocation).
-	maxStoredBots = 400
 )
 
 type storedBot struct {
@@ -134,7 +132,7 @@ func Encode(s Series) (raw []byte, ok bool) {
 // a wrong bucket count, a bad number.
 func Decode(raw []byte) (Series, bool) {
 	var st stored
-	if err := json.Unmarshal(raw, &st); err != nil || st.V != StoredV || st.N <= 0 || st.N > MaxBuckets || len(st.Bots) > maxStoredBots || st.StepMs == 0 {
+	if err := json.Unmarshal(raw, &st); err != nil || st.V != StoredV || st.N <= 0 || st.N > MaxBuckets || len(st.Bots) > MaxBots || st.StepMs == 0 {
 		return Series{}, false
 	}
 	out := Series{V: 1, StepMs: st.StepMs, N: st.N, Src: st.Src, Bots: make([]Bot, len(st.Bots))}

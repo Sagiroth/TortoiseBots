@@ -1,6 +1,7 @@
 package meters
 
 import (
+	"math"
 	"testing"
 
 	"tortoise-observability/internal/combat"
@@ -187,4 +188,47 @@ func TestBuildNoFightFrames(t *testing.T) {
 	if _, ok := Build(steadyFrames(1000, 7), fightOf(1000, 20000)); ok {
 		t.Fatal("no bots")
 	}
+}
+
+// A duration near MaxUint32 (a garbled or hostile telemetry value) must not wrap the bucket arithmetic into n == 0 and index an empty
+// slice: Build says no series. The limits sit where documented (6 h, 400 bots), 0 ms is no fight, and 1 ms is one bucket.
+func TestBuildHugeDurationIsNoSeriesNotAPanic(t *testing.T) {
+	frames := steadyFrames(1000, 7)
+	for _, dur := range []uint32{math.MaxUint32, math.MaxUint32 - 1, math.MaxUint32 - 149999, 1 << 31, MaxDurMs + 1} {
+		f := fightOf(1000, dur, combat.FightBot{GUID: 7, Dmg: 2000})
+		if s, ok := Build(frames, f); ok || s.N != 0 {
+			t.Fatalf("duration %d ms built a series: %+v", dur, s)
+		}
+	}
+	if StepFor(math.MaxUint32) == 0 || StepFor(math.MaxUint32) < StepFor(MaxDurMs) {
+		t.Fatalf("StepFor wrapped: %d", StepFor(math.MaxUint32))
+	}
+	if _, ok := Build(frames, fightOf(1000, 0, combat.FightBot{GUID: 7, Dmg: 1})); ok {
+		t.Fatal("0 ms is no fight")
+	}
+	// 1 ms: one bucket of the minimum step; the one report centred at 0 counts.
+	one := []state.TrackFrame{{T: 1005, Fight: true, WinS: 10, Bots: []state.TrackBot{{GUID: 7, DPS: 100}}}}
+	s, ok := Build(one, fightOf(1000, 1, combat.FightBot{GUID: 7, Dmg: 5}))
+	if !ok || s.N != 1 || s.StepMs != MinStepMs || s.Bots[0].Dmg[0] != 5 {
+		t.Fatalf("1 ms: ok=%v %+v", ok, s)
+	}
+	// The longest allowed fight is 150 buckets at most; a fight with too many bots is refused before anything is allocated.
+	long := fightOf(0, MaxDurMs, combat.FightBot{GUID: 7, Dmg: 9})
+	var lf []state.TrackFrame
+	for s := int64(6); s < 21600; s += 2 {
+		lf = append(lf, state.TrackFrame{T: s, Fight: true, WinS: 10, Bots: []state.TrackBot{{GUID: 7, DPS: 1}}})
+	}
+	if s, ok := Build(lf, long); !ok || s.N < 1 || s.N > MaxBuckets {
+		t.Fatalf("6 h: ok=%v n=%d", ok, s.N)
+	}
+	many := fightOf(1000, 20000)
+	for i := 0; i < MaxBots+1; i++ {
+		many.Bots = append(many.Bots, combat.FightBot{GUID: uint32(i + 1), Dmg: 1})
+	}
+	if _, ok := Build(frames, many); ok {
+		t.Fatal("more bots than MaxBots")
+	}
+	// A report whose time is far outside int range of the fight never indexes outside the buckets.
+	odd := []state.TrackFrame{{T: math.MaxInt64 / 2000, Fight: true, WinS: math.MaxUint32, Bots: []state.TrackBot{{GUID: 7, DPS: 1}}}}
+	Build(odd, fightOf(1000, 20000, combat.FightBot{GUID: 7, Dmg: 5})) // must not panic
 }

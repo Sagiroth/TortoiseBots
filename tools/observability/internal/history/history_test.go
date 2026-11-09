@@ -1195,3 +1195,30 @@ func TestMetersNeverCostAFight(t *testing.T) {
 		t.Fatalf("with room the meters are stored: ok=%v %d bytes", ok, len(m))
 	}
 }
+
+// TestMetersPanicCostsOnlyTheMeters: a panic in the meters callback (telemetry numbers gone wrong) must not take the writer goroutine
+// down: the fight is written without meters and the next fight is written as usual.
+func TestMetersPanicCostsOnlyTheMeters(t *testing.T) {
+	dir := t.TempDir()
+	clock := &fakeClock{t: t0}
+	s := open(t, Config{Dir: dir, Now: clock.Now})
+	calls := 0
+	s.SetMeters(func(string, combat.Fight) json.RawMessage {
+		calls++
+		if calls == 1 {
+			panic("index out of range [-1]")
+		}
+		return json.RawMessage(`{"v":2,"step_ms":2000,"n":1,"src":"window","bots":[]}`)
+	})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f1", "Glacienne", t0.Unix()-300), At: clock.Now()})
+	deliver(t, s, clock, Item{Session: 1, Fight: mkFight("f2", "Glacienne", t0.Unix()-200), At: clock.Now()})
+	if len(s.List("Glacienne", "2026-10-28")) != 2 {
+		t.Fatalf("the fights after a meters panic: %+v", s.List("Glacienne", "2026-10-28"))
+	}
+	if _, _, m, ok := s.FightMeters(combat.Key("Glacienne", 1, "f1")); !ok || m != nil {
+		t.Fatalf("f1 is kept without meters: ok=%v %s", ok, m)
+	}
+	if _, _, m, ok := s.FightMeters(combat.Key("Glacienne", 1, "f2")); !ok || m == nil {
+		t.Fatalf("the writer still works: f2 has its meters: ok=%v %s", ok, m)
+	}
+}

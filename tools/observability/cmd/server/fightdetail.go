@@ -78,6 +78,63 @@ func (c *meterCache) put(key string, s *meters.Series) {
 	c.m[key] = s
 }
 
+// histDetail is a past night's fight as the detail answers it: the fight, its pack key and its decoded series.
+type histDetail struct {
+	fight   combat.Fight
+	packKey string
+	meters  *meters.Series
+}
+
+// histCache keeps the last few past-night details, so reopening one (the navigation of the night picker) does not read its line and
+// decode its series again. A line is never rewritten, so an entry never goes stale. Small on purpose: a fight is a few hundred KiB.
+type histCache struct {
+	mu    sync.Mutex
+	m     map[string]*histDetail
+	order []string
+}
+
+const histCacheMax = 16
+
+func (c *histCache) get(key string) (*histDetail, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	d, ok := c.m[key]
+	return d, ok
+}
+
+func (c *histCache) put(key string, d *histDetail) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]*histDetail{}
+	}
+	if _, ok := c.m[key]; !ok {
+		c.order = append(c.order, key)
+		if len(c.order) > histCacheMax {
+			delete(c.m, c.order[0])
+			c.order = c.order[1:]
+		}
+	}
+	c.m[key] = d
+}
+
+// historyDetail is the stored fight of a past night through the cache: read from its day file and decoded once.
+func historyDetail(hs *history.Store, cache *histCache, key string) (*histDetail, bool) {
+	if hs == nil {
+		return nil, false
+	}
+	if d, ok := cache.get(key); ok {
+		return d, true
+	}
+	hf, row, raw, ok := hs.FightMeters(key)
+	if !ok {
+		return nil, false
+	}
+	d := &histDetail{fight: hf, packKey: row.PackKey, meters: decodeMeters(raw)}
+	cache.put(key, d)
+	return d, true
+}
+
 // storedMeters is the series the history wrote for this fight: found false while the fight is not written yet (still in the writer's
 // six-second wait), else the series or nil (the line carries none: no reports were kept, or it did not fit).
 func storedMeters(hs *history.Store, cache *meterCache, key string) (s *meters.Series, found bool) {
@@ -116,6 +173,7 @@ func decodeMeters(raw json.RawMessage) *meters.Series {
 // memory is re-read from its history file and judged now with the same rules.
 func combatFightDetailHandler(combatStore *combat.Store, historyStore *history.Store, src trackSource) http.HandlerFunc {
 	cache := &meterCache{}
+	past := &histCache{}
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		key := strings.TrimPrefix(r.URL.Path, "/api/v1/combat/fight/")
@@ -127,18 +185,15 @@ func combatFightDetailHandler(combatStore *combat.Store, historyStore *history.S
 			}
 		}
 		if !ok {
-			if historyStore != nil {
-				if hf, row, raw, hok := historyStore.FightMeters(key); hok {
-					ms := decodeMeters(raw)
-					writeJSON(w, struct {
-						Fight    combat.Fight     `json:"fight"`
-						Warnings []combat.Warning `json:"warnings"`
-						Hist     bool             `json:"hist,omitempty"`
-						PackKey  string           `json:"pack_key,omitempty"`
-						Meters   *meters.Series   `json:"meters,omitempty"`
-					}{hf, combat.Judge(hf, combatStore.Rules()), true, row.PackKey, ms})
-					return
-				}
+			if d, hok := historyDetail(historyStore, past, key); hok {
+				writeJSON(w, struct {
+					Fight    combat.Fight     `json:"fight"`
+					Warnings []combat.Warning `json:"warnings"`
+					Hist     bool             `json:"hist,omitempty"`
+					PackKey  string           `json:"pack_key,omitempty"`
+					Meters   *meters.Series   `json:"meters,omitempty"`
+				}{d.fight, combat.Judge(d.fight, combatStore.Rules()), true, d.packKey, d.meters})
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)

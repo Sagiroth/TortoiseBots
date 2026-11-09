@@ -288,10 +288,7 @@ func (s *Store) write(it Item) bool {
 			ntMs, longest = &a, &b
 		}
 	}
-	var meters json.RawMessage
-	if s.meters != nil {
-		meters = s.meters(f.Commander, f)
-	}
+	meters := s.buildMeters(f)
 	key := combat.Key(f.Commander, it.Session, f.ID)
 	stored := line{
 		V: 1, Session: it.Session, Key: key, SavedAt: now.Unix(), PackKey: packKey(f, pack), Pack: pack,
@@ -515,4 +512,19 @@ func (s *Store) dropRowsOf(path string) {
 	for i := range s.rows {
 		s.byKey[s.rows[i].Key] = i
 	}
+}
+
+// buildMeters asks the meters callback for the fight's series. The callback is the writer's only call into code that works on telemetry
+// numbers, so a panic in it costs the fight its meters (logged once), never the writer goroutine or the daemon.
+func (s *Store) buildMeters(f combat.Fight) (raw json.RawMessage) {
+	if s.meters == nil {
+		return nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			raw = nil
+			s.logOnce("meters panic", fmt.Sprintf("building the meters of %s failed (%v); the fight is kept without them", f.ID, r))
+		}
+	}()
+	return s.meters(f.Commander, f)
 }

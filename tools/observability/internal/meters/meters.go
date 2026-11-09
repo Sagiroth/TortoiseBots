@@ -27,6 +27,11 @@ const (
 	FirstGapS = 2
 	// DefaultWinS is the window half-shift when a frame names no window.
 	DefaultWinS = 10
+	// MaxDurMs bounds the fight Build will describe: six hours. A longer (or garbled) duration is no series, so the bucket arithmetic
+	// can never wrap and a telemetry value cannot make the daemon allocate or index out of range.
+	MaxDurMs = 6 * 60 * 60 * 1000
+	// MaxBots bounds the bots of one series (a fight record carries at most a raid's worth; Decode takes the same limit).
+	MaxBots = 400
 )
 
 // Bot is one bot's cumulative damage and healing at the end of each bucket (index i: the amount up to (i+1)*StepMs).
@@ -48,10 +53,15 @@ type Series struct {
 }
 
 // StepFor is the bucket length for a fight of durMs: at least MinStepMs, whole seconds, and never more than MaxBuckets buckets.
+// The arithmetic is 64-bit: no duration wraps it (a result beyond uint32 is clamped, which Build never reaches: see MaxDurMs).
 func StepFor(durMs uint32) uint32 {
-	s := (durMs + MaxBuckets*1000 - 1) / (MaxBuckets * 1000) // ceil(durMs / 150 / 1000) seconds
-	if ms := s * 1000; ms > MinStepMs {
-		return ms
+	s := (uint64(durMs) + MaxBuckets*1000 - 1) / (MaxBuckets * 1000) // ceil(durMs / 150 / 1000) seconds
+	ms := s * 1000
+	if ms > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	if ms > MinStepMs {
+		return uint32(ms)
 	}
 	return MinStepMs
 }
@@ -64,11 +74,14 @@ func StepFor(durMs uint32) uint32 {
 // previous counted report (at most MaxGapS, FirstGapS for the first); the amount lands in bucket floor(t / StepMs), clamped to the
 // last; the buckets are summed cumulatively.
 func Build(frames []state.TrackFrame, f combat.Fight) (Series, bool) {
-	if f.DurMS == 0 || len(f.Bots) == 0 {
+	if f.DurMS == 0 || f.DurMS > MaxDurMs || len(f.Bots) == 0 || len(f.Bots) > MaxBots {
 		return Series{}, false
 	}
 	step := StepFor(f.DurMS)
-	n := int((f.DurMS + step - 1) / step)
+	n := int((uint64(f.DurMS) + uint64(step) - 1) / uint64(step))
+	if n < 1 || n > MaxBuckets {
+		return Series{}, false
+	}
 	index := make(map[uint32]int, len(f.Bots))
 	for i, b := range f.Bots {
 		index[b.GUID] = i
@@ -108,6 +121,9 @@ func Build(frames []state.TrackFrame, f combat.Fight) (Series, bool) {
 		prevMs = t
 		used++
 		b := int(t / int64(step))
+		if b < 0 {
+			b = 0
+		}
 		if b >= n {
 			b = n - 1
 		}

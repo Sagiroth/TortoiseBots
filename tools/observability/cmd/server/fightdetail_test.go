@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -196,5 +198,51 @@ func TestFightDetailKeepsTheStoredSeriesWhenTheTrackIsTrimmed(t *testing.T) {
 	trk.frames = meterFrames(1000, 3) // frames appear later
 	if _, got := getDetail(h, combat.Key("G", 1, "b")); got["meters"] != nil {
 		t.Fatalf("written without meters, so answered without: %s", got["meters"])
+	}
+}
+
+// TestFightDetailHistoryOnlyIsCached: after a fight has left the memory store, the first request reads its line and decodes its series;
+// the next ones are answered from the cache. Proof: the day file is deleted after the first answer, and the same key still answers in
+// full while a key that was never asked for no longer can.
+func TestFightDetailHistoryOnlyIsCached(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	clk := now
+	dir := t.TempDir()
+	hs, err := history.Open(history.Config{Dir: dir, Now: func() time.Time { return clk }},
+		func(context.Context, string, combat.Fight) int { return 0 }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hs.Close(context.Background()) })
+	hs.SetMeters(func(commander string, f combat.Fight) json.RawMessage {
+		return metersJSON(&fakeTrack{frames: meterFrames(f.Start, 3)}, f)
+	})
+	for _, id := range []string{"a", "b"} {
+		if !hs.Enqueue(history.Item{Session: 1, Fight: meterFight(id), At: now}) {
+			t.Fatal("Enqueue refused")
+		}
+	}
+	clk = now.Add(7 * time.Second)
+	hs.Flush()
+	h := combatFightDetailHandler(combat.NewStore(nil), hs, nil) // the fights are not in memory
+	keyA, keyB := combat.Key("G", 1, "a"), combat.Key("G", 1, "b")
+	code, first := getDetail(h, keyA)
+	if code != 200 || !strings.Contains(string(first["meters"]), `"src":"window"`) {
+		t.Fatalf("first request: %d %s", code, first["meters"])
+	}
+	filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(p, ".jsonl") {
+			os.Remove(p)
+		}
+		return nil
+	})
+	for i := 0; i < 3; i++ {
+		code, again := getDetail(h, keyA)
+		if code != 200 || string(again["meters"]) != string(first["meters"]) || string(again["fight"]) != string(first["fight"]) || string(again["hist"]) != "true" {
+			t.Fatalf("request %d after the file is gone must answer from the cache: %d", i+2, code)
+		}
+	}
+	if code, _ := getDetail(h, keyB); code != 404 {
+		t.Fatalf("an uncached fight cannot be read once its file is gone (so the cache above was used): %d", code)
 	}
 }
