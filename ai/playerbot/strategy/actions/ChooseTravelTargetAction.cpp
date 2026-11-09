@@ -149,7 +149,8 @@ static bool IsGuildOrderTravelName(std::string const& name)
 // keeps its zone move, the vendor leg keeps retrying (a vendor-unlimited
 // reagent is bought, never farmed or delegated); focus has no ladder exit
 // and only parks.
-static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey)
+static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey,
+    bool onlyInactive = false)
 {
     using namespace TortoiseBots::GuildOrders;
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -232,7 +233,10 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         // Three consecutive rejected or empty searches in one zone move the
         // order to the next plan zone, so a bad zone costs about a minute,
         // not the hour the death rules would take.
-        NoteSearchFailed(bot->GetGUIDLow(), record->farmZoneId);
+        // Sources that are only inactive right now (taken, respawning) are
+        // not a bad zone: the bot waits for them instead of leaving.
+        if (!onlyInactive)
+            NoteSearchFailed(bot->GetGUIDLow(), record->farmZoneId);
     }
     return false;
 }
@@ -719,7 +723,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         bool const orderLeg = IsGuildOrderTravelName(purposeKey);
         if (orderLeg)
         {
-            bool orderLegSwitched = OrderLegSearchEmpty(ai, bot, purposeKey);
+            bool const onlyInactive = lastRejectReasons.compare(0, 9, "inactive=") == 0 &&
+                lastRejectReasons.find(',') == std::string::npos;
+            bool orderLegSwitched = OrderLegSearchEmpty(ai, bot, purposeKey, onlyInactive);
             if (orderLegSwitched)
             {
                 // The order moved to a new leg (bank, AH, farm, sub, need):
