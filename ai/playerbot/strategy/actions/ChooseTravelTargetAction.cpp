@@ -2737,7 +2737,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 });
             mailboxLeg = true;
         }
-        else if (!mailRecord->supplyItemId &&
+        else if ((!mailRecord->supplyItemId || mailRecord->supplyItemId == mailRecord->itemId) &&
             TortoiseBots::GuildOrders::CollectOrderMailFirst(
                 ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
                 OrderMailboxItems(bot, order.itemId), order.amount, false, false))

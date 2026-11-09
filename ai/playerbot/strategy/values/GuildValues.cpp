@@ -14,6 +14,7 @@
 #include "runtime/GuildOrderAccess.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderBringPolicy.h"
+#include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderReagentTree.h"
@@ -1275,7 +1276,13 @@ bool HasGuildTravelOrderValue::Calculate()
     // The mailbox counts toward the amount, but delivery needs the items in
     // the bags: a farm or buy order whose last items wait in the mail still
     // walks to the mailbox (live: a sub-order sat 90 min on 4/2 in the mail).
-    if (!mailLeg && !OrderStillNeedsWork(bot, order))
+    // Ordered items that sit in the mailbox while the leg is farming (bought
+    // earlier, or sent back) still need the walk to the mailbox: delivery wants
+    // them in the bags.
+    bool const orderItemInMail = current->supplyItemId == current->itemId &&
+        TortoiseBots::GuildOrders::CollectOrderMailFirst(bot->GetItemCount(current->itemId), current->delivered,
+            ai::OrderMailboxItems(bot, current->itemId), order.amount, false, false);
+    if (!mailLeg && !orderItemInMail && !OrderStillNeedsWork(bot, order))
     {
         blocked("delivered plus bags plus mail already cover the amount");
         return false;
