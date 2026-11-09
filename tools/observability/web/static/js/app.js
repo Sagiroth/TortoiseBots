@@ -5840,13 +5840,18 @@
     if (d.showModal) d.showModal(); else d.setAttribute('open', '');
   }
 
-  // A link's layout (FdView.fromQuery already decoded and bounded it) becomes the Shared layout, unsaved; a layout the viewer has saved is
-  // not touched. Only the layout this page itself last wrote into the hash (fdLay.written), read back by the router, is skipped.
+  // A link's layout (FdView.fromQuery already decoded and bounded it) becomes the Shared layout, unsaved, unless it is one of the viewer's own
+  // saved layouts (then that one is selected by name); the saved layouts and the stored active choice are not touched. Only the unsaved layout this page itself last wrote into the hash (fdLay.written), read back by the router, is skipped.
   function fdLaySetShared(layout) {
     if (!layout) return;
-    if (FdLayout.encode(layout) === fdLay.written) return; // what this page itself last wrote into the hash, read back: nothing to switch
-    fdLay.shared = layout; // any other link layout is the Shared layout, even when it equals a saved one
-    fdLay.sel = '~';
+    const code = FdLayout.encode(layout);
+    if (code === fdLay.written) return; // the unsaved layout this page itself just wrote into the hash, read back: nothing to switch
+    // A link that carries one of the viewer's own saved layouts (a reload, Back to an older entry) selects it by name: it is theirs, so no
+    // Shared chip and nothing is written to storage. Any other layout, one equal to the unsaved edit or to the default grid's table
+    // included, is the Shared layout.
+    const own = Object.keys(fdLay.state.layouts).find(n => FdLayout.encode(fdLay.state.layouts[n]) === code);
+    if (own !== undefined) fdLay.sel = 'n:' + own;
+    else { fdLay.shared = layout; fdLay.sel = '~'; }
     fdLay.edit = null;
     fdLay.note = '';
     fdLayChanged({ noHash: true });
@@ -5981,6 +5986,7 @@
   // a timer tick. A no-op when nothing changed, when the card is not the open debugger tab, and while a link's own view is still
   // waiting to be applied (the link is not overwritten with defaults).
   function fdViewHash(key) {
+    fdLay.written = ''; // set again below only when a hash is written: an early return wrote no layout, so none can be mistaken for the page's own
     const fd = key != null ? cmdFd[key] : null;
     if (!fd || fdPage.open !== key || !fd.sel || cmdPageMode() !== 'debug') return;
     if (fdPage.pending && fdPage.pending.cmd === key && fdPage.pending.key === fd.sel) return;

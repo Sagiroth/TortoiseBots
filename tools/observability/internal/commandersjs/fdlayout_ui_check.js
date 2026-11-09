@@ -92,6 +92,7 @@ function makeCard(on) {
 }
 const attrs = (x) => Object.keys(x.attributes);
 const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeline", span: 12 }] });
+const LAYJ_FOR_CHIP = FdLayout.normalize({ panels: [{ id: "events", span: 4 }] });
 
 // ---- a card with no layout is untouched: no fd-custom class, no style, no mark (the default grid is the stylesheet's alone)
 {
@@ -306,22 +307,47 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   assert.strictEqual(run("fdLay.sel"), "n:k", "the viewer can pick their own again");
   run("fdLayPick('~')");
   assert.strictEqual(run("fdLay.sel"), "~", "and the link's layout is still there to pick");
-  // a link whose layout equals the saved one in force (or the unsaved edit) is still the Shared layout, and stays selectable
-  run("fdLayPick('n:k'); fdLay.written = ''"); // a page just opened from the link has written nothing yet
-  run("fdLaySetShared(l)", { l: LAY });
-  assert.strictEqual(run("fdLay.sel"), "~", "a link equal to the saved layout in force is installed as Shared");
-  assert.strictEqual(FdLayout.encode(run("fdLay.shared")), FdLayout.encode(LAY));
+  // a link that carries one of the viewer's own saved layouts (a reload, Back to an older entry) selects it by name: no Shared layout, no chip,
+  // no storage write
+  const LAYJ = FdLayout.normalize({ panels: [{ id: "auras", span: 12 }] });
+  reset({ active: "", layouts: { k: LAY, j: LAYJ } });
+  run("fdPage.open = 'T'");
+  run("fdLaySetShared(l)", { l: LAY }); // a reload: the page has written nothing yet (written is '')
+  assert.strictEqual(run("fdLay.sel"), "n:k", "a reload with lay = saved k selects k");
+  assert.strictEqual(run("fdLay.shared"), null, "it is not a Shared layout");
+  assert.strictEqual(store.writes.length, 0, "and nothing is written to storage");
+  assert.strictEqual(JSON.parse(store.m[FdLayout.STORAGE_KEY]).active, "", "the stored active choice is not touched");
+  assert.deepStrictEqual(hashes, [], "no hash write");
+  run("fdLayAct('down', 'run')"); // the page writes its own unsaved edit; the stub records it
+  run("fdLay.written = 'stale'; fdLay.edit = null; fdLay.sel = 'n:k'; fdLay.written = '" + FdLayout.encode(LAY) + "'");
+  run("fdLaySetShared(l)", { l: LAYJ }); // Back to an older entry that carries the saved j
+  assert.strictEqual(run("fdLay.sel"), "n:j", "Back to an entry with saved j selects j");
+  assert.strictEqual(run("fdLay.shared"), null);
+  assert.strictEqual(run("fdLay.edit"), null);
+  assert.strictEqual(store.writes.length, 0);
+  // an unsaved layout the link names is the Shared layout: a layout equal to the default table's order, or to the unsaved edit
+  run("fdLay.written = ''");
+  run("fdLaySetShared(l)", { l: FdLayout.defaults() });
+  assert.strictEqual(run("fdLay.sel"), "~", "a link that is not a saved layout (here the table's default order) is Shared");
   run("fdLayPick('')");
-  assert.strictEqual(run("fdLay.sel"), "", "switching away ...");
   run("fdLayPick('~')");
-  assert.strictEqual(run("fdLay.sel"), "~", "... the Shared layout can be picked again");
-  assert.deepStrictEqual(Object.keys(run("fdLay.state.layouts")), ["k"], "and no saved layout was added");
+  assert.strictEqual(run("fdLay.sel"), "~", "and it stays selectable after switching away");
+  assert.deepStrictEqual(Object.keys(run("fdLay.state.layouts")).sort(), ["j", "k"], "no saved layout was added");
   run("fdLayPick('n:k'); fdLayAct('down', 'run')");
   const editCode = FdLayout.encode(run("fdLay.edit"));
   run("fdLay.written = ''; fdLaySetShared(l)", { l: run("fdLay.edit") });
-  assert.strictEqual(run("fdLay.sel"), "~", "a link equal to the unsaved edit is installed as Shared too (the edit is dropped)");
+  assert.strictEqual(run("fdLay.sel"), "~", "a link equal to the unsaved edit (not the page's own write) is installed as Shared (the edit is dropped)");
   assert.strictEqual(run("fdLay.edit"), null);
   assert.strictEqual(FdLayout.encode(run("fdLay.shared")), editCode);
+  // a stale written no longer skips a real link: every path of fdViewHash, the early returns too, clears it first
+  run(grab("fdViewHash").replace("function fdViewHash(", "function realViewHash("), { cmdFd: {} });
+  assert.ok(/function fdViewHash\(key\) \{\s*\n\s*fdLay\.written = '';/.test(src), "the first thing fdViewHash does is clear what it last wrote");
+  run("fdPage.open = 'T'; fdLay.written = '" + editCode + "'; realViewHash('T');"); // no fight state: an early return, nothing written
+  assert.strictEqual(run("fdLay.written"), "", "an early return leaves no layout recorded");
+  run("fdLay.edit = null; fdLay.sel = ''");
+  run("fdLaySetShared(l)", { l: FdLayout.normalize({ panels: [{ id: "map", span: 4 }] }) });
+  assert.strictEqual(run("fdLay.sel"), "~", "so a real link is installed, not skipped");
+  run("fdLay.sel = 'n:k'; fdLay.edit = null");
   // the page's own hash of a saved layout read back does not flip it to Shared
   run("fdLayPick('n:k')");
   assert.strictEqual(run("fdLay.written"), FdLayout.encode(LAY), "the page wrote the saved layout's code");
@@ -357,7 +383,7 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   const names = tags.map((t) => t[0]);
   assert.ok(names.indexOf("fdlayout.js") > names.indexOf("fdview.js") && names.indexOf("fdlayout.js") < names.indexOf("app.js"), "fdlayout.js loads before app.js: " + names.join(","));
   const ver = (n) => (tags.find((t) => t[0] === n) || [])[1];
-  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["2", "3", "61"], "the changed scripts carry new versions");
+  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["2", "3", "62"], "the changed scripts carry new versions");
   assert.ok(/app\.css\?v=34/.test(indexHtml), "and so does the stylesheet");
 }
 
@@ -449,6 +475,13 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   assert.strictEqual(chip.hidden, true, "back to the default grid: the chip goes");
   run("fdLayPick('~')");
   assert.strictEqual(chip.hidden, false);
+  reset({ active: "", layouts: { k: LAY } });
+  run("fdLaySetShared(l)", { l: LAY });
+  assert.strictEqual(run("fdLay.sel"), "n:k");
+  assert.strictEqual(chip.hidden, true, "a link that is the viewer's own saved layout shows no chip");
+  run("fdLaySetShared(l)", { l: LAYJ_FOR_CHIP });
+  assert.strictEqual(chip.hidden, false, "another link layout does");
+  run("fdLayPick('~')");
   run("cmdPageMode = () => 'live'; fdLayChip();");
   assert.strictEqual(chip.hidden, true, "on the Live page there is no chip");
   run("cmdPageMode = () => 'debug'");

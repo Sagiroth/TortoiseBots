@@ -219,7 +219,7 @@ assert.ok(run("fdMechHtml({ text: 'deaths 1', title: '' }, { res: null }, '')").
 {
   const tags = Array.from(indexHtml.matchAll(/<script src="\/static\/js\/([a-z]+\.js)\?v=(\d+)">/g), (m) => m[1]);
   assert.ok(tags.indexOf("fightauras.js") < tags.indexOf("fdmech.js") && tags.indexOf("fdmech.js") < tags.indexOf("fdlive.js") && tags.indexOf("fdmech.js") < tags.indexOf("app.js"), "fdmech.js loads after fightauras.js and before app.js: " + tags.join(","));
-  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /static\/js\/app\.js\?v=61/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
+  assert.ok(/fdmech\.js\?v=2/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /static\/js\/app\.js\?v=62/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
   assert.ok(src.includes('class="fd-mechbox"') && src.includes('class="fd-mechbody"') && src.includes('class="fd-livemech cell-muted"'), "the section and the live bar slot are in the card");
   assert.ok(src.indexOf('class="fd-mechbox"') > src.indexOf('class="fd-underbox"'), "directly under the underperforming bots");
   assert.ok(/fdMechSync\(card, bind, fd, /.test(src) && /fdLiveMechBar\(card, st, lf, bind\)/.test(src) && /fdLiveMechBar\(card, liveSt, liveFight, bind\)/.test(src), "rendered with the card and repainted by the live tick");
