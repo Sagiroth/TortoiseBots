@@ -10,8 +10,11 @@
 #include "playerbot/GuildOrderCraft.h"
 #include "playerbot/policy/guild/EnchantGatherPolicy.h"
 #include "runtime/EnchantCapital.h"
+#include "host/ModuleLog.h"
+#include "runtime/GuildOrderAccess.h"
 #include "runtime/GuildOrderStore.h"
 #include "runtime/GuildOrderBringPolicy.h"
+#include "runtime/GuildOrderMailPolicy.h"
 #include "runtime/GuildOrderNeedPolicy.h"
 #include "runtime/GuildOrderSourcesPolicy.h"
 #include "runtime/GuildOrderReagentTree.h"
@@ -524,7 +527,27 @@ private:
     bool canFarm_ = false;
 };
 
+SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable);
+
+// The ladder pick, logged whenever it differs from the leg the order is on, with
+// what the pick rested on, so a stuck order can be traced afterwards.
 SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable)
+{
+    SupplyStep const picked = ChooseSourceStepImpl(bot, order, candidate, snapshot, farmable);
+    SupplyStep const current = order.supplyItemId == candidate.itemId ? order.supplyStep : SupplyStep::None;
+    if (picked != current)
+        TB_LOG_DETAIL("TortoiseBots: order %s supply item %u: %s -> %s (guild bank %s, craft %s, farm %s)",
+            bot->GetName(), candidate.itemId, TortoiseBots::GuildOrders::SupplyStepToken(current),
+            TortoiseBots::GuildOrders::SupplyStepToken(picked),
+            TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId()) ? "yes" : "no",
+            candidate.craft ? "yes" : "no",
+            (farmable ? farmable->CanFarm() : false) ? "yes" : "no");
+    return picked;
+}
+
+SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot, FarmableVerdict* farmable)
 {
     // A ticked material is the giver's to bring: the bot never sources it
@@ -544,7 +567,10 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
     if (!snap.nowMs)
         snap.nowMs = WorldTimer::getMSTime();
     // A banker visit that found none of this item skips the bank leg until
-    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId, snap.nowMs, order.bankEmptyMs);
+    // A guild that never bought a bank has nothing to take from: the bank
+    // leg is skipped from the start instead of sending the bot to a banker.
+    bool bankSkipped = BankLegSkipped(candidate.itemId, order.bankEmptyItemId, snap.nowMs, order.bankEmptyMs) ||
+        !TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId());
     bool sameItem = order.supplyItemId == candidate.itemId;
     SupplyStep current = sameItem ? order.supplyStep : SupplyStep::None;
     FarmableVerdict localVerdict(bot, order, candidate);
@@ -604,6 +630,7 @@ SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandida
             order.botGuidLow, candidate.itemId);
         options.auctionHouseAttempted = auctionUnaffordable ||
             (!auctionReentry && current != SupplyStep::AuctionHouse);
+        options.auctionHouseLive = current == SupplyStep::AuctionHouse;
         options.selfCanCraft = candidate.craft;
         options.selfCanFarm = verdict.CanFarm();
         // Enchant reagents are never delegated: the auction leg hands off to
@@ -1118,6 +1145,7 @@ GuildOrder GuildOrderValue::Calculate()
         case TortoiseBots::GuildOrders::OrderType::Enchant:
             break;
     }
+    order.itemId = stored->itemId;
     order.amount = stored->amount;
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(stored->itemId);
     order.target = proto ? proto->Name1 : std::to_string(stored->itemId);
@@ -1181,10 +1209,27 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 
 bool HasGuildTravelOrderValue::Calculate()
 {
+    // One line a minute per working order bot naming the gate that stopped
+    // its order travel, so a bot that stands still can be explained.
+    auto blocked = [&](char const* why)
+    {
+        static std::unordered_map<uint32_t, time_t> lastNote;
+        time_t& last = lastNote[bot->GetGUIDLow()];
+        if (time(nullptr) - last < 60)
+            return;
+        last = time(nullptr);
+        std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (stored && stored->state == TortoiseBots::GuildOrders::OrderState::Working)
+            TB_LOG_DETAIL("TortoiseBots: order %s does not travel: %s (step %s)", bot->GetName(), why,
+                TortoiseBots::GuildOrders::SupplyStepToken(stored->supplyStep));
+    };
     // No order work while grouped with a player, for any order type. An
     // autonomous alt still travels: it plays on its own like a pool bot.
     if (!OrderBotMayTravel(ai, bot))
+    {
+        blocked("not allowed to travel (grouped, in combat or dead)");
         return false;
+    }
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
@@ -1193,7 +1238,10 @@ bool HasGuildTravelOrderValue::Calculate()
     if (!current || current->state != TortoiseBots::GuildOrders::OrderState::Working ||
         (current->supplyStep != SupplyStep::Bank && current->supplyStep != SupplyStep::AuctionHouse &&
          current->supplyStep != SupplyStep::Farm && current->supplyStep != SupplyStep::Bags))
+    {
+        blocked("order is not on a travel step");
         return false;
+    }
     // A craft order short on a farmable reagent travels like a farm order.
     // The refreshed record already names the supply item, so the check below
     // never re-reads the farm-item value (and its second ladder refresh).
@@ -1214,7 +1262,10 @@ bool HasGuildTravelOrderValue::Calculate()
             current->supplyItemId != 0 && IsUnlimitedVendorItem(current->supplyItemId)) != 0;
     }
     if (!order.IsTravelOrder())
+    {
+        blocked("order is not a travel order");
         return false;
+    }
     // No order work while delivering or done with the amount (delivered
     // plus bags plus mailbox). Mail waiting never blocks the leg: the
     // travel code walks to a mailbox and collects it before farming, buying
@@ -1226,8 +1277,30 @@ bool HasGuildTravelOrderValue::Calculate()
     // The mailbox counts toward the amount, but delivery needs the items in
     // the bags: a farm or buy order whose last items wait in the mail still
     // walks to the mailbox (live: a sub-order sat 90 min on 4/2 in the mail).
-    if (!mailLeg && !OrderStillNeedsWork(bot, order))
+    // Ordered items that sit in the mailbox while the leg is farming (bought
+    // earlier, or sent back) still need the walk to the mailbox: delivery wants
+    // them in the bags.
+    bool const orderItemInMail = current->supplyItemId == current->itemId &&
+        TortoiseBots::GuildOrders::CollectOrderMailFirst(bot->GetItemCount(current->itemId), current->delivered,
+            ai::OrderMailboxItems(bot, current->itemId), order.amount, false, false);
+    if (!mailLeg && !orderItemInMail && !OrderStillNeedsWork(bot, order))
+    {
+        {
+            static std::unordered_map<uint32_t, time_t> lastCount;
+            time_t& at = lastCount[bot->GetGUIDLow()];
+            if (time(nullptr) - at >= 60)
+            {
+                at = time(nullptr);
+                TB_LOG_DETAIL("TortoiseBots: order %s counts: delivered %u bags %u mail %u of %u (record item %u, order item %u, state %s)",
+                    bot->GetName(), current->delivered, bot->GetItemCount(order.itemId),
+                    ai::OrderMailboxItems(bot, order.itemId), order.amount, current->itemId, order.itemId,
+                    TortoiseBots::GuildOrders::StateToken(current->state));
+            }
+        }
+        blocked("delivered plus bags plus mail already cover the amount");
         return false;
+    }
+    blocked("ok, order travel allowed");
     return true;
 }
 

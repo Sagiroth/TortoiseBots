@@ -1,3 +1,4 @@
+#include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/policy/rpg/GroupHygienePolicy.h"
 #include "playerbot/playerbot.h"
@@ -47,6 +48,18 @@ namespace ai
             // LFT fill role is spent once the dungeon group is gone: drop it
             // so the next ResetStrategies falls back to the talent spec.
             ai->SetForcedRole(0);
+            // The same full reset the alt-bot release runs: expire the travel
+            // plan, clear follow/stay/guard anchors and stop, so the next tick
+            // rebuilds the pool leisure kit from a clean slate. Hires leave via
+            // the hire lifecycle, never this branch, and the guild claim stays.
+            ai->Reset(true);
+            bot->StopMoving();
+            ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
+            posMap["stay"].Reset();
+            posMap["guard"].Reset();
+            posMap["return"].Reset();
+            context->GetValue<ai::GuidPosition>("manual follow target")->Reset();
+            context->GetValue<time_t>("stay time")->Set(0);
         }
 
         if(!aiMaster)
