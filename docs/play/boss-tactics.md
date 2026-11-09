@@ -207,6 +207,14 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Vectus | `kill_first` Marduk; `interrupt` Flamestrike |
 | Marduk | `kill_first` self (Marduk's party-wide shadow first) |
 
+### Onyxia's Lair (249)
+
+| Boss | Rows |
+| :--- | :--- |
+| Cindarion | `taunt_after_cast` mode `until_tank`, tank 1, 4 s (no fixate, plain threat; the first off-tank takes him back whenever he stands on a non-tank); `interrupt` Flame Breath 33439; `behind` 30 yd; `kill_first` self (2, before Onyxia whenever targetable). Needs `AiPlayerbot.DungeonRunAuraTactics = 1` |
+| Onyxian Hatcher | `kill_first` self (1, first in P3); `taunt_after_cast` mode `until_tank`, tank 2, 4 s (opens on a random raid member; the second off-tank takes it off a non-tank); `behind` Flaming Cleave 33441, 12 yd. Needs `AiPlayerbot.DungeonRunAuraTactics = 1` |
+| Onyxian Warder | healer stand set (9 seats, 34 yd) and ranged stand set (5 seats, 26 yd) at the corridor junction where the room-mouth pack is fought |
+
 ### Zul'Gurub (309)
 
 | Boss | Rows |
@@ -371,4 +379,4 @@ Seats go to same-role bots in id order. Taking part means being on the threat li
 
 ## Not yet verified live
 
-Uldaman, Deadmines, Wailing Caverns, Frostmane Hollow, Windhorn Canyon, Gilneas City, Karazhan Crypt, Crescent Grove, Zul'Farrak, Scholomance, Zul'Gurub, AQ20, Hakkar: none of the rows above are verified in game yet.
+Uldaman, Deadmines, Wailing Caverns, Frostmane Hollow, Windhorn Canyon, Gilneas City, Karazhan Crypt, Crescent Grove, Zul'Farrak, Scholomance, Zul'Gurub, AQ20, Hakkar, Onyxia's Lair: none of the rows above are verified in game yet.
