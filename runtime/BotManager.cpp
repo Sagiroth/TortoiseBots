@@ -16,6 +16,7 @@
 #include "RandomBotAccountRegistry.h"
 #include "StartZoneBalance.h"
 #include "GearSeedingGuard.h"
+#include "policy/provision/GearBlacklistPolicy.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/BotActionLog.h"
 #include "../ai/playerbot/strategy/actions/MovementActions.h"
@@ -1272,6 +1273,19 @@ void BotManager::OnPlayerLogin(::Player* player)
     {
         if (PlayerbotAI* ai = entry.aiAdapter->GetAI())
             ai->DoSpecificAction("auto learn spell");
+    }
+
+    // Pool and hired bots seeded before an item joined the gear blacklist still
+    // wear it; their slot is not re-geared until a level-up, so strip it here.
+    if (record.random)
+    {
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* worn = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (worn && worn->GetProto() &&
+                TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, worn->GetProto()->ItemId))
+                player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+        }
     }
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.
