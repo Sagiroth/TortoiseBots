@@ -76,6 +76,15 @@ namespace ai
     // bot and entry. Never the bots' "attackers" list: a Portal of Madness is unselectable and never attacks.
     std::uint32_t HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry);
 
+    // How many living blockers of a gate_hold row fight within `radius` yd of the bot (in combat and not evading:
+    // CountsAsFightingBlocker): the "fighting blockers" value, one cached grid search per bot, entry and radius.
+    std::uint32_t GateHoldFighters(PlayerbotAI* ai, std::uint32_t entry, float radius);
+
+    // Whether `unit` is spared right now by a gate_hold row of the fight: its health is at or below the row's gate %
+    // and more than the row's `priority` blockers still fight (GateHeld). Gated by AiPlayerbot.DungeonRunGateHold; the
+    // callers apply the role gate (free DPS) and the explicit-order rule, as for hold_kill.
+    bool GateHoldsUnit(PlayerbotAI* ai, const ActiveBossRows& rows, Unit* unit);
+
     // The living, fighting units of `entry` within kHoldKillRangeYd of the bot, a crowd-controlled or evading one
     // included (`eligible` false): the "sole kill candidates" value, one cached grid search per bot and entry, the
     // fight's own units of the entry, never the bot's "attackers" list, which "focus rti targets" collapses to the raid

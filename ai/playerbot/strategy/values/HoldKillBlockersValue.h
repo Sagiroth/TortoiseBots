@@ -19,6 +19,19 @@ namespace ai
         uint32 Calculate() override;
     };
 
+    // "fighting blockers::<entry>::<radius>": how many living units of a gate_hold row's blocker entry within `radius`
+    // yards of the bot fight (in combat and not evading: CountsAsFightingBlocker). Never the hold_kill rule, which also
+    // counts an unselectable unit that never fights: an evaded second boss back in the air is out of the encounter and
+    // must not hold the spared one. One grid search per bot, entry and radius a second; every gate reader (the pickers,
+    // the veto and the hold action) goes through this value.
+    class GateHoldFightingBlockersValue : public CalculatedValue<uint32>, public Qualified
+    {
+    public:
+        GateHoldFightingBlockersValue(PlayerbotAI* ai)
+            : CalculatedValue<uint32>(ai, "fighting blockers", 1), Qualified() {}
+        uint32 Calculate() override;
+    };
+
     // "sole kill candidates::<entry>": the living units of the entry within kHoldKillRangeYd that fight, the whole
     // fight's units of that entry (the pick rule is BossTacticsPolicy's PickSoleKill: lowest health, lowest guid on a
     // tie, among the `eligible` ones; a crowd-controlled or evading unit stays on the list, ineligible, for the area

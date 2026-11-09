@@ -22,7 +22,7 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
@@ -252,9 +252,28 @@ def new_kind_problem(row):
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
     if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor",
-                "tank_ignore", "seek_pull") and (
+                "tank_ignore", "seek_pull", "gate_hold") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
+    if kind == "gate_hold":
+        # The spared entry (boss_entry) and its blocker (target_entry): `param` the health gate 1-99, `priority` the
+        # blockers that may still fight, `window_s` the search radius (0 = 200 yd, else 50-250). The row's own health
+        # gate is `param`, so the band columns, a spell, a spot, a mode word and the cycle columns are refused.
+        if not row["target_entry"]:
+            return "gate_hold without its blocker"
+        if row["target_entry"] == row["boss_entry"]:
+            return "gate_hold blocker is its own boss"
+        if row["spell_id"]:
+            return "gate_hold with a spell"
+        if not 1.0 <= row["param"] <= 99.0:
+            return "gate_hold gate outside [1, 99]"
+        if not (row["window_s"] == 0.0 or 50.0 <= row["window_s"] <= 250.0):
+            return "gate_hold radius outside 0 or [50, 250]"
+        if row["tactic_mode"]:
+            return "a mode word on gate_hold"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
+        return None
     if kind == "burn_mana":
         # target_entry 0 (the boss), param the start % (exclusive), priority the most burners (0 = every eligible
         # bot, so 0..10).
@@ -1262,6 +1281,20 @@ class BossTacticsSql(unittest.TestCase):
         for broken in (dict(hold, param=2.0), dict(hold, param=41.0), dict(hold, hp_min=20)):
             self.assertIsNotNone(new_kind_problem(broken), broken)
         self.assertIsNone(new_kind_problem(dict(hold, target_entry=15934)))
+
+    def test_gate_hold_row_shape_refused(self):
+        gate = dict(INSERT_COLUMNS, map=249, boss_entry=10184, kind="gate_hold", target_entry=50143, param=42.0,
+                    window_s=200.0)
+        self.assertIsNone(new_kind_problem(gate))
+        self.assertIsNone(new_kind_problem(dict(gate, window_s=0.0)))    # 0 = the 200 yd default
+        self.assertIsNone(new_kind_problem(dict(gate, priority=2)))      # blockers that may still fight
+        for broken in (dict(gate, target_entry=0), dict(gate, target_entry=gate["boss_entry"]),
+                       dict(gate, spell_id=33439), dict(gate, param=0.0),
+                       dict(gate, param=100.0), dict(gate, window_s=7.0), dict(gate, window_s=49.0),
+                       dict(gate, window_s=251.0), dict(gate, hp_min=20), dict(gate, hp_max=50),
+                       dict(gate, bot_aura=24306), dict(gate, tactic_mode="until_tank"), dict(gate, spot_x=1.0),
+                       dict(gate, cycle_s=30.0)):
+            self.assertIsNotNone(new_kind_problem(broken), broken)
 
     def test_hakkar_threat_successor_row_is_live(self):
         # 20261105210000: Hakkar alone asks for a threat successor, so his damage dealers stay below the assigned
