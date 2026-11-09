@@ -537,6 +537,7 @@ bool MoveToTravelTargetAction::TravelLegChainDue(PlayerbotAI* ai, Player* bot)
     // Chain only after a leg was successfully dispatched: a failed move (or
     // a path with fewer than 2 points) never chains, so the caller's retry
     // counting and target drop behave exactly as before.
+    AiObjectContext* context = ai->GetAiObjectContext();
     LastMovement const& lastMove = AI_VALUE(LastMovement&, "last movement");
     if (lastMove.moveFailReason != MOVE_FAIL_NONE)
         return false;

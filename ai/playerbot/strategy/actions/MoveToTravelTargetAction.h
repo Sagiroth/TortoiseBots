@@ -81,7 +81,7 @@ namespace ai
         // refuses combat, flight, mounts, swimming, transports, dungeons and
         // group-wait moves, and any spline this module's dispatch did not
         // launch. A failed move never chains: the failure path is untouched.
-        static bool TravelLegChainDue(PlayerbotAI* ai, Player* bot);
+        bool TravelLegChainDue(PlayerbotAI* ai, Player* bot);
         bool TryStepTowardTarget(WorldPosition const& location);
         bool ContinueMesaLiftRide();
 

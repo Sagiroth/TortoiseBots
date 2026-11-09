@@ -64,9 +64,8 @@ class LegChainTravelWiringTest(unittest.TestCase):
         helper = helper[:helper.index("bool MoveToTravelTargetAction::TravelMoveMadeNoProgress()")]
         self.assertIn('"DispatchMovement"', helper)
         self.assertIn("TravelLegChainDecide", helper)
-
     def test_helper_declared(self):
-        self.assertIn("static bool TravelLegChainDue(PlayerbotAI* ai, Player* bot);", HEADER)
+        self.assertIn("bool TravelLegChainDue(PlayerbotAI* ai, Player* bot);", HEADER)
 
 
 if __name__ == "__main__":
