@@ -16,13 +16,12 @@ int failures = 0;
 
 int main()
 {
-    // Eligible: real-player master, alive, not in combat, follow strategy, not pool bot.
-    CHECK(ai::PartyFlightEligible(true, true, false, true, false));
-    CHECK(!ai::PartyFlightEligible(false, true, false, true, false)); // master not real player
-    CHECK(!ai::PartyFlightEligible(true, false, false, true, false)); // bot not alive
-    CHECK(!ai::PartyFlightEligible(true, true, true, true, false));   // bot in combat
-    CHECK(!ai::PartyFlightEligible(true, true, false, false, false)); // no follow strategy (e.g. stay/guard)
-    CHECK(!ai::PartyFlightEligible(true, true, false, true, true));   // pool bot
+    // Eligible: real-player master, alive, not in combat, follow strategy.
+    CHECK(ai::PartyFlightEligible(true, true, false, true));
+    CHECK(!ai::PartyFlightEligible(false, true, false, true)); // master not real player
+    CHECK(!ai::PartyFlightEligible(true, false, false, true)); // bot not alive
+    CHECK(!ai::PartyFlightEligible(true, true, true, true));   // bot in combat
+    CHECK(!ai::PartyFlightEligible(true, true, false, false)); // no follow strategy (e.g. stay/guard)
 
     // PartyFlightAtMaster: same map and within 30 yd.
     CHECK(ai::PartyFlightAtMaster(false, 0.0f));

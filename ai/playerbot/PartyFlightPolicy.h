@@ -18,9 +18,9 @@ constexpr float kPartyFlightAtMasterYd = 30.0f;
 
 // Whether a party bot is eligible to participate in party flight.
 inline bool PartyFlightEligible(bool masterIsRealPlayer, bool botAlive, bool botInCombat,
-    bool followStrategy, bool poolBot)
+    bool followStrategy)
 {
-    return masterIsRealPlayer && botAlive && !botInCombat && followStrategy && !poolBot;
+    return masterIsRealPlayer && botAlive && !botInCombat && followStrategy;
 }
 
 // Whether the bot is back with the master on the same map.

@@ -3704,7 +3704,7 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
 
     bool const eligible = master && master->IsInWorld() && group && group == master->GetGroup() &&
         ai::PartyFlightEligible(HasActivePlayerMaster(), bot->IsInWorld() && !bot->IsBeingTeleported() && bot->IsAlive(),
-            bot->IsInCombat(), followStrategy, sRandomBotFacade.IsFreeBot(bot));
+            bot->IsInCombat(), followStrategy);
 
     if (!eligible)
     {
