@@ -1,7 +1,7 @@
-
 #include "host/ModuleLog.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/LootObjectStack.h"
 #include "Maps/PathFinder.h"
 #include "playerbot/LandWalkPolicy.h"
 #include "ChooseTravelTargetAction.h"

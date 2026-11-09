@@ -826,8 +826,8 @@ bool MoveToTravelTargetAction::TryStepTowardTarget(WorldPosition const& location
         // slopes excluded, so a NOPATH/shortcut still refuses.
         if (!WalkChecked(end))
             continue;
-        SET_AI_VALUE2(time_t, "manual time", "travel step until", time(0) + 2 + (time_t)(botPos.distance(end) / 7.0f));
-        sPlayerbotAIConfig.logEvent(ai, "TravelStepToward", std::to_string((int32)gap), std::to_string((int32)end.distance(location)));
+        // WalkChecked waits for the reach (capped at a few seconds); the walk
+        // itself may take longer.
         return true;
     }
     return false;
