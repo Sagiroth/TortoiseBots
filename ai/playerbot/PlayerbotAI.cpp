@@ -65,7 +65,9 @@
 #include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
 #include "playerbot/PortalFollowPolicy.h"
-#include "playerbot/PartyFlightPolicy.h"
+#include "Maps/PathFinder.h"
+// The portal walk's verdict (UpdatePortalFollow below).
+#include "playerbot/LandWalkPolicy.h"
 #include "playerbot/TaxiRouteGuard.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
@@ -3608,9 +3610,21 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
 
         if (!CanMove())
             return;
+        // The portal walk, checked like every other short walk: with no real
+        // navmesh path the bot holds (the episode retries) instead of
+        // cutting straight through the dungeon.
+        PathFinder probe(bot);
+        probe.ExcludeSteepSlopes();
+        probe.calculate(portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(), false);
+        uint32 const probeType = static_cast<uint32>(probe.getPathType());
+        Vector3 const probeEnd = probe.getActualEndPosition();
+        if (ai::ClassifyLandPath(probeType, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                probeEnd.x, probeEnd.y, probeEnd.z,
+                portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ()) != ai::LandWalkVerdict::Walk)
+            return;
         bot->GetMotionMaster()->MovePoint(m_portalFollowMap,
             portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(),
-            MOVE_RUN_MODE | MOVE_PATHFINDING);
+            MOVE_RUN_MODE | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
         return;
     }
 
@@ -3825,8 +3839,18 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
                     if (!bot->IsMoving() || nowMs - m_partyFlightMoveMs >= 1000)
                     {
                         m_partyFlightMoveMs = nowMs;
-                        bot->GetMotionMaster()->MovePoint(fromEntry->map_id, destX, destY, destZ,
-                            MOVE_RUN_MODE | MOVE_PATHFINDING);
+                        // The flight-master walk, checked like the portal walk
+                        // above: no navmesh path means hold, not a shortcut.
+                        PathFinder flightProbe(bot);
+                        flightProbe.ExcludeSteepSlopes();
+                        flightProbe.calculate(destX, destY, destZ, false);
+                        uint32 const flightType = static_cast<uint32>(flightProbe.getPathType());
+                        Vector3 const flightEnd = flightProbe.getActualEndPosition();
+                        if (ai::ClassifyLandPath(flightType, bot->GetPositionX(), bot->GetPositionY(),
+                                bot->GetPositionZ(), flightEnd.x, flightEnd.y, flightEnd.z, destX, destY, destZ) ==
+                            ai::LandWalkVerdict::Walk)
+                            bot->GetMotionMaster()->MovePoint(fromEntry->map_id, destX, destY, destZ,
+                                MOVE_RUN_MODE | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
                     }
                     return;
                 }

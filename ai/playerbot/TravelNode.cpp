@@ -921,18 +921,24 @@ void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
     if (newPath.front() == fullPath.front() || beginPos.distance(firstNode) < sPlayerbotAIConfig.tooCloseDistance)
         return;
 
-    //We are (nearly) on the new path. Just follow the rest.
+    // The join onto the route must itself go over a real path. The dispatch
+    // below turns the route into one spline starting at the bot's live
+    // position, so splicing an unreached join point would walk a straight
+    // line to it. When the navmesh has no path there the route is not usable
+    // from here: clear it so the caller re-plans instead.
+    std::vector<WorldPosition> toPath = startPos.GetPathTo(beginPos, bot);
+    if (!beginPos.isPathTo(toPath))
+    {
+        clear();
+        return;
+    }
+
+    // We are (nearly) on the new path. Just follow the rest.
     if (beginPos.distance(startPos) < sPlayerbotAIConfig.tooCloseDistance)
     {
         fullPath = newPath;
         return;
     }
-
-    std::vector<WorldPosition> toPath = startPos.GetPathTo(beginPos, bot);
-
-    //We can not reach the new begin position. Follow the complete path.
-    if (!beginPos.isPathTo(toPath))
-        return;
 
     //Move to the new path and continue.
     fullPath.clear();

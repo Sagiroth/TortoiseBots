@@ -32,6 +32,7 @@ namespace ai
         MOVE_FAIL_NO_FORMATION = 12,  // MoveTo(Unit*): hostile target with no formation slot
         MOVE_FAIL_MAGMA = 13,         // MoveTo2: end point in magma, or magma right ahead (MagmaHazardPolicy.h)
         MOVE_FAIL_BOUND_RUN_MAP = 14, // MoveTo2: a bound run's bot never leaves the plan's map (BoundRunMapGuard.h)
+        MOVE_FAIL_NO_LAND_PATH = 15,  // WalkChecked: no real navmesh path (NOPATH/shortcut/no progress)
     };
 
     inline const char* MoveFailReasonName(uint32 reason)
@@ -52,6 +53,7 @@ namespace ai
             case MOVE_FAIL_NO_FORMATION: return "no-formation";
             case MOVE_FAIL_MAGMA: return "magma";
             case MOVE_FAIL_BOUND_RUN_MAP: return "bound-run-map";
+            case MOVE_FAIL_NO_LAND_PATH: return "no-land-path";
             default: return "none";
         }
     }
