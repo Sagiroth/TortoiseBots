@@ -27,7 +27,7 @@ const ctx = { console, FightAuras, FdLive, FdView, FightDebug, Fights, document:
 vm.createContext(ctx);
 const names = ["esc", "setHtml", "fdSet", "fdLiveClock", "fdLiveWinLabel", "fdAuIv", "fdAuState", "fdAuMarkVal", "fdAuPct", "fdAurasControlsHtml", "fdAurasRestHtml",
   "fdAurasParts", "fdAurasHtml", "fdAuLiveOpts", "fdRangeBandHtml", "fdOutCls", "fdTimelineHtml", "fdRecapHtml", "fdLanesHtml", "fdRangeBarHtml", "fdWholeTags",
-  "fdViewFight", "fdRangeAction", "fdDragDrop", "fdDragStart", "fdDragMove", "fdDragEnd", "fdLiveRangeOf", "fdViewSync", "fdViewHandover", "fdLiveTimelineHtml"];
+  "fdViewFight", "fdRangeAction", "fdDragDrop", "fdDragLostCapture", "fdDragStart", "fdDragMove", "fdDragEnd", "fdLiveRangeOf", "fdViewSync", "fdViewHandover", "fdLiveTimelineHtml"];
 vm.runInContext(["var FD_AU_NAMES_MAX = 8; const fdAuMemo = new WeakMap();"].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const J = (v) => JSON.parse(JSON.stringify(v));
@@ -267,6 +267,23 @@ const tlOf = (f) => ({ durMs: f.dur_ms, ticks: [], hits: [], bossCasts: [{ t_ms:
   call("fdDragMove(card, fd, e)", fd, ev(200));
   call("fdDragDrop(card, fd)", fd, null);
   assert.strictEqual(fd.drag, null);
+  // touch and pen: the browser captured the pointer on the bar at the press; the drag moves the capture to the card, so the bar loses it
+  // and `lostpointercapture` (target: the bar) bubbles to the card. That is the drag starting, not ending.
+  fd = mk();
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  call("fdDragMove(card, fd, e)", fd, ev(200));
+  assert.ok(fd.drag.moved, "the drag has begun and the card holds the capture");
+  call("fdDragLostCapture(card, fd, e)", fd, { target: bar, pointerId: 1 });
+  assert.ok(fd.drag && fd.drag.moved, "the bar losing its implicit capture does not end the drag");
+  call("fdDragLostCapture(card, fd, e)", fd, { target: card, pointerId: 2 });
+  assert.ok(fd.drag, "another pointer's lost capture does not end it either");
+  call("fdDragLostCapture(card, fd, e)", fd, { target: card, pointerId: 1 });
+  assert.strictEqual(fd.drag, null, "the card losing the capture itself ends it");
+  call("fdDragStart(card, key, fd, e)", fd, ev(150));
+  call("fdDragMove(card, fd, e)", fd, ev(250));
+  call("fdDragLostCapture(card, fd, e)", fd, { target: bar, pointerId: 1 });
+  call("fdDragEnd(card, key, fd, e)", fd, ev(250));
+  assert.deepStrictEqual(J(fd.view.range), { from: 15000, to: 45000 }, "so a touch drag still ends with its range");
 }
 
 // ---- wiring pins on the text of app.js
@@ -277,7 +294,7 @@ assert.ok(src.includes("if (Date.now() - fd.dragEnd < 300) return;"), "the click
 assert.ok(src.indexOf("fd.dragEnd < 300") < src.indexOf("const bar = e.target.closest && e.target.closest('[data-fd-seekbar]');"), "and does so before it seeks");
 assert.ok(/if \(next === fd\.view\) return;\n    fd\.view = next;\n    fd\.dragEnd = Date\.now\(\);/.test(grab("fdDragEnd")), "the click guard is held only by a drag that made a range");
 assert.ok(grab("fdDragMove").includes("setPointerCapture") && !grab("fdDragStart").includes("setPointerCapture"), "the pointer is captured once the drag starts (never on a press, which would break the click)");
-assert.ok(/card\.addEventListener\('lostpointercapture'[\s\S]{0,200}fdDragDrop\(card, fd\)/.test(src) && /card\.addEventListener\('pointercancel'[\s\S]{0,200}fdDragDrop\(card, fd\)/.test(src), "a lost capture and a cancel both end the drag");
+assert.ok(/card\.addEventListener\('lostpointercapture'[\s\S]{0,200}fdDragLostCapture\(card, fd, e\)/.test(src) && grab("fdDragLostCapture").includes("e.target === card")  && /card\.addEventListener\('pointercancel'[\s\S]{0,200}fdDragDrop\(card, fd\)/.test(src), "a lost capture and a cancel both end the drag");
 assert.ok(grab("fdDragMove").includes("!(e.buttons & 1)"), "a move with no button held ends the press");
 assert.ok(grab("fdDragMove").includes("FdView.pxToMs(dr.x0 - dr.left, dr.width, dr.dur)") && grab("fdDragEnd").includes("FdView.setRange(fd.view, dr.a, dr.b, dr.dur, fd.sel === 'live')"), "the drag converts pixels with the fight's own length and sets the range through FdView");
 assert.ok(/e\.key === 'Escape'[\s\S]{0,700}FdView\.clear\(fd\.view\)/.test(src), "Escape clears the range (a live view follows again)");

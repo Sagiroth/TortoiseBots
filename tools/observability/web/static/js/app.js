@@ -6677,6 +6677,12 @@
     fdDragBandSync(card, fd);
   }
 
+  // The card's own capture was lost. Touch and pen capture the pointer on the pressed bar implicitly: moving the capture to the card
+  // makes the bar lose it, and that event bubbles here, so only the event of the card itself (the target) for this pointer counts.
+  function fdDragLostCapture(card, fd, e) {
+    if (e.target === card && fd.drag && e.pointerId === fd.drag.id) fdDragDrop(card, fd);
+  }
+
   function fdDragStart(card, key, fd, e) {
     if (e.button != null && e.button !== 0) return;
     if (e.target.closest && e.target.closest('button, select, input, a, summary')) return;
@@ -9025,7 +9031,7 @@
     // A capture that ends without a pointerup (the press left the window, the element went away) ends the drag too.
     card.addEventListener('lostpointercapture', e => {
       const fd = cmdFd[key];
-      if (fd && fd.drag && fd.drag.moved) fdDragDrop(card, fd);
+      if (fd && fd.drag) fdDragLostCapture(card, fd, e);
     });
     card.addEventListener('input', e => {
       if (!e.target.matches || !e.target.matches('.fd-scrub') || e.target.hasAttribute('data-fd-rtscrub')) return;
