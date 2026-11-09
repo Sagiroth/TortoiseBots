@@ -86,6 +86,7 @@ const ctx = {
   FightDebug: require(path.join(dir, "fightdebug.js")),
   FdLive: require(path.join(dir, "fdlive.js")),
   FightMeters: require(path.join(dir, "fightmeters.js")),
+  WipeRecap: require(path.join(dir, "wiperecap.js")),
   FdView: require(path.join(dir, "fdview.js")),
   FdFilter: require(path.join(dir, "fdfilter.js")),
   FdTabs: require(path.join(dir, "fdtabs.js")),
