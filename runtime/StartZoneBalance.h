@@ -7,11 +7,11 @@
 // and Dun Morogh (dwarf + gnome) while Tirisfal, Mulgore and Teldrassil sit
 // nearly empty, so the crowded valleys run out of mobs. When
 // AiPlayerbot.RandomBotEvenStartZones=1 the auto-create race pick goes to a
-// valid race from the least-populated start zone. Goblins and high elves
-// count toward Durotar and Elwynn, and the isolated-custom-zone normalization
-// sends them to Valley of Trials and Northshire in both modes, so the zone a
-// bot was counted for is the zone it plays in. 0 keeps the old uniform random
-// race.
+// valid race from the least-populated start zone. Goblins and high elves are
+// rolled like orcs and humans, but then start in the emptiest start zone of
+// their faction (any of the three), and that is the zone they are counted
+// for. With explicit zone weights, or with the spread off, they keep Valley
+// of Trials and Northshire. 0 keeps the old uniform random race.
 //
 // Header-only and free of core/database types on purpose (same precedent as
 // PoolResetPolicy.h/HunterPetPolicy.h): spawn coordinates are the core's own
@@ -63,6 +63,26 @@ inline int StartZoneIndexForRace(uint32_t race)
         case 4:                  return 5; // night elf -> Teldrassil
         default:                 return -1;
     }
+}
+
+// Goblins and high elves have no mainland start zone of their own (their
+// custom islands have no way to the mainland), so any start zone of their
+// faction works for them.
+inline bool IsFlexibleStartRace(uint32_t race)
+{
+    return race == 9 || race == 10;
+}
+
+// The emptiest of a faction's three start zones (Horde 0-2, Alliance 3-5).
+// Ties go to the lower index, so an empty realm hands the zones out in turn.
+inline int LeastPopulatedFactionZone(uint32_t const (&counts)[kStartZoneCount], bool alliance)
+{
+    uint32_t const first = alliance ? 3 : 0;
+    uint32_t best = first;
+    for (uint32_t zone = first + 1; zone < first + 3; ++zone)
+        if (counts[zone] < counts[best])
+            best = zone;
+    return int(best);
 }
 
 // Short region names for the six start zones, same order as kStartZoneSpawns:

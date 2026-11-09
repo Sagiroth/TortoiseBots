@@ -773,6 +773,8 @@ Distributes newly created pool bots evenly across all standard racial starter zo
 
 When enabled, the character auto-creation routine evaluates character counts across all six starter zones and generates new bots in the least-populated zones, keeping starting valleys balanced.
 
+Goblins and High Elves have no mainland starting zone of their own, so each one is placed in the emptiest of the three starting zones of its faction instead of always in Valley of Trials or Northshire. Explicit zone weights (`RandomBotStartZoneWeights`) keep them in those two.
+
 Setting this to `0` uses uniform random race rolls without population balancing.
 
 </details>

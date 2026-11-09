@@ -330,6 +330,8 @@ When a random pool bot kills a creature, uncommon and rare loot table entries ro
 
 A value of `1.0` disables the boost.
 
+**Tip for a fresh realm where everyone starts at level 1:** bots mostly grind, so a value of `5` to `10` for both gives them some gear while they level and keeps the Auction House stocked. Pair it with the default bot experience rate ([`AiPlayerbot.XPRate`](world-population.md#aiplayerbotxprate), `3`) so they keep pace with players.
+
 </details>
 
 ### `AiPlayerbot.MountBreakEvenFactor`
