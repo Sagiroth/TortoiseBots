@@ -228,10 +228,44 @@ bool HunterStepOutAction::Execute(Event& event)
     float const away = target->GetAngle(bot);
     WorldPosition const botPos(bot);
 
+    std::list<ObjectGuid> const& possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+
+    struct NearbyEnemy
+    {
+        Unit* unit;
+        float currentDist;
+        bool isUnpulled;
+        bool victimOnBot;
+    };
+
+    std::vector<NearbyEnemy> nearbyEnemies;
+    nearbyEnemies.reserve(possibleTargets.size());
+    for (ObjectGuid const& guid : possibleTargets)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !sServerFacade.IsAlive(unit) || unit == bot)
+            continue;
+        if (unit->IsFriendlyTo(bot))
+            continue;
+
+        float const currentDist = sServerFacade.getDistance2d(unit, botPos.getX(), botPos.getY());
+        if (currentDist > sPlayerbotAIConfig.sightDistance)
+            continue;
+
+        bool const isUnpulled = !unit->GetVictim() && unit != target;
+        bool const victimOnBot = unit->GetVictim() == bot;
+        nearbyEnemies.push_back({ unit, currentDist, isUnpulled, victimOnBot });
+    }
+
     // Straight back first, then fanned out to either side (donor MoveAway).
     static float const offsets[] = { 0.0f, M_PI_F / 8, -M_PI_F / 8, M_PI_F / 4, -M_PI_F / 4,
         3 * M_PI_F / 8, -3 * M_PI_F / 8, M_PI_F / 2, -M_PI_F / 2 };
+
     bool moved = false;
+    bool hasBest = false;
+    float bestScore = -999999.0f;
+    WorldPosition bestCand(botPos);
+
     for (float const offset : offsets)
     {
         float const heading = away + offset;
@@ -247,11 +281,49 @@ bool HunterStepOutAction::Execute(Event& event)
             continue;
         if (!botPos.canPathTo(cand, bot))
             continue;
-        if (!MoveTo(bot->GetMapId(), cand.getX(), cand.getY(), cand.getZ(), false, IsReaction(), false, true))
+
+        bool safe = true;
+        float minEnemyDist = landingCenter - reach;
+
+        for (NearbyEnemy const& enemy : nearbyEnemies)
+        {
+            float const d = sServerFacade.getDistance2d(enemy.unit, cand.getX(), cand.getY());
+            if (enemy.isUnpulled)
+            {
+                if (!IsShootingSpotSafeFromUnpulled(d, sPlayerbotAIConfig.aggroDistance))
+                {
+                    safe = false;
+                    break;
+                }
+            }
+            else
+            {
+                if (!IsShootingSpotSafeFromEnemy(d, minRange, enemy.currentDist, enemy.victimOnBot && enemy.unit != target))
+                {
+                    safe = false;
+                    break;
+                }
+
+                if (d < minEnemyDist)
+                    minEnemyDist = d;
+            }
+        }
+
+        if (!safe)
             continue;
 
-        moved = true;
-        break;
+        float const score = ScoreShootingSpot(minEnemyDist, offset);
+        if (!hasBest || score > bestScore)
+        {
+            bestScore = score;
+            bestCand = cand;
+            hasBest = true;
+        }
+    }
+
+    if (hasBest)
+    {
+        moved = MoveTo(bot->GetMapId(), bestCand.getX(), bestCand.getY(), bestCand.getZ(), false, IsReaction(), false, false);
     }
 
     LogHunterRangedEvent(ai, "StepOut", std::string("moved=") + (moved ? "1" : "0") +
