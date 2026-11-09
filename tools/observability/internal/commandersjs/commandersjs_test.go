@@ -207,6 +207,7 @@ func TestRaidsPollJS(t *testing.T) {
 func TestRaidsRouteJS(t *testing.T) {
 	runCheck(t, "raids_route_check.js", "../../web/static/js/app.js")
 }
+
 // walk 2 track fixture.
 func TestFightReplayJS(t *testing.T) {
 	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")
@@ -435,6 +436,23 @@ func TestWipeRecapJS(t *testing.T) {
 // nothing, a live wipe is headed "Wiping" with dashes and its note, the live box repaints only on a new death, escaping, the wiring).
 func TestWipeRecapUIJS(t *testing.T) {
 	runCheck(t, "wiperecap_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFightMapJS runs fightmap_check.js: the pure logic of the Fight layers on the card map (trails cut by the range and split at a 40 yd jump,
+// 1000 frames thinned to 300 points with the first and last kept, the cloud a Son of Hakkar seen in frames 1-3 and gone in 4 leaves with its
+// radius from the seek_aura row or the default 4, the puller's path, the anchor circle and stand from the two Hakkar rows and nothing for a
+// row with spot 0, heat cells (a 40 % drop and a death, 500 cells kept at 400), the focus filter through FdFilter, the fit box, the track and
+// live frames, the Dungeons pull pins, hostile input).
+func TestFightMapJS(t *testing.T) {
+	runCheck(t, "fightmap_check.js", "../../web/static/js/fightmap.js", "../../web/static/js/fdfilter.js")
+}
+
+// TestFightMapUIJS runs fightmap_ui_check.js: the Fight layers in app.js (the source of a finished fight or a live view and nothing outside the
+// debugger, the model rebuilt only when something it reads changed, trails, anchor, clouds, puller and heat each switched off alone, every name
+// escaped including the death mark's killer, the one fit, the unit focus through FdFilter, the Dungeons pull pins and their 30 s request rule,
+// and the wiring pins).
+func TestFightMapUIJS(t *testing.T) {
+	runCheck(t, "fightmap_ui_check.js", "../../web/static/js/app.js")
 }
 
 // TestFdMechJS runs fdmech_check.js: the per-fight mechanic row (the dash-2 Hakkar fixture: dosed 0/2 and, with two more applies, 1/2; the

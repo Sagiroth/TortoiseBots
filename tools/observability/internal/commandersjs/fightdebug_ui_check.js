@@ -26,6 +26,7 @@ const ctx = { console };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(dir, "fightdebug.js"), "utf8"), ctx, { filename: "fightdebug.js" });
 vm.runInContext(fs.readFileSync(path.join(dir, "fdview.js"), "utf8"), ctx, { filename: "fdview.js" });
+vm.runInContext(fs.readFileSync(path.join(dir, "fightmap.js"), "utf8"), ctx, { filename: "fightmap.js" });
 assert.ok(ctx.FightDebug && typeof ctx.FightDebug.checks === "function", "fightdebug.js loads as the global FightDebug");
 vm.runInContext(
   [grab("esc"), grabConst("CMD_MAP_ICONS"), grab("cmdMapIcon"), grab("cmdFightMarksSvg"), grab("fdFramesHtml"),

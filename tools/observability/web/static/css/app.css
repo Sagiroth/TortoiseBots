@@ -4054,3 +4054,32 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .go-plan { font-size: 0.88em; margin-bottom: 10px; }
 .go-plan-now { color: var(--accent-blue-bright); font-weight: 600; }
 .go-plan-past { color: var(--text-dim); text-decoration: line-through; }
+
+/* ---------- Fight map: trails, heat, the boss's anchor and stand, clouds, the puller's path, the focus chip, the pull pins (fightmap.js) ---------- */
+.cmd-map .fm-heat { fill: var(--accent-red); stroke: none; pointer-events: none; }
+.cmd-map .fm-trail { fill: none; stroke: #9ca3af; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; opacity: 0.75; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-trail.r-tank { stroke: var(--role-tank, #2f80ff); } .cmd-map .fm-trail.r-healer { stroke: var(--role-healer, #22c55e); }
+.cmd-map .fm-trail.r-dps { stroke: var(--role-dps, #ff9f1c); } .cmd-map .fm-trail.r-other { stroke: var(--role-other, #9ca3af); }
+.cmd-map .fm-trail.mob { stroke: var(--accent-red); stroke-dasharray: 5 3; stroke-width: 1.6; }
+.cmd-map .fm-cloud { fill: var(--accent-green); fill-opacity: 0.22; stroke: var(--accent-green); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-anchor { fill: none; stroke: var(--accent-blue); stroke-width: 1.6; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-anchor.tank { stroke-dasharray: 3 4; opacity: 0.8; }
+.cmd-map .fm-stand polygon { fill: var(--accent-blue); stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-puller { fill: none; stroke: var(--accent-yellow); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; vector-effect: non-scaling-stroke; }
+.cmd-map text.fm-label { fill: #fff; font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; pointer-events: none; }
+.cmd-map .fm-pin { cursor: pointer; }
+.cmd-map .fm-pin circle.pin { fill: var(--accent-blue); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-pin.wipe circle.pin { fill: var(--accent-red); }
+.cmd-map .fm-pin text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; }
+.cmd-map .fm-pin.live circle.ring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; animation: fm-pulse 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes fm-pulse { from { opacity: 0.9; transform: scale(1); } to { opacity: 0; transform: scale(2.4); } }
+@media (prefers-reduced-motion: reduce) { .cmd-map .fm-pin.live circle.ring { animation: none; opacity: 0.8; } }
+.cmd-legend i.fm-sw { width: 16px; height: 3px; border: 0; border-radius: 2px; vertical-align: 3px; background: #9ca3af; }
+.cmd-legend i.fm-sw.heat { height: 10px; background: var(--accent-red); opacity: 0.6; vertical-align: -1px; }
+.cmd-legend i.fm-sw.anchor { background: var(--accent-blue); }
+.cmd-legend i.fm-sw.cloud { height: 10px; background: var(--accent-green); opacity: 0.5; vertical-align: -1px; }
+.cmd-legend i.fm-sw.puller { background: var(--accent-yellow); height: 4px; }
+.fm-focus { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.fm-focus[hidden] { display: none; }
+.fm-focus > span { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg-card-hover, rgba(255, 255, 255, 0.08)); border: 1px solid var(--accent-yellow); font-size: 12px; }
+.fm-focus .fm-unfocus { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; }
