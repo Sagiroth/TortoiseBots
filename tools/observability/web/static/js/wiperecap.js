@@ -124,8 +124,10 @@
   }
 
   // What the box would draw, in a short string: the outcome, whether it is a wipe, and for a wipe the first three deaths (index,
-  // name, time, killer, role) with the identity of the casts in the 3 s before each (the likely spell is read from them). The page
-  // compares it between ticks, so a death or a role that changed with the same counts still repaints. Bounded like every read here.
+  // name, time, killer, role) with what the recap rows are made of: each death's hits (their number and the last one's time and spell,
+  // which the damage and the killing spell come from) and the identity of the casts in the 3 s before it (the likely spell is read from
+  // them). The page compares it between ticks, so a death, a role, a hit or a cast that changed with the same counts still repaints.
+  // Bounded like every read here: the newest SCAN_MAX log entries are scanned, and the newest CAST_KEEP casts by time are kept.
   function signature(fight) {
     if (!isObj(fight)) return "";
     const head = String(fight.outcome);
@@ -137,17 +139,26 @@
       if (isObj(d) && typeof d.name === "string" && finite(d.t_ms) !== null) list.push({ i, name: d.name, t: d.t_ms, by: d.killer == null ? "" : String(d.killer) });
     });
     list.sort((a, b) => (a.t - b.t) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.i - b.i));
-    const log = Array.isArray(fight.log) ? fight.log.slice(0, SCAN_MAX) : [];
-    const parts = list.slice(0, FIRST_N).map((d) => {
-      // The casts deathRecaps may pick the likely spell from: the 3 s before the death, each by its time, caster, target and spell (the
-      // newest CAST_KEEP of them, each field cut to FIELD_MAX), so a cast replaced by another at the same count still changes it.
-      const casts = [];
-      log.forEach((e) => {
+    const log = Array.isArray(fight.log) ? fight.log.slice(-SCAN_MAX) : []; // the newest entries: a long fight's old ones are not the ones that change
+    const shown = list.slice(0, FIRST_N);
+    const rawDeaths = Array.isArray(fight.deaths) ? fight.deaths : [];
+    const parts = shown.map((d) => {
+      // The casts deathRecaps may pick the likely spell from: every cast in the 3 s before the death, each by its time, caster, target
+      // and spell (each field cut to FIELD_MAX), the newest CAST_KEEP of them BY TIME (the log's order is not time's), so a cast replaced
+      // by another at the same count still changes it.
+      const found = [];
+      log.forEach((e, at) => {
         if (!isObj(e) || e.k !== "cast" || finite(e.t) === null || e.t > d.t || e.t < d.t - 3000) return;
-        casts.push([e.t, e.n, e.tg, e.tn, e.s, e.sid].map((v) => (v == null ? "" : String(v).slice(0, FIELD_MAX))).join("\u0003"));
-        if (casts.length > CAST_KEEP) casts.shift();
+        found.push({ t: e.t, at, id: [e.t, e.n, e.tg, e.tn, e.s, e.sid].map((v) => (v == null ? "" : String(v).slice(0, FIELD_MAX))).join("\u0003") });
       });
-      return [d.i, d.name, d.t, d.by, Object.prototype.hasOwnProperty.call(role, d.name) ? role[d.name] : "", casts.join("\u0004")].join("\u0001");
+      found.sort((a, b) => (a.t - b.t) || (a.at - b.at));
+      const casts = found.slice(-CAST_KEEP).map((c) => c.id);
+      // The hits the recap's damage and killing spell come from: how many, and the last one's time and spell.
+      const hits = isObj(rawDeaths[d.i]) && Array.isArray(rawDeaths[d.i].hits) ? rawDeaths[d.i].hits.slice(0, SCAN_MAX).filter((h) => isObj(h) && finite(h.t_ms) !== null) : [];
+      let last = null;
+      hits.forEach((h) => { if (!last || h.t_ms >= last.t_ms) last = h; });
+      const hitId = hits.length + "," + (last ? [last.t_ms, last.s, last.sid, last.d].map((v) => (v == null ? "" : String(v).slice(0, FIELD_MAX))).join("\u0003") : "");
+      return [d.i, d.name, d.t, d.by, Object.prototype.hasOwnProperty.call(role, d.name) ? role[d.name] : "", hitId, casts.join("\u0004")].join("\u0001");
     });
     return head + "|w|" + parts.join("\u0002");
   }

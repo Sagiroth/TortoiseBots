@@ -48,6 +48,8 @@ assert.strictEqual(row(five(4), []).parts.dosed, 1, "4 of 5 = 0.8 counts");
 assert.strictEqual(row(five(3), []).parts.dosed, 0, "3 of 5 does not");
 assert.strictEqual(row(five(5), []).text, "Hakkar: dosed 1/1 cycles · Son pulled ?/1");
 
+// a cast before the pull (a negative time) is no cycle, as in the daemon
+assert.strictEqual(row(Object.assign(hakkar(), { log: [{ k: "cast", t: -5, s: "Blood Siphon", sid: SIPHON }] }), []).text, "Hakkar: no Blood Siphon yet");
 // no cast yet
 assert.strictEqual(row(Object.assign(hakkar(), { log: [] }), []).text, "Hakkar: no Blood Siphon yet");
 // the cast is found by name when the event carries no id, and the boss by its phase entry

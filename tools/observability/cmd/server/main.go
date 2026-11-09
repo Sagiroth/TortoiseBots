@@ -1064,14 +1064,6 @@ func serve(ctx context.Context, server *http.Server, udpListener *udp.Listener, 
 	return err
 }
 
-// logoutHandler ends the session. Logout is POST-only: a GET or HEAD must not
-// clear the cookie, or a sandboxed page could log a GM out with a plain request.
-// POST alone is not enough: a cross-site HTML form POST is a top-level
-// navigation, so the browser would apply the clearing Set-Cookie. The request
-// must also be same-origin (Origin matches the Host, as for the WebSocket
-// stream); a missing, foreign or opaque (Origin: null) origin gets 403 and the
-// cookie is left alone. The dashboard's button posts with fetch and navigates to
-// /login itself.
 // sessionGate runs next for a request with a GM session (or for every request with noAuth, the dev flag): an API path without one
 // gets 401 and a JSON error, any other path a redirect to the login page.
 func sessionGate(authService *auth.Service, noAuth bool, next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
@@ -1095,6 +1087,14 @@ func sessionGate(authService *auth.Service, noAuth bool, next func(http.Response
 	}
 }
 
+// logoutHandler ends the session. Logout is POST-only: a GET or HEAD must not
+// clear the cookie, or a sandboxed page could log a GM out with a plain request.
+// POST alone is not enough: a cross-site HTML form POST is a top-level
+// navigation, so the browser would apply the clearing Set-Cookie. The request
+// must also be same-origin (Origin matches the Host, as for the WebSocket
+// stream); a missing, foreign or opaque (Origin: null) origin gets 403 and the
+// cookie is left alone. The dashboard's button posts with fetch and navigates to
+// /login itself.
 func logoutHandler(authService *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

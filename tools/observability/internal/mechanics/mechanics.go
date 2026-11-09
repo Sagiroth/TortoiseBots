@@ -93,8 +93,22 @@ func Intervals(f combat.Fight) AuraIntervals {
 		if i >= maxAuraRows {
 			break
 		}
-		var r []float64
-		if json.Unmarshal(raw, &r) != nil || len(r) < 4 {
+		// Only the first four values are read, as the page does: a row is [t_ms, guid, spell id, 1 apply | -1 remove] and anything
+		// after them is ignored, whatever it is.
+		var cells []json.RawMessage
+		if json.Unmarshal(raw, &cells) != nil || len(cells) < 4 {
+			continue
+		}
+		var r [4]float64
+		bad := false
+		for k := range r {
+			// null unmarshals into a number as 0, which the page does not read as a number
+			if string(cells[k]) == "null" || json.Unmarshal(cells[k], &r[k]) != nil {
+				bad = true
+				break
+			}
+		}
+		if bad {
 			continue
 		}
 		g, s := r[1], r[2]
@@ -221,8 +235,8 @@ type Row struct {
 	DeathsPerFight float64 `json:"deaths_per_fight"`
 	Worst          string  `json:"worst"` // the fight key to open, "" when none stands out
 
-	// Hakkar. Casts are every Blood Siphon cast read; cycles and dosed count every Hakkar fight once any of them has aura rows (the watch
-	// is deployed; AuraFights counts the ones that have), and none when no fight has (dosed_pct is then null).
+	// Hakkar. Casts are every Blood Siphon cast read; cycles and dosed count every Hakkar fight from the first one that has aura rows (the watch
+	// is deployed; AuraFights counts the ones that have), none before it and none when no fight has (dosed_pct is then null).
 	Casts             int      `json:"casts"`
 	AuraFights        int      `json:"aura_fights"`
 	Cycles            int      `json:"cycles"`
@@ -276,15 +290,30 @@ func Casts(f combat.Fight, sid int, name string) (out []int64, cut bool) {
 	return out, cut
 }
 
+// deathsOf and botsOf are the one bounded read of a fight's deaths and members: every number of the fold comes from these (the totals,
+// the worst pick, the shares, the kills by an add, the alive count at a cast and the main tank), and cut says the fight held more, so
+// the row is a lower bound.
+func deathsOf(f combat.Fight) (deaths []combat.FightDeath, cut bool) {
+	if len(f.Deaths) > maxDeaths {
+		return f.Deaths[:maxDeaths], true
+	}
+	return f.Deaths, false
+}
+
+func botsOf(f combat.Fight) (bots []combat.FightBot, cut bool) {
+	if len(f.Bots) > maxBots {
+		return f.Bots[:maxBots], true
+	}
+	return f.Bots, false
+}
+
 // firstDeaths is the time of each bot's first death by name (a bot stays dead: the module records no resurrection). A death with no
 // time is skipped, as the page does for a row without a numeric t_ms (the typed field reads a missing one as 0, and no death
 // happens at the pull itself).
 func firstDeaths(f combat.Fight) map[string]int64 {
 	died := map[string]int64{}
-	for i, d := range f.Deaths {
-		if i >= maxDeaths {
-			break
-		}
+	deaths, _ := deathsOf(f)
+	for _, d := range deaths {
 		if d.TMs == 0 {
 			continue
 		}
@@ -319,10 +348,9 @@ func BossOf(f combat.Fight) uint32 {
 // raid over maxBots (the rest are not read).
 func Dosed(f combat.Fight, iv AuraIntervals, p Preset, casts []int64) (cycles, dosed, on, alive int, lower bool) {
 	died := firstDeaths(f)
-	bots := f.Bots
-	if len(bots) > maxBots {
-		bots, lower = bots[:maxBots], true
-	}
+	bots, cutBots := botsOf(f)
+	_, cutDeaths := deathsOf(f)
+	lower = cutBots || cutDeaths
 	for _, t := range casts {
 		a, o := 0, 0
 		for _, b := range bots {
@@ -351,10 +379,8 @@ func Dosed(f combat.Fight, iv AuraIntervals, p Preset, casts []int64) (cycles, d
 func MainTank(f combat.Fight) (combat.FightBot, bool) {
 	var best combat.FightBot
 	found := false
-	for i, b := range f.Bots {
-		if i >= maxBots {
-			break
-		}
+	bots, _ := botsOf(f)
+	for _, b := range bots {
 		if b.Role != "tank" {
 			continue
 		}
@@ -367,10 +393,8 @@ func MainTank(f combat.Fight) (combat.FightBot, bool) {
 
 func killedBy(f combat.Fight, killer string) int {
 	n := 0
-	for i, d := range f.Deaths {
-		if i >= maxDeaths {
-			break
-		}
+	deaths, _ := deathsOf(f)
+	for _, d := range deaths {
 		if d.Killer == killer {
 			n++
 		}
@@ -397,9 +421,10 @@ type acc struct {
 // Fold groups the fights (at least MinFightMS long) by boss and returns one row per boss, the most fought first. A fight with no boss
 // and no preset entry among its engaged units (trash) is not on the scorecard.
 //
-// Whether a boss's watch rows are deployed is decided over the whole window: when any of its fights has aura rows, one without
-// counts as measured with nobody dosed (a fight where nobody carried the aura writes no rows, and is the worst one); when none has,
-// the dose and Hex numbers are null.
+// Whether a boss's watch rows are deployed is decided over the whole window, from its first fight with aura rows: a fight with none
+// that started at or after it counts as measured with nobody dosed (a fight where nobody carried the aura writes no rows, and is the
+// worst one), one that started before it ran without the watch and is left out; when no fight has rows, the dose and Hex numbers
+// are null.
 func Fold(in []Input) []Row {
 	by := map[uint32]*acc{}
 	var order []uint32
@@ -435,7 +460,8 @@ func Fold(in []Input) []Row {
 		case "wipe":
 			a.row.Wipes++
 		}
-		a.deaths += len(f.Deaths)
+		deaths, _ := deathsOf(f)
+		a.deaths += len(deaths)
 		fd := fightData{key: it.Key, f: f}
 		if a.row.Kind != "generic" {
 			fd.iv = Intervals(f)
@@ -460,9 +486,15 @@ func (a *acc) finish() Row {
 	r := a.row
 	n := float64(r.Fights)
 	r.DeathsPerFight = float64(a.deaths) / n
+	// The watch is deployed from the boss's first fight with aura rows in the window: a fight with none that started before it ran
+	// without the watch (not measured), one at or after it is a fight where nobody carried the aura (measured, 0).
 	deployed := false
+	var deployFrom int64
 	for _, fd := range a.fights {
 		if fd.iv.Rows > 0 {
+			if !deployed || fd.f.Start < deployFrom {
+				deployFrom = fd.f.Start
+			}
 			deployed = true
 			r.AuraFights++
 		}
@@ -482,8 +514,13 @@ func (a *acc) finish() Row {
 	}
 	for _, fd := range a.fights {
 		f, iv := fd.f, fd.iv
+		deaths, cutDeaths := deathsOf(f)
+		_, cutBots := botsOf(f)
+		// A cap that bit anywhere makes the row's numbers minimums (the members only matter to the presets).
+		r.Lower = r.Lower || cutDeaths || (cutBots && r.Kind != "generic")
+		onWatch := deployed && f.Start >= deployFrom
 		// "Worst" takes the fight with the most deaths unless the preset has its own measure below.
-		score, measured := -float64(len(f.Deaths)), len(f.Deaths) > 0
+		score, measured := -float64(len(deaths)), len(deaths) > 0
 		switch r.Kind {
 		case "hakkar":
 			p := Presets[r.Boss]
@@ -492,7 +529,7 @@ func (a *acc) finish() Row {
 			r.Lower = r.Lower || cut
 			sonDeaths += killedBy(f, p.Killer)
 			measured = false
-			if deployed {
+			if onWatch {
 				cycles, dosed, on, alive, lower := Dosed(f, iv, p, casts)
 				r.Cycles += cycles
 				r.DosedCycles += dosed
@@ -508,7 +545,7 @@ func (a *acc) finish() Row {
 			shade := killedBy(f, p.Killer)
 			shadeDeaths += shade
 			score, measured = -float64(shade), shade > 0
-			if mt, ok := MainTank(f); ok && deployed {
+			if mt, ok := MainTank(f); ok && onWatch {
 				r.HexFights++
 				hexMS += iv.spanOn(p.AuraSid, mt.GUID)
 				if iv.Capped {

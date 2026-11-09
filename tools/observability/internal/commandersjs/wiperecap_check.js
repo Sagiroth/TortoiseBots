@@ -140,6 +140,47 @@ assert.strictEqual(W.startMs(null), null);
   const manyCasts = Array.from({ length: 5000 }, (_, i) => Object.assign({}, base, { t: base.t - (i % 100), s: "S" + i }));
   assert.ok(W.signature(Object.assign({}, f, { log: manyCasts })).length < 3 * 21 * 200 + 2000, "the signature of a crowded window is bounded");
   assert.ok(W.signature(Object.assign({}, f, { log: [Object.assign({}, base, { s: "x".repeat(100000) })] })).length < 3000, "a huge field is cut");
+  // a shown death's hits: their number and the last one's time and spell are what the damage and the killing spell are drawn from
+  {
+    const hit = (t, s, d) => ({ t_ms: t, a: "Boss", d: d == null ? 100 : d, s });
+    const withHits = (hits, i) => W.signature(Object.assign({}, f, { deaths: f.deaths.map((d, k) => (k === (i || 0) ? Object.assign({}, d, { hits }) : d)) }));
+    const T = f.deaths[0].t_ms;
+    const h0 = [hit(T - 900, "Shadow Bolt"), hit(T - 100, "Cleave")];
+    const sig0 = withHits(h0);
+    assert.notStrictEqual(sig0, sig, "hits arrived (the filed fight replaces the live one's empty list)");
+    assert.strictEqual(withHits(JSON.parse(JSON.stringify(h0))), sig0, "the same hits, the same signature");
+    assert.notStrictEqual(withHits(h0.concat([hit(T - 500, "Fire")])), sig0, "one more hit, the last unchanged");
+    assert.notStrictEqual(withHits([h0[0], hit(T - 100, "Frost")]), sig0, "the last hit's spell changed, same count");
+    assert.notStrictEqual(withHits([h0[0], hit(T - 50, "Cleave")]), sig0, "the last hit's time changed, same count");
+    assert.notStrictEqual(withHits([h0[0], hit(T - 100, "Cleave", 999)]), sig0, "the last hit's damage changed");
+    assert.strictEqual(withHits(h0.slice().reverse()), sig0, "the last hit is the one with the largest time, not the last listed");
+    assert.strictEqual(withHits(h0, 7), sig, "hits of a death the box does not show change nothing");
+    assert.strictEqual(typeof withHits([null, 5, { t_ms: "x" }, { t_ms: 5 }]), "string", "broken hits never throw");
+  }
+  // the casts are picked by TIME, the newest CAST_KEEP (20) of the 3 s before the death, whatever order the log holds them in
+  {
+    const T = f.deaths[0].t_ms;
+    const mk = (i, s) => ({ k: "cast", t: T - 100 - i * 50, n: "Boss", s: s || "S" + i });
+    const newestFirst = Array.from({ length: 25 }, (_, i) => mk(i)); // i = 0 is the newest by time and first in the log
+    const sigLog = (log) => W.signature(Object.assign({}, f, { log }));
+    const base25 = sigLog(newestFirst);
+    const change = (i) => sigLog(newestFirst.map((c, k) => (k === i ? mk(i, "Changed") : c)));
+    assert.notStrictEqual(change(0), base25, "the newest cast by time, first in the log, is kept");
+    assert.notStrictEqual(change(19), base25, "the 20th newest is kept");
+    assert.strictEqual(change(20), base25, "the 21st newest (and older) are not kept, wherever the log lists them");
+    assert.strictEqual(change(24), base25, "the oldest by time, last in the log");
+    assert.strictEqual(sigLog(newestFirst.slice().reverse()), sigLog(newestFirst.slice().reverse()), "stable");
+    assert.strictEqual(sigLog(newestFirst.slice().reverse()), base25, "the same casts in another order of the log, the same signature");
+  }
+  // a long log: the newest SCAN_MAX entries are scanned, not the oldest
+  {
+    const T = f.deaths[0].t_ms;
+    const filler = Array.from({ length: 5000 }, (_, i) => ({ k: "taunt", t: i, n: "x" }));
+    const late = (s) => W.signature(Object.assign({}, f, { log: filler.concat([{ k: "cast", t: T - 200, n: "Boss", s }]) }));
+    assert.notStrictEqual(late("A"), late("B"), "a cast after 5000 older entries still counts");
+    const early = (s) => W.signature(Object.assign({}, f, { log: [{ k: "cast", t: T - 200, n: "Boss", s }].concat(filler, filler.slice(0, 5)) }));
+    assert.strictEqual(early("A"), early("B"), "the oldest entries past the newest 5000 are not read");
+  }
   [null, 5, "x", {}, { bots: "x", deaths: [null, 3] }, { outcome: "wipe", deaths: [null, { name: 4 }], log: [5, null] }].forEach((x) => assert.strictEqual(typeof W.signature(x), "string"));
 }
 
