@@ -1207,10 +1207,27 @@ bool ai::OrderStillNeedsWork(Player* bot, GuildOrder const& order)
 
 bool HasGuildTravelOrderValue::Calculate()
 {
+    // One line a minute per working order bot naming the gate that stopped
+    // its order travel, so a bot that stands still can be explained.
+    auto blocked = [&](char const* why)
+    {
+        static std::unordered_map<uint32_t, time_t> lastNote;
+        time_t& last = lastNote[bot->GetGUIDLow()];
+        if (time(nullptr) - last < 60)
+            return;
+        last = time(nullptr);
+        std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow());
+        if (stored && stored->state == TortoiseBots::GuildOrders::OrderState::Working)
+            TB_LOG_DETAIL("TortoiseBots: order %s does not travel: %s (step %s)", bot->GetName(), why,
+                TortoiseBots::GuildOrders::SupplyStepToken(stored->supplyStep));
+    };
     // No order work while grouped with a player, for any order type. An
     // autonomous alt still travels: it plays on its own like a pool bot.
     if (!OrderBotMayTravel(ai, bot))
+    {
+        blocked("not allowed to travel (grouped, in combat or dead)");
         return false;
+    }
 
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (std::optional<OrderRecord> stored = TortoiseBots::GuildOrders::Find(bot->GetGUIDLow()))
@@ -1219,7 +1236,10 @@ bool HasGuildTravelOrderValue::Calculate()
     if (!current || current->state != TortoiseBots::GuildOrders::OrderState::Working ||
         (current->supplyStep != SupplyStep::Bank && current->supplyStep != SupplyStep::AuctionHouse &&
          current->supplyStep != SupplyStep::Farm && current->supplyStep != SupplyStep::Bags))
+    {
+        blocked("order is not on a travel step");
         return false;
+    }
     // A craft order short on a farmable reagent travels like a farm order.
     // The refreshed record already names the supply item, so the check below
     // never re-reads the farm-item value (and its second ladder refresh).
@@ -1240,7 +1260,10 @@ bool HasGuildTravelOrderValue::Calculate()
             current->supplyItemId != 0 && IsUnlimitedVendorItem(current->supplyItemId)) != 0;
     }
     if (!order.IsTravelOrder())
+    {
+        blocked("order is not a travel order");
         return false;
+    }
     // No order work while delivering or done with the amount (delivered
     // plus bags plus mailbox). Mail waiting never blocks the leg: the
     // travel code walks to a mailbox and collects it before farming, buying
