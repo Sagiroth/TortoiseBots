@@ -250,6 +250,38 @@ float ExpectedCastThreat(Player* bot, Unit* target, uint32 spellId)
                                modPct, totalMod) + triggeredThreat;
 }
 
+// Whether the bot can crit with `info` on `target`, the core's Unit::IsSpellCrit chance in short: none for a spell that
+// cannot crit or has no damage class, the spell crit percent of the school for a magic spell (none for a physical one),
+// the weapon crit chance for a melee or ranged attack spell.
+bool CastCanCrit(Player* bot, Unit* target, SpellEntry const* info)
+{
+    if (info->AttributesEx2 & SPELL_ATTR_EX2_CANT_CRIT)
+        return false;
+    switch (info->DmgClass)
+    {
+        case SPELL_DAMAGE_CLASS_MAGIC:
+        {
+            SpellSchoolMask const schoolMask = info->GetSpellSchoolMask();
+            if (schoolMask & SPELL_SCHOOL_MASK_NORMAL)
+                return false;
+            return bot->GetSpellCritPercent(GetFirstSchoolInMask(schoolMask)) > 0.0f;
+        }
+        case SPELL_DAMAGE_CLASS_MELEE:
+        case SPELL_DAMAGE_CLASS_RANGED:
+            return bot->GetUnitCriticalChance(info->GetWeaponAttackType(), target) > 0.0f;
+        default:
+            return false;
+    }
+}
+
+// A crit's damage as a multiple of the normal hit: the core's SpellCriticalDamageBonus on 1000 (x1.5 for spells, x2
+// for melee and ranged attack spells, plus crit-damage talents and modifiers). No Spell is passed, so no mod charge is
+// used up.
+float CastCritMultiplier(Player* bot, Unit* target, SpellEntry const* info)
+{
+    return float(bot->SpellCriticalDamageBonus(info, 1000, target)) / 1000.0f;
+}
+
 // One row per bot and 2 s while a damage cast is held by AiPlayerbot.ThreatCapCountsCastThreat: the bot's threat, the
 // cast's expected threat and the tank's, so a live run shows why a Fireball waited (the engine's own
 // `MULT threat x0.000` line carries no numbers).
@@ -409,8 +441,15 @@ float ThreatMultiplier::GetValue(Action* action)
                 float const castLine = ThreatCapCastReference(
                     sServerFacade.GetThreatManager(castTarget).getThreat(castVictimPlayer), castTankThreat);
                 float const castThreat = ExpectedCastThreat(bot, castTarget, castAction->GetSpellID());
+                // The crit rule (b) measures a crit against the core's real pull line: 110 % while the mob can reach
+                // the bot with a melee swing (the core's own test), 130 % otherwise.
+                SpellEntry const* castInfo = castThreat > 0.0f ? sServerFacade.LookupSpellInfo(castAction->GetSpellID())
+                                                               : nullptr;
+                bool const castCanCrit = castInfo && CastCanCrit(bot, castTarget, castInfo);
+                float const castCritMult = castCanCrit ? CastCritMultiplier(bot, castTarget, castInfo) : 1.0f;
+                float const castPullLine = ThreatCapCastPullLine(castTarget->CanReachWithMeleeAutoAttack(bot));
                 if (ThreatCapCastOvershoots(sPlayerbotAIConfig.threatCapCountsCastThreat, castBotThreat, castThreat,
-                                            castLine))
+                                            castLine, castCritMult, castPullLine, castCanCrit))
                 {
                     LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castLine);
                     return 0.0f;

@@ -532,16 +532,36 @@ namespace ai
             return held;
         }
     };
-    // AiPlayerbot.ThreatCapCountsCastThreat: whether a single-target damage cast is held because its own expected
-    // threat would carry the bot to the tank's threat on the target. The high-threat veto (HighThreatTrigger, 80 %)
-    // reads only the threat the bot has at cast start, so a Fireball started at 79 % landed about 3 s later as one
-    // 400-690 threat hit and jumped the mage past the core's 130 % ranged pull line (non-fire mages: 48 of 87 aggro
-    // onsets came within 5 s of a Fireball hit). The line is 100 % of the tank's threat, not the 110/130 % pull line,
-    // because the estimate leaves out crits (x1.5) and threat talents. False without the key, without tank threat on
-    // the target (the old veto keeps that case) and without an estimate (a cast with no direct damage).
-    inline bool ThreatCapCastOvershoots(bool key, float botThreat, float castThreat, float tankThreat)
+
+    // The core's pull lines (ThreatManager::getHostileTarget): a mob turns on an attacker whose threat passes 110 % of
+    // its current victim's while it can reach that attacker with a melee swing, 130 % otherwise.
+    constexpr float kThreatCapCastMeleePullLine = 1.1f;
+    constexpr float kThreatCapCastRangedPullLine = 1.3f;
+
+    inline float ThreatCapCastPullLine(bool meleeReach)
     {
-        return key && tankThreat > 0.0f && castThreat > 0.0f && botThreat + castThreat >= tankThreat;
+        return meleeReach ? kThreatCapCastMeleePullLine : kThreatCapCastRangedPullLine;
+    }
+
+    // AiPlayerbot.ThreatCapCountsCastThreat: whether a single-target damage cast is held because its own expected
+    // threat would carry the bot past the mob's victim. The high-threat veto (HighThreatTrigger, 80 %) reads only the
+    // threat the bot has at cast start, so a Fireball started at 79 % landed about 3 s later as one 400-690 threat hit
+    // and jumped the mage past the core's 130 % ranged pull line (non-fire mages: 48 of 87 aggro onsets came within 5 s
+    // of a Fireball hit). Held when EITHER
+    //  (a) the normal hit reaches the reference: botThreat + castThreat >= tankThreat (100 %, the margin for what the
+    //      estimate leaves out), or
+    //  (b) the bot can crit with the spell and a crit reaches the core's real pull line: botThreat + castThreat *
+    //      critMult >= pullLine * tankThreat (critMult 1.5 for spells, 2 for melee/ranged attack spells, plus crit
+    //      talents; pullLine 1.1 in the mob's melee reach, else 1.3).
+    // False without the key, without tank threat on the target (the old veto keeps that case) and without an estimate.
+    inline bool ThreatCapCastOvershoots(bool key, float botThreat, float castThreat, float tankThreat, float critMult,
+                                        float pullLine, bool canCrit)
+    {
+        if (!key || tankThreat <= 0.0f || castThreat <= 0.0f)
+            return false;
+        if (botThreat + castThreat >= tankThreat)
+            return true;
+        return canCrit && botThreat + castThreat * critMult >= pullLine * tankThreat;
     }
 
     // The average of one spell effect's points, the same arithmetic as the core's WorldObject::CalculateSpellDamage
