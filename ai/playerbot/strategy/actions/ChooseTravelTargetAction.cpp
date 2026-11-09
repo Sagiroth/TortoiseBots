@@ -1021,6 +1021,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         if (pickedFromNull)
             destZone += " (from null)";
         sPlayerbotAIConfig.logEvent(ai, "TravelTarget", purpose, destZone);
+        if (newPickDest && IsGuildOrderTravelName(purpose) && newPickPos)
+            TB_LOG_DETAIL("TortoiseBots: order %s walks to %s at map %u (%.0f, %.0f) in %s, purpose %s",
+                bot->GetName(), newPickDest->GetTitle().c_str(), newPickPos->getMapId(), newPickPos->getX(),
+                newPickPos->getY(), destZone.c_str(), purpose.c_str());
 
         // One vendor journey at a time: a walk to a vendor has just started, and
         // the request gate refuses another until this is ten minutes old, a sale
