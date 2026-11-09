@@ -1,4 +1,5 @@
 
+#include "host/ModuleLog.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/LootObjectStack.h"
@@ -2822,10 +2823,15 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 if (plan.zones.size() <= pick)
                 {
                     OrderReason reason = plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict;
+                    TB_LOG_DETAIL("TortoiseBots: order %s farm item %u: no zone to farm (plan has %u zones, verdict %s, bot map %u)",
+                        bot->GetName(), itemId, uint32_t(plan.zones.size()),
+                        TortoiseBots::GuildOrders::ReasonToken(reason), bot->GetMapId());
                     SetState(bot->GetGUIDLow(), TortoiseBots::GuildOrders::StateForReason(reason), reason);
                     return false;
                 }
                 farmZoneId = plan.zones[pick].zoneId;
+                TB_LOG_DETAIL("TortoiseBots: order %s farm item %u: zone %u picked (%u of %u, bot map %u)",
+                    bot->GetName(), itemId, farmZoneId, uint32_t(pick + 1), uint32_t(plan.zones.size()), bot->GetMapId());
                 SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance, uint32_t(pick), itemId);
             }
 
