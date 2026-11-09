@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=32">
+  <link rel="stylesheet" href="/static/css/app.css?v=33">
   <link rel="stylesheet" href="/static/css/underperf.css?v=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
@@ -643,6 +643,7 @@
             <button type="button" class="seg-btn" data-page-mode="live" aria-pressed="false">Live</button>
             <button type="button" class="seg-btn" data-page-mode="debug" aria-pressed="false">Fight debugger</button>
           </div>
+          <button type="button" class="btn" id="cmd-fd-panels" hidden title="Move, resize and hide the Fight debugger's panels; keep named layouts in this browser">Panels</button>
         </div>
         <!-- Refresh rate: the same choice as in the top bar (one setting for every live view, kept in this browser). -->
         <div class="card cmd-refresh-bar">
@@ -885,7 +886,8 @@
 <script src="/static/js/dungeon-runs.js?v=1"></script>
 <script src="/static/js/fights.js?v=1"></script>
 <script src="/static/js/fightdebug.js?v=3"></script>
-<script src="/static/js/fdview.js?v=2"></script>
+<script src="/static/js/fdview.js?v=3"></script>
+<script src="/static/js/fdlayout.js?v=1"></script>
 <script src="/static/js/fightauras.js?v=4"></script>
 <script src="/static/js/fdmech.js?v=2"></script>
 <script src="/static/js/fightevents.js?v=2"></script>
@@ -907,6 +909,6 @@
 <script src="/static/js/coverage.js?v=1"></script>
 <script src="/static/js/trash.js?v=1"></script>
 <script src="/static/js/underperf.js?v=2"></script>
-<script src="/static/js/app.js?v=58"></script>
+<script src="/static/js/app.js?v=59"></script>
 </body>
 </html>

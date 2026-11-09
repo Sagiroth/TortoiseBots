@@ -412,6 +412,13 @@ func TestFdLayoutJS(t *testing.T) {
 	runCheck(t, "fdlayout_check.js", "../../web/static/js/fdlayout.js")
 }
 
+// TestFdLayoutUIJS runs fdlayout_ui_check.js: the layouts in app.js over the fake DOM (every panel tagged once, the order/span/hide marks, no
+// fd-custom class with no layout, the live bar kept outside every panel, the arrange dialog's escaping, Save as, the cap, the two-click Delete,
+// a link's Shared layout, a blocked storage, the route and hash wiring, and the stylesheet rules).
+func TestFdLayoutUIJS(t *testing.T) {
+	runCheck(t, "fdlayout_ui_check.js", "../../web/static/js/app.js")
+}
+
 // TestFdShareUIJS runs fdshare_ui_check.js: the Fight debugger's share links in app.js (the route reads and writes the view after bot and
 // p, a new fight starts clean, the card writes its view with replaceState only and never from a tick, a link is applied once when its
 // fight is on screen, the live hand-over rewrites the hash to the filed fight, Copy link, the link kept through login, a hostile link

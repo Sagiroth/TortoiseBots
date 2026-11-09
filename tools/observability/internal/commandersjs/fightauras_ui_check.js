@@ -273,7 +273,7 @@ const draw = (f, au, opts) => run("fdAurasHtml(f, FightAuras.intervals(f), au, o
   assert.ok(render.includes("fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander)"), "and the filed fight's, with the track fallback");
   assert.ok(render.includes(".fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = noWin; });"), "the panel hides with the other fight panels");
   assert.ok(src.includes(".fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });"), "and outside the debug mode");
-  assert.ok(src.includes('<section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>'), "the card template");
+  assert.ok(src.includes('<section class="fd-auras" data-fd-panel="auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>'), "the card template");
   assert.ok(src.includes("[data-fd-ausid], [data-fd-aumark]") && src.includes("fd.au.marker = fdAuMarkParse(e.target.value);"), "the selects' change handler");
   assert.ok(grab("fdLiveHandoff").includes("fdAuCarry(fd, 'live:' + fd.liveKey, summary.key);"), "the hand-over carries the pick of that live fight");
   assert.ok(grab("fdSyncSel").includes("fdAuCarry(fd, 'live:' + fd.liveKey, filed.key);"), "and so does the list's own hand-over");

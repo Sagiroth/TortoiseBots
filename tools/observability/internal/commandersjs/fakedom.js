@@ -7,12 +7,15 @@
 // what the layer-panel check needs to see.
 
 function simpleTest(sel) {
-  const m = /^([a-zA-Z][\w-]*)?((?:[.#][\w-]+)*)$/.exec(sel);
+  const m = /^([a-zA-Z][\w-]*)?((?:[.#][\w-]+|\[[\w-]+(?:="[^"]*")?\])*)$/.exec(sel);
   if (!m) throw new Error("fakedom: unsupported selector " + sel);
   const tag = m[1] ? m[1].toLowerCase() : null;
   const classes = Array.from(m[2].matchAll(/\.([\w-]+)/g), (x) => x[1]);
   const id = /#([\w-]+)/.exec(m[2]);
-  return (el) => (!tag || el.tagName === tag) && (!id || el.id === id[1]) && classes.every((c) => el.classList.contains(c));
+  // [attr] and [attr="value"] read the attributes setAttribute wrote
+  const attrs = Array.from(m[2].matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g), (x) => [x[1], x[2]]);
+  return (el) => (!tag || el.tagName === tag) && (!id || el.id === id[1]) && classes.every((c) => el.classList.contains(c))
+    && attrs.every(([k, v]) => k in el.attributes && (v === undefined || el.attributes[k] === v));
 }
 
 function Element(tag) {
@@ -21,7 +24,13 @@ function Element(tag) {
   this.children = [];
   this.parentElement = null;
   this.dataset = {};
+  // a style object a page can set properties on, with the setProperty/removeProperty pair (the methods do not show as properties)
   this.style = {};
+  Object.defineProperties(this.style, {
+    setProperty: { value(k, v) { this[k] = String(v); } },
+    removeProperty: { value(k) { delete this[k]; } },
+    getPropertyValue: { value(k) { return k in this ? this[k] : ""; } },
+  });
   this.attributes = {};
   this.textContent = "";
   this.hidden = false;
@@ -86,6 +95,10 @@ Element.prototype.remove = function () {
 };
 
 Element.prototype.setAttribute = function (k, v) { this.attributes[k] = String(v); };
+
+Element.prototype.removeAttribute = function (k) { delete this.attributes[k]; };
+
+Element.prototype.hasAttribute = function (k) { return k in this.attributes; };
 
 Element.prototype.getAttribute = function (k) { return k in this.attributes ? this.attributes[k] : null; };
 

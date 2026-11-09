@@ -5614,6 +5614,232 @@
   const FD_HISTCMD_MS = 60000;
   const fdHistNamed = name => !!(fdHistCmd.list && fdHistCmd.list.some(r => r && r.commander === name));
 
+  // ---- Panel layouts (FdLayout, web/static/js/fdlayout.js): the order, width and visibility of the debugger's panels, one layout for the
+  // whole page. The viewer's named layouts live in this browser's storage (the same try/catch storage the page already uses). The layout in
+  // force is the unsaved edit, else the Shared layout a link carried, else the saved one picked, else none: the debugger's own grid, which
+  // is drawn by the stylesheet alone and gets no class from here. Applying a layout is style-only (an order, a span and a hide mark on the
+  // panels the template tags with data-fd-panel): no card is rebuilt, no request is made, and a running live view keeps its tick.
+  const fdLay = { state: FdLayout.load(fdPageStore), shared: null, sel: '', edit: null, note: '', armed: 0, armTimer: 0, focus: '' };
+  fdLay.sel = fdLay.state.active ? 'n:' + fdLay.state.active : '';
+
+  function fdLayCurrent() {
+    if (fdLay.edit) return fdLay.edit;
+    if (fdLay.sel === '~') return fdLay.shared;
+    if (fdLay.sel.indexOf('n:') === 0) {
+      const name = fdLay.sel.slice(2);
+      return Object.prototype.hasOwnProperty.call(fdLay.state.layouts, name) ? fdLay.state.layouts[name] : null;
+    }
+    return null;
+  }
+
+  // Put the layout on one card. Only a Fight debugger card takes it; any other card (the Live page) is cleared, so no order of a layout
+  // outlives the debugger. The live bar (.fd-livebar) is not a panel: it moves out of the Timeline panel to the top of the card while a
+  // layout is on, so hiding the Timeline never hides the window picker, and goes back when the layout does. True when the card changed.
+  function fdLayApply(card) {
+    if (!card) return false;
+    const lay = card.classList.contains('fd-on') ? fdLayCurrent() : null;
+    if ((card._fdLay || null) === lay) return false; // the layout objects are never changed in place: the same one is the same layout (a new card has none)
+    card._fdLay = lay;
+    const map = lay ? FdLayout.apply(lay) : null;
+    card.classList.toggle('fd-custom', !!lay);
+    card.querySelectorAll('[data-fd-panel]').forEach(el => {
+      const a = map ? map[el.getAttribute('data-fd-panel')] : null;
+      if (a) {
+        el.style.order = String(a.order);
+        el.style.setProperty('--fd-span', String(a.span));
+        if (a.hide) el.setAttribute('data-fd-hide', ''); else el.removeAttribute('data-fd-hide');
+      } else {
+        el.style.removeProperty('order');
+        el.style.removeProperty('--fd-span');
+        el.removeAttribute('data-fd-hide');
+      }
+    });
+    const bar = card.querySelector('.fd-livebar'), body = card.querySelector('.cmd-body'), tl = card.querySelector('.fd-timeline');
+    if (bar && body && body.parentElement && tl) {
+      if (lay) { if (bar.parentElement !== body.parentElement) body.parentElement.insertBefore(bar, body); }
+      else if (bar.parentElement !== tl) tl.insertBefore(bar, card.querySelector('.fd-rangebar'));
+    }
+    return true;
+  }
+
+  // Every card of the page; a map whose panel changed size is drawn again (at once when it is on screen, else when it is back).
+  function fdLayApplyAll() {
+    cmdCards.forEach((card, key) => {
+      if (fdLayApply(card)) { if (cmdSched.shown(key)) drawCmdMap(key); else cmdSched.mark(key); }
+    });
+  }
+
+  function fdLayOptionsHtml(state, shared, sel, edited) {
+    const opt = (v, label, on, extra) => `<option value="${esc(v)}"${on ? ' selected' : ''}${extra || ''}>${esc(label)}</option>`;
+    let h = opt('', 'Default', !edited && sel === '');
+    if (shared) h += opt('~', 'Shared layout', !edited && sel === '~');
+    Object.keys(state.layouts).forEach(n => { h += opt('n:' + n, n, !edited && sel === 'n:' + n); });
+    if (edited) h += opt('*', 'Unsaved changes', true);
+    return h;
+  }
+
+  function fdLayRowsHtml(layout) {
+    const rows = FdLayout.normalize(layout).panels;
+    const label = id => FdLayout.PANELS.find(p => p.id === id).label;
+    return rows.map((e, i) => {
+      const nm = esc(label(e.id)), id = esc(e.id);
+      return `<li class="fd-arr-row${e.hide ? ' off' : ''}" data-fd-row="${id}"><span class="fd-arr-name">${nm}</span>`
+        + `<button type="button" class="btn" data-fd-up="${id}" aria-label="Move ${nm} up"${i === 0 ? ' disabled' : ''}>↑</button>`
+        + `<button type="button" class="btn" data-fd-down="${id}" aria-label="Move ${nm} down"${i === rows.length - 1 ? ' disabled' : ''}>↓</button>`
+        + `<select data-fd-span="${id}" aria-label="${nm} width">${FdLayout.SPANS.map(n => `<option value="${n}"${n === e.span ? ' selected' : ''}>${esc(FdLayout.SPAN_LABELS[n])}</option>`).join('')}</select>`
+        + `<label class="fd-arr-show"><input type="checkbox" data-fd-show="${id}"${e.hide ? '' : ' checked'}> Show</label></li>`;
+    }).join('');
+  }
+
+  function fdLayDialog() {
+    let d = document.getElementById('fd-arrange');
+    if (d) return d;
+    d = document.createElement('dialog');
+    d.id = 'fd-arrange';
+    d.className = 'fd-arrange';
+    d.setAttribute('aria-label', 'Panels');
+    d.innerHTML = '<div class="fd-arr-head"><h3 class="cmd-h">Panels</h3><button type="button" class="btn" data-fd-close>Close</button></div>'
+      + '<label class="fd-arr-pick">Layout <select data-fd-lay aria-label="Layout"></select></label>'
+      + '<ol class="fd-arr-list"></ol>'
+      + '<div class="fd-arr-save"><input type="text" data-fd-name maxlength="40" placeholder="Layout name" aria-label="Layout name"><button type="button" class="btn" data-fd-save>Save as</button></div>'
+      + '<div class="fd-arr-act"><button type="button" class="btn" data-fd-del>Delete</button><button type="button" class="btn" data-fd-reset>Reset to default</button></div>'
+      + '<p class="fd-arr-note" role="status"></p>';
+    document.body.appendChild(d);
+    d.addEventListener('click', e => {
+      const t = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (!t) return;
+      const a = t.dataset;
+      if (a.fdUp != null) fdLayAct('up', a.fdUp);
+      else if (a.fdDown != null) fdLayAct('down', a.fdDown);
+      else if (a.fdSave != null) fdLaySave(d.querySelector('[data-fd-name]').value);
+      else if (a.fdDel != null) fdLayDelete();
+      else if (a.fdReset != null) fdLayPick('');
+      else if (a.fdClose != null && d.close) d.close();
+    });
+    d.addEventListener('change', e => {
+      const t = e.target;
+      if (!t || !t.dataset) return;
+      if (t.dataset.fdLay != null) fdLayPick(t.value);
+      else if (t.dataset.fdSpan != null) fdLayAct('span', t.dataset.fdSpan, t.value);
+      else if (t.dataset.fdShow != null) fdLayAct('show', t.dataset.fdShow, t.checked);
+    });
+    d.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.fdName != null) { e.preventDefault(); fdLaySave(e.target.value); }
+    });
+    return d;
+  }
+
+  // The dialog follows the state; a control the viewer was on keeps the focus through the repaint.
+  function fdLayPaint() {
+    const d = document.getElementById('fd-arrange');
+    if (!d) return;
+    const cur = fdLayCurrent(), saved = fdLay.sel.indexOf('n:') === 0 && !fdLay.edit;
+    d.querySelector('[data-fd-lay]').innerHTML = fdLayOptionsHtml(fdLay.state, fdLay.shared, fdLay.sel, !!fdLay.edit);
+    d.querySelector('.fd-arr-list').innerHTML = fdLayRowsHtml(cur || FdLayout.defaults());
+    const del = d.querySelector('[data-fd-del]');
+    del.disabled = fdLay.sel.indexOf('n:') !== 0;
+    del.textContent = fdLay.armed ? 'Click again to delete' : 'Delete';
+    d.querySelector('.fd-arr-note').textContent = fdLay.note || (saved ? '' : cur ? 'Not saved: name it and press Save as to keep it.' : 'The default grid.');
+    if (fdLay.focus) { const f = d.querySelector(fdLay.focus); if (f && !f.disabled && f.focus) f.focus(); fdLay.focus = ''; }
+  }
+
+  // After any change: the cards, the dialog, and the address (the layout is part of a fight's link).
+  function fdLayChanged(opts) {
+    fdLayApplyAll();
+    fdLayPaint();
+    if (!(opts && opts.noHash) && fdPage.open != null) fdViewHash(fdPage.open);
+  }
+
+  function fdLayDisarm() {
+    clearTimeout(fdLay.armTimer);
+    fdLay.armed = 0;
+  }
+
+  function fdLayPersist() {
+    return FdLayout.save(fdPageStore, fdLay.state);
+  }
+
+  // The layout picker: Default, the Shared layout of a link, or a saved name. A pick drops the unsaved edit.
+  function fdLayPick(value) {
+    fdLayDisarm();
+    if (value === '*') return; // the "Unsaved changes" entry is where the viewer already is
+    fdLay.edit = null;
+    fdLay.note = '';
+    const name = typeof value === 'string' && value.indexOf('n:') === 0 ? value.slice(2) : null;
+    if (value === '~' && fdLay.shared) fdLay.sel = '~'; // a link's layout: the saved choice is not touched
+    else {
+      fdLay.sel = name !== null && Object.prototype.hasOwnProperty.call(fdLay.state.layouts, name) ? value : '';
+      fdLay.state = FdLayout.setActive(fdLay.state, fdLay.sel ? name : '');
+      if (!fdLayPersist()) fdLay.note = 'This browser blocks storage: the choice lasts until the page is closed.';
+    }
+    fdLayChanged();
+  }
+
+  // One edit of the layout in force (a panel moves, is resized or shown or hidden): it becomes the unsaved edit.
+  function fdLayAct(op, id, val) {
+    fdLayDisarm();
+    const cur = FdLayout.normalize(fdLayCurrent() || FdLayout.defaults());
+    const next = op === 'up' ? FdLayout.move(cur, id, -1) : op === 'down' ? FdLayout.move(cur, id, 1)
+      : op === 'span' ? FdLayout.resize(cur, id, Number(val)) : op === 'show' ? FdLayout.show(cur, id, !!val) : null;
+    if (!next) return;
+    fdLay.edit = next;
+    fdLay.note = '';
+    fdLay.focus = '[data-fd-' + (op === 'show' ? 'show' : op) + '="' + String(id).replace(/[^a-z]/g, '') + '"]';
+    fdLayChanged();
+  }
+
+  // Save as: the layout in force under the typed name (an existing name is replaced); it becomes the picked one.
+  function fdLaySave(name) {
+    fdLayDisarm();
+    const r = FdLayout.put(fdLay.state, name, fdLayCurrent() || FdLayout.defaults());
+    if (!r.ok) { fdLay.note = r.why; fdLayPaint(); return; }
+    fdLay.state = r.state;
+    fdLay.sel = 'n:' + r.name;
+    fdLay.edit = null;
+    fdLay.note = fdLayPersist() ? 'Saved as "' + r.name + '".' : 'This browser blocks storage: "' + r.name + '" lasts until the page is closed.';
+    const dlg = document.getElementById('fd-arrange'), input = dlg && dlg.querySelector('[data-fd-name]');
+    if (input) input.value = '';
+    fdLayChanged();
+  }
+
+  // Delete asks twice: the second click within 3 s deletes the picked saved layout.
+  function fdLayDelete() {
+    if (fdLay.sel.indexOf('n:') !== 0) return;
+    if (!fdLay.armed) {
+      fdLay.armed = Date.now();
+      fdLay.armTimer = setTimeout(() => { fdLay.armed = 0; fdLayPaint(); }, 3000);
+      fdLayPaint();
+      return;
+    }
+    fdLayDisarm();
+    const name = fdLay.sel.slice(2);
+    fdLay.state = FdLayout.remove(fdLay.state, name);
+    fdLay.sel = '';
+    fdLay.edit = null;
+    fdLay.note = fdLayPersist() ? 'Deleted "' + name + '".' : 'This browser blocks storage: the layout is gone until the page is closed.';
+    fdLayChanged();
+  }
+
+  function fdLayOpen() {
+    const d = fdLayDialog();
+    fdLayPaint();
+    if (d.open) return;
+    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+  }
+
+  // A link's layout (FdView.fromQuery already decoded and bounded it) becomes the Shared layout, unsaved; a layout the viewer has saved is
+  // not touched. The layout already in force (a saved one, an edit or the same link again) is left as it is: the page's own hash carries it.
+  function fdLaySetShared(layout) {
+    if (!layout) return;
+    const cur = fdLayCurrent();
+    if (cur && FdLayout.encode(cur) === FdLayout.encode(layout)) return; // the layout in force (the page's own link carries it): nothing to switch
+    fdLay.shared = layout;
+    fdLay.sel = '~';
+    fdLay.edit = null;
+    fdLay.note = '';
+    fdLayChanged({ noHash: true });
+  }
+
   function cmdPageMode() {
     if (!fdPage.loaded) {
       fdPage.loaded = true;
@@ -5655,6 +5881,8 @@
     if (!el) return;
     const m = mode || cmdPageMode();
     el.querySelectorAll('[data-page-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pageMode === m ? 'true' : 'false'));
+    const panels = document.getElementById('cmd-fd-panels');
+    if (panels) panels.hidden = m !== 'debug'; // the Panels button arranges the debugger's panels only
   }
 
   // The hash decides the open tab and the Fight debugger mode: #/commanders/<name> (the old form) still opens the debugger,
@@ -5674,6 +5902,7 @@
       // once (fdApplyPending). The night comes first, the way the picker sets it, so the fight is looked for on its own night.
       // Any recognised view key counts as a request, an unreadable one too: a link of only bad parts opens with defaults, says so, and
       // its hash is rewritten to the view that was applied (fdViewHash, once the fight is on screen).
+      if (fight && r.fdq && r.fdq.lay) fdLaySetShared(r.fdq.lay); // a link's panel layout is the page's Shared layout (unsaved)
       const fq = fight && r.fdq && typeof FdView !== 'undefined' ? FdView.toQuery(r.fdq) : '';
       const nbad = fight && r.fdq && r.fdq.bad ? r.fdq.bad.length : 0;
       let repick = fdPage.fight !== fight;
@@ -5752,7 +5981,7 @@
       live, follow: view ? view.follow : true, range: view ? view.range : null, filter: fd.filter,
       au: au && au.userSid ? au.sid : null, marker: au && au.userMark ? au.marker : null,
       night: fd.day || null, rp: fd.rp && fd.rp.on && fd.rp.key === fd.sel ? Math.round(fd.rp.t) : null, sp: fd.rp ? fd.rp.speed : 1,
-      lw: live ? fd.liveWin : null,
+      lw: live ? fd.liveWin : null, lay: fdLayCurrent(),
     });
     const q = FdView.stripFd(new URLSearchParams((window.location.hash.split('?')[1]) || '')).toString(); // bot, p and the rest stay first
     const qs = q + (q && fq ? '&' : '') + fq;
@@ -5847,7 +6076,7 @@
   function fdStopCard(key) {
     const fd = key != null ? cmdFd[key] : null;
     const card = key != null ? cmdCards.get(key) : null;
-    if (card) card.classList.remove('fd-on');
+    if (card) { card.classList.remove('fd-on'); fdLayApply(card); }
     if (!fd) return;
     if (fd.rp) { clearTimeout(fd.rp.timer); fd.rp.playing = false; }
     if (fd.run) { clearTimeout(fd.run.timer); fd.run.playing = false; fd.run.on = false; }
@@ -6273,6 +6502,8 @@
       const b = e.target.closest && e.target.closest('[data-page-mode]');
       if (b) cmdPageSetMode(b.dataset.pageMode);
     });
+    const arrange = document.getElementById('cmd-fd-panels');
+    if (arrange) arrange.addEventListener('click', fdLayOpen);
   }
 
   function applyCommanders(view) {
@@ -8920,7 +9151,7 @@
       <div class="cmd-run" hidden></div>
       <div class="cmd-warn" aria-live="polite"></div>
       <div class="cmd-body">
-        <section class="fd-runtl" aria-label="Run timeline" hidden>
+        <section class="fd-runtl" data-fd-panel="run" aria-label="Run timeline" hidden>
           <div class="fd-rthead">
             <h3 class="cmd-h">Run timeline <span class="fd-rtsub">where the minutes went; drag to replay the raid on the map</span></h3>
             <div class="fd-rtlegend" aria-hidden="true"><span><i class="sw sw-walk"></i>walking</span><span><i class="sw sw-fight"></i>trash fight</span><span><i class="sw sw-boss"></i>boss</span><span>✕ death</span></div>
@@ -8928,21 +9159,21 @@
           <div class="fd-rt" data-fd-rt role="img" aria-label="Run timeline"></div>
           <div class="fd-rtplay" data-fd-rtplayrow></div>
         </section>
-        <section class="fd-raid" aria-label="Raid frames" hidden>
+        <section class="fd-raid" data-fd-panel="frames" aria-label="Raid frames" hidden>
           <div class="fd-raidhead"><h3 class="cmd-h">Raid frames<span class="fd-dead"></span> <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="fd-ready"></div></div>
           <div class="fd-frames" role="group" aria-label="Raid frames"></div>
         </section>
-        <div class="fd-railcol" hidden><div class="fd-railbosses" aria-label="Boss abilities" hidden></div><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div>
-        <section class="cmd-live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
-        <section class="fd-roles" aria-label="Roles" hidden><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
-        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details><div class="fd-mech" role="region" aria-label="Boss mechanics"><details class="fd-mechbox"><summary class="cmd-h">Boss mechanics</summary><div class="fd-mechbody"></div></details></div></section>
+        <div class="fd-railwrap"><div class="fd-railbosses" data-fd-panel="bosses" aria-label="Boss abilities" hidden></div><div class="fd-railcol" data-fd-panel="rail" hidden><h3 class="cmd-h">Fights</h3><label class="fd-daylab">Night <select class="fd-day" data-fd-day aria-label="Fight night"></select></label><label class="fd-showall" title="Off: bosses, wipes and fights with deaths as cards, clean trash folded, the current run plus the last 2 hours. On: every fight of the night as a card. Kept in this browser."><input type="checkbox" data-fd-showall> Show all fights</label><nav class="fd-rail" aria-label="Fights"></nav></div></div>
+        <section class="cmd-live" data-fd-panel="live" aria-label="Live events" hidden><h3 class="cmd-h">Live events <span class="cmd-live-sub">as they happen</span></h3><div class="cmd-live-events"></div></section>
+        <section class="fd-roles" data-fd-panel="roles" aria-label="Roles" hidden><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-totalsseg"></div><div class="fd-t fd-tanks"></div><div class="fd-t fd-heals"></div><div class="fd-t fd-dps"></div><div class="fd-bot" hidden></div></section>
+        <section class="fd-under" aria-label="Underperforming bots"><details class="fd-underbox" data-fd-panel="under"><summary class="cmd-h">Underperforming bots <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></summary><div class="fd-underbody"></div></details><div class="fd-mech" data-fd-panel="mech" role="region" aria-label="Boss mechanics"><details class="fd-mechbox"><summary class="cmd-h">Boss mechanics</summary><div class="fd-mechbody"></div></details></div></section>
         <div class="cmd-left">
           <div class="cmd-party"></div>
           <h3 class="cmd-h">Last orders</h3>
           <div class="cmd-orders"></div>
         </div>
         <div class="fd-centre">
-          <div class="cmd-mapbox">
+          <div class="cmd-mapbox" data-fd-panel="map">
             <div class="cmd-legend fd-legend" role="note"></div>
             <div class="fm-focus" hidden></div>
             <div class="cmd-stage">
@@ -8966,11 +9197,11 @@
             <div class="cmd-feed" hidden></div>
             <div class="cmd-legend">${cmdLegendHtml()}</div>
           </div>
-          <section class="fd-meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>
-          <section class="fd-checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
-          <section class="fd-timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><span class="fd-livemech cell-muted"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
-          <section class="fd-auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
-          <section class="fd-events" aria-label="Events" hidden><h3 class="cmd-h">Events <span class="fd-evcount"></span></h3><div class="fd-evfilter"></div><div class="fd-evlist"></div></section>
+          <section class="fd-meters" data-fd-panel="meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>
+          <section class="fd-checks" data-fd-panel="checks" aria-label="Checks" hidden><div class="fd-head"><h3 class="cmd-h fd-title" aria-live="polite"></h3><span class="fd-whole" hidden title="not filtered by the range">whole fight</span><div class="fd-chips"></div></div><p class="fd-checkfor" hidden></p><ol class="fd-checklist"></ol><section class="fd-pack" aria-label="Same pack across runs" hidden></section></section>
+          <section class="fd-timeline" data-fd-panel="timeline" aria-label="Timeline and death recap" hidden><h3 class="cmd-h">Timeline</h3><div class="fd-livebar" aria-live="off" hidden><span class="fd-livetitle"></span><span class="fd-livemech cell-muted"></span><label class="fd-livewin">Window <select data-fd-livewin aria-label="Live window">${FdLive.WINDOWS.map(w => `<option value="${w}">${fdLiveWinLabel(w)}</option>`).join('')}</select></label></div><div class="fd-rangebar"></div><div class="fd-play" role="group" aria-label="Fight replay"></div><div class="fd-tl" data-fd-seekbar></div><div class="fd-lanes" data-fd-seekbar aria-label="Who each enemy targeted"></div><div class="fd-recap"></div></section>
+          <section class="fd-auras" data-fd-panel="auras" aria-label="Aura uptime" hidden><h3 class="cmd-h">Auras</h3><div class="fd-aubody"></div></section>
+          <section class="fd-events" data-fd-panel="events" aria-label="Events" hidden><h3 class="cmd-h">Events <span class="fd-evcount"></span></h3><div class="fd-evfilter"></div><div class="fd-evlist"></div></section>
         </div>
         <p class="fd-nofight" hidden></p>
         <section class="fd-bosses" aria-label="Boss abilities" hidden><div class="fd-bosslist"></div></section>
@@ -8984,7 +9215,7 @@
           <div class="cmd-panel"><h3 class="cmd-h">Ready check <span class="fd-whole" hidden title="not filtered by the range">whole fight</span></h3><div class="raid-ready"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Boss debuffs</h3><div class="raid-debuffs"></div></div>
           <div class="cmd-panel"><h3 class="cmd-h">Orders</h3><div class="raid-orders-note">controls need a bound commander</div></div>
-          <div class="cmd-panel cmd-controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
+          <div class="cmd-panel cmd-controls" data-fd-panel="controls" hidden><h3 class="cmd-h">Controls</h3><div class="cmd-controls-row"></div><div class="cmd-controls-note" aria-live="polite"></div></div>
         </div>
       </div>`;
     bindCmdMap(card, key);
@@ -9434,7 +9665,8 @@
     if (left) left.hidden = debug;
     const fightsEl = card.querySelector('.cmd-fights');
     if (fightsEl) fightsEl.hidden = debug;
-    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railcol, .fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });
+    card.querySelectorAll('.fd-runtl, .fd-raid, .fd-railwrap, .fd-railcol, .fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });
+    fdLayApply(card); // the panel layout (debugger only); the map draw just below follows any size change
     cmdPlaceLiveStrip(card, debug);
     cmdLivePaintEvents(key);
     // A structural redraw: at once when the map is on screen (the layer panel reads what it worked out), else when it is back.

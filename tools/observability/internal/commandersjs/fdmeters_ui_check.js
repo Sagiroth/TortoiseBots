@@ -266,7 +266,7 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   assert.ok(render.includes("fdMetersSync(card, noWin ? null : fdMetersInputs(fd, liveSt, liveFight));"), "the card render draws the panel (live: from the live fight)");
   assert.ok(render.includes(".fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = noWin; });"), "the panel hides with the other fight panels");
   assert.ok(src.includes(".fd-checks, .fd-meters, .fd-timeline, .fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });"), "and outside the debug mode");
-  assert.ok(src.includes('<section class="fd-meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>'), "the card template");
+  assert.ok(src.includes('<section class="fd-meters" data-fd-panel="meters" aria-label="Meters" hidden><h3 class="cmd-h">Meters <span class="fd-mtnote"></span></h3><div class="fd-mtbody"></div></section>'), "the card template");
   assert.ok(src.indexOf('class="fd-meters"') > src.indexOf('class="cmd-legend"') && src.indexOf('class="fd-meters"') < src.indexOf('<section class="fd-checks"'), "the panel sits right after the map box, inside the centre column");
   assert.ok(render.includes("fdSet(card.querySelector('.fd-play'), '');"), "a running fight (no filed fight) draws no replay row: no Play button in live");
   assert.ok(render.includes("if (fdHasMeters(det)) fdPlaySync(card, fd, fight, null, true);") && render.includes("No replay for past nights (positions are kept 30 min)"), "a past night's fight with meters plays; one without says so as before");
@@ -279,6 +279,6 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightmeters.js") > 0 && at("fightmeters.js") < at("app.js"), "fightmeters.js loads before app.js");
-  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=3/.test(html) && /static\/js\/app\.js\?v=58/.test(html) && /app\.css\?v=32/.test(html), "the changed assets carry new versions");
+  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=3/.test(html) && /static\/js\/app\.js\?v=59/.test(html) && /app\.css\?v=33/.test(html), "the changed assets carry new versions");
 }
 console.log("fdmeters_ui_check.js ok");

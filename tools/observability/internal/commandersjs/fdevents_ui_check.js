@@ -522,7 +522,7 @@ assert.ok(list.innerHTML.includes('data-fd-bosscast="69900"'), "the newest is on
   assert.ok(render.includes("fdEventsSync(card, fd, evKey, evFight, { range, st: selLive ? liveSt : null, tl: tlHtml });"), "the card render paints the panel with the same range as every panel");
   assert.ok(render.includes("fdEvKeep(fd, evFight, selLive ? liveSt : null)"), "and the filed timeline's marks follow the filter");
   assert.ok(render.includes("fdAuraFight(fight, track && track !== 'loading' ? track : null, bind.commander)"), "the filed fight is the Auras panel's (sampled rows when it has none)");
-  assert.ok(src.includes('<section class="fd-events" aria-label="Events" hidden><h3 class="cmd-h">Events <span class="fd-evcount"></span></h3><div class="fd-evfilter"></div><div class="fd-evlist"></div></section>'), "the card template");
+  assert.ok(src.includes('<section class="fd-events" data-fd-panel="events" aria-label="Events" hidden><h3 class="cmd-h">Events <span class="fd-evcount"></span></h3><div class="fd-evfilter"></div><div class="fd-evlist"></div></section>'), "the card template");
   assert.ok(src.indexOf('<section class="fd-events"') > src.indexOf('<section class="fd-auras"'), "after the Auras panel");
   assert.ok(src.includes(".fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = !debug; });") && render.includes(".fd-auras, .fd-events, .fd-roles').forEach(el => { el.hidden = noWin; });"), "hidden outside the debug mode and with no fight");
   assert.ok(src.includes("filter: FdFilter.empty(), evShown: FD_EV_PAGE"), "the card's state starts with an empty filter and the first page (it is not reset by a fight change)");
@@ -539,7 +539,7 @@ assert.ok(list.innerHTML.includes('data-fd-bosscast="69900"'), "the newest is on
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightevents.js") > 0 && at("fdfilter.js") > 0 && at("fightevents.js") < at("app.js") && at("fdfilter.js") < at("app.js") && at("fdview.js") < at("fdfilter.js"), "the modules load before app.js");
-  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=58/.test(html), "with their versions (bumped when round 1 changed them)");
+  assert.ok(/fightevents\.js\?v=2/.test(html) && /fdfilter\.js\?v=2/.test(html) && /static\/js\/app\.js\?v=59/.test(html), "with their versions (bumped when round 1 changed them)");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(css.includes(".fd-evgroup {") && css.includes("border-left: 2px solid var(--border-color)") && css.includes(".fd-events[hidden]"), "the css is there");
 }

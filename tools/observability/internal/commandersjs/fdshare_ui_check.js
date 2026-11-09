@@ -33,8 +33,8 @@ vm.createContext(ctx);
 const routeSrc = src.slice(src.indexOf("  const TABS = {"), src.indexOf("  function openNavDrawer()"));
 const names = ["keepHash", "parseRoute", "routeHash", "go", "cmdPageHash", "cmdRouteTab", "fdRoutePick", "fdFightHash", "fdViewHash", "fdViewHashSoon",
   "fdApplyPending", "fdSetDay", "fdLinkTail", "fdCopyLink", "fdCopyPaint", "fdLiveHandoff", "fdViewHandover", "fdViewSync", "fdAuCarry", "fdLiveFiledRow",
-  "fdLiveDrop", "fdLiveRangeOf", "fdAuLiveKey", "fdAuIv", "fdSyncSel", "esc", "linkTooLong", "showLinkNote", "fdReplayTick", "fdReplayPlay"];
-vm.runInContext(["var FD_EV_PAGE = 500; const fdAuMemo = new WeakMap();", routeSrc].concat(names.map(grab)).join("\n"), ctx);
+  "fdLiveDrop", "fdLiveRangeOf", "fdLayCurrent", "fdAuLiveKey", "fdAuIv", "fdSyncSel", "esc", "linkTooLong", "showLinkNote", "fdReplayTick", "fdReplayPlay"];
+vm.runInContext(["var FD_EV_PAGE = 500; const fdAuMemo = new WeakMap(); const fdLay = { state: { layouts: {} }, shared: null, sel: '', edit: null };", routeSrc].concat(names.map(grab)).join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const J = (v) => JSON.parse(JSON.stringify(v));
 const realSetDay = ctx.fdSetDay; // cmdRouteTab's test swaps in a recorder; fdSetDay's own test needs the real one
