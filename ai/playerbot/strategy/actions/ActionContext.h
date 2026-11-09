@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/VictimEscapeActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 #include "GenericActions.h"
@@ -111,6 +112,8 @@ namespace ai
             creators["fankriss rear stack"] = [](PlayerbotAI* ai) { return new FankrissStackAction(ai); };
             creators["fankriss control spawn"] = [](PlayerbotAI* ai) { return new FankrissControlAction(ai); };
             creators["fankriss focus spawn"] = [](PlayerbotAI* ai) { return new FankrissFocusAction(ai); };
+            creators["immune boss victim escape"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimEscapeAction(ai); };
+            creators["bop immune boss victim"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimProtectAction(ai); };
             creators["patchwerk melee retreat"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeRetreatAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
