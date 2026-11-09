@@ -8675,7 +8675,9 @@
     const awayNote = away > 0 ? `${away} bot${away === 1 ? ' is' : 's are'} on another map` : '';
     const enemiesNote = MapLayers.enemiesText(mobs.length, mobsTotal);
     const noteEl = card.querySelector('.cmd-mapnote');
-    noteEl.textContent = [awayNote, enemiesNote].filter(Boolean).join(' · ');
+    const pinNote = liveBind && liveBind.dungeon && liveBind.dgn && dgnPins.key === liveBind.dgn.key && dgnPins.missing > 0
+      ? `${dgnPins.missing} earlier fight${dgnPins.missing === 1 ? ' has' : 's have'} no pin (positions are kept for 30 min)` : '';
+    noteEl.textContent = [awayNote, enemiesNote, pinNote].filter(Boolean).join(' · ');
     noteEl.title = enemiesNote ? 'The module caps the mob list per run (24 in a party, 48 in a raid)' : '';
     card.querySelector('.cmd-grid-size').textContent = on.grid ? `grid ${step} yd` : '';
     const sc = card.querySelector('.cmd-scale');
@@ -12020,8 +12022,9 @@
     if (!fight) return null;
     const track = fd.tracks[fd.sel];
     const loaded = !!track && track !== 'loading' && !!track.prep;
-    // 'loading': the positions are not in yet (not asked, or on their way); 'ready' with frames; 'none': the daemon has none for this fight
-    const trackState = track === 'loading' || track === undefined ? 'loading' : loaded && track.prep.frames.length ? 'ready' : 'none';
+    // 'loading': the positions are not in yet (not asked, or on their way); 'failed': the request failed and its retry is pending; 'ready':
+    // frames came; 'none': the daemon answered and kept no positions for this fight (an old one), so none will ever come
+    const trackState = track === 'loading' || track === undefined ? 'loading' : track === null ? 'failed' : loaded && track.prep.frames.length ? 'ready' : 'none';
     if (loaded && track._fmFor !== fight) { track._fmFor = fight; track._fmId = ++fmSeq; track._fm = FightMap.fromTrack(track.prep, fight); }
     const range = FdView.effective(fd.view, false, null);
     const frames = loaded ? track._fm : [];
@@ -12056,8 +12059,10 @@
   // The one fit to the whole fight when a finished fight is first picked on a card: the view takes the box of its trails, deaths and mechanics
   // and stops following the party; the viewer's own zoom and pan win afterwards. A running fight keeps following. True when it fitted.
   function fdMapFit(ms, fm, src, sel, pw, ph) {
-    // not while the positions load: the deaths and mechanics alone would fit a box without the fight in it, and the fit is once
-    if (!ms || !fm || !fm.bounds || !src || src.live || !sel || src.trackState === 'loading' || ms.fmFit === sel) return false;
+    // Not while the positions load or after a failed request (a retry is coming): the deaths and mechanics alone would fit a box without the
+    // fight in it, and the fit is once. A fight the daemon answered for with no positions (an old one) fits on its deaths and mechanics.
+    if (!ms || !fm || !fm.bounds || !src || src.live || !sel || ms.fmFit === sel) return false;
+    if (src.trackState !== 'ready' && src.trackState !== 'none') return false;
     const bb = fm.bounds;
     ms.fmFit = sel;
     ms.view = CmdView.fitView([CmdView.project(bb.x0, bb.y0), CmdView.project(bb.x1, bb.y0), CmdView.project(bb.x0, bb.y1), CmdView.project(bb.x1, bb.y1)], pw, ph, 44, 60);
@@ -12187,7 +12192,7 @@
 
   // Whether a tap landed on bare ground: not on a unit, a boss's edge marker, a death skull, a pin, or any of the Fight layers' marks.
   function fdTapEmpty(target) {
-    return !(target && target.closest && target.closest('[data-u], g.bosspoint, g.fdmark, g.fm-pin, g.ic, g.trailmark, g.stamp, .fm-trail, .fm-heat, .fm-cloud, .fm-anchor, .fm-stand, .fm-puller'));
+    return !(target && target.closest && target.closest('[data-u], g.bosspoint, g.fdmark, g.fm-pin, g.ic, g.trailmark, g.stamp, .fm-trail, .fm-heat, .fm-cloud, .fm-anchor, .fm-stand, .fm-puller, .fm-label'));
   }
 
   // A tap on a mob of the debugger's map focuses it when it is a summon the page names or the fight's boss; a tap on bare ground (`empty`)
@@ -12897,13 +12902,14 @@
   // One pin per fight of the run's fight commander at the lead's place when it began. The list and the kept positions are read through the
   // live view's bounded request (fdLiveJson) at most once per 30 s, only while a run card is open and the page is visible.
   const DGN_PINS_EVERY_MS = 30000;
-  const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [] };
+  const DGN_PINS_MAX = 200;
+  const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [], missing: 0 };
 
   function dgnPinsSync(run, cmd) {
     if (!run || !cmd || document.hidden) return;
     const now = Date.now(), same = dgnPins.key === run.key && dgnPins.cmd === cmd;
     if (dgnPins.busy || (same && now - dgnPins.at < DGN_PINS_EVERY_MS)) return;
-    if (!same) { dgnPins.key = run.key; dgnPins.cmd = cmd; dgnPins.pins = []; }
+    if (!same) { dgnPins.key = run.key; dgnPins.cmd = cmd; dgnPins.pins = []; dgnPins.missing = 0; }
     dgnPins.busy = true;
     dgnPins.at = now;
     const fbind = (state.commanders.list || []).find(b => b && b.commander === cmd), lead = fbind ? CmdView.leadBot(fbind) : null;
@@ -12913,13 +12919,25 @@
       fdLiveJson('/api/v1/combat/fights?commander=' + enc + '&limit=200'),
       fdLiveJson('/api/v1/commanders/track?commander=' + enc + '&from=' + fromS + '&to=' + toS),
     ]).then(([fr, tr]) => {
-      if (!cur()) return;
+      if (!cur() || fr.missing || !Array.isArray(fr.json)) return; // no list (404 or a bad body): the pins stand as they are
       const rows = (Array.isArray(fr.json) ? fr.json : []).filter(r => r && typeof r.start === 'number' && r.start >= (run.first_seen || 0));
-      dgnPins.pins = FightMap.pullPins(rows, tr.json ? FightReplay.prep(tr.json).frames : [], lead ? lead.guid : null);
+      dgnPinsMerge(FightMap.pullPins(rows, tr.json ? FightReplay.prep(tr.json).frames : [], lead ? lead.guid : null), rows);
     }).catch(() => {}).then(() => {
       dgnPins.busy = false;
       if (cur() && cmdCards.has('dgn:' + run.key)) drawCmdMap('dgn:' + run.key);
     });
+  }
+
+  // A refresh adds or updates pins and never drops a resolved one: the daemon keeps 30 minutes of positions, so a long run's early fights can
+  // no longer be placed, but the pins they got while their positions were still kept stay for as long as the card is open. `missing` counts the
+  // run's listed fights that have no pin (their positions were never in a window this page asked for).
+  function dgnPinsMerge(got, rows) {
+    got.forEach(p => {
+      const at = dgnPins.pins.findIndex(q => q.key === p.key);
+      if (at >= 0) dgnPins.pins[at] = p; else if (dgnPins.pins.length < DGN_PINS_MAX) dgnPins.pins.push(p);
+    });
+    const have = new Set(dgnPins.pins.map(q => q.key));
+    dgnPins.missing = (rows || []).filter(r => r && !have.has(r.key)).length;
   }
 
   // A click on a pin: opens its fight in the debugger. A fight key holds U+0000, which markup would turn into U+FFFD, so the pin carries it

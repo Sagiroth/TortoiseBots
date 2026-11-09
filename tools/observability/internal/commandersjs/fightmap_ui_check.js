@@ -63,9 +63,9 @@ ctx.theBind = null;
 vm.createContext(ctx);
 vm.runInContext([
   grabConst("CMD_MAP_ICONS"),
-  "const FD_EV_PAGE = 500; let fmSeq = 0; let fmTacBusy = false; const DGN_PINS_EVERY_MS = 30000; const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [] };",
+  "const FD_EV_PAGE = 500; let fmSeq = 0; let fmTacBusy = false; const DGN_PINS_EVERY_MS = 30000; const DGN_PINS_MAX = 200; const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [], missing: 0 };",
   ...["esc", "cmdMapIcon", "fdMapTactics", "fdMapSource", "fdFightModel", "fdMapFit", "cmdFightMapSvg", "fmLegendHtml", "fdFocusPaint", "fdFocusSet", "fdFocusClear",
-    "fdFocusTap", "fdFocusAfter", "fdPickBot", "fdPickBotName", "fdTapEmpty", "fdFightClockMs", "fdDecodeKey", "dgnPinOpen", "cmdFightMarksSvg", "cmdPullPinsSvg", "dgnPinsSync"].map(grab),
+    "fdFocusTap", "fdFocusAfter", "fdPickBot", "fdPickBotName", "fdTapEmpty", "fdFightClockMs", "fdDecodeKey", "dgnPinOpen", "cmdFightMarksSvg", "cmdPullPinsSvg", "dgnPinsSync", "dgnPinsMerge"].map(grab),
 ].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const count = (s, re) => (s.match(re) || []).length;
@@ -239,8 +239,30 @@ assert.strictEqual(fit({ follow: true }, null, srcOf(), "K3"), false);
   const rsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
   assert.strictEqual(rsrc.trackState, "ready");
   assert.strictEqual(fit(msW, run("fdFightModel(c, src, on, 309)", { c: {}, src: rsrc, on: ALL_ON }), rsrc, "K1"), true, "once the track is in, it fits");
+  // a failed request (tracks null, the 30 s retry pending) is not "none": no fit, the card keeps following, and the retry's success fits once
   fdW.tracks.K1 = null;
-  assert.strictEqual(run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA }).trackState, "none", "a fight with no kept positions is known to have none");
+  const fsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(fsrc.trackState, "failed", "a failed fetch is 'failed'");
+  const msF2 = { follow: true, view: null, userScale: null };
+  const fmod = run("fdFightModel(c, src, on, 309)", { c: {}, src: fsrc, on: ALL_ON });
+  assert.ok(fmod.bounds, "the deaths alone give a box");
+  assert.strictEqual(fit(msF2, fmod, fsrc, "K1"), false, "after a failed fetch the fit waits for the retry");
+  assert.deepStrictEqual([msF2.fmFit, msF2.follow, msF2.view], [undefined, true, null], "fmFit unset, follow on, no view");
+  fdW.tracks.K1 = track();
+  const okSrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(fit(msF2, run("fdFightModel(c, src, on, 309)", { c: {}, src: okSrc, on: ALL_ON }), okSrc, "K1"), true, "the retry's success fits");
+  assert.strictEqual(fit(msF2, run("fdFightModel(c, src, on, 309)", { c: {}, src: okSrc, on: ALL_ON }), okSrc, "K1"), false, "once");
+  // an old fight: the daemon answered with no frames. None will come, so it fits on its deaths and mechanics
+  const emptyRaw = { frames: [], names: {}, tracked: true };
+  fdW.tracks.K1 = { raw: emptyRaw, prep: FightReplay.prep(emptyRaw) };
+  const nsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(nsrc.trackState, "none", "an answer with no frames is 'none'");
+  const nmod = run("fdFightModel(c, src, on, 309)", { c: {}, src: nsrc, on: ALL_ON });
+  assert.ok(nmod.bounds, "its deaths still give a box");
+  const msN = { follow: true, view: null, userScale: null };
+  assert.strictEqual(fit(msN, nmod, nsrc, "K1"), true, "an old fight with no positions fits on its deaths");
+  assert.deepStrictEqual([msN.fmFit, msN.follow], ["K1", false]);
+  fdW.tracks.K1 = null;
   fdW.tracks.K1 = undefined;
   assert.strictEqual(run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA }).trackState, "loading", "one not asked for yet is still to come");
   ctx.cmdFd[KEY] = fdA;
@@ -337,7 +359,7 @@ assert.deepStrictEqual([fdF.bot, fdF.focus, FdFilter.isEmpty(fdF.filter)], [null
 // what is bare ground
 const tgt = (hit) => ({ closest: (sel) => (hit && sel.split(",").some((q) => q.trim() === hit) ? {} : null) });
 assert.strictEqual(run("fdTapEmpty(t)", { t: tgt(null) }), true, "nothing under the tap");
-["[data-u]", "g.bosspoint", "g.fdmark", "g.fm-pin", ".fm-trail", ".fm-heat", ".fm-cloud", ".fm-anchor", ".fm-stand", ".fm-puller"].forEach((q) => assert.strictEqual(run("fdTapEmpty(t)", { t: tgt(q) }), false, q + " is not bare ground"));
+["[data-u]", "g.bosspoint", "g.fdmark", "g.fm-pin", ".fm-trail", ".fm-heat", ".fm-cloud", ".fm-anchor", ".fm-stand", ".fm-puller", ".fm-label"].forEach((q) => assert.strictEqual(run("fdTapEmpty(t)", { t: tgt(q) }), false, q + " is not bare ground"));
 assert.strictEqual(run("fdTapEmpty(null)"), true);
 // the chip's × and outside the debugger
 fdF.focus = null; fdF.filter = FdFilter.empty();
@@ -441,6 +463,47 @@ const pinsDone = (async () => {
   ctx.document.hidden = false;
   run("dgnPinsSync(null, 'Cmd')", {}); run("dgnPinsSync(r, null)", { r: run1 });
   assert.strictEqual(requests.length, 0, "no run or no fight commander: nothing");
+  // a run longer than 30 minutes keeps the pins its early fights got while their positions were still kept
+  {
+    const longRun = { key: "309:7", first_seen: base - 4000 };
+    ctx.cmdCards.set("dgn:309:7", {});
+    answers = {
+      "/api/v1/combat/fights": { missing: false, json: [
+        { key: "early", start: base - 3500, boss_name: "Hakkar", outcome: "kill" },
+        { key: "never", start: base - 3600, outcome: "kill" },
+        { key: "late", start: base - 100, outcome: "wipe", live: true },
+      ] },
+      "/api/v1/commanders/track": { missing: false, json: { frames: [
+        { t: base - 3499, map: 309, bots: [[1, 31, 32, 100, 1, 309]] }, { t: base - 99, map: 309, bots: [[1, 41, 42, 100, 1, 309]] }] } },
+    };
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    assert.deepStrictEqual(Array.from(run("dgnPins.pins.map((p) => p.key)")), ["early", "late"], "the first refresh pins the two fights whose positions it could ask for");
+    assert.strictEqual(run("dgnPins.missing"), 1, "one listed fight has no pin");
+    // the next refresh asks only the last 30 min: the early fight can no longer be placed, its pin stays; the live one is updated
+    answers["/api/v1/commanders/track"] = { missing: false, json: { frames: [{ t: base - 99, map: 309, bots: [[1, 43, 44, 100, 1, 309]] }] } };
+    answers["/api/v1/combat/fights"].json[2] = { key: "late", start: base - 100, outcome: "wipe", live: false };
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    const kept = JSON.parse(JSON.stringify(run("dgnPins.pins")));
+    assert.deepStrictEqual(kept.map((p) => p.key), ["early", "late"], "a refresh never drops a resolved pin");
+    assert.deepStrictEqual([kept[0].x, kept[0].y], [31, 32], "the early pin keeps its place");
+    assert.deepStrictEqual([kept[1].x, kept[1].y, kept[1].live], [43, 44, false], "and the later pin is updated");
+    assert.strictEqual(run("dgnPins.missing"), 1, "the fight that never had a pin is still counted");
+    // a failed refresh leaves the pins and the count alone
+    answers = {};
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    assert.deepStrictEqual([run("dgnPins.pins.length"), run("dgnPins.missing")], [2, 1], "a failed request changes nothing");
+    run("dgnPinsMerge([], [])");
+    assert.strictEqual(run("dgnPins.missing"), 0);
+    run("dgnPinsMerge(arr, [])", { arr: Array.from({ length: 300 }, (_, i) => ({ key: "p" + i, x: 1, y: 1, label: "t", wipe: false, live: false })) });
+    assert.ok(run("dgnPins.pins.length") <= 200, "the kept pins are capped");
+    run("dgnPins.pins = []; dgnPins.missing = 0");
+  }
   // another run starts from no pins; a failing request keeps the page quiet
   answers = {};
   run("dgnPinsSync(r, 'Cmd')", { r: { key: "309:2", first_seen: base - 100 } });
@@ -467,6 +530,7 @@ assert.ok(draw1.indexOf("fdMapFit(ms, fm, fmSrc") > 0 && draw1.indexOf("fdMapFit
 assert.ok(/fmSrc && fmSrc\.rest\) \|\| null\) : null;/.test(draw1), "with no replay the units stand at the end of the range");
 assert.ok(/facts\.ctx\.fightMap = !!fmSrc;/.test(draw1), "the Fight layers are available only with a source");
 assert.ok(/fdFocusPaint\(card, fdCtx\);/.test(draw1), "the chip follows the card");
+assert.ok(/earlier fight\$\{dgnPins\.missing === 1 \? ' has' : 's have'\} no pin \(positions are kept for 30 min\)/.test(draw1) && /\[awayNote, enemiesNote, pinNote\]/.test(draw1), "a note under the map counts the fights with no pin");
 assert.ok(draw1.includes("dgnPins.key === liveBind.dgn.key") && draw1.includes("cmdPullPinsSvg(dc, dgnPins.pins)"), "the open run's pins");
 assert.ok(src.includes("dgnPinsSync(open, fightCmd);\n    drawCmdMap(key);"), "the Dungeons card asks for its pins before it draws");
 assert.ok(/else if \(!tap\.guid\) fdFocusTap\(key, tap\.uid, tap\.empty\);/.test(src) && /empty: fdTapEmpty\(e\.target\)/.test(src) && /fdPickBotName\(key, t\.dataset\.fdBot\);/.test(src) && /hideTip\(\); \/\/ a tap on nothing, or on the same unit that has no details\n\s*fdFocusTap\(key, tap\.uid, tap\.empty\);/.test(src), "the map's taps reach the focus");
@@ -475,7 +539,7 @@ assert.ok(src.includes('<div class="fm-focus" hidden></div>\n            <div cl
 const indexHtml = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
 const ft = indexHtml.indexOf('<script src="/static/js/fightmap.js?v=2"></script>'), at = indexHtml.indexOf('<script src="/static/js/app.js?v=');
 assert.ok(ft > 0 && at > ft, "index.html loads fightmap.js before app.js");
-assert.ok(/fightreplay\.js\?v=4/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=59/.test(indexHtml) && /app\.css\?v=32/.test(indexHtml), "the changed assets carry new versions");
+assert.ok(/fightreplay\.js\?v=4/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=60/.test(indexHtml) && /app\.css\?v=32/.test(indexHtml), "the changed assets carry new versions");
 const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
 const classes = new Set(src.match(/\bfm-[a-z-]+\b/g));
 ["fm-trail", "fm-cloud", "fm-anchor", "fm-puller", "fm-heat", "fm-pin", "fm-focus", "fm-stand", "fm-label", "fm-unfocus"].forEach((c) => assert.ok(classes.has(c), c + " is emitted"));
