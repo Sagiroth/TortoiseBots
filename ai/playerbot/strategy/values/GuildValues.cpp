@@ -525,7 +525,27 @@ private:
     bool canFarm_ = false;
 };
 
+SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable);
+
+// The ladder pick, logged whenever it differs from the leg the order is on, with
+// what the pick rested on, so a stuck order can be traced afterwards.
 SupplyStep ChooseSourceStep(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
+    SupplySnapshot* snapshot, FarmableVerdict* farmable)
+{
+    SupplyStep const picked = ChooseSourceStepImpl(bot, order, candidate, snapshot, farmable);
+    SupplyStep const current = order.supplyItemId == candidate.itemId ? order.supplyStep : SupplyStep::None;
+    if (picked != current)
+        TB_LOG_DETAIL("TortoiseBots: order %s supply item %u: %s -> %s (guild bank %s, craft %s, farm %s)",
+            bot->GetName(), candidate.itemId, TortoiseBots::GuildOrders::SupplyStepToken(current),
+            TortoiseBots::GuildOrders::SupplyStepToken(picked),
+            TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId()) ? "yes" : "no",
+            candidate.craft ? "yes" : "no",
+            (farmable ? farmable->CanFarm() : false) ? "yes" : "no");
+    return picked;
+}
+
+SupplyStep ChooseSourceStepImpl(Player* bot, OrderRecord const& order, SupplyCandidate const& candidate,
     SupplySnapshot* snapshot, FarmableVerdict* farmable)
 {
     // A ticked material is the giver's to bring: the bot never sources it
