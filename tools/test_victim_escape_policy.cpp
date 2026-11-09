@@ -143,6 +143,29 @@ int main()
     CHECK(VictimHoldsDuty(false, true, 0));
     CHECK(!VictimHoldsDuty(false, false, 0));
 
+    // The own cast's global cooldown: Ice Block refused NOT_READY while the mage's Frostbolt is still preparing, with
+    // Ice Block itself off cooldown, is only the GCD (breaking the cast cancels it); a real cooldown stays a refusal.
+    CHECK(VictimEscapeGcdOnlyRefusal(true, true, false, false));
+    CHECK(!VictimEscapeGcdOnlyRefusal(false, true, false, false));   // another refusal
+    CHECK(!VictimEscapeGcdOnlyRefusal(true, false, false, false));   // the cast is already launched or channelled
+    CHECK(!VictimEscapeGcdOnlyRefusal(true, true, true, false));     // Ice Block on its own cooldown
+    CHECK(!VictimEscapeGcdOnlyRefusal(true, true, false, true));     // on its category cooldown
+
+    // The duty rule counts a non-boss add on the victim, never the boss itself or another boss.
+    CHECK(CountsAsDutyAttacker(false, true, true, true, true, false));   // a Son of Hakkar
+    CHECK(!CountsAsDutyAttacker(false, true, true, true, true, true));   // another boss: no block
+    CHECK(!CountsAsDutyAttacker(true, true, true, true, true, true));    // the boss
+    CHECK(!CountsAsDutyAttacker(false, true, false, true, true, false)); // a dead add
+    CHECK(!CountsAsDutyAttacker(false, true, true, false, true, false)); // not engaged
+    CHECK(!CountsAsDutyAttacker(false, true, true, true, false, false)); // on someone else
+    CHECK(!CountsAsDutyAttacker(false, false, true, true, true, false)); // not a creature
+    VictimEscapeGuards secondBoss;
+    secondBoss.holdsDuty = VictimHoldsDuty(false, false, CountsAsDutyAttacker(false, true, true, true, true, true) ? 1 : 0);
+    CHECK(VictimEscapeFor(true, false, true, true, CLASS_MAGE, kAll, secondBoss) == VictimEscape::IceBlock);
+    VictimEscapeGuards addOnMage;
+    addOnMage.holdsDuty = VictimHoldsDuty(false, false, CountsAsDutyAttacker(false, true, true, true, true, false) ? 1 : 0);
+    CHECK(VictimEscapeFor(true, false, true, true, CLASS_MAGE, kAll, addOnMage) == VictimEscape::None);
+
     // The only living non-tank target: the boss would come straight back, so nothing is spent.
     VictimEscapeGuards alone;
     alone.otherNonTankTarget = false;

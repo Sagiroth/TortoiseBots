@@ -128,9 +128,9 @@ class VictimEscapeWiring(unittest.TestCase):
         self.assertIn("SeekMeetHealPuller(victim->GetInstanceId()) == victim->GetObjectGuid().GetRawValue()", duty)
         self.assertIn("OtherCreaturesOnVictim(boss, victim)", duty)
         others = body(ACTIONS, "int OtherCreaturesOnVictim(")
-        for clause in ("attacker == boss", "!attacker->IsCreature()", "!sServerFacade.IsAlive(attacker)",
-                       "!attacker->IsInCombat()", "attacker->GetVictim() != victim"):
-            self.assertIn(clause, others)
+        self.assertIn("CountsAsDutyAttacker(attacker == boss, attacker->IsCreature(), sServerFacade.IsAlive(attacker),\n"
+                      "                                 attacker->IsInCombat(), attacker->GetVictim() == victim, IsBossCreature(attacker))",
+                      others)
         protect = body(ACTIONS, "bool PlanProtection(")
         self.assertIn("!member->HasAura(kForbearanceId) && EscapeSpellReady(ai, bot, bop, member)", protect)
         self.assertIn("ProtectorShouldBop(true, bopReady, false, victimEscape, distYd)", protect)
@@ -148,6 +148,11 @@ class VictimEscapeWiring(unittest.TestCase):
         self.assertIn("spell->CheckCast(true)", core)
         self.assertIn("Spell::CalculatePowerCost(info, caster)", core)
         self.assertIn("return result == SPELL_CAST_OK;", core)
+        # The own preparing cast's global cooldown is not a refusal: the check re-runs without it.
+        self.assertIn("VictimEscapeGcdOnlyRefusal(result == SPELL_FAILED_NOT_READY, own && own->getState() == SPELL_STATE_PREPARING,", core)
+        self.assertIn("caster->HasSpellCooldown(spellId), caster->HasSpellCategoryCooldown(info->Category)", core)
+        self.assertIn("result = spell->CheckCast(false);", core)
+        self.assertLess(core.index("CheckCast(false)"), core.index("delete spell;"))
         of = body(ACTIONS, "VictimEscapeReady ReadyOf(")
         # A real player has no bot AI: no own escape, so a paladin protects them.
         self.assertIn("if (!memberAi)\n        return ready;", of)

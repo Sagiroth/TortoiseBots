@@ -74,6 +74,16 @@ namespace ai
         return fullCheckOk || (refusedOnlyByOwnCast && coreCheckOk);
     }
 
+    // Whether the core's cast check refused the escape only for the global cooldown of the bot's own cast in progress:
+    // the check said not ready, the own cast is still preparing (interrupting it cancels its global cooldown,
+    // Spell::cancel), and the escape itself is on neither its own nor its category cooldown. The caller then re-runs
+    // the check without the global cooldown (CheckCast(false)) for the rest (silence, reagents, range).
+    inline bool VictimEscapeGcdOnlyRefusal(bool notReady, bool ownCastPreparing, bool spellCooldown,
+                                           bool categoryCooldown)
+    {
+        return notReady && ownCastPreparing && !spellCooldown && !categoryCooldown;
+    }
+
     // Whether the boss is one the escape serves: immune to taunts and carrying a `threat_successor` row.
     inline bool VictimEscapeBossInScope(bool tauntImmune, bool threatSuccessorRow)
     {
@@ -83,6 +93,14 @@ namespace ai
     // Whether an escape would drop the victim's duty: it is the walk-out puller, the open meet's Son puller, or the
     // current victim of another live, engaged hostile creature than the boss (a Son, an add): Feign Death or Vanish
     // would wipe that creature's threat too, and a protected member would leave it loose.
+    // Whether one attacker of the victim counts for the duty rule: a live, engaged hostile creature on the victim that is
+    // neither the boss nor another boss (a second boss on the victim is the escape's own case, not a duty).
+    inline bool CountsAsDutyAttacker(bool isTheBoss, bool isCreature, bool alive, bool engaged, bool onVictim,
+                                     bool isBoss)
+    {
+        return !isTheBoss && isCreature && alive && engaged && onVictim && !isBoss;
+    }
+
     inline bool VictimHoldsDuty(bool walkoutPuller, bool meetPuller, int otherCreaturesOnVictim)
     {
         return walkoutPuller || meetPuller || otherCreaturesOnVictim > 0;

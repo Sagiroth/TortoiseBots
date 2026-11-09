@@ -68,7 +68,12 @@ bool CoreCastCheckOk(Player* caster, uint32 spellId, Unit* target)
         return false;
     Spell* const spell = new Spell(caster, info, false);
     spell->m_targets.setUnitTarget(target);
-    const SpellCastResult result = spell->CheckCast(true);
+    SpellCastResult result = spell->CheckCast(true);
+    // The own cast's global cooldown is no refusal: breaking a preparing cast cancels it (Spell::cancel).
+    Spell* const own = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (VictimEscapeGcdOnlyRefusal(result == SPELL_FAILED_NOT_READY, own && own->getState() == SPELL_STATE_PREPARING,
+                                   caster->HasSpellCooldown(spellId), caster->HasSpellCategoryCooldown(info->Category)))
+        result = spell->CheckCast(false);
     delete spell;
     return result == SPELL_CAST_OK;
 }
@@ -133,16 +138,17 @@ bool OtherNonTankTarget(Unit* boss, Player* victim)
     return false;
 }
 
-// Live, engaged hostile creatures other than the boss whose current victim is this member (a Son, an add).
+// Live, engaged hostile creatures other than a boss whose current victim is this member (a Son, an add).
 int OtherCreaturesOnVictim(Unit* boss, Player* victim)
 {
     int count = 0;
     for (Unit* attacker : victim->GetAttackers())
     {
-        if (!attacker || attacker == boss || !attacker->IsCreature() || !attacker->IsInWorld() ||
-            !sServerFacade.IsAlive(attacker) || !attacker->IsInCombat() || attacker->GetVictim() != victim)
+        if (!attacker || !attacker->IsInWorld())
             continue;
-        ++count;
+        if (CountsAsDutyAttacker(attacker == boss, attacker->IsCreature(), sServerFacade.IsAlive(attacker),
+                                 attacker->IsInCombat(), attacker->GetVictim() == victim, IsBossCreature(attacker)))
+            ++count;
     }
     return count;
 }
