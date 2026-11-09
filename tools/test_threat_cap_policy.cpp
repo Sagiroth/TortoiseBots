@@ -646,6 +646,12 @@ int main()
         CHECK(!ThreatResetWindowOpen(37999, 19000, 26000));
         CHECK(ThreatResetWindowOpen(57000, 19000, 26000));
         CHECK(!ThreatResetWindowOpen(78001, 19000, 26000));
+        // The index names the window the hold is in, so one reset's three gaps each log their own row.
+        CHECK(ThreatResetWindowIndex(18999, 19000, 26000) == 0);
+        CHECK(ThreatResetWindowIndex(19000, 19000, 26000) == 1);
+        CHECK(ThreatResetWindowIndex(40000, 19000, 26000) == 2);
+        CHECK(ThreatResetWindowIndex(57000, 19000, 26000) == 3);
+        CHECK(ThreatResetWindowIndex(78001, 19000, 26000) == 0);
         // Before the first reset: the fight's age plus 3 s.
         CHECK(ThreatResetSince(100000, 0, 50000) == 53000);
         CHECK(ThreatResetSince(100000, 40000, 50000) == 60000);

@@ -439,12 +439,19 @@ namespace ai
     constexpr std::uint32_t kThreatResetFirstOffsetMs = 3000;
     constexpr std::uint8_t kThreatResetResumeGapPct = 5;
 
-    inline bool ThreatResetWindowOpen(std::uint32_t sinceMs, std::uint32_t minGapMs, std::uint32_t maxGapMs)
+    // Which gap window `sinceMs` falls in: 1..3 for the three double-gap windows, 0 when shut. The hold and its log
+    // both key on it, so one reset logs one row per window rather than one per reset.
+    inline std::uint32_t ThreatResetWindowIndex(std::uint32_t sinceMs, std::uint32_t minGapMs, std::uint32_t maxGapMs)
     {
         for (std::uint32_t k = 1; k <= 3; ++k)
             if (sinceMs >= k * minGapMs && sinceMs <= k * maxGapMs)
-                return true;
-        return false;
+                return k;
+        return 0;
+    }
+
+    inline bool ThreatResetWindowOpen(std::uint32_t sinceMs, std::uint32_t minGapMs, std::uint32_t maxGapMs)
+    {
+        return ThreatResetWindowIndex(sinceMs, minGapMs, maxGapMs) != 0;
     }
 
     inline std::uint32_t ThreatResetSince(std::uint32_t nowMs, std::uint32_t lastResetMs, std::uint32_t engageMs)

@@ -1210,8 +1210,9 @@ AiPlayerbot.DungeonRunSeekCycleRoll = 0
 # resuming under 90 %; heals and cures are never held and the target is never cleared. Walk 62: 49 of 83 non-tank turns
 # were a DPS above the best remaining tank, and a non-tank turn cost 0.69 deaths in the next 15 s against 0.28 after a
 # tank turn; the expected tank-turn gain is +7-12 points for about 3-5 % of the damage on Hakkar, so it ships as an A/B
-# and turns on only after the siphon clock has a walk. Stop rule: tank-turn share up less than 8 points, or Hakkar
-# %/s per alive member down 3 % or more.
+# and turns on only after the siphon clock has a walk. Needs AiPlayerbot.DungeonRunSeekAura: the reset clock is that
+# fight read's charm scan, so with the seek off the window never opens (the config load logs one line saying so).
+# Stop rule: tank-turn share up less than 8 points, or Hakkar %/s per alive member down 3 % or more.
 AiPlayerbot.DungeonRunThreatResetWindow = 0
 
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.

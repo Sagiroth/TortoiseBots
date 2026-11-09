@@ -342,6 +342,38 @@ class ThreatResetWindow(unittest.TestCase):
         self.assertIn("std::uint32_t lastResetMs = 0, engageMs = 0;", view)
         self.assertIn("out.lastResetMs = record.lastResetMs;", BOSS)
 
+    def test_the_load_warns_when_the_seek_is_off(self):
+        # Round-1 review (Codex HIGH, kept off): the reset clock is the seek fight read's charm scan, so the key alone
+        # does nothing. The config load says so once, naming both keys, and the docs and template state the dependency.
+        keys = body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()")
+        self.assertIn("if (dungeonRunThreatResetWindow && !dungeonRunSeekAura)", keys)
+        self.assertIn("sLog.outString(\"TortoiseBots: AiPlayerbot.DungeonRunThreatResetWindow = 1 needs "
+                      "AiPlayerbot.DungeonRunSeekAura = 1:", keys)
+        self.assertIn("the reset clock is the seek fight's charm scan", keys)
+        self.assertIn("Needs AiPlayerbot.DungeonRunSeekAura", CONF)
+        self.assertIn("needs `AiPlayerbot.DungeonRunSeekAura`", SETTINGS)
+
+    def test_the_hold_checks_the_window_before_the_tank_list(self):
+        # Round-1 L5: a shut window clears the latch and returns before the reference's tank scan.
+        hold = body(STRATEGY, "bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)")
+        self.assertIn("const std::uint32_t windowIndex = ThreatResetWindowIndex(sinceMs, win->minGapMs, win->maxGapMs);",
+                      hold)
+        self.assertIn("if (windowIndex == 0)", hold)
+        self.assertLess(hold.index("if (windowIndex == 0)"), hold.index("ThreatValue::GetResetSuccessorThreat("))
+        self.assertIn("ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);", hold)
+        self.assertLess(hold.index("ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);"),
+                        hold.index("ThreatValue::GetResetSuccessorThreat("))
+
+    def test_the_hold_log_is_once_per_gap_window(self):
+        # Round-1 L7: the key carries the window index, so the k = 2 and k = 3 gaps after one reset log too.
+        log = body(STRATEGY, "void LogThreatResetHold(PlayerbotAI* ai, Player* bot, std::uint8_t pct, float ref,")
+        self.assertIn("std::uint32_t windowIndex)", log)
+        self.assertIn("const std::uint64_t windowKey = (static_cast<std::uint64_t>(lastResetMs) << 8) | windowIndex;",
+                      log)
+        self.assertIn("if (it != g_threatResetLog.end() && it->second == windowKey)", log)
+        self.assertIn("LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, "
+                      "view.lastResetMs, windowIndex);", STRATEGY)
+
     def test_docs_and_changelog(self):
         self.assertIn("### `AiPlayerbot.DungeonRunThreatResetWindow`", SETTINGS)
         self.assertIn("DungeonRunThreatResetWindow", DOC)

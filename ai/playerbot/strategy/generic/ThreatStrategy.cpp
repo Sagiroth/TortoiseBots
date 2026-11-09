@@ -29,21 +29,23 @@ bool AutoAttackAction(Action* action)
         action->getName() == "auto shot";
 }
 
-// One BossTacticsThreatReset row per bot per reset window: a walk reads whether the hold fired when it should.
+// One BossTacticsThreatReset row per bot per reset window: a walk reads whether the hold fired when it should. The key
+// packs the reset and which of the three gap windows it is, so one reset can log up to three windows.
 std::mutex g_threatResetLogMutex;
-std::unordered_map<std::uint64_t, std::uint32_t> g_threatResetLog;
+std::unordered_map<std::uint64_t, std::uint64_t> g_threatResetLog;
 
 void LogThreatResetHold(PlayerbotAI* ai, Player* bot, std::uint8_t pct, float ref, std::uint32_t sinceMs,
-                        std::uint32_t lastResetMs)
+                        std::uint32_t lastResetMs, std::uint32_t windowIndex)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
+    const std::uint64_t windowKey = (static_cast<std::uint64_t>(lastResetMs) << 8) | windowIndex;
     {
         std::lock_guard<std::mutex> lock(g_threatResetLogMutex);
         auto const it = g_threatResetLog.find(bot->GetObjectGuid().GetRawValue());
-        if (it != g_threatResetLog.end() && it->second == lastResetMs)
+        if (it != g_threatResetLog.end() && it->second == windowKey)
             return;
-        g_threatResetLog[bot->GetObjectGuid().GetRawValue()] = lastResetMs;
+        g_threatResetLog[bot->GetObjectGuid().GetRawValue()] = windowKey;
         if (g_threatResetLog.size() > 4096)
             g_threatResetLog.clear();
     }
@@ -65,18 +67,30 @@ bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
     // The row is read before the fight's seek snapshot: the snapshot costs a lock.
     const ThreatResetWindow* const win = GetBossTactics().ThreatResetWindowOf(target->GetMapId(), target->GetEntry());
     if (!win)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
         return false;
+    }
     SeekCycleView view;
     if (!SeekCycleSnapshot(bot->GetInstanceId(), target->GetObjectGuid().GetRawValue(), view) || !view.valid)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
         return false;
+    }
     const std::uint32_t nowMs = WorldTimer::getMSTime();
     const std::uint32_t sinceMs = ThreatResetSince(nowMs, view.lastResetMs, view.engageMs);
+    const std::uint32_t windowIndex = ThreatResetWindowIndex(sinceMs, win->minGapMs, win->maxGapMs);
+    // A shut window holds nothing: drop the latch before the tank list is built, so the common read costs no scan.
+    if (windowIndex == 0)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
+        return false;
+    }
     const float botThreat = sServerFacade.GetThreatManager(target).getThreat(bot);
     const float ref = ThreatValue::GetResetSuccessorThreat(ai, target);
-    const bool held = ai->ThreatResetCap().Update(ThreatResetWindowOpen(sinceMs, win->minGapMs, win->maxGapMs), true,
-                                                  botThreat, ref, win->stopPct);
+    const bool held = ai->ThreatResetCap().Update(true, true, botThreat, ref, win->stopPct);
     if (held)
-        LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs);
+        LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
     return held;
 }
 

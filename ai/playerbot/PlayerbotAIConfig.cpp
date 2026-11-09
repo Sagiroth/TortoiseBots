@@ -231,6 +231,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     botLfgChat = config.GetBoolDefault("AiPlayerbot.BotLfgChat", true);
     if (botLfgGroups && !dungeonSelfClear)
         sLog.outString("TortoiseBots: AiPlayerbot.BotLfgGroups = 1 needs AiPlayerbot.DungeonSelfClear = 1: bot LFG groups stay dormant.");
+    if (dungeonRunThreatResetWindow && !dungeonRunSeekAura)
+        sLog.outString("TortoiseBots: AiPlayerbot.DungeonRunThreatResetWindow = 1 needs AiPlayerbot.DungeonRunSeekAura = 1: the reset clock is the seek fight's charm scan, so the window stays shut.");
 }
 
 void PlayerbotAIConfig::LoadObservabilityRaids()
