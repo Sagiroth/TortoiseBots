@@ -1276,16 +1276,23 @@ void BotManager::OnPlayerLogin(::Player* player)
     }
 
     // Pool and hired bots seeded before an item joined the gear blacklist still
-    // wear it; their slot is not re-geared until a level-up, so strip it here.
+    // wear it; their slot is not re-geared until a level-up, so strip it here
+    // and let the normal gear pass fill the slot with a fitting piece.
     if (record.random)
     {
+        bool stripped = false;
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* worn = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
             if (worn && worn->GetProto() &&
                 TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, worn->GetProto()->ItemId))
+            {
                 player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+                stripped = true;
+            }
         }
+        if (stripped && !hired && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5)
+            sRandomBotFacade.UpdateGearSpells(player);
     }
 
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.
