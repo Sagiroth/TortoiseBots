@@ -1287,6 +1287,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                         location.GetMapId(), location.getX(), location.getY(), location.getZ());
             }
             bool const noPath = pathTag == "nopath";
+            if (noPath && target->GetDestination() &&
+                ai::PurposeRemembersUnreachablePoints(target->GetDestination()->GetPurpose() == TravelDestinationPurpose::GatherFishing,
+                    target->GetDestination()->GetPurpose() == TravelDestinationPurpose::GenericRpg))
+                sTravelMgr.NoteUnreachablePoint(location);
             failDetail += pathTag;
             failDetail += ":";
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
