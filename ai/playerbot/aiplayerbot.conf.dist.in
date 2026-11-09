@@ -2512,12 +2512,18 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # pool runs after them as one turn queue: after each turn a bot is due again
 # when its AI asked to think next, never later than its situation allows
 # (combat 400 ms, dead or battleground 1 s, teleport 100 ms, else 3 s), and a
-# change of situation makes it due at once. Due bots run most overdue first
-# relative to that cap until the budget is spent, so nobody is dropped.
+# change of situation (plus arriving at the travel target or finishing the
+# worked task: walk-to-work or work-to-expired in one turn, never a failed
+# move or a re-pick) makes it due at once. Bots next to a real player run
+# first: due bots on the same map and instance within PoolNearPlayerYd run
+# ahead of the rest when the budget cuts the pass, never starving the rest.
 #   PoolTickBudgetUs: microseconds of module work per tick for the pool turn
 #       queue, added to CombatTickBudgetUs (the two make one budget).
 #       0 = no budget at all (every due bot runs).
 #       Values below 1000 are raised to 1000; 100000 is the ceiling.
+#   PoolNearPlayerYd: yards around a real player whose pool bots run ahead of
+#       the rest when the budget cuts the pass (same map and instance).
+#       0 turns the preference off. Default is 80.
 #   PoolBudgetWhenTickOverMs: the budget only engages while the previous world
 #       tick ran longer than this. 0 = budget on every tick (the default: with
 #       the self-tuning budget below, a healthy server reclaims the full
@@ -2544,6 +2550,7 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # The pass cost and whether the budget cut a pass are reported by the
 # "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
 AiPlayerbot.PoolTickBudgetUs = 22000
+AiPlayerbot.PoolNearPlayerYd = 80
 AiPlayerbot.PoolBudgetWhenTickOverMs = 0
 AiPlayerbot.CombatTickBudgetUs = 15000
 AiPlayerbot.TargetWorldTickMs = 100

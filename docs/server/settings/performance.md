@@ -23,7 +23,7 @@ The total bot population is a major factor in server CPU and memory usage. When 
 | [`AiPlayerbot.botActiveAlone`](#aiplayerbotbotactivealone) | `10` | Percentage of isolated bots kept active when throttling is enabled. |
 | [`AiPlayerbot.ForceActiveWhenNearPlayer`](#aiplayerbotforceactivewhennearplayer) | `0` | Forces bots within human visibility range to remain fully active. |
 | [`AiPlayerbot.PoolTickBudgetUs`](#aiplayerbotpooltickbudgetus) | `22000` | Microsecond time budget per world tick for processing pool bots. |
-| [`AiPlayerbot.CombatTickBudgetUs`](#aiplayerbotcombattickbudgetus) | `15000` | Microsecond time budget per world tick for processing combat turns. |
+| [`AiPlayerbot.PoolNearPlayerYd`](#aiplayerbotpoolnearplayeryd) | `80` | Yards around a real player whose pool bots run first when the budget cuts. |
 | [`AiPlayerbot.PoolBudgetWhenTickOverMs`](#aiplayerbotpoolbudgetwhentickoverms) | `0` | World tick latency threshold in milliseconds where budgets engage. |
 | [`AiPlayerbot.TargetWorldTickMs`](#aiplayerbottargetworldtickms) | `100` | Target world tick duration used by the self-tuning budget controller. |
 | [`AiPlayerbot.ValueRefreshAtInterval`](#aiplayerbotvaluerefreshatinterval) | `0` | Refreshes cached AI sensory values at full intervals to reduce CPU usage. |
@@ -102,12 +102,25 @@ Microsecond execution budget ceiling per world tick for processing pool bots.
 
 Defines the time budget allocated for updating random pool bots during each server world tick (22,000 microseconds = 22 milliseconds).
 
-Player-owned bots and companions hired by online players always update first, on every tick, and are completely exempt from this budget. The random pool runs afterward as one turn queue, most-overdue-first; bots it does not reach run first on the next tick. The budget is checked between bots so a single pass can overshoot by one bot. Setting either budget to `0` disables the whole combined budget.
-
-If pool bots feel sluggish or unresponsive, raise `PoolTickBudgetUs` to `30000`–`50000` (30–50 ms). On a weak machine, run fewer bots rather than lowering it.
+Player-owned bots and companions hired by online players always update first, on every tick, and are completely exempt from this budget. The random pool runs afterward as one turn queue, most-overdue-first with bots near real players ahead; bots it does not reach run first on the next tick. The budget is checked between bots so a single pass can overshoot by one bot. Setting either budget to `0` disables the whole combined budget.
 
 </details>
 
+
+### `AiPlayerbot.PoolNearPlayerYd`
+Yards around a real player whose pool bots run ahead of the rest when the budget cuts the pass.
+**Default:** `80` · **Values:** yards (0..N; 0 off) · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+Due pool bots on the same map and instance within this many yards of a real (network-session) player run first, most overdue first among themselves; the rest keep today's most-overdue order and run after, never dropped, so a bot next to you answers at once (for example it starts its next task right after arriving) while distant bots just wait a little longer. Combat, teleport, death and battleground situation caps still apply inside each group.
+
+Costs nothing measurable: player spots per map are cached once per tick and the radius check is squared 2D distance from positions the server already tracks.
+
+If bots next to players still feel slow, raise `PoolTickBudgetUs` first. Set to `0` to turn the preference off.
+
+</details>
 ### `AiPlayerbot.CombatTickBudgetUs`
 Microsecond execution budget ceiling per world tick for processing bots in combat.
 **Default:** `15000` · **Values:** microseconds (1000..100000, or 0) · **Restart:** needed
