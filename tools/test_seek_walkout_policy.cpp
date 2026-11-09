@@ -2481,24 +2481,36 @@ static void TestWalkoutCapTakeLatch()
 // of its point, for at most 6 s, and never when the next siphon is 15 s or less away.
 static void TestWalkoutShotWaitsReceiver()
 {
+    // Signed ms to the siphon and the task's age: a far siphon is 60000 ms, a young task 3000 ms.
+    const int far = 60000;
+    const std::uint32_t young = 3000;
     // The named failing case: the receiver 19 yd from its point, 1 s waited, the siphon 60 s out: the shot waits.
-    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, 60) == false);
-    CHECK(WalkoutShotReady(true, true, 4.0f, 1000, 60));
-    CHECK(WalkoutShotReady(true, true, 5.0f, 1000, 60));    // the 5 yd line itself is arrived
-    CHECK(!WalkoutShotReady(true, true, 5.1f, 1000, 60));
-    CHECK(WalkoutShotReady(true, true, 19.0f, 6000, 60));   // the 6 s timeout
-    CHECK(!WalkoutShotReady(true, true, 19.0f, 5999, 60));
-    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, 15));   // the siphon floor
-    CHECK(!WalkoutShotReady(true, true, 19.0f, 1000, 16));
-    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, -3));   // the siphon is overdue
-    CHECK(WalkoutShotReady(true, false, 19.0f, 1000, 60));  // no pre-place this cycle: no wait
-    CHECK(WalkoutShotReady(false, true, 19.0f, 1000, 60));  // key off: today
-    CHECK(WalkoutShotReady(false, false, 19.0f, 0, 60));
+    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, far, young) == false);
+    CHECK(WalkoutShotReady(true, true, 4.0f, 1000, far, young));
+    CHECK(WalkoutShotReady(true, true, 5.0f, 1000, far, young));    // the 5 yd line itself is arrived
+    CHECK(!WalkoutShotReady(true, true, 5.1f, 1000, far, young));
+    CHECK(WalkoutShotReady(true, true, 19.0f, 6000, far, young));   // the 6 s timeout
+    CHECK(!WalkoutShotReady(true, true, 19.0f, 5999, far, young));
+    // The siphon floor in ms (review: whole seconds released the shot at 15999 ms).
+    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, 15000, young));
+    CHECK(!WalkoutShotReady(true, true, 19.0f, 1000, 15001, young));
+    CHECK(!WalkoutShotReady(true, true, 19.0f, 1000, 15999, young));
+    CHECK(WalkoutShotReady(true, true, 19.0f, 1000, -3000, young)); // the siphon is overdue
+    CHECK(!WalkoutShotReady(true, true, 19.0f, 1000, std::numeric_limits<int>::max(), young)); // unknown: no clause
+    // Review M1: a puller in position at 20 s (receiver far, siphon far) is ready, so the wait never eats the last 6 s
+    // before the task's 25 s timeout.
+    CHECK(WalkoutShotReady(true, true, 30.0f, 1000, far, 20000));
+    CHECK(WalkoutShotReady(true, true, 30.0f, 1000, far, kSeekWalkoutTimeoutMs - kSeekShotReceiverWaitMs));
+    CHECK(!WalkoutShotReady(true, true, 30.0f, 1000, far, kSeekWalkoutTimeoutMs - kSeekShotReceiverWaitMs - 1));
+    CHECK(WalkoutShotReady(true, false, 19.0f, 1000, far, young));  // no pre-place this cycle: no wait
+    CHECK(WalkoutShotReady(false, true, 19.0f, 1000, far, young));  // key off: today
+    CHECK(WalkoutShotReady(false, false, 19.0f, 0, far, young));
 
-    CHECK(std::string(WalkoutShotWaitReason(true, 3.0f, 2000, 60)) == "arrived");
-    CHECK(std::string(WalkoutShotWaitReason(true, 19.0f, 2000, 12)) == "siphon");
-    CHECK(std::string(WalkoutShotWaitReason(true, 19.0f, 6000, 60)) == "timeout");
-    CHECK(std::string(WalkoutShotWaitReason(false, 19.0f, 2000, 60)) == "ended");
+    CHECK(std::string(WalkoutShotWaitReason(true, 3.0f, 2000, far, young)) == "arrived");
+    CHECK(std::string(WalkoutShotWaitReason(true, 19.0f, 2000, 12000, young)) == "siphon");
+    CHECK(std::string(WalkoutShotWaitReason(true, 19.0f, 6000, far, young)) == "timeout");
+    CHECK(std::string(WalkoutShotWaitReason(true, 19.0f, 2000, far, 20000)) == "late");
+    CHECK(std::string(WalkoutShotWaitReason(false, 19.0f, 2000, far, young)) == "ended");
 
     // The wait's latch: once per task, only for this task's puller and generation, and over after its end.
     SeekWalkoutState s;
@@ -2517,7 +2529,11 @@ static void TestWalkoutShotWaitsReceiver()
     CHECK(WalkoutShotStalled(s, 8100));
     CHECK(WalkoutStallHeldByShotWait(s, 7999));
     CHECK(WalkoutStallHeldByShotWait(s, 8100));
-    CHECK(!WalkoutStallHeldByShotWait(s, 2000 + kSeekShotReceiverWaitMs + kSeekShotWaitStallSlackMs)); // bounded
+    // Review L1: the hold lasts until the wait's own end, however slow the puller's tick (past 8 s too); a stamp
+    // ahead of the clock (signed age) still holds; only the task's own timeout bounds it.
+    CHECK(WalkoutStallHeldByShotWait(s, 2000 + 9000));
+    CHECK(WalkoutStallHeldByShotWait(s, 1500));
+    CHECK(!WalkoutStallHeldByShotWait(s, 2000 + kSeekWalkoutTimeoutMs));
     // Its end: one row, the stall clock restarts at the end, and the task never waits again.
     CHECK(!WalkoutShotWaitEnd(s, 12, s.startGen, 8000));
     CHECK(WalkoutShotWaitEnd(s, 11, s.startGen, 8000));
@@ -2566,7 +2582,7 @@ static void TestShotWaitAndLateWalkNoDeadlock()
         if (due)
             pointYd = std::max(0.0f, pointYd - 0.7f);
         CHECK(WalkoutShotWaitNote(s, 11, s.startGen, now, waited));
-        if (WalkoutShotReady(true, WalkoutPrePlaceLive(s), pointYd, waited, 60))
+        if (WalkoutShotReady(true, WalkoutPrePlaceLive(s), pointYd, waited, 60000, now - s.startMs))
         {
             shot = true;
             break;
@@ -2577,7 +2593,7 @@ static void TestShotWaitAndLateWalkNoDeadlock()
     CHECK(pointYd <= kSeekShotReceiverArriveYd);
     CHECK(now - 3000 < kSeekShotReceiverWaitMs);
     // A tank that never walks: the timeout still lets the shot go.
-    CHECK(WalkoutShotReady(true, true, 30.0f, kSeekShotReceiverWaitMs, 60));
+    CHECK(WalkoutShotReady(true, true, 30.0f, kSeekShotReceiverWaitMs, 60000, 4000));
 }
 
 int main()

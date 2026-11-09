@@ -222,11 +222,12 @@ class SeekSonMeetWiring(unittest.TestCase):
         gate = execute.index("if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)")
         wait = execute[gate:execute.index("// DungeonRunSeekWalkoutFaceCast: stop, turn", gate)]
         self.assertIn("SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait)", wait)
-        self.assertIn("if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInS))", wait)
+        self.assertIn("if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInMs,\n"
+                      "                                              wait.taskAgeMs))", wait)
         self.assertIn("return true;", wait)
         self.assertIn("SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs)", wait)
         self.assertIn('"son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s"', wait)
-        self.assertIn("WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInS)", wait)
+        self.assertIn("WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInMs,", wait)
         self.assertIn("LogSeekMeet(ai, info1);", wait)
         # The wait sits after the in-flight wait and before the face and the cast.
         self.assertLess(execute.index("WalkoutPullShotWaits(task.walkoutPullCastMs"), gate)
@@ -239,7 +240,10 @@ class SeekSonMeetWiring(unittest.TestCase):
         end = body(ACTIONS, "bool SeekWalkoutShotWaitEnd(")
         self.assertIn("WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs)", end)
         # The siphon's signed seconds reach the task; the no-shot stall is held while the wait runs.
-        self.assertIn("task.walkoutDueInS = state.dueSignedMs == std::numeric_limits<int>::max()", ACTIONS)
+        # Review (Codex MED): the siphon time is passed in signed ms, never truncated to seconds; the task's age too.
+        self.assertIn("task.walkoutDueInMs = state.dueSignedMs;", ACTIONS)
+        self.assertNotIn("dueSignedMs / 1000", ACTIONS)
+        self.assertIn("out.taskAgeMs = nowMs - s.startMs;", read)
         self.assertIn("!WalkoutStallHeldByShotWait(state, nowMs);", update())
         # The late walk cannot wait on the waiting puller: a latched wait counts as in position.
         self.assertIn("s.firstInShotMs != 0 || s.shotWaitSinceMs != 0;", inline_body(POLICY, "inline bool WalkoutPullerInPos("))
@@ -370,11 +374,11 @@ class CauseInsanityRowWiring(unittest.TestCase):
         return body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
 
     def test_the_row_is_built(self):
-        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,cap_ref_threat=%.0f,'
-                      'top_dps_threat=%.0f"',
+        for field in ('"charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"\n'
+                      '             "top_dps_threat=%.0f"',
                       '"Cause Insanity on %s: Hakkar turned to %s (%s)"',
                       '"BossTacticsCharm"'):
-            self.assertIn(field.replace("'\n                      '", ""), ACTIONS.replace('"\n             "', ""))
+            self.assertIn(field, ACTIONS)
         self.assertIn("LogSeekCharm(ai, bot, boss, charmRowGuid, roles);", ACTIONS)
 
     def test_the_row_carries_the_cap_reference(self):
@@ -386,7 +390,10 @@ class CauseInsanityRowWiring(unittest.TestCase):
         self.assertIn("sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder", log)
         self.assertIn("capWho[static_cast<std::size_t>(capPick.index)]", log)
         self.assertIn('std::strcmp(CharmRoleWord(entry.unit), "dps") == 0', log)
-        self.assertIn('capRef ? capRef->GetName() : "none", capRef ? capPick.threat : -1.0f, topDpsThreat);', log)
+        self.assertIn('capRef ? capRef->GetName() : "none",', log)
+        # Review M2: the reference's kind, from the pick itself.
+        self.assertIn('!capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, '
+                      'topDpsThreat);', log)
         # The new fields come after `top=`, whose entries never hold a comma, so `top=([^,]*)` still parses it.
         fmt = log[log.index('"charmed='):log.index("CharmRoleWord(charmed)")]
         self.assertLess(fmt.index("top=%s"), fmt.index(",cap_ref=%s"))

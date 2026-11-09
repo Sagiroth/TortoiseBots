@@ -1299,17 +1299,20 @@ namespace ai
     // The walk-out shot waits for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2). Walk 58 (late
     // walk on): at the shot the receiver stood a median 19.1 yd from its pre-place point, within 4 yd in 3 of 26, so the
     // Son ran 43 yd past it. With the key and a live pre-place the puller, in shot position, holds its shot until the
-    // receiver is within kSeekShotReceiverArriveYd of its point; it shoots anyway after kSeekShotReceiverWaitMs of
-    // waiting, or once the next Blood Siphon is kSeekShotReceiverDueFloorS or less away (the dose must not be lost).
+    // receiver is within kSeekShotReceiverArriveYd of its point (its own line: the pre-place's hold ring,
+    // kSeekMeetPrePlaceArriveYd, is 4 yd). It shoots anyway after kSeekShotReceiverWaitMs of waiting, once the next
+    // Blood Siphon is kSeekShotReceiverDueFloorMs or less away (the dose must not be lost), or once the task is
+    // kSeekShotReceiverTaskLateMs old (review M1: the wait never eats the last 6 s before the task's 25 s timeout).
     constexpr float kSeekShotReceiverArriveYd = 5.0f;
     constexpr std::uint32_t kSeekShotReceiverWaitMs = 6000;
-    constexpr int kSeekShotReceiverDueFloorS = 15;
-    constexpr std::uint32_t kSeekShotWaitStallSlackMs = 2000; // the stall hold's bound past the wait (one slow tick)
+    constexpr int kSeekShotReceiverDueFloorMs = 15000;
+    constexpr std::uint32_t kSeekShotReceiverTaskLateMs = kSeekWalkoutTimeoutMs - kSeekShotReceiverWaitMs;
 
-    // Whether the walk-out shot may go now. Key off, or no live pre-place this cycle: always (today). `siphonInS` is the
-    // signed seconds to the next siphon (0 or less: due or past).
+    // Whether the walk-out shot may go now. Key off, or no live pre-place this cycle: always (today). `siphonInMs` is the
+    // signed milliseconds to the next siphon (0 or less: due or past; INT_MAX: unknown, never the siphon clause),
+    // compared in ms (review: whole seconds released the shot up to 999 ms early). `taskAgeMs`: since the task started.
     inline bool WalkoutShotReady(bool flagOn, bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
-                                 int siphonInS)
+                                 int siphonInMs, std::uint32_t taskAgeMs)
     {
         if (!flagOn || !prePlaceLive)
             return true;
@@ -1317,21 +1320,24 @@ namespace ai
             return true;
         if (waitedMs >= kSeekShotReceiverWaitMs)
             return true;
-        return siphonInS <= kSeekShotReceiverDueFloorS;
+        if (taskAgeMs >= kSeekShotReceiverTaskLateMs)
+            return true;
+        return siphonInMs <= kSeekShotReceiverDueFloorMs;
     }
 
     // The `reason=` of the shot_wait row once the wait is over: `ended` (the pre-place ended while the puller waited),
-    // `arrived`, `siphon` or `timeout`, in that order.
+    // `arrived`, `siphon`, `late` (the task's age clause) or `timeout`, in that order.
     inline const char* WalkoutShotWaitReason(bool prePlaceLive, float receiverToPointYd, std::uint32_t waitedMs,
-                                             int siphonInS)
+                                             int siphonInMs, std::uint32_t taskAgeMs)
     {
         if (!prePlaceLive)
             return "ended";
         if (receiverToPointYd <= kSeekShotReceiverArriveYd)
             return "arrived";
-        if (siphonInS <= kSeekShotReceiverDueFloorS)
+        if (siphonInMs <= kSeekShotReceiverDueFloorMs)
             return "siphon";
-        (void)waitedMs;
+        if (waitedMs < kSeekShotReceiverWaitMs && taskAgeMs >= kSeekShotReceiverTaskLateMs)
+            return "late";
         return "timeout";
     }
 
@@ -1366,12 +1372,15 @@ namespace ai
     }
 
     // Whether a running shot wait holds the no-shot stall abort off (the wait would otherwise be aborted as "no shot" at
-    // the same 6 s). Bounded: past kSeekShotReceiverWaitMs plus kSeekShotWaitStallSlackMs a wait whose puller stopped
-    // ticking no longer holds it.
+    // the same 6 s). The hold lasts until the wait's own end (WalkoutShotWaitEnd, on the puller's tick), so a slow tick
+    // cannot let the abort fire mid-wait (review L1). The age is signed (a stamp ahead of `nowMs` still holds); the task's
+    // own 25 s timeout bounds a puller that stopped ticking.
     inline bool WalkoutStallHeldByShotWait(const SeekWalkoutState& s, std::uint32_t nowMs)
     {
-        return s.shotWaitSinceMs != 0 && !s.shotWaitDone &&
-            nowMs - s.shotWaitSinceMs < kSeekShotReceiverWaitMs + kSeekShotWaitStallSlackMs;
+        if (s.shotWaitSinceMs == 0 || s.shotWaitDone)
+            return false;
+        const std::int32_t age = static_cast<std::int32_t>(nowMs - s.shotWaitSinceMs);
+        return age < static_cast<std::int32_t>(kSeekWalkoutTimeoutMs);
     }
 
     // The pre-placed tank came within kSeekMeetPrePlaceArriveYd of its point: true once per pre-place (the one

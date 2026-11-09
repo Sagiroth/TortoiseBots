@@ -165,7 +165,7 @@ ref survives line drift.
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
 | 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=` and `src=` (the take path) |
-| 18a | seek take held | `seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=<nearest_reach\|healer_clock>` | LogSeekTakeHeld (FindSeekNearestTake, SeekHealerClockCapOk) | yes: `cap_guard` (with `DungeonRunSeekNearestTakeReach`, the collapse guard held this tank's reach or healer-clock take of the Son back: its leave would collapse the damage dealers' threat cap; `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's, 0 when no off-tank reference is left); once per tank and Son per 2 s | new |
+| 18a | seek take held | `seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=<nearest_reach\|healer_clock> victim=<name> on_nontank_ms=%u victim_hp=%.0f` | LogSeekTakeHeld (FindSeekNearestTake, SeekHealerClockCapOk) | yes: `cap_guard` (with `DungeonRunSeekNearestTakeReach`, the collapse guard held this tank's reach or healer-clock take of the Son back: its leave would collapse the damage dealers' threat cap; `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's, 0 when no off-tank reference is left; `victim`, `on_nontank_ms` and `victim_hp` are the Son's victim, its time on it and its health); once per tank and Son per 2 s; a held row and a take row can share a tick, so join them on time | new |
 
 ### Other boss-tactics rows
 
@@ -216,7 +216,7 @@ receiver's tank pick when `DungeonRunSeekSonMeet` and a `seek_pull` row are live
 | 43g | pre-place end | `son=%u,event=preplace_end,receiver=<name\|none>,reason=<receiver_dead\|receiver_charmed\|receiver_victim>` | UpdateSeekWalkout | yes: the pre-placed tank can no longer wait, so the pre-place ends and the shot's pick is today's | new |
 | 43h | pre-place skip | `son=%u,event=preplace_skip,receiver=<name>,reason=floor` | UpdateSeekWalkout | yes: at the start, the point's floor is off the platform's level, so no pre-place began | new |
 | 43i | pre-place arrive | `son=%u,event=preplace_arrive,receiver=<name>,after_ms=%u,point_yd=%.1f` | FindBossSeekTank (SeekMeetPrePlaceTask) | not a refusal (once per pre-place: the tank came within 4 yd of its point; `after_ms` since its walk began, which `DungeonRunSeekMeetPrePlaceLate` delays) | new |
-| 43j | shot wait | `son=%u,event=shot_wait,receiver=<name>,receiver_point_yd=%.1f,waited_ms=%u,reason=arrived\|timeout\|siphon\|ended` | BossTacticsSeekTankAction (the walk-out shot) | not a refusal (with `DungeonRunSeekShotWaitsReceiver`, once per walk-out when the shot's wait for the pre-placed receiver ends: within 5 yd of its point, 6 s waited, the siphon 15 s or less away, or the pre-place ended) | new |
+| 43j | shot wait | `son=%u,event=shot_wait,receiver=<name>,receiver_point_yd=%.1f,waited_ms=%u,reason=arrived\|timeout\|siphon\|late\|ended` | BossTacticsSeekTankAction (the walk-out shot) | not a refusal (with `DungeonRunSeekShotWaitsReceiver`, once per walk-out when the shot's wait for the pre-placed receiver ends: within 5 yd of its point (its own line; the pre-place hold ring stays 4 yd), 6 s waited, the siphon 15 000 ms or less away, the task 19 s old (`late`), or the pre-place ended) | new |
 
 The no-meet row's codes come in `MeetRefusalWhy`'s order and count the raid tanks at indices 1 and up (the main tank,
 index 0, never waits): `dead` (not alive or in the world; near-unreachable in practice, because `GetRaidTankRoles`
@@ -251,8 +251,10 @@ One row per charm, from `ReadSeekFight`: a group-wide aura scan at most every 50
 and the row is built 1500 ms after the charmed player is first seen (Hakkar has turned to his next victim by then,
 median 1.05 s after the cast). `charmed=<role>:<class>,victim=<role>:<class>,ot1=<threat>,ot2=<threat>,top=<role>:<class>:<threat>|...`
 (up to five threat entries, the charmed player left out; `ot1`/`ot2` are the second and third tanks' threat, or -1
-when absent), then `,cap_ref=<name>,cap_ref_threat=<threat>,top_dps_threat=<threat>` (walk 58 F3: the threat cap's
-reference tank and its threat at the row, from the cap's own tank list and pick, `none`/-1 with no tank listed; the
+when absent), then `,cap_ref=<name>,ref_kind=main|offtank,cap_ref_threat=<threat>,top_dps_threat=<threat>` (walk 58 F3: the threat
+cap's reference tank, whether the pick named an off-tank reference or fell back to the main tank (`none` with no tank
+listed), and its threat at the row, from the cap's own tank list and pick, `none`/-1 with no tank listed; this is the
+cap's reference only on a boss with a `threat_successor` row (Hakkar); elsewhere it is the plain highest tank; the
 highest damage dealer's threat, 0 with none; `top=` entries never hold a comma, so a parser reads it as `top=([^,]*)`),
 and info2 is `Cause Insanity on <role>: Hakkar turned to <role> (<class>)`.
 **Not a refusal:** it is a measurement of the threat successor's margin for the Cause Insanity work, and it carries no

@@ -1464,12 +1464,14 @@ struct SeekCapGuardInfo
 
 // One `seek take held` row per tank and Son and 2 s (walk 58 F3: the collapse guard logged nothing, so its effect
 // could not be measured): the cap guard (ThreatCapLeaveCollapses) held back this tank's reach or healer-clock take of
-// `son`. `src` is the held take's path (nearest_reach or healer_clock). A no-op unless bot_events.csv is in
-// AllowedLogFiles.
+// `son`. `src` is the held take's path (nearest_reach or healer_clock); `onNonTankMs` the Son's time on its non-tank
+// victim (the fight's non-tank clock; 0 when unknown), logged with that victim and its health (review M2: the walk-59
+// measures). A no-op unless bot_events.csv is in AllowedLogFiles.
 constexpr std::uint32_t kSeekTakeHeldLogGapMs = 2000;
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint32_t> g_seekTakeHeldLog;
 
-void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuardInfo& info, const char* src)
+void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuardInfo& info, const char* src,
+                     std::uint32_t onNonTankMs)
 {
     if (!ai || !bot || !son || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
@@ -1488,9 +1490,13 @@ void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuard
             return;
         last = nowMs == 0 ? 1 : nowMs;
     }
-    char info1[224];
-    snprintf(info1, sizeof(info1), "seek take held son=%u taker=%s reason=cap_guard ref=%s share=%.0f src=%s",
-             son->GetGUIDLow(), bot->GetName(), info.refName.c_str(), info.sharePct, src);
+    Unit* const victim = son->GetVictim();
+    char info1[288];
+    snprintf(info1, sizeof(info1),
+             "seek take held son=%u taker=%s reason=cap_guard ref=%s share=%.0f src=%s victim=%s on_nontank_ms=%u "
+             "victim_hp=%.0f",
+             son->GetGUIDLow(), bot->GetName(), info.refName.c_str(), info.sharePct, src,
+             victim ? victim->GetName() : "none", onNonTankMs, victim ? victim->GetHealthPercent() : 100.0f);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
@@ -2999,6 +3005,7 @@ struct SeekShotWaitSnapshot
     float x = 0.0f, y = 0.0f;
     std::uint64_t son = 0;
     std::uint32_t waitedMs = 0;
+    std::uint32_t taskAgeMs = 0; // since the walk-out task started (WalkoutShotReady's late clause)
 };
 
 bool SeekWalkoutShotWaitRead(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
@@ -3017,6 +3024,7 @@ bool SeekWalkoutShotWaitRead(std::uint32_t instanceId, std::uint64_t puller, std
         out.y = s.prePlaceY;
     }
     out.son = s.son;
+    out.taskAgeMs = nowMs - s.startMs;
     // No live pre-place and no wait under way: nothing to wait for (and nothing latched, so the late walk and the
     // stall read as without the key).
     if (!out.prePlaceLive && s.shotWaitSinceMs == 0)
@@ -4046,9 +4054,11 @@ void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charme
     }
     char info1[512];
     snprintf(info1, sizeof(info1),
-             "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,cap_ref_threat=%.0f,top_dps_threat=%.0f",
+             "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"
+             "top_dps_threat=%.0f",
              CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
-             ot1, ot2, top, capRef ? capRef->GetName() : "none", capRef ? capPick.threat : -1.0f, topDpsThreat);
+             ot1, ot2, top, capRef ? capRef->GetName() : "none",
+             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat);
     char info2[160];
     snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
              CharmRoleWord(victim), CharmClassWord(victim));
@@ -8607,7 +8617,7 @@ bool SeekHealerClockCapOk(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
                                    HealerClockOverridesCap(onNonTankMs, victimHpPct));
     // Walk 58 F3: the held take is visible (the guard alone holds it: the caller skips this with the key off).
     if (!allowed)
-        LogSeekTakeHeld(ai, bot, son, capInfo, "healer_clock");
+        LogSeekTakeHeld(ai, bot, son, capInfo, "healer_clock", onNonTankMs);
     return allowed;
 }
 
@@ -8681,7 +8691,13 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
         const int held = SeekCapGuardHeldPick(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
                                               selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap);
         if (held >= 0)
-            LogSeekTakeHeld(ai, bot, units[static_cast<std::size_t>(held)], capInfo, "nearest_reach");
+        {
+            Unit* const heldSon = units[static_cast<std::size_t>(held)];
+            const auto since = state.nonTankSince.find(heldSon->GetObjectGuid().GetRawValue());
+            const std::uint32_t heldOnNonTankMs =
+                since != state.nonTankSince.end() ? state.nowMs - since->second.sinceMs : 0;
+            LogSeekTakeHeld(ai, bot, heldSon, capInfo, "nearest_reach", heldOnNonTankMs);
+        }
     }
     // A reach take that passed the cap guard is latched by Execute once it really starts (round 2), not here.
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
@@ -8848,8 +8864,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         task.walkoutShot = state.walkoutShot;
         task.walkoutPullCastMs = state.walkoutPullCastMs;
         task.walkoutGen = state.walkoutGen;
-        task.walkoutDueInS = state.dueSignedMs == std::numeric_limits<int>::max()
-            ? std::numeric_limits<int>::max() : state.dueSignedMs / 1000;
+        task.walkoutDueInMs = state.dueSignedMs; // signed ms, INT_MAX when unknown (compared in ms, never truncated)
         task.source = state.pullTarget;
         task.x = state.shotX;
         task.y = state.shotY;
@@ -9161,7 +9176,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                             wait.receiver ? bot->GetMap()->GetPlayer(ObjectGuid(wait.receiver)) : nullptr;
                         const bool live = wait.prePlaceLive && receiver && receiver->IsInWorld();
                         const float pointYd = live ? receiver->GetDistance2d(wait.x, wait.y) : -1.0f;
-                        if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInS))
+                        if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                              wait.taskAgeMs))
                         {
                             if (!bot->IsStopped())
                                 ai->StopMoving();
@@ -9175,7 +9191,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                                      "son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s",
                                      ObjectGuid(guid).GetCounter(), receiver ? receiver->GetName() : "none",
                                      pointYd, wait.waitedMs,
-                                     WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInS));
+                                     WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                                           wait.taskAgeMs));
                             LogSeekMeet(ai, info1);
                         }
                     }

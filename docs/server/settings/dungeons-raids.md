@@ -1088,7 +1088,7 @@ With the key on, the same cap guard also holds back the first off-tank's 3 s hea
 
 The take row says `src=nearest_reach` when only the reach let the take through (`src=nearest` when the 8 yd rule did).
 
-Diagnostics (always on with the key, walk 58 F3: the guard logged nothing, so its effect could not be measured): a `BossTacticsSeekPull` row `seek take held son=<g> taker=<name> reason=cap_guard ref=<name> share=<pct> src=nearest_reach|healer_clock` whenever the collapse guard holds back a reach take (the reach would take the Son, the guard alone stops it) or a healer-clock take, once per tank and Son per 2 s. `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's (0: no off-tank reference left).
+Diagnostics (always on with the key, walk 58 F3: the guard logged nothing, so its effect could not be measured): a `BossTacticsSeekPull` row `seek take held son=<g> taker=<name> reason=cap_guard ref=<name> share=<pct> src=nearest_reach|healer_clock victim=<name> on_nontank_ms=<ms> victim_hp=<pct>` whenever the collapse guard holds back a reach take (the reach would take the Son, the guard alone stops it) or a healer-clock take, once per tank and Son per 2 s. `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's (0: no off-tank reference left); `victim`, `on_nontank_ms` (the Son's time on that non-tank, the fight's non-tank clock) and `victim_hp` say what the hold cost. A held row and a take row can come from the same tick (a held reach take while another path takes the Son, or the healer clock's later override): join them on time, not by order.
 
 Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon cycle (the walk-out record forgets the Sons of earlier cycles), so a Son walked last cycle and never lost counts as one that joined by itself.
 
@@ -1144,15 +1144,15 @@ Whether the Hakkar walk-out puller waits with its shot until the pre-placed rece
 
 **Why:** in walk 58 (late walk on) the pre-placed third tank stood a median 19.1 yd from its point when the shot landed, within 4 yd in only 3 of 26 shots, and the Son ran a median 43 yd to its puller before a tank met it.
 
-**The wait:** with the key on and a live pre-place for this walk-out, the puller, once in shot range, sight and on the stand's floor, stops and holds its shot until the pre-placed tank is within 5 yd of its pre-place point. It shoots anyway after 6 s of waiting, or as soon as the next Blood Siphon is 15 s or less away (the cycle's dose comes first). With no pre-place this cycle (`DungeonRunSeekMeetPrePlace` off, no third tank fit to pre-place, or the pre-place skipped) there is no wait. A pre-place that ends during the wait (the tank dies, is charmed, becomes Hakkar's victim) lets the shot go at once. The wait happens once per walk-out: a shot refused after it does not wait again.
+**The wait:** with the key on and a live pre-place for this walk-out, the puller, once in shot range, sight and on the stand's floor, stops and holds its shot until the pre-placed tank is within 5 yd of its pre-place point. The 5 yd line is its own constant: the pre-place's hold ring, where the tank stops walking and holds (and the `preplace_arrive` row), stays 4 yd, so a tank 4-5 yd out is still walking in when the shot goes. It shoots anyway after 6 s of waiting, as soon as the next Blood Siphon is 15 000 ms or less away (compared in milliseconds; the cycle's dose comes first; an unknown siphon time never triggers it), or once the walk-out task is 19 s old, so the wait never eats the last 6 s before the task's 25 s timeout. With no pre-place this cycle (`DungeonRunSeekMeetPrePlace` off, no third tank fit to pre-place, or the pre-place skipped) there is no wait. A pre-place that ends during the wait (the tank dies, is charmed, becomes Hakkar's victim) lets the shot go at once. The wait happens once per walk-out: a shot refused after it does not wait again.
 
 **With the late walk** (`DungeonRunSeekMeetPrePlaceLate`): a waiting puller counts as in position, so the late tank's walk is due on the first tick of the wait; the two never wait for each other, and the 6 s cap bounds the wait in any case.
 
-**The no-shot stall:** the 6 s no-shot abort is held while the wait runs (at most 8 s, so a puller that stops ticking is still aborted), and its clock restarts when the wait ends, so it measures the shot's own time.
+**The no-shot stall:** the 6 s no-shot abort is held from the wait's start until the wait's own end (the puller's tick that lets the shot go), however slow that tick is, and its clock restarts when the wait ends, so it measures the shot's own time. A puller that stops ticking mid-wait is ended by the task's 25 s timeout.
 
-Diagnostics (always on with the key): one `BossTacticsSonMeet` row per walk-out when the wait ends, `son=<g>,event=shot_wait,receiver=<name>,receiver_point_yd=<yd>,waited_ms=<ms>,reason=arrived|timeout|siphon|ended`.
+Diagnostics (always on with the key): one `BossTacticsSonMeet` row per walk-out when the wait ends, `son=<g>,event=shot_wait,receiver=<name>,receiver_point_yd=<yd>,waited_ms=<ms>,reason=arrived|timeout|siphon|late|ended` (`late`: the task's 19 s age clause).
 
-Limits (documented, not fixed): the walk-out's 25 s timeout still counts the wait; the wait adds up to 6 s to the cycle, so the Son lands up to 6 s closer to the siphon.
+Limits (documented, not fixed): the wait adds up to 6 s to the cycle, so the Son lands up to 6 s closer to the siphon.
 
 </details>
 
