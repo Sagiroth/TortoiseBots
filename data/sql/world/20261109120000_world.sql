@@ -1,8 +1,8 @@
 -- Boss tactics: Hakkar the Soulflayer's (map 309, creature 14834) threat_successor row also carries his Cause
 -- Insanity timer, read only with AiPlayerbot.DungeonRunThreatResetWindow.
 --
---   cycle_spell 24327  Cause Insanity. The fight's charm scan sees the spell land, so the boss's own row names it
---                      rather than code: a row with cycle_spell 0 keeps today's successor cap and no window.
+--   cycle_spell 24327  Cause Insanity. The fight's charm scan watches for this spell; the row's cycle_spell is what
+--                      arms the window, and a row with cycle_spell 0 keeps today's successor cap and no window.
 --   param 19           the earliest gap between CIs in seconds (the window's minimum).
 --   window_s 26        the latest gap (the window's maximum; walk 61-62, raid-zg-walk62/whysiphon/citimer.out:
 --                      first CI at 16.2-18.3 s, gaps p5 20.4 s, median 23.1 s, about 10 % double gaps of 40-48 s).
@@ -11,6 +11,11 @@
 --
 -- The window is open when the time since the last charm lies in [k*19, k*26] s for k = 1, 2 or 3, which covers the
 -- double gaps; it is open about 7 s of every 22.5 s. Every other column is the row 20261105210000_world.sql wrote.
+--
+-- Rollback: a binary from before this change refuses a non-`seek_aura` row with a nonzero `cycle_spell`, so on this
+-- database it would drop Hakkar's whole `threat_successor` row, not only the timer. Before starting an older binary,
+-- run tools/sql/rollback/20261109120000_world.rollback.sql (outside data/sql, so the migration runner never applies
+-- it): it puts 20261105210000's plain row back.
 --
 -- Idempotent: the DELETE names the same (map, boss, kind, target, spell, health band) key, and this file's own row is
 -- the only one it writes. Never edit this file once applied; add a newer migration.

@@ -1295,6 +1295,47 @@ class BossTacticsSql(unittest.TestCase):
                     (309, 14834, "spread", 0, 24328)):
             self.assertIn(key, live)
 
+    def test_hakkar_reset_window_rollback_restores_the_plain_row(self):
+        # Round-1 review: a binary from before 20261109120000 refuses a non-seek_aura row with a nonzero cycle_spell,
+        # so on the migrated database it drops Hakkar's whole threat_successor row, not only the timer. The rollback
+        # script (outside data/sql, so the updater never runs it) must leave the row exactly as 20261105210000 wrote it.
+        # Replay every migration, then the rollback.
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261109120000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the reset window rollback script is missing")
+        self.assertNotIn(rollback, migration_paths())
+        key = (309, 14834, "threat_successor", 0, 0)
+
+        def row_of(paths):
+            rows = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows(paths)}
+            row = rows[key]
+            row.pop("file")  # the rollback re-inserts, so its file name differs from the original insert's
+            return row
+
+        before = [path for path in migration_paths() if os.path.basename(path) < "20261109120000_world.sql"]
+        plain = row_of(before)
+        migrated = row_of(migration_paths())
+        rolled = row_of(migration_paths() + [rollback])
+        self.assertEqual(0, plain["cycle_spell"])
+        self.assertEqual(24327, migrated["cycle_spell"])
+        self.assertEqual(plain, rolled)
+        self.assertEqual((0, 0.0, 0.0, 0, "", 0),
+                         (rolled["priority"], rolled["param"], rolled["window_s"], rolled["cycle_spell"],
+                          rolled["tactic_mode"], rolled["hp_min"]))
+        # An older binary's loader (a non-seek_aura row takes no cycle_spell) accepts the rolled-back row again.
+        self.assertIsNone(new_kind_problem(rolled))
+        with open(rollback, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'threat_successor' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        # The comment goes back to the one 20261105210000 inserted.
+        old_comment = ("'Hakkar: Cause Insanity 24327 zeroes the main tank and taunts cannot land; the damage dealers "
+                       "keep below the off-tank so a threat reset hands him to it'")
+        with open(os.path.join(ROOT, "data/sql/world/20261105210000_world.sql"), encoding="utf-8") as handle:
+            self.assertIn(old_comment + ");", handle.read())
+        self.assertIn(old_comment + ");", text)
+
     def test_jindo_t1105h_migration(self):
         # 20261106120000: Jin'do is taunt-immune (creature_template 11380 immunity_flags 6), so his two taunt_after_cast
         # rows (Hex/charm, Banish) are deleted by their exact keys; the Sacrificed Trolls 14826 go to the damage dealers
