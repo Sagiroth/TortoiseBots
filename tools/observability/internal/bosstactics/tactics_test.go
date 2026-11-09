@@ -439,10 +439,11 @@ func TestTruncatedFlag(t *testing.T) {
 
 func TestQueries(t *testing.T) {
 	for name, query := range map[string]string{
-		"tactics": QueryTactics,
-		"stands":  QueryStands,
-		"plans":   QueryPlanKillFirst,
-		"steps":   QueryBossSteps,
+		"tactics":    QueryTactics,
+		"tactics-v1": QueryTacticsV1,
+		"stands":     QueryStands,
+		"plans":      QueryPlanKillFirst,
+		"steps":      QueryBossSteps,
 	} {
 		if !strings.Contains(query, "ORDER BY") {
 			t.Errorf("%s query has no ORDER BY: %s", name, query)
@@ -456,6 +457,9 @@ func TestQueries(t *testing.T) {
 	}
 	if !strings.Contains(QueryStands, "GROUP BY") || !strings.Contains(QueryStands, "SUM(`slots`)") {
 		t.Errorf("stands query does not aggregate the seats: %s", QueryStands)
+	}
+	if !strings.HasSuffix(QueryTacticsV1, "LIMIT 5001") {
+		t.Errorf("old tactics query does not ask one row over its cap: %s", QueryTacticsV1)
 	}
 	if !strings.HasSuffix(QueryTactics, "LIMIT 5001") || !strings.HasSuffix(QueryStands, "LIMIT 5001") {
 		t.Errorf("tactics/stands queries do not ask one row over their caps (%d/%d): %s / %s", TacticsLimit, StandsLimit, QueryTactics, QueryStands)
