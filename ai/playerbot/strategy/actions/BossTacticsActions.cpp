@@ -8464,9 +8464,10 @@ bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, 
     // Once per pre-place: the first hold's row.
     if (SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
     {
+        const std::uint64_t guid = progress.son;
         char info1[200];
         snprintf(info1, sizeof(info1), "son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f",
-                 ObjectGuid(progress.son).GetCounter(), bot->GetName(), target->GetEntry(),
+                 ObjectGuid(guid).GetCounter(), bot->GetName(), target->GetEntry(),
                  actionKind ? actionKind : "reach", bot->GetDistance2d(progress.x, progress.y));
         LogSeekMeet(ai, info1);
     }
