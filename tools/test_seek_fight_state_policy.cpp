@@ -536,6 +536,25 @@ int main()
         CHECK(record.charmGuid == 43 && record.charmSeenMs == 10000 && !record.charmLogged);
     }
 
+    // DungeonRunSeekCycleRoll: a missed sighting rolls the cycle count with the due time. kSeekOverdueGraceMs is 8000.
+    CHECK(SeekRolledCycles(9000 + 8000, 9000, 90000) == 0);
+    CHECK(SeekRolledCycles(9000 + 8001, 9000, 90000) == 1);
+    CHECK(SeekRolledCycles(9000 + 90000 + 8001, 9000, 90000) == 2);
+    CHECK(SeekRolledCycles(9000, 0, 90000) == 0);
+    CHECK(SeekRolledCycles(9000, 9000, 0) == 0);
+    {
+        SeekCycleRecord rolled;
+        rolled.engageMs = 1000;
+        rolled.cycleMs = 90000;
+        CHECK(SeekRollMissedCycles(rolled, 1000 + 90000 + 9000) == 1);
+        CHECK(rolled.cycleNo == 1);
+        CHECK(rolled.lastCycleMs == 91000); // the estimated sighting, not left at 0 nor moved to now
+        CHECK(SeekCycleAccepts(rolled.lastCycleMs, 181000, 90000));
+        // A due time inside the grace rolls nothing.
+        CHECK(SeekRollMissedCycles(rolled, 181000 + 8000) == 0);
+        CHECK(rolled.cycleNo == 1 && rolled.lastCycleMs == 91000);
+    }
+
     std::cout << "seek fight state policy: all tests passed\n";
     return 0;
 }

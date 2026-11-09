@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunSeekCycleRoll (default 0, recommended on with DungeonRunSeekPullCycle), a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time, so Hakkar's walk-out spent cycle reopens instead of staying shut for the rest of the fight, with one `BossTacticsSeekCycleRoll` row per roll.
 - New: behind AiPlayerbot.DungeonRunSeekSiphonClock (default 0, recommended on), a Hakkar walk-out that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s instead of timing out at 25 s, and a seek_pull row's start and retry floors drop to 50 s, so the cycle reopens in time for another pull.
 - New: behind AiPlayerbot.DungeonRunSeekTakenSonThreatCap (default 0, recommended on), damage dealers at 85 % of the taking tank's threat hold off Hakkar's just-taken Son for up to 15 s (not under 20 % health or within 8 s of the siphon), with one `seek take capped` row per bot and Son.
 - New: behind AiPlayerbot.DungeonRunSeekMeetTakeReach (default 0, recommended on), the waiting Hakkar receiver takes the walked Son within 25 yd instead of 8 yd, leaving the boss anchor only while the Son is at most 12 yd past the raid circle and it is not Hakkar's victim (one `event=receiver_exempt` row per meet), and the `seek take` row gains `reach_yd=` and `beyond_yd=`.

@@ -739,6 +739,10 @@ public:
     // 25 s, and a seek_pull row's start and retry floors are lowered to 50 s (never raised; defaults off, recommended
     // on). Off keeps today's clock: the 25 s timeout and the row's own 60 s floors.
     bool dungeonRunSeekSiphonClock = false;
+    // The rolled cycle number (Hakkar's seek pull; needs DungeonRunSeekPullCycle): when a due time rolls past a
+    // missed sighting, the record's cycle number advances by the rolls too, so the walk-out's spent cycle reopens and a
+    // later Son can still be pulled; the estimated sighting time moves with it (default off, recommended on).
+    bool dungeonRunSeekCycleRoll = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

@@ -78,6 +78,21 @@ namespace ai
         return dueMs;
     }
 
+    // How many cycles SeekRolledDueMs rolled `dueMs` forward (0: none). DungeonRunSeekCycleRoll moves the record's cycle
+    // number by this, so a missed sighting no longer leaves the walk-out's cycle closed (walk 62 SIPHON-WHY cause C).
+    inline std::uint32_t SeekRolledCycles(std::uint32_t nowMs, std::uint32_t dueMs, std::uint32_t cycleMs)
+    {
+        if (dueMs == 0 || cycleMs == 0)
+            return 0;
+        std::uint32_t n = 0;
+        while (nowMs > dueMs + kSeekOverdueGraceMs)
+        {
+            dueMs += cycleMs;
+            ++n;
+        }
+        return n;
+    }
+
     // The burn is forced once the window is about to close.
     inline bool SeekForceBurn(std::uint32_t nowMs, std::uint32_t dueMs)
     {

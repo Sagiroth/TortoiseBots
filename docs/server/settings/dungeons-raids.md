@@ -95,6 +95,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekMeetTakeReach`](#aiplayerbotdungeonrunseekmeettakereach) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): the waiting receiver takes the walked Son within 25 yd (Intercept range) instead of 8 yd, so a healer cannot peel it on its last yards. |
 | [`AiPlayerbot.DungeonRunSeekTakenSonThreatCap`](#aiplayerbotdungeonrunseektakensonthreatcap) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): a damage dealer at 85 % of the taking tank's threat on the just-taken Son holds its attacks on it (until under 75 %) for up to 15 s, so the burn does not pull it off the tank. |
 | [`AiPlayerbot.DungeonRunSeekSiphonClock`](#aiplayerbotdungeonrunseeksiphonclock) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle` and `DungeonRunSeekWalkoutFaceCast`): a Hakkar walk-out that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s, and the `seek_pull` row's start and retry floors drop to 50 s, so an undosed siphon gets another pull. |
+| [`AiPlayerbot.DungeonRunSeekCycleRoll`](#aiplayerbotdungeonrunseekcycleroll) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle`): a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time, so the walk-out's spent cycle reopens instead of staying shut for the rest of the fight (one `BossTacticsSeekCycleRoll` row per roll). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -1247,6 +1248,21 @@ Whether Hakkar's walk-out gets the siphon clock. Recommended on with `DungeonRun
 **Expected (walk 62 model):** about 19.5 of the 42 standing-raid undosed cycles dose (no-sight 15.4, missed sighting 2.5, aborts 1.6), taking the undosed share from 29 % to about 16 %. The cut's cost is a shot task that would have shot after 15 s with no in-shot read before it: an upper bound of 11 % of shot tasks, which get a retry at due about 59 s instead.
 
 **Rows:** `seek pull: walk-out abort no sight ...` (the no-shot row's fields, `los=` `inrange=` `spell=` `onson=` `front=` `moving=` `dz=`), and the start row gains `floor=<s>` while the key is on.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekCycleRoll`
+Whether a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time. Recommended on with `DungeonRunSeekPullCycle`.
+**Default:** `0` · **Values:** `0` off (only the due time rolls; the cycle number stays where the last sighting left it), `1` on (needs `DungeonRunSeekPullCycle`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why (walk 62, SIPHON-WHY cause C):** when a sighting is missed, the due time rolls forward one cycle at a time past the 8 s overdue grace, but the fight record's cycle number did not move. The walk-out's spent cycle therefore stayed closed for the rest of the fight, and three cycles had no walk-out row at all.
+
+**The roll:** with the key on, a read whose due time is past its grace counts the cycles it rolled (`SeekRolledCycles`) and moves the record with them: `cycleNo += rolls`, and `lastCycleMs = rawDue + (rolls - 1) × cycleMs`, the estimated sighting time of the last missed siphon. The next real sighting about 90 s later is accepted as usual (an accepted sighting needs half a cycle since the last). The roll mutates the shared fight record, so exactly the reader that rolled it writes one `BossTacticsSeekCycleRoll` row, `cycle=<n>,rolls=<n>,due_in=<s>`.
+
+**No key, no change:** without it the due time rolls and the cycle number does not.
 
 </details>
 

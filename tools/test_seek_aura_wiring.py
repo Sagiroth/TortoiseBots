@@ -107,6 +107,16 @@ class SeekWalkWiring(unittest.TestCase):
         self.assertNotIn("MovementAction::isUseful()", action)
         self.assertIn("ai->CanMove()", action)
 
+    def test_the_rolled_cycle_number_moves_the_record(self):
+        # DungeonRunSeekCycleRoll: the roll runs before the due time is read and moves the shared record, and the one
+        # reader that rolled it logs the row.
+        read = body(ACTIONS, "bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunSeekCycleRoll", read)
+        self.assertIn("SeekRollMissedCycles(record, nowMs)", read)
+        self.assertLess(read.index("SeekRollMissedCycles("), read.index("dueMs = SeekRolledDueMs("))
+        self.assertIn('"BossTacticsSeekCycleRoll"', read)
+        self.assertIn('"cycle=%u,rolls=%u,due_in=%u"', ACTIONS)
+
     def test_the_move_hold_stands_the_other_moves_down(self):
         hold = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(")
         self.assertIn("dynamic_cast<MovementAction*>(action)", hold)

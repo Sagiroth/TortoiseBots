@@ -325,6 +325,20 @@ namespace ai
         }
     }
 
+    // DungeonRunSeekCycleRoll: a due time past its grace with no sighting counts the missed siphons as cycles. The record
+    // then reads as if each had been sighted at its estimated time. Returns the rolls applied.
+    inline std::uint32_t SeekRollMissedCycles(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        std::uint32_t const raw = SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
+        std::uint32_t const rolls = SeekRolledCycles(nowMs, raw, record.cycleMs);
+        if (rolls)
+        {
+            record.cycleNo += rolls;
+            record.lastCycleMs = raw + (rolls - 1) * record.cycleMs;
+        }
+        return rolls;
+    }
+
     // The charm row is due once, kSeekCharmWaitMs after the charm was first seen (Hakkar has picked his next victim 1.05 s
     // after the cast, median). Marks it logged when due.
     constexpr std::uint32_t kSeekCharmWaitMs = 1500;

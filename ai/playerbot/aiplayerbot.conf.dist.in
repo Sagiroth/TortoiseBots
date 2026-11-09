@@ -1195,6 +1195,13 @@ AiPlayerbot.DungeonRunSeekTakenSonThreatCap = 0
 # and the row's own floors.
 AiPlayerbot.DungeonRunSeekSiphonClock = 0
 
+# The rolled cycle number for Hakkar's seek pull (recommended on; needs DungeonRunSeekPullCycle): when a due time rolls
+# past a missed Blood Siphon sighting, the fight's cycle number advances with it and the estimated sighting time moves
+# to the rolled cycle's own, so the walk-out's spent cycle reopens instead of staying shut for the rest of the fight.
+# Walk 62: three full cycles had no walk-out row at all after a missed sighting. Off keeps the cycle number where the
+# last real sighting left it. One `BossTacticsSeekCycleRoll` row says cycle=<n>,rolls=<n>,due_in=<s>.
+AiPlayerbot.DungeonRunSeekCycleRoll = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

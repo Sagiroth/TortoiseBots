@@ -3438,6 +3438,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::uint32_t dueMs = 0;
     std::uint32_t cycleNo = 0;
     std::uint32_t fightMs = 0;
+    std::uint32_t rolled = 0;
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
     std::uint32_t pendingSiphonElapsedMs = 0;
@@ -3527,6 +3528,10 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         }
         // A due time nobody saw the siphon for is stale: past the overdue grace it rolls a cycle at a time, so the
         // window and the forced burn follow the estimate instead of the missed siphon's past due.
+        // DungeonRunSeekCycleRoll also moves the record's cycle number, so the walk-out's closed cycle does not stay
+        // closed for the rest of the fight after a missed sighting.
+        if (sPlayerbotAIConfig.dungeonRunSeekCycleRoll && record.engageMs != 0)
+            rolled = SeekRollMissedCycles(record, nowMs);
         dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs), cycleMs);
         cycleNo = record.cycleNo;
     }
@@ -3543,6 +3548,13 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.windowOpen = dueMs != 0 && SeekWindowOpen(nowMs, dueMs, leadMs);
     out.forceBurn = dueMs != 0 && SeekForceBurn(nowMs, dueMs);
     out.cycleNo = cycleNo;
+    if (rolled != 0)
+    {
+        // The roll mutated the shared record, so exactly the reader that rolled it writes the row.
+        char info1[96];
+        snprintf(info1, sizeof(info1), "cycle=%u,rolls=%u,due_in=%u", out.cycleNo, rolled, out.dueInMs / 1000);
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekCycleRoll", info1, "");
+    }
     if (pendingSiphon)
     {
         int dosed = 0;
