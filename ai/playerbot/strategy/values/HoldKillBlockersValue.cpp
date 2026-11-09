@@ -161,7 +161,6 @@ std::vector<TankPostUnit> TankPostUnitsValue::Calculate()
         unit.z = creature->GetPositionZ();
         unit.alive = creature->IsAlive();
         unit.selectable = !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-        unit.inCombat = creature->IsInCombat();
         unit.evading = creature->IsInEvadeMode();
         units.push_back(unit);
     }

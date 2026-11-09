@@ -10693,7 +10693,6 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     in.subjectFound = subjectUnit != nullptr;
     in.subjectAlive = subjectUnit && subjectUnit->alive;
     in.subjectSelectable = subjectUnit && subjectUnit->selectable;
-    in.subjectInCombat = subjectUnit && subjectUnit->inCombat;
     in.subjectEvading = subjectUnit && subjectUnit->evading;
     in.arrivalRadiusYd = row->param;
     if (subjectUnit)

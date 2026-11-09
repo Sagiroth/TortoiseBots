@@ -493,7 +493,6 @@ static TankPostIn TankPostWaiting()
     in.subjectFound = true;
     in.subjectAlive = true;
     in.subjectSelectable = false; // a second boss still in the air
-    in.subjectInCombat = false;
     in.subjectEvading = false;
     in.subjectToSpotYd = 30.0f;
     in.arrivalRadiusYd = 15.0f;
@@ -520,17 +519,28 @@ static void TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable()
     in.botToSpotYd = 1.0f;
     in.subjectToSpotYd = 2.0f;
     CHECK(TankPostStep(in) == TankPostDecision::Hold);
-    // Selectable but not in combat yet: still waiting.
+    // Selectable (combat is not asked): engage.
     in.subjectSelectable = true;
-    CHECK(TankPostStep(in) == TankPostDecision::Hold);
-    // Both: engage.
-    in.subjectInCombat = true;
     CHECK(TankPostStep(in) == TankPostDecision::Engage);
     // Another hostile on a group member keeps the tank on it and the post waits, on the ground and after arrival.
     in.holdingOtherHostile = true;
     CHECK(TankPostStep(in) == TankPostDecision::Hold);
     in.subjectSelectable = false;
-    in.subjectInCombat = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// The case that fails if the combat requirement comes back: a unit that is alive, selectable and in range but not in
+// combat yet is arrived, so the posted tank engages it. (TankPostUnit and TankPostIn carry no combat flag any more.)
+static void TestTankPost_EngagesSelectableOutOfCombatSubject()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostArrived(true, true, true, 2.0f, 15.0f));
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // The not-selectable case still holds.
+    in.subjectSelectable = false;
     CHECK(TankPostStep(in) == TankPostDecision::Hold);
 }
 
@@ -538,12 +548,11 @@ static void TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable()
 // check fails.
 static void TestTankPost_UnselectableSubjectNotArrived()
 {
-    CHECK(!TankPostArrived(true, true, false, true, 1.0f, 15.0f));
-    CHECK(!TankPostArrived(true, true, true, false, 1.0f, 15.0f));
-    CHECK(!TankPostArrived(true, false, true, true, 1.0f, 15.0f));
-    CHECK(!TankPostArrived(true, true, true, true, 16.0f, 15.0f));
-    CHECK(!TankPostArrived(false, true, true, true, 1.0f, 15.0f));
-    CHECK(TankPostArrived(true, true, true, true, 15.0f, 15.0f));
+    CHECK(!TankPostArrived(true, true, false, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, false, true, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, true, true, 16.0f, 15.0f));
+    CHECK(!TankPostArrived(false, true, true, 1.0f, 15.0f));
+    CHECK(TankPostArrived(true, true, true, 15.0f, 15.0f));
 
     // The grid pick: the nearest living unit to the spot; a dead one only when none lives. Three units: a dead one on
     // the spot, a living one 20 yd away and a living one 5 yd away.
@@ -574,7 +583,6 @@ static void TestTankPost_UnselectableSubjectNotArrived()
     // The step closes a held post on each of the row's ends, and does nothing before a post exists.
     TankPostIn in = TankPostWaiting();
     in.subjectSelectable = true;
-    in.subjectInCombat = true;
     in.subjectToSpotYd = 2.0f;
     in.botToSpotYd = 1.0f;
     CHECK(TankPostStep(in) == TankPostDecision::Engage);
@@ -632,6 +640,7 @@ int main()
     TestKillFirstCheckDueFlips();
     TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable();
     TestTankPost_UnselectableSubjectNotArrived();
+    TestTankPost_EngagesSelectableOutOfCombatSubject();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

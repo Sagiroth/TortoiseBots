@@ -3585,7 +3585,6 @@ namespace ai
         bool subjectFound = false;  // a unit of the awaited entry stands within kTankPostSearchYd
         bool subjectAlive = false;
         bool subjectSelectable = false; // no UNIT_FLAG_NOT_SELECTABLE
-        bool subjectInCombat = false;
         bool subjectEvading = false;
         float subjectToSpotYd = 0.0f;
         float arrivalRadiusYd = 0.0f; // the row's param
@@ -3594,12 +3593,13 @@ namespace ai
         bool windowExpired = false;       // the row's window_s has passed since the post started
     };
 
-    // The awaited unit has arrived when it stands within the row's radius of the spot, alive, selectable and in
-    // combat. An unselectable unit (a second boss still in the air) is not arrived, however close it circles.
-    inline bool TankPostArrived(bool found, bool alive, bool selectable, bool inCombat, float subjectToSpotYd,
+    // The awaited unit has arrived when it stands within the row's radius of the spot, alive and selectable. Combat
+    // is not asked: a unit that lands and becomes targetable before it enters combat is attacked by the posted tank.
+    // An unselectable unit (a second boss still in the air) is not arrived, however close it circles.
+    inline bool TankPostArrived(bool found, bool alive, bool selectable, float subjectToSpotYd,
                                 float arrivalRadiusYd)
     {
-        return found && alive && selectable && inCombat && subjectToSpotYd <= arrivalRadiusYd;
+        return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
     }
 
     // One creature of the awaited entry as the grid search saw it ("tank post units" value).
@@ -3609,7 +3609,6 @@ namespace ai
         float x = 0.0f, y = 0.0f, z = 0.0f;
         bool alive = false;
         bool selectable = false;
-        bool inCombat = false;
         bool evading = false;
     };
 
@@ -3646,7 +3645,7 @@ namespace ai
             return in.started ? TankPostDecision::End : TankPostDecision::None;
         if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
             return in.started ? TankPostDecision::End : TankPostDecision::None;
-        if (TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable, in.subjectInCombat,
+        if (TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
                 in.subjectToSpotYd, in.arrivalRadiusYd))
             return in.holdingOtherHostile ? TankPostDecision::Hold : TankPostDecision::Engage;
         if (in.holdingOtherHostile)
