@@ -1284,6 +1284,18 @@ bool HasGuildTravelOrderValue::Calculate()
             ai::OrderMailboxItems(bot, current->itemId), order.amount, false, false);
     if (!mailLeg && !orderItemInMail && !OrderStillNeedsWork(bot, order))
     {
+        {
+            static std::unordered_map<uint32_t, time_t> lastCount;
+            time_t& at = lastCount[bot->GetGUIDLow()];
+            if (time(nullptr) - at >= 60)
+            {
+                at = time(nullptr);
+                TB_LOG_DETAIL("TortoiseBots: order %s counts: delivered %u bags %u mail %u of %u (record item %u, order item %u, state %s)",
+                    bot->GetName(), current->delivered, bot->GetItemCount(order.itemId),
+                    ai::OrderMailboxItems(bot, order.itemId), order.amount, current->itemId, order.itemId,
+                    TortoiseBots::GuildOrders::StateToken(current->state));
+            }
+        }
         blocked("delivered plus bags plus mail already cover the amount");
         return false;
     }
