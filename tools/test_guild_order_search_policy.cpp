@@ -6,9 +6,9 @@
 //   /tmp/test_guild_order_search_policy
 #include "../runtime/GuildOrderSearchPolicy.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
-#include <vector>
 
 using namespace TortoiseBots::GuildOrders;
 
@@ -70,6 +70,18 @@ int main()
     CHECK(OrderSearchShows(OrderType::Buy, fish));
     CHECK(!OrderSearchShows(OrderType::Buy, randomDropGear));
     CHECK(!OrderSearchShows(OrderType::Buy, OrderItemFacts{}));
+    // Usable-first ordering for the per-bot cut: known recipes outrank
+    // better-ranking unknown ones, keeping rank then A-Z inside each group.
+    std::vector<SearchOrderRow> order = {
+        {2, "Minor Healing Potion", false},
+        {3, "Greater Healing Potion", true},
+        {2, "Lesser Healing Potion", true},
+    };
+    std::sort(order.begin(), order.end(), SearchOrderLess);
+    CHECK(order[0].name == "Lesser Healing Potion");
+    CHECK(order[1].name == "Greater Healing Potion");
+    CHECK(order[2].name == "Minor Healing Potion");
+
     if (failures == 0)
         std::printf("test_guild_order_search_policy ok\n");
     return failures ? 1 : 0;

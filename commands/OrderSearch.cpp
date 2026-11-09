@@ -39,6 +39,8 @@ using TortoiseBots::GuildOrders::NormalizeQueryWords;
 using TortoiseBots::GuildOrders::OrderItemCategory;
 using TortoiseBots::GuildOrders::SearchNameMatches;
 using TortoiseBots::GuildOrders::SearchNameRank;
+using TortoiseBots::GuildOrders::SearchOrderLess;
+using TortoiseBots::GuildOrders::SearchOrderRow;
 using TortoiseBots::GuildOrders::SplitQueryWords;
 using TortoiseBots::GuildOrders::StripCategoryArg;
 constexpr size_t kMinSearchChars = 3;
@@ -293,16 +295,18 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
             scored.push_back({ &row, words.empty() ? 1 : SearchNameRank(row.lower, needle) });
         }
     }
-    // Name rank first, then the bot's verdict inside each rank (planner runs
-    // only for the rows that survive the cut), then the name.
+    // Name rank first, then the name. Verdicts run next over at most this
+    // many rank-ordered matches, so a broad query stays one spell-map scan
+    // per candidate instead of one full index walk per result row.
+    constexpr size_t kMaxVerdictRows = 300;
     std::sort(scored.begin(), scored.end(), [](ScoredRow const& a, ScoredRow const& b)
     {
         if (a.rank != b.rank)
             return a.rank < b.rank;
         return a.row->name < b.row->name;
     });
-    if (scored.size() > kMaxSearchResults)
-        scored.resize(kMaxSearchResults);
+    if (scored.size() > kMaxVerdictRows)
+        scored.resize(kMaxVerdictRows);
 
     struct ResultRow
     {
@@ -324,17 +328,25 @@ bool HandleOrderSearch(ChatHandler* handler, Player* requester, Player* bot, std
         result.rank = scoredRow.rank;
         result.plan = ai::PlanGuildOrderSources(bot, scoredRow.row->itemId, orderType);
         result.usable = result.plan.verdict == OrderReason::None;
-        result.difficulty = ai::PlanOrderDifficulty(bot, scoredRow.row->itemId, orderType, 1);
         results.push_back(std::move(result));
     }
-    std::sort(results.begin(), results.end(), [](ResultRow const& a, ResultRow const& b)
+    // Usable rows first across all matches, keeping rank then name inside
+    // each group; the 30-row cut follows, so craftable matches are not lost
+    // to unknown recipes that rank better by name alone. Farm and Buy keep
+    // the same pass: most farm rows are ok for a gatherer, and Buy plans are
+    // a cheap always-ok source check, so the verdict cost is the same shape.
+    auto toOrderRow = [](ResultRow const& result)
     {
-        if (a.rank != b.rank)
-            return a.rank < b.rank;
-        if (a.usable != b.usable)
-            return a.usable;
-        return a.row->name < b.row->name;
+        return SearchOrderRow{ result.rank, result.row->name, result.usable };
+    };
+    std::sort(results.begin(), results.end(), [&toOrderRow](ResultRow const& a, ResultRow const& b)
+    {
+        return SearchOrderLess(toOrderRow(a), toOrderRow(b));
     });
+    if (results.size() > kMaxSearchResults)
+        results.resize(kMaxSearchResults);
+    for (ResultRow& result : results)
+        result.difficulty = ai::PlanOrderDifficulty(bot, result.row->itemId, orderType, 1);
 
     handler->PSendSysMessage("TBM:ORDER_ITEMS_BEGIN|%u", static_cast<uint32_t>(results.size()));
     for (ResultRow const& result : results)
