@@ -141,3 +141,29 @@ std::vector<KillFirstGridUnit> KillFirstGridUnitsValue::Calculate()
     }
     return units;
 }
+
+// The awaited units of a tank_post row: every creature of the entry within kTankPostSearchYd of the bot, alive or
+// dead (a dead one still ends the post), with the flags the arrival read needs. The same grid search as the blocker
+// count; the pick is PickTankPostUnit's.
+std::vector<TankPostUnit> TankPostUnitsValue::Calculate()
+{
+    std::vector<TankPostUnit> units;
+    std::list<Creature*> found;
+    ScanEntry(bot, QualifierEntry(qualifier), found, kTankPostSearchYd);
+    for (Creature* creature : found)
+    {
+        if (!creature)
+            continue;
+        TankPostUnit unit;
+        unit.guid = creature->GetObjectGuid().GetRawValue();
+        unit.x = creature->GetPositionX();
+        unit.y = creature->GetPositionY();
+        unit.z = creature->GetPositionZ();
+        unit.alive = creature->IsAlive();
+        unit.selectable = !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        unit.inCombat = creature->IsInCombat();
+        unit.evading = creature->IsInEvadeMode();
+        units.push_back(unit);
+    }
+    return units;
+}

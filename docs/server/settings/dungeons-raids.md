@@ -1241,6 +1241,23 @@ Whether the boss tactics keep their `swap_on_aura` rows: the tanks of the row's 
 
 </details>
 
+### `AiPlayerbot.DungeonRunTankPost`
+Whether the boss tactics keep their `tank_post` rows: a tank named by a row waits at a spot for a second unit that is not in the fight yet, then takes it the moment it lands. It is recommended on for a fight with a second boss that becomes selectable later.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-40 yd) and `window_s` the longest hold (10-120 s). No spell and no mode word. The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
+
+**The wait:** while the row is live and a unit of `target_entry` within 200 yd (a grid search, like the hold-kill blocker count) is alive and has not arrived, the named tank walks to the spot and stays within 3 yd of it. It drops its current target only when that target is the row's `boss_entry` (an airborne boss it cannot reach) or nothing; another hostile that attacks a group member is kept and the post waits. A unit has arrived when it stands within `param` of the spot alive, selectable (no `UNIT_FLAG_NOT_SELECTABLE`) and in combat; an unselectable unit circling overhead is not arrived however close it is. On arrival the tank attacks it, and a `taunt_after_cast` row then works as it does today.
+
+**The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
+
+**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunShadeHealerCover`
 Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)

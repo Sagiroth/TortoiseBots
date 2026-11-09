@@ -901,6 +901,7 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
     bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
     bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
     bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
+    bool const tankPostOn = sPlayerbotAIConfig.dungeonRunTankPost;
     auto const addRows = [&](const std::vector<BossTacticRow>& rows, int bossHpPct)
     {
         for (const BossTacticRow& row : rows)
@@ -918,7 +919,13 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
                 continue;
             if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
                 continue;
-            if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
+            // tank_post keeps its own key too: key-off behaves exactly as before the kind. Its health band is the
+            // kind's own arming gate, so that key reads it instead of the aura-tactics key.
+            bool const tankPostRow = row.kind == BossTacticKind::TankPost;
+            if (tankPostRow && !tankPostOn)
+                continue;
+            if (!RowGateOpen(row, tankPostRow ? true : keyOn, bossHpPct,
+                    row.botAura != 0 && bot->HasAura(row.botAura)))
                 continue;
             fight.rows.push_back(&row);
         }
@@ -10434,6 +10441,395 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (cast)
         NoteBossTauntAfterCast(ai, bot, task);
     return cast;
+}
+
+namespace
+{
+// The tank_post record: one per bot (a bot holds at most one post), keyed by its own guid. The start time and the
+// arrival flag are what the trigger and the action share; the row's copied columns let a band change close the post
+// without dereferencing a row the reload may have freed. A mutex guards it: a bot's trigger and action reach the same
+// record from the world thread, and the sweep reaches other bots' records.
+struct TankPostRecord
+{
+    std::uint32_t map = 0;
+    std::uint32_t bossEntry = 0;
+    std::uint32_t targetEntry = 0;
+    std::uint8_t hpMin = 0;
+    std::uint8_t hpMax = 100;
+    float param = 0.0f;
+    float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+    std::uint64_t bossGuid = 0;
+    std::uint32_t startMs = 0;
+    std::uint32_t lastReadMs = 0;
+    bool arrivedLogged = false;
+};
+
+std::mutex g_tankPostMutex;
+std::map<std::uint64_t, TankPostRecord> g_tankPost;
+// A record nobody read for this long belongs to a fight that is over (the window is at most 120 s).
+constexpr std::uint32_t kTankPostIdleMs = 150000;
+// The dead-tank sweep runs at most this often, whatever asks.
+constexpr std::uint32_t kTankPostSweepMs = 1000;
+std::atomic<std::uint32_t> g_tankPostSweepMs{0};
+
+bool TankPostSameRow(const TankPostRecord& record, const BossTacticRow& row)
+{
+    return record.map == row.map && record.bossEntry == row.bossEntry &&
+           record.targetEntry == row.targetEntry && record.hpMin == row.hpMin && record.hpMax == row.hpMax &&
+           record.param == row.param && record.spotX == row.spotX && record.spotY == row.spotY &&
+           record.spotZ == row.spotZ;
+}
+
+// Whether the player may run a post: alive, and not charmed by a creature (a creature-charmed bot yields its AI).
+bool TankPostTankCanAct(Player* player)
+{
+    if (!player || !sServerFacade.IsAlive(player))
+        return false;
+    const ObjectGuid charmer = player->GetCharmerGuid();
+    return charmer.IsEmpty() || charmer.IsPlayer();
+}
+
+float TankPostDistanceYd(float x1, float y1, float z1, float x2, float y2, float z2)
+{
+    const float dx = x1 - x2;
+    const float dy = y1 - y2;
+    const float dz = z1 - z2;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// The living unit of the row's boss entry the fight sees, or null.
+Unit* TankPostBoss(const BossTacticsFight& fight, std::uint32_t entry)
+{
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetEntry() == entry && sServerFacade.IsAlive(unit))
+            return unit;
+    return nullptr;
+}
+
+// Whether the tank's current target is another hostile that attacks a group member. Such a target is kept and the
+// post waits; the row's own boss is never kept this way.
+bool TankPostHoldsOtherHostile(Player* bot, Unit* current, std::uint32_t bossEntry)
+{
+    if (!bot || !current || current->GetEntry() == bossEntry || !sServerFacade.IsAlive(current))
+        return false;
+    Unit* const victim = current->GetVictim();
+    Player* const owner = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!owner)
+        return false;
+    Group* const group = bot->GetGroup();
+    return owner == bot || (group && group->IsMember(owner->GetObjectGuid()));
+}
+
+// One BossTacticsTankPost row per post event: start, arrive, end. `reason` is empty for start and arrive.
+void LogTankPost(PlayerbotAI* ai, const BossTacticRow& row, const char* event, const char* reason)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[48];
+    if (reason && reason[0])
+        snprintf(info2, sizeof(info2), "event=%s,reason=%s", event, reason);
+    else
+        snprintf(info2, sizeof(info2), "event=%s", event);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// The end word of a post that the step closed: the first closed input in the step's own order.
+const char* TankPostEndReason(const TankPostIn& in)
+{
+    if (!in.live)
+        return "band";
+    if (!in.tankCanAct)
+        return "tank";
+    if (in.windowExpired)
+        return "window";
+    if (!in.subjectFound)
+        return "gone";
+    if (!in.subjectAlive)
+        return "dead";
+    if (in.subjectEvading)
+        return "evade";
+    return "band";
+}
+}  // namespace
+
+BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    BossTankPost out;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunTankPost)
+        return out;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
+        return out;
+    if (!GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return out;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.botIndex < 0)
+        return out;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t mapId = bot->GetMapId();
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    // The row this bot's slot holds now, if any.
+    const BossTacticRow* row = nullptr;
+    Unit* boss = nullptr;
+    for (const BossTacticRow* candidate : fight.rows)
+    {
+        if (candidate->kind != BossTacticKind::TankPost || candidate->priority != roles.botIndex)
+            continue;
+        Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+        if (!candidateBoss)
+            continue;
+        row = candidate;
+        boss = candidateBoss;
+        break;
+    }
+
+    TankPostRecord record;
+    bool haveRecord = false;
+    bool sweepDue = false;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        auto const mine = g_tankPost.find(self);
+        if (mine != g_tankPost.end())
+        {
+            record = mine->second;
+            haveRecord = true;
+        }
+        const std::uint32_t lastSweep = g_tankPostSweepMs.load(std::memory_order_relaxed);
+        sweepDue = lastSweep == 0 || nowMs - lastSweep >= kTankPostSweepMs;
+        if (sweepDue)
+            g_tankPostSweepMs.store(nowMs, std::memory_order_relaxed);
+    }
+
+    // A post whose tank died, was charmed or logged out ends wherever its record is read from, and a record nobody
+    // reads any more goes. The sweep runs once a second, from whichever tank asks.
+    if (sweepDue)
+    {
+        std::vector<std::pair<std::uint64_t, TankPostRecord> > ended;
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            for (auto it = g_tankPost.begin(); it != g_tankPost.end();)
+            {
+                if (nowMs - it->second.lastReadMs > kTankPostIdleMs)
+                {
+                    it = g_tankPost.erase(it);
+                    continue;
+                }
+                // This bot's own record is ended by the step below, once, with its reason.
+                if (it->first == self)
+                {
+                    ++it;
+                    continue;
+                }
+                Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(it->first));
+                if (tank && !TankPostTankCanAct(tank))
+                {
+                    ended.push_back(std::make_pair(it->first, it->second));
+                    it = g_tankPost.erase(it);
+                    continue;
+                }
+                ++it;
+            }
+        }
+        for (const std::pair<std::uint64_t, TankPostRecord>& dead : ended)
+        {
+            Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(dead.first));
+            PlayerbotAI* const tankAi = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+            BossTacticRow endedRow;
+            endedRow.map = dead.second.map;
+            endedRow.bossEntry = dead.second.bossEntry;
+            endedRow.targetEntry = dead.second.targetEntry;
+            endedRow.kind = BossTacticKind::TankPost;
+            endedRow.hpMin = dead.second.hpMin;
+            endedRow.hpMax = dead.second.hpMax;
+            endedRow.param = dead.second.param;
+            endedRow.spotX = dead.second.spotX;
+            endedRow.spotY = dead.second.spotY;
+            endedRow.spotZ = dead.second.spotZ;
+            if (tankAi)
+                LogTankPost(tankAi, endedRow, "end", "tank");
+        }
+    }
+
+    // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over.
+    if (haveRecord && (!row || record.map != mapId || !TankPostSameRow(record, *row) ||
+            record.bossGuid != boss->GetObjectGuid().GetRawValue()))
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            g_tankPost.erase(self);
+        }
+        BossTacticRow closed;
+        closed.map = record.map;
+        closed.bossEntry = record.bossEntry;
+        closed.targetEntry = record.targetEntry;
+        closed.kind = BossTacticKind::TankPost;
+        closed.hpMin = record.hpMin;
+        closed.hpMax = record.hpMax;
+        closed.param = record.param;
+        closed.spotX = record.spotX;
+        closed.spotY = record.spotY;
+        closed.spotZ = record.spotZ;
+        LogTankPost(ai, closed, "end", row ? "slot" : "band");
+        return out;
+    }
+    if (!row || !boss)
+        return out;
+
+    std::vector<TankPostUnit> const candidates =
+        AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(row->targetEntry));
+    const int pick = PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ);
+    TankPostUnit const* subjectUnit = pick < 0 ? nullptr : &candidates[pick];
+    Unit* const subject = subjectUnit ? ai->GetUnit(ObjectGuid(subjectUnit->guid)) : nullptr;
+    if (subjectUnit && !subject)
+        subjectUnit = nullptr; // gone from the map between the search and the read
+    TankPostIn in;
+    in.live = true;
+    in.started = haveRecord;
+    in.tankCanAct = TankPostTankCanAct(bot);
+    in.subjectFound = subjectUnit != nullptr;
+    in.subjectAlive = subjectUnit && subjectUnit->alive;
+    in.subjectSelectable = subjectUnit && subjectUnit->selectable;
+    in.subjectInCombat = subjectUnit && subjectUnit->inCombat;
+    in.subjectEvading = subjectUnit && subjectUnit->evading;
+    in.arrivalRadiusYd = row->param;
+    if (subjectUnit)
+        in.subjectToSpotYd = TankPostDistanceYd(subjectUnit->x, subjectUnit->y, subjectUnit->z,
+            row->spotX, row->spotY, row->spotZ);
+    in.botToSpotYd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+        row->spotX, row->spotY, row->spotZ);
+    in.holdingOtherHostile = TankPostHoldsOtherHostile(bot, AI_VALUE(Unit*, "current target"), row->bossEntry);
+    const std::uint32_t windowMs = static_cast<std::uint32_t>(row->windowSec * 1000.0f + 0.5f);
+    in.windowExpired = haveRecord && windowMs > 0 && nowMs - record.startMs >= windowMs;
+
+    // A post starts once there is a living subject to wait for and the tank is free to go: no record before that, so an
+    // idle row costs nothing, and an add the tank holds does not spend the post's window.
+    bool startedNow = false;
+    if (!haveRecord)
+    {
+        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || in.holdingOtherHostile)
+            return out;
+        record.map = row->map;
+        record.bossEntry = row->bossEntry;
+        record.targetEntry = row->targetEntry;
+        record.hpMin = row->hpMin;
+        record.hpMax = row->hpMax;
+        record.param = row->param;
+        record.spotX = row->spotX;
+        record.spotY = row->spotY;
+        record.spotZ = row->spotZ;
+        record.bossGuid = boss->GetObjectGuid().GetRawValue();
+        record.startMs = nowMs;
+        record.lastReadMs = nowMs;
+        record.arrivedLogged = false;
+        haveRecord = true;
+        startedNow = true;
+        in.started = true;
+    }
+
+    const TankPostDecision step = TankPostStep(in);
+    if (step == TankPostDecision::End)
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            g_tankPost.erase(self);
+        }
+        LogTankPost(ai, *row, "end", TankPostEndReason(in));
+        return out;
+    }
+    if (step == TankPostDecision::None)
+        return out;
+
+    bool arrivedNow = false;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        TankPostRecord& stored = g_tankPost[self];
+        stored = record;
+        stored.lastReadMs = nowMs;
+        if (step == TankPostDecision::Engage && !stored.arrivedLogged)
+        {
+            stored.arrivedLogged = true;
+            arrivedNow = true;
+        }
+    }
+    if (startedNow)
+        LogTankPost(ai, *row, "start", nullptr);
+    if (arrivedNow)
+        LogTankPost(ai, *row, "arrive", nullptr);
+
+    out.valid = true;
+    out.holdingOtherHostile = in.holdingOtherHostile;
+    out.step = step;
+    out.boss = boss;
+    out.subject = subject;
+    out.row = row;
+    out.tankIndex = roles.botIndex;
+    out.x = row->spotX;
+    out.y = row->spotY;
+    out.z = row->spotZ;
+    out.arrived = step == TankPostDecision::Engage;
+    return out;
+}
+
+bool BossTacticsTankPostAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTankPost task = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
+    if (!task.valid || !task.row || !task.subject)
+    {
+        hasLast = false;
+        return false;
+    }
+    // Another hostile on a group member is the tank's job: the post waits and the ordinary rotation keeps it.
+    if (task.holdingOtherHostile)
+    {
+        hasLast = false;
+        return false;
+    }
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* const current = AI_VALUE(Unit*, "current target");
+    if (task.step == TankPostDecision::Engage)
+    {
+        hasLast = false;
+        if (current == task.subject)
+            return false;
+        return Attack(bot, task.subject);
+    }
+    // Walk or hold: drop only the row's boss (an airborne boss) or nothing, and keep every other hostile.
+    if (current && current->GetEntry() != task.row->bossEntry)
+    {
+        hasLast = false;
+        return false;
+    }
+    if (current)
+    {
+        context->GetValue<Unit*>("current target")->Set(nullptr);
+        context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+        bot->AttackStop();
+    }
+    if (task.step == TankPostDecision::Hold)
+    {
+        hasLast = false;
+        if (!bot->IsStopped())
+            ai->StopMoving();
+        return true;
+    }
+    // The walk: already on its way to this spot, leave the spline alone.
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+        std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f)
+        return true;
+    float z = task.z;
+    bot->UpdateGroundPositionZ(task.x, task.y, z);
+    bot->AttackStop();
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+        return false;
+    lastX = task.x;
+    lastY = task.y;
+    hasLast = true;
+    return true;
 }
 
 namespace

@@ -1058,6 +1058,18 @@ AiPlayerbot.DungeonRunUseObject = 0
 # 1 - on
 AiPlayerbot.DungeonRunTankSwap = 0
 
+# The tank_post boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): a tank named by the
+# row's priority waits at the row's spot (spot_x/y/z) for a unit of target_entry that is not in the fight yet, then
+# attacks it when it arrives (within the row's param, alive, selectable and in combat). The row's boss_entry health band
+# arms the post, and it ends on the unit's death or evade, the row's window_s, the tank's death or charm, or the band
+# closing. The awaiting tank drops only the row's boss (or nothing) and keeps another hostile that attacks the group.
+# With this key off the rows are ignored, so the table behaves exactly as before the kind. This is its own key on top of
+# AiPlayerbot.DungeonTactics (or a commander-bound group) because the kind changes what a tank does mid-fight.
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: tank_post rows are ignored (Default, recommended on for a fight with a second boss that lands later)
+# 1 - on
+AiPlayerbot.DungeonRunTankPost = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 

@@ -86,7 +86,8 @@ std::uint32_t ai::ReadBossTacticRows(BossTacticTable& table, std::uint64_t* rows
                     "another kind's missing or out-of-range spell or param, a linked_death window that is not positive, "
                     "a use_object without a target, a clicker role above 2, a boss range outside 0-60, a window that is "
                     "neither 0 nor at least 10 s, a row with neither aura nor timer, a seek_aura, pull_gate or spread "
-                    "row it cannot use, an anchor row it cannot use, a seek_pull row it cannot use, a cycle or spot "
+                    "row it cannot use, an anchor row it cannot use, a seek_pull row it cannot use, a tank_post row "
+                    "it cannot use, a cycle or spot "
                     "column on another kind, or a second row of "
                     "the key)", row.map,
                     row.bossEntry, fields[2].GetCppString().c_str(), row.targetEntry, row.spellId);

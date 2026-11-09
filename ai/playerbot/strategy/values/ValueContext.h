@@ -245,6 +245,7 @@ namespace ai
 
             creators["spell id"] = [](PlayerbotAI* ai) { return new SpellIdValue(ai); };
             creators["hold kill blockers"] = [](PlayerbotAI* ai) { return new HoldKillBlockersValue(ai); };
+            creators["tank post units"] = [](PlayerbotAI* ai) { return new TankPostUnitsValue(ai); };
             creators["sole kill candidates"] = [](PlayerbotAI* ai) { return new SoleKillCandidatesValue(ai); };
             creators["kill first grid units"] = [](PlayerbotAI* ai) { return new KillFirstGridUnitsValue(ai); };
             creators["item for spell"] = [](PlayerbotAI* ai) { return new ItemForSpellValue(ai); };

@@ -91,6 +91,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics taunt after",
         NextAction::array(0, new NextAction("boss tactics taunt after", ACTION_HIGH + 7), NULL)));
 
+    // tank_post: the named tank waits at the row's spot for a unit that is not in the fight yet. Above reach and
+    // assist, so neither pulls it at the boss it cannot reach; below avoid/flee, so a survival walk still wins.
+    triggers.push_back(new TriggerNode(
+        "boss tank post",
+        NextAction::array(0, new NextAction("boss tactics tank post", ACTION_EMERGENCY + 2), NULL)));
+
     // A burn_mana row's boss stands above the row's start % of mana and this bot is one of its burners: the drain
     // cast goes out above the ordinary damage rotation, below every survival and avoid action.
     triggers.push_back(new TriggerNode(

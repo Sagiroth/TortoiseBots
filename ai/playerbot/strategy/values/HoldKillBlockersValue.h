@@ -45,4 +45,15 @@ namespace ai
             : CalculatedValue<std::vector<KillFirstGridUnit>>(ai, "kill first grid units", 1), Qualified() {}
         std::vector<KillFirstGridUnit> Calculate() override;
     };
+
+    // "tank post units::<entry>": every creature of the awaited entry within kTankPostSearchYd of the bot, alive or
+    // dead, with the flags the tank_post arrival read needs (TankPostUnit). The same grid search as the blocker count,
+    // at most once a second per bot and entry; the pick (PickTankPostUnit) is the policy's.
+    class TankPostUnitsValue : public CalculatedValue<std::vector<TankPostUnit>>, public Qualified
+    {
+    public:
+        TankPostUnitsValue(PlayerbotAI* ai)
+            : CalculatedValue<std::vector<TankPostUnit>>(ai, "tank post units", 1), Qualified() {}
+        std::vector<TankPostUnit> Calculate() override;
+    };
 }
