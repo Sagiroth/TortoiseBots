@@ -404,6 +404,14 @@ func TestFdEventsUIJS(t *testing.T) {
 	runCheck(t, "fdevents_ui_check.js", "../../web/static/js/app.js")
 }
 
+// TestFdLayoutJS runs fdlayout_check.js: FdLayout (web/static/js/fdlayout.js), the pure side of the Fight debugger's panel layouts: the panel
+// table and its default code (mech included), normalize (unknown ids, repeats, a bad span, missing panels), encode/decode (400-character and
+// 60-item bounds, bad item syntax), the dialog's move/resize/show, and the named layouts in storage (junk, a storage that throws, hostile names,
+// the 20-layout cap, name rules). The failing case: on a tree without fdlayout.js (the dash/fight-map head) the check cannot load the module.
+func TestFdLayoutJS(t *testing.T) {
+	runCheck(t, "fdlayout_check.js", "../../web/static/js/fdlayout.js")
+}
+
 // TestFdShareUIJS runs fdshare_ui_check.js: the Fight debugger's share links in app.js (the route reads and writes the view after bot and
 // p, a new fight starts clean, the card writes its view with replaceState only and never from a tick, a link is applied once when its
 // fight is on screen, the live hand-over rewrites the hash to the filed fight, Copy link, the link kept through login, a hostile link

@@ -6,6 +6,7 @@ const assert = require("assert");
 const path = require("path");
 const FdView = require(path.resolve(process.argv[2]));
 const FdFilter = require(path.join(path.dirname(path.resolve(process.argv[2])), "fdfilter.js"));
+const FdLayout = require(path.join(path.dirname(path.resolve(process.argv[2])), "fdlayout.js"));
 const eq = (a, b, msg) => assert.deepStrictEqual(JSON.parse(JSON.stringify(a)), b, msg);
 
 assert.strictEqual(FdView.MIN_RANGE_MS, 1000);
@@ -86,7 +87,7 @@ eq(FdView.handover({ key: "live:K", range: { from: 0, to: 5000 }, follow: true, 
 eq(FdView.handover(null, "filed"), { key: "filed", range: null, follow: true, reclamp: false }, "no view at all");
 
 // ---- the share link: toQuery / fromQuery / stripFd ------------------------------------------------------------------------------------
-assert.deepStrictEqual(FdView.KEYS, ["r", "f", "au", "mk", "n", "rp", "sp", "lw"], "the fixed output order");
+assert.deepStrictEqual(FdView.KEYS, ["r", "f", "au", "mk", "n", "rp", "sp", "lw", "lay"], "the fixed output order");
 const FILTER = FdFilter.addAt(FdFilter.empty(), "", { f: "ability", op: "is", v: "Blood Siphon", not: false });
 const CODE = FdFilter.encode(FILTER);
 const FULL = { range: { from: 72000, to: 125000 }, filter: FILTER, au: 24321, marker: { sid: 24324 }, night: "2026-11-06", rp: 95000, sp: 2 };
@@ -184,4 +185,26 @@ eq(lv.bad, ["n", "rp", "sp"]);
 eq(lv.range, { from: 1000, to: 9000 });
 assert.strictEqual(FdView.toQuery(lv), "r=1000-9000&f=" + CODE + "&lw=30", "a live link round trips");
 eq(FdView.fromQuery(new URLSearchParams("lw=30&r=1000-9000"), { live: false }).bad, ["lw"], "a finished fight's link has no window");
+// LAYOUT: lay is the page's panel layout (the short code of FdLayout), written last and only for a layout that is not the default; a bad
+// code lands in bad and a layout needs no fight kind (it reads in live and finished links alike)
+const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 8 }, { id: "timeline", span: 12 }, { id: "auras", span: 6, hide: true }] });
+const LAYCODE = FdLayout.encode(LAY);
+assert.strictEqual(FdView.toQuery({ range: { from: 1000, to: 9000 }, filter: FILTER, lay: LAY }), "r=1000-9000&f=" + CODE + "&lay=" + encodeURIComponent(LAYCODE), "toQuery appends lay= last");
+assert.strictEqual(FdView.toQuery({ live: true, lw: 120, lay: LAY }), "lw=120&lay=" + encodeURIComponent(LAYCODE), "after lw in a live link");
+assert.strictEqual(FdView.toQuery({ lay: FdLayout.defaults() }), "lay=" + encodeURIComponent(FdLayout.encode(FdLayout.defaults())), "a chosen layout that equals the panel table's order is still written: it is not the default grid");
+assert.strictEqual(FdView.toQuery({ lay: null }), "", "no layout (the default grid) is not written");
+const lb = FdView.fromQuery(new URLSearchParams("lay=" + encodeURIComponent(LAYCODE)));
+eq(lb.lay, LAY, "lay reads");
+eq(lb.bad, []);
+assert.strictEqual(FdView.toQuery(lb), "lay=" + encodeURIComponent(LAYCODE), "lay round trips");
+eq(FdView.fromQuery(new URLSearchParams("lay=" + encodeURIComponent(LAYCODE)), { live: true }).lay, LAY, "a live link carries it");
+eq(FdView.fromQuery(new URLSearchParams("lay=" + encodeURIComponent(LAYCODE)), { live: false }).lay, LAY, "so does a finished fight's");
+["ma", "ma.x", "x".repeat(401), "ma.8~~tl.6", "%00", "MA.8"].forEach((v) => {
+  const b = FdView.fromQuery(new URLSearchParams("lay=" + encodeURIComponent(v)));
+  assert.deepStrictEqual([b.lay, b.bad], [null, ["lay"]], "a bad lay lands in bad: " + v);
+});
+eq(FdView.fromQuery(new URLSearchParams("lay=" + "z".repeat(5000))).bad, ["lay"], "a huge lay is not read at all");
+eq(FdView.fromQuery(new URLSearchParams("lay=")).bad, ["lay"], "an empty lay is bad");
+assert.strictEqual(FdView.fromQuery(new URLSearchParams("")).lay, null, "no lay, no layout");
+eq(Array.from(FdView.stripFd(new URLSearchParams("bot=5&lay=ma.8&r=1-9")).entries()), [["bot", "5"]], "stripFd drops lay with the rest");
 console.log("fdview_check.js ok");

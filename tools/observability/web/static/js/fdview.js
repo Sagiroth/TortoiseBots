@@ -114,7 +114,7 @@
   // ---- the share link: the whole view of one fight as URL parameters (the keys below, in this order). toQuery writes only what differs
   // from the defaults; fromQuery reads a URL the page never trusted: every key is checked alone and a bad one is dropped (and
   // named in `bad`), so a hostile or stale link restores what it can and never throws.
-  const KEYS = ["r", "f", "au", "mk", "n", "rp", "sp", "lw"];
+  const KEYS = ["r", "f", "au", "mk", "n", "rp", "sp", "lw", "lay"];
   const MAX_MS = 86400000;     // a fight is shorter than a day
   const MAX_SID = 10000000;    // a spell id
   const MAX_NAME = 80;         // characters of a marker's spell name
@@ -128,6 +128,7 @@
   const live = () => lib("FdLive", "./fdlive.js");
   const replay = () => lib("FightReplay", "./fightreplay.js");
   const filters = () => lib("FdFilter", "./fdfilter.js");
+  const layouts = () => lib("FdLayout", "./fdlayout.js");
 
   const isInt = (n, lo, hi) => typeof n === "number" && isFinite(n) && Math.floor(n) === n && n >= lo && n <= hi;
   const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -142,7 +143,7 @@
     return "";
   }
 
-  // v = { range, filter, au, marker, night, rp, sp, lw, live, follow } -> the query text, no leading "?". A running fight (live) has no
+  // v = { range, filter, au, marker, night, rp, sp, lw, lay, live, follow } -> the query text, no leading "?". A running fight (live) has no
   // replay and no night, and writes its range only while the reader has fixed it (follow === false).
   function toQuery(v) {
     v = v || {};
@@ -169,6 +170,9 @@
     }
     const L = live();
     if (typeof v.lw === "number" && v.lw !== DEFAULT_LW && L && L.WINDOWS.indexOf(v.lw) >= 0) add("lw", v.lw);
+    // The page's panel layout (one for the page, not per fight): written only while a chosen layout is on; the default grid has none.
+    const Y = layouts();
+    if (v.lay && Y) add("lay", Y.encode(v.lay));
     return out.join("&");
   }
 
@@ -183,7 +187,7 @@
   // finished fight's lw does not, so those are dropped into `bad`; with no opts every key is read.
   function fromQuery(params, opts) {
     const isLive = !!(opts && opts.live === true), finished = !!(opts && opts.live === false);
-    const out = { range: null, filter: null, au: null, marker: null, night: null, rp: null, sp: null, lw: null, live: isLive, follow: true, bad: [] };
+    const out = { range: null, filter: null, au: null, marker: null, night: null, rp: null, sp: null, lw: null, lay: null, live: isLive, follow: true, bad: [] };
     KEYS.forEach(k => {
       const raw = rawOf(params, k);
       if (raw === null) return;
@@ -214,6 +218,9 @@
         } else if (k === "lw") {
           const L = live();
           if (/^\d{1,4}$/.test(raw) && L && L.WINDOWS.indexOf(Number(raw)) >= 0 && !finished) { out.lw = Number(raw); ok = true; }
+        } else if (k === "lay") {
+          const Y = layouts(), g = Y ? Y.decode(raw) : null;
+          if (g) { out.lay = g; ok = true; }
         }
       }
       if (!ok) out.bad.push(k);
