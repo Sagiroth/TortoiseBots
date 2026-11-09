@@ -1181,8 +1181,8 @@ AiPlayerbot.DungeonRunSeekMeetTakeReach = 0
 
 # The damage dealers' threat cap on Hakkar's just-taken Son (recommended on; needs DungeonRunSeekSonMeet): once the
 # meet's Son is on the tank that took it, a damage dealer whose threat on it reaches 85 % of that tank's holds its
-# attacks and casts on it (never heals, never a tank), until the Son is under 20 % health, 15 s after the take, or the
-# next Blood Siphon is 8 s or less away. Off burns it as soon as a tank has it, as before.
+# attacks and casts on it (never heals, never a tank; once held, down to 75 %), until the Son is under 20 % health, 15 s
+# after the take, or the next Blood Siphon is 8 s or less away or unknown. Off burns it as soon as a tank has it.
 AiPlayerbot.DungeonRunSeekTakenSonThreatCap = 0
 
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.

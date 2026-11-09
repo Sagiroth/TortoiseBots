@@ -73,12 +73,38 @@ class TakenSonThreatCapWiring(unittest.TestCase):
         self.assertIn("if (PlayerbotAI::IsTank(bot) || !IsFreeDps(ai, bot))", fn)
         self.assertIn("unit->GetObjectGuid().GetRawValue() != taken.son", fn)
         self.assertIn("bot->GetObjectGuid().GetRawValue() == taken.by", fn)
-        self.assertIn("victim->GetObjectGuid().GetRawValue() == taken.by", fn)
+        self.assertIn("const bool sonTakenByTank = victim->GetObjectGuid().GetRawValue() == taken.by;", fn)
         self.assertIn("ThreatPctOf(threat.getThreat(bot), threat.getThreat(victim), unit->IsInCombat(), false)", fn)
-        self.assertIn("siphonInMs = state.dueSignedMs;", fn)
         self.assertIn("PlayerbotAI::IsHeal(bot)", fn)
-        self.assertIn("SeekTakenSonDpsHeld(true, sonTakenByTank, pct,", fn)
         self.assertLess(fn.index("SeekTakenSonDpsHeld("), fn.index("LogSeekTakenSonCapped("))
+
+    def test_the_cheap_filters_run_before_the_walkout_lock(self):
+        # Codex/Opus round 1 (cost): the map filter and the victim-is-a-tank filter come before SeekTakenSonRead's lock.
+        fn = body(ACTIONS, "bool TakenSonDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit)")
+        read = fn.index("SeekTakenSonRead(ai, bot)")
+        self.assertLess(fn.index("GetBossTactics().HasSeekAuraMap(bot->GetMapId())"), read)
+        self.assertLess(fn.index("if (!victim || !PlayerbotAI::IsTank(victim))"), read)
+        self.assertNotIn("g_walkoutMutex", fn)
+
+    def test_an_unknown_siphon_clock_releases(self):
+        # Codex round 1 HIGH: no fight read, or no known due time, is an unknown clock, and the pure rule releases it.
+        fn = body(ACTIONS, "bool TakenSonDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit)")
+        self.assertIn("const bool fightRead = ReadSeekFightCached(ai, bot, state);", fn)
+        self.assertIn("const bool siphonKnown = fightRead && state.dueSignedMs != std::numeric_limits<int>::max();", fn)
+        self.assertIn("taken.sinceMs, siphonKnown,", fn)
+
+    def test_the_latch_is_per_bot_and_take(self):
+        fn = body(ACTIONS, "bool TakenSonDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_seekTakenCapMutex);", fn)
+        self.assertIn("SeekTakenCapLatchFor(g_seekTakenCapLatches[bot->GetObjectGuid().GetRawValue()], taken.son, taken.takenMs)",
+                      fn)
+        self.assertIn("siphonInMs, PlayerbotAI::IsHeal(bot), latch.held);", fn)
+        self.assertIn("latch.held = held;", fn)
+        self.assertIn("rowDue = SeekTakenCapRowDue(latch, held);", fn)
+        # The row is written after the latch lock is released.
+        self.assertLess(fn.index("rowDue = SeekTakenCapRowDue(latch, held);\n    }"), fn.index("if (rowDue)"))
+        reader = body(ACTIONS, "SeekTakenSon SeekTakenSonRead(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("out.takenMs = s.takenMs;", reader)
 
     def test_is_dps_held_reads_the_key_first(self):
         fn = body(ACTIONS, "bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger)")
@@ -88,12 +114,12 @@ class TakenSonThreatCapWiring(unittest.TestCase):
         self.assertLess(fn.index(call), fn.index("if (!sPlayerbotAIConfig.dungeonRunAuraTactics"))
         self.assertLess(fn.index("if (!ai || !bot || !unit || !unit->IsAlive())"), fn.index(call))
 
-    def test_the_row_once_per_bot_and_son(self):
+    def test_the_row_text(self):
         fn = body(ACTIONS, "void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct,")
         self.assertIn('"seek take capped son=%u bot=%s pct=%u since_take_ms=%u"', fn)
-        self.assertIn("if (last == sonGuid)\n            return;", fn)
         self.assertIn("seek take capped son=<son> bot=<name> pct=<pct> since_take_ms=<ms>", ROWS_DOC)
-
+        # The documented limit: area damage, ticking damage and pets are not held.
+        self.assertIn("pets", ROWS_DOC[ROWS_DOC.index("| 18b |"):ROWS_DOC.index("| 18b |") + 800])
 
 if __name__ == "__main__":
     unittest.main()

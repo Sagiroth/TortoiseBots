@@ -266,20 +266,53 @@ namespace ai
     // after the take the burn opened as soon as the Son's victim was a tank (SeekMeetHoldsSon), and DPS pulled it off
     // the tank that had just taunted it (18 of 25 victims DPS, a median 13 s after the take). True: hold this damage
     // dealer's attacks and casts on that Son while ALL of: the key is on; the action is no heal; the Son's live victim
-    // is the tank that took it; this bot's threat on the Son is at least `capPct` % of that tank's; the Son is at 20 %
-    // health or more; the take is under kSeekTakenSonCapMs (15 s) old; and the next Blood Siphon is more than 8 s away
-    // (`siphonInMs` INT_MAX: unknown, which counts as far). Dosing comes first: the Son must still die near the raid.
+    // is the tank that took it; this bot's threat on the Son is at least `capPct` % of that tank's (once held, at least
+    // `releasePct` %: `wasHeld` is this bot's hold of this same take on its last read, so the hold does not flicker at
+    // the line); the Son is at 20 % health or more; the take is under kSeekTakenSonCapMs (15 s) old; and the next Blood
+    // Siphon is KNOWN to be more than 8 s away. An unknown siphon clock releases (dosing comes first: the Son must still
+    // die near the raid before the siphon).
     constexpr std::uint8_t kSeekTakenSonCapPct = 85;
+    constexpr std::uint8_t kSeekTakenSonReleasePct = 75;
     constexpr float kSeekTakenSonCapMinHpPct = 20.0f;
     constexpr std::uint32_t kSeekTakenSonCapMs = 15000;
     constexpr int kSeekTakenSonCapSiphonMs = 8000;
     inline bool SeekTakenSonDpsHeld(bool flagOn, bool sonTakenByTank, std::uint8_t dpsThreatPct, float sonHpPct,
-                                    std::uint32_t sinceTakeMs, int siphonInMs, bool isHealAction,
-                                    std::uint8_t capPct = kSeekTakenSonCapPct)
+                                    std::uint32_t sinceTakeMs, bool siphonKnown, int siphonInMs, bool isHealAction,
+                                    bool wasHeld, std::uint8_t capPct = kSeekTakenSonCapPct,
+                                    std::uint8_t releasePct = kSeekTakenSonReleasePct)
     {
-        return flagOn && !isHealAction && sonTakenByTank && dpsThreatPct >= capPct &&
-            sonHpPct >= kSeekTakenSonCapMinHpPct && sinceTakeMs < kSeekTakenSonCapMs &&
+        const std::uint8_t line = wasHeld ? releasePct : capPct;
+        return flagOn && !isHealAction && sonTakenByTank && dpsThreatPct >= line &&
+            sonHpPct >= kSeekTakenSonCapMinHpPct && sinceTakeMs < kSeekTakenSonCapMs && siphonKnown &&
             siphonInMs > kSeekTakenSonCapSiphonMs;
+    }
+
+    // The per-bot latch of one take (DungeonRunSeekTakenSonThreatCap): the take it belongs to (Son and take time, so a
+    // re-take of the same Son guid is a new take), whether this bot was held on its last read (the hysteresis), and
+    // whether its one `seek take capped` row went out.
+    struct SeekTakenCapLatch
+    {
+        std::uint64_t son = 0;
+        std::uint32_t takenMs = 0;
+        bool held = false;
+        bool logged = false;
+    };
+
+    // The latch for the take (son, takenMs): kept when it is the same take, reset when it is another one.
+    inline SeekTakenCapLatch& SeekTakenCapLatchFor(SeekTakenCapLatch& latch, std::uint64_t son, std::uint32_t takenMs)
+    {
+        if (latch.son != son || latch.takenMs != takenMs)
+            latch = SeekTakenCapLatch{son, takenMs, false, false};
+        return latch;
+    }
+
+    // Whether this read writes the take's one row: the bot is held and the row for this take has not gone out yet.
+    inline bool SeekTakenCapRowDue(SeekTakenCapLatch& latch, bool held)
+    {
+        if (!held || latch.logged)
+            return false;
+        latch.logged = true;
+        return true;
     }
     inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
     {
