@@ -249,6 +249,9 @@ namespace ai
     {
         std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
         std::uint32_t lastCycleMs = 0;  // the last accepted cycle spell sighting (0: none)
+        // lastCycleMs is the roll's estimate, not a real sighting: a real sighting of that same cycle re-anchors the
+        // clock instead of counting a second cycle (SeekCycleSightingOf).
+        bool lastCycleEstimated = false;
         std::uint32_t lastSeenMs = 0;
         // The row's own clock, copied at every read: the record outlives the row pointer, and SeekCycleSnapshot reads
         // the due time without a row.
@@ -341,8 +344,52 @@ namespace ai
         {
             record.cycleNo += rolls;
             record.lastCycleMs = raw + (rolls - 1) * record.cycleMs;
+            record.lastCycleEstimated = true;
         }
         return rolls;
+    }
+
+    // The siphon read's delays: the count runs one second after the sighting and again two seconds later, and the boss's
+    // health is read once more nine seconds after it (the 8 s heal has run its course by then, so that read sees the
+    // heal the +1 s and +3 s reads under-count).
+    constexpr std::uint32_t kSeekSiphonReadMs = 1000;
+    constexpr std::uint32_t kSeekSiphonSecondMs = 3000;
+    constexpr std::uint32_t kSeekSiphonThirdMs = 9000;
+
+    // What a read that sees the row's cycle spell on a group member does with the record's clock. `Next`: no cycle known
+    // or the sighting is at least half a cycle after the last accepted one, so it counts. `Resync`: the clock holds the
+    // roll's estimate (lastCycleEstimated) and the real sighting is too close to count, but it is that cycle's own
+    // siphon (the roll was a few seconds early or late), so the clock re-anchors without a second cycle. `None`: the
+    // raid's other sightings of the same siphon.
+    enum class SeekCycleSighting
+    {
+        None,
+        Next,
+        Resync,
+    };
+
+    inline SeekCycleSighting SeekCycleSightingOf(bool hasAura, std::uint32_t lastCycleMs, std::uint32_t seenMs,
+                                                 std::uint32_t cycleMs, bool estimated)
+    {
+        if (!hasAura)
+            return SeekCycleSighting::None;
+        if (SeekCycleAccepts(lastCycleMs, seenMs, cycleMs))
+            return SeekCycleSighting::Next;
+        return estimated ? SeekCycleSighting::Resync : SeekCycleSighting::None;
+    }
+
+    // The re-sync of a rolled cycle on its real sighting: the sighting is the cycle's clock and its siphon reads, and
+    // the cycle number stays where the roll put it (`siphonCycle` is the cycle the reads report). The caller sets the
+    // sighting's health percent.
+    inline void SeekCycleResync(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        record.lastCycleMs = nowMs;
+        record.siphonAtMs = nowMs + kSeekSiphonReadMs;
+        record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
+        record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
+        record.siphonSeenMs = nowMs;
+        record.siphonCycle = record.cycleNo;
+        record.lastCycleEstimated = false;
     }
 
     // The charm row is due once, kSeekCharmWaitMs after the charm was first seen (Hakkar has picked his next victim 1.05 s

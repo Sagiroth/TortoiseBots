@@ -1017,12 +1017,6 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting and again two seconds later, and the boss's health is read once
-// more nine seconds after it: the 8 s heal has run its course by then, so that read sees the heal the +1 s and +3 s
-// reads under-count. The first two settle a heal the counts alone cannot explain (a pet, the boss's own stack count).
-const std::uint32_t kSeekSiphonReadMs = 1000;
-const std::uint32_t kSeekSiphonSecondMs = 3000;
-const std::uint32_t kSeekSiphonThirdMs = 9000;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -3491,17 +3485,28 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (record.engageMs != 0)
             fightMs = nowMs - record.engageMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
-        // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
-        if (bot->HasAura(row->cycleSpell) && SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs))
+        // accepted once per half cycle so the raid's sightings of one siphon move the clock once. A sighting of a cycle
+        // the roll already counted as missed re-anchors the clock instead: the roll's estimate was a few seconds early
+        // or late, and counting another cycle would move the one it already counted.
+        const SeekCycleSighting sighting =
+            SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,
+                                record.lastCycleEstimated);
+        if (sighting == SeekCycleSighting::Next)
         {
             record.lastCycleMs = nowMs;
             ++record.cycleNo;
+            record.lastCycleEstimated = false;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
             record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
             record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
             record.siphonCycle = record.cycleNo;
+        }
+        else if (sighting == SeekCycleSighting::Resync)
+        {
+            SeekCycleResync(record, nowMs);
+            record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
         {
