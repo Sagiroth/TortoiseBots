@@ -1072,11 +1072,12 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         return true;
     }
 
-    // The route below launches as one spline; there is no MovePoint first.
-    // (An earlier revision launched a MovePoint here and then overrode it
-    // with the spline below. MoveSplineInit::Launch writes the spline state
-    // directly, so the point generator never moved the bot; the launch only
-    // cost the mutate. The hazard rewrite and the wait below are unchanged.)
+    // The spline below is what moves the bot. The point generator is still
+    // pushed first, without pathfinding: code that asks "is a walk in flight"
+    // reads POINT_MOTION_TYPE (the ghost corpse run keeps riding on it).
+    mm.MovePoint(path.back().GetMapId(), path.back().getX(), path.back().getY(), path.back().getZ(),
+        moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE);
+
     GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
     {
@@ -1086,11 +1087,6 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
-
-    // The single-point walks above return early; here the route always walks
-    // as its own spline. No MovePoint leg remains: an earlier revision
-    // launched a MovePoint first, but MoveSplineInit::Launch overwrote the
-    // spline state directly, so the point generator never moved the bot.
 
     // Hoisted for the magma floor guard below: the loop runs per path
     // point, the two liquid lookups only on a lowered point.
@@ -1182,8 +1178,6 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     if (bot->GetTransport())
         init.SetTransport(bot->GetTransport()->GetGUIDLow());
     init.Launch();
-    // The single-point walks above return early; here the route always walks
-    // as its own spline, never as a MovePoint leg.
     // The spline keeps walking server-side; wake the next turn a margin
     // BEFORE this leg ends so the travel action can chain the next leg in
     // the same Execute instead of standing still until a fresh turn.
