@@ -59,7 +59,7 @@ class MoveFailNoteWiringTest(unittest.TestCase):
 
     def test_path_type_is_recorded_around_the_route(self):
         step = body(WORLDPOS, "std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder", "\n}\n")
-        self.assertIn("type = pathfinder->getPathType();\n    LastPathStepType() = static_cast<uint32>(type);", step)
+        self.assertIn("type = permissiveKept ? pathfinder->getPathType() : strictType;\n    LastPathStepType() = static_cast<uint32>(type);", step)
         move = body(MOVES, "bool MovementAction::MoveTo2(", "\n}\n")
         self.assertIn("    WorldPosition::LastPathStepType() = 0;\n    TravelPath movePath = ResolveMovePath(startPos, endPos, mover, lastMove);\n"
                       "    lastMove.movePathType = WorldPosition::LastPathStepType();", move)

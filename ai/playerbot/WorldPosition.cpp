@@ -1371,10 +1371,26 @@ std::string WorldPosition::SwimLineWhy(const std::vector<WorldPosition>& path, c
 
 //A single pathfinding attempt from one position to another. Returns pathfinding status and path.
 void WorldPosition::ExcludeSteepSlopes(PathFinder& pathfinder) { pathfinder.ExcludeSteepSlopes(); }
-bool WorldPosition::FellBackToPermissive(PathType strictType)
-{
-    return ai::ShouldRetryPermissive(static_cast<std::uint32_t>(strictType));
-}
+ bool WorldPosition::FellBackToPermissive(PathType strictType)
+ {
+     return ai::ShouldRetryPermissive(static_cast<std::uint32_t>(strictType));
+ }
+ bool WorldPosition::PermissivePathWalkable(PointsArray const& path)
+ {
+     std::vector<ai::SteepGradePoint> line;
+     line.reserve(path.size());
+     for (Vector3 const& p : path)
+         line.push_back({p.x, p.y, p.z});
+     return ai::PermissivePathWalkable(line);
+ }
+ bool WorldPosition::PermissivePathWalkable(std::vector<WorldPosition> const& path)
+ {
+     std::vector<ai::SteepGradePoint> line;
+     line.reserve(path.size());
+     for (WorldPosition const& p : path)
+         line.push_back({p.getX(), p.getY(), p.getZ()});
+     return ai::PermissivePathWalkable(line);
+ }
 
 std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder, const Unit* bot, bool forceNormalPath) const
 {
@@ -1406,14 +1422,20 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
         ExcludeSteepSlopes(*pathfinder);
     pathfinder->calculate(start.getVector3(), end.getVector3(), false);
     PathType strictType = pathfinder->getPathType();
+    // The flag over-marks stairs a player walks: when strict does not reach,
+    // one permissive query runs, and its path is walked only when a player
+    // could climb it. A refused grade falls back to the strict answer below.
     bool const fellBack = grounded && FellBackToPermissive(strictType);
+    PointsArray strictPoints = pathfinder->getPath();
+    bool permissiveKept = false;
     if (fellBack)
     {
         pathfinder = std::make_unique<PathFinder>(bot);
         pathfinder->calculate(start.getVector3(), end.getVector3(), false);
+        permissiveKept = PermissivePathWalkable(pathfinder->getPath());
     }
 
-    points = pathfinder->getPath();
+    points = permissiveKept ? pathfinder->getPath() : strictPoints;
 
     if (bot && bot->GetTransport())
     {
@@ -1421,7 +1443,7 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
             bot->GetTransport()->CalculatePassengerPosition(p.x, p.y, p.z);
     }
 
-    type = pathfinder->getPathType();
+    type = permissiveKept ? pathfinder->getPathType() : strictType;
     LastPathStepType() = static_cast<uint32>(type);
 
     std::vector<WorldPosition> retvec = fromPointsArray(points);

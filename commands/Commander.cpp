@@ -3522,14 +3522,16 @@ static LeadMoveCheck CheckLeadMove(Unit* mover, Vector3 const& origin, RemoteCom
         PathFinder path(mover);
         ai::WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(origin, Vector3(point.x, point.y, point.z), false);
-        // Off the mesh on steep ground (a knockback), the strict answer is
-        // NOPATH; the permissive retry still walks the mover off it.
+        // The flag over-marks stairs a player walks: when strict does not
+        // reach, the permissive retry walks the mover when a player could
+        // climb it, else the strict answer stands.
         PathFinder permissive(mover);
         PathFinder* active = &path;
         if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
         {
             permissive.calculate(origin, Vector3(point.x, point.y, point.z), false);
-            active = &permissive;
+            if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+                active = &permissive;
         }
         {
             check.rawPathType = static_cast<uint32>(active->getPathType());
@@ -3753,14 +3755,22 @@ static RemoteCommander::DirectJoin DirectFollowerJoin(Player* bot, Map* map, flo
         PathFinder path(bot);
         ai::WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(leadX, leadY, leadZ, false);
-        Vector3 const end = path.getActualEndPosition();
-        uint32 const type = static_cast<uint32>(path.getPathType());
+        PathFinder permissive(bot);
+        PathFinder* active = &path;
+        if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
+        {
+            permissive.calculate(leadX, leadY, leadZ, false);
+            if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+                active = &permissive;
+        }
+        Vector3 const end = active->getActualEndPosition();
+        uint32 const type = static_cast<uint32>(active->getPathType());
         pathComplete = (type & PATHFIND_NORMAL) &&
             !(type & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT)) &&
-            (end - leadSpot).length() <= 2.0f && path.getPath().size() >= 2;
-        pathLength = path.Length();
+            (end - leadSpot).length() <= 2.0f && active->getPath().size() >= 2;
+        pathLength = active->Length();
         if (pathComplete)
-            route = path.getPath();
+            route = active->getPath();
     }
     // The last resort: its own straight line to the point (on the lead bot's floor, the point in reach and sight).
     bool ownLine = false;
@@ -7653,9 +7663,17 @@ bool RunBotWalk(Player* commander, std::string const& order, std::string& answer
     PathFinder path(bot);
     ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
-    Vector3 const end = path.getActualEndPosition();
+    PathFinder permissive(bot);
+    PathFinder* active = &path;
+    if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
+    {
+        permissive.calculate(x, y, z, false);
+        if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+            active = &permissive;
+    }
+    Vector3 const end = active->getActualEndPosition();
     float const short_ = std::sqrt((end.x - x) * (end.x - x) + (end.y - y) * (end.y - y) + (end.z - z) * (end.z - z));
-    if ((path.getPathType() & PATHFIND_NOPATH) || short_ > 5.0f)
+    if ((active->getPathType() & PATHFIND_NOPATH) || short_ > 5.0f)
     {
         answer = "unreachable: " + std::string(name) + " has no navmesh path to the point (it ends " +
             std::to_string(static_cast<int>(short_)) + " yd short)";
@@ -7665,11 +7683,11 @@ bool RunBotWalk(Player* commander, std::string const& order, std::string& answer
     // the summon goes instead (DungeonRun::StragglerWalkRefused).
     {
         std::vector<TortoiseBots::DungeonRun::PathPoint> points;
-        for (Vector3 const& v : path.getPath())
+        for (Vector3 const& v : active->getPath())
             points.push_back(TortoiseBots::DungeonRun::PathPoint{v.x, v.y, v.z});
         float const bx = bot->GetPositionX(), by = bot->GetPositionY(), bz = bot->GetPositionZ();
         float const straight = std::sqrt((x - bx) * (x - bx) + (y - by) * (y - by) + (z - bz) * (z - bz));
-        float const pathYd = path.Length();
+        float const pathYd = active->Length();
         auto const run = DungeonRuns().find(commanderRaw);
         bool const hasRun = run != DungeonRuns().end() && run->second.run.plan;
         std::vector<TortoiseBots::DungeonRun::StandHostile> hostiles;

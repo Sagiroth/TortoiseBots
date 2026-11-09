@@ -3817,8 +3817,9 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
         return result;
     }
 
+    std::unique_ptr<PathFinder> strictFinder = std::make_unique<PathFinder>(bot);
+    WorldPosition::ExcludeSteepSlopes(*strictFinder);
     std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-    WorldPosition::ExcludeSteepSlopes(*pathfinder);
     PointsArray points;
     PathType pathType;
     WorldPosition currentPos = startPos;
@@ -3826,10 +3827,21 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
 
     for (uint8 i = 0; i < 40; i++)
     {
-        pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
-
-        pathType = pathfinder->getPathType();
-        points = pathfinder->getPath();
+        strictFinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
+        pathType = strictFinder->getPathType();
+        points = strictFinder->getPath();
+        // The flag over-marks stairs a player walks: when strict does not
+        // reach, the permissive answer is graded and a climb a player could
+        // take replaces the strict leg.
+        if (WorldPosition::FellBackToPermissive(pathType))
+        {
+            pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
+            if (WorldPosition::PermissivePathWalkable(pathfinder->getPath()))
+            {
+                pathType = pathfinder->getPathType();
+                points = pathfinder->getPath();
+            }
+        }
 
         std::vector<WorldPosition> subPath = currentPos.fromPointsArray(points);
 
