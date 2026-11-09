@@ -57,6 +57,23 @@ static bool Parse(char const* text, uint32_t (&out)[kStartZoneCount])
     return ParseStartZoneWeights(text, out);
 }
 
+static void TestFlexibleRaces()
+{
+    CHECK(IsFlexibleStartRace(9) && IsFlexibleStartRace(10));
+    CHECK(!IsFlexibleStartRace(2) && !IsFlexibleStartRace(1) && !IsFlexibleStartRace(0));
+    uint32_t counts[kStartZoneCount] = { 5, 2, 2, 7, 7, 1 };
+    CHECK(LeastPopulatedFactionZone(counts, false) == 1); // tie Mulgore/Tirisfal -> lower index
+    CHECK(LeastPopulatedFactionZone(counts, true) == 5);
+    uint32_t empty[kStartZoneCount] = {};
+    CHECK(LeastPopulatedFactionZone(empty, false) == 0);
+    CHECK(LeastPopulatedFactionZone(empty, true) == 3);
+    // Handing out ten goblins one by one fills the three Horde zones evenly.
+    uint32_t horde[kStartZoneCount] = {};
+    for (int i = 0; i < 9; ++i)
+        ++horde[LeastPopulatedFactionZone(horde, false)];
+    CHECK(horde[0] == 3 && horde[1] == 3 && horde[2] == 3 && horde[3] == 0);
+}
+
 static void TestWeightParser()
 {
     uint32_t w[kStartZoneCount] = {};
@@ -124,6 +141,7 @@ static void TestWeightedPick()
 int main()
 {
     TestRaceMapping();
+    TestFlexibleRaces();
     TestWeightParser();
     TestWeightedPick();
     TestSpawnTableMatchesCorePlayercreateinfo();

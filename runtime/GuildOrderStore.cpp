@@ -1078,6 +1078,9 @@ public:
             NoteAuctionLegEntered(it->second.auctionCycles[itemId], itemId);
         if (step == SupplyStep::Bank && returnStep == SupplyStep::AuctionHouse && goldCount)
             it->second.auctionGoldReturnItemId = itemId;
+        TB_LOG_DETAIL("TortoiseBots: order bot %u step %s -> %s item %u count %u reason %s",
+            botGuidLow, SupplyStepToken(record.supplyStep), SupplyStepToken(step), itemId, count,
+            ReasonToken(reason));
         record.supplyStep = step;
         record.supplyItemId = itemId;
         record.supplyCount = count;
@@ -4371,6 +4374,22 @@ void Update(uint32_t diff)
         {
             in.bankCount = BankItemCount(snapshot.guildId, snapshot.itemId);
             in.bankChecked = true;
+        }
+
+        // One status line per running order every 5 minutes: where it stands
+        // even when nothing changed, so a quiet order reads as quiet.
+        static std::unordered_map<uint32_t, uint32_t> lastBeat;
+        uint32_t& beat = lastBeat[guidLow];
+        if (!beat || now - beat >= 300000)
+        {
+            beat = now ? now : 1;
+            if (snapshot.state == OrderState::Working || snapshot.state == OrderState::Waiting ||
+                snapshot.state == OrderState::Delivering)
+                TB_LOG_DETAIL("TortoiseBots: order status bot %u %s %s item %u %u/%u step %s zone %u %s%s",
+                    guidLow, StateToken(snapshot.state), ReasonToken(snapshot.reason), snapshot.itemId,
+                    snapshot.delivered, snapshot.amount, SupplyStepToken(snapshot.supplyStep),
+                    snapshot.farmZoneId, online ? "online" : "offline",
+                    online && bot && !bot->IsAlive() ? " dead" : "");
         }
 
         OrderStore::TickOut out = OrderStore::Instance().Tick(guidLow, in);

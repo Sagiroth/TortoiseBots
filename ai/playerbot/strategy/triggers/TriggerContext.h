@@ -78,6 +78,7 @@ namespace ai
             creators["healer low mana"] = [](PlayerbotAI* ai) { return new HealerLowManaTrigger(ai); };
             creators["medium mana"] = [](PlayerbotAI* ai) { return new MediumManaTrigger(ai); };
             creators["high mana"] = [](PlayerbotAI* ai) { return new HighManaTrigger(ai); };
+            creators["resume drink"] = [](PlayerbotAI* ai) { return new ResumeDrinkTrigger(ai); };
             creators["enough mana"] = [](PlayerbotAI* ai) { return new EnoughManaTrigger(ai); };
             creators["almost full mana"] = [](PlayerbotAI* ai) { return new AlmostFullManaTrigger(ai); };
             creators["healer should attack"] = [](PlayerbotAI* ai) { return new HealerShouldAttackTrigger(ai); };

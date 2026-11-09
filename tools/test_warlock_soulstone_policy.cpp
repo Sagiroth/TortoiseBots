@@ -101,6 +101,19 @@ static void TestSecondWarlockStonesTheTank()
     CHECK(DecideSoulstoneTarget(Grouped(), {healer, tank}).kind == SoulstoneChoiceKind::None);
 }
 
+// One warlock, one stone: with its stone up on the healer it does not move on
+// to the tank or the leader; another warlock still can.
+static void TestOneStonePerWarlock()
+{
+    SoulstoneCandidate healer = Healer();
+    healer.hasSoulstoneAura = true;
+    SoulstoneFacts own = Grouped();
+    own.ownStoneActive = true;
+    CHECK(DecideSoulstoneTarget(own, {healer, Tank(), Leader()}).kind == SoulstoneChoiceKind::None);
+    CHECK(DecideSoulstoneTarget(own, {Healer(), Tank()}).kind == SoulstoneChoiceKind::None);
+    CHECK(PicksMember(DecideSoulstoneTarget(Grouped(), {healer, Tank()}), 1));
+}
+
 // Never in combat, in any shape of group.
 static void TestSkipsInCombat()
 {
@@ -195,6 +208,7 @@ static void TestStoneRank()
 
 int main()
 {
+    TestOneStonePerWarlock();
     TestHealerBeatsLeader();
     TestFallbackTiers();
     TestSkipsWhenAuraPresent();

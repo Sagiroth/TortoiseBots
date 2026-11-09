@@ -16,6 +16,7 @@
 #include "RandomBotAccountRegistry.h"
 #include "StartZoneBalance.h"
 #include "GearSeedingGuard.h"
+#include "policy/provision/GearBlacklistPolicy.h"
 #include "../ai/playerbot/PlayerbotAI.h"
 #include "../ai/playerbot/BotActionLog.h"
 #include "../ai/playerbot/strategy/actions/MovementActions.h"
@@ -89,6 +90,54 @@ bool AwaitsTravelStep(PlayerbotAI* ai)
     ai::TravelStatus const status = target->GetStatus();
     return status == ai::TravelStatus::TRAVEL_STATUS_PREPARE || status == ai::TravelStatus::TRAVEL_STATUS_READY;
 }
+// Which edge the turn's AI crossed on its travel target, read before and
+// after the update through the same context the walk itself uses. EXPIRED is
+// kept apart from a drop (SetNullTravelTarget nulls to NONE with the purpose
+// parked) and from COOLDOWN/PREPARE: only the EXPIRED edge below may wake
+// the bot, so a failed move, Unstuck reset or re-pick never does.
+enum class TravelTurnEdge : uint8_t
+{
+    Other,
+    EnRoute,
+    Working,
+    Expired,
+};
+struct TravelTurnSpot
+{
+    TravelTurnEdge edge = TravelTurnEdge::Other;
+    ai::TravelTarget const* target = nullptr;
+};
+TravelTurnSpot TravelTurnStatus(PlayerbotAI* ai)
+{
+    if (!ai || !ai->GetAiObjectContext())
+        return {};
+    ai::TravelTarget* target = ai->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
+    if (!target)
+        return {};
+    TravelTurnEdge edge = TravelTurnEdge::Other;
+    switch (target->GetStatus())
+    {
+        case ai::TravelStatus::TRAVEL_STATUS_READY:
+        case ai::TravelStatus::TRAVEL_STATUS_TRAVEL:
+            edge = TravelTurnEdge::EnRoute;
+            break;
+        case ai::TravelStatus::TRAVEL_STATUS_WORK:
+            edge = TravelTurnEdge::Working;
+            break;
+        case ai::TravelStatus::TRAVEL_STATUS_EXPIRED:
+            edge = TravelTurnEdge::Expired;
+            break;
+        case ai::TravelStatus::TRAVEL_STATUS_NONE:
+        case ai::TravelStatus::TRAVEL_STATUS_PREPARE:
+        case ai::TravelStatus::TRAVEL_STATUS_COOLDOWN:
+        default:
+            break;
+    }
+    return {edge, target};
+}
+
+
+
 
 // The situation that caps how long a pool bot may wait for its next turn
 // (BotTurnScheduler.h). Takes the FindPlayerNotInWorld lookup, so a bot
@@ -1274,6 +1323,26 @@ void BotManager::OnPlayerLogin(::Player* player)
             ai->DoSpecificAction("auto learn spell");
     }
 
+    // Pool and hired bots seeded before an item joined the gear blacklist still
+    // wear it; their slot is not re-geared until a level-up, so strip it here
+    // and let the normal gear pass fill the slot with a fitting piece.
+    if (record.random)
+    {
+        bool stripped = false;
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* worn = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (worn && worn->GetProto() &&
+                TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, worn->GetProto()->ItemId))
+            {
+                player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+                stripped = true;
+            }
+        }
+        if (stripped && !hired && sPlayerbotAIConfig.randomGearUpgradeEnabled && player->GetLevel() >= 5)
+            sRandomBotFacade.UpdateGearSpells(player);
+    }
+
     // One-shot random scatter on headless login only; fail-closed, no DB mutation, no homebind.
     // Must run AFTER gear seeding and skills so the bot is fully initialized before any map transfer.
     TryRandomTeleport(player, record);
@@ -2139,6 +2208,8 @@ void BotManager::UpdateBots(uint32_t diff)
                 : diff;
             entry.lastAiUpdateMs = nowMs ? nowMs : 1;
             ++entry.aiVisits;
+            TravelTurnSpot const travelBefore = entry.aiAdapter->GetAI()
+                ? TravelTurnStatus(entry.aiAdapter->GetAI()) : TravelTurnSpot{};
             entry.aiAdapter->Update(elapsed);
             // Issue #1043: a pet the AI turn just brought back (the resummon
             // after a teleport ack) is checked before the maps update, so its
@@ -2161,6 +2232,13 @@ void BotManager::UpdateBots(uint32_t diff)
                     ++entry.followUps;
                     aiDelayMs = 0;
                 }
+                TravelTurnSpot const travelAfter = TravelTurnStatus(stepAi);
+                if (TravelArrivalMakesDueAtOnce(travelBefore.edge == TravelTurnEdge::EnRoute,
+                        travelAfter.edge == TravelTurnEdge::Working) ||
+                    TravelCompletionMakesDueAtOnce(travelBefore.edge == TravelTurnEdge::Working &&
+                        travelBefore.target == travelAfter.target,
+                        travelAfter.edge == TravelTurnEdge::Expired))
+                    aiDelayMs = 0;
                 entry.turnSituation = TurnSituationOf(sObjectAccessor.FindPlayerNotInWorld(entry.record.characterGuid), stepAi);
                 entry.turnDueMs = TurnNextDueMs(WorldTimer::getMSTime(), aiDelayMs, entry.turnSituation);
             }
@@ -2206,6 +2284,58 @@ void BotManager::UpdateBots(uint32_t diff)
         ? 0 : m_adaptiveBudget.PoolUs() + m_adaptiveBudget.CombatUs();
     uint32 const gateMs = sPlayerbotAIConfig.poolBudgetWhenTickOverMs;
     bool const budgetActive = budgetUs > 0 && (gateMs == 0 || diff > gateMs);
+    // Near-first: real (network) players per map, rebuilt once per pass from
+    // positions the server already tracks (same shape as RealPlayerGuids in
+    // PlayerbotAI.cpp: sessions enter the network map, headless never does,
+    // so a bot can never count as a player). The radius check below is
+    // squared distance, one pass over the pool times one short map list.
+    struct NearPlayerSpot
+    {
+        uint32_t mapId;
+        uint32_t instanceId;
+        float x;
+        float y;
+    };
+    float const nearYd = sPlayerbotAIConfig.poolNearPlayerYd;
+    float const nearSq = nearYd * nearYd;
+    std::unordered_map<uint32_t, std::vector<NearPlayerSpot>> nearByMap;
+    if (nearYd > 0.0f)
+    {
+        for (auto const& sessionPair : sWorld.GetAllSessions())
+        {
+            ::WorldSession* session = sessionPair.second;
+            if (!session || !session->HasNetworkTransport())
+                continue;
+            ::Player* observer = session->GetPlayer();
+            if (!observer || !observer->IsInWorld() || observer->IsBeingTeleported())
+                continue;
+            NearPlayerSpot spot{observer->GetMapId(), observer->GetInstanceId(),
+                observer->GetPositionX(), observer->GetPositionY()};
+            nearByMap[spot.mapId].push_back(spot);
+        }
+    }
+    auto BotNearRealPlayer = [&nearByMap, nearSq](::Player* bot) -> bool
+    {
+        if (!bot || !bot->IsInWorld() || nearSq <= 0.0f)
+            return false;
+        auto it = nearByMap.find(bot->GetMapId());
+        if (it == nearByMap.end())
+            return false;
+        uint32_t const instance = bot->GetInstanceId();
+        float const bx = bot->GetPositionX();
+        float const by = bot->GetPositionY();
+        for (NearPlayerSpot const& spot : it->second)
+        {
+            if (spot.instanceId != instance)
+                continue;
+            float const dx = bx - spot.x;
+            float const dy = by - spot.y;
+            if (dx * dx + dy * dy < nearSq)
+                return true;
+        }
+        return false;
+    };
+
 
     uint32_t const turnNowMs = WorldTimer::getMSTime();
     m_dueTurns.clear();
@@ -2223,7 +2353,10 @@ void BotManager::UpdateBots(uint32_t diff)
             entry.turnDueMs = turnNowMs;
         }
         if (TurnIsDue(turnNowMs, entry.turnDueMs))
-            m_dueTurns.push_back({guidLow, entry.turnDueMs, situation});
+        {
+            ::Player* poolBot = sObjectAccessor.FindPlayerNotInWorld(entry.record.characterGuid);
+            m_dueTurns.push_back({guidLow, entry.turnDueMs, situation, BotNearRealPlayer(poolBot)});
+        }
     }
     OrderDueTurns(m_dueTurns, turnNowMs);
 

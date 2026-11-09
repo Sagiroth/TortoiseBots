@@ -643,12 +643,15 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
         CharacterCreateOutcome outcome = CharacterCreation::CreateCharacter(accountId, info);
         if (outcome.result == CHAR_CREATE_SUCCESS)
         {
-            if (sPlayerbotAIConfig.randomBotEvenStartZones)
-            {
-                int zone = StartZoneIndexForRace(race);
-                if (zone >= 0 && zone < int(kStartZoneCount))
-                    ++m_startZoneCounts[zone];
-            }
+            // A goblin or high elf can start in any start zone of its
+            // faction: the emptiest one when the even spread is on and no
+            // explicit zone weights are set, else Valley of Trials/Northshire.
+            int startZone = StartZoneIndexForRace(race);
+            if (IsFlexibleStartRace(race) && sPlayerbotAIConfig.randomBotEvenStartZones &&
+                !sPlayerbotAIConfig.randomBotStartZoneWeightsValid)
+                startZone = LeastPopulatedFactionZone(m_startZoneCounts, Player::TeamForRace(race) == ALLIANCE);
+            if (sPlayerbotAIConfig.randomBotEvenStartZones && startZone >= 0 && startZone < int(kStartZoneCount))
+                ++m_startZoneCounts[startZone];
             // Synchronous (direct) writes, like the creation seam itself
             // (CharacterCreation::CreateCharacter commits the character with
             // SaveToDB(false, true, false) before it returns): the bot's headless
@@ -658,23 +661,15 @@ RandomBotService::AutoCreateCharResult RandomBotService::TryCreateCharacterOnAcc
             // the late REPLACE then hit the primary key ("[1062] Duplicate entry
             // ... character_homebind", 25 pool goblins/high elves, live
             // 2026-10-21 09:54-09:56).
-            if (race == RACE_GOBLIN)
+            if (IsFlexibleStartRace(race))
             {
+                StartZoneSpawn const& spawn = kStartZoneSpawns[startZone];
                 CharacterDatabase.DirectPExecute(
-                    "UPDATE characters SET map = 1, zone = 14, position_x = -618.518, position_y = -4251.67, position_z = 38.718, orientation = 0 WHERE guid = '%u'",
-                    outcome.guid.GetCounter());
+                    "UPDATE characters SET map = %u, zone = %u, position_x = %f, position_y = %f, position_z = %f, orientation = %f WHERE guid = '%u'",
+                    spawn.map, spawn.area, spawn.x, spawn.y, spawn.z, spawn.o, outcome.guid.GetCounter());
                 CharacterDatabase.DirectPExecute(
-                    "REPLACE INTO character_homebind (guid, map, zone, position_x, position_y, position_z) VALUES ('%u', 1, 14, -618.518, -4251.67, 38.718)",
-                    outcome.guid.GetCounter());
-            }
-            else if (race == RACE_HIGH_ELF)
-            {
-                CharacterDatabase.DirectPExecute(
-                    "UPDATE characters SET map = 0, zone = 12, position_x = -8949.95, position_y = -132.493, position_z = 83.5312, orientation = 0 WHERE guid = '%u'",
-                    outcome.guid.GetCounter());
-                CharacterDatabase.DirectPExecute(
-                    "REPLACE INTO character_homebind (guid, map, zone, position_x, position_y, position_z) VALUES ('%u', 0, 12, -8949.95, -132.493, 83.5312)",
-                    outcome.guid.GetCounter());
+                    "REPLACE INTO character_homebind (guid, map, zone, position_x, position_y, position_z) VALUES ('%u', %u, %u, %f, %f, %f)",
+                    outcome.guid.GetCounter(), spawn.map, spawn.area, spawn.x, spawn.y, spawn.z);
             }
 
             Candidate created;

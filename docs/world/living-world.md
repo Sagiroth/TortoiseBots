@@ -173,7 +173,7 @@ On realms where bots progress organically, new pool bots start with sensible att
 - This spreads characters across all level bands rather than bunching the whole population at level 1.
 - With [`AiPlayerbot.LevelLadder`](../server/settings/world-population.md#aiplayerbotlevelladder) enabled, the online population is distributed proportionally across level brackets.
 
-New bots are spread evenly across the starting zones via [`AiPlayerbot.RandomBotEvenStartZones`](../server/settings/world-population.md#aiplayerbotrandombotevenstartzones). Auto-creation monitors starting zone populations and assigns newly created bots to less populated regions. Custom race starting areas relocate naturally to core racial hubs (such as Goblins to Valley of Trials and High Elves to Northshire).
+New bots are spread evenly across the starting zones via [`AiPlayerbot.RandomBotEvenStartZones`](../server/settings/world-population.md#aiplayerbotrandombotevenstartzones). Auto-creation monitors starting zone populations and assigns newly created bots to less populated regions. Goblins and High Elves have no mainland starting zone of their own, so each one starts in the emptiest of the three starting zones of its faction. With [`AiPlayerbot.RandomBotStartZoneWeights`](../server/settings/world-population.md#aiplayerbotrandombotstartzoneweights) set, or the even spread off, they start in Valley of Trials and Northshire.
 
 Hunters follow standard class progression: hunters own no pets below level 10. Upon reaching level 10, a pool hunter acquires a level-appropriate pet. A pool hunter logging in below level 10 gives up any previously seeded pet; player-owned, hired, or adopted hunters keep theirs.
 

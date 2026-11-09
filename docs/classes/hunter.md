@@ -46,6 +46,8 @@ Hunters deliver consistent ranged physical damage, pet management, crowd control
 
 ### Dead-Zone & Melee Weaving
 - If enemies close inside Auto Shot minimum range, ranged hunters trade into melee using *Wing Clip*, *Raptor Strike*, and *Mongoose Bite*, then step back out.
+- When stepping out to shooting range, the hunter picks a spot that steers clear of unpulled hostile packs and enemies approaching from the sides or behind, fanning out away from threats.
+- In a party, a hunter walking into shooting range holds still while its path would pass within aggro distance of an idle hostile pack, and walks on once the tank has pulled it.
 - The bot switches back to ranged attacks once the mob is pulled off the hunter by the tank or pet, or is rooted — not on distance alone.
 
 ### Threat drops

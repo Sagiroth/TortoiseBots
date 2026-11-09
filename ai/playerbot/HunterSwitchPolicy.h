@@ -251,4 +251,29 @@ namespace ai
     {
         return targetOnHunter;
     }
+
+    // Evaluates whether a candidate shooting spot is clear of an unpulled creature's aggro radius.
+    inline bool IsShootingSpotSafeFromUnpulled(float distToCreature, float aggroDistance)
+    {
+        return distToCreature >= aggroDistance;
+    }
+
+    // Evaluates whether a candidate shooting spot is outside an active enemy's dead zone
+    // and does not step closer to an approaching enemy targeting the bot.
+    inline bool IsShootingSpotSafeFromEnemy(float distToEnemy, float minRange,
+        float currentDistToEnemy, bool victimOnBot)
+    {
+        if (distToEnemy < minRange + 1.0f)
+            return false;
+        if (victimOnBot && distToEnemy < currentDistToEnemy)
+            return false;
+        return true;
+    }
+
+    // Scores a candidate shooting spot: prefers larger clearance from enemies,
+    // with tie-break favoring smaller deflection angle.
+    inline float ScoreShootingSpot(float minEnemyDist, float angleOffset)
+    {
+        return minEnemyDist - (angleOffset < 0.0f ? -angleOffset : angleOffset) * 0.5f;
+    }
 }

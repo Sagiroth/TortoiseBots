@@ -21,6 +21,7 @@ bool RememberTaxiAction::Execute(Event& event)
             movement.taxiNodes.resize(2);
 
             p >> movement.taxiMaster >> movement.taxiNodes[0] >> movement.taxiNodes[1];
+            ai->StartPartyFlight();
             return true;
         }
     case CMSG_ACTIVATETAXIEXPRESS:
@@ -32,6 +33,7 @@ bool RememberTaxiAction::Execute(Event& event)
 
             LastMovement& movement = context->GetValue<LastMovement&>("last taxi")->Get();
             movement.taxiNodes.clear();
+            movement.taxiMaster = guid;
             for (uint32 i = 0; i < node_count; ++i)
             {
                 uint32 node;
@@ -39,6 +41,7 @@ bool RememberTaxiAction::Execute(Event& event)
                 movement.taxiNodes.push_back(node);
             }
 
+            ai->StartPartyFlight();
             return true;
         }
     }

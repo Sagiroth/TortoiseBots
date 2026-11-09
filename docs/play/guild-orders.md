@@ -72,9 +72,9 @@ An order on a fish sends the bot to a fishing spot in the planned zone. The bot 
 
 ## Where the bot gets items
 
-For the ordered item itself (a farm or buy order), the bot checks its own bags and mailbox, then the auction house, then farms it. It never takes the finished item from the guild bank: the bank holds crafting materials.
+For the ordered item itself, the bot checks its own bags and mailbox, then farms it when it has the skill to. It goes to the auction house only when it cannot farm it (a buy order starts there on purpose). It never takes the finished item from the guild bank: the bank holds crafting materials.
 
-For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing), then the auction house, then getting it itself (gathering, farming, crafting, or buying it from a shop), then asking another guild bot, and finally your need list (see below). Getting it itself means a craft step before a farm step.
+For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing, skipped when the guild has no bank), then making it itself (crafting, then gathering or farming, or buying it from a shop), then the auction house, then asking another guild bot, and finally your need list (see below). The bot spends gold at the auction house only when it cannot make or farm the material.
 
 Some materials every shop sells without limit (Empty Vial is one: the exact list comes from the vendor data). For those the bot skips the guild bank and the auction house and walks to a shop instead, paying with its own gold. It never asks another bot for those. If it cannot buy them, they land on your need list.
 
@@ -102,7 +102,7 @@ For the auction house step the bot picks one auction house and walks there.
 - **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
   - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables. Enchant: permanent enchants the bot knows.
-  - Never shown: recipes, conjured items, random-drop gear. At most 30 matches.
+  - Never shown: recipes, conjured items, random-drop gear. At most 30 matches. Rows the bot can actually use come first (across all name matches), then name rank, then A-Z; craft matches you cannot order still list, below the usable ones.
   - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that). Enchant matches show the slot, the required Enchanting skill and the reagents instead.
   - Every query word must match somewhere in the name, in any order. Enchant search also matches the slot word (`bracer`, `chest`, `boots`, `cloak`, `gloves`, `shield`, `weapon`, `2hweapon`) and its aliases (`wrist`, `feet`, `back`, `hands`, `2h`).
   - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text. `.bot order search <BotName> enchant <text>` lists only enchants this bot knows, one row each with verdict `ok` or `noskill` and the reagents it holds (bags plus mail).

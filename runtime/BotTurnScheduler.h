@@ -6,14 +6,16 @@
 // when its own AI asked to think next (reaction delay, GCD, cast time, move
 // duration), but never later than its situation allows: in combat 400 ms,
 // dead or in a battleground 1 s, anything else 3 s. A change of situation
-// (pulled into combat, died, started a teleport) makes the bot due at once.
-// "In combat" is the core's combat flag or the AI's own combat state.
+// (pulled into combat, died, started a teleport) makes the bot due at once,
+// and so does arriving at the travel target (see TravelArrivalMakesDueAtOnce:
+// only the walk-to-work edge counts, never a failed move or a re-pick).
 //
-// Every tick the due bots are served most-overdue first, where "overdue" is
-// measured against what the bot's situation tolerates, until the tick budget
-// runs out. A bot left over keeps getting later and so climbs the order. Under
-// load every bot is equally late relative to its tolerance: a fight never
-// waits behind a questing walk, and no bot is skipped for good.
+// Every tick the due bots visible to a real player run first (same map and
+// instance, within PoolNearPlayerYd), most overdue relative to tolerance
+// inside that group; the rest keep today's most-overdue order and run after,
+// never dropped. A bot left over keeps getting later and so climbs the order.
+// Under load every bot is equally late relative to its tolerance: a fight
+// never waits behind a questing walk, and no bot is skipped for good.
 //
 // Pure decision logic, no AI or core types: tested on its own in
 // tools/test_bot_turn_scheduler.cpp. World-thread only, like BotManager.
@@ -83,10 +85,35 @@ inline bool TurnIsDue(uint32_t nowMs, uint32_t dueMs)
 }
 
 // When a bot is due after a turn: the delay its AI asked for, capped by the
-// situation.
+// situation. An arrival (TravelArrivalMakesDueAtOnce) passes 0 here, so the
+// bot is due on the next tick.
 inline uint32_t TurnNextDueMs(uint32_t nowMs, uint32_t aiDelayMs, TurnSituation situation)
 {
     return nowMs + std::min(aiDelayMs, TurnMaxWaitMs(situation));
+}
+
+// A bot that just finished its walk is due at once, like a situation change,
+// so a bot next to a player acts on arrival instead of waiting out its
+// normal cap. wasEnRoute is whether the travel target was still on the way
+// (READY or TRAVEL) before the turn, nowWorking whether it is being worked
+// (WORK) after it. Only that edge counts: a failed move, drop, expiry,
+// cooldown or re-pick never lands on WORK, so an unreachable target cannot
+// re-pick itself in a tight loop.
+inline bool TravelArrivalMakesDueAtOnce(bool wasEnRoute, bool nowWorking)
+{
+    return wasEnRoute && nowWorking;
+}
+
+// A bot that just finished its task is due at once too: the quest errand is
+// done (its target expired) so the next tick picks the next one instead of
+// waiting out the normal cap. wasWorking is whether the travel target was
+// being worked (WORK) before the turn, nowExpired whether it expired after
+// it. EXPIRED only: a drop nulls to NONE with the purpose parked, a cooldown
+// waits, a MoveTo failure leaves the trip TRAVEL-side, an Unstuck reset or
+// re-pick never expires - so none of them wakes the bot early.
+inline bool TravelCompletionMakesDueAtOnce(bool wasWorking, bool nowExpired)
+{
+    return wasWorking && nowExpired;
 }
 
 struct DueTurn
@@ -94,15 +121,21 @@ struct DueTurn
     uint32_t guidLow;
     uint32_t dueMs;
     TurnSituation situation;
+    // Within sight of a real player this pass (BotManager's per-pass cache):
+    // served ahead of the rest when the budget cuts the pass.
+    bool nearPlayer = false;
 };
 
-// Order due turns most overdue first, relative to tolerance:
-// (now - due) / maxWait, compared by cross-multiplication so no floats.
-// Ties go to the more urgent situation, then the lower guid (deterministic).
+// Order due turns with player-visible bots first, then most overdue relative
+// to tolerance: (now - due) / maxWait, compared by cross-multiplication so no
+// floats. Ties go to the more urgent situation, then the lower guid
+// (deterministic). Distant bots keep today's order inside their group.
 inline void OrderDueTurns(std::vector<DueTurn>& due, uint32_t nowMs)
 {
     std::sort(due.begin(), due.end(), [nowMs](DueTurn const& a, DueTurn const& b)
     {
+        if (a.nearPlayer != b.nearPlayer)
+            return a.nearPlayer > b.nearPlayer;
         uint64_t const lateA = static_cast<uint32_t>(nowMs - a.dueMs);
         uint64_t const lateB = static_cast<uint32_t>(nowMs - b.dueMs);
         uint64_t const scoreA = lateA * TurnMaxWaitMs(b.situation);
