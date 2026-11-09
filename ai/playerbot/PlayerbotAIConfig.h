@@ -734,6 +734,11 @@ public:
     bool dungeonRunSeekMeetPrePlaceHold = false;
     bool dungeonRunSeekMeetTakeReach = false;
     bool dungeonRunSeekTakenSonThreatCap = false;
+    // The siphon clock (Hakkar's seek pull; needs dungeonRunSeekPullCycle and dungeonRunSeekWalkoutFaceCast): a walk-out
+    // that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s rather than timing out at
+    // 25 s, and a seek_pull row's start and retry floors are lowered to 50 s (never raised; defaults off, recommended
+    // on). Off keeps today's clock: the 25 s timeout and the row's own 60 s floors.
+    bool dungeonRunSeekSiphonClock = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

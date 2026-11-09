@@ -48,6 +48,12 @@ namespace ai
     constexpr std::uint32_t kSeekWalkoutShotStallMs = 6000; // at the stand this long without a shot aborts ("no shot")
     constexpr float kSeekWalkoutStandArriveYd = 3.0f;       // at the stand is this close to it
     constexpr float kSeekWalkoutPlatformYd = 60.0f;         // the ranged platform: this close to the anchor's centre
+    // The siphon clock's no-sight cut (DungeonRunSeekSiphonClock, walk 62 SIPHON-WHY): shot tasks shoot at a median
+    // 11 s and p90 18 s after the start, while never-shot tasks run the full 25 s and miss the siphon.
+    constexpr std::uint32_t kSeekWalkoutNoSightCutMs = 15000;
+    // The siphon clock's start and retry floor: start to dose cloud a median 43 s and p90 54 s, and a start at due 50 s
+    // doses 56 % of the time.
+    constexpr std::uint32_t kSeekSiphonClockFloorMs = 50000;
 
     // The pulled Son meets a tank (walk 53): the walk back ends where a waiting off-tank stands, not at the circle's
     // edge. The Son that chased the puller lands on that tank instead of on the ranged raid. Taunt and Growl are melee
@@ -70,6 +76,7 @@ namespace ai
         int maxPerCycle = kSeekWalkoutMaxPerCycle;
         std::uint32_t retryMinMs = kSeekWalkoutRetryMinMs;
         std::uint32_t firstStartMinMs = 0; // 0: no deadline (the old rule)
+        std::uint32_t noSightCutMs = 0;    // 0: no cut (the old rules)
         std::uint32_t startLeadMs = kSeekWalkoutSiphonLeadMs; // the earliest start: this much to the due time
         std::uint32_t firstFightStartMs = 0; // 0: no gate (the old rule)
         bool perCycleWalked = false;
@@ -105,6 +112,19 @@ namespace ai
             std::uint32_t const leadMs = static_cast<std::uint32_t>(seekLeadSec * 1000.0f);
             rules.startLeadMs = std::clamp(leadMs, kSeekWalkoutSiphonLeadMs, 85000u);
         }
+        return rules;
+    }
+
+    // DungeonRunSeekSiphonClock: lower a seek_pull row's start and retry floors to kSeekSiphonClockFloorMs (never raise
+    // them; 0, the old rules, stays 0) and arm the no-sight cut.
+    inline WalkoutCycleRules WalkoutSiphonClockRules(WalkoutCycleRules rules)
+    {
+        if (rules.firstStartMinMs > kSeekSiphonClockFloorMs)
+            rules.firstStartMinMs = kSeekSiphonClockFloorMs;
+        if (rules.retryMinMs > kSeekSiphonClockFloorMs && rules.perCycleWalked)
+            rules.retryMinMs = kSeekSiphonClockFloorMs;
+        if (rules.perCycleWalked)
+            rules.noSightCutMs = kSeekWalkoutNoSightCutMs;
         return rules;
     }
 
@@ -1947,6 +1967,16 @@ namespace ai
             (s.firstInShotMs != 0 && nowMs - s.firstInShotMs >= kSeekWalkoutInShotBackstopMs);
     }
 
+    // The no-sight cut (DungeonRunSeekSiphonClock): an unshot task that never stood in shot position and sent no pull
+    // cast is cut `cutMs` after its start, so the cycle reopens with time for a retry. Only with the in-shot clock on
+    // (DungeonRunSeekWalkoutFaceCast): without it firstInShotMs is never written.
+    inline bool WalkoutNoSightCutDue(const SeekWalkoutState& s, std::uint32_t nowMs, std::uint32_t cutMs,
+                                     bool inShotClockOn)
+    {
+        return inShotClockOn && cutMs != 0 && WalkoutActive(s) && !s.shot && s.pullCastMs == 0 &&
+            s.firstInShotMs == 0 && nowMs - s.startMs >= cutMs;
+    }
+
     enum class WalkoutEnd : std::uint8_t
     {
         None = 0,
@@ -2017,7 +2047,7 @@ namespace ai
         if (!reason)
             return false;
         for (const char* free : {"threat", "victim", "dead", "charmed", "insanity", "gone", "cast failed",
-                                 "move failed", "no shot"})
+                                 "move failed", "no shot", "no sight"})
             if (std::strcmp(reason, free) == 0)
                 return true;
         return false;

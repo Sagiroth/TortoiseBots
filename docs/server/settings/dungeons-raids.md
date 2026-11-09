@@ -94,6 +94,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekMeetTakeReach`](#aiplayerbotdungeonrunseekmeettakereach) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): the waiting receiver takes the walked Son within 25 yd (Intercept range) instead of 8 yd, so a healer cannot peel it on its last yards. |
 | [`AiPlayerbot.DungeonRunSeekTakenSonThreatCap`](#aiplayerbotdungeonrunseektakensonthreatcap) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): a damage dealer at 85 % of the taking tank's threat on the just-taken Son holds its attacks on it (until under 75 %) for up to 15 s, so the burn does not pull it off the tank. |
+| [`AiPlayerbot.DungeonRunSeekSiphonClock`](#aiplayerbotdungeonrunseeksiphonclock) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle` and `DungeonRunSeekWalkoutFaceCast`): a Hakkar walk-out that sent no pull cast and never stood in shot position aborts as `no sight` after 15 s, and the `seek_pull` row's start and retry floors drop to 50 s, so an undosed siphon gets another pull. |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -1227,6 +1228,25 @@ Whether the damage dealers cap their threat on the meet's just-taken Son. Recomm
 Diagnostics: one `BossTacticsSeekPull` row per bot and take (a re-take of the same Son writes its own), `seek take capped son=<son> bot=<name> pct=<pct> since_take_ms=<ms>`.
 
 Limits (documented, not fixed): only the meet's take is covered (a Son taken by the nearest or healer-clock take is not); like every dps hold it holds the pick and the attack, so area damage, damage over time already ticking and pets still hit the held Son; and the Son dies later, up to the 15 s bound.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekSiphonClock`
+Whether Hakkar's walk-out gets the siphon clock. Recommended on with `DungeonRunSeekPullCycle` and `DungeonRunSeekWalkoutFaceCast`.
+**Default:** `0` · **Values:** `0` off (the 25 s task timeout and the `seek_pull` row's own 60 s floors, as before), `1` on (needs `DungeonRunSeekPullCycle`; the cut also needs `DungeonRunSeekWalkoutFaceCast`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why (walk 62, SIPHON-WHY):** 42 of 144 siphon cycles in the standing raid were undosed, and 22 of them — 52 % — were one cause: a walk-out started, never shot, ran the full 25 s timeout, and the siphon arrived before a retry could. Every no-shot timeout was an undosed siphon; every walk-out that shot dosed 92-98 % of the time. The trap is the clock: a cycle-2 start arrives at due 79 s, the 25 s timeout lands at due 54 s, and the `seek_pull` row's 60 s start/retry floor refuses any retry. Shot tasks shoot a median 11 s, p90 18 s, after the start; never-shot tasks reach no shot position at all (their stand rows read `los=0`), so the 6 s in-shot stall never fires.
+
+**The no-sight cut:** a running task that is unshot, sent no pull cast (`pullCastMs == 0`), never had an in-shot read (`firstInShotMs == 0`) and started at least 15 s ago aborts with reason `no sight` through the no-shot abort's own path: the Son is freed for the cycle and the puller sits out the picks for 60 s. Only with `DungeonRunSeekWalkoutFaceCast`, which is what writes `firstInShotMs`: without it every task reads "never in shot" and the cut stays off.
+
+**The floor:** a `seek_pull` row's `firstStartMinMs` and `retryMinMs` are lowered to 50 s when they are higher, never raised; a row at 0 keeps 0. Nothing else needs a guard: a start already needs the dose window open, three or more seekers without the poison, two or more living tanks, no Son in combat or inside the anchor, an open cycle and a puller that is not dead, charmed, insane, the boss's victim or at threat. So the floor only allows a late first start (after `no puller` or `late`) or a retry after an unshot end, in a cycle with no dose yet.
+
+**Expected (walk 62 model):** about 19.5 of the 42 standing-raid undosed cycles dose (no-sight 15.4, missed sighting 2.5, aborts 1.6), taking the undosed share from 29 % to about 16 %. The cut's cost is a shot task that would have shot after 15 s with no in-shot read before it: an upper bound of 11 % of shot tasks, which get a retry at due about 59 s instead.
+
+**Rows:** `seek pull: walk-out abort no sight ...` (the no-shot row's fields, `los=` `inrange=` `spell=` `onson=` `front=` `moving=` `dz=`), and the start row gains `floor=<s>` while the key is on.
 
 </details>
 

@@ -1187,6 +1187,14 @@ AiPlayerbot.DungeonRunSeekMeetTakeReach = 0
 # after the take, or the next Blood Siphon is 8 s or less away or unknown. Off burns it as soon as a tank has it.
 AiPlayerbot.DungeonRunSeekTakenSonThreatCap = 0
 
+# The siphon clock for Hakkar's seek pull (recommended on; needs DungeonRunSeekPullCycle and the walk-out's in-shot
+# clock, DungeonRunSeekWalkoutFaceCast): a walk-out task that sent no pull cast and never stood in shot position aborts
+# `no sight` 15 s after its start instead of running the full 25 s, so its Son and its cycle are free for a later start;
+# and a seek_pull row's first-start and retry floors drop to 50 s (never raised; a row at 0 stays 0). Walk 62: 22 of the
+# 42 standing-raid undosed cycles were no-shot timeouts, every one of them an undosed siphon. Off keeps the 25 s timeout
+# and the row's own floors.
+AiPlayerbot.DungeonRunSeekSiphonClock = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 
