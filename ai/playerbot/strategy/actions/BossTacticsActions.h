@@ -643,6 +643,14 @@ namespace ai
     bool LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out);
     // The same read, handing back the live anchor row itself (so a caller can take another role's circle of it).
     const BossTacticRow* LiveBossAnchorRow(PlayerbotAI* ai, Player* bot);
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5, MeetPrePlaceHoldsChase): true
+    // while the key is on, this bot is the live pre-place's receiver, its walk began, and `target` is the boss of its
+    // live anchor row. Its reach actions (BossTacticsSeekHoldMultiplier) and its warrior gap closer then skip the boss.
+    // The first hold of a pre-place logs one `event=preplace_hold` row naming `actionKind` (reach, charge, gapclose or intervene).
+    bool SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind = "reach");
+    // Its receiver and liveness part alone (no target test): the key, the map filter and the one locked snapshot. The
+    // multiplier holds the receiver's Intervene (a friendly target) on it; the first hold logs the row too.
+    bool SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind);
     // Every boss/raid mover's destination goes through here before its MoveTo: unchanged without a live anchor or
     // inside it; outside, moved onto the circle toward the destination with the floor read there. False: the clamped
     // point has no floor on the centre's level, so the caller skips the move this tick.

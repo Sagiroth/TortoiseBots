@@ -1036,6 +1036,9 @@ namespace ai
         bool prePlaceWalking = false;
         std::uint32_t prePlaceWalkMs = 0;
         bool prePlaceArrived = false;
+        // The pre-place's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): its one `event=preplace_hold` row
+        // went out.
+        bool prePlaceHoldLogged = false;
         // The walk-out shot's wait for the pre-placed receiver (DungeonRunSeekShotWaitsReceiver, walk 58 F2): when this
         // task's puller first stood in shot position with a live pre-place (0: no wait this task), and whether the wait
         // is over (its one `event=shot_wait` row claimed; the task never waits again).
@@ -1287,6 +1290,16 @@ namespace ai
         return pullerInPos || pullerToStandYd <= leadYd;
     }
 
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5). Walk 59: the receiver's own
+    // Protection rotation (charge / reach melee at 37, Intercept at 42, the melee casts' reach melee) outranked its
+    // pre-place walk (seek tank at 26) and kept chasing Hakkar back into melee; with Hakkar within 30 yd of his spawn
+    // 2 of 18 receivers arrived. True: the key is on, this bot is the live pre-place's receiver whose walk began, and
+    // the target is the anchored boss, so its reach actions and gap closer get nothing on it. A Son is still chased.
+    inline bool MeetPrePlaceHoldsChase(bool flagOn, bool prePlaceWalking, bool targetIsBoss)
+    {
+        return flagOn && prePlaceWalking && targetIsBoss;
+    }
+
     // Whether the walk-out's puller is in position for MeetPrePlaceWalkDue: the pre-place's meet already handed over,
     // the shot landed, the puller stood at its stand, it reached shot position once this task, or its shot waits for
     // the receiver (DungeonRunSeekShotWaitsReceiver: the waiting puller always makes the late walk due, so the two never
@@ -1396,6 +1409,16 @@ namespace ai
         return true;
     }
 
+    // The chase hold first applied to the pre-placed receiver: true once per pre-place (the one `event=preplace_hold`
+    // row). False for another bot, another generation or a row already out.
+    inline bool WalkoutPrePlaceNoteHold(SeekWalkoutState& s, std::uint64_t receiver, std::uint32_t gen)
+    {
+        if (receiver == 0 || s.prePlaceReceiver != receiver || s.prePlaceGen != gen || s.prePlaceHoldLogged)
+            return false;
+        s.prePlaceHoldLogged = true;
+        return true;
+    }
+
     // Whether the hold's step takes the tick (the action returns true): the walk and the stop do; a standing tank's hold
     // does not, so the rotation runs.
     inline bool MeetPrePlaceStepConsumesTick(MeetPrePlaceStep step)
@@ -1437,6 +1460,7 @@ namespace ai
         s.prePlaceWalking = false;
         s.prePlaceWalkMs = 0;
         s.prePlaceArrived = false;
+        s.prePlaceHoldLogged = false;
     }
 
     // The task just started (WalkoutStart): pre-place `receiver` at (x, y) for it. Only an unshot running task takes one.

@@ -92,6 +92,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
+| [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
@@ -1167,6 +1168,25 @@ Whether the Hakkar walk-out puller waits with its shot until the pre-placed rece
 Diagnostics (always on with the key): one `BossTacticsSonMeet` row per walk-out when the wait ends, `son=<g>,event=shot_wait,receiver=<name>,receiver_point_yd=<yd>,waited_ms=<ms>,reason=arrived|timeout|siphon|late|ended` (`late`: the task's 19 s age clause).
 
 Limits (documented, not fixed): the wait adds up to 6 s to the cycle, so the Son lands up to 6 s closer to the siphon.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`
+Whether the pre-placed receiver stops chasing the anchored boss while it walks to and holds its pre-place point. Recommended on with `DungeonRunSeekMeetPrePlace`.
+**Default:** `0` · **Values:** `0` off (the tank's rotation chases the boss as before), `1` on (needs `DungeonRunSeekMeetPrePlace`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why:** in walk 59 the pre-placed third tank started its walk on time, but its own Protection rotation kept chasing Hakkar back into melee: `enemy out of melee` (charge, then `reach melee`, at 37), the gap-closer Intercept (42) and the melee casts' `reach melee` prerequisites all outrank the pre-place walk (`boss tactics seek tank`, 26). Only the anchor's chase gate held them, and only while Hakkar stood more than 30 yd from his spawn: inside that line 2 of 18 receivers reached their point.
+
+**The hold:** with the key on, while a live pre-place names this bot and its walk has begun, its reach actions (`reach melee`, charge's reach alternative and the reach spells, also as prerequisites or alternatives) and its reach casts (Charge, Feral Charge and any other cast that moves the caster to its target) get nothing on the boss of its live anchor row, and its warrior gap closer skips that boss (no Intercept, no Charge, and no Berserker or Battle Stance swap for one). A warrior receiver's Intervene, which jumps it to an ally, is held whatever its target while the walk runs. The walk then wins the tick and the pre-place's hold keeps the tank on its point. No boss is named in code: the boss is the live anchor row's.
+
+**Untouched:** chases and reaches of a Son, the take's own reach (through `AttackAction`), flee, avoid-cast, freeze, seek, taunts (they do not move), and every bot that is not the pre-placed receiver. Before the walk is due (`DungeonRunSeekMeetPrePlaceLate`) nothing is held. The hold ends with the pre-place, not with the walk-out task: it carries on past the puller's walk back while the meet is open, and ends when its meet closes, the task ends without a meet, or the tank dies, is charmed or becomes Hakkar's victim.
+
+Diagnostics (always on with the key): one `BossTacticsSonMeet` row per pre-place, the first time the hold applies, `son=<g>,event=preplace_hold,receiver=<name>,boss=<entry>,action=reach|charge|gapclose|intervene,point_yd=<yd>` (`charge`: a reach cast such as Charge or Feral Charge; `intervene`: a warrior's Intervene; `boss=` is the anchor row's boss).
+
+Limits (documented, not fixed): the third tank builds no threat on the boss for longer (from the walk's start to the meet's close).
 
 </details>
 

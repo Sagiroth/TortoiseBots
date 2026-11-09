@@ -18,6 +18,8 @@ CONFIG = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 DOC = (ROOT / "docs/play/refusal-rows.md").read_text()
 POLICY = (ROOT / "ai/playerbot/SeekWalkoutPolicy.h").read_text()
+GAP_CLOSER = (ROOT / "ai/playerbot/strategy/warrior/WarriorGapCloser.cpp").read_text()
+SETTINGS_DOC = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 FIGHT_STATE = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 
 
@@ -436,6 +438,128 @@ class CauseInsanityRowWiring(unittest.TestCase):
         self.assertIn("getThreatList()", ACTIONS)
         self.assertIn("roles.tanks.size() > 1 && roles.tanks[1]", ACTIONS)
         self.assertIn("roles.tanks.size() > 2 && roles.tanks[2]", ACTIONS)
+
+
+class PrePlaceHoldWiring(unittest.TestCase):
+    """Walk 59 F5: DungeonRunSeekMeetPrePlaceHold. The pre-placed receiver's reach actions and warrior gap closer skip
+    the anchored boss once its walk began (MeetPrePlaceHoldsChase, tested in tools/test_seek_walkout_policy.cpp)."""
+
+    def hold(self):
+        return body(ACTIONS, "bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)")
+
+    def held_read(self):
+        return body(ACTIONS, "bool PrePlaceReceiverHeldRead(PlayerbotAI* ai, Player* bot, SeekPrePlaceProgress& progress)")
+
+    def note(self):
+        return body(ACTIONS, "void NotePrePlaceHold(PlayerbotAI* ai, Player* bot, const SeekPrePlaceProgress& progress, std::uint32_t bossEntry,")
+
+    def test_the_flag_is_read_as_off_and_documented(self):
+        self.assertIn('dungeonRunSeekMeetPrePlaceHold = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold", false)',
+                      CONFIG)
+        self.assertIn("bool dungeonRunSeekMeetPrePlaceHold = false;", CONFIG_H)
+        self.assertIn("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`", SETTINGS_DOC)
+        self.assertIn("Recommended on with `DungeonRunSeekMeetPrePlace`", SETTINGS_DOC)
+
+    def test_the_hold_checks_the_flag_first(self):
+        # Mutation: the hold ignoring the flag (drop the first check, or pass `true` to the policy) fails here.
+        fn = self.hold()
+        self.assertTrue(fn.split("{", 1)[1].lstrip().startswith("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)\n        return false;"))
+        self.assertIn("MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss)",
+                      fn)
+        self.assertIn("!target->ToCreature()", fn)
+        self.assertLess(fn.index("!target->ToCreature()"), fn.index("if (!PrePlaceReceiverHeldRead(ai, bot, progress))"))
+        read = self.held_read()
+        first = read.index("if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)\n        return false;")
+        self.assertLess(first, read.index("SeekMeetPrePlaceProgressRead("))
+
+    def test_the_hold_outlives_the_walkout_task(self):
+        # Review round 1: the walk-out counter drops at Back while the pre-place lives on through its meet (and is
+        # process-wide); the hold reads only the map filter and the pre-place snapshot. Mutation: the counter gate back.
+        fn = self.held_read()
+        self.assertNotIn("g_walkoutsRunning", fn)
+        self.assertNotIn("g_walkoutsRunning", self.hold())
+        self.assertIn("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())", fn)
+        self.assertLess(fn.index("HasSeekAuraMap(bot->GetMapId())"), fn.index("SeekMeetPrePlaceProgressRead("))
+
+    def test_the_hold_holds_only_the_anchored_boss(self):
+        # Mutation: holding non-boss targets (Sons) - targetIsBoss always true - fails here.
+        fn = self.hold()
+        self.assertIn("const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);", fn)
+        self.assertIn("const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;", fn)
+        self.assertNotIn("14834", fn)
+        self.assertIn("return flagOn && prePlaceWalking && targetIsBoss;",
+                      inline_body(POLICY, "inline bool MeetPrePlaceHoldsChase(bool flagOn, bool prePlaceWalking, bool targetIsBoss)"))
+
+    def test_the_hold_reads_the_snapshot_under_one_lock(self):
+        fn = self.held_read()
+        self.assertEqual(fn.count("SeekMeetPrePlaceProgressRead(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress)"), 1)
+        self.assertNotIn("lock_guard", fn)
+        self.assertIn("return progress.walking;", fn)
+        self.assertNotIn("SeekMeetPrePlaceProgressRead(", self.hold())
+        self.assertEqual(self.hold().count("PrePlaceReceiverHeldRead(ai, bot, progress)"), 1)
+        read = body(ACTIONS, "bool SeekMeetPrePlaceProgressRead(")
+        self.assertEqual(read.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
+        self.assertIn("!WalkoutPrePlaceLive(it->second.state)", read)
+        self.assertIn("out.walking = s.prePlaceWalking;", read)
+
+    def test_the_multiplier_holds_reach_before_the_attack_branch(self):
+        fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
+        hold = fn.index("if (prePlaceHold && dynamic_cast<ReachTargetAction*>(action) &&\n"
+                        "        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"reach\"))\n        return 0.0f;")
+        self.assertLess(fn.index("dynamic_cast<BossTacticsAvoidCastAction*>(action)"), hold)
+        self.assertLess(hold, fn.index("if (dynamic_cast<AttackAction*>(action))"))
+
+    def test_the_multiplier_holds_reach_casts_before_the_movement_check(self):
+        # Review round 1: Charge and Feral Charge are CastReachTargetSpellActions, no MovementAction. Mutation: remove
+        # the branch and this fails.
+        fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
+        cast = fn.index("if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&\n"
+                        "        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"charge\"))\n        return 0.0f;")
+        # Review round 2 (cost): the key and the map filter come before any target read.
+        self.assertLess(fn.index("const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold &&\n"
+                                 "        GetBossTactics().HasSeekAuraMap(bot->GetMapId());"), cast)
+        self.assertLess(fn.index("HasSeekAuraMap(bot->GetMapId())"), fn.index("action->GetTarget()"))
+        self.assertLess(cast, fn.index("if (!dynamic_cast<MovementAction*>(action))"))
+
+    def test_the_multiplier_holds_the_receivers_intervene(self):
+        # Review round 2: Intervene jumps to a friendly target; it is held on the receiver part alone. Mutation:
+        # remove the branch and this fails.
+        fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
+        branch = fn.index("if (prePlaceHold && dynamic_cast<CastInterveneAction*>(action) && "
+                          "SeekMeetPrePlaceReceiverHeld(ai, bot, \"intervene\"))\n        return 0.0f;")
+        self.assertLess(branch, fn.index("if (!dynamic_cast<MovementAction*>(action))"))
+        held = body(ACTIONS, "bool ai::SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind)")
+        self.assertIn("if (!PrePlaceReceiverHeldRead(ai, bot, progress))", held)
+        self.assertNotIn("GetTarget", held)
+        self.assertIn('#include "playerbot/strategy/warrior/WarriorActions.h"', ACTIONS)
+
+    def test_the_gap_closer_checks_the_hold(self):
+        # Mutation: the gap closer skipping its check fails here.
+        fn = body(GAP_CLOSER, "WarriorGapCloser ai::DecideWarriorGapCloser(PlayerbotAI* ai, Unit** chosen)")
+        loop = fn[fn.index("for (Unit* unit : { rescueTarget, ownTarget })"):fn.index("PickWarriorGapCloserTarget(facts)")]
+        check = loop.index('if (SeekMeetPrePlaceHoldsChase(ai, bot, unit, "gapclose"))\n            continue;')
+        self.assertLess(check, loop.index("facts.push_back(f);"))
+        self.assertIn('#include "playerbot/strategy/actions/BossTacticsActions.h"', GAP_CLOSER)
+        self.assertIn('bool SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind = "reach");',
+                      ACTIONS_H)
+
+    def test_the_row_once_per_pre_place(self):
+        fn = self.note()
+        self.assertIn('"son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f"', fn)
+        # Review round 1 (cost): no second lock once the snapshot says the row is out.
+        self.assertIn("if (progress.holdLogged ||\n        !SeekMeetPrePlaceNoteHold(", fn)
+        self.assertIn("NotePrePlaceHold(ai, bot, progress, target->GetEntry(), actionKind);", self.hold())
+        self.assertIn("out.holdLogged = s.prePlaceHoldLogged;", body(ACTIONS, "bool SeekMeetPrePlaceProgressRead("))
+        self.assertLess(fn.index("SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen)"),
+                        fn.index("LogSeekMeet(ai, info1);"))
+        self.assertIn("action=<reach\\|charge\\|gapclose\\|intervene>", DOC)
+        claim = body(ACTIONS, "bool SeekMeetPrePlaceNoteHold(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_walkoutMutex);", claim)
+        self.assertIn("WalkoutPrePlaceNoteHold(it->second.state, bot, gen)", claim)
+        self.assertIn("s.prePlaceHoldLogged = false;", inline_body(POLICY, "inline void WalkoutPrePlaceClear(SeekWalkoutState& s)"))
+        self.assertIn("event=preplace_hold", DOC)
+        self.assertIn("| 43k | pre-place hold |", DOC)
 
 
 class RefusalDocWiring(unittest.TestCase):

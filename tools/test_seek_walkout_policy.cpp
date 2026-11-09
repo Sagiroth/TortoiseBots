@@ -2311,6 +2311,62 @@ static void TestWalkoutMeetLostRecord()
     CHECK(s.lostMeets.empty());
 }
 
+// The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5) and its one-row latch.
+static void TestMeetPrePlaceHoldsChase()
+{
+    // Named failing case: key on, the receiver's walk began, the target is the anchored boss -> its chase is held
+    // (the base has no such function, and the rotation chases Hakkar back into melee).
+    CHECK(MeetPrePlaceHoldsChase(true, true, true) == true);
+    // Key off: today's behaviour (mutation: drop the flag and this fails).
+    CHECK(MeetPrePlaceHoldsChase(false, true, true) == false);
+    // The walk is not due yet (late walk): the tank stays on Hakkar (mutation: drop prePlaceWalking and this fails).
+    CHECK(MeetPrePlaceHoldsChase(true, false, true) == false);
+    // A Son is still chased (mutation: drop targetIsBoss and this fails).
+    CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
+    CHECK(MeetPrePlaceHoldsChase(false, false, false) == false);
+
+    // The row's latch: once per pre-place, for its receiver and generation only; a new pre-place re-arms it.
+    SeekWalkoutState s;
+    s.prePlaceReceiver = 7;
+    s.prePlaceGen = 3;
+    CHECK(!WalkoutPrePlaceNoteHold(s, 0, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 8, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 7, 2));
+    CHECK(WalkoutPrePlaceNoteHold(s, 7, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 7, 3));
+    WalkoutPrePlaceClear(s);
+    CHECK(!s.prePlaceHoldLogged);
+    s.prePlaceReceiver = 7;
+    s.prePlaceGen = 4;
+    CHECK(WalkoutPrePlaceNoteHold(s, 7, 4));
+}
+
+// Review round 1 (Codex HIGH / Opus): the hold must outlive the walk-out task. The task ends at Back (the puller within
+// 8 yd of the receiver) while the Son still trails it, but the pre-place lives on through its meet, so the glue may not
+// gate the hold on the walk-out counter (WalkoutActive): only the pre-place's own liveness.
+static void TestMeetPrePlaceHoldOutlivesTheTask()
+{
+    const std::uint64_t puller = 11, son = 21, receiver = 7;
+    SeekWalkoutState s;
+    WalkoutStart(s, puller, son, 1000, 1);
+    WalkoutPrePlaceSet(s, receiver, 1.0f, 2.0f);
+    CHECK(WalkoutPrePlaceConfirm(s, receiver, s.prePlaceGen, true, 1100));
+    WalkoutNoteShot(s);
+    s.meetReceiver = receiver;
+    s.meetSon = son;
+    s.meetMs = 1500;
+    s.meetPuller = puller;
+    WalkoutPrePlaceNoteMeet(s);
+    WalkoutFinish(s, WalkoutEnd::Back, 2000);
+    // Named case: the task is over, the pre-place and its walk are still live, so the chase is still held.
+    CHECK(!WalkoutActive(s) && WalkoutPrePlaceLive(s) && s.prePlaceWalking);
+    CHECK(MeetPrePlaceHoldsChase(true, WalkoutPrePlaceLive(s) && s.prePlaceWalking, true));
+    // The meet closes: the pre-place clears and the hold ends with it.
+    CHECK(WalkoutMeetCloseIf(s, receiver, son, 1500));
+    CHECK(!WalkoutPrePlaceLive(s));
+    CHECK(!MeetPrePlaceHoldsChase(true, WalkoutPrePlaceLive(s) && s.prePlaceWalking, true));
+}
+
 // The pre-place's late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3) and its arrival latch.
 static void TestMeetPrePlaceLateWalk()
 {
@@ -2690,6 +2746,8 @@ int main()
     TestWalkoutCapTakeLatch();
     TestWalkoutShotWaitsReceiver();
     TestShotWaitAndLateWalkNoDeadlock();
+    TestMeetPrePlaceHoldsChase();
+    TestMeetPrePlaceHoldOutlivesTheTask();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }
