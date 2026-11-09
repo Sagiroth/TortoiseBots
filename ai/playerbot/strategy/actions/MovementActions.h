@@ -103,6 +103,7 @@ namespace ai
         // shortcut and not-using-path refuse. In water, on a transport, flying
         // or dead the checked walk does not apply (false, the caller decides).
         bool WalkChecked(const WorldPosition& endPos, bool walk = false);
+        static bool LaunchLandWalk(Player* bot, const WorldPosition& endPos, bool walk = false, uint32* pathTypeOut = nullptr);
         float GetFollowAngle();
         bool Follow(Unit* target, float distance = 0);
         bool Follow(Unit* target, float distance, float angle);

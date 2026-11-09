@@ -3,7 +3,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/LootObjectStack.h"
 #include "Maps/PathFinder.h"
-#include "playerbot/LandWalkPolicy.h"
+#include "playerbot/strategy/actions/MovementActions.h"
 #include "ChooseTravelTargetAction.h"
 #include "FishAction.h"
 #include "MoveToTravelTargetAction.h"
@@ -353,20 +353,8 @@ static void WanderOnEmptyPick(PlayerbotAI* ai, Player* bot)
         if (path.size() < 2 || !spot.isPathTo(path, 3.0f) || spot.IsGuardedHostileTownFor(bot))
             continue;
 
-        // Route-verified above; the launch below re-proves it in the core
-        // with steep slopes excluded, so a NOPATH/shortcut still refuses
-        // instead of walking the core's straight line.
-        PathFinder wanderProbe(bot);
-        wanderProbe.ExcludeSteepSlopes();
-        wanderProbe.calculate(spot.getX(), spot.getY(), spot.getZ(), false);
-        uint32 const wanderType = static_cast<uint32>(wanderProbe.getPathType());
-        Vector3 const wanderEnd = wanderProbe.getActualEndPosition();
-        if (ai::ClassifyLandPath(wanderType, botPos.getX(), botPos.getY(), botPos.getZ(),
-                wanderEnd.x, wanderEnd.y, wanderEnd.z, spot.getX(), spot.getY(), spot.getZ()) !=
-            ai::LandWalkVerdict::Walk)
+        if (!MovementAction::LaunchLandWalk(bot, spot))
             continue;
-        bot->GetMotionMaster()->MovePoint(spot.GetMapId(), spot.getX(), spot.getY(), spot.getZ(),
-            MOVE_RUN_MODE | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
         if (AI_VALUE2(time_t, "manual time", "empty pick wander log") <= time(0))
         {
             SET_AI_VALUE2(time_t, "manual time", "empty pick wander log", time(0) + 5 * MINUTE);

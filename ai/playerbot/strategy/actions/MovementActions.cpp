@@ -207,10 +207,34 @@ bool MovementAction::MoveNear(uint32 mapId, float x, float y, float z, float dis
     return MoveTo(mapId, x + cos(angle) * distance, y + sin(angle) * distance, z);
 }
 
-// A step that never walks a straight line on land: the core MovePoint below
-// recomputes the walk with MOVE_EXCLUDE_STEEP_SLOPES, and a NOPATH / shortcut
-// answer walks the core's straight line through walls. The verdict
-// (LandWalkPolicy.h) refuses those, and an INCOMPLETE that makes no progress.
+// A short walk that never leaves the navmesh: the path comes from the same
+// query the routes use (steep ground excluded, stairs allowed), and with no
+// real path the bot does not move. The point generator under the spline only
+// marks a walk in flight and re-paths in the core when the bot's speed changes.
+bool MovementAction::LaunchLandWalk(Player* bot, const WorldPosition& endPos, bool walk, uint32* pathTypeOut)
+{
+    WorldPosition botPos(bot);
+    std::vector<WorldPosition> path = endPos.getPathStepFrom(botPos, bot);
+    uint32 const type = WorldPosition::LastPathStepType();
+    if (pathTypeOut)
+        *pathTypeOut = type;
+    if (path.size() < 2)
+        return false;
+    WorldPosition const& reached = path.back();
+    if (ai::ClassifyLandPath(type, botPos.getX(), botPos.getY(), botPos.getZ(),
+            reached.getX(), reached.getY(), reached.getZ(), endPos.getX(), endPos.getY(), endPos.getZ()) !=
+        ai::LandWalkVerdict::Walk)
+        return false;
+
+    bot->GetMotionMaster()->MovePoint(endPos.GetMapId(), reached.getX(), reached.getY(), reached.getZ(),
+        (walk ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
+    Movement::MoveSplineInit init(*bot, "LandWalk");
+    init.MovebyPath(WorldPosition().toPointsArray(path));
+    init.SetWalk(walk);
+    init.Launch();
+    return true;
+}
+
 // Water, transports, flight and ghosts keep their own movement.
 bool MovementAction::WalkChecked(const WorldPosition& endPos, bool walk)
 {
@@ -224,22 +248,13 @@ bool MovementAction::WalkChecked(const WorldPosition& endPos, bool walk)
     if (botPos.distance(endPos) < sPlayerbotAIConfig.targetPosRecalcDistance)
         return false;
 
-    PathFinder probe(bot);
-    probe.ExcludeSteepSlopes();
-    probe.calculate(endPos.getX(), endPos.getY(), endPos.getZ(), false);
-    uint32 const type = static_cast<uint32>(probe.getPathType());
-    Vector3 const actualEnd = probe.getActualEndPosition();
-    if (ai::ClassifyLandPath(type, botPos.getX(), botPos.getY(), botPos.getZ(),
-            actualEnd.x, actualEnd.y, actualEnd.z, endPos.getX(), endPos.getY(), endPos.getZ()) !=
-        ai::LandWalkVerdict::Walk)
+    uint32 type = 0;
+    if (!LaunchLandWalk(bot, endPos, walk, &type))
     {
         AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_NO_LAND_PATH;
         AI_VALUE(LastMovement&, "last movement").movePathType = type;
         return false;
     }
-
-    bot->GetMotionMaster()->MovePoint(endPos.GetMapId(), endPos.getX(), endPos.getY(), endPos.getZ(),
-        (walk ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
     WaitForReach(botPos.distance(endPos));
     return true;
 }
@@ -1072,11 +1087,11 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         return true;
     }
 
-    // The spline below is what moves the bot. The point generator is still
-    // pushed first, without pathfinding: code that asks "is a walk in flight"
-    // reads POINT_MOTION_TYPE (the ghost corpse run keeps riding on it).
+    // The spline below is what moves the bot. The point generator stays under
+    // it: code that asks "is a walk in flight" reads POINT_MOTION_TYPE (the
+    // ghost corpse run), and it re-paths in the core when the speed changes.
     mm.MovePoint(path.back().GetMapId(), path.back().getX(), path.back().getY(), path.back().getZ(),
-        moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE);
+        (moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
 
     GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
