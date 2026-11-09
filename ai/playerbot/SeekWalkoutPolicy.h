@@ -1091,6 +1091,36 @@ namespace ai
         std::uint32_t exemptLogMeetMs = 0;
     };
 
+    // The exemption is target-aware (review round 2, Codex HIGH): only a chase of the open meet's CURRENT Son is let past
+    // the anchor, and only while the receiver's bounds hold (SeekMeetReceiverExempt); a chase of the boss or any other
+    // unit by the same receiver stays anchored.
+    inline bool SeekMeetSonChaseExempt(bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return targetIsMeetSon && receiverBoundsHold;
+    }
+
+    // Whether the live anchor applies to this chase: a live anchor, unless the chase is the meet Son's exempt one.
+    inline bool SeekAnchorAppliesToChase(bool anchorLive, bool targetIsMeetSon, bool receiverBoundsHold)
+    {
+        return anchorLive && !SeekMeetSonChaseExempt(targetIsMeetSon, receiverBoundsHold);
+    }
+
+    // Whether the meet take is allowed now (DungeonRunSeekMeetTakeReach): due (SeekMeetTakeDue with the key's reach) and,
+    // under a boss anchor, inside the receiver's bounded exemption (SeekMeetReceiverExempt). With no anchor row nothing
+    // refuses the chase, so the reach alone decides (review round 2: the 8 yd take is never lost). Key off: the 8 yd
+    // rule, as before (`anchored` and `exempt` unread).
+    inline bool SeekMeetTakeAllowed(bool reachOn, bool anchored, bool takeDue, bool exempt)
+    {
+        return takeDue && (!reachOn || !anchored || exempt);
+    }
+
+    // Whether the receiver stops once when its exemption ends (review round 2): it was exempt, is no longer, stands
+    // outside the tanks' circle and is not on its meet Son, so a chase sent while exempt does not carry on.
+    inline bool SeekMeetExemptEndStop(bool wasExempt, bool exemptNow, bool outsideTankCircle, bool onMeetSon)
+    {
+        return wasExempt && !exemptNow && outsideTankCircle && !onMeetSon;
+    }
+
     // Claims the one `event=receiver_exempt` row of the meet (son, meetMs): true the first time only.
     inline bool WalkoutReceiverExemptNote(SeekWalkoutState& s, std::uint64_t son, std::uint32_t meetMs)
     {

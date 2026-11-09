@@ -1673,15 +1673,36 @@ bool MeetReceiverExemptEval(Player* bot, std::uint64_t receiver, std::uint64_t s
 }
 
 // Whether the anchor lets this bot go: the puller of its instance's running walk-out task, or of a timed-out or aborted
-// one walking back (SeekWalkoutExempts); with DungeonRunSeekMeetTakeReach also the open meet's receiver inside its
-// bounded exemption (MeetReceiverExemptEval), read from the same locked snapshot.
+// one walking back (SeekWalkoutExempts).
 bool SeekWalkoutExemptsBot(Player* bot)
 {
-    const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;
-    if (g_walkoutsActive.load(std::memory_order_relaxed) == 0 &&
-        !(reachOn && g_walkoutMeetsOpen.load(std::memory_order_relaxed) > 0))
+    if (g_walkoutsActive.load(std::memory_order_relaxed) == 0)
         return false;
     std::uint32_t const nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    SweepSeekWalkouts(bot->GetMap(), nowMs);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    return it != g_walkouts.end() && WalkoutExempts(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
+}
+
+// The meet take's read for this receiver and `son` (DungeonRunSeekMeetTakeReach), from one locked snapshot of the meet
+// (receiver, Son, shot time, boss): `found` this bot is the open meet's receiver and `son` is its Son; `anchored` the
+// boss has an anchor row; `exempt` the bounded chase exemption holds (MeetReceiverExemptEval); `beyondYd` the Son's
+// distance past the raid circle. Only the meet's own Son is ever exempt: any other target reads false.
+struct MeetTakeRead
+{
+    bool found = false;
+    bool anchored = false;
+    bool exempt = false;
+    float beyondYd = 0.0f;
+};
+
+MeetTakeRead ReadMeetTake(Player* bot, Unit* son)
+{
+    MeetTakeRead out;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !son || !son->ToCreature() ||
+        g_walkoutMeetsOpen.load(std::memory_order_relaxed) <= 0)
+        return out;
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
     std::uint64_t meetReceiver = 0;
     std::uint64_t meetSon = 0;
@@ -1689,22 +1710,38 @@ bool SeekWalkoutExemptsBot(Player* bot)
     std::uint64_t bossGuid = 0;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
-        SweepSeekWalkouts(bot->GetMap(), nowMs);
         auto const it = g_walkouts.find(bot->GetInstanceId());
-        if (it == g_walkouts.end())
-            return false;
-        if (WalkoutExempts(it->second.state, self, nowMs))
-            return true;
-        // The receiver's exemption only behind its key, and only for the meet's own receiver.
-        if (!reachOn || it->second.state.meetReceiver != self)
-            return false;
+        if (it == g_walkouts.end() || it->second.state.meetReceiver != self)
+            return out;
         meetReceiver = it->second.state.meetReceiver;
         meetSon = it->second.state.meetSon;
         meetMs = it->second.state.meetMs;
         bossGuid = it->second.bossGuid;
     }
+    // The target is the meet's CURRENT Son, or nothing is exempt (the receiver stays anchored for the boss and any
+    // other unit).
+    const bool targetIsMeetSon = meetSon != 0 && son->GetObjectGuid().GetRawValue() == meetSon;
+    if (!targetIsMeetSon)
+        return out;
+    out.found = true;
     Creature* const boss = bossGuid ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
-    return MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs, boss, nowMs, nullptr);
+    BossAnchorCircle raid;
+    out.anchored = boss && BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), false, raid);
+    const bool bounds = MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs, boss, WorldTimer::getMSTime(),
+                                               &out.beyondYd);
+    out.exempt = SeekMeetSonChaseExempt(targetIsMeetSon, bounds);
+    return out;
+}
+
+// Whether the meet take of `son` is allowed now (SeekMeetTakeAllowed): due by the reach, and inside the bounded
+// exemption when the boss is anchored (no anchor row: nothing refuses the chase, so the reach alone).
+bool MeetTakeAllowedNow(Player* bot, Unit* son, MeetTakeRead* readOut = nullptr)
+{
+    const MeetTakeRead read = ReadMeetTake(bot, son);
+    if (readOut)
+        *readOut = read;
+    return read.found && SeekMeetTakeAllowed(true, read.anchored,
+                                             SeekMeetTakeDue(bot->GetDistance(son), false, true), read.exempt);
 }
 
 // The meet's one `event=receiver_exempt` row (WalkoutReceiverExemptNote under g_walkoutMutex), when the receiver
@@ -1724,6 +1761,51 @@ void NoteSeekReceiverExempt(PlayerbotAI* ai, Player* bot, std::uint64_t son, std
     snprintf(info1, sizeof(info1), "son=%u,event=receiver_exempt,receiver=%s,beyond_yd=%.1f",
              ObjectGuid(guid).GetCounter(), bot->GetName(), beyondYd);
     LogSeekMeet(ai, info1);
+}
+
+// The receiver's exemption end (review round 2, Opus LOW 1): a MoveChase sent while exempt would run on after the
+// exemption ends. Per receiver: the meet Son it was last exempt for, and the boss.
+std::mutex g_meetExemptLatchMutex;
+std::unordered_map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>> g_meetExemptLatch; // bot -> (son, boss)
+
+void MeetExemptEndTick(PlayerbotAI* ai, Player* bot)
+{
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::uint64_t meetSon = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it != g_walkouts.end() && it->second.state.meetReceiver == self)
+        {
+            meetSon = it->second.state.meetSon;
+            bossGuid = it->second.bossGuid;
+        }
+    }
+    Creature* const son = meetSon ? bot->GetMap()->GetCreature(ObjectGuid(meetSon)) : nullptr;
+    const bool exemptNow = son && ReadMeetTake(bot, son).exempt;
+    std::pair<std::uint64_t, std::uint64_t> was(0, 0);
+    {
+        std::lock_guard<std::mutex> lock(g_meetExemptLatchMutex);
+        auto const it = g_meetExemptLatch.find(self);
+        if (exemptNow)
+        {
+            g_meetExemptLatch[self] = std::make_pair(meetSon, bossGuid);
+            return;
+        }
+        if (it == g_meetExemptLatch.end())
+            return;
+        was = it->second;
+        g_meetExemptLatch.erase(it);
+    }
+    Creature* const wasSon = bot->GetMap()->GetCreature(ObjectGuid(was.first));
+    Creature* const boss = was.second ? bot->GetMap()->GetCreature(ObjectGuid(was.second)) : nullptr;
+    BossAnchorCircle tanks;
+    const bool outside = boss && BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), true, tanks) &&
+        !InsideAnchor(tanks, bot->GetPositionX(), bot->GetPositionY());
+    const bool onMeetSon = wasSon && wasSon->GetVictim() == bot;
+    if (SeekMeetExemptEndStop(true, false, outside, onMeetSon))
+        ai->StopMoving();
 }
 
 void LogSeekWalkout(PlayerbotAI* ai, const char* text, const char* info2 = "")
@@ -8726,12 +8808,24 @@ bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y,
     return true;
 }
 
+bool ai::MeetSonChaseExempt(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    (void)ai;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !bot || !target)
+        return false;
+    return ReadMeetTake(bot, target).exempt;
+}
+
 bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)
 {
     if (!unit)
         return false;
     const BossTacticRow* row = LiveBossAnchorRow(ai, bot);
     if (!row)
+        return false;
+    // The meet receiver's chase of its own meet Son inside the bounded allowance (DungeonRunSeekMeetTakeReach): only
+    // that target is let through; every other chase keeps the circle.
+    if (MeetSonChaseExempt(ai, bot, unit))
         return false;
     const BossAnchorCircle circle = raidCircle ? AnchorCircleOf(*row, false) : AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
     return !InsideAnchor(circle, unit->GetPositionX(), unit->GetPositionY());
@@ -9066,6 +9160,9 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
+    // The receiver's chase exemption ended (DungeonRunSeekMeetTakeReach): stop a chase it sent while exempt.
+    if (sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach && (thirdTank || pickupTank || healerTaker))
+        MeetExemptEndTick(ai, bot);
     // The pulled Son's meet: this tank keeps its normal tank AI, the puller follows its live position, and it takes the
     // Son on arrival, before any other Son, pull or drag takes its tick.
     if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), state.row) &&
@@ -9099,15 +9196,13 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                 // it falls through to the wait and the pre-place below, unchanged. The pre-place hold
                 // (DungeonRunSeekMeetPrePlaceHold) holds only the boss as a chase target, never this Son.
                 const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;
-                float beyondYd = 0.0f;
-                const bool reachExempt = reachOn && MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs,
-                                                                           state.boss, WorldTimer::getMSTime(),
-                                                                           &beyondYd);
-                if (SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach) &&
-                    (!reachOn || reachExempt))
+                MeetTakeRead meetRead;
+                const bool takeAllowed = reachOn ? MeetTakeAllowedNow(bot, son, &meetRead)
+                                                 : SeekMeetTakeDue(bot->GetDistance(son), false, false);
+                if (takeAllowed)
                 {
-                    if (reachExempt)
-                        NoteSeekReceiverExempt(ai, bot, meetSon, meetMs, beyondYd);
+                    if (meetRead.exempt)
+                        NoteSeekReceiverExempt(ai, bot, meetSon, meetMs, meetRead.beyondYd);
                     task.valid = true;
                     task.source = son;
                     task.take = true;
@@ -9721,6 +9816,10 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
             (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
         bool started = false;
+        // The meet take re-checks its tuple (this receiver, the current meet Son, the bounded exemption) right before
+        // its Attack (DungeonRunSeekMeetTakeReach): a meet that closed or left the allowance since the pick sends none.
+        if (task.meet && sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach && !MeetTakeAllowedNow(bot, task.source))
+            return false;
         if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
             const bool attacked = Attack(bot, task.source);

@@ -660,6 +660,11 @@ namespace ai
     // `raidCircle`: judge against the everyone circle (the raid's 30 yd) instead of the bot's own (a tank's 25 yd): the
     // off-tank's take of a Son on a non-tank, which stands where the raid stands.
     bool BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle = false);
+    // The meet receiver's bounded chase exemption (DungeonRunSeekMeetTakeReach, SeekMeetReceiverExempt): true only when
+    // `target` is the open meet's current Son, this bot is its receiver, and every bound holds (the Son alive and at
+    // most 12 yd past the raid circle, the receiver not the boss's victim, the take due by the reach). The anchor's
+    // chase refusal (BossAnchorRefusesChase) and ChaseTo's anchor gate and clamps skip that one target only.
+    bool MeetSonChaseExempt(PlayerbotAI* ai, Player* bot, Unit* target);
     // A boss's anchor row from the table alone (no fight read): the run leader's stand search for a boss step reads
     // it before the pull. False when the boss has no anchor row.
     bool BossAnchorOfBoss(std::uint32_t map, std::uint32_t bossEntry, bool tank, BossAnchorCircle& out);
