@@ -76,6 +76,12 @@ namespace ai
         // failed move instead of decaying. A scheduled teleport-hop wait and
         // a transport leg stand still by design and are skipped.
         bool TravelMoveMadeNoProgress();
+        // True when the current walk leg's spline is nearly finished and the
+        // next leg may be dispatched in the same Execute. Pure walk only:
+        // refuses combat, flight, mounts, swimming, transports, dungeons and
+        // group-wait moves, and any spline this module's dispatch did not
+        // launch. A failed move never chains: the failure path is untouched.
+        bool TravelLegChainDue(PlayerbotAI* ai, Player* bot);
         bool TryStepTowardTarget(WorldPosition const& location);
         bool ContinueMesaLiftRide();
 
