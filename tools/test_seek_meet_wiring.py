@@ -462,8 +462,15 @@ class PrePlaceHoldWiring(unittest.TestCase):
         self.assertLess(first, fn.index("SeekMeetPrePlaceProgressRead("))
         self.assertIn("MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss)",
                       fn)
-        self.assertIn("g_walkoutsRunning.load(std::memory_order_relaxed) == 0", fn)
         self.assertIn("!target->ToCreature()", fn)
+
+    def test_the_hold_outlives_the_walkout_task(self):
+        # Review round 1: the walk-out counter drops at Back while the pre-place lives on through its meet (and is
+        # process-wide); the hold reads only the map filter and the pre-place snapshot. Mutation: the counter gate back.
+        fn = self.hold()
+        self.assertNotIn("g_walkoutsRunning", fn)
+        self.assertIn("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())", fn)
+        self.assertLess(fn.index("HasSeekAuraMap(bot->GetMapId())"), fn.index("SeekMeetPrePlaceProgressRead("))
 
     def test_the_hold_holds_only_the_anchored_boss(self):
         # Mutation: holding non-boss targets (Sons) - targetIsBoss always true - fails here.
@@ -486,9 +493,20 @@ class PrePlaceHoldWiring(unittest.TestCase):
 
     def test_the_multiplier_holds_reach_before_the_attack_branch(self):
         fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
-        hold = fn.index("if (dynamic_cast<ReachTargetAction*>(action) && SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"reach\"))\n        return 0.0f;")
+        hold = fn.index("if (prePlaceHold && dynamic_cast<ReachTargetAction*>(action) &&\n"
+                        "        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"reach\"))\n        return 0.0f;")
         self.assertLess(fn.index("dynamic_cast<BossTacticsAvoidCastAction*>(action)"), hold)
         self.assertLess(hold, fn.index("if (dynamic_cast<AttackAction*>(action))"))
+
+    def test_the_multiplier_holds_reach_casts_before_the_movement_check(self):
+        # Review round 1: Charge and Feral Charge are CastReachTargetSpellActions, no MovementAction. Mutation: remove
+        # the branch and this fails.
+        fn = body(ACTIONS, "float BossTacticsSeekHoldMultiplier::GetValue(Action* action)")
+        cast = fn.index("if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&\n"
+                        "        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), \"charge\"))\n        return 0.0f;")
+        self.assertLess(fn.index("const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold;"), cast)
+        self.assertLess(cast, fn.index("if (!dynamic_cast<MovementAction*>(action))"))
+        self.assertIn("action=<reach\\|charge\\|gapclose>", DOC)
 
     def test_the_gap_closer_checks_the_hold(self):
         # Mutation: the gap closer skipping its check fails here.
@@ -503,6 +521,9 @@ class PrePlaceHoldWiring(unittest.TestCase):
     def test_the_row_once_per_pre_place(self):
         fn = self.hold()
         self.assertIn('"son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f"', fn)
+        # Review round 1 (cost): no second lock once the snapshot says the row is out.
+        self.assertIn("if (!progress.holdLogged && SeekMeetPrePlaceNoteHold(", fn)
+        self.assertIn("out.holdLogged = s.prePlaceHoldLogged;", body(ACTIONS, "bool SeekMeetPrePlaceProgressRead("))
         self.assertLess(fn.index("SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen)"),
                         fn.index("LogSeekMeet(ai, info1);"))
         claim = body(ACTIONS, "bool SeekMeetPrePlaceNoteHold(")

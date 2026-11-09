@@ -2951,6 +2951,7 @@ struct SeekPrePlaceProgress
     bool walking = false;
     std::uint32_t gen = 0;
     std::uint64_t son = 0;
+    bool holdLogged = false; // the pre-place's one `event=preplace_hold` row is already out
 };
 
 bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, SeekPrePlaceProgress& out)
@@ -2971,6 +2972,7 @@ bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, S
     out.walking = s.prePlaceWalking;
     out.gen = s.prePlaceGen;
     out.son = s.son ? s.son : s.meetSon;
+    out.holdLogged = s.prePlaceHoldLogged;
     return true;
 }
 
@@ -8448,7 +8450,10 @@ bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, 
     // Key off: today's behaviour, nothing held (and no lock taken).
     if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
         return false;
-    if (!ai || !bot || !target || !target->ToCreature() || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+    // The cheap map filter only (review: not the walk-out counter, which drops at the task's Back while the pre-place
+    // lives on through its meet, and is process-wide): liveness is the snapshot's alone, so the hold ends exactly when
+    // the pre-place clears.
+    if (!ai || !bot || !target || !target->ToCreature() || !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
         return false;
     // One locked snapshot (SeekMeetPrePlaceProgressRead): false unless a live pre-place names this bot.
     SeekPrePlaceProgress progress;
@@ -8461,8 +8466,8 @@ bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, 
     const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;
     if (!MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss))
         return false;
-    // Once per pre-place: the first hold's row.
-    if (SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
+    // Once per pre-place: the first hold's row (no second lock once the snapshot says it is out).
+    if (!progress.holdLogged && SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
     {
         const std::uint64_t guid = progress.son;
         char info1[200];
@@ -9642,6 +9647,14 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
 {
     if (!action || !sPlayerbotAIConfig.dungeonRunSeekAura)
         return 1.0f;
+    // The pre-placed receiver's chase hold for the reach casts (DungeonRunSeekMeetPrePlaceHold, review): Charge, Feral
+    // Charge and every other CastReachTargetSpellAction move the caster but are no MovementAction, so they are held
+    // here, before the movement check, on the anchored boss (no class or spell constant). The key is read first so
+    // that with it off no action's target is read here (a gap closer's GetTarget runs its whole decision).
+    const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold;
+    if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&
+        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "charge"))
+        return 0.0f;
     if (!dynamic_cast<MovementAction*>(action))
         return 1.0f;
     // The seek walk itself, the freeze, the flee and the avoid_cast walk must all run.
@@ -9651,7 +9664,8 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
     // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): its reach actions (reach melee,
     // charge's reach alternative, the reach spells, as prerequisites or alternatives too) get nothing on the anchored
     // boss once its pre-place walk began, so the walk at ACTION_HIGH+6 wins the tick. A Son is still reached.
-    if (dynamic_cast<ReachTargetAction*>(action) && SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "reach"))
+    if (prePlaceHold && dynamic_cast<ReachTargetAction*>(action) &&
+        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "reach"))
         return 0.0f;
     // An attack only picks a target: holding it would stop the pre-damage and the burn (the trap hold's rule). The one
     // exception is the holding off-tank's own swing on a Son already close to the hold with the window shut: the tank
