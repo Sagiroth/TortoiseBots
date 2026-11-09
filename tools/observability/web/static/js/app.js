@@ -6656,6 +6656,9 @@
   const FD_DRAG_PX = 6;                                         // a press that moves less than this is a click (the seek)
 
   // The band of a drag in progress, drawn in the bar it started on. A repaint rebuilds the bars, so it is drawn again after each one.
+  // The bar is found again by its place among the bars of its kind (dr.idx), so a repaint mid-drag that changes how many lanes or aura
+  // rows there are can draw this band on a different bar. That is cosmetic: the range a drag ends with comes from the left, width and
+  // length stored at the press (dr.left, dr.width, dr.dur), never from the bar found here.
   function fdDragBandSync(card, fd) {
     card.querySelectorAll('.fd-range-live').forEach(n => n.remove());
     const dr = fd && fd.drag;
