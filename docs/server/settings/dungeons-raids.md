@@ -93,6 +93,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekMeetTakeReach`](#aiplayerbotdungeonrunseekmeettakereach) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): the waiting receiver takes the walked Son within 25 yd (Intercept range) instead of 8 yd, so a healer cannot peel it on its last yards. |
+| [`AiPlayerbot.DungeonRunSeekTakenSonThreatCap`](#aiplayerbotdungeonrunseektakensonthreatcap) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): a damage dealer at 85 % of the taking tank's threat on the just-taken Son holds its attacks on it for up to 15 s, so the burn does not pull it off the tank. |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
@@ -1205,6 +1206,25 @@ Whether the waiting receiver takes the walked Son from 25 yd instead of 8 yd. Re
 Diagnostics: the `seek take` row carries `reach_yd=<yd>`, the tank's distance to the Son on that tick.
 
 Limits (documented, not fixed): the receiver leaves its point to meet the Son, so the Son is taken up to 17 yd farther out than before.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekTakenSonThreatCap`
+Whether the damage dealers cap their threat on the meet's just-taken Son. Recommended on with `DungeonRunSeekSonMeet`.
+**Default:** `0` · **Values:** `0` off (the burn opens as soon as a tank has the Son, as before), `1` on (needs `DungeonRunSeekSonMeet`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Why:** in walk 60 (m910q) a taken Son killed 1.00 times per fight after the burn opened: 18 of 25 victims were damage dealers, a median 13 s after the take. The burn opens the moment the Son's victim is a tank, and the taker holds only one taunt plus a few seconds of threat.
+
+**The taken state:** when the meet closes because its Son is on a tank, the walk-out record keeps that Son, the tank and the time (one per instance). It is cleared when that Son is dead or gone, 15 s after the take, or when a new walk-out task starts.
+
+**The hold:** with the key on, a free damage dealer (never a tank, a healer, or the taker) whose target is the taken Son holds its attacks and casts on it (the dps hold drops the pick, and the target pickers skip it) while all of: the Son's live victim is the tank that took it; the bot's threat on the Son is at least 85 % of that tank's (`ThreatPctOf`); the Son is at 20 % health or more; the take is under 15 s old; the next Blood Siphon is more than 8 s away (unknown counts as far). Dosing comes first, so the Son still dies near the raid before the siphon. Heals are never held. No boss is named in code: the Son is the walk-out's own.
+
+Diagnostics: one `BossTacticsSeekPull` row per bot and Son, `seek take capped son=<son> bot=<name> pct=<pct> since_take_ms=<ms>`.
+
+Limits (documented, not fixed): only the meet's take is covered (a Son taken by the nearest or healer-clock take is not), and the Son dies later, up to the 15 s bound.
 
 </details>
 

@@ -261,6 +261,26 @@ namespace ai
     // puller holds). So while the meet is open a heal target that is the puller is skipped, unless its hp after the
     // incoming hits is below kSeekMeetHealFloorPct (then the heal wins over the threat). `flagOn` is the key.
     constexpr float kSeekMeetHealFloorPct = 40.0f;
+
+    // The damage dealers' threat cap on a just-taken Son (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2). Walk 60:
+    // after the take the burn opened as soon as the Son's victim was a tank (SeekMeetHoldsSon), and DPS pulled it off
+    // the tank that had just taunted it (18 of 25 victims DPS, a median 13 s after the take). True: hold this damage
+    // dealer's attacks and casts on that Son while ALL of: the key is on; the action is no heal; the Son's live victim
+    // is the tank that took it; this bot's threat on the Son is at least `capPct` % of that tank's; the Son is at 20 %
+    // health or more; the take is under kSeekTakenSonCapMs (15 s) old; and the next Blood Siphon is more than 8 s away
+    // (`siphonInMs` INT_MAX: unknown, which counts as far). Dosing comes first: the Son must still die near the raid.
+    constexpr std::uint8_t kSeekTakenSonCapPct = 85;
+    constexpr float kSeekTakenSonCapMinHpPct = 20.0f;
+    constexpr std::uint32_t kSeekTakenSonCapMs = 15000;
+    constexpr int kSeekTakenSonCapSiphonMs = 8000;
+    inline bool SeekTakenSonDpsHeld(bool flagOn, bool sonTakenByTank, std::uint8_t dpsThreatPct, float sonHpPct,
+                                    std::uint32_t sinceTakeMs, int siphonInMs, bool isHealAction,
+                                    std::uint8_t capPct = kSeekTakenSonCapPct)
+    {
+        return flagOn && !isHealAction && sonTakenByTank && dpsThreatPct >= capPct &&
+            sonHpPct >= kSeekTakenSonCapMinHpPct && sinceTakeMs < kSeekTakenSonCapMs &&
+            siphonInMs > kSeekTakenSonCapSiphonMs;
+    }
     inline bool SeekMeetHealHeld(bool flagOn, bool meetOpen, bool isPuller, float hpPct)
     {
         return flagOn && meetOpen && isPuller && hpPct >= kSeekMeetHealFloorPct;

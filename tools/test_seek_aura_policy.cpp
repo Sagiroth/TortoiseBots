@@ -5,6 +5,7 @@
 #include "../ai/playerbot/ThreatCapPolicy.h"
 
 #include <cstdlib>
+#include <limits>
 #include <iostream>
 
 #define CHECK(x) do { \
@@ -948,6 +949,43 @@ int main()
         CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 0, 1000)));
         CHECK(SeekMeetHealHpAfterIncoming(20.0f, 500, 1000) == 0.0f);
         CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 0) == 45.0f);
+    }
+
+    // taken_son_dps_held_at_85pct (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): a damage dealer at 85 % of the
+    // taking tank's threat on the just-taken Son is held off it; the base has no such function.
+    {
+        const int far = std::numeric_limits<int>::max();
+        // Named failing case: at 85 % (and above) with the Son on its taker, healthy, 5 s after the take, siphon far.
+        CHECK(SeekTakenSonDpsHeld(true, true, 85, 80.0f, 5000, 30000, false));
+        CHECK(SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, far, false));
+        CHECK(kSeekTakenSonCapPct == 85);
+        // 84 % passes.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 84, 80.0f, 5000, 30000, false));
+        // Key off passes.
+        CHECK(!SeekTakenSonDpsHeld(false, true, 99, 80.0f, 5000, 30000, false));
+        // The Son not on the tank that took it passes (mutation: the cap ignoring "taken by a tank" fails here).
+        CHECK(!SeekTakenSonDpsHeld(true, false, 99, 80.0f, 5000, 30000, false));
+        // Son health: 20 % is still held, 19 % passes.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 20.0f, 5000, 30000, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 19.0f, 5000, 30000, false));
+        // 15 s after the take or later passes; 16 s too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 14999, 30000, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 15000, 30000, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 16000, 30000, false));
+        // The siphon within 8 s passes (mutation: the siphon bound removed fails here); 7 s, due and overdue too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, 8001, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, 8000, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, 7000, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, -500, false));
+        // Unknown siphon (INT_MAX) counts as far.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, far, false));
+        // A heal is never held (mutation: the cap holding heals fails here).
+        CHECK(!SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, far, true));
+        // A custom cap.
+        CHECK(SeekTakenSonDpsHeld(true, true, 70, 80.0f, 5000, far, false, 70));
+        // ThreatPctOf feeds it: 85 of 100 reads 85, a 0 reference on an engaged Son reads 100 (held).
+        CHECK(ThreatPctOf(85.0f, 100.0f, true, false) == 85);
+        CHECK(ThreatPctOf(10.0f, 0.0f, true, false) == 100);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

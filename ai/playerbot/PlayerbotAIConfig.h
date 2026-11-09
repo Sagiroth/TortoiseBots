@@ -733,6 +733,7 @@ public:
     bool dungeonRunSeekShotWaitsReceiver = false;
     bool dungeonRunSeekMeetPrePlaceHold = false;
     bool dungeonRunSeekMeetTakeReach = false;
+    bool dungeonRunSeekTakenSonThreatCap = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;

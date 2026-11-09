@@ -1064,7 +1064,46 @@ namespace ai
         std::uint64_t capTaker = 0;
         std::uint64_t capTakeSon = 0;
         std::uint32_t capTakeMs = 0;
+        // The meet's taken Son (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): the Son the meet's taken close saw on
+        // a tank, that tank, and when. The damage dealers' threat cap on it reads them (SeekTakenSonDpsHeld). Cleared
+        // when that Son is dead or gone, kSeekTakenSonHoldMs after the take, or when a new walk-out task starts.
+        std::uint64_t takenSon = 0;
+        std::uint64_t takenBy = 0;
+        std::uint32_t takenMs = 0;
     };
+
+    // How long the taken Son's threat cap lasts after the take (the bound of SeekTakenSonDpsHeld, and the taken
+    // state's own expiry).
+    constexpr std::uint32_t kSeekTakenSonHoldMs = 15000;
+
+    inline void WalkoutTakenClear(SeekWalkoutState& s)
+    {
+        s.takenSon = 0;
+        s.takenBy = 0;
+        s.takenMs = 0;
+    }
+
+    // The meet's taken close (g_walkoutMutex held, before the meet is cleared): records the Son, its taker and now.
+    inline void WalkoutTakenNote(SeekWalkoutState& s, std::uint64_t son, std::uint64_t by, std::uint32_t nowMs)
+    {
+        if (son == 0 || by == 0)
+            return;
+        s.takenSon = son;
+        s.takenBy = by;
+        s.takenMs = nowMs;
+    }
+
+    // The taken state's signed age (a reader a tick behind the writer reads a small negative age, never a wrapped one).
+    inline std::int64_t WalkoutTakenAgeMs(std::uint32_t nowMs, std::uint32_t takenMs)
+    {
+        return static_cast<std::int64_t>(static_cast<std::int32_t>(nowMs - takenMs));
+    }
+
+    // Whether the taken state is over: no Son recorded, the Son dead or gone, or kSeekTakenSonHoldMs since the take.
+    inline bool WalkoutTakenEnds(std::uint64_t takenSon, bool sonAlive, std::int64_t ageMs)
+    {
+        return takenSon == 0 || !sonAlive || ageMs >= static_cast<std::int64_t>(kSeekTakenSonHoldMs);
+    }
 
     // How long a started cap-checked take is honoured without a re-check (round 2: it never expired).
     constexpr std::uint32_t kSeekCapTakeLatchMs = 10000;
@@ -1621,6 +1660,8 @@ namespace ai
         s.lastCycle = cycleNo;
         s.walkedSons.push_back(son);
         s.walkedAt.emplace_back(son, cycleNo);
+        // A new walk-out task ends the last meet's taken state (DungeonRunSeekTakenSonThreatCap).
+        WalkoutTakenClear(s);
         ++s.startGen;
     }
 

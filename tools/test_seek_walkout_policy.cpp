@@ -2336,6 +2336,43 @@ static void TestMeetTakeReachCoversInterceptRange()
     CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
 }
 
+// The meet's taken state (DungeonRunSeekTakenSonThreatCap): noted at the taken close, over when the Son dies or is
+// gone, 15 s after the take, or when a new walk-out task starts.
+static void TestWalkoutTakenState()
+{
+    SeekWalkoutState s;
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    WalkoutTakenNote(s, 22, 7, 1000);
+    CHECK(s.takenSon == 22 && s.takenBy == 7 && s.takenMs == 1000);
+    // No Son or no taker: nothing noted.
+    SeekWalkoutState n;
+    WalkoutTakenNote(n, 0, 7, 1000);
+    WalkoutTakenNote(n, 22, 0, 1000);
+    CHECK(n.takenSon == 0);
+    // Live and young: kept.
+    CHECK(!WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(15999, s.takenMs)));
+    // Son dead or gone: over.
+    CHECK(WalkoutTakenEnds(s.takenSon, false, WalkoutTakenAgeMs(2000, s.takenMs)));
+    // 15 s after the take: over (mutation: the state not cleared after 15 s fails here).
+    CHECK(WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(16000, s.takenMs)));
+    CHECK(kSeekTakenSonHoldMs == 15000);
+    // A reader a tick behind reads a small negative age: kept.
+    CHECK(WalkoutTakenAgeMs(990, 1000) == -10);
+    CHECK(!WalkoutTakenEnds(s.takenSon, true, WalkoutTakenAgeMs(990, 1000)));
+    // Nothing recorded: over.
+    CHECK(WalkoutTakenEnds(0, true, 0));
+    WalkoutTakenClear(s);
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    // A new walk-out task clears it.
+    WalkoutTakenNote(s, 22, 7, 1000);
+    WalkoutStart(s, 11, 33, 2000, 1);
+    CHECK(s.takenSon == 0 && s.takenBy == 0 && s.takenMs == 0);
+    // The meet clear leaves it (the taken close notes it before clearing the meet).
+    WalkoutTakenNote(s, 33, 7, 3000);
+    WalkoutMeetClear(s);
+    CHECK(s.takenSon == 33 && s.takenBy == 7);
+}
+
 // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5) and its one-row latch.
 static void TestMeetPrePlaceHoldsChase()
 {
@@ -2772,6 +2809,7 @@ int main()
     TestWalkoutShotWaitsReceiver();
     TestShotWaitAndLateWalkNoDeadlock();
     TestMeetTakeReachCoversInterceptRange();
+    TestWalkoutTakenState();
     TestMeetPrePlaceHoldsChase();
     TestMeetPrePlaceHoldOutlivesTheTask();
     std::cout << "seek walk-out policy: all checks passed\n";

@@ -2353,6 +2353,10 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 auto const it = g_walkouts.find(instanceId);
                 cleared = it != g_walkouts.end() &&
                     CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
+                // The taken Son (DungeonRunSeekTakenSonThreatCap): recorded by the one closer, before the meet is
+                // cleared, so the damage dealers' threat cap on it knows its taker and the take time.
+                if (cleared && takenBy)
+                    WalkoutTakenNote(it->second.state, state.meetSon, takenBy->GetObjectGuid().GetRawValue(), nowMs);
                 // A `receiver_victim` close counts as a lost meet for the nearest take's reach.
                 if (cleared && !takenBy)
                     WalkoutNoteMeetLost(it->second.state.lostMeets, lost, state.meetSon, nowMs,
@@ -3156,6 +3160,54 @@ void SeekCapTakeNoteExec(std::uint32_t instanceId, std::uint64_t taker, std::uin
     auto const it = g_walkouts.find(instanceId);
     if (it != g_walkouts.end())
         WalkoutCapTakeNoteExec(it->second.state, taker, son, started, nowMs);
+}
+
+// The meet's taken Son as one bot reads it (DungeonRunSeekTakenSonThreatCap): the Son, the tank that took it and the
+// time since the take (0 when a reader is a tick behind). All 0 with no taken state.
+struct SeekTakenSon
+{
+    std::uint64_t son = 0;
+    std::uint64_t by = 0;
+    std::uint32_t sinceMs = 0;
+};
+
+// The taken state's snapshot under one g_walkoutMutex lock; a state kSeekTakenSonHoldMs old is cleared in that same
+// lock. A Son found dead or gone afterwards clears it with a compare-and-clear (the same take only), as the cap take
+// latch does.
+SeekTakenSon SeekTakenSonRead(PlayerbotAI* ai, Player* bot)
+{
+    (void)ai;
+    SeekTakenSon out;
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint32_t takenMs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it == g_walkouts.end() || it->second.state.takenSon == 0)
+            return out;
+        SeekWalkoutState& s = it->second.state;
+        const std::int64_t age = WalkoutTakenAgeMs(nowMs, s.takenMs);
+        if (WalkoutTakenEnds(s.takenSon, true, age))
+        {
+            WalkoutTakenClear(s);
+            return out;
+        }
+        out.son = s.takenSon;
+        out.by = s.takenBy;
+        out.sinceMs = age > 0 ? static_cast<std::uint32_t>(age) : 0;
+        takenMs = s.takenMs;
+    }
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(out.son));
+    if (son && son->IsInWorld() && sServerFacade.IsAlive(son))
+        return out;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it != g_walkouts.end() && it->second.state.takenSon == out.son && it->second.state.takenMs == takenMs)
+            WalkoutTakenClear(it->second.state);
+    }
+    return SeekTakenSon();
 }
 
 // One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
@@ -5201,12 +5253,73 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
 }
 
+namespace
+{
+// The `seek take capped` row: at most one per bot and Son (the last Son each bot logged), so a held damage dealer
+// writes it once per take. A no-op unless bot_events.csv is in AllowedLogFiles.
+std::mutex g_seekTakenCapLogMutex;
+std::unordered_map<std::uint64_t, std::uint64_t> g_seekTakenCapLog;
+
+void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct, std::uint32_t sinceTakeMs)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_seekTakenCapLogMutex);
+        std::uint64_t& last = g_seekTakenCapLog[bot->GetObjectGuid().GetRawValue()];
+        const std::uint64_t sonGuid = son->GetObjectGuid().GetRawValue();
+        if (last == sonGuid)
+            return;
+        last = sonGuid;
+    }
+    char info1[160];
+    snprintf(info1, sizeof(info1), "seek take capped son=%u bot=%s pct=%u since_take_ms=%u", son->GetGUIDLow(),
+             bot->GetName(), static_cast<unsigned>(pct), sinceTakeMs);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// The damage dealers' threat cap on the meet's just-taken Son (DungeonRunSeekTakenSonThreatCap, SeekTakenSonDpsHeld):
+// true holds this bot's attacks and casts on `unit`. Only a free damage dealer that is not the taker, and only on the
+// taken state's own Son; never a tank or a healer. No boss constant: the Son is the walk-out's own.
+bool TakenSonDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekTakenSonThreatCap)
+        return false;
+    if (PlayerbotAI::IsTank(bot) || !IsFreeDps(ai, bot))
+        return false;
+    const SeekTakenSon taken = SeekTakenSonRead(ai, bot);
+    if (taken.son == 0 || unit->GetObjectGuid().GetRawValue() != taken.son ||
+        bot->GetObjectGuid().GetRawValue() == taken.by)
+        return false;
+    Unit* const victim = unit->GetVictim();
+    const bool sonTakenByTank = victim && victim->GetObjectGuid().GetRawValue() == taken.by;
+    if (!sonTakenByTank)
+        return false;
+    ThreatManager& threat = unit->GetThreatManager();
+    const std::uint8_t pct = ThreatPctOf(threat.getThreat(bot), threat.getThreat(victim), unit->IsInCombat(), false);
+    // The next Blood Siphon from the seek fight's own clock (INT_MAX: unknown, which counts as far).
+    int siphonInMs = std::numeric_limits<int>::max();
+    SeekFight state;
+    if (ReadSeekFightCached(ai, bot, state))
+        siphonInMs = state.dueSignedMs;
+    if (!SeekTakenSonDpsHeld(true, sonTakenByTank, pct, unit->GetHealthPercent(), taken.sinceMs, siphonInMs,
+                             PlayerbotAI::IsHeal(bot)))
+        return false;
+    LogSeekTakenSonCapped(ai, bot, unit, pct, taken.sinceMs);
+    return true;
+}
+}
+
 bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger)
 {
     if (trigger)
         *trigger = DpsHoldTrigger::None;
     if (!ai || !bot || !unit || !unit->IsAlive())
         return false;
+    // The threat cap on the meet's just-taken Son (DungeonRunSeekTakenSonThreatCap): its own key, read first, before
+    // the aura-tactics gates.
+    if (sPlayerbotAIConfig.dungeonRunSeekTakenSonThreatCap && TakenSonDpsHeld(ai, bot, unit))
+        return true;
     // The kind is the new key's own, and the map flag keeps every other map at one lookup.
     if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
         return false;

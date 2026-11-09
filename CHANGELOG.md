@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunSeekTakenSonThreatCap (default 0, recommended on), damage dealers at 85 % of the taking tank's threat hold off Hakkar's just-taken Son for up to 15 s (not under 20 % health or within 8 s of the siphon), with one `seek take capped` row per bot and Son.
 - New: behind AiPlayerbot.DungeonRunSeekMeetTakeReach (default 0, recommended on), the waiting Hakkar receiver takes the walked Son within 25 yd instead of 8 yd, and the `seek take` row gains `reach_yd=`.
 - Fixed: behind AiPlayerbot.DungeonRunSeekMeetPrePlaceHold (default 0, recommended on with DungeonRunSeekMeetPrePlace), the pre-placed Hakkar receiver no longer chases the anchored boss with its reach actions, reach casts (Charge, Feral Charge), warrior gap closer or Intervene once its walk began, through the open meet, so it reaches its point; one `event=preplace_hold` row per pre-place.
 - New: Hakkar log rows show the threat-cap collapse guard: `seek take held ... reason=cap_guard ref= share=` when it holds back a reach or healer-clock take, and the Cause Insanity row gains `cap_ref=`, `cap_ref_threat=` and `top_dps_threat=`.
