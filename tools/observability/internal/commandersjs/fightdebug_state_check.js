@@ -49,6 +49,7 @@ vm.runInContext([
   "var fdTabListSeen = () => {};",
   "var fdFightHash = () => {};",
   "var renderFightDebug = () => {};",
+  "var cmdFindBind = () => null;",
   "var fdNightParams = () => '';",
   "var fdDayFights = (fd, bind, day, cb) => { if (cb) cb(null); };",
   "var fdNightFights = (fd, bind, night, cb) => { if (cb) cb(null); };",
@@ -224,6 +225,34 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   await settle();
   assert.strictEqual(fdNL.day, "2026-10-27", "no live pick: the history card still opens on its newest night");
   assert.ok(/const wantDay = .*&& !fd\.userSel;/.test(grab("fdLoad")), "the guard is in fdLoad's wantDay");
+
+  // The bug the m910q re-proof found: a live share link opened while a fight RUNS. The history card's list answer arrives after the
+  // report: it must be drawn with the live binding. Drawn with the stale history one ("no live fight") it handed the live pick away
+  // (liveLink was already false) and the page landed on the newest filed fight.
+  {
+    run("cmdFd = {}");
+    const fdRun = run("fdState('RUN')");
+    fdRun.days = [{ night: "2026-10-27", fights: 1 }];
+    fdRun.daysAt = clock;
+    fdRun.sel = "live"; fdRun.userSel = true; fdRun.liveLink = true;
+    const liveBind = { commander: "RUN", bots: [{ guid: 1, id: "1" }], combat: { fight_ms: 2000, win_s: 10, bots: [{ g: 1, dps: 5 }] } };
+    const rowsRun = [{ key: "RUN\u00001\u00005-5" }];
+    const drawn = [];
+    ctx.renderFightDebug = (c, b) => { drawn.push(b); run("fdSyncSel(fd, b, rowsRun, {}, null)", { fd: fdRun, b, rowsRun }); };
+    ctx.cmdRaidFights = (b, cb) => setImmediate(() => cb(rowsRun)); // the list answers later
+    ctx.cmdFindBind = () => null;
+    run("fdLoad(card, hbind)", { card, hbind: { commander: "RUN", history: true, bots: [] } }); // the history card starts its load
+    // the report arrives first: the live card draws once (liveLink goes false), the history load's answer comes after
+    run("fdSyncSel(fd, b, rowsRun, {}, null)", { fd: fdRun, b: liveBind, rowsRun });
+    assert.strictEqual(fdRun.liveLink, false, "the report with a running fight clears the live link's wait");
+    ctx.cmdFindBind = (name) => (name === "RUN" ? liveBind : null);
+    await settle();
+    assert.ok(drawn.length > 0, "the list answer drew the card");
+    assert.ok(drawn.every((b) => !b.history), "every late draw uses the live binding, not the stale history one: " + JSON.stringify(drawn.map((b) => !!b.history)));
+    assert.deepStrictEqual([fdRun.sel, fdRun.userSel], ["live", true], "the live pick stands (no newest filed fight)");
+    ctx.renderFightDebug = () => {};
+    ctx.cmdFindBind = () => null;
+  }
 
   // A filed-fight share link (no n= night) opened before the report: the history card keeps the pick (no newest night over it), the
   // fight is fetched by its key, and the night that holds it (from its start) becomes the card's night.

@@ -10269,6 +10269,9 @@
     // "Show all fights" (the viewer's box) lists every fight as a card; a read-only history card has no run of its own and no
     // "Load older" row, so it always lists the whole day unfolded. The render reads this same flag.
     fd.showAll = fdShowAllGet() || !!bind.history;
+    // The answers below arrive later. A history card (no commander bound when the load started) whose commander has reported since is
+    // drawn with that report's binding: a render with the stale history one would read "no live fight" and hand a live pick away.
+    const curBind = () => (bind.history && cmdFindBind(bind.commander)) || bind;
     // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
     // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
     // A link's pick (a share link .../fight/live or .../fight/<key>, or a click) opened before the commander's first report reaches this
@@ -10286,8 +10289,8 @@
       if (!wantDay()) return;
       pickDay();
       if (!card.classList.contains('fd-on')) return;
-      renderFightDebug(card, bind);
-      fdLoad(card, bind);
+      renderFightDebug(card, curBind());
+      fdLoad(card, curBind());
     });
     if (wantDay()) pickDay();
     const gotList = list => {
@@ -10296,7 +10299,7 @@
       const sig = list ? list.length + '|' + list.map(r => (r && r.key) || '').join(',') : '';
       if (list && sig !== fd.listSig) {
         fd.listSig = sig;
-        if (card.classList.contains('fd-on')) renderFightDebug(card, bind);
+        if (card.classList.contains('fd-on')) renderFightDebug(card, curBind());
       }
       if (fd.loading) return;
       const row = fdDetailRow(fd);
@@ -10309,8 +10312,8 @@
         fdDetailFail(fd, row.key);
         if (fdDetailFailed(fd, row.key) && fdPage.pending && fdPage.pending.cmd === bind.commander && fdPage.pending.key === row.key) { fdPage.pending = null; fdViewHash(bind.commander); } // no fight, no view to apply: the hash says what stands
         if (!card.classList.contains('fd-on')) return;
-        renderFightDebug(card, bind); // the rail says "details not available" once the retry failed too
-        fdLoad(card, bind);
+        renderFightDebug(card, curBind()); // the rail says "details not available" once the retry failed too
+        fdLoad(card, curBind());
       };
       const req = fdFightsFeed().detail(bind.commander, row.key, FdTabs.detailAllowed(cmdPageMode(), fdPage.open, bind.commander),
         k => fetch('/api/v1/combat/fight/' + encodeURIComponent(k)).then(jsonOrThrow));
@@ -10329,9 +10332,9 @@
         const keys = Object.keys(fd.details);
         if (keys.length > FD_DETAIL_CACHE) keys.slice(0, keys.length - FD_DETAIL_CACHE).forEach(k => { delete fd.details[k]; });
         if (!card.classList.contains('fd-on')) return;
-        renderFightDebug(card, bind);
+        renderFightDebug(card, curBind());
         drawCmdMap(bind.commander); // the newly loaded fight may be the one the debugger now shows
-        fdLoad(card, bind);
+        fdLoad(card, curBind());
       }).catch(failed);
     };
     // A chosen night lists that night's stored fights; Tonight is tonight's stored fights with the live list on top.
