@@ -504,3 +504,117 @@ func TestMainTankSharedFixture(t *testing.T) {
 		t.Fatalf("tie: %q", mt.Name)
 	}
 }
+
+// The watch is deployed from the boss's first fight with aura rows: [rowless 20:00, rows 21:00, rowless 22:00] reads the 22:00 fight as
+// 0 % dosed (it ran with the watch and nobody carried the aura) and leaves the 20:00 fight out (it ran before the watch existed).
+func TestFoldDeployStartsAtFirstRows(t *testing.T) {
+	at := func(f combat.Fight, id string, start int64) Input {
+		f.ID, f.Start = id, start
+		return Input{Key: id, Fight: f}
+	}
+	rowless := hakkar()
+	rowless.Auras = nil
+	r := row(t, Fold([]Input{at(rowless, "k20", 72000), at(hakkar(), "k21", 75600), at(rowless, "k22", 79200)}), 14834)
+	if r.Cycles != 4 || r.AuraFights != 1 || r.Casts != 6 {
+		t.Fatalf("cycles %d aura fights %d casts %d, want 4 1 6 (k21 and k22 measured, k20 only has its casts counted)", r.Cycles, r.AuraFights, r.Casts)
+	}
+	near(t, "dosed_pct", r.DosedPct, 3.0/14.0*100) // k21: 3 of 7 alive carried it; k22: 0 of 7
+	if r.Worst != "k22" {
+		t.Fatalf("worst = %q, want the 22:00 fight (0 %%), not the 20:00 one that ran without the watch", r.Worst)
+	}
+	// Jin'do: the 20:00 fight is left out of the Hex mean, the 22:00 one counts 0 s
+	j := func(id string, start int64, auras ...string) Input {
+		return Input{Key: id, Fight: combat.Fight{ID: id, Boss: 11380, Start: start, DurMS: 60000, Bots: []combat.FightBot{bot(1, "T", "tank", 5)}, Auras: raws(auras...)}}
+	}
+	jr := row(t, Fold([]Input{j("a", 72000), j("b", 75600, fmt.Sprintf("[10000,1,%d,1]", hex), fmt.Sprintf("[40000,1,%d,-1]", hex)), j("c", 79200)}), 11380)
+	if jr.HexFights != 2 {
+		t.Fatalf("hex fights %d, want 2 (b and c)", jr.HexFights)
+	}
+	near(t, "hex_mt_s_per_fight", jr.HexMTSPerFight, 15)
+	// the order the fights are given in does not matter: the window's first fight with rows decides, by start
+	r2 := row(t, Fold([]Input{at(rowless, "k22", 79200), at(hakkar(), "k21", 75600), at(rowless, "k20", 72000)}), 14834)
+	if r2.Cycles != 4 || r2.Worst != "k22" {
+		t.Fatalf("shuffled: cycles %d worst %q", r2.Cycles, r2.Worst)
+	}
+}
+
+// Every cap qualifies every number it touches: 1001 deaths are read as 1000 (totals, the worst pick and the shares alike) and the row is
+// a lower bound; a main tank after member 80 is not seen, and the Jin'do row says so.
+func TestCapsSetLowerEverywhere(t *testing.T) {
+	deaths := func(n int, killer string) []combat.FightDeath {
+		var d []combat.FightDeath
+		for i := 0; i < n; i++ {
+			d = append(d, combat.FightDeath{Name: "B" + strconv.Itoa(i), TMs: uint32(1000 + i), Killer: killer})
+		}
+		return d
+	}
+	g := Fold([]Input{{Key: "g", Fight: combat.Fight{ID: "g", Boss: 4000, DurMS: 70000, Deaths: deaths(1001, "Boss")}}})
+	r := row(t, g, 4000)
+	if !r.Lower {
+		t.Fatal("1001 deaths: the row is a lower bound")
+	}
+	near(t, "deaths_per_fight", &r.DeathsPerFight, maxDeaths) // the bounded count, not 1001
+	if r.Worst != "g" {
+		t.Fatalf("worst %q", r.Worst)
+	}
+	if row(t, Fold([]Input{{Key: "g", Fight: combat.Fight{ID: "g", Boss: 4000, DurMS: 70000, Deaths: deaths(1000, "Boss")}}}), 4000).Lower {
+		t.Fatal("1000 deaths fit the cap")
+	}
+	// Shade deaths: the 1001st (a Shade kill) is past the cap, so the count and the share are consistent over the 1000 read
+	d := deaths(1000, "Jin'do the Hexxer")
+	d[0].Killer = "Shade of Jin'do"
+	d = append(d, combat.FightDeath{Name: "late", TMs: 5000, Killer: "Shade of Jin'do"})
+	jf := combat.Fight{ID: "j", Boss: 11380, DurMS: 60000, Deaths: d, Bots: []combat.FightBot{bot(1, "T", "tank", 5)}}
+	jr := row(t, Fold([]Input{{Key: "j", Fight: jf}}), 11380)
+	near(t, "shade_deaths_per_fight", jr.ShadeDeathsPerFight, 1)
+	near(t, "shade_share_pct", jr.ShadeSharePct, 0.1) // 1 of the 1000 read
+	if !jr.Lower {
+		t.Fatal("Jin'do with 1001 deaths: lower")
+	}
+	hf := hakkar()
+	hf.Deaths = deaths(1001, "Son of Hakkar")
+	if hr := row(t, Fold([]Input{{Key: "h", Fight: hf}}), 14834); !hr.Lower {
+		t.Fatal("Hakkar with 1001 deaths: lower")
+	} else {
+		near(t, "son_deaths_per_fight", hr.SonDeathsPerFight, maxDeaths)
+	}
+
+	// a main tank past member 80: the first 80 are read, the winner is not seen and the row says so
+	bots := []combat.FightBot{bot(1, "T1", "tank", 5)}
+	for i := 2; i <= 100; i++ {
+		bots = append(bots, bot(uint32(i), "B"+strconv.Itoa(i), "dps", 0))
+	}
+	bots[89] = bot(90, "T90", "tank", 9000)
+	jf = combat.Fight{ID: "j", Boss: 11380, DurMS: 60000, Bots: bots, Auras: raws(
+		fmt.Sprintf("[10000,1,%d,1]", hex), fmt.Sprintf("[20000,1,%d,-1]", hex), fmt.Sprintf("[10000,90,%d,1]", hex), fmt.Sprintf("[40000,90,%d,-1]", hex))}
+	jr = row(t, Fold([]Input{{Key: "j", Fight: jf}}), 11380)
+	if !jr.Lower {
+		t.Fatal("a tank after member 80: lower")
+	}
+	near(t, "hex_mt_s_per_fight", jr.HexMTSPerFight, 10) // T1 (the first 80), not T90
+	if mt, _ := MainTank(jf); mt.Name != "T1" {
+		t.Fatalf("main tank %q", mt.Name)
+	}
+	if row(t, Fold([]Input{{Key: "j", Fight: combat.Fight{ID: "j", Boss: 11380, DurMS: 60000, Bots: bots[:80], Auras: jf.Auras}}}), 11380).Lower {
+		t.Fatal("80 members fit the cap")
+	}
+}
+
+// Only the first four values of an aura row are read, as the page does: anything after them is ignored, and a row of fewer than four
+// numbers, or whose first four are not all numbers, is skipped.
+func TestIntervalsReadFirstFourValues(t *testing.T) {
+	f := combat.Fight{DurMS: 10000, Auras: raws(
+		`[1000,1,9,1,"extra"]`, `[5000,1,9,-1,null,{}]`, // read: 1 s to 5 s
+		`[1000,2,9,1]`, `[2000,2,9]`, // the second is three values: skipped
+		`[1000,3,9,"x"]`, `["1000",4,9,1]`, `[1000,null,9,1]`)}
+	iv := Intervals(f)
+	if s := iv.BySid[9][1]; len(s) != 1 || s[0] != (Span{1000, 5000}) {
+		t.Fatalf("guid 1: %v", s)
+	}
+	if s := iv.BySid[9][2]; len(s) != 1 || s[0] != (Span{1000, 10000}) {
+		t.Fatalf("guid 2 (open at the end, the short row skipped): %v", s)
+	}
+	if len(iv.BySid[9][3])+len(iv.BySid[9][4]) != 0 || iv.Rows != 3 {
+		t.Fatalf("rows %d, the non-numeric ones are skipped: %v", iv.Rows, iv.BySid[9])
+	}
+}
