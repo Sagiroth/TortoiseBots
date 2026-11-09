@@ -94,8 +94,8 @@ namespace ai
         // unpulled hostile creature on it (dungeon hold-before-pack follow); see ClipPath.
         bool MoveTo2(const WorldPosition& endPos, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false, PackHoldResult* packHold = nullptr);
 
-        bool MoveTo(uint32 mapId, float x, float y, float z, bool idle = false, bool react = false, bool noPath = false, bool ignoreEnemyTargets = false);
         bool MoveTo(Unit* target, float distance = 0.0f);
+        bool MoveNear(WorldObject* target, float distance = sPlayerbotAIConfig.contactDistance);
         // One checked step on land (LandWalkPolicy.h): asks the core for a real
         // navmesh path with steep slopes excluded and walks it only when the
         // answer is NORMAL (or an INCOMPLETE that closes the gap); NOPATH, a

@@ -68,6 +68,7 @@
 #include "Maps/PathFinder.h"
 // The portal walk's verdict (UpdatePortalFollow below).
 #include "playerbot/LandWalkPolicy.h"
+#include "playerbot/PartyFlightPolicy.h"
 #include "playerbot/TaxiRouteGuard.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
