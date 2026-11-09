@@ -284,6 +284,14 @@ namespace ai
         virtual bool Calculate() override { return bot->GetGroup() && bot->GetGroup()->GetMembersCount() > 3 && AI_VALUE2(bool, "group and", "can fight equal") && AI_VALUE2(bool, "group and", "following party") && !ShouldSellValue::GroupMemberLeavingForVendor(ai); };
     };
 
+    // Set when a drink starts; cleared once mana reaches the stop line or a
+    // fight begins.
+    class DrinkUnfinishedValue : public ManualSetValue<bool>
+    {
+    public:
+        DrinkUnfinishedValue(PlayerbotAI* ai) : ManualSetValue<bool>(ai, false, "drink unfinished") {}
+    };
+
     class ShouldDrinkValue : public BoolCalculatedValue
     {
     public:

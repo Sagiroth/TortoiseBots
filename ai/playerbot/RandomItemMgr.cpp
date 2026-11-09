@@ -13,6 +13,8 @@
 
 #include "strategy/values/SharedValueContext.h"
 #include "policy/gear/SpecWeaponPolicy.h"
+#include "policy/gear/SpecArmorPolicy.h"
+#include "policy/gear/FeralSpecPolicy.h"
 #include "../../runtime/policy/provision/AmmoCachePolicy.h"
 
 char * strstri (const char* str1, const char* str2);
@@ -401,7 +403,10 @@ bool RandomItemMgr::CheckItemStats(uint8 clazz, uint8 sp, uint8 ap, uint8 tank)
 
 bool RandomItemMgr::ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto)
 {
-    if (proto->InventoryType == INVTYPE_TABARD)
+    if (!proto)
+        return false;
+
+    if (ai::IsArmorExemptFromMaterialGate(proto->InventoryType))
         return true;
 
     if (!spec)
@@ -410,94 +415,7 @@ bool RandomItemMgr::ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemP
     if (!m_weightScales[spec].info.id)
         return false;
 
-    std::unordered_set<uint32> resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-
-    switch (playerclass)
-    {
-    case CLASS_WARRIOR:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "arms" || m_weightScales[spec].info.name == "fury")
-        {
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
-        }
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE };
-        break;
-    }
-    case CLASS_PALADIN:
-    {
-        if (m_weightScales[spec].info.name != "holy" && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name != "holy")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE , ITEM_SUBCLASS_ARMOR_LIBRAM };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_PLATE, ITEM_SUBCLASS_ARMOR_LIBRAM };
-        break;
-    }
-    case CLASS_HUNTER:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        break;
-    }
-    case CLASS_ROGUE:
-    {
-        if (proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER };
-        break;
-    }
-    case CLASS_PRIEST:
-    {
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-        break;
-    }
-    case CLASS_SHAMAN:
-    {
-        if (m_weightScales[spec].info.name == "shamantank")
-        {
-            // Shaman tank: shield always (its armor is the prized stat); the
-            // leather/mail level split stays in CanEquipArmor, not here.
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL, ITEM_SUBCLASS_ARMOR_SHIELD };
-            break;
-        }
-        if (m_weightScales[spec].info.name == "enhance" && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "enhance")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_TOTEM, ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER, ITEM_SUBCLASS_ARMOR_MAIL };
-        break;
-    }
-    case CLASS_MAGE:
-    case CLASS_WARLOCK:
-    {
-        resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_CLOTH };
-        break;
-    }
-    case CLASS_DRUID:
-    {
-        if ((m_weightScales[spec].info.name == "feraltank" || m_weightScales[spec].info.name == "feraldps") && proto->InventoryType == INVTYPE_HOLDABLE)
-            return false;
-
-        if (m_weightScales[spec].info.name == "feraltank" || m_weightScales[spec].info.name == "feraldps")
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_IDOL, ITEM_SUBCLASS_ARMOR_LEATHER };
-        else
-            resultArmorSubClass = { ITEM_SUBCLASS_ARMOR_IDOL, ITEM_SUBCLASS_ARMOR_CLOTH, ITEM_SUBCLASS_ARMOR_LEATHER };
-
-        break;
-    }
-    }
-
-    return resultArmorSubClass.find(proto->SubClass) != resultArmorSubClass.end();
+    return ai::SpecArmorSubClassAllowed(playerclass, m_weightScales[spec].info.name, proto->InventoryType, proto->SubClass);
 }
 
 bool RandomItemMgr::CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPrototype const* proto)
@@ -552,7 +470,7 @@ bool RandomItemMgr::CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPro
     //return CheckItemStats(clazz, sp, ap, tank);
 }
 
-bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
+bool RandomItemMgr::ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
 {
     EquipmentSlots slot_mh = EQUIPMENT_SLOT_START;
     EquipmentSlots slot_oh = EQUIPMENT_SLOT_START;
@@ -604,7 +522,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
         }
         else if (m_weightScales[spec].info.name == "arms")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
             r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
         }
         else
@@ -621,6 +539,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_AXE2);
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_MACE2);
                 mh_weapons.insert(ITEM_SUBCLASS_WEAPON_POLEARM);
+                mh_weapons.insert(ITEM_SUBCLASS_WEAPON_STAFF);
             }
             oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
             r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
@@ -643,7 +562,7 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE };
             r_weapons = { ITEM_SUBCLASS_ARMOR_LIBRAM };
         }
         break;
@@ -651,28 +570,55 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     case CLASS_HUNTER:
     {
         mh_weapons = { ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF };
+        if (canDualWield)
+            oh_weapons = { ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_AXE };
         r_weapons = { ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
         break;
     }
     case CLASS_ROGUE:
     {
-        if (RogueSpecWantsDaggers(m_weightScales[spec].info.name))
+        if (bot)
         {
-            // Backstab/Ambush need a dagger main hand; the off hand keeps a
-            // dagger for the spec's fast-off-hand damage.
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
-        }
-        else if (m_weightScales[spec].info.name == "combat")
-        {
-            // Rogues are taught fist skill; combat uses swords/maces + fists.
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            bool const hasHackAndSlash = bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R1) ||
+                                         bot->HasSpell(ROGUE_TALENT_HACK_AND_SLASH_R2);
+            bool const hasCloseQuartersCombat = bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R1) ||
+                                                bot->HasSpell(ROGUE_TALENT_CLOSE_QUARTERS_COMBAT_R2);
+            bool const hasConcussiveBlows = bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R1) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R2) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R3) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R4) ||
+                                            bot->HasSpell(ROGUE_TALENT_CONCUSSIVE_BLOWS_R5);
+
+            std::string_view const specName = m_weightScales[spec].info.name;
+            for (uint32 subclass : { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST, ITEM_SUBCLASS_WEAPON_AXE })
+            {
+                if (ai::RogueWeaponAllowed(specName, hasHackAndSlash, hasCloseQuartersCombat, hasConcussiveBlows, subclass))
+                {
+                    mh_weapons.insert(subclass);
+                    oh_weapons.insert(subclass);
+                }
+            }
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
-            oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            if (RogueSpecWantsDaggers(m_weightScales[spec].info.name))
+            {
+                // Backstab/Ambush need a dagger main hand; the off hand keeps a
+                // dagger for the spec's fast-off-hand damage.
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER };
+            }
+            else if (m_weightScales[spec].info.name == "combat")
+            {
+                // Rogues are taught fist skill; combat uses swords/maces + fists.
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            }
+            else
+            {
+                mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                oh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+            }
         }
 
         r_weapons = { ITEM_SUBCLASS_WEAPON_THROWN, ITEM_SUBCLASS_WEAPON_BOW, ITEM_SUBCLASS_WEAPON_CROSSBOW, ITEM_SUBCLASS_WEAPON_GUN };
@@ -704,7 +650,8 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
         }
         else if (m_weightScales[spec].info.name == "enhance")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_AXE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_AXE2, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
+            oh_weapons = { ITEM_SUBCLASS_ARMOR_SHIELD };
             r_weapons = { ITEM_SUBCLASS_ARMOR_TOTEM };
         }
         else
@@ -727,25 +674,25 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     {
         if (m_weightScales[spec].info.name == "feraltank")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else if (m_weightScales[spec].info.name == "resto")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else if (m_weightScales[spec].info.name == "feraldps")
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_MACE };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
         else
         {
-            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2 };
+            mh_weapons = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_MACE2, ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
             oh_weapons = { ITEM_SUBCLASS_ARMOR_MISC };
             r_weapons = { ITEM_SUBCLASS_ARMOR_IDOL };
         }
@@ -769,13 +716,17 @@ bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, Item
     return false;
 }
 
-bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+bool RandomItemMgr::ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield)
 {
-    // Only shield specs have a slot-aware policy (protection warrior /
-    // paladin, shaman tank); every other class keeps the plain any-slot
-    // answer (fail-open).
-    if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN && playerclass != CLASS_SHAMAN)
-        return ShouldEquipWeaponForSpec(playerclass, spec, proto, canDualWield);
+    return ShouldEquipWeaponForSpec(nullptr, playerclass, spec, proto, canDualWield);
+}
+
+bool RandomItemMgr::ShouldEquipWeaponForSlot(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+{
+    // Shield specs and dual-wield/slot-constrained classes have a slot-aware
+    // policy; every other class keeps the plain any-slot answer (fail-open).
+    if (playerclass != CLASS_WARRIOR && playerclass != CLASS_PALADIN && playerclass != CLASS_SHAMAN && playerclass != CLASS_HUNTER)
+        return ShouldEquipWeaponForSpec(bot, playerclass, spec, proto, canDualWield);
 
     if (!spec)
         spec = static_cast<uint8>(GetFallbackSpecId(playerclass));
@@ -788,6 +739,11 @@ bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, Item
     // Non-tank shaman specs stay fail-open inside the policy.
     return ai::SpecWeaponAllowed(playerclass, m_weightScales[spec].info.name,
         proto->Class, proto->SubClass, slot, canDualWield);
+}
+
+bool RandomItemMgr::ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield)
+{
+    return ShouldEquipWeaponForSlot(nullptr, playerclass, spec, proto, slot, canDualWield);
 }
 
 bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
@@ -855,7 +811,9 @@ bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_GUN &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_CROSSBOW &&
                 proto->SubClass != ITEM_SUBCLASS_WEAPON_BOW &&
-                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN)
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_THROWN &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_FIST &&
+                proto->SubClass != ITEM_SUBCLASS_WEAPON_AXE)
             return false;
         break;
     }
@@ -2670,10 +2628,127 @@ void RandomItemMgr::BuildSourceTierIndex()
             pvpItemSets.insert(setProto->ItemSet);
     }
 
+    BuildKnownSourceIndex();
+
     sLog.outDetail("RandomItemMgr: source-tier index holds %zu creature spawns, %zu gameobject spawns, %zu loot items (%zu direct base), %zu recipe tiers (%zu rep-gated), %zu pvp sets",
         creatureSpawnTier.size(), gameObjectSpawnTier.size(), itemLootTier.size(), itemDirectBaseLoot.size(), recipeTier.size(), repRecipeItems.size(), pvpItemSets.size());
 }
 
+
+void RandomItemMgr::BuildKnownSourceIndex()
+{
+    knownSourceItems.clear();
+
+    // A craft spell, or a trainer spell that teaches one: every item it creates.
+    auto markCreated = [&](uint32 spellId)
+    {
+        SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+        if (!spell)
+            return;
+        for (uint8 e = 0; e < MAX_EFFECT_INDEX; ++e)
+        {
+            if (spell->Effect[e] == SPELL_EFFECT_CREATE_ITEM && spell->EffectItemType[e])
+                knownSourceItems.insert(spell->EffectItemType[e]);
+            if (spell->Effect[e] != SPELL_EFFECT_LEARN_SPELL)
+                continue;
+            if (SpellEntry const* taught = sServerFacade.LookupSpellInfo(spell->EffectTriggerSpell[e]))
+                for (uint8 t = 0; t < MAX_EFFECT_INDEX; ++t)
+                    if (taught->Effect[t] == SPELL_EFFECT_CREATE_ITEM && taught->EffectItemType[t])
+                        knownSourceItems.insert(taught->EffectItemType[t]);
+        }
+    };
+    auto markVendor = [&](VendorItemData const* items)
+    {
+        if (!items)
+            return;
+        for (uint8 i = 0; i < items->GetItemCount(); ++i)
+            if (VendorItem const* vendorItem = items->GetItem(i))
+                knownSourceItems.insert(vendorItem->item);
+    };
+    std::set<TrainerSpellData const*> trainerLists;
+    auto markTrainer = [&](TrainerSpellData const* spells)
+    {
+        if (!spells || !trainerLists.insert(spells).second)
+            return;
+        for (auto const& entry : spells->spellList)
+            markCreated(entry.second.spell);
+    };
+
+    LootType const creatureLootTypes[3] = { LOOT_CORPSE, LOOT_PICKPOCKETING, LOOT_SKINNING };
+    for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+    {
+        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(entry);
+        if (!cInfo)
+            continue;
+        ObjectGuid guid(HIGHGUID_UNIT, entry, uint32(1));
+        for (LootType lootType : creatureLootTypes)
+            MarkLootItems(DropMapValue::GetLootTemplate(guid, lootType), knownSourceItems);
+        markVendor(sObjectMgr.GetNpcVendorItemList(entry));
+        if (cInfo->vendor_id)
+            markVendor(sObjectMgr.GetNpcVendorTemplateItemList(cInfo->vendor_id));
+        markTrainer(sObjectMgr.GetNpcTrainerSpells(entry));
+        if (cInfo->trainer_id)
+            markTrainer(sObjectMgr.GetNpcTrainerTemplateSpells(cInfo->trainer_id));
+    }
+
+    for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); ++entry)
+    {
+        GameObjectInfo const* goInfo = sObjectMgr.GetGameObjectInfo(entry);
+        if (!goInfo)
+            continue;
+        ObjectGuid guid(HIGHGUID_GAMEOBJECT, entry, uint32(1));
+        MarkLootItems(DropMapValue::GetLootTemplate(guid, LOOT_CORPSE), knownSourceItems);
+        if (goInfo->type == GAMEOBJECT_TYPE_FISHINGHOLE)
+            MarkLootItems(DropMapValue::GetLootTemplate(guid, LOOT_FISHINGHOLE), knownSourceItems);
+    }
+
+    // Containers (lockboxes, event gift boxes) and open-water fishing.
+    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        if (LootTemplates_Item.HaveLootFor(itemId))
+            MarkLootItems(reinterpret_cast<LootTemplateAccess const*>(LootTemplates_Item.GetLootFor(itemId)), knownSourceItems);
+    uint32 const maxFishingLootId = 100000;
+    for (uint32 zoneId = 0; zoneId <= maxFishingLootId; ++zoneId)
+        if (LootTemplates_Fishing.HaveLootFor(zoneId))
+            MarkLootItems(reinterpret_cast<LootTemplateAccess const*>(LootTemplates_Fishing.GetLootFor(zoneId)), knownSourceItems);
+
+    for (auto const& entry : recipeTier)
+        knownSourceItems.insert(entry.first);
+
+    for (auto const& entry : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* quest = entry.second.get();
+        for (uint32 i = 0; i < quest->GetRewItemsCount(); ++i)
+            if (quest->RewItemId[i])
+                knownSourceItems.insert(quest->RewItemId[i]);
+        for (uint32 i = 0; i < quest->GetRewChoiceItemsCount(); ++i)
+            if (quest->RewChoiceItemId[i])
+                knownSourceItems.insert(quest->RewChoiceItemId[i]);
+    }
+
+    knownSourceItems.erase(0);
+    sLog.outDetail("RandomItemMgr: %zu items have a known source", knownSourceItems.size());
+}
+
+bool RandomItemMgr::IsForbiddenBotGear(uint32 itemId)
+{
+    TortoiseBots::BotGearFacts facts;
+    facts.blacklisted = TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, itemId);
+    if (facts.blacklisted)
+        return true;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+    if (!proto)
+        return true;
+    std::list<uint32> const& whitelist = sPlayerbotAIConfig.randomGearWhitelist;
+    facts.whitelisted = std::find(whitelist.begin(), whitelist.end(), itemId) != whitelist.end();
+    // The index is built with the item info cache at startup; until then the
+    // source rule stays open rather than starving every slot.
+    facts.knownSource = !sourceTierIndexed || knownSourceItems.count(itemId) != 0;
+    facts.retired = (proto->Flags & ITEM_FLAG_DEPRECATED) || TortoiseBots::GearNameLooksRetired(proto->Name1);
+    facts.cosmeticSlot = proto->InventoryType == INVTYPE_BODY || proto->InventoryType == INVTYPE_TABARD;
+    facts.itemLevel = proto->ItemLevel;
+    facts.quality = proto->Quality;
+    return TortoiseBots::BotGearForbidden(facts);
+}
 
 // O(1) recipe-source lookup on the inverted index. Fail-open base when the
 // recipe has no loot row (quest reward, deprecated).
@@ -2998,7 +3073,9 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
             specName = "elem";
         break;
     case CLASS_WARRIOR:
-        if (tab == 2)
+        if (player->GetLevel() < 10)
+            specName = "arms";
+        else if (tab == 2)
             specName = "prot";
         else if (tab == 1)
             specName = "fury";
@@ -3018,9 +3095,7 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
             specName = "balance";
         else if (tab == 1)
         {
-            specName = "feraltank";
-            if (player->GetLevel() > 19 && urand(0, 100) > 50)
-                specName = "feraldps";
+            specName = ResolveDruidFeralSpecName(player->GetLevel(), PlayerbotAI::IsTank(player));
         }
         else if (tab == 2)
             specName = "resto";
@@ -3103,6 +3178,33 @@ uint32 RandomItemMgr::GetSpecIdFor(uint8 playerclass, std::string const& specNam
     return 0;
 }
 
+ai::ItemStatFamily RandomItemMgr::GetSpecStatFamily(uint32 specId)
+{
+    auto itr = m_weightScales.find(specId);
+    if (itr == m_weightScales.end())
+        return ai::ItemStatFamily::None;
+
+    ai::SpecWeightSummary w;
+    for (auto const& st : itr->second.stats)
+    {
+        if (st.stat == "str")
+            w.strWeight += st.weight;
+        else if (st.stat == "agi")
+            w.agiWeight += st.weight;
+        else if (st.stat == "int" || st.stat == "spi" || st.stat == "splpwr" ||
+                 st.stat == "splheal" || st.stat == "manargn" || st.stat == "arcsplpwr" ||
+                 st.stat == "frosplpwr" || st.stat == "firsplpwr" || st.stat == "shasplpwr" ||
+                 st.stat == "natsplpwr" || st.stat == "spellhitrtng" || st.stat == "spellcritstrkrtng" ||
+                 st.stat == "spellpenrtng")
+            w.spellWeight += st.weight;
+        else if (st.stat == "defrtng" || st.stat == "dodgertng" || st.stat == "parryrtng" ||
+                 st.stat == "blockrtng" || st.stat == "block" || st.stat == "armor")
+            w.tankWeight += st.weight;
+    }
+
+    return ai::DeriveSpecStatFamily(w);
+}
+
 uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, uint32 quality, uint32 itemId)
 {
     if (!player)
@@ -3153,7 +3255,7 @@ uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, u
         if (info->weights[specId] == 0)
             continue;
 
-        if (TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, info->itemId))
+        if (IsForbiddenBotGear(info->itemId))
             continue;
 
         // skip higher lvl
@@ -3275,7 +3377,7 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
         if (info->weights[specId] == 0)
             continue;
 
-        if (TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, info->itemId))
+        if (IsForbiddenBotGear(info->itemId))
             continue;
 
         // skip higher lvl

@@ -6,6 +6,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
 #include "MailAction.h"
+#include "runtime/GuildOrderAccessPolicy.h"
 #include "runtime/GuildOrderAuctionPolicy.h"
 #include "runtime/GuildOrderBuyPolicy.h"
 #include "runtime/GuildOrderRefundPolicy.h"
@@ -422,8 +423,10 @@ bool GuildOrderBuyAction::Execute(Event& event)
         // back to the banker for the same listing. A new listing may try
         // again; the bank may have funds by then.
         int triedAuction = AI_VALUE2(int, "manual int", "order buy gold tried");
+        // The core refuses bank gold below the officer rank: no banker trip.
         if (GoldTopUpAllowed(best.auctionId, uint32_t(triedAuction), cappedShortfall,
-            sPlayerbotAIConfig.guildOrderBankGold) &&
+            sPlayerbotAIConfig.guildOrderBankGold &&
+                TortoiseBots::GuildOrders::BotRankMayWithdrawGold(bot->GetRank(), true)) &&
             cappedShortfall >= shortfall && shortfall > 0 &&
             uint64_t(cash) + shortfall <= uint32_t(INT32_MAX))
         {

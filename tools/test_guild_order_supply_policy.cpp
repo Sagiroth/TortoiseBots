@@ -16,11 +16,16 @@ int main()
     CHECK(NextSupplyStep(options) == SupplyStep::Bank);
     options.bankAttempted = true;
     CHECK(NextSupplyStep(options) == SupplyStep::AuctionHouse);
-    options.auctionHouseAttempted = true;
     options.selfCanFarm = true;
     CHECK(NextSupplyStep(options) == SupplyStep::Farm);
     options.selfCanCraft = true;
     CHECK(NextSupplyStep(options) == SupplyStep::Craft);
+    // A running auction leg keeps its turn; once it ends the bot falls back.
+    options.auctionHouseLive = true;
+    CHECK(NextSupplyStep(options) == SupplyStep::AuctionHouse);
+    options.auctionHouseAttempted = true;
+    CHECK(NextSupplyStep(options) == SupplyStep::Craft);
+    options.auctionHouseLive = false;
     options.selfCanCraft = false;
     options.selfCanFarm = false;
     CHECK(NextSupplyStep(options) == SupplyStep::Sub);

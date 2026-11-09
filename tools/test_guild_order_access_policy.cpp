@@ -21,8 +21,8 @@ int main()
     CHECK(!IsGuildOrderBot(true, true, true));
     CHECK(!IsGuildOrderBot(false, false, true));
 
-    // Default is the rank below the master; a master-only guild keeps rank 0.
-    CHECK(DefaultBotRank(5) == 1);
+    // Default is the lowest rank; a master-only guild keeps rank 0.
+    CHECK(DefaultBotRank(5) == 4);
     CHECK(DefaultBotRank(2) == 1);
     CHECK(DefaultBotRank(1) == 0);
     CHECK(DefaultBotRank(0) == 0);
@@ -67,10 +67,10 @@ int main()
     CHECK(!BotRankMayWithdrawGold(0, false));
     CHECK(!BotRankMayWithdrawGold(1, false));
 
-    // The red header shows when anything is missing: any denied tab, or no gold.
-    CHECK(BotRankHasNoAccess({}, {}, false));
+    // The red header shows only for a denied tab; no gold alone stays plain.
+    CHECK(!BotRankHasNoAccess({}, {}, false));
     CHECK(BotRankHasNoAccess({1}, {2}, true));
-    CHECK(BotRankHasNoAccess({1, 2}, {}, false));
+    CHECK(!BotRankHasNoAccess({1, 2}, {}, false));
     CHECK(!BotRankHasNoAccess({1, 2}, {}, true));
 
     if (failures == 0)

@@ -22,6 +22,7 @@
 #include "Player.h"
 
 #include <ctime>
+#include <chrono>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -294,13 +295,14 @@ void RefreshBotRankManagement(uint32_t guildId, uint32_t excludeGuidLow)
         BotRankAppliesInGuild(GuildHasRealPlayerMember(guildId, excludeGuidLow), rank));
 }
 
-void ApplyBotRanksAtStartup()
+void LoadBotRankManagementAtStartup()
 {
     BotRankStore::Instance().Initialize();
     if (!sPlayerbotAIConfig.guildOrderBotRank)
         return;
-    // One pass over the whole member table, grouped per guild in memory:
-    // a guild is swept only when it holds a real player member.
+    // One pass over the whole member table, grouped per guild in memory, to
+    // warm the management verdict. Members are not moved: a rank a player
+    // gave a bot stays; only joins and `.bot order rank` move bots.
     std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
         "SELECT `guildid`, `guid` FROM `guild_member` ORDER BY `guildid`"));
     if (!result)
@@ -327,20 +329,35 @@ void ApplyBotRanksAtStartup()
                 break;
             }
         }
-        if (!BotRankAppliesInGuild(realPlayer, rank))
-        {
-            BotRankStore::Instance().SetManagementBlocked(guildId, false);
-            continue;
-        }
-        BotRankStore::Instance().SetManagementBlocked(guildId, true);
-        for (uint32_t guidLow : members)
-        {
-            ObjectGuid guid(HIGHGUID_PLAYER, guidLow);
-            if (!IsRankableBot(guid))
-                continue;
-            MoveMemberToRank(guild, guid, rank);
-        }
+        BotRankStore::Instance().SetManagementBlocked(guildId, BotRankAppliesInGuild(realPlayer, rank));
     }
+}
+
+void OpenBotBankTabForNextStart()
+{
+    if (!sPlayerbotAIConfig.guildOrderBotRank)
+        return;
+    std::unique_ptr<QueryResult> result(CharacterDatabase.Query(
+        "SELECT `guildid`, `minrank1` FROM `guild_bank_tabs` WHERE `isInferno` = '0' AND `tabs` > '0'"));
+    if (!result)
+        return;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32_t guildId = fields[0].GetUInt32();
+        if (!BotRankBlocksManagement(guildId))
+            continue;
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild)
+            continue;
+        uint32_t rank = WantedBotRank(guildId, guild->GetRanksSize());
+        // A tab is reachable from every rank at or above its minimum rank.
+        if (!rank || fields[1].GetUInt32() >= rank)
+            continue;
+        CharacterDatabase.DirectPExecute(
+            "UPDATE `guild_bank_tabs` SET `minrank1` = '%u' WHERE `guildid` = '%u' AND `isInferno` = '0'",
+            rank, guildId);
+    } while (result->NextRow());
 }
 
 void OnBotRankDisband(uint32_t guildId)
@@ -400,6 +417,25 @@ uint32_t GuildBankTabCount(uint32_t guildId)
 {
     std::optional<std::vector<uint32_t>> tabMinRanks = BankTabMinRanks(guildId);
     return tabMinRanks ? uint32_t(tabMinRanks->size()) : 0;
+}
+
+bool GuildHasBank(uint32_t guildId)
+{
+    if (!guildId)
+        return false;
+    static std::mutex lock;
+    static std::unordered_map<uint32_t, std::pair<bool, std::chrono::steady_clock::time_point>> cache;
+    auto const now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        auto it = cache.find(guildId);
+        if (it != cache.end() && now - it->second.second < std::chrono::seconds(30))
+            return it->second.first;
+    }
+    bool const has = GuildBankTabCount(guildId) > 0;
+    std::lock_guard<std::mutex> guard(lock);
+    cache[guildId] = { has, now };
+    return has;
 }
 
 } // namespace GuildOrders

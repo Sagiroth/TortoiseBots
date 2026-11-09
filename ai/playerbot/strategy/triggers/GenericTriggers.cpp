@@ -89,6 +89,20 @@ bool HighManaTrigger::IsActive()
     return HasManaPool(bot) && AI_VALUE2(uint8, "mana", "self target") < 65;
 }
 
+bool ResumeDrinkTrigger::IsActive()
+{
+    if (!AI_VALUE(bool, "drink unfinished"))
+        return false;
+    uint32 const stop = DrinkStopManaPct(ai->HasCheat(BotCheatMask::item), sPlayerbotAIConfig.almostFullHealth);
+    uint8 const mana = AI_VALUE2(uint8, "mana", "self target");
+    if (!ShouldDrinkAtManaPct(HasManaPool(bot), mana, stop))
+    {
+        SET_AI_VALUE(bool, "drink unfinished", false);
+        return false;
+    }
+    return ShouldResumeDrink(true, true, mana, stop, ai->HasAura("drink", bot));
+}
+
 bool EnoughManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") > 65;

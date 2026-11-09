@@ -14,6 +14,7 @@
 #include "playerbot/policy/raid/RaidQuestChainPolicy.h"
 #include "playerbot/policy/gear/GearDuplicateItemPolicy.h"
 #include "playerbot/policy/gear/TransmogClonePolicy.h"
+#include "playerbot/policy/loot/LootSpecPriorityPolicy.h"
 
 enum RandomItemType
 {
@@ -242,6 +243,9 @@ class RandomItemMgr
         // canDualWield=false: the bot cannot use an off-hand yet (no Dual Wield
         // spell), so a dual-wield spec may fall back to a two-hander it can
         // actually swing. Only fury's weapon set changes (see .cpp).
+        // When bot is provided, spec weapon policies (e.g. Rogue weapon-spec
+        // talents) evaluate against the bot's learned talents.
+        bool ShouldEquipWeaponForSpec(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
         bool ShouldEquipWeaponForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto, bool canDualWield = true);
         // Slot-aware twin: answers for the concrete slot the item is evaluated
         // for. The plain overload answers "legal in ANY slot" (main hand is
@@ -250,6 +254,7 @@ class RandomItemMgr
         // against the shield-transition. Warriors/paladins use the policy
         // header (SpecWeaponPolicy.h); other classes fail open to the plain
         // answer. slot is a raw EquipmentSlots value (core header type).
+        bool ShouldEquipWeaponForSlot(Player const* bot, uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield = true);
         bool ShouldEquipWeaponForSlot(uint8 playerclass, uint8 spec, ItemPrototype const* proto, uint8 slot, bool canDualWield = true);
         bool CheckItemSpec(uint8 spec, ItemSpecType itSpec);
         // Fresh-seed provenance gates. Unknown items pass (fail-open): missing
@@ -278,6 +283,10 @@ class RandomItemMgr
         // Seed/hire gate: tier cap + REP/PVP flags from the new knobs.
         // Fail-open for uncached items (custom items, sparse DBC).
         bool PassesSourceTier(uint32 itemId);
+        // Gear no auto-gear path hands out: the owner blacklist, and unless
+        // whitelisted, items with no known source, retired or test data,
+        // item level 0 outside shirt/tabard, and legendary or better.
+        bool IsForbiddenBotGear(uint32 itemId);
         std::string GetPlayerSpecName(Player* player);
         uint32 GetPlayerSpecId(Player* player);
         // Issue #189 Phase 2: unknown-spec fallback. Spent talents decide
@@ -290,6 +299,9 @@ class RandomItemMgr
         // Scale id for a weightscale name of this class (0 when unknown) —
         // the lookup GetPlayerSpecId does, without needing a Player.
         uint32 GetSpecIdFor(uint8 playerclass, std::string const& specName);
+        // Primary stat family for a spec scale id derived from weight scales
+        // (ai_playerbot_weightscale_data).
+        ai::ItemStatFamily GetSpecStatFamily(uint32 specId);
     private:
         void BuildRandomItemCache();
         void BuildEquipCache();
@@ -359,6 +371,12 @@ class RandomItemMgr
         // process lifetime like the raid index above.
         void BuildSourceTierIndex();
         bool sourceTierIndexed = false;
+        // Every item the game hands a player: loot of any creature or game
+        // object template (spawned or not), item containers, fishing,
+        // vendors, quest rewards and crafts (recipes and trainer-taught).
+        // Built once at the end of BuildSourceTierIndex.
+        void BuildKnownSourceIndex();
+        std::set<uint32> knownSourceItems;
         // Creature template -> lowest map tier of its spawns (id..id4).
         std::map<uint32, ItemSourceTier> creatureSpawnTier;
         // GameObject template -> lowest map tier of its spawns.

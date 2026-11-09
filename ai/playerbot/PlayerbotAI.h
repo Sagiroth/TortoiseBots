@@ -1087,8 +1087,11 @@ private:
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void UpdateLeadTrail();
     void UpdatePortalFollow(Player* master, Group* group);
+    void UpdatePartyFlight(Player* master, Group* group);
 public:
     bool PortalFollowActive() const { return !m_portalFollowGuid.IsEmpty(); }
+    void StartPartyFlight();
+    bool PartyFlightActive() const;
 private:
     std::vector<FollowTrailPoint> leadTrail;
 
@@ -1106,6 +1109,8 @@ protected:
 	uint32 m_portalFollowStartMs = 0;
 	uint32 m_portalFollowUsedMs = 0;
 	uint32 m_portalFollowScanMs = 0;
+	uint32 m_partyFlightStartMs = 0;
+	uint32 m_partyFlightMoveMs = 0;
 	// GUID-shadow of `master` so we can verify the pointer is still
 	// alive each tick without dereferencing it. Set in SetMaster().
 	// Used by RevalidateMasterPointer() at the top of UpdateAI.

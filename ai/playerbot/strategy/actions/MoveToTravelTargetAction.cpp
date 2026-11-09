@@ -13,6 +13,7 @@
 #include "Maps/PathFinder.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/TravelRepickPolicy.h"
+#include "playerbot/TravelLegChainPolicy.h"
 #include "playerbot/policy/travel/FlightErrandPolicy.h"
 #include "playerbot/policy/travel/OrderFocusPolicy.h"
 #include "playerbot/policy/travel/MesaLiftPolicy.h"
@@ -514,6 +515,45 @@ bool MoveToTravelTargetAction::TryRescueNoPathTrap(bool noPath, bool offGraph, s
     }
     Event rescueEvent("travel nopath trapped");
     return ai->DoSpecificAction("unstuck", rescueEvent, true);
+}
+
+bool MoveToTravelTargetAction::TravelLegChainDue(PlayerbotAI* ai, Player* bot)
+{
+    // Pure walk legs only: a chained leg re-enters the same route code
+    // (makeShortCut / ClipPath / dispatch), which would clear a transport,
+    // swim, flight or mount move. Combat moves re-target every turn and a
+    // dungeon or grouped wait stands still by design.
+    if (!bot || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsFlying() ||
+        bot->IsMounted() || bot->IsBeingTeleported() || bot->GetTransport() ||
+        bot->InBattleGround() || bot->IsInWater() || bot->IsUnderwater() ||
+        bot->HasMovementFlag(MOVEFLAG_SWIMMING))
+        return false;
+    if (bot->GetMap() && bot->GetMap()->IsDungeon())
+        return false;
+    if (Group* group = bot->GetGroup())
+        if (!group->IsLeader(bot->getObjectGuid()))
+            return false;
+    if (ai->GetState() == BotState::BOT_STATE_COMBAT)
+        return false;
+
+    // Chain only after a leg was successfully dispatched: a failed move (or
+    // a path with fewer than 2 points) never chains, so the caller's retry
+    // counting and target drop behave exactly as before.
+    AiObjectContext* context = ai->GetAiObjectContext();
+    LastMovement const& lastMove = AI_VALUE(LastMovement&, "last movement");
+    if (lastMove.moveFailReason != MOVE_FAIL_NONE)
+        return false;
+    if (lastMove.lastPath.GetPath().size() < 2)
+        return false;
+    for (PathNodePoint const& point : lastMove.lastPath.GetPath())
+        if (!point.IsWalkable())
+            return false;
+
+    Movement::MoveSpline const& spline = *bot->movespline;
+    char const* origin = spline.GetMovementOrigin();
+    bool ownLeg = origin != nullptr && std::strcmp(origin, "DispatchMovement") == 0;
+    return TravelLegChainDecide(ownLeg, spline.timeElapsed(), spline.Initialized(), spline.Finalized())
+        == TravelLegChainVerdict::Chain;
 }
 
 bool MoveToTravelTargetAction::TravelMoveMadeNoProgress()
@@ -1287,6 +1327,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
                         location.GetMapId(), location.getX(), location.getY(), location.getZ());
             }
             bool const noPath = pathTag == "nopath";
+            if (noPath && target->GetDestination() &&
+                ai::PurposeRemembersUnreachablePoints(target->GetDestination()->GetPurpose() == TravelDestinationPurpose::GatherFishing,
+                    target->GetDestination()->GetPurpose() == TravelDestinationPurpose::GenericRpg))
+                sTravelMgr.NoteUnreachablePoint(location);
             failDetail += pathTag;
             failDetail += ":";
             failDetail += MoveFailReasonName(AI_VALUE(LastMovement&, "last movement").moveFailReason);
@@ -1395,6 +1439,8 @@ bool MoveToTravelTargetAction::Execute(Event& event)
             SET_AI_VALUE2(bool, "no active travel destinations", parkKey, true);
             SET_AI_VALUE2(time_t, "manual time", "no travel purpose until::" + parkKey,
                 time(0) + (orderFocusTrip ? ai::ORDER_FOCUS_PARK_SECONDS : orderLeg ? TortoiseBots::GuildOrders::kOrderLegParkSeconds : 5 * MINUTE));
+            if (DropParkClearsTrainerMoneyPark(parkKey))
+                SET_AI_VALUE2(bool, "manual bool", "trainer park needs money", false);
         }
     }
     else
@@ -1448,8 +1494,14 @@ bool MoveToTravelTargetAction::isUseful()
     if (bot->IsTaxiFlying())
         return false;
 
+    // Leg chaining: a turn that lands while the current leg's spline is
+    // nearly finished stays useful so Execute dispatches the NEXT leg in the
+    // same turn instead of waiting for the leg to end (~3 s still on a busy
+    // realm). Pure walk legs only: the helper refuses combat, flight paths,
+    // mounts, swimming, transports, dungeon and group-wait moves.
+    bool const legChainDue = bot->IsMoving() && TravelLegChainDue(ai, bot);
     if (MEM_AI_VALUE(WorldPosition, "current position")->LastChangeDelay() < 10)
-        if (bot->IsMoving())
+        if (bot->IsMoving() && !legChainDue)
             return false;
 
     if (!AI_VALUE(bool, "can move around"))

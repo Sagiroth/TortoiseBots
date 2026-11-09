@@ -16,6 +16,7 @@ using ai::ZoneMigrationExcludeZone;
 using ai::TargetlessLeaveDue;
 using ai::TargetlessLeaveTripStarts;
 using ai::TargetlessSinceAfterReset;
+using ai::LevelFittingTeleportAllowsZone;
 int main()
 {
     std::cout << "Starting TortoiseBots zone migration policy tests...\n";
@@ -109,6 +110,20 @@ int main()
     CHECK(!TargetlessLeaveTripStarts(false, true, false, true));
     CHECK(!TargetlessLeaveTripStarts(false, true, true, false));
     std::cout << "  [PASS] targetless leave trip starts only on its own Grind pick\n";
+
+    // Level-fitting teleport: +-5 window clamped to 1..60, capitals never.
+    CHECK(LevelFittingTeleportAllowsZone(10, 12, false));
+    CHECK(!LevelFittingTeleportAllowsZone(10, 12, true));
+    CHECK(!LevelFittingTeleportAllowsZone(10, 15, true));
+    CHECK(LevelFittingTeleportAllowsZone(7, 12, false));
+    CHECK(!LevelFittingTeleportAllowsZone(6, 12, false));
+    CHECK(LevelFittingTeleportAllowsZone(17, 12, false));
+    CHECK(!LevelFittingTeleportAllowsZone(18, 12, false));
+    CHECK(LevelFittingTeleportAllowsZone(1, 3, false));
+    CHECK(!LevelFittingTeleportAllowsZone(0, 3, false));
+    CHECK(LevelFittingTeleportAllowsZone(60, 58, false));
+    CHECK(!LevelFittingTeleportAllowsZone(61, 58, false));
+    std::cout << "  [PASS] level-fitting teleport window skips capitals\n";
 
     std::cout << "TortoiseBots zone migration policy tests passed.\n";
     return 0;

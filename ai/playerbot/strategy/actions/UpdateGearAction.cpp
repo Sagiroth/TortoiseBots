@@ -7,6 +7,7 @@
 #include "../../../runtime/ClaimLifecycle.h"
 #include "../../../runtime/HireLifecycle.h"
 #include "../../../runtime/policy/hire/HireGearPolicy.h"
+#include "../../../runtime/policy/provision/GearBlacklistPolicy.h"
 
 using namespace ai;
 
@@ -80,6 +81,14 @@ bool UpdateGearAction::Execute(Event& event)
         if (itemId >= 0)
         {
             const uint32 pItemId = (uint32)itemId;
+            if (pItemId > 0 && TortoiseBots::GearBlacklistBlocks(sPlayerbotAIConfig.randomGearBlacklist, pItemId))
+            {
+                std::ostringstream ss;
+                ss << "Item " << std::to_string(pItemId) << " in AiPlayerbot.GearProgressionSystem." << std::to_string(itemProgressionLevel) << "." << std::to_string(cls) << "." << std::to_string(spec) << "." << std::to_string(slot) << " is on AiPlayerbot.RandomGearBlacklist and was not equipped.";
+                ai->TellError(requester, ss.str());
+                continue;
+            }
+
             Item* oldItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
             if (oldItem)
             {

@@ -406,6 +406,9 @@ ItemUsage ItemUsageValue::Calculate()
     if (equip != ItemUsage::ITEM_USAGE_NONE)
         return equip;
 
+    if (!miscWeapon && IsFutureUpgrade(itemQualifier, bot))
+        return ItemUsage::ITEM_USAGE_KEEP;
+
 
     if (forceUsage == ForceItemUsage::FORCE_USAGE_EQUIP)
         return ItemUsage::ITEM_USAGE_KEEP;
@@ -675,7 +678,7 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
     // target the shield it must never replace. Only an item legal FOR the
     // hand it would take starts a transition.
     bool const newWeaponForSpec = proto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, canDualWield);
+        sRandomItemMgr.ShouldEquipWeaponForSpec(bot, bot->GetClass(), specId, proto, canDualWield);
 
     uint8 emptySlot = NULL_SLOT;
     uint8 best = NULL_SLOT;
@@ -688,7 +691,7 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
         // main-hand upgrade against its (lighter) shield, pick the off hand,
         // and then reject the item there - never upgrading the main hand.
         if (proto->Class == ITEM_CLASS_WEAPON &&
-            !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
+            !sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, proto, slot, canDualWield))
             continue;
 
         Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -700,8 +703,8 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
         }
 
         if (newWeaponForSpec && equipped->GetProto()->Class == ITEM_CLASS_WEAPON &&
-            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, equipped->GetProto(), canDualWield) &&
-            sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, proto, slot, canDualWield))
+            !sRandomItemMgr.ShouldEquipWeaponForSpec(bot, bot->GetClass(), specId, equipped->GetProto(), canDualWield) &&
+            sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, proto, slot, canDualWield))
         {
             // An empty main hand is worse than an off-spec off hand: without a
             // main hand the bot cannot auto-attack or use main-hand abilities
@@ -731,7 +734,7 @@ uint8 ItemUsageValue::GetPreferredEquipSlot(Player* bot, Item* item, ItemPrototy
 // ordinary loot.
 static bool BotCanReturnToShield(Player* bot, uint32 specId, ItemPrototype const* proto)
 {
-    if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot->GetClass(), specId, proto, bot->CanDualWield()))
+    if (sRandomItemMgr.ShouldEquipWeaponForSpec(bot, bot->GetClass(), specId, proto, bot->CanDualWield()))
         return true;
 
     return PlayerbotAI::IsTank(bot);
@@ -939,7 +942,10 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     bool shouldEquip = false;
     bool armorForSpec = true;
 
-    uint32 statWeight = sRandomItemMgr.ItemStatWeight(bot, itemQualifier);
+    // Compare the items themselves: an enchant on the worn piece is lost on the
+    // swap anyway and must not hide a better base item.
+    ItemQualifier baseQualifier(itemQualifier.GetId(), itemQualifier.GetRandomPropertyId());
+    uint32 statWeight = sRandomItemMgr.ItemStatWeight(bot, baseQualifier);
     if (statWeight)
         shouldEquip = true;
 
@@ -948,7 +954,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // compared against the shield. The OH slot of a shield spec admits
     // shields only - a weapon there is never an upgrade, which is the
     // reverse guard for the shield-transition below (no ping-pong).
-    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
+    if (itemProto->Class == ITEM_CLASS_WEAPON && !sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, itemProto, slot, canDualWield))
         shouldEquip = false;
     if (itemProto->Class == ITEM_CLASS_ARMOR)
     {
@@ -962,7 +968,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     ai->TellDebug(ai->GetMaster(), "Checking equip: " + chat->formatItem(itemProto) + " to " + chat->formatSlot(slot) + " vs " + (oldItem ? chat->formatItem(oldItem->GetProto()) : "empty"), "debug equip");
 
     if (itemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield))
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, itemProto, slot, canDualWield))
     {
         if (oldItem)
             return ItemUsage::ITEM_USAGE_NONE;
@@ -990,11 +996,11 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
             return ItemUsage::ITEM_USAGE_NONE;
     }
 
-    // Caster off-hand on a melee class with an empty off-hand slot: the
-    // armor-class fallthrough below would EQUIP it unconditionally. Reject
-    // first so warriors/rogues/hunters never pick it up (Issue #219).
+    // Caster off-hand on a melee class or off-spec with an empty off-hand slot:
+    // the armor-class fallthrough below would EQUIP it unconditionally. Reject
+    // first so non-caster specs never pick it up (Issue #219).
     if (!oldItem && slot == EQUIPMENT_SLOT_OFFHAND && itemProto->InventoryType == INVTYPE_HOLDABLE &&
-        (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_HUNTER))
+        (bot->GetClass() == CLASS_WARRIOR || bot->GetClass() == CLASS_ROGUE || bot->GetClass() == CLASS_HUNTER || !armorForSpec))
         return ItemUsage::ITEM_USAGE_NONE;
 
     //No item equiped
@@ -1031,7 +1037,8 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
             return ItemUsage::ITEM_USAGE_NONE;
     }
 
-    uint32 oldStatWeight = sRandomItemMgr.ItemStatWeight(bot, oldItem);
+    ItemQualifier oldBaseQualifier(oldItemProto->ItemId, oldItem->GetItemRandomPropertyId());
+    uint32 oldStatWeight = sRandomItemMgr.ItemStatWeight(bot, oldBaseQualifier);
 
     // When the weighted scores tie - the common case for low-level gear, since
     // armour-only pieces score 0 for nearly every spec - the sheet value breaks
@@ -1086,9 +1093,9 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // in a shield spec's off hand. Only the weight race is skipped; class
     // rules (CanUseItem above) still apply to the new item.
     bool const newWeaponForSpec = (itemProto->Class == ITEM_CLASS_WEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, itemProto, slot, canDualWield));
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, itemProto, slot, canDualWield));
     bool const oldWeaponAgainstSpec = (oldItemProto->Class == ITEM_CLASS_WEAPON &&
-        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, canDualWield));
+        !sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, oldItemProto, slot, canDualWield));
 
     // The two-hander a fury warrior leveled on before it could dual wield is not
     // an off-spec mistake: learning Dual Wield must not downgrade it to the
@@ -1100,7 +1107,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     // two-hander there (it leveled on it), protection never does.
     bool const standInTwoHander = canDualWield &&
         oldItemProto->InventoryType == INVTYPE_2HWEAPON && itemProto->InventoryType != INVTYPE_2HWEAPON &&
-        sRandomItemMgr.ShouldEquipWeaponForSlot(bot->GetClass(), specId, oldItemProto, slot, false);
+        sRandomItemMgr.ShouldEquipWeaponForSlot(bot, bot->GetClass(), specId, oldItemProto, slot, false);
 
     if (newWeaponForSpec && oldWeaponAgainstSpec && !standInTwoHander)
         return ItemUsage::ITEM_USAGE_EQUIP;
@@ -2353,4 +2360,52 @@ uint32 ItemUsageValue::DesiredPricePerItem(Player* bot, const ItemPrototype* pro
         [] { return frand(0.0f, 0.1f); });
 
     return desiredPricePerItem;
+}
+
+bool ItemUsageValue::IsFutureUpgrade(ItemQualifier& itemQualifier, Player* bot)
+{
+    ItemPrototype const* proto = itemQualifier.GetProto();
+    if (!proto || !bot || (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR))
+        return false;
+
+    if (bot->CanUseItem(proto) != EQUIP_ERR_CANT_EQUIP_LEVEL_I ||
+        !ai::FutureUpgradeLevelOk(bot->GetLevel(), proto->RequiredLevel))
+        return false;
+
+    // The core reports the level before the proficiency, so check that too:
+    // a warrior without the dagger skill gains nothing from a future dagger.
+    if (uint32 skill = proto->GetProficiencySkill())
+    {
+        if (proto->Class == ITEM_CLASS_WEAPON && proto->SubClass == ITEM_SUBCLASS_WEAPON_FIST)
+            skill = SKILL_FIST_WEAPONS;
+        if (!bot->GetSkillValue(skill))
+            return false;
+    }
+
+    uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
+    if (!specId)
+        specId = sRandomItemMgr.GetFallbackSpecId(bot->GetClass());
+
+    if (proto->Class == ITEM_CLASS_WEAPON &&
+        !sRandomItemMgr.ShouldEquipWeaponForSpec(bot, bot->GetClass(), specId, proto, bot->CanDualWield()))
+        return false;
+    if (proto->Class == ITEM_CLASS_ARMOR && !sRandomItemMgr.ShouldEquipArmorForSpec(bot->GetClass(), specId, proto))
+        return false;
+
+    ItemQualifier baseQualifier(itemQualifier.GetId(), itemQualifier.GetRandomPropertyId());
+    uint32 statWeight = sRandomItemMgr.ItemStatWeight(bot, baseQualifier);
+    if (!statWeight)
+        return false;
+
+    uint8 slot = bot->FindEquipSlot(proto, NULL_SLOT, true);
+    if (slot == NULL_SLOT)
+        return false;
+
+    Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    if (!worn)
+        return true;
+
+    ItemQualifier wornQualifier(worn->GetProto()->ItemId, worn->GetItemRandomPropertyId());
+    return ai::EquipUpgradeBetter(statWeight, sRandomItemMgr.ItemStatWeight(bot, wornQualifier),
+        sPlayerbotAIConfig.equipUpgradeThreshold);
 }

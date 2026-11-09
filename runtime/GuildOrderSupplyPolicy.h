@@ -12,6 +12,9 @@ struct SupplyOptions
     bool bankEnabled = true;
     bool bankAttempted = false;
     bool auctionHouseAttempted = false;
+    // The bot is standing in a running auction leg: it keeps its turn instead
+    // of yielding to craft or farm.
+    bool auctionHouseLive = false;
     bool selfCanCraft = false;
     bool selfCanFarm = false;
     bool subAttempted = false;
@@ -39,12 +42,16 @@ inline SupplyStep NextSupplyStep(SupplyOptions const& options)
 {
     if (options.bankEnabled && !options.bankAttempted)
         return SupplyStep::Bank;
-    if (!options.auctionHouseAttempted)
+    if (options.auctionHouseLive && !options.auctionHouseAttempted)
         return SupplyStep::AuctionHouse;
+    // The bot makes or farms what it can before it spends gold at the
+    // auction house; buying is the fallback when it cannot.
     if (options.selfCanCraft)
         return SupplyStep::Craft;
     if (options.selfCanFarm)
         return SupplyStep::Farm;
+    if (!options.auctionHouseAttempted)
+        return SupplyStep::AuctionHouse;
     if (!options.subAttempted)
         return SupplyStep::Sub;
     return SupplyStep::Need;

@@ -4,7 +4,7 @@
 // with a real player member is moved to, so the bots share one rank the
 // master can open bank tabs to. Backed by `tortoise_bots_guild_bot_rank`
 // (one row per guild holding a real rank 1..lowest, written when the master
-// picks a rank); guilds without a row use the default rank 1. The whole
+// picks a rank); guilds without a row use the lowest rank. The whole
 // feature is an on/off switch (`AiPlayerbot.GuildOrderBotRank`).
 #include <cstdint>
 #include <optional>
@@ -21,7 +21,7 @@ std::optional<uint32_t> StoredBotRank(uint32_t guildId);
 bool StoreBotRank(uint32_t guildId, uint32_t rank);
 
 // Rank every bot in the guild should hold: the stored choice, or the
-// highest rank below the master when nothing was stored. 0 when the switch
+// guild's lowest rank when nothing was stored. 0 when the switch
 // is off (nothing is applied anywhere then).
 uint32_t WantedBotRank(uint32_t guildId, uint32_t rankCount);
 
@@ -37,7 +37,12 @@ void ApplyBotRankToGuild(uint32_t guildId);
 // Recompute the cached management verdict after a member left, ignoring a
 // row whose database delete is still queued. World thread only.
 void RefreshBotRankManagement(uint32_t guildId, uint32_t excludeGuidLow);
-void ApplyBotRanksAtStartup();
+void LoadBotRankManagementAtStartup();
+// Open bank tab 1 to the bot rank in the database, for every guild where the
+// bot rank applies. The core keeps tab ranks in memory from its load at
+// startup, so this takes effect at the next server start. World thread only;
+// called at startup and shutdown.
+void OpenBotBankTabForNextStart();
 
 // True when bots in the guild must not manage it (promote, demote, kick,
 // invite): the guild has a real player member, so every bot holds the same
@@ -60,6 +65,10 @@ std::string FormatAccessLine(uint32_t guildId, uint32_t askerGuidLow);
 // bank state from. Sync database read: travel requests and arrival checks
 // only, never per-tick logic.
 uint32_t GuildBankTabCount(uint32_t guildId);
+
+// True when the guild has bought a bank. Cached for half a minute per guild,
+// so the supply planner can ask on every tick without a database read.
+bool GuildHasBank(uint32_t guildId);
 
 } // namespace GuildOrders
 } // namespace TortoiseBots

@@ -88,7 +88,7 @@ These settings configure autonomous random bots roaming the open world, includin
 | [`AiPlayerbot.RandomGearUpgradeEnabled`](#aiplayerbotrandomgearupgradeenabled) | `1` (commented out in the template; uncomment to change it) | Seeds newly created pool bots with level-appropriate starter equipment. |
 | [`AiPlayerbot.RandomGearWhitelist`](#aiplayerbotrandomgearwhitelist) | `(empty)` (commented out in the template; uncomment to change it) | Item IDs that skip stat-weight scoring; other equip rules still apply. |
 | [`AiPlayerbot.RandomGearProgression`](#aiplayerbotrandomgearprogression) | `1` (commented out in the template; uncomment to change it) | Controls quality-band variety when pool bots generate gear. |
-| [`AiPlayerbot.RandomGearBlacklist`](#aiplayerbotrandomgearblacklist) | `(empty)` | Comma-separated list of item IDs excluded from random equipment pools. |
+| [`AiPlayerbot.RandomGearBlacklist`](#aiplayerbotrandomgearblacklist) | `10,163,19972,58260,21524,21525,7` | Comma-separated list of item IDs excluded from random equipment pools. |
 | [`AiPlayerbot.AutoEquipUpgradeLoot`](#aiplayerbotautoequipupgradeloot) | `1` | Automatically equips stat upgrades acquired from questing or creature loot. |
 | [`AiPlayerbot.EquipUpgradeThreshold`](#aiplayerbotequipupgradethreshold) | `1.1` | Stat weight multiplier required for an item to replace current equipment. |
 | [`AiPlayerbot.AutoPickReward`](#aiplayerbotautopickreward) | `yes` | Controls how bots select equipment rewards when completing quests. |
@@ -697,7 +697,7 @@ When enabled, masterless pool bots actively manage their quest logs:
 - Obsolete or failed quests are abandoned when the quest log nears capacity.
 - War-effort item turn-ins and banned joke quests are declined.
 
-Banned quests are dropped across all bots including owned companions. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
+Banned quests are dropped across all bots including owned companions. An alt playing on its own also skips grey quests lacking gear upgrades, but it never drops quests already in its log. Setting this to `0` restores legacy unmanaged questing behavior. Owned bots and alts are otherwise unaffected.
 
 </details>
 
@@ -719,9 +719,9 @@ Whether bots share one guild rank for guild bank access.
 <details>
 <summary>How it works in detail</summary>
 
-When on, every bot in a guild with a real player member holds the guild's bot rank. This defaults to the rank below the guild master, or the rank picked with `.bot order rank`. New bots join at that rank at once, and bots already in the guild move there once when the server starts. All-bot guilds keep their own ranks.
+When on, bots that join a guild with a real player member get the guild's bot rank. This defaults to the guild's lowest rank, or the rank picked with `.bot order rank` (which also moves every bot already in the guild). A rank a player gives a bot by hand stays. All-bot guilds keep their own ranks.
 
-- The master can open bank tabs to one rank for all bots.
+- Bank tab 1 is opened to the bot rank in the database at startup and shutdown; the core reads tab ranks at startup, so it applies from the next start.
 - When off, ranks stay as they are. `.bot order access` answers `TBM:ORDER_ACCESS|-|-|-|-|0|0`, and the addon shows that the server does not manage bot ranks.
 - Your own characters are never moved. See [Guild Orders](../../play/guild-orders.md#guild-bank-access).
 
@@ -760,7 +760,7 @@ Scatters newly seeded random bots at level 10 and above to validated level-fitti
 
 When enabled, random bots at level 10 and above scatter to a validated level-fitting overworld spot upon initial login instead of lingering in their racial starting zone.
 
-Level appropriateness is validated via zone level tables and area data. Pinned bots and dead bots stay with their corpse and are skipped.
+Level appropriateness is validated via zone level tables and area data; capitals are never picked. Pinned bots and dead bots stay with their corpse and are skipped.
 
 </details>
 
@@ -772,6 +772,8 @@ Distributes newly created pool bots evenly across all standard racial starter zo
 <summary>How it works in detail</summary>
 
 When enabled, the character auto-creation routine evaluates character counts across all six starter zones and generates new bots in the least-populated zones, keeping starting valleys balanced.
+
+Goblins and High Elves have no mainland starting zone of their own, so each one is placed in the emptiest of the three starting zones of its faction instead of always in Valley of Trials or Northshire. Explicit zone weights (`RandomBotStartZoneWeights`) keep them in those two.
 
 Setting this to `0` uses uniform random race rolls without population balancing.
 
@@ -1003,7 +1005,7 @@ Comma-separated list of item IDs that pool bots are explicitly allowed to equip.
 <details>
 <summary>How it works in detail</summary>
 
-Whitelisted items skip stat-weight scoring and are always considered. Level, item level, source, and equip rules still apply. An ID that is also on the blacklist stays blocked: the blacklist wins.
+Whitelisted items skip stat-weight scoring and are always considered. Level, item level, source tier, and equip rules still apply. A whitelisted ID also skips the rules for items players cannot really have (see `AiPlayerbot.RandomGearBlacklist`). An ID that is also on the blacklist stays blocked: the blacklist wins.
 
 </details>
 
@@ -1020,18 +1022,27 @@ When enabled (`1`), equipment rolls use quality-band variety and sorting. Settin
 
 ### `AiPlayerbot.RandomGearBlacklist`
 Excludes specific item IDs from being generated by random gear seeding or upgrade systems.
-**Default:** `(empty)` · **Values:** comma-separated item IDs · **Restart:** needed
+**Default:** `10,163,19972,58260,21524,21525,7` · **Values:** comma-separated item IDs; empty means the default, `0` blocks nothing · **Restart:** needed
 
 <details>
 <summary>How it works in detail</summary>
 
-Defines a blacklist of item IDs that no auto-gear path hands out:
+Defines a blacklist of item IDs that no auto-gear path hands out. The default blocks the GM-only Gamemaster's Broom of Doom (`10`), the unobtainable trinket Fang of Alichos (`58260`), the prize hats Lucky Top Hat (`163`) and Lucky Fishing Hat (`19972`), and the event hats Red and Green Winter Hat (`21524`, `21525`) and The Greatest Wizzard Hat (`7`).
 
-- Random seeds, hire gear sets, owned-bot `.bot autogear`, the `.autogear` player command, and upgrade suggestions.
+- Random seeds, hire gear sets, owned-bot `.bot autogear`, the `.autogear` player command, the gear progression system (`AiPlayerbot.GearProgressionSystem`), and upgrade suggestions.
 - The empty-slot fallback and shirts/tabards. The ban wins over the whitelist.
 - A pool or hired bot already wearing a blocked item gets it replaced or removed on its next gear pass.
 - Real players and owned bots never have their own gear taken off.
 - Items a bot finds itself (loot, quest rewards, auction house) are unaffected. Use IDs from database.turtle-wow.org, for example `12345,23456`.
+
+Besides the list, the same auto-gear paths (all of the above except the gear progression system and the curated hire kits) never hand out items players cannot really have. These rules are always on and have no key:
+
+- No known source: the item is not dropped by any creature or object, sold by any vendor, crafted, fished, found in a container or given by a quest. This covers GM, developer and unreleased items.
+- Deprecated or test data: the item's deprecated flag, or a name marked deprecated, unused, placeholder, `[PH]`, `(OLD)`, `zzz` or with the word "test", in any letter case.
+- Item level 0 outside the shirt and tabard slots.
+- Legendary quality or better.
+
+A pool or hired bot already wearing such an item gets it replaced or removed on its next gear pass. A whitelisted ID skips these rules; the blacklist always applies.
 
 </details>
 

@@ -320,6 +320,48 @@ namespace ai
         return pick;
     }
 
+    // The bot's threat on a target as a percentage of the reference tank's (ThreatValue::GetThreat over
+    // ThreatValue::GetTankThreat), unsaturated; the interrupt veto row logs it. A negative tank threat is
+    // GetTankThreat's "no tank on the target": there is no reference, and the high-threat line reads 0 there as well.
+    // A zero tank threat reads 100, as ThreatValue does for a mob in combat that no tank has touched.
+    inline float ThreatCapPercentOf(float botThreat, float tankThreat)
+    {
+        if (tankThreat < 0.0f)
+            return 0.0f;
+        if (tankThreat == 0.0f)
+            return 100.0f;
+        return botThreat * 100.0f / tankThreat;
+    }
+
+    // The core's aggro pull line (ThreatManager::getHostileTarget, src/game/Threat/ThreatManager.cpp): a mob leaves its
+    // victim for another attacker whose threat is above 110 % of the victim's when the mob can reach that attacker in
+    // melee (Unit::CanReachWithMeleeAutoAttack), and above 130 % otherwise.
+    constexpr float kAggroPullMeleeFactor = 1.1f;
+    constexpr float kAggroPullRangedFactor = 1.3f;
+
+    inline float AggroPullFactor(bool ranged)
+    {
+        return ranged ? kAggroPullRangedFactor : kAggroPullMeleeFactor;
+    }
+
+    // Whether an interrupt skips the damage threat back-off (ThreatMultiplier). Kick, Pummel, Shield Bash, Bash,
+    // Counterspell and Silence (CastInterruptSpellAction whose IgnoresThreatCap() is true) are SINGLE-threat spell
+    // actions and were vetoed at the 80 % high line like a nuke, so a rogue over the line stood idle at full energy
+    // while the caster finished its cast (Tortoise Trials DPS-ROG-KICK: 21 of 50 windows). With
+    // AiPlayerbot.InterruptIgnoresThreat on, such an interrupt runs while the bot's threat on the INTERRUPT TARGET (the
+    // action's own target, not the current target) plus the interrupt's own flat threat (the core's spell threat
+    // table: Counterspell 300, Shield Bash 180, Kick none) stays under the pull line on the tank's threat: 110 % when
+    // the mob can reach the bot in melee, 130 % from range. Strictly under: at the line itself it is vetoed. With no
+    // tank threat on the mob (0 or below) the veto stays as it is. Earth Shock and Death Coil interrupt rows stay
+    // gated: they are real nukes. Heals are exempt at the call site.
+    inline bool ThreatCapInterruptExempt(bool interrupt, bool interruptIgnoresThreat, float botThreat, float tankThreat,
+                                         float flatThreat, bool ranged)
+    {
+        if (!interrupt || !interruptIgnoresThreat || tankThreat <= 0.0f)
+            return false;
+        return botThreat + flatThreat < AggroPullFactor(ranged) * tankThreat;
+    }
+
     // The Hex snapshot row (BossTacticsHex, ThreatValues.cpp LogHexSnapshot): Jin'do's Hex (17172) lands on the boss's
     // current victim and wipes its threat. The row names who wore it (the main tank, an off-tank or a damage dealer) and
     // the threat of both tanks and the top damage dealer right after, so a walk can see who the boss turned to and why.

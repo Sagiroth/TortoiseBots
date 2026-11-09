@@ -343,6 +343,13 @@ inline bool AltBotMayVendorItem(uint32_t quality, bool isSoulbound, bool isEquip
     return quality <= 1;
 }
 
+// The vendor-trip need counts only stock the sale would actually take, so an
+// autonomous alt holding greens is never sent to a vendor that sells nothing.
+inline bool AltBotItemCountsForVendorNeed(bool isAutonomous, uint32_t quality, bool isSoulbound, bool isEquipped)
+{
+    return !isAutonomous || AltBotMayVendorItem(quality, isSoulbound, isEquipped);
+}
+
 // B10 second half: repairs from its own gold. The repair path is
 // RepairAllAction with no cheat: alts carry only Bank cheats repair/breath
 // (BotCheats), so HasCheat(gold) is false and the gold is really spent.

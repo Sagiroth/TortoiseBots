@@ -64,7 +64,7 @@ Recipe tools stay available as long as [`AiPlayerbot.CraftToolsAlways`](../serve
 
 ## Requirements
 
-- Bank delivery needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master. Bots in a guild with a real player hold the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank access; all-bot guilds keep their own ranks.
+- Bank delivery needs an unlocked guild bank and a tab the bots' rank may access. Deposits or withdrawals refused by the rank rules are skipped; finished items that cannot be deposited are mailed to the guild master. Bots in a guild with a real player join at the guild's bot rank (by default the lowest rank), and bank tab 1 opens to that rank by itself; open more tabs to it if you want; all-bot guilds keep their own ranks.
 - Guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, `.bot order` answers `disabled`.
 - Guild bank item withdrawals and guild bank gold use are controlled by [`AiPlayerbot.GuildOrderBankWithdraw`](../server/settings/guild-orders.md#aiplayerbotguildorderbankwithdraw) and [`AiPlayerbot.GuildOrderBankGold`](../server/settings/guild-orders.md#aiplayerbotguildorderbankgold); both default to `1`.
 
@@ -72,9 +72,9 @@ An order on a fish sends the bot to a fishing spot in the planned zone. The bot 
 
 ## Where the bot gets items
 
-For the ordered item itself (a farm or buy order), the bot checks its own bags and mailbox, then the auction house, then farms it. It never takes the finished item from the guild bank: the bank holds crafting materials.
+For the ordered item itself, the bot checks its own bags and mailbox, then farms it when it has the skill to. It goes to the auction house only when it cannot farm it (a buy order starts there on purpose). It never takes the finished item from the guild bank: the bank holds crafting materials.
 
-For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing), then the auction house, then getting it itself (gathering, farming, crafting, or buying it from a shop), then asking another guild bot, and finally your need list (see below). Getting it itself means a craft step before a farm step.
+For each missing crafting material, the bot works down a fixed list: its own bags and mailbox, then the guild bank (only the count still missing, skipped when the guild has no bank), then making it itself (crafting, then gathering or farming, or buying it from a shop), then the auction house, then asking another guild bot, and finally your need list (see below). The bot spends gold at the auction house only when it cannot make or farm the material.
 
 Some materials every shop sells without limit (Empty Vial is one: the exact list comes from the vendor data). For those the bot skips the guild bank and the auction house and walks to a shop instead, paying with its own gold. It never asks another bot for those. If it cannot buy them, they land on your need list.
 
@@ -102,7 +102,7 @@ For the auction house step the bot picks one auction house and walks there.
 - **Materials I bring:** add `bring=<item>,<item>` after the other options on a craft order (or its preview). Tick the base materials you will deliver yourself: the bot never buys, withdraws, farms or delegates them, and the rest of each ticked material lands on your need list. Unticked materials work as before.
 - **Search:** each order type lists only what fits it.
   - Farm: gatherables (herbs, ore, skins, fish) and mob-drop materials. Craft: profession recipes. Buy: materials, crafted items and gatherables. Enchant: permanent enchants the bot knows.
-  - Never shown: recipes, conjured items, random-drop gear. At most 30 matches.
+  - Never shown: recipes, conjured items, random-drop gear. At most 30 matches. Rows the bot can actually use come first (across all name matches), then name rank, then A-Z; craft matches you cannot order still list, below the usable ones.
   - Each match shows a farm zone and a difficulty for one item (Buy rows show `-`): easy (about 30 kills or gathers), medium (about 200), hard (more than that). Enchant matches show the slot, the required Enchanting skill and the reagents instead.
   - Every query word must match somewhere in the name, in any order. Enchant search also matches the slot word (`bracer`, `chest`, `boots`, `cloak`, `gloves`, `shield`, `weapon`, `2hweapon`) and its aliases (`wrist`, `feet`, `back`, `hands`, `2h`).
   - `.bot order search <BotName> <farm|buy|craft> cat=<kind>` (herb, ore, leather, fish, cloth) browses a whole kind with no text; other kinds need at least 3 characters of text. `.bot order search <BotName> enchant <text>` lists only enchants this bot knows, one row each with verdict `ok` or `noskill` and the reagents it holds (bags plus mail).
@@ -164,19 +164,22 @@ An enchanter bot puts one enchant on your own item, from real materials, meeting
 
 ## Guild bank access
 
-Every bot in a guild with at least one real player in it shares the guild's **bot rank** (by default the highest rank below the guild master).
-- A bot that joins gets the bot rank at once; bots already in the guild are moved there once when the server starts.
-- The founding guild-master rank is never rewritten. A guild of only a master with no other ranked members keeps its ranks.
-- Your own characters are never touched: only bot characters get the bot rank. Bots in such guilds no longer promote, demote, kick or invite anyone.
+Every bot that joins a guild with at least one real player in it gets the guild's **bot rank** (by default the lowest rank).
+- **Your promotions stay:** promote or demote a bot in the normal guild window and it keeps that rank, also after a restart.
+- **Tab 1 is the bots' tab:** the server opens bank tab 1 to the bot rank by itself, so bots can always put in and take out order materials there. The guild bank keeps its tab settings in memory, so this shows after the next server restart (after the first update: the second restart). The server reopens it at every start, so don't keep valuables in tab 1.
+- **More tabs:** open any other tab to the bot rank in the guild bank window to let the bots use it too.
+- **Same rules as players:** a tab open to the lowest rank is open to every guild member, because the bank checks ranks, not whether someone is a bot.
+- **Guild gold:** only the guild master and the rank right below may take gold from the bank. Bots at a lower rank buy with their own gold; give them that rank (`.bot order rank 1`) if orders should also spend guild gold.
+- The founding guild-master rank is never rewritten. Your own characters are never touched. Bots in such guilds no longer promote, demote, kick or invite anyone.
 
 ```text
 .bot order rank <rankIndex>
 .bot order access
 ```
 
-- **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
+- **Change the bots' rank:** `.bot order rank 2` moves every bot to rank 2 (also bots you promoted by hand) and new bots join there. Only a player whose own rank may promote and demote members may do this; anyone else gets an error.
 - **See what the bots can reach:** `.bot order access` (and the top of `.bot order list`) shows the bot rank, which bank tabs it reaches, and whether it may take guild gold. Guilds without an unlocked bank show no tabs and no gold.
-- The header shows red when anything is missing (a tab the bots cannot use, or no gold access). Open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank.
+- The header shows red when a bank tab is closed to the bots. Open the tabs to the bot rank (or pick a higher rank) before giving orders that need the bank. "gold no" is normal below Officer: the bots then buy with their own gold only.
 - **Turn it off:** setting `AiPlayerbot.GuildOrderBotRank = 0` leaves every rank alone; `.bot order access` then answers that the server does not manage bot ranks.
 
 ## Who may give orders

@@ -114,6 +114,51 @@ static void TestOrderIsRelativeToTolerance()
     CHECK(wrapped[0].guidLow == 8);
 }
 
+static void TestNearPlayerRunsFirstWithoutStarving()
+{
+    // Near beats far even when the far bot is later: a just-due near bot
+    // runs before a 2 s-late walker. Inside each group today's order
+    // holds (most overdue relative to tolerance, then situation, guid).
+    uint32_t const now = 50000;
+    std::vector<DueTurn> due = {
+        {1, now - 2000, TurnSituation::Normal, false}, // 2000/3000 = 0.67
+        {2, now - 100, TurnSituation::Combat, false},  // 100/400 = 0.25
+        {3, now, TurnSituation::Normal, true},          // just due
+        {4, now - 150, TurnSituation::Combat, true},    // 150/400 = 0.375
+    };
+    OrderDueTurns(due, now);
+    CHECK(due[0].nearPlayer);
+    CHECK(due[1].nearPlayer);
+    CHECK(!due[2].nearPlayer);
+    CHECK(!due[3].nearPlayer);
+    CHECK(due[0].guidLow == 4);
+    CHECK(due[1].guidLow == 3);
+    CHECK(due[2].guidLow == 1);
+    CHECK(due[3].guidLow == 2);
+}
+
+static void TestArrivalMakesDueAtOnce()
+{
+    // Only the walk-to-WORK edge wakes the bot: failed moves (still en
+    // route), drops (nulled to NONE), expiry without work, cooldowns and
+    // re-picks never do, so an unreachable target cannot tighten its loop.
+    CHECK(TravelArrivalMakesDueAtOnce(true, true));
+    CHECK(!TravelArrivalMakesDueAtOnce(true, false));
+    CHECK(!TravelArrivalMakesDueAtOnce(false, true));
+    CHECK(!TravelArrivalMakesDueAtOnce(false, false));
+}
+
+static void TestCompletionMakesDueAtOnce()
+{
+    // Only WORK-to-EXPIRED on the same target wakes the bot: a drop (NONE),
+    // a cooldown, a failure or a re-pick never expires, so none wakes it.
+    CHECK(TravelCompletionMakesDueAtOnce(true, true));
+    CHECK(!TravelCompletionMakesDueAtOnce(true, false));
+    CHECK(!TravelCompletionMakesDueAtOnce(false, true));
+    CHECK(!TravelCompletionMakesDueAtOnce(false, false));
+}
+
+
 // A pool the way BotManager drives it: each tick collect the due bots, order
 // them, serve as many as the budget allows, and set each served bot's next due
 // from its AI delay. Every turn costs one budget unit.
@@ -127,6 +172,7 @@ struct SimBot
     uint32_t turns = 0;
     uint32_t maxGapMs = 0;
     uint64_t gapSumMs = 0;
+    bool nearPlayer = false;
 };
 
 static void Simulate(std::vector<SimBot>& bots, uint32_t turnsPerTick, uint32_t tickMs, uint32_t ticks)
@@ -162,6 +208,63 @@ static void Simulate(std::vector<SimBot>& bots, uint32_t turnsPerTick, uint32_t 
             b.dueMs = TurnNextDueMs(now, b.aiDelayMs, b.situation);
         }
     }
+}
+
+static void TestOverloadedNearPoolStarvesNobody()
+{
+    // Near bots first under overload, distant bots still turn: 20 near
+    // walkers (1 s) against 170 distant ones, room for 10 per 50 ms tick.
+    // First sweep serves every near bot before any distant one; after that
+    // the distant backlog climbs the order, so nobody starves.
+    std::vector<SimBot> bots;
+    for (uint32_t i = 0; i < 20; ++i)
+    {
+        bots.push_back({i + 1, TurnSituation::Normal, 1000});
+        bots.back().nearPlayer = true;
+    }
+    for (uint32_t i = 0; i < 170; ++i)
+        bots.push_back({i + 1000, TurnSituation::Normal, 1000});
+    uint32_t now = 1000;
+    std::map<uint32_t, SimBot*> byGuid;
+    for (SimBot& b : bots)
+    {
+        b.dueMs = b.lastTurnMs = now;
+        byGuid[b.guidLow] = &b;
+    }
+    for (uint32_t t = 0; t < 2000; ++t, now += 50)
+    {
+        std::vector<DueTurn> due;
+        for (SimBot const& b : bots)
+            if (TurnIsDue(now, b.dueMs))
+                due.push_back({b.guidLow, b.dueMs, b.situation, b.nearPlayer});
+        OrderDueTurns(due, now);
+        if (t == 0)
+        {
+            for (uint32_t s = 0; s < 10; ++s)
+                CHECK(byGuid[due[s].guidLow]->nearPlayer);
+            for (uint32_t s = 10; s < 20; ++s)
+                CHECK(byGuid[due[s].guidLow]->nearPlayer);
+        }
+        uint32_t served = 0;
+        for (DueTurn const& d : due)
+        {
+            if (served++ == 10)
+                break;
+            SimBot& b = *byGuid[d.guidLow];
+            uint32_t const gap = now - b.lastTurnMs;
+            if (b.turns)
+            {
+                b.maxGapMs = std::max(b.maxGapMs, gap);
+                b.gapSumMs += gap;
+            }
+            ++b.turns;
+            b.lastTurnMs = now;
+            b.dueMs = TurnNextDueMs(now, b.aiDelayMs, b.situation);
+        }
+    }
+    for (SimBot const& b : bots)
+        CHECK(b.turns > 10);
+    std::printf("  near-first overload: every near bot served in the first two sweeps, nobody starved\n");
 }
 
 static void TestUnderloadedPoolRunsOnTime()
@@ -233,8 +336,11 @@ int main()
     TestAiCombatCountsAsCombat();
     TestDueSurvivesClockWrap();
     TestOrderIsRelativeToTolerance();
+    TestNearPlayerRunsFirstWithoutStarving();
+    TestArrivalMakesDueAtOnce();
+    TestCompletionMakesDueAtOnce();
     TestUnderloadedPoolRunsOnTime();
     TestOverloadedPoolStarvesNobody();
-    std::printf("test_bot_turn_scheduler: %d checks passed\n", checks);
+    TestOverloadedNearPoolStarvesNobody();
     return 0;
 }

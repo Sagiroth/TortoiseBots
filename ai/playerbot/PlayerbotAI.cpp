@@ -65,6 +65,8 @@
 #include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
 #include "playerbot/PortalFollowPolicy.h"
+#include "playerbot/PartyFlightPolicy.h"
+#include "playerbot/TaxiRouteGuard.h"
 #include "BotDiagnostics.h"
 #include "BotActionLog.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -1443,6 +1445,7 @@ void PlayerbotAI::OnCombatStarted()
         aiObjectContext->GetValue<bool>("has attackers")->Reset();
 
         ChangeEngine(BotState::BOT_STATE_COMBAT);
+        aiObjectContext->GetValue<bool>("drink unfinished")->Set(false);
         if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
         {
             ResetAIInternalUpdateDelay();
@@ -2595,6 +2598,8 @@ void PlayerbotAI::Reset(bool full)
         RESET_AI_VALUE(LastMovement&,"last movement");
         RESET_AI_VALUE(LastMovement&,"last area trigger");
         RESET_AI_VALUE(LastMovement&,"last taxi");
+        m_partyFlightStartMs = 0;
+        m_partyFlightMoveMs = 0;
 
         TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
         sTravelMgr.SetNullTravelTarget(target);
@@ -3435,6 +3440,7 @@ void PlayerbotAI::DoNextAction(bool min, bool forceActivity)
         }
 
         UpdatePortalFollow(master, group);
+        UpdatePartyFlight(master, group);
 
         if (!group && sRandomBotFacade.IsFreeBot(bot) && !IsRealPlayer())
         {
@@ -3654,6 +3660,194 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
     m_portalFollowMap = portal->GetMapId();
     m_portalFollowStartMs = nowMs;
     m_portalFollowUsedMs = 0;
+}
+
+void PlayerbotAI::StartPartyFlight()
+{
+    m_partyFlightStartMs = WorldTimer::getMSTime();
+}
+
+bool PlayerbotAI::PartyFlightActive() const
+{
+    if (!m_partyFlightStartMs || !aiObjectContext)
+        return false;
+    return !aiObjectContext->GetValue<LastMovement&>("last taxi")->Get().taxiNodes.empty();
+}
+
+void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
+{
+    if (!m_partyFlightStartMs && (!master || !master->IsTaxiFlying()))
+        return;
+
+    uint32 const nowMs = WorldTimer::getMSTime();
+
+    if (!m_partyFlightStartMs && master && master->IsTaxiFlying())
+    {
+        m_partyFlightStartMs = nowMs;
+        LastMovement& movement = aiObjectContext->GetValue<LastMovement&>("last taxi")->Get();
+        if (movement.taxiNodes.empty())
+        {
+            uint32 src = master->GetTaxi().GetTaxiSource();
+            uint32 dst = master->GetTaxi().GetTaxiDestination();
+            if (src && dst)
+                movement.taxiNodes = { src, dst };
+        }
+    }
+
+    if (!m_partyFlightStartMs)
+        return;
+
+    uint32 const elapsed = nowMs - m_partyFlightStartMs;
+    bool const crossMap = master && master->IsInWorld() && !master->IsBeingTeleported() &&
+        bot->GetMapId() != master->GetMapId();
+    float const masterDistance = master && !crossMap ? sServerFacade.getDistance2d(bot, master) : 0.0f;
+
+    bool const followStrategy = HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) &&
+        !HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+        !HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT);
+
+    bool const eligible = master && master->IsInWorld() && group && group == master->GetGroup() &&
+        ai::PartyFlightEligible(HasActivePlayerMaster(), bot->IsInWorld() && !bot->IsBeingTeleported() && bot->IsAlive(),
+            bot->IsInCombat(), followStrategy);
+
+    if (!eligible)
+    {
+        if (bot->IsInCombat())
+            return;
+
+        m_partyFlightStartMs = 0;
+        aiObjectContext->GetValue<LastMovement&>("last taxi")->Get().taxiNodes.clear();
+        return;
+    }
+
+    if (ai::PartyFlightEpisodeExpired(elapsed))
+    {
+        m_partyFlightStartMs = 0;
+        aiObjectContext->GetValue<LastMovement&>("last taxi")->Get().taxiNodes.clear();
+        return;
+    }
+
+    if (bot->IsTaxiFlying())
+        return;
+
+    if (ai::PartyFlightAtMaster(crossMap, masterDistance) && !master->IsTaxiFlying())
+    {
+        m_partyFlightStartMs = 0;
+        aiObjectContext->GetValue<LastMovement&>("last taxi")->Get().taxiNodes.clear();
+        return;
+    }
+
+    LastMovement& movement = aiObjectContext->GetValue<LastMovement&>("last taxi")->Get();
+
+    if (!movement.taxiNodes.empty())
+    {
+        if (ai::PartyFlightBoardExpired(elapsed))
+        {
+            movement.taxiNodes.clear();
+            movement.taxiMaster.Clear();
+        }
+        else
+        {
+            TaxiNodesEntry const* fromEntry = sObjectMgr.GetTaxiNodeEntry(movement.taxiNodes[0]);
+            if (!fromEntry || fromEntry->map_id != bot->GetMapId())
+            {
+                movement.taxiNodes.clear();
+                movement.taxiMaster.Clear();
+            }
+            else
+            {
+                Creature* flightMaster = nullptr;
+                if (movement.taxiMaster)
+                    flightMaster = bot->GetNPCIfCanInteractWith(movement.taxiMaster, UNIT_NPC_FLAG_FLIGHTMASTER);
+                if (!flightMaster)
+                {
+                    std::list<ObjectGuid> npcs = aiObjectContext->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get();
+                    for (ObjectGuid guid : npcs)
+                    {
+                        flightMaster = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_FLIGHTMASTER);
+                        if (flightMaster)
+                            break;
+                    }
+                }
+
+                if (flightMaster)
+                {
+                    RemoveShapeshift();
+                    Unmount();
+                    if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                        bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+                    bot->GetSession()->SendLearnNewTaxiNode(flightMaster);
+
+                    bool const routeAllowed = ai::BotTaxiRouteAllowed(movement.taxiNodes);
+                    // The master already flew this route, so a companion follows it
+                    // without gold or learned stops: the core check is satisfied for
+                    // the call and the purse is put back to what it was.
+                    bool activated = false;
+                    if (routeAllowed)
+                    {
+                        bool const wasCheater = bot->IsTaxiCheater();
+                        uint32 const purse = bot->GetMoney();
+                        bot->SetTaxiCheater(true);
+                        bot->SetMoney(std::max<uint32>(purse, 500000));
+                        activated = bot->ActivateTaxiPathTo(movement.taxiNodes, flightMaster, 0);
+                        bot->SetTaxiCheater(wasCheater);
+                        bot->SetMoney(purse);
+                    }
+                    if (activated)
+                    {
+                        ai::BotInstantFlightFinish(bot, movement.taxiNodes);
+                        movement.taxiNodes.clear();
+                        movement.taxiMaster.Clear();
+                        m_partyFlightStartMs = 0;
+                        return;
+                    }
+                    else
+                    {
+                        movement.taxiNodes.clear();
+                        movement.taxiMaster.Clear();
+                    }
+                }
+                else
+                {
+                    if (!CanMove())
+                        return;
+
+                    float destX = fromEntry->x;
+                    float destY = fromEntry->y;
+                    float destZ = fromEntry->z;
+                    if (movement.taxiMaster)
+                    {
+                        if (Creature* c = bot->GetMap()->GetCreature(movement.taxiMaster))
+                        {
+                            destX = c->GetPositionX();
+                            destY = c->GetPositionY();
+                            destZ = c->GetPositionZ();
+                        }
+                    }
+
+                    if (!bot->IsMoving() || nowMs - m_partyFlightMoveMs >= 1000)
+                    {
+                        m_partyFlightMoveMs = nowMs;
+                        bot->GetMotionMaster()->MovePoint(fromEntry->map_id, destX, destY, destZ,
+                            MOVE_RUN_MODE | MOVE_PATHFINDING);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    if (!master->IsTaxiFlying() && (crossMap || masterDistance > ai::kPartyFlightAtMasterYd))
+    {
+        if (TortoiseBots::PlayerConvenience::Instance().RequestSummon(master, bot))
+        {
+            sLog.outString("TortoiseBots: bringing bot %s to master %s after flight path",
+                bot->GetName(), master->GetName());
+            m_partyFlightStartMs = 0;
+            return;
+        }
+    }
 }
 
 void PlayerbotAI::ReInitCurrentEngine()

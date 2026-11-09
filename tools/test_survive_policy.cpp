@@ -18,6 +18,7 @@ using ai::IsHopelessSingleAttacker;
 using ai::RestStopHealthPct;
 using ai::ShouldAnswerAttacker;
 using ai::ShouldDrinkAtManaPct;
+using ai::ShouldResumeDrink;
 using ai::ShouldFleeAtCriticalHealth;
 using ai::ShouldGrantPoolFlee;
 using ai::ShouldIgnoreHardHostile;
@@ -226,5 +227,12 @@ int main()
     }
 
     std::cout << "survive policy: OK\n";
+    // An interrupted drink resumes between the start line and the stop.
+    CHECK(ShouldResumeDrink(true, true, 70, 85, false));
+    CHECK(!ShouldResumeDrink(false, true, 70, 85, false));
+    CHECK(!ShouldResumeDrink(true, true, 85, 85, false));
+    CHECK(!ShouldResumeDrink(true, true, 70, 85, true));
+    CHECK(!ShouldResumeDrink(true, false, 70, 85, false));
+
     return 0;
 }

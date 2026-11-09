@@ -334,7 +334,7 @@ Gives a guild bot an order to fetch items for real: it farms, buys or crafts the
 - **Needs travel data:** guild orders only work while `AiPlayerbot.AutoDoQuests = 1` (the default). With quest travel off, the source index stays empty, `guild-orders` disappears from `TBM:CAPS`, and `.bot order` answers `disabled`.
 - **Offline craft orders:** giving a craft order to an offline bot is refused with `norecipe` (its recipes cannot be checked while it is offline).
 - **Guild bank:** deposits and withdrawals follow the bot's guild rank (the game logs withdrawals). A refused supply withdrawal sends the bot on to the auction house or farming.
-- **Undeliverable finished items** are mailed to the guild master instead (`mailed`). Bots in a guild with a real player share the guild's bot rank (by default the rank below the guild master), so open a tab to that rank if you want bank access. All-bot guilds keep their own ranks.
+- **Undeliverable finished items** are mailed to the guild master instead (`mailed`). Bots in a guild with a real player join at the guild's bot rank (by default the lowest rank); bank tab 1 opens to that rank by itself, open more tabs to it if you want. All-bot guilds keep their own ranks.
 - **Rank tools:** `.bot order rank <rankIndex>` moves every bot to another rank (only a player whose rank may promote and demote members). `.bot order access` shows what the bots can reach.
 - **Sub-orders:** when the ordering bot cannot get a material itself, it asks another guild bot to make or farm it (up to 3 levels deep; the same item never appears twice in one branch). Sub-orders deliver into the guild bank, show indented under the parent in the addon, and go live to the player who gave the root order.
 - **Failed and moved sub-orders:** a failed sub-order puts its item on the parent's need list instead of failing the parent. Move one with `.bot order reassign` (same permission as giving orders); only bots without a running or watched (`stocked`) order of their own qualify.
@@ -354,7 +354,7 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 | Take it back as your companion | `.bot add <Name>`, or invite it into your group again (only your own group's invite reclaims it). |
 | Play it yourself | Log into it from the character screen. |
 
-- **Where it goes:** if it was in an instance, a battleground or on a boat, it first leaves through the instance entrance portal, or to its battleground entry or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level (like a pool bot); below 10 it skips only the scatter and stays where it is.
+- **Where it goes:** if it was in an instance, a battleground or on a boat, it first leaves through the instance entrance portal, or to its battleground entry or a graveyard. At level 10 and higher it is then teleported to a zone that fits its level, never a capital (like a pool bot); below 10 it skips only the scatter and stays where it is.
 - **What it tells you:** when it starts it whispers you how to stop it; when it stops it whispers a summary (levels, quests, deaths, gold). When you log in you get one line per alt for what it did since your last logout; [`.bot alts`](#bot-alts) repeats the same lines any time.
 - **How long it plays:** while you are logged out too, until you stop it or the server restarts. With [`AiPlayerbot.AltBotsLogoutWithOwner`](../../server/settings/party.md#aiplayerbotaltbotslogoutwithowner) = `1` it logs out with you. A server crash can lose progress it had not saved yet.
 - **Pool size:** each alt-bot takes the place of one pool bot, which comes back when the alt-bot stops.
@@ -364,8 +364,8 @@ An **alt-bot** is one of your own alts that plays on its own, like a pool bot, w
 
 | Does | Does not |
 | :--- | :--- |
-| Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank |
-| Sell grey items and white items it does not need (never soulbound, equipped or better-than-white) | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
+| Quest, grind, travel by flight path and boat, rest, gather, fish | Use the auction house, mail, trade or a guild bank (so it never walks to a capital for the auction house) |
+| Sell grey items and white items it does not need (never soulbound, equipped or better-than-white); only those count when it decides to walk to a vendor | Sell or destroy items on its own (an explicit `.bot destroy` style command of yours still works) |
 | Equip upgrades it finds (the old piece goes to its bags) | Need on loot (it rolls Greed or Pass at most) |
 | Leave an instance when it is alone in it (and keeps 10 quest-log slots free) | Abandon quests it did not take itself |
 | | Buy mounts, bags or talent resets |

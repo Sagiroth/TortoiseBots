@@ -28,6 +28,7 @@
 #include "playerbot/JumpPolicy.h"
 #include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
+#include "playerbot/TravelLegChainPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
 #include "playerbot/PlaceUnstickPolicy.h"
@@ -1168,7 +1169,19 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
             movePosition.getZ(),
             moveOptions);
     }
-    WaitForReach(size);
+    if (usePath)
+    {
+        // The spline keeps walking server-side; wake the next turn a margin
+        // BEFORE this leg ends so the travel action can chain the next leg in
+        // the same Execute instead of standing still until a fresh turn. A
+        // plain MovePoint leg keeps its own wait: it re-paths in the core and
+        // must not be cut short.
+        float const chainMarginDist = static_cast<float>(TRAVEL_LEG_CHAIN_REMAIN_MS) / 1000.0f * bot->GetSpeed(MOVE_RUN);
+        float chainWait = size > chainMarginDist ? size - chainMarginDist : 0.0f;
+        WaitForReach(chainWait);
+    }
+    else
+        WaitForReach(size);
     return true;
 }
 

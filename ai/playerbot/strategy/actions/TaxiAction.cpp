@@ -69,28 +69,44 @@ bool TaxiAction::Execute(Event& event)
             uint32 path = nodes[selected - 1];
             TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(path);
             if (!entry) return false;
+            ai->Unmount();
+            if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
+            bot->GetSession()->SendLearnNewTaxiNode(npc);
             bool didTaxi = ai::BotTaxiRouteAllowed({ entry->from, entry->to }) && bot->ActivateTaxiPathTo({ entry->from, entry->to }, npc, 0);
             if (didTaxi)
                 ai::BotInstantFlightFinish(bot, { entry->from, entry->to });
             return didTaxi;
         }
-        if (!movement.taxiNodes.empty() && (!ai::BotTaxiRouteAllowed(movement.taxiNodes) || !bot->ActivateTaxiPathTo(movement.taxiNodes, npc)))
+        if (!movement.taxiNodes.empty())
         {
+            ai->Unmount();
+            if (bot->GetStandState() != UNIT_STAND_STATE_STAND)
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
+            bot->GetSession()->SendLearnNewTaxiNode(npc);
+            if (!ai::BotTaxiRouteAllowed(movement.taxiNodes) || !bot->ActivateTaxiPathTo(movement.taxiNodes, npc))
+            {
+                movement.taxiNodes.clear();
+                movement.Set(NULL);
+                if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+                    ai->TellPlayerNoFacing(requester, "I can't fly with you");
+                return false;
+            }
+
+            ai::BotInstantFlightFinish(bot, movement.taxiNodes);
             movement.taxiNodes.clear();
             movement.Set(NULL);
-            if (!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
-                ai->TellPlayerNoFacing(requester, "I can't fly with you");
-            return false;
+            return true;
         }
-
-        if (!movement.taxiNodes.empty())
-            ai::BotInstantFlightFinish(bot, movement.taxiNodes);
 
         return true;
     }
 
-    if(!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
-        ai->TellPlayerNoFacing(requester, "Cannot find any flightmaster to talk");
+    if (movement.taxiNodes.empty())
+    {
+        if(!ai->GetMaster() || sServerFacade.getDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+            ai->TellPlayerNoFacing(requester, "Cannot find any flightmaster to talk");
+    }
 
     return false;
 }

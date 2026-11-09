@@ -17,7 +17,10 @@
 //                 but is not ready (out of range, no line of sight, dead,
 //                 another warlock mid-cast) is waited for, not skipped; a
 //                 tier whose members all hold the aura is done and the next
-//                 tier is stoned (a second warlock stones the tank). Waiting: a used stone starts the item's 30 minute cooldown,
+//                 tier is stoned (a second warlock stones the tank). A
+//                 warlock whose own stone is up on anyone gives no other:
+//                 bots do not wait out the item cooldown, so without this one
+//                 warlock stoned every tier. Waiting: a used stone starts the item's 30 minute cooldown,
 //                 so spending it on the leader because the healer is a few
 //                 yards late would leave the healer unstoned for half an hour.
 //   solo        - the warlock stones itself (unchanged behaviour).
@@ -120,6 +123,9 @@ struct SoulstoneFacts
     bool inGroup = false;
     bool botInCombat = false;
     bool botHasSoulstoneAura = false; // used for the solo case only
+    // The warlock's own stone is up on someone (itself included): one stone
+    // per warlock at a time, the next only once that one is used or expires.
+    bool ownStoneActive = false;
 };
 
 enum class SoulstoneChoiceKind
@@ -176,6 +182,9 @@ inline SoulstoneChoice DecideSoulstoneTarget(SoulstoneFacts const& facts,
         self.kind = SoulstoneChoiceKind::Self;
         return self;
     }
+
+    if (facts.ownStoneActive)
+        return none;
 
     static constexpr SoulstoneTier order[] = {SoulstoneTier::Healer, SoulstoneTier::Tank, SoulstoneTier::Leader};
     for (SoulstoneTier tier : order)

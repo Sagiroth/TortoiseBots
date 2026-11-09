@@ -719,11 +719,11 @@ AiPlayerbot.GuildOrderSubOrders = 1
 # How deep sub-orders may nest (ore, then bars, then armor): the same item never
 # appears twice in one branch. Out of range values fall back to 3.
 AiPlayerbot.GuildOrderSubOrderDepth = 3
-# Guild bank access for guild bots: every bot in a guild with a real player
-# holds one shared rank (by default the rank below the guild master, or the
-# rank picked with `.bot order rank`), so the master can open bank tabs to
-# one rank. 1 is on, 0 is off (ranks stay as they are and the addon shows no
-# bot rank).
+# Guild bank access for guild bots: bots joining a guild with a real player
+# get one shared rank (by default the guild's lowest rank, or the rank picked
+# with `.bot order rank`) and bank tab 1 is kept open to it (from the next
+# server start). Ranks a player gives bots by hand stay. 1 is on, 0 is off
+# (ranks stay as they are and the addon shows no bot rank).
 #AiPlayerbot.GuildOrderBotRank = 1
 
 # Limit combat activity for slight performance boost.
@@ -797,17 +797,28 @@ AiPlayerbot.RandomGearTabardsReplaceGuild = 0
 
 # Comma-separated item IDs that no auto-gear path hands out, e.g.
 # AiPlayerbot.RandomGearBlacklist = 12345,23456
-# Item IDs are on database.turtle-wow.org. Empty (default) means nothing is
-# blocked, and there is no separate on/off switch. The ban covers every
-# auto-gear path including .autogear, and wins over the whitelist below. A
-# pool or hired bot already wearing a blocked item gets it replaced or
-# removed on its next gear pass; real players and owned bots keep whatever
+# Item IDs are on database.turtle-wow.org. The default blocks the GM-only
+# Gamemaster's Broom of Doom (10), the unobtainable trinket Fang of Alichos
+# (58260), the prize hats Lucky Top Hat (163) and Lucky Fishing Hat (19972),
+# and the event hats Red/Green Winter Hat (21524, 21525) and The Greatest
+# Wizzard Hat (7). An empty value also means this default (older templates
+# shipped the line empty); 0 blocks nothing. The ban covers every auto-gear path including
+# .autogear and the gear progression system, and wins over the whitelist
+# below. A pool or hired bot already wearing a blocked item gets it replaced
+# or removed on its next gear pass; real players and owned bots keep whatever
 # they wear, and items a bot finds itself (loot, quest rewards, auction
 # house) are unaffected.
-AiPlayerbot.RandomGearBlacklist =
+# Besides this list, auto-gear (except the gear progression system and the
+# curated hire kits) never hands out items players cannot really have: no
+# known source (not dropped, sold, crafted, fished, found in a container or
+# given by a quest), deprecated or test items, item level 0 outside shirt and
+# tabard, and legendary or better. These rules are always on; a pool or hired
+# bot wearing such an item gets it replaced the same way.
+AiPlayerbot.RandomGearBlacklist = 10,163,19972,58260,21524,21525,7
 
 # Item ids always seeded on random gear regardless of the scoring rules below,
-# unless the id is also on the blacklist above.
+# unless the id is also on the blacklist above. A whitelisted id also skips
+# the "items players cannot really have" rules above.
 #AiPlayerbot.RandomGearWhitelist =
 
 # Roll need on items if slot is empty or broken, even if not appropriate for bot's spec
@@ -1419,6 +1430,29 @@ AiPlayerbot.DungeonRunRaidBossRules = 0
 # 0 - off: the off-tanks take the adds, as before (Default)
 # 1 - on
 AiPlayerbot.DungeonRunRaidHealerGuard = 0
+
+# Pure interrupts skip the damage threat back-off the way heals do. Kick, Pummel, Shield Bash, Bash, Counterspell and
+# Silence are single-target spell actions, so a damage dealer whose threat on its target sat at the 80 % line had them
+# vetoed like a nuke and let the cast finish: a rogue stood idle at full energy in 21 of 50 Kick windows (Tortoise
+# Trials DPS-ROG-KICK, 0.42 of casts kicked). An interrupt adds little threat and stopping the cast is the point. The
+# exemption holds while the interrupt would not pull the mob: the bot's threat on it plus the spell's flat threat
+# (Counterspell 300, Shield Bash 180) under 110 % of the tank's in melee reach, 130 % from range (the core's rule);
+# at or over that line the back-off applies again. The Earth Shock and Death Coil interrupt rows are real nukes and
+# keep the back-off; the "on enemy healer" rows stay gated too.
+# Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
+# 0 - off: interrupts are vetoed at the high-threat line as before (Default)
+# 1 - on
+AiPlayerbot.InterruptIgnoresThreat = 0
+
+# A bot does not probe a cast the target's facing makes impossible: Gouge (the target must face the caster) from behind,
+# or a from-behind-only spell such as Backstab from the front. The core refuses both in its cast check, broadcasts a
+# spell failure to everyone nearby each time it is asked, and the bot read a Gouge from behind as castable: a rogue on
+# the behind strategy probed Gouge about 20 times a second, and no Gouge ever landed (Tortoise Trials DPS-ROG-KICK).
+# With 1 the bot refuses such a cast before the probe and the engine picks its next action in the same tick.
+# Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
+# 0 - off: the probe runs as before (Default)
+# 1 - on
+AiPlayerbot.SpellFacingPrecheck = 0
 
 # A raid binding's healer seats (.bot commander bind <LeadBot> raid, only read with AiPlayerbot.DungeonRunRaid = 1):
 # with 1 the seats go by class instead of member order. The raid seats take a group healer first (priest, then druid,
@@ -2798,12 +2832,19 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # pool runs after them as one turn queue: after each turn a bot is due again
 # when its AI asked to think next, never later than its situation allows
 # (combat 400 ms, dead or battleground 1 s, teleport 100 ms, else 3 s), and a
-# change of situation makes it due at once. Due bots run most overdue first
-# relative to that cap until the budget is spent, so nobody is dropped.
+# change of situation (plus arriving at the travel target or finishing the
+# worked task: walk-to-work or work-to-expired in one turn, never a failed
+# move or a re-pick) makes it due at once. Optionally (PoolNearPlayerYd) bots
+# next to a real player run ahead of the rest when the budget cuts the pass.
 #   PoolTickBudgetUs: microseconds of module work per tick for the pool turn
 #       queue, added to CombatTickBudgetUs (the two make one budget).
 #       0 = no budget at all (every due bot runs).
 #       Values below 1000 are raised to 1000; 100000 is the ceiling.
+#   PoolNearPlayerYd: yards around a real player whose pool bots run ahead of
+#       the rest when the budget cuts the pass (same map and instance).
+#       0 turns the preference off (the default): every bot is equally late,
+#       so distant bots are as smooth as the ones in view. Set it for a large
+#       pool on a slow machine, e.g. 80.
 #   PoolBudgetWhenTickOverMs: the budget only engages while the previous world
 #       tick ran longer than this. 0 = budget on every tick (the default: with
 #       the self-tuning budget below, a healthy server reclaims the full
@@ -2830,6 +2871,7 @@ AiPlayerbot.PremadeSpecLink.11.2.60 = 5002012--5050013355213521
 # The pass cost and whether the budget cut a pass are reported by the
 # "TortoiseBots: BOTPERF ..." log line every ~30 s (LogLevel 1 or higher).
 AiPlayerbot.PoolTickBudgetUs = 22000
+AiPlayerbot.PoolNearPlayerYd = 0
 AiPlayerbot.PoolBudgetWhenTickOverMs = 0
 AiPlayerbot.CombatTickBudgetUs = 15000
 AiPlayerbot.TargetWorldTickMs = 100

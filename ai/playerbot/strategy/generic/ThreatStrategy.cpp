@@ -10,10 +10,13 @@
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/ThreatCapPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/BotActionLog.h"
+#include "Spells/SpellMgr.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
 #include <cstdio>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 
@@ -54,6 +57,39 @@ void LogThreatResetHold(PlayerbotAI* ai, Player* bot, std::uint8_t pct, float re
              sinceMs);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatReset", info1, "");
 }
+
+// One row per bot and second while an interrupt is vetoed with AiPlayerbot.InterruptIgnoresThreat on: the bot's
+// threat, the tank's, the interrupt's flat threat and the pull line it was measured against, so a live run shows why
+// a Kick or Counterspell still waited (the engine's own `MULT threat x0.000` line carries no numbers).
+constexpr uint32 kInterruptVetoLogGapMs = 1000;
+
+std::mutex g_interruptVetoLogMutex;
+std::unordered_map<uint64, uint32> g_interruptVetoLog;
+
+void LogInterruptVeto(PlayerbotAI* ai, Player* bot, CastInterruptSpellAction const* action, float botThreat,
+                      float tankThreat, float flatThreat, bool ranged)
+{
+    uint32 const nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_interruptVetoLogMutex);
+        uint32& last = g_interruptVetoLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kInterruptVetoLogGapMs)
+            return;
+        last = nowMs;
+        if (g_interruptVetoLog.size() > 4096)
+        {
+            for (auto it = g_interruptVetoLog.begin(); it != g_interruptVetoLog.end();)
+                it = nowMs - it->second > kInterruptVetoLogGapMs * 600 ? g_interruptVetoLog.erase(it) : std::next(it);
+        }
+    }
+    char info[192];
+    snprintf(info, sizeof(info), "ThreatCap interrupt spell=%s pct=%.0f flat=%.0f line=%.2f bot=%.0f tank=%.0f",
+             action->GetSpellName().c_str(), ThreatCapPercentOf(botThreat + flatThreat, tankThreat), flatThreat,
+             AggroPullFactor(ranged), botThreat, tankThreat);
+    ai::botdiag::BotActionLog::Write(ai, "THREAT", "%s", info);
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        sPlayerbotAIConfig.logEvent(ai, "ThreatCapInterrupt", info, "");
+}
 }
 
 bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
@@ -93,7 +129,6 @@ bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
         LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
     return held;
 }
-
 float ThreatMultiplier::GetValue(Action* action)
 {
     // Per-fight suppression (mod-playerbots "neglect threat"): a boss
@@ -158,9 +193,34 @@ float ThreatMultiplier::GetValue(Action* action)
     // A party cure or dispel joins the heals behind AiPlayerbot.DungeonRunCureIgnoresThreat: it is a SINGLE-threat
     // CastSpellAction, so a healer whose own threat on its target sat at the high line had every cure vetoed and
     // Jin'do's Hex stayed on the tank for its full 5 s (ThreatCapPolicy.h ThreatCapExempt).
-    if (ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
-                        dynamic_cast<CurePartyMemberAction*>(action) != nullptr,
-                        sPlayerbotAIConfig.dungeonRunCureIgnoresThreat))
+    // An interrupt joins the heals behind AiPlayerbot.InterruptIgnoresThreat: Kick and the other pure interrupts are
+    // SINGLE-threat spell actions, so a rogue at the high line had every Kick vetoed and stood idle at full energy
+    // while the caster finished. It is measured on the interrupt's own target (the "interrupt target" pick, which can
+    // be another mob than the current target) against the core's pull line: the bot's threat plus the interrupt's flat
+    // threat (spell threat table) under 110 % of the tank's when the mob can reach the bot in melee, 130 % otherwise
+    // (ThreatCapPolicy.h ThreatCapInterruptExempt). Earth Shock and Death Coil rows stay gated.
+    bool const heal = dynamic_cast<CastHealingSpellAction*>(action) != nullptr;
+    bool const cure = dynamic_cast<CurePartyMemberAction*>(action) != nullptr;
+    CastInterruptSpellAction const* interruptAction = dynamic_cast<CastInterruptSpellAction*>(action);
+    bool const interrupt = interruptAction != nullptr && interruptAction->IgnoresThreatCap();
+    bool const interruptKey = interrupt && sPlayerbotAIConfig.interruptIgnoresThreat;
+    float interruptBotThreat = 0.0f;
+    float interruptTankThreat = 0.0f;
+    float interruptFlatThreat = 0.0f;
+    bool interruptRanged = false;
+    if (interruptKey)
+    {
+        Unit* const interruptTarget = action->GetTarget();
+        interruptBotThreat = ThreatValue::GetThreat(bot, interruptTarget);
+        interruptTankThreat = ThreatValue::GetTankThreat(ai, interruptTarget);
+        if (SpellThreatEntry const* threatEntry = sSpellMgr.GetSpellThreatEntry(interruptAction->GetSpellID()))
+            interruptFlatThreat = threatEntry->threat;
+        // The core's own test for the 110 % rule: can the mob reach this attacker with a melee swing.
+        interruptRanged = !interruptTarget || !interruptTarget->CanReachWithMeleeAutoAttack(bot);
+    }
+    if (ThreatCapExempt(heal, cure, sPlayerbotAIConfig.dungeonRunCureIgnoresThreat) ||
+        ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, interruptBotThreat,
+                                 interruptTankThreat, interruptFlatThreat, interruptRanged))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
@@ -204,6 +264,9 @@ float ThreatMultiplier::GetValue(Action* action)
                 TortoiseBots::BotCommands::IsInCommandedGroup(bot), true, PlayerbotAI::IsTank(victimPlayer),
                 TargetTauntImmune(target)))
             return 1.0f;
+        if (interruptKey)
+            LogInterruptVeto(ai, bot, interruptAction, interruptBotThreat, interruptTankThreat, interruptFlatThreat,
+                             interruptRanged);
         return 0.0f;
     }
 
