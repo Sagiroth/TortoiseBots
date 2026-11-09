@@ -2796,6 +2796,12 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             // to the first when the list is exhausted.
             uint32_t farmZoneId = record->farmZoneId;
             TortoiseBots::GuildOrders::SourcePlan plan = planFor(itemId);
+            // Pool bots never travel to another continent: when the bot's own
+            // map has zones, the ones across the sea are no candidates, or
+            // the zone moves burn through them with empty searches.
+            if (!plan.zones.empty() && plan.zones.front().onBotMap)
+                plan.zones.erase(std::remove_if(plan.zones.begin(), plan.zones.end(),
+                    [](TortoiseBots::GuildOrders::FarmZone const& z) { return !z.onBotMap; }), plan.zones.end());
             bool listed = false;
             bool listedOnBotMap = false;
             size_t listedIndex = 0;
