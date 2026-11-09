@@ -1296,18 +1296,24 @@ static void TestSiphonClockRetryAfterNoSightCut()
 
     SeekWalkoutState s;
     WalkoutStart(s, 7, 100, 1000000, 2, 79000); // due at 1079000
-    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 14999, rules.noSightCutMs, true));
-    CHECK(WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, true));
-    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, false));
+    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 14999, rules, true));
+    CHECK(WalkoutNoSightCutDue(s, 1000000 + 15000, rules, true));
+    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules, false));
     WalkoutNoteInShot(s, true, 1010000);
-    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, true));
+    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules, true));
     s.firstInShotMs = 0;
     s.pullCastMs = 1010001;
-    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, true));
+    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules, true));
     s.pullCastMs = 0;
-    CHECK(WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, true));
+    CHECK(WalkoutNoSightCutDue(s, 1000000 + 15000, rules, true));
     WalkoutNoteShot(s);
-    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules.noSightCutMs, true));
+    CHECK(!WalkoutNoSightCutDue(s, 1000000 + 15000, rules, true));
+    // A task whose cycle leaves no room for a retry is not cut: at due 59000 the puller is 44 s from the siphon 15 s
+    // in, under the 50 s retry floor plus the 5 s walk-back margin, so it runs the full 25 s timeout.
+    SeekWalkoutState lateStart;
+    WalkoutStart(lateStart, 7, 100, 1000000, 2, 59000);
+    CHECK(!WalkoutNoSightCutDue(lateStart, 1000000 + 15000, rules, true));
+    CHECK(!WalkoutNoSightCutDue(lateStart, 1000000 + 24999, rules, true));
 
     // The cut's abort reopens the cycle: 64 s to the siphon is more than the 50 s retry floor.
     SeekWalkoutState a;

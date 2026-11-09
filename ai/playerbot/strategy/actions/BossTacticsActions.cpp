@@ -2567,25 +2567,39 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         if (shotNow)
             WalkoutNoteShot(state);
         // The no-sight cut (DungeonRunSeekSiphonClock): a task that sent no cast and never stood in shot position is
-        // aborted after kSeekWalkoutNoSightCutMs, freeing its Son and the cycle, so a later start still doses.
-        if (WalkoutNoSightCutDue(state, nowMs, rules.noSightCutMs,
-                                 sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+        // aborted after kSeekWalkoutNoSightCutMs, freeing its Son and the cycle, so a later start still doses. Only
+        // with the focus (which writes the pull cast) and the in-shot clock (which writes firstInShotMs), and never
+        // for a vanished Son or a puller that can no longer pull: that task ends as gone, and nothing blames or
+        // benches it here.
+        if (pullerOk && sonOk && sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus &&
+            WalkoutNoSightCutDue(state, nowMs, rules, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
         {
+            bool cut = false;
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
                 if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                     return; // another read closed or replaced it
-                WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
-                WalkoutAbortUnspent(it->second.state, nowMs, rules);
-                WalkoutExclude(it->second.state, state.puller, nowMs);
-                it->second.scanned = false;
-                NoteWalkoutBusy(before, it->second.state);
+                // A read between the snapshot and this lock may have landed the shot or the in-shot read: the cut is
+                // decided again on the shared state, the one the abort would change.
+                if (WalkoutNoSightCutDue(it->second.state, nowMs, rules,
+                                         sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+                {
+                    WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                    WalkoutAbortUnspent(it->second.state, nowMs, rules);
+                    WalkoutExclude(it->second.state, state.puller, nowMs);
+                    it->second.scanned = false;
+                    NoteWalkoutBusy(before, it->second.state);
+                    cut = true;
+                }
             }
-            char info2[160];
-            WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
-            LogSeekWalkoutAbort(ai, "no sight", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
-            return;
+            if (cut)
+            {
+                char info2[160];
+                WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
+                LogSeekWalkoutAbort(ai, "no sight", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
+                return;
+            }
         }
         // A shot that does not come: the puller has stood at its stand 6 s unshot (a blocked sight line, a cast the
         // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
