@@ -23,7 +23,7 @@ class SeekTakeSrcWiring(unittest.TestCase):
     def test_the_row_carries_src(self):
         log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
         self.assertIn("const std::string& src)", log)
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s"', log)
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f"', log)
         self.assertIn("src.c_str()", log)
         self.assertIn('const char* takeSrc = "other";', ACTIONS_H)
 

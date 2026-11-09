@@ -1174,6 +1174,11 @@ AiPlayerbot.DungeonRunSeekShotWaitsReceiver = 0
 # the pre-place. Off: the rotation chases the boss as before.
 AiPlayerbot.DungeonRunSeekMeetPrePlaceHold = 0
 
+# The meet's take reach for Hakkar's walked Son (recommended on; needs DungeonRunSeekSonMeet): the waiting receiver
+# takes the Son once it is within 25 yd (Intercept range), its Attack closing the gap, instead of within 8 yd. The
+# pre-place hold holds only the boss, never this Son. Off takes it within 8 yd as before.
+AiPlayerbot.DungeonRunSeekMeetTakeReach = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

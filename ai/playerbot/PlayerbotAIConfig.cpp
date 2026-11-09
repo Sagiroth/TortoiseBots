@@ -161,6 +161,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunSeekMeetPrePlaceLate = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceLate", false);
     dungeonRunSeekShotWaitsReceiver = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekShotWaitsReceiver", false);
     dungeonRunSeekMeetPrePlaceHold = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold", false);
+    dungeonRunSeekMeetTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetTakeReach", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);

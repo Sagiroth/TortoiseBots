@@ -104,7 +104,7 @@ An off-tank's take of a Son of Hakkar (`LogSeekTake`) says what it did about the
 going out; the other four are refusal codes (the take did not taunt this tick):
 
 ```
-seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0 src=receiver
+seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0 src=receiver reach_yd=6.2
 ```
 
 | Code | Meaning |
@@ -164,7 +164,7 @@ ref survives line drift.
 | 15 | skip anchor | `seek pull: skip anchor` | LogSeekPullSkipAnchor | yes: constant meaning "no Son stands inside the live anchor" | keep, documented here |
 | 16 | ranged from anchor | `seek pull: ranged from anchor` | LogSeekPullRangedFromAnchor | not a refusal (the anchored shot replaced the walk) | document |
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
-| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=` and `src=` (the take path) |
+| 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word> reach_yd=<yd>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=`, `src=` (the take path) and `reach_yd=` (the tank's distance to the Son; DungeonRunSeekMeetTakeReach) |
 | 18a | seek take held | `seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=<nearest_reach\|healer_clock> victim=<name> on_nontank_ms=%u victim_hp=%.0f` | LogSeekTakeHeld (FindSeekNearestTake, SeekHealerClockCapOk) | yes: `cap_guard` (with `DungeonRunSeekNearestTakeReach`, the collapse guard held this tank's reach or healer-clock take of the Son back: its leave would collapse the damage dealers' threat cap; `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's, 0 when no off-tank reference is left; `victim`, `on_nontank_ms` and `victim_hp` are the Son's victim, its time on it and its health); once per tank and Son per 2 s; a held row and a take row can share a tick, so join them on time | new |
 
 ### Other boss-tactics rows

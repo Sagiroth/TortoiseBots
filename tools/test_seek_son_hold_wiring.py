@@ -51,7 +51,7 @@ class SeekSonHoldWiring(unittest.TestCase):
         self.assertIn("BossAnchorRefusesChase(ai, bot, task.source, true)", take)
         self.assertIn("LogSeekTake(ai, bot, task.source,", take)
         log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
-        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s"', log)
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f"', log)
         refuse = body(ACTIONS, "bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)")
         self.assertIn("AnchorCircleOf(*row, false)", refuse)
 

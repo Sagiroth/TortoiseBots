@@ -2311,6 +2311,31 @@ static void TestWalkoutMeetLostRecord()
     CHECK(s.lostMeets.empty());
 }
 
+// The meet take's reach (DungeonRunSeekMeetTakeReach, walk 60 lever 1): with the key the receiver takes the walked Son
+// within Intercept range (25 yd), not 8 yd; off, the 8 yd rule is unchanged. The pre-place hold never holds the Son.
+static void TestMeetTakeReachCoversInterceptRange()
+{
+    // Named failing case `meet_take_reach_covers_intercept_range`: the walk-60 peels came with the Son a median 20 yd
+    // from the receiver, which the 8 yd take refused (the base has no 3-argument form).
+    CHECK(SeekMeetTakeDue(20.0f, false, true));
+    CHECK(SeekMeetTakeDue(25.0f, false, true));
+    // Past the reach: still waiting.
+    CHECK(!SeekMeetTakeDue(26.0f, false, true));
+    CHECK(!SeekMeetTakeDue(25.01f, false, true));
+    // Key off: the 8 yd rule (mutation: the reach ignoring the flag fails here).
+    CHECK(!SeekMeetTakeDue(20.0f, false, false));
+    CHECK(SeekMeetTakeDue(8.0f, false, false));
+    CHECK(!SeekMeetTakeDue(8.01f, false, false));
+    CHECK(SeekMeetTakeDue(30.0f, true, false));
+    CHECK(SeekMeetTakeDue(30.0f, true, true));
+    // The take row's reach_yd.
+    CHECK(SeekMeetTakeReachYd(true) == kSeekMeetTakeReachYd);
+    CHECK(SeekMeetTakeReachYd(false) == kSeekMeetTakeYd);
+    // The pre-place hold holds only the boss as a chase target: the Son the reach take chases is never held, so the
+    // hold cannot block this take.
+    CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
+}
+
 // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5) and its one-row latch.
 static void TestMeetPrePlaceHoldsChase()
 {
@@ -2746,6 +2771,7 @@ int main()
     TestWalkoutCapTakeLatch();
     TestWalkoutShotWaitsReceiver();
     TestShotWaitAndLateWalkNoDeadlock();
+    TestMeetTakeReachCoversInterceptRange();
     TestMeetPrePlaceHoldsChase();
     TestMeetPrePlaceHoldOutlivesTheTask();
     std::cout << "seek walk-out policy: all checks passed\n";

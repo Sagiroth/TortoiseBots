@@ -1435,7 +1435,8 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
 // One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
 // why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
 // names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
-// pull_join, other, with `+edge` when only the take edge let it chase).
+// pull_join, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance to the Son this
+// tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd).
 void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
@@ -1450,8 +1451,9 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bo
     }
     Unit* const victim = son->GetVictim();
     char info1[224];
-    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s", bot->GetName(),
-             son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0, src.c_str());
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f",
+             bot->GetName(), son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0, src.c_str(),
+             bot->GetDistance(son));
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
@@ -8901,7 +8903,9 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                         task.walkToSpot = true;
                     return task;
                 }
-                if (SeekMeetTakeDue(bot->GetDistance(son), false))
+                // DungeonRunSeekMeetTakeReach: the take reaches 25 yd, not 8 (Attack closes the gap). The pre-place hold
+                // (DungeonRunSeekMeetPrePlaceHold) holds only the boss as a chase target, never this Son.
+                if (SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach))
                 {
                     task.valid = true;
                     task.source = son;

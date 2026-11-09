@@ -54,6 +54,10 @@ namespace ai
     // range, so the puller has to bring the Son within the receiver's reach: the receiver takes it once it is this
     // close (Attack closes the last yards to the taunt's melee range), and the puller stops this close to the receiver.
     constexpr float kSeekMeetTakeYd = 8.0f;         // the receiver takes the Son once it is this close
+    // The meet take's reach (DungeonRunSeekMeetTakeReach, walk 60 lever 1): the receiver takes the walked Son from this
+    // far (Intercept range) instead of kSeekMeetTakeYd, its Attack closing the gap; 19 of 24 walk-60 peels came with the
+    // Son 8-25 yd from the waiting receiver.
+    constexpr float kSeekMeetTakeReachYd = 25.0f;
     constexpr std::uint32_t kSeekMeetMaxMs = 20000; // the meet is over 20 s after the shot (walk 52: start to back
                                                     // median 18 s, p90 23 s, and the shot lands mid-task)
 
@@ -925,10 +929,16 @@ namespace ai
     }
 
     // Whether the receiver takes the pulled Son now: it is on the receiver, or within the take reach (Attack closes
-    // the last yards to the taunt's melee range).
-    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver)
+    // the last yards to the taunt's melee range). `reachOn` (DungeonRunSeekMeetTakeReach) widens the reach from
+    // kSeekMeetTakeYd to kSeekMeetTakeReachYd; off, the 8 yd rule is unchanged.
+    inline float SeekMeetTakeReachYd(bool reachOn)
     {
-        return sonOnReceiver || sonToReceiverYd <= kSeekMeetTakeYd;
+        return reachOn ? kSeekMeetTakeReachYd : kSeekMeetTakeYd;
+    }
+
+    inline bool SeekMeetTakeDue(float sonToReceiverYd, bool sonOnReceiver, bool reachOn = false)
+    {
+        return sonOnReceiver || sonToReceiverYd <= SeekMeetTakeReachYd(reachOn);
     }
 
     // Whether the receiver keeps waiting for the Son: only while the Son's victim is the walk-out puller, the returner or

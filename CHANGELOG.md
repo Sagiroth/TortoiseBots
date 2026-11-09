@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunSeekMeetTakeReach (default 0, recommended on), the waiting Hakkar receiver takes the walked Son within 25 yd instead of 8 yd, and the `seek take` row gains `reach_yd=`.
 - Fixed: behind AiPlayerbot.DungeonRunSeekMeetPrePlaceHold (default 0, recommended on with DungeonRunSeekMeetPrePlace), the pre-placed Hakkar receiver no longer chases the anchored boss with its reach actions, reach casts (Charge, Feral Charge), warrior gap closer or Intervene once its walk began, through the open meet, so it reaches its point; one `event=preplace_hold` row per pre-place.
 - New: Hakkar log rows show the threat-cap collapse guard: `seek take held ... reason=cap_guard ref= share=` when it holds back a reach or healer-clock take, and the Cause Insanity row gains `cap_ref=`, `cap_ref_threat=` and `top_dps_threat=`.
 - New: behind AiPlayerbot.DungeonRunSeekShotWaitsReceiver (default 0, recommended on), the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s and never with the next Blood Siphon 15 s or less away, and logs one `event=shot_wait` row per walk-out.

@@ -105,7 +105,7 @@ class SeekSonMeetWiring(unittest.TestCase):
                       " SeekPullRulesOn(bot->GetMapId(), state.row) &&", fn)
         self.assertIn("SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs) &&", fn)
         self.assertIn("SeekMeetOpen(meetReceiver, meetMs, WorldTimer::getMSTime())", fn)
-        self.assertIn("SeekMeetTakeDue(bot->GetDistance(son), false)", fn)
+        self.assertIn("SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach)", fn)
         self.assertIn("task.meet = true;", fn)
         meet = fn.index("SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs)")
         self.assertLess(meet, fn.index("if (!thirdTank && !pickupTank && !healerTaker && state.walkout)"))
@@ -568,6 +568,43 @@ class RefusalDocWiring(unittest.TestCase):
                      "timeout", "chase_refused", "edge_far", "no_taunt", "attack", "taunt", "taunt_gated", "peeled", "receiver_charmed",
                      "receiver_victim", "receiver_busy", "receiver_wait"):
             self.assertIn("`%s`" % word, DOC, word)
+
+
+class MeetTakeReachWiring(unittest.TestCase):
+    """Walk 60 lever 1: DungeonRunSeekMeetTakeReach. The receiver takes the walked Son within 25 yd, not 8
+    (SeekMeetTakeDue's reach, tested in tools/test_seek_walkout_policy.cpp as meet_take_reach_covers_intercept_range)."""
+
+    def test_the_key_is_declared_loaded_and_documented(self):
+        self.assertIn("bool dungeonRunSeekMeetTakeReach = false;", CONFIG_H)
+        self.assertIn('dungeonRunSeekMeetTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetTakeReach", false)',
+                      CONFIG)
+        self.assertIn("AiPlayerbot.DungeonRunSeekMeetTakeReach = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekMeetTakeReach`", SETTINGS_DOC)
+
+    def test_the_meet_take_passes_the_key(self):
+        fn = tank_pick()
+        call = "SeekMeetTakeDue(bot->GetDistance(son), false, sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach)"
+        self.assertEqual(1, ACTIONS.count(call))
+        self.assertIn(call, fn)
+        # The take returns before the wait branch's pre-place task: the pre-place hold never turns the take into a hold.
+        meet = fn[fn.index(call):]
+        self.assertLess(meet.index("task.take = true;"), meet.index("SeekMeetPrePlaceTask(bot, state.row, task);"))
+        self.assertLess(meet.index("return task;"), meet.index("SeekMeetPrePlaceTask(bot, state.row, task);"))
+
+    def test_the_pre_place_hold_holds_only_the_boss(self):
+        # The hold's chase check is the boss-only MeetPrePlaceHoldsChase: the Son the reach take chases is never held.
+        fn = body(ACTIONS, "bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)")
+        self.assertIn("const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;", fn)
+        self.assertIn("MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss)",
+                      fn)
+        held = inline_body(POLICY, "inline bool MeetPrePlaceHoldsChase(bool flagOn, bool prePlaceWalking, bool targetIsBoss)")
+        self.assertIn("return flagOn && prePlaceWalking && targetIsBoss;", held)
+
+    def test_the_take_row_carries_reach_yd(self):
+        log = body(ACTIONS, "void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet,")
+        self.assertIn('"seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f"', log)
+        self.assertIn("bot->GetDistance(son));", log)
+        self.assertIn("reach_yd=", DOC)
 
 
 if __name__ == "__main__":
