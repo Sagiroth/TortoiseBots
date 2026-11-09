@@ -88,6 +88,7 @@
 #include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
+#include "../ai/playerbot/LandWalkPolicy.h" // the nudge walk's verdict (NudgeTaskWalk)
 #include "../runtime/policy/movement/TeleportLandingPolicy.h" // the feet probe an off-floor lead bot is read with
 #include "CreatureGroups.h"
 #include "Group/CreatureLinkingMgr.h"
@@ -4824,8 +4825,20 @@ void NudgeTaskWalk(CommanderTask& task, Player* bot, uint32 diff)
                     bot->GetMap()->GetTerrain())))
             return;
     }
+    // The standing-point nudge, checked: with no real navmesh path the bot
+    // holds (the nudge retries next window) instead of walking the core's
+    // straight shortcut line through walls.
+    PathFinder nudgePath(bot);
+    nudgePath.ExcludeSteepSlopes();
+    nudgePath.calculate(task.stand.x, task.stand.y, task.stand.z, false);
+    uint32 const nudgeType = static_cast<uint32>(nudgePath.getPathType());
+    Vector3 const nudgeEnd = nudgePath.getActualEndPosition();
+    if (ai::ClassifyLandPath(nudgeType, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            nudgeEnd.x, nudgeEnd.y, nudgeEnd.z, task.stand.x, task.stand.y, task.stand.z) !=
+        ai::LandWalkVerdict::Walk)
+        return;
     bot->GetMotionMaster()->MovePoint(0, task.stand.x, task.stand.y, task.stand.z,
-        MOVE_RUN_MODE | MOVE_PATHFINDING);
+        MOVE_RUN_MODE | MOVE_PATHFINDING | MOVE_EXCLUDE_STEEP_SLOPES);
 }
 
 // The act hold (RemoteCommander::HoldsForAct): before each attempt to start the

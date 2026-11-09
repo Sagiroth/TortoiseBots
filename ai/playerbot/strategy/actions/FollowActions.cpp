@@ -336,9 +336,13 @@ bool FollowAction::StepUpToLeaderInDungeon(Unit* followTarget, bool& moved)
             return false;
     }
 
+    // The sampled floor along the whole segment already proved a walkable
+    // stair; WalkChecked still asks the navmesh (steep excluded) and refuses
+    // a NOPATH/shortcut instead of walking the core's straight line.
+    WorldPosition const stepPos(bot->GetMapId(), step.x, step.y, groundZ);
     float const startDist = bot->GetDistance(followTarget);
-    bot->GetMotionMaster()->MovePoint(bot->GetMapId(), step.x, step.y, groundZ, MOVE_RUN_MODE);
-    WaitForReach(bot->GetDistance(step.x, step.y, groundZ));
+    if (!WalkChecked(stepPos))
+        return true; // stalled but the mesh refuses the step: keep watching
     moved = true;
     followStallWatch.Walked(nowMs, true);
     if (WorldPosition(bot->GetMapId(), step.x, step.y, groundZ).distance(WorldPosition(followTarget)) >
@@ -414,6 +418,9 @@ bool FollowAction::RescueStalledOpenFollow(Unit* followTarget, bool& moved)
 
     ai::OpenFollowStep step = ai::OpenFollowStepToward(bot->GetPositionX(), bot->GetPositionY(),
         followTarget->GetPositionX(), followTarget->GetPositionY());
+    // A navmesh gap stalled the core follow, so the mesh cannot clear this
+    // step either (it answered the same way the follow did); the short
+    // sighted same-floor step stays a straight walk by design.
     float const startDist = bot->GetDistance(followTarget);
     bot->GetMotionMaster()->MovePoint(bot->GetMapId(), step.x, step.y, bot->GetPositionZ(), MOVE_RUN_MODE);
     WaitForReach(bot->GetDistance(step.x, step.y, bot->GetPositionZ()));

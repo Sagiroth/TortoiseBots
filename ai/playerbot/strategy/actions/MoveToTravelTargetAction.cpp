@@ -822,11 +822,13 @@ bool MoveToTravelTargetAction::TryStepTowardTarget(WorldPosition const& location
         if (end.distance(location) + 5.0f >= gap)
             continue;
 
-        bot->GetMotionMaster()->MovePoint(end.GetMapId(), end.getX(), end.getY(), end.getZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
-        WaitForReach(botPos.distance(end));
-        // WaitForReach caps at a few seconds; the walk itself may take longer.
-        SET_AI_VALUE2(time_t, "manual time", "travel step until", time(0) + 2 + (time_t)(botPos.distance(end) / 7.0f));
-        sPlayerbotAIConfig.logEvent(ai, "TravelStepToward", std::to_string((int32)gap), std::to_string((int32)end.distance(location)));
+        // The stone is navmesh-verified (ClosestCorrectPoint + a 2-point
+        // route); WalkChecked re-proves the launch in the core with steep
+        // slopes excluded, so a NOPATH/shortcut still refuses.
+        if (!WalkChecked(end))
+            continue;
+        // WalkChecked waits for the reach (capped at a few seconds); the walk
+        // itself may take longer.
         return true;
     }
     return false;
@@ -920,8 +922,10 @@ bool MoveToTravelTargetAction::TryMesaLift(WorldPosition const& location, float&
     }
     if (walkMs)
     {
-        bot->GetMotionMaster()->MovePoint(bot->GetMapId(), car.x, car.y,
-            car.z + ai::LiftCarOffset(car, now), MOVE_RUN_MODE);
+        // A few yards onto the parked car; checked, so a mesh hole under the
+        // shaft refuses instead of walking the core's straight line.
+        if (!WalkChecked(WorldPosition(bot->GetMapId(), car.x, car.y, car.z + ai::LiftCarOffset(car, now))))
+            return false;
         SetDuration(walkMs);
         return true;
     }
@@ -982,8 +986,10 @@ bool MoveToTravelTargetAction::ContinueMesaLiftRide()
         WorldPosition off(bot->GetMapId(), car.x, car.y, levelZ);
         if (off.isMmapLoaded(bot->GetInstanceId()) && off.ClosestCorrectPoint(8.0f, 6.0f, bot->GetInstanceId()))
         {
+            // Off the car onto the station floor; checked like the boarding.
+            if (!WalkChecked(off))
+                return true;
             float const step = std::hypot(off.getX() - car.x, off.getY() - car.y);
-            bot->GetMotionMaster()->MovePoint(off.GetMapId(), off.getX(), off.getY(), off.getZ(), MOVE_RUN_MODE);
             SetDuration(uint32(step / std::max(bot->GetSpeed(MOVE_RUN), 1.0f) * 1000.0f) + 300);
         }
     }

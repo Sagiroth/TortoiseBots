@@ -928,11 +928,15 @@ void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
         return;
     }
 
+    // The route is walked as one spline from the bot's position, so a join
+    // point with no real path to it would be reached in a straight line.
+    // Drop the route instead; the caller plans a new one.
     std::vector<WorldPosition> toPath = startPos.GetPathTo(beginPos, bot);
-
-    //We can not reach the new begin position. Follow the complete path.
     if (!beginPos.isPathTo(toPath))
+    {
+        clear();
         return;
+    }
 
     //Move to the new path and continue.
     fullPath.clear();

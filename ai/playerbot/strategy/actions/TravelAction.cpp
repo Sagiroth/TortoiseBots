@@ -122,8 +122,10 @@ bool TravelAction::Execute(Event& event)
             {
                 if (!bot->IsWithinDistInMap(vendor, INTERACTION_DISTANCE))
                 {
+                    // A few yards to the innkeeper; checked, so a mesh trap
+                    // between the stalls refuses instead of cutting through.
                     if (!bot->IsMoving())
-                        bot->GetMotionMaster()->MovePoint(vendor->GetMapId(), vendor->GetPositionX(), vendor->GetPositionY(), vendor->GetPositionZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+                        WalkChecked(WorldPosition(vendor->GetMapId(), vendor->GetPositionX(), vendor->GetPositionY(), vendor->GetPositionZ()));
                     return true;
                 }
                 if (ai->DoSpecificAction("buy", Event("travel", ChatHelper::formatItem(proto)), true))
@@ -164,8 +166,9 @@ bool TravelAction::Execute(Event& event)
                     {
                         if (sServerFacade.getDistance2d(bot, board) > INTERACTION_DISTANCE)
                         {
+                            // A few yards to the board; checked like the vendor.
                             if (!bot->IsMoving())
-                                bot->GetMotionMaster()->MovePoint(board->GetMapId(), board->GetPositionX(), board->GetPositionY(), board->GetPositionZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+                                WalkChecked(WorldPosition(board->GetMapId(), board->GetPositionX(), board->GetPositionY(), board->GetPositionZ()));
                             return true;
                         }
                         if (ai->DoSpecificAction("accept all quests", Event("travel", board->GetObjectGuid()), true))
