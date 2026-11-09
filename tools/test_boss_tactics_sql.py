@@ -1828,6 +1828,14 @@ class BossTacticsCoreData(unittest.TestCase):
         15083: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21608 command 10 summons Hazza'rah",
         15084: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21609 command 10 summons Renataki",
         15085: "sql/base/tw_world_gameobject_scripts.sql, brazier 180327 script 21610 command 10 summons Wushoolay",
+        50144: "src/scripts/dungeons/onyxias_lair/boss_onyxia.cpp:720-721 "
+               "(Onyxia summons two Onyxian Hatchers at the 40 % landing)",
+    }
+    # Entries whose template row lives in sql/database_updates/world rather than the base dumps
+    # (creature_template 20260510092659_world.sql). 50143's row is NOT waived: the core update file is parsed and
+    # the spawn row asserted below. Only the Hatcher 50144 is excepted: it is summoned, so it has no spawn row.
+    CORE_UPDATE_ENTRIES = {
+        50144: "sql/database_updates/world/20260510092659_world.sql (template; no spawn row: summoned, see SUMMONED)",
     }
 
     @classmethod
@@ -2005,10 +2013,37 @@ class BossTacticsCoreData(unittest.TestCase):
     def test_bosses_spawn_on_their_map(self):
         for row in effective_rows():
             map_id, boss = int(row[1]), int(row[2])
-            if boss in self.SUMMONED:
+            if boss in self.SUMMONED or boss in self.CORE_UPDATE_ENTRIES:
                 continue
             self.assertIn((map_id, boss), self.spawns,
                           "map %s boss %s has no creature row with its entry on that map (and no SUMMONED reason)" % (map_id, boss))
+    def test_cindarion_spawns_on_map_249(self):
+        # Cindarion 50143 has no SUMMONED entry, so test_bosses_spawn_on_their_map requires a
+        # (249, 50143) row in the base creature dump: the core ships it in a database update instead,
+        # so this test parses that update and proves the spawn row itself.
+        path = os.path.join(CORE, "sql", "database_updates", "world", "20261108142635_world.sql")
+        self.assertTrue(os.path.isfile(path), "Cindarion's spawn update is gone: %s" % path)
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            update_text = handle.read()
+        base_path = os.path.join(CORE, "sql", "base", "tw_world_creature.sql")
+        with open(base_path, encoding="utf-8", errors="replace") as handle:
+            base_text = handle.read()
+        fields = _create_table_fields(base_text, "creature", base_path)
+        rows = _apply_dump(update_text, "creature", fields, ("guid", "id", "map"))
+        self.assertIn({"guid": 473281, "id": 50143, "map": 249}, rows,
+                      "no creature row with entry 50143 on map 249 (guid 473281) in %s" % path)
+
+    def test_core_update_entries_are_pinned(self):
+        # The CORE_UPDATE_ENTRIES waiver cannot go stale: every named file exists under TORTOISE_CORE and
+        # contains the entry.
+        for entry, reason in self.CORE_UPDATE_ENTRIES.items():
+            files = [token for token in reason.split() if token.startswith("sql/")]
+            self.assertTrue(files, "entry %s: no file in %r" % (entry, reason))
+            for name in files:
+                path = os.path.join(CORE, name.rstrip(",;"))
+                self.assertTrue(os.path.isfile(path), "entry %s: %s is gone" % (entry, path))
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    self.assertIn(str(entry), handle.read(), "entry %s: %s no longer names it" % (entry, path))
 
     def test_spell_table_updates_do_not_touch_the_rule(self):
         self.assertEqual(

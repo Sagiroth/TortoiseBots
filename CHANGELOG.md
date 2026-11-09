@@ -1,5 +1,6 @@
 # Changelog
 
+- New: Onyxia's Lair plan for the 1181dev fight (two legs, seven packs, the mouth pack fought in the corridor), Cindarion and Hatcher tactic rows, Warder stand seats.
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).
 - New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off while they would not pull the caster off the tank, so a damage dealer at the high-threat line still interrupts a cast (found by Tortoise Trials, #1556).
 - New: behind AiPlayerbot.ThreatCapCountsCastThreat (default 0, recommended on), a damage dealer no longer starts a slow nuke such as Fireball that would carry its threat past the tank's when it lands, so a mage under the threat cap stops pulling mobs off the tank (found by Tortoise Trials).
