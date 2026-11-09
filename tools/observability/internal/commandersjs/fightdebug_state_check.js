@@ -196,6 +196,35 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
   await settle();
   assert.strictEqual(fdP.day, "2026-10-27", "a past night is selected by its own day");
 
+  // A live share link opened before the commander's first report: the card is the read-only history one for a moment. Its pick of
+  // the live view stands: no night is picked, no newest filed fight replaces it (the bug: the link landed on the newest filed fight).
+  run("cmdFd = {}");
+  const fdLL = run("fdState('LL')");
+  fdLL.days = [{ night: "2026-10-27", fights: 1 }];
+  fdLL.daysAt = clock;
+  fdLL.sel = "live"; fdLL.userSel = true; fdLL.liveLink = true;
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "LL", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdLL.sel, "live", "a live link's pick survives the history card's open");
+  assert.strictEqual(fdLL.userSel, true);
+  assert.strictEqual(fdLL.day, "", "and no night is picked over it");
+  // The report then arrives. No live fight: the pick stays on its "No live fight right now." note (and so does the link's filter);
+  // a fight that runs: the live view, with the link no longer waiting.
+  const listLL = [{ key: "5-5" }];
+  run("fdSyncSel(fd, bind, listLL, {}, null)", { fd: fdLL, bind: { commander: "LL", bots: [] }, listLL });
+  assert.deepStrictEqual([fdLL.sel, fdLL.userSel, fdLL.liveLink], ["live", true, true], "no live fight: the note stands, no filed fight is picked");
+  run("fdSyncSel(fd, bind, listLL, {}, null)", { fd: fdLL, bind: { bots: [{ guid: 1, id: "1" }], combat: { fight_ms: 2000, win_s: 10, bots: [{ g: 1, dps: 5 }] } }, listLL });
+  assert.deepStrictEqual([fdLL.sel, fdLL.liveLink], ["live", false], "a fight that runs: the live view");
+  // The same card with a filed fight picked, or nothing picked, still opens on the newest night.
+  run("cmdFd = {}");
+  const fdNL = run("fdState('NL')");
+  fdNL.days = [{ night: "2026-10-27", fights: 1 }];
+  fdNL.daysAt = clock;
+  run("fdLoad(card, hbind)", { card, hbind: { commander: "NL", history: true, bots: [] } });
+  await settle();
+  assert.strictEqual(fdNL.day, "2026-10-27", "no live pick: the history card still opens on its newest night");
+  assert.ok(grab("fdLoad").includes("!(fd.sel === 'live' && fd.userSel)"), "the guard is in fdLoad's wantDay");
+
   // ---- 2c. detail on demand: only the picked fight, whatever its age --------------------------------------------------
   const oldList = Array.from({ length: 60 }, (_, i) => ({ key: "k" + i }));
   const fdOld = { sel: "k59", details: {}, failed: {}, list: oldList };

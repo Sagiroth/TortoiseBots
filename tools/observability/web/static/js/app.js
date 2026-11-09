@@ -10271,7 +10271,9 @@
     fd.showAll = fdShowAllGet() || !!bind.history;
     // A read-only history card has no live list: it opens on the newest stored night, as soon as the picker knows the days. The
     // newest day may be today, which the picker calls Tonight (the rail reads today's stored fights there).
-    const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0;
+    // A live link (#/commanders/<name>/fight/live) opened before the commander's first report reaches this card through the history
+    // path: its pick stands (no night, no newest filed fight), so the live view opens once the report is in, or says "No live fight".
+    const wantDay = () => bind.history && !fd.day && Array.isArray(fd.days) && fd.days.length > 0 && !(fd.sel === 'live' && fd.userSel);
     const pickDay = () => {
       const day = fd.days[0].night || fd.days[0].day;
       fd.day = typeof FightHistory !== 'undefined' ? FightHistory.rowDay(day, Date.now()) : day;
