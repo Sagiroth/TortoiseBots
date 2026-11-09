@@ -2974,6 +2974,14 @@ bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, S
     return true;
 }
 
+// Claims the pre-place's one chase-hold row (WalkoutPrePlaceNoteHold) under g_walkoutMutex.
+bool SeekMeetPrePlaceNoteHold(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceNoteHold(it->second.state, bot, gen);
+}
+
 // The snapshot's commit (WalkoutPrePlaceConfirm) under g_walkoutMutex: true while the snapshot's generation is still
 // this bot's live pre-place; `latchWalk` latches the walk's start too. False: the pre-place was replaced or ended.
 bool SeekMeetPrePlaceConfirm(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, bool latchWalk,
@@ -8435,6 +8443,36 @@ const BossTacticRow* ai::LiveBossAnchorRow(PlayerbotAI* ai, Player* bot)
     return nullptr;
 }
 
+bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)
+{
+    // Key off: today's behaviour, nothing held (and no lock taken).
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
+        return false;
+    if (!ai || !bot || !target || !target->ToCreature() || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return false;
+    // One locked snapshot (SeekMeetPrePlaceProgressRead): false unless a live pre-place names this bot.
+    SeekPrePlaceProgress progress;
+    if (!SeekMeetPrePlaceProgressRead(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress))
+        return false;
+    if (!progress.walking)
+        return false;
+    // The boss is the live anchor row's own (no boss constant: every raid's anchored boss).
+    const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+    const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;
+    if (!MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss))
+        return false;
+    // Once per pre-place: the first hold's row.
+    if (SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
+    {
+        char info1[200];
+        snprintf(info1, sizeof(info1), "son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f",
+                 ObjectGuid(progress.son).GetCounter(), bot->GetName(), target->GetEntry(),
+                 actionKind ? actionKind : "reach", bot->GetDistance2d(progress.x, progress.y));
+        LogSeekMeet(ai, info1);
+    }
+    return true;
+}
+
 bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z)
 {
     BossAnchorCircle circle;
@@ -9609,6 +9647,11 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
     if (dynamic_cast<BossTacticsSeekAction*>(action) || dynamic_cast<BossTacticsFreezeAction*>(action) ||
         dynamic_cast<BossTacticsFleeAction*>(action) || dynamic_cast<BossTacticsAvoidCastAction*>(action))
         return 1.0f;
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): its reach actions (reach melee,
+    // charge's reach alternative, the reach spells, as prerequisites or alternatives too) get nothing on the anchored
+    // boss once its pre-place walk began, so the walk at ACTION_HIGH+6 wins the tick. A Son is still reached.
+    if (dynamic_cast<ReachTargetAction*>(action) && SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "reach"))
+        return 0.0f;
     // An attack only picks a target: holding it would stop the pre-damage and the burn (the trap hold's rule). The one
     // exception is the holding off-tank's own swing on a Son already close to the hold with the window shut: the tank
     // action stops the swing, and this keeps the "tank target" pick from re-arming it every tick.

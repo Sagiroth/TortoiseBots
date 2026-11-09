@@ -2311,6 +2311,36 @@ static void TestWalkoutMeetLostRecord()
     CHECK(s.lostMeets.empty());
 }
 
+// The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5) and its one-row latch.
+static void TestMeetPrePlaceHoldsChase()
+{
+    // Named failing case: key on, the receiver's walk began, the target is the anchored boss -> its chase is held
+    // (the base has no such function, and the rotation chases Hakkar back into melee).
+    CHECK(MeetPrePlaceHoldsChase(true, true, true) == true);
+    // Key off: today's behaviour (mutation: drop the flag and this fails).
+    CHECK(MeetPrePlaceHoldsChase(false, true, true) == false);
+    // The walk is not due yet (late walk): the tank stays on Hakkar (mutation: drop prePlaceWalking and this fails).
+    CHECK(MeetPrePlaceHoldsChase(true, false, true) == false);
+    // A Son is still chased (mutation: drop targetIsBoss and this fails).
+    CHECK(MeetPrePlaceHoldsChase(true, true, false) == false);
+    CHECK(MeetPrePlaceHoldsChase(false, false, false) == false);
+
+    // The row's latch: once per pre-place, for its receiver and generation only; a new pre-place re-arms it.
+    SeekWalkoutState s;
+    s.prePlaceReceiver = 7;
+    s.prePlaceGen = 3;
+    CHECK(!WalkoutPrePlaceNoteHold(s, 0, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 8, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 7, 2));
+    CHECK(WalkoutPrePlaceNoteHold(s, 7, 3));
+    CHECK(!WalkoutPrePlaceNoteHold(s, 7, 3));
+    WalkoutPrePlaceClear(s);
+    CHECK(!s.prePlaceHoldLogged);
+    s.prePlaceReceiver = 7;
+    s.prePlaceGen = 4;
+    CHECK(WalkoutPrePlaceNoteHold(s, 7, 4));
+}
+
 // The pre-place's late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3) and its arrival latch.
 static void TestMeetPrePlaceLateWalk()
 {
@@ -2690,6 +2720,7 @@ int main()
     TestWalkoutCapTakeLatch();
     TestWalkoutShotWaitsReceiver();
     TestShotWaitAndLateWalkNoDeadlock();
+    TestMeetPrePlaceHoldsChase();
     std::cout << "seek walk-out policy: all checks passed\n";
     return 0;
 }

@@ -1167,6 +1167,12 @@ AiPlayerbot.DungeonRunSeekMeetPrePlaceLate = 0
 # at once.
 AiPlayerbot.DungeonRunSeekShotWaitsReceiver = 0
 
+# The pre-placed receiver stops chasing the anchored boss (recommended on with DungeonRunSeekMeetPrePlace): once its
+# pre-place walk began, the third tank's reach actions (reach melee, charge's reach, reach spells) and its warrior gap
+# closer (Intercept, Charge) skip the boss of the live anchor row, so the walk wins and it holds its point. A Son is
+# still chased. Ends with the pre-place. Off: the rotation chases the boss as before.
+AiPlayerbot.DungeonRunSeekMeetPrePlaceHold = 0
+
 # A pull_gate row makes the run leader refuse a boss pull while the boss wears the row's spell; off ignores the rows.
 AiPlayerbot.DungeonRunPullGate = 0
 

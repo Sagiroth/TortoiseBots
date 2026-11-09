@@ -731,6 +731,7 @@ public:
     // never once the next Blood Siphon is 15 s or less away. No pre-place this cycle: no wait. Off, the shot goes at
     // once, as before (default off, recommended on).
     bool dungeonRunSeekShotWaitsReceiver = false;
+    bool dungeonRunSeekMeetPrePlaceHold = false;
     // The pull_gate boss-tactic kind (the run leader refuses a boss pull while the boss wears the row's spell above
     // its stack band, then ends the run): off, the rows are ignored (default off).
     bool dungeonRunPullGate = false;
