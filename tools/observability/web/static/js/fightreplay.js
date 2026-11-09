@@ -72,6 +72,7 @@
           x: x,
           y: y,
           hp: hp === null ? 0 : hp,
+          hk: hp !== null, // the report carried a health (false: 0 above is a placeholder, unknown)
           alive: row[4] === 1 || row[4] === true,
           map: num(row[5]) === null ? map : row[5],
         };
@@ -95,6 +96,7 @@
           x: x,
           y: y,
           hp: hp === null ? 0 : hp,
+          hk: hp !== null,
           v: v === null ? 0 : v,
           vo: m.vo ? 1 : 0,
           rk: typeof m.rk === "string" ? m.rk : "",

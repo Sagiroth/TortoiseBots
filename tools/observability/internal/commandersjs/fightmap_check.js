@@ -164,6 +164,65 @@ eq(F.bounds([frame(0, { 1: bot(0, 0), 2: bot(10, -5) })], { deaths: [{ x: 20, y:
 eq(F.bounds([frame(0, { 1: bot(0, 0), 2: bot(10, -5) })], null), { x0: 0, y0: -5, x1: 10, y1: 0 });
 assert.strictEqual(F.bounds([], null), null);
 assert.strictEqual(F.bounds("x", { deaths: "y" }), null);
+// the fit holds the fight's own cluster: a bot on another map, a bot at 1e6 yd, a bot 40000 yd away, a death or an anchor far off are no part of it
+const cluster = [frame(0, { 1: bot(0, 0), 2: bot(30, 20) }), frame(1000, { 1: bot(10, 5), 2: bot(40, 10) })];
+const want = { x0: 0, y0: 0, x1: 40, y1: 20 };
+eq(F.bounds(cluster, null, 309), want, "the cluster alone");
+const other = frame(2000, { 9: { x: 5000, y: 5000, hp: 100, alive: true, m: 249 } });
+eq(F.bounds(cluster.concat([other]), null, 309), want, "a bot on another map does not move the fit");
+eq(F.bounds(cluster.concat([frame(3000, { 9: bot(1e6, 1e6) })]), null, 309), want, "a bot at 1e6 yd (no place in the world) is dropped");
+eq(F.bounds(cluster.concat([frame(3000, { 9: bot(40000, -40000) })]), null, 309), want, "a bot 40000 yd away is an outlier");
+eq(F.bounds(cluster, { deaths: [{ x: 9000, y: 9000 }, { x: 1e9, y: 1 }], mechanics: [{ kind: "stand", x: -7000, y: 0 }] }, 309), want, "a far death and a far stand are outliers too");
+eq(F.bounds(cluster, { mechanics: [{ kind: "anchor", x: 20, y: 10, r: 1e9 }] }, 309), { x0: -80, y0: -90, x1: 120, y1: 110 }, "an anchor radius of 1e9 is clamped to 100 yd");
+eq(F.bounds(cluster, { mechanics: [{ kind: "anchor", x: 20, y: 10, r: 30 }] }, 309), { x0: -10, y0: -20, x1: 50, y1: 40 }, "an honest anchor near the fight counts with its radius");
+assert.strictEqual(F.bounds([frame(0, { 9: { x: 1, y: 1, hp: 1, alive: true, m: 249 } })], null, 309), null, "only another map: nothing to fit");
+assert.strictEqual(F.model({ frames: cluster.concat([other]), fight: { deaths: [] }, mapId: 309, fit: true }, {}).bounds.x1, 40, "the model passes the card's map");
+eq(F.mechanics([{ map: 309, boss: 1, kind: "anchor", param: 1e9, priority: 1e8, spotX: 1, spotY: 1 }], 309, 1)[0].r, 100, "a radius of 1e9 is clamped by mechanics()");
+eq(F.mechanics([{ map: 309, boss: 1, kind: "anchor", param: 1e9, priority: 1e8, spotX: 1, spotY: 1 }], 309, 1)[0].rTank, 0, "and a tank radius beyond it is left out");
+eq(F.clouds(sonFrames, null, [{ kind: "seek_aura", target: 11357, param: 1e9 }])[0].r, 100, "a cloud radius of 1e9 is clamped");
+
+// ---- trails: another map's positions are not drawn; a mob at 0 hp starts a new segment
+{
+  const fr = [frame(0, { 1: bot(0, 0) }), frame(1000, { 1: { x: 5, y: 0, hp: 100, alive: true, m: 249 } }), frame(2000, { 1: bot(2, 0) })];
+  eq(F.trails(fr, null, { mapId: 309 })[1].map((p) => (p === null ? null : p[2])), [0, 2000], "the position on map 249 is skipped on a fight of map 309");
+  eq(F.trails(fr, null)[1].filter((p) => p !== null).length, 3, "with no map given every position counts");
+  const mf = [0, 1, 2, 3, 4].map((i) => frame(i * 1000, {}, { 7: { e: 11357, x: i * 3, y: 0, hp: i === 2 ? 0 : 100, v: 0 } }));
+  eq(F.trails(mf, null, { mobs: true })["m:7:11357"].map((p) => (p === null ? null : p[2])), [0, 1000, null, 3000, 4000], "a mob at hp 0 cuts the line");
+}
+
+// ---- an unknown hp is unknown: no cloud, no cut, no heat drop
+{
+  const unk = (x) => ({ e: 11357, x, y: 7, hp: null, v: 0 });
+  const fr = [frame(1000, {}, { 50: unk(1) }), frame(3000, {}, { 50: unk(2) })];
+  eq(F.clouds(fr, null, []), [], "a Son whose health the reports never carried is not dying");
+  eq(F.clouds([frame(1000, {}, { 50: unk(1) }), frame(3000, {}, {})], null, []).length, 1, "but one that vanishes still leaves its cloud");
+  const hf2 = [frame(0, { 1: { x: 1, y: 1, hp: null, alive: true, m: 309 } }), frame(2000, { 1: bot(1, 1, 10) })];
+  eq(F.heat(hf2, { deaths: [] }, null).cells, [], "a bot with no known health lost none");
+  eq(F.trails([frame(0, { 1: { x: 0, y: 0, hp: null, alive: true, m: 309 } }), frame(1000, { 1: { x: 1, y: 0, hp: null, alive: true, m: 309 } })], null)[1].length, 2, "and its trail has no cut");
+}
+
+// ---- a Son that vanishes in the last 4 s of a wipe is the reset, not a death
+{
+  const fr = [frame(50000, {}, { 50: son(1) }), frame(52000, {}, { 50: son(2) }), frame(54000, {}, {}), frame(56000, {}, {})];
+  eq(F.clouds(fr, null, [], { endMs: 56000, wipe: true }), [], "it vanished at 52 s of a 56 s wipe: no cloud");
+  eq(F.clouds(fr, null, [], { endMs: 56000, wipe: false }).length, 1, "the same on a kill leaves one");
+  eq(F.clouds(fr, null, [], { endMs: 70000, wipe: true }).length, 1, "and on a wipe that went on longer");
+  eq(F.clouds([frame(50000, {}, { 50: son(1) }), frame(52000, {}, { 50: son(2, 0) }), frame(54000, {}, {})], null, [], { endMs: 56000, wipe: true }).length, 1, "a Son at 0 hp did die, wipe or not");
+  eq(F.model({ frames: fr, fight: { dur_ms: 56000, outcome: "wipe", deaths: [] }, mapId: 309, tactics: [] }, { marks: true }).clouds, [], "the model hands the fight's outcome on");
+}
+
+// ---- caps and hp of the sources
+{
+  const many = {};
+  for (let i = 1; i <= 120; i++) many[i] = [i, i, 1, 100, 1, 309];
+  eq(Object.keys(F.fromTrack({ frames: [{ t: 1000, bots: Object.fromEntries(Object.entries(many).map(([k, r]) => [k, { x: r[1], y: r[2], hp: 100, alive: true, map: 309 }])), mobs: {} }] }, { start: 1000, dur_ms: 5000 })[0].bots).length, 80, "at most 80 bots per frame (track)");
+  eq(Object.keys(F.fromLive({ startMs: 1, pos: [{ t: 10, bots: Object.values(many), mobs: [] }] })[0].bots).length, 80, "at most 80 bots per frame (live)");
+  eq(Object.keys(F.fromTrack({ frames: [{ t: 1000, bots: { 1: { x: 1e9, y: 1, hp: 1, alive: true, map: 1 }, 2: { x: 5, y: 5, hp: 1, alive: true, map: 1 } }, mobs: { 9: { e: 1, x: 1, y: 7e6 } } }] }, { start: 1000, dur_ms: 5000 })[0].bots), ["2"], "a coordinate beyond the world is dropped (track)");
+  eq(Object.keys(F.fromLive({ startMs: 1, pos: [{ t: 10, bots: [[1, 1e9, 1, 1, 1], [2, 5, 5, 1, 1]], mobs: [["9", 1, 7e6, 1]] }] })[0].bots), ["2"], "and in a live frame");
+  const t = F.fromTrack({ frames: [{ t: 1000, bots: { 1: { x: 1, y: 1, hp: 0, hk: false, alive: true, map: 1 }, 2: { x: 1, y: 1, hp: 0, hk: true, alive: true, map: 1 } }, mobs: { 9: { e: 1, x: 1, y: 1, hp: 0, hk: false } } }] }, { start: 1000, dur_ms: 5000 })[0];
+  eq([t.bots[1].hp, t.bots[2].hp, t.mobs[9].hp], [null, 0, null], "a health the report did not carry (hk false) is null, a real 0 stays 0");
+  eq(F.fromLive({ startMs: 1, pos: [{ t: 10, bots: [[1, 1, 1, null, 1]], mobs: [["9", 1, 1, null]] }] })[0].bots[1].hp, null, "a live frame's unknown health stays null");
+}
 
 // ---- fromTrack: FightReplay's frames (t in unix seconds) become fight ms, only the frames around the fight
 const track = { frames: [

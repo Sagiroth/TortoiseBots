@@ -357,7 +357,7 @@ const LAY = FdLayout.normalize({ panels: [{ id: "map", span: 12 }, { id: "timeli
   const names = tags.map((t) => t[0]);
   assert.ok(names.indexOf("fdlayout.js") > names.indexOf("fdview.js") && names.indexOf("fdlayout.js") < names.indexOf("app.js"), "fdlayout.js loads before app.js: " + names.join(","));
   const ver = (n) => (tags.find((t) => t[0] === n) || [])[1];
-  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["2", "3", "60"], "the changed scripts carry new versions");
+  assert.deepStrictEqual([ver("fdlayout.js"), ver("fdview.js"), ver("app.js")], ["2", "3", "61"], "the changed scripts carry new versions");
   assert.ok(/app\.css\?v=34/.test(indexHtml), "and so does the stylesheet");
 }
 

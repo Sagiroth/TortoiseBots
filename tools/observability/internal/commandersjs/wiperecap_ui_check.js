@@ -234,7 +234,7 @@ const samples = [{ t: START + 8000, bots: { 5: { hp: 70, a: 1 } }, mobs: [] }, {
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("wiperecap.js") > 0 && at("wiperecap.js") < at("app.js"), "wiperecap.js loads before app.js");
-  assert.ok(/wiperecap.js\?v=4/.test(html) && /static\/js\/app\.js\?v=60/.test(html) && /app\.css\?v=34/.test(html), "the changed assets carry new versions");
+  assert.ok(/wiperecap.js\?v=4/.test(html) && /static\/js\/app\.js\?v=61/.test(html) && /app\.css\?v=34/.test(html), "the changed assets carry new versions");
   const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
   assert.ok(/\.fd-wipe \{/.test(css) && /\.fd-wiperow/.test(css), "the box has its styles");
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css.slice(css.indexOf(".fd-wipe {"), css.indexOf(".fd-wipe {") + 1500).split("\n").filter((l) => /\.fd-wipe/.test(l)).join("\n")), "its rules use the page's variables, no new colour");

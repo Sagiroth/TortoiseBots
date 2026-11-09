@@ -8685,6 +8685,8 @@
     const on = MapLayers.active(cmdLayers, avail, facts.ctx);
     if (rp) FD_REPLAY_OFF.forEach(p => { on[p] = false; }); // the layers that only mean anything live; the plan and the enemies stay
     const away = (bind.bots || []).length - onMap.length;
+    // The moment the Fight layers and the deaths are drawn at, in the fight's own milliseconds (a run replay counts from the run's start).
+    const fmShown = rp ? (fmSrc ? fdFightClockMs(fmSrc.fight, rp.tS) : rp.tMs) : fmSrc ? fmSrc.nowMs : null;
     // The Fight layers' model (memoised on the card) and the one-time fit to the whole fight when it is first picked.
     const fmOn = fmSrc ? { trails: !!on.fighttrails, marks: !!on.fightmarks, heat: !!on.fightheat, summons: !!on.fightsummons } : null;
     const fm = fmSrc && first ? fdFightModel(card, fmSrc, fmOn, first.map) : null;
@@ -8762,7 +8764,7 @@
       const fmRoles = {};
       ((fmSrc.fight && fmSrc.fight.bots) || []).forEach(b => { if (b && b.guid != null) fmRoles[b.guid] = { name: b.name, role: b.role }; });
       (bind.bots || []).forEach(b => { if (b && b.guid != null) fmRoles[b.guid] = { name: b.name, role: b.role }; });
-      g += cmdFightMapSvg(dc, fm, on, rp ? rp.tMs : fmSrc.nowMs, fmRoles, fmSrc.fight && fmSrc.fight.boss_name);
+      g += cmdFightMapSvg(dc, fm, on, fmShown, fmRoles, fmSrc.fight && fmSrc.fight.boss_name);
     }
     if (liveBind && liveBind.dungeon && liveBind.dgn && dgnPins.key === liveBind.dgn.key && dgnPins.pins.length) g += cmdPullPinsSvg(dc, dgnPins.pins);
     if (on.healring) {
@@ -8866,7 +8868,7 @@
         // the replay shows only the deaths before its moment, those inside the range, and only those on the floor the picture shows (a live
         // death has no floor)
         const raw = dfight.deaths || [], range = fmSrc ? fmSrc.range : null;
-        const seen = FightDebug.deathRecaps(dfight).filter((r, i) => (!rp || r.t_ms <= rp.tMs) && FdView.inRange(r.t_ms, range)
+        const seen = FightDebug.deathRecaps(dfight).filter((r, i) => (!rp || r.t_ms <= fmShown) && FdView.inRange(r.t_ms, range)
           && Number.isFinite(r.x) && Number.isFinite(r.y) && !(r.x === 0 && r.y === 0) && (live || !fl || fl.has(raw[i] && raw[i].z)));
         g += cmdFightMarksSvg(dc, seen, fd.death);
       }
@@ -8921,7 +8923,9 @@
     const awayNote = away > 0 ? `${away} bot${away === 1 ? ' is' : 's are'} on another map` : '';
     const enemiesNote = MapLayers.enemiesText(mobs.length, mobsTotal);
     const noteEl = card.querySelector('.cmd-mapnote');
-    noteEl.textContent = [awayNote, enemiesNote].filter(Boolean).join(' · ');
+    const pinNote = liveBind && liveBind.dungeon && liveBind.dgn && dgnPins.key === liveBind.dgn.key && dgnPins.missing > 0
+      ? `${dgnPins.missing} earlier fight${dgnPins.missing === 1 ? ' has' : 's have'} no pin (positions are kept for 30 min)` : '';
+    noteEl.textContent = [awayNote, enemiesNote, pinNote].filter(Boolean).join(' · ');
     noteEl.title = enemiesNote ? 'The module caps the mob list per run (24 in a party, 48 in a raid)' : '';
     card.querySelector('.cmd-grid-size').textContent = on.grid ? `grid ${step} yd` : '';
     const sc = card.querySelector('.cmd-scale');
@@ -9038,7 +9042,7 @@
     svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideTip(); });
     svg.addEventListener('pointerdown', e => {
       const hit = e.target.closest && e.target.closest('g.bot[data-guid]');
-      tap = pointers.size === 0 ? { id: e.pointerId, guid: hit ? parseInt(hit.dataset.guid, 10) : 0, uid: unitAt(e), touch: e.pointerType !== 'mouse', x: e.clientX, y: e.clientY } : null;
+      tap = pointers.size === 0 ? { id: e.pointerId, guid: hit ? parseInt(hit.dataset.guid, 10) : 0, uid: unitAt(e), empty: fdTapEmpty(e.target), touch: e.pointerType !== 'mouse', x: e.clientX, y: e.clientY } : null;
       pointers.set(e.pointerId, rel(e));
       try { svg.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
       lastPinch = null;
@@ -9067,7 +9071,7 @@
         const m = ms();
         if (!tap.touch) {
           if (tap.guid && !fdPickBot(key, tap.guid)) openProfile(tap.guid); // a click on a bot opens its details; its box is already up from the hover
-          else if (!tap.guid) fdFocusTap(key, tap.uid); // the debugger: a summon or the boss is the focus, empty ground clears it
+          else if (!tap.guid) fdFocusTap(key, tap.uid, tap.empty); // the debugger: a summon or the boss is the focus, empty ground clears it
         } else if (tap.uid && !(m.tip && m.tip.id === tap.uid)) {
           m.tip = { id: tap.uid, x: rel(e).x, y: rel(e).y }; // first tap: the box
           paintCmdTip(key);
@@ -9075,7 +9079,7 @@
           if (!fdPickBot(key, tap.guid)) openProfile(tap.guid); // second tap on the same bot: its details
         } else {
           hideTip(); // a tap on nothing, or on the same unit that has no details
-          fdFocusTap(key, tap.uid); // the debugger: a second tap on a summon or the boss focuses it, a tap on nothing clears the focus
+          fdFocusTap(key, tap.uid, tap.empty); // the debugger: a second tap on a summon or the boss focuses it, a tap on nothing clears the focus
         }
       }
       if (tap && tap.id === e.pointerId) tap = null;
@@ -9085,7 +9089,7 @@
     // A click on the edge marker of an off-screen boss centres the map on that boss (a drag is a pan, not a pick).
     svg.addEventListener('click', e => {
       const pin = e.target.closest && e.target.closest('g.fm-pin');
-      if (pin && dgnPins.cmd && pin.getAttribute('data-pin')) { window.location.hash = raidFightHash(dgnPins.cmd, pin.getAttribute('data-pin')); return; }
+      if (pin && dgnPinOpen(pin)) return;
       const n = e.target.closest && e.target.closest('g.bosspoint');
       if (!n) return;
       const bx = Number(n.dataset.bx), by = Number(n.dataset.by);
@@ -9316,7 +9320,8 @@
         fdRunStopAll(fd);
         fdFightHash(fd, false);
       } else if (t.dataset.fdBot != null) {
-        fd.bot = fd.bot === t.dataset.fdBot ? null : t.dataset.fdBot;
+        fdPickBotName(key, t.dataset.fdBot);
+        fdViewHash(key);
       } else if (t.dataset.fdDeath != null) {
         fd.death = parseInt(t.dataset.fdDeath, 10) || 0;
         const det = fd.sel && fd.sel !== 'live' ? fd.details[fd.sel] : null;
@@ -9869,12 +9874,19 @@
     if (!fd || fd.mode !== 'debug' || !bind) return false;
     const b = (bind.bots || []).find(x => x.guid === guid);
     if (!b) return false;
-    fd.bot = fd.bot === b.name ? null : b.name;
-    // The pick is also the map's focus: the events are those the bot is the source or the target of. Picking it again clears both.
-    if (fd.bot) fdFocusSet(key, 'bot', b.name); else fdFocusClear(key);
+    fdPickBotName(key, b.name);
     fdRender(key);
     fdViewHash(key);
     return true;
+  }
+
+  // The bot pick, from the map or from a panel: the pick is also the focus, so the chip, the filter and the pick always name the same bot.
+  // Picking the bot again clears both (and gives the reader's own filter back).
+  function fdPickBotName(key, name) {
+    const fd = cmdFd[key];
+    if (!fd) return;
+    fd.bot = fd.bot === name ? null : name;
+    if (fd.bot) fdFocusSet(key, 'bot', name); else fdFocusClear(key);
   }
 
   // One detail at a time, newest first. A fight that fails (an error, or an answer without a fight) is asked once more at
@@ -12253,12 +12265,15 @@
       const now = Date.now(), sec = Math.floor(now / FdLive.TICK_MS);
       const fight = FdLive.fight(st, bind, now);
       if (!st._fm || st._fm.sec !== sec || st._fm.gen !== st.gen) st._fm = { sec, gen: st.gen, frames: FightMap.fromLive(st) };
-      return { live: true, fight, frames: st._fm.frames, range: fd.liveRange || null, k: 'L|' + st.key + '|' + st.gen + '|' + sec, rest: null, nowMs: FdLive.nowFightMs(st, now) };
+      return { live: true, trackState: 'ready', fight, frames: st._fm.frames, range: fd.liveRange || null, k: 'L|' + st.key + '|' + st.gen + '|' + sec, rest: null, nowMs: FdLive.nowFightMs(st, now) };
     }
     const det = fd.details[fd.sel], fight = det && det.fight;
     if (!fight) return null;
     const track = fd.tracks[fd.sel];
     const loaded = !!track && track !== 'loading' && !!track.prep;
+    // 'loading': the positions are not in yet (not asked, or on their way); 'failed': the request failed and its retry is pending; 'ready':
+    // frames came; 'none': the daemon answered and kept no positions for this fight (an old one), so none will ever come
+    const trackState = track === 'loading' || track === undefined ? 'loading' : track === null ? 'failed' : loaded && track.prep.frames.length ? 'ready' : 'none';
     if (loaded && track._fmFor !== fight) { track._fmFor = fight; track._fmId = ++fmSeq; track._fm = FightMap.fromTrack(track.prep, fight); }
     const range = FdView.effective(fd.view, false, null);
     const frames = loaded ? track._fm : [];
@@ -12267,7 +12282,7 @@
       const dur = Math.round(fight.dur_ms || 0), tMs = Math.max(0, Math.min(dur, range ? Math.round(range.to) : dur));
       rest = { tS: (fight.start || 0) + tMs / 1000, tMs, track, fight };
     }
-    return { live: false, fight, frames, range, k: 'P|' + fd.sel + '|' + (loaded ? track._fmId : 0) + '|' + ((fight.deaths || []).length), rest, nowMs: rest ? rest.tMs : Math.round(fight.dur_ms || 0) };
+    return { live: false, trackState, fight, frames, range, k: 'P|' + fd.sel + '|' + (loaded ? track._fmId : 0) + '|' + ((fight.deaths || []).length), rest, nowMs: rest ? rest.tMs : Math.round(fight.dur_ms || 0) };
   }
 
   // The model of one view of one fight, kept on the card and rebuilt only when what it reads changed: the fight, its frames, the range, the
@@ -12283,10 +12298,20 @@
     return m;
   }
 
+  // Fight milliseconds at a replay moment (unix seconds): a run replay's moment is measured from the run's start, the fight layers and the
+  // deaths filter from the fight's own.
+  function fdFightClockMs(fight, tS) {
+    const startS = fight && typeof fight.start_ms === 'number' && fight.start_ms > 0 ? fight.start_ms / 1000 : (fight && fight.start) || 0;
+    return Math.round((tS - startS) * 1000);
+  }
+
   // The one fit to the whole fight when a finished fight is first picked on a card: the view takes the box of its trails, deaths and mechanics
   // and stops following the party; the viewer's own zoom and pan win afterwards. A running fight keeps following. True when it fitted.
   function fdMapFit(ms, fm, src, sel, pw, ph) {
+    // Not while the positions load or after a failed request (a retry is coming): the deaths and mechanics alone would fit a box without the
+    // fight in it, and the fit is once. A fight the daemon answered for with no positions (an old one) fits on its deaths and mechanics.
     if (!ms || !fm || !fm.bounds || !src || src.live || !sel || ms.fmFit === sel) return false;
+    if (src.trackState !== 'ready' && src.trackState !== 'none') return false;
     const bb = fm.bounds;
     ms.fmFit = sel;
     ms.view = CmdView.fitView([CmdView.project(bb.x0, bb.y0), CmdView.project(bb.x1, bb.y0), CmdView.project(bb.x0, bb.y1), CmdView.project(bb.x1, bb.y1)], pw, ph, 44, 60);
@@ -12392,8 +12417,11 @@
   function fdFocusSet(key, kind, name) {
     const fd = cmdFd[key], g = FightMap.focusGroup(name);
     if (!fd || !g || !FdFilter.validate(g).ok) return false;
+    // The reader's own filter is kept to give back; a focus that replaces another focus keeps the one before it.
+    const was = fd.focus && fd.focus.enc && FdFilter.encode(fd.filter) === fd.focus.enc;
+    const prev = was ? fd.focus.prev : fd.filter;
     fd.filter = g;
-    fd.focus = { kind, name, enc: FdFilter.encode(g) };
+    fd.focus = { kind, name, enc: FdFilter.encode(g), prev };
     fd.evWhy = '';
     fd.evShown = FD_EV_PAGE;
     return true;
@@ -12404,19 +12432,25 @@
   function fdFocusClear(key, bot) {
     const fd = cmdFd[key], fc = fd && fd.focus;
     if (!fc) return false;
-    if (fc.enc && FdFilter.encode(fd.filter) === fc.enc) { fd.filter = FdFilter.empty(); fd.evWhy = ''; fd.evShown = FD_EV_PAGE; }
+    // the filter is still the focus's own: the reader's earlier one comes back (none: empty); one the reader changed since is left alone
+    if (fc.enc && FdFilter.encode(fd.filter) === fc.enc) { fd.filter = fc.prev || FdFilter.empty(); fd.evWhy = ''; fd.evShown = FD_EV_PAGE; }
     if (bot || (fc.kind === 'bot' && fd.bot === fc.name)) fd.bot = null;
     fd.focus = null;
     return true;
   }
 
-  // A tap on a mob of the debugger's map focuses it when it is a summon the page names or the fight's boss; a tap on empty ground clears the
-  // focus. True when the tap was used.
-  function fdFocusTap(key, uid) {
+  // Whether a tap landed on bare ground: not on a unit, a boss's edge marker, a death skull, a pin, or any of the Fight layers' marks.
+  function fdTapEmpty(target) {
+    return !(target && target.closest && target.closest('[data-u], g.bosspoint, g.fdmark, g.fm-pin, g.ic, g.trailmark, g.stamp, .fm-trail, .fm-heat, .fm-cloud, .fm-anchor, .fm-stand, .fm-puller, .fm-label'));
+  }
+
+  // A tap on a mob of the debugger's map focuses it when it is a summon the page names or the fight's boss; a tap on bare ground (`empty`)
+  // clears the focus. True when the tap was used.
+  function fdFocusTap(key, uid, empty) {
     const fd = cmdFd[key];
     if (!fd || fd.mode !== 'debug') return false;
     if (!uid) {
-      if (!fd.focus) return false;
+      if (!empty || !fd.focus) return false;
       fdFocusClear(key, true);
       fdFocusAfter(key);
       return true;
@@ -13117,13 +13151,14 @@
   // One pin per fight of the run's fight commander at the lead's place when it began. The list and the kept positions are read through the
   // live view's bounded request (fdLiveJson) at most once per 30 s, only while a run card is open and the page is visible.
   const DGN_PINS_EVERY_MS = 30000;
-  const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [] };
+  const DGN_PINS_MAX = 200;
+  const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [], missing: 0 };
 
   function dgnPinsSync(run, cmd) {
     if (!run || !cmd || document.hidden) return;
     const now = Date.now(), same = dgnPins.key === run.key && dgnPins.cmd === cmd;
     if (dgnPins.busy || (same && now - dgnPins.at < DGN_PINS_EVERY_MS)) return;
-    if (!same) { dgnPins.key = run.key; dgnPins.cmd = cmd; dgnPins.pins = []; }
+    if (!same) { dgnPins.key = run.key; dgnPins.cmd = cmd; dgnPins.pins = []; dgnPins.missing = 0; }
     dgnPins.busy = true;
     dgnPins.at = now;
     const fbind = (state.commanders.list || []).find(b => b && b.commander === cmd), lead = fbind ? CmdView.leadBot(fbind) : null;
@@ -13133,13 +13168,34 @@
       fdLiveJson('/api/v1/combat/fights?commander=' + enc + '&limit=200'),
       fdLiveJson('/api/v1/commanders/track?commander=' + enc + '&from=' + fromS + '&to=' + toS),
     ]).then(([fr, tr]) => {
-      if (!cur()) return;
+      if (!cur() || fr.missing || !Array.isArray(fr.json)) return; // no list (404 or a bad body): the pins stand as they are
       const rows = (Array.isArray(fr.json) ? fr.json : []).filter(r => r && typeof r.start === 'number' && r.start >= (run.first_seen || 0));
-      dgnPins.pins = FightMap.pullPins(rows, tr.json ? FightReplay.prep(tr.json).frames : [], lead ? lead.guid : null);
+      dgnPinsMerge(FightMap.pullPins(rows, tr.json ? FightReplay.prep(tr.json).frames : [], lead ? lead.guid : null), rows);
     }).catch(() => {}).then(() => {
       dgnPins.busy = false;
       if (cur() && cmdCards.has('dgn:' + run.key)) drawCmdMap('dgn:' + run.key);
     });
+  }
+
+  // A refresh adds or updates pins and never drops a resolved one: the daemon keeps 30 minutes of positions, so a long run's early fights can
+  // no longer be placed, but the pins they got while their positions were still kept stay for as long as the card is open. `missing` counts the
+  // run's listed fights that have no pin (their positions were never in a window this page asked for).
+  function dgnPinsMerge(got, rows) {
+    got.forEach(p => {
+      const at = dgnPins.pins.findIndex(q => q.key === p.key);
+      if (at >= 0) dgnPins.pins[at] = p; else if (dgnPins.pins.length < DGN_PINS_MAX) dgnPins.pins.push(p);
+    });
+    const have = new Set(dgnPins.pins.map(q => q.key));
+    dgnPins.missing = (rows || []).filter(r => r && !have.has(r.key)).length;
+  }
+
+  // A click on a pin: opens its fight in the debugger. A fight key holds U+0000, which markup would turn into U+FFFD, so the pin carries it
+  // encoded and the click decodes it (the page's own rule for keys in attributes).
+  function dgnPinOpen(pin) {
+    const raw = pin && pin.getAttribute ? pin.getAttribute('data-pin') : null;
+    if (!raw || !dgnPins.cmd) return false;
+    window.location.hash = raidFightHash(dgnPins.cmd, fdDecodeKey(raw));
+    return true;
   }
 
   // The pins of the open run: a dot with the boss's name or "trash", red for a wipe, pulsing while the fight runs; a click opens the fight
@@ -13148,7 +13204,7 @@
     let g = '';
     pins.forEach(p => {
       const q = CmdView.project(p.x, p.y), k = c.k, f = c.f;
-      g += `<g class="fm-pin${p.wipe ? ' wipe' : ''}${p.live ? ' live' : ''}" data-pin="${esc(p.key)}"><title>${esc(p.label + (p.wipe ? ' \u00b7 wipe' : '') + (p.live ? ' \u00b7 live' : ''))}</title>`
+      g += `<g class="fm-pin${p.wipe ? ' wipe' : ''}${p.live ? ' live' : ''}" data-pin="${esc(encodeURIComponent(p.key))}"><title>${esc(p.label + (p.wipe ? ' \u00b7 wipe' : '') + (p.live ? ' \u00b7 live' : ''))}</title>`
         + (p.live ? `<circle class="ring" cx="${f(q.x)}" cy="${f(q.y)}" r="${f(9 * k)}"/>` : '')
         + `<circle class="pin" cx="${f(q.x)}" cy="${f(q.y)}" r="${f(6 * k)}"/>`
         + `<text x="${f(q.x + 9 * k)}" y="${f(q.y + 4 * k)}" style="font-size:${f(10.5 * k)}px;stroke-width:${f(3 * k)}px">${esc(p.label)}</text></g>`;

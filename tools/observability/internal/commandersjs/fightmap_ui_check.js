@@ -63,9 +63,9 @@ ctx.theBind = null;
 vm.createContext(ctx);
 vm.runInContext([
   grabConst("CMD_MAP_ICONS"),
-  "const FD_EV_PAGE = 500; let fmSeq = 0; let fmTacBusy = false; const DGN_PINS_EVERY_MS = 30000; const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [] };",
+  "const FD_EV_PAGE = 500; let fmSeq = 0; let fmTacBusy = false; const DGN_PINS_EVERY_MS = 30000; const DGN_PINS_MAX = 200; const dgnPins = { key: '', cmd: '', at: 0, busy: false, pins: [], missing: 0 };",
   ...["esc", "cmdMapIcon", "fdMapTactics", "fdMapSource", "fdFightModel", "fdMapFit", "cmdFightMapSvg", "fmLegendHtml", "fdFocusPaint", "fdFocusSet", "fdFocusClear",
-    "fdFocusTap", "fdFocusAfter", "fdPickBot", "cmdFightMarksSvg", "cmdPullPinsSvg", "dgnPinsSync"].map(grab),
+    "fdFocusTap", "fdFocusAfter", "fdPickBot", "fdPickBotName", "fdTapEmpty", "fdFightClockMs", "fdDecodeKey", "dgnPinOpen", "cmdFightMarksSvg", "cmdPullPinsSvg", "dgnPinsSync", "dgnPinsMerge"].map(grab),
 ].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 const count = (s, re) => (s.match(re) || []).length;
@@ -210,12 +210,74 @@ assert.strictEqual(fit({ follow: true }, m, Object.assign({}, srcOf(), { live: t
 assert.strictEqual(fit({ follow: true }, { bounds: null }, srcOf(), "K3"), false, "no bounds, no fit");
 assert.strictEqual(fit({ follow: true }, null, srcOf(), "K3"), false);
 {
-  // the fitted box holds the trails: a 30 yd anchor circle at (-11787, -1649) is far from the bots at the origin, so the scale is small
+  // the fitted box is the fight's cluster: the anchor circle of the fixture sits 11000 yd away from the bots (a corrupt row), so it is an outlier
   const ms2 = { follow: true, view: null, userScale: null };
   fit(ms2, m, srcOf(), "K9");
-  const far = CmdView.project(-11787.4, -1649.34);
-  const half = (800 / ms2.view.scale) / 2;
-  assert.ok(Math.abs(far.x - ms2.view.cx) <= half + 1 && ms2.view.scale < 1, "the anchor circle, the deaths and the trails all sit inside the fitted view: " + JSON.stringify(ms2.view));
+  assert.ok(Math.abs(ms2.view.cx) < 100 && Math.abs(ms2.view.cy) < 100 && ms2.view.scale > 1, "a far-off anchor and the other outliers do not move the fit away from the fight: " + JSON.stringify(ms2.view));
+  // one bot on another map and one at 1e6 yd in the track do not move it either
+  const dirty = JSON.parse(JSON.stringify(rawTrack));
+  dirty.frames.forEach((f, i) => { if (i % 3 === 0) { f.bots.push([7, 5000, 5000, 100, 1, 249], [8, 1e6, 1e6, 100, 1, 309]); } });
+  const fd9 = mkFd({ tracks: { K1: { raw: dirty, prep: FightReplay.prep(dirty) } } });
+  ctx.cmdFd[KEY] = fd9;
+  const dsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fd9, bind: bindA });
+  const dm = run("fdFightModel(c, src, on, 309)", { c: {}, src: dsrc, on: ALL_ON });
+  const ms3 = { follow: true, view: null, userScale: null };
+  fit(ms3, dm, dsrc, "K1");
+  assert.deepStrictEqual([ms3.view.cx, ms3.view.cy, ms3.view.scale], [ms2.view.cx, ms2.view.cy, ms2.view.scale], "the same fit with a bot on another map and one at 1e6 yd in the reports");
+  assert.ok(!Object.keys(dm.trails).includes("7") && !Object.keys(dm.trails).includes("8"), "and neither has a trail");
+  // the fit waits for the positions: while the track loads, the deaths and mechanics alone must not set it
+  const fdW = mkFd({ tracks: { K1: "loading" } });
+  ctx.cmdFd[KEY] = fdW;
+  const wsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(wsrc.trackState, "loading");
+  const wm = run("fdFightModel(c, src, on, 309)", { c: {}, src: wsrc, on: ALL_ON });
+  assert.ok(wm.bounds, "the deaths alone give a box");
+  const msW = { follow: true, view: null, userScale: null };
+  assert.strictEqual(fit(msW, wm, wsrc, "K1"), false, "but the fit waits for the track");
+  assert.deepStrictEqual([msW.fmFit, msW.follow, msW.view], [undefined, true, null], "and leaves the card following, with the fit still to come");
+  fdW.tracks.K1 = track();
+  const rsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(rsrc.trackState, "ready");
+  assert.strictEqual(fit(msW, run("fdFightModel(c, src, on, 309)", { c: {}, src: rsrc, on: ALL_ON }), rsrc, "K1"), true, "once the track is in, it fits");
+  // a failed request (tracks null, the 30 s retry pending) is not "none": no fit, the card keeps following, and the retry's success fits once
+  fdW.tracks.K1 = null;
+  const fsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(fsrc.trackState, "failed", "a failed fetch is 'failed'");
+  const msF2 = { follow: true, view: null, userScale: null };
+  const fmod = run("fdFightModel(c, src, on, 309)", { c: {}, src: fsrc, on: ALL_ON });
+  assert.ok(fmod.bounds, "the deaths alone give a box");
+  assert.strictEqual(fit(msF2, fmod, fsrc, "K1"), false, "after a failed fetch the fit waits for the retry");
+  assert.deepStrictEqual([msF2.fmFit, msF2.follow, msF2.view], [undefined, true, null], "fmFit unset, follow on, no view");
+  fdW.tracks.K1 = track();
+  const okSrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(fit(msF2, run("fdFightModel(c, src, on, 309)", { c: {}, src: okSrc, on: ALL_ON }), okSrc, "K1"), true, "the retry's success fits");
+  assert.strictEqual(fit(msF2, run("fdFightModel(c, src, on, 309)", { c: {}, src: okSrc, on: ALL_ON }), okSrc, "K1"), false, "once");
+  // an old fight: the daemon answered with no frames. None will come, so it fits on its deaths and mechanics
+  const emptyRaw = { frames: [], names: {}, tracked: true };
+  fdW.tracks.K1 = { raw: emptyRaw, prep: FightReplay.prep(emptyRaw) };
+  const nsrc = run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA });
+  assert.strictEqual(nsrc.trackState, "none", "an answer with no frames is 'none'");
+  const nmod = run("fdFightModel(c, src, on, 309)", { c: {}, src: nsrc, on: ALL_ON });
+  assert.ok(nmod.bounds, "its deaths still give a box");
+  const msN = { follow: true, view: null, userScale: null };
+  assert.strictEqual(fit(msN, nmod, nsrc, "K1"), true, "an old fight with no positions fits on its deaths");
+  assert.deepStrictEqual([msN.fmFit, msN.follow], ["K1", false]);
+  fdW.tracks.K1 = null;
+  fdW.tracks.K1 = undefined;
+  assert.strictEqual(run("fdMapSource(key, fd, bind)", { key: KEY, fd: fdW, bind: bindA }).trackState, "loading", "one not asked for yet is still to come");
+  ctx.cmdFd[KEY] = fdA;
+}
+
+// ---- a run replay's moment is the run's, not the fight's: the fight layers and the deaths use the fight's own clock
+{
+  const f = { start: 1000, dur_ms: 60000 };
+  assert.strictEqual(run("fdFightClockMs(f, 1018)", { f }), 18000, "18 s into the fight");
+  assert.strictEqual(run("fdFightClockMs(f, 1018)", { f: { start: 1000, start_ms: 1000500, dur_ms: 1 } }), 17500, "the live fight's exact start wins");
+  assert.strictEqual(run("fdFightClockMs(null, 5)"), 5000);
+  // the run began 100 s before the fight: a run moment of 118 s (tS 1018 when t0 is 900) is 18 s into the fight, where the Son's cloud stands
+  const runTMs = 118000, shownRun = run("fdFightClockMs(f, 900 + t / 1000)", { f, t: runTMs });
+  assert.strictEqual(shownRun, 18000);
+  assert.ok(/fm-cloud/.test(draw(m, shownRun)) && !/fm-cloud/.test(draw(m, runTMs)), "the cloud shows at the fight's 18 s, and would not at the run's 118 s");
 }
 
 // ---- the unit focus through FdFilter
@@ -260,9 +322,11 @@ run("fdFocusPaint(card, fd)", { card: chipCard, fd: fdF });
 assert.strictEqual(chip.children[0].textContent, "Focus: " + EVIL, "the chip sets it as text");
 // empty ground clears the focus (and the bot pick), nothing without one
 fdF.bot = "A";
-assert.strictEqual(run("fdFocusTap(key, '')", { key: KEY }), true);
+assert.strictEqual(run("fdFocusTap(key, '', false)", { key: KEY }), false, "a tap that is not on bare ground (a death skull, an edge marker, a trail, a heat cell) clears nothing");
+assert.ok(fdF.focus && fdF.bot === "A", "the focus and the pick stand");
+assert.strictEqual(run("fdFocusTap(key, '', true)", { key: KEY }), true);
 assert.deepStrictEqual([FdFilter.isEmpty(fdF.filter), fdF.focus, fdF.bot], [true, null, null], "a tap on empty ground clears the focus and the bot pick");
-assert.strictEqual(run("fdFocusTap(key, '')", { key: KEY }), false, "with no focus it does nothing");
+assert.strictEqual(run("fdFocusTap(key, '', true)", { key: KEY }), false, "with no focus it does nothing");
 // the reader's own filter is not taken away by clearing a focus that is no longer the filter
 run("fdFocusTap(key, 'm:200')", { key: KEY });
 fdF.filter = FdFilter.preset("casts");
@@ -270,6 +334,33 @@ run("fdFocusPaint(card, fd)", { card: chipCard, fd: fdF });
 assert.strictEqual(chip.hidden, true, "a filter the reader changed hides the chip");
 run("fdFocusClear(key)", { key: KEY });
 assert.strictEqual(FdFilter.describe(fdF.filter), "kind is Cast", "clearing a stale focus leaves the reader's own filter");
+// the reader's own filter comes back when the focus is cleared
+fdF.focus = null; fdF.bot = null; fdF.filter = FdFilter.preset("casts");
+const typed = JSON.stringify(fdF.filter);
+run("fdPickBotName(key, 'A')", { key: KEY });
+assert.strictEqual(FdFilter.describe(fdF.filter), "source is A or target is A", "the focus replaces it");
+run("fdPickBotName(key, 'A')", { key: KEY });
+assert.strictEqual(JSON.stringify(fdF.filter), typed, "and picking A again gives the reader's filter back");
+assert.deepStrictEqual([fdF.bot, fdF.focus], [null, null]);
+run("fdPickBotName(key, 'A')", { key: KEY });
+run("fdFocusTap(key, 'm:200')", { key: KEY });
+run("fdFocusClear(key, true)", { key: KEY });
+assert.strictEqual(JSON.stringify(fdF.filter), typed, "a focus that replaced another focus still gives back the reader's own filter, not the first focus");
+fdF.filter = FdFilter.empty();
+// a map pick of A and then a panel pick of B: the chip, the filter and the pick all name B
+fdF.focus = null; fdF.bot = null;
+run("fdPickBot(key, 1)", { key: KEY });
+run("fdPickBotName(key, 'B')", { key: KEY });
+assert.deepStrictEqual([fdF.bot, fdF.focus.name, FdFilter.describe(fdF.filter)], ["B", "B", "source is B or target is B"], "map pick A then panel pick B");
+run("fdFocusPaint(card, fd)", { card: chipCard, fd: fdF });
+assert.strictEqual(chip.children[0].textContent, "Focus: B", "the chip names B");
+run("fdPickBotName(key, 'B')", { key: KEY });
+assert.deepStrictEqual([fdF.bot, fdF.focus, FdFilter.isEmpty(fdF.filter)], [null, null, true], "the panel's second pick of B clears all three");
+// what is bare ground
+const tgt = (hit) => ({ closest: (sel) => (hit && sel.split(",").some((q) => q.trim() === hit) ? {} : null) });
+assert.strictEqual(run("fdTapEmpty(t)", { t: tgt(null) }), true, "nothing under the tap");
+["[data-u]", "g.bosspoint", "g.fdmark", "g.fm-pin", ".fm-trail", ".fm-heat", ".fm-cloud", ".fm-anchor", ".fm-stand", ".fm-puller", ".fm-label"].forEach((q) => assert.strictEqual(run("fdTapEmpty(t)", { t: tgt(q) }), false, q + " is not bare ground"));
+assert.strictEqual(run("fdTapEmpty(null)"), true);
 // the chip's × and outside the debugger
 fdF.focus = null; fdF.filter = FdFilter.empty();
 fdF.mode = "live";
@@ -311,6 +402,24 @@ const pinSvg = run("cmdPullPinsSvg(dc, pins)", { dc, pins: [
   { key: "k1", x: 1, y: 2, label: EVIL, wipe: true, live: false }, { key: "k2", x: 3, y: 4, label: "trash", wipe: false, live: true }, { key: EVIL, x: 5, y: 6, label: "Hakkar", wipe: false, live: false }] });
 assert.ok(pinSvg.includes("&lt;img src=x onerror=1&gt;") && !pinSvg.includes("<img"), "pin labels and keys are escaped");
 assert.ok(/<g class="fm-pin wipe" data-pin="k1">/.test(pinSvg) && /<g class="fm-pin live" data-pin="k2">/.test(pinSvg), "a wipe is marked, a live fight pulses");
+assert.ok(pinSvg.includes('data-pin="%3Cimg%20src%3Dx%20onerror%3D1%3E"'), "a hostile key is encoded in the attribute");
+// a fight key holds U+0000: it goes through the markup and the click to the exact hash
+{
+  const KEYZ = "cmd\u0000sess\u0000id";
+  const mk = run("cmdPullPinsSvg(dc, pins)", { dc, pins: [{ key: KEYZ, x: 1, y: 1, label: "Hakkar", wipe: false, live: false }] });
+  const raw = /data-pin="([^"]*)"/.exec(mk)[1];
+  assert.ok(!raw.includes("\u0000") && raw === "cmd%00sess%00id", "the key travels encoded: " + raw);
+  ctx.window.location.hash = "";
+  run("dgnPins.cmd = 'Cmd'");
+  assert.strictEqual(run("dgnPinOpen(pin)", { pin: { getAttribute: (a) => (a === "data-pin" ? raw : null) } }), true);
+  assert.strictEqual(ctx.window.location.hash, run("raidFightHash('Cmd', k)", { k: KEYZ }), "the click opens exactly that fight");
+  assert.strictEqual(ctx.window.location.hash, "#/commanders/Cmd/fight/cmd%00sess%00id");
+  // an attribute written through innerHTML turns U+0000 into U+FFFD: the raw key would not have survived
+  assert.ok(!/\u0000/.test(raw) && decodeURIComponent(raw) === KEYZ);
+  assert.strictEqual(run("dgnPinOpen(null)"), false);
+  assert.strictEqual(run("dgnPinOpen(pin)", { pin: { getAttribute: () => null } }), false, "a pin with no key opens nothing");
+  run("dgnPins.cmd = ''");
+}
 assert.ok(pinSvg.includes('<circle class="ring"') && count(pinSvg, /class="ring"/g) === 1, "only the live pin has the pulsing ring");
 assert.ok(pinSvg.includes("<title>" + "&lt;img src=x onerror=1&gt;" + " · wipe</title>"), "the hover text names a wipe");
 const pinsDone = (async () => {
@@ -354,6 +463,47 @@ const pinsDone = (async () => {
   ctx.document.hidden = false;
   run("dgnPinsSync(null, 'Cmd')", {}); run("dgnPinsSync(r, null)", { r: run1 });
   assert.strictEqual(requests.length, 0, "no run or no fight commander: nothing");
+  // a run longer than 30 minutes keeps the pins its early fights got while their positions were still kept
+  {
+    const longRun = { key: "309:7", first_seen: base - 4000 };
+    ctx.cmdCards.set("dgn:309:7", {});
+    answers = {
+      "/api/v1/combat/fights": { missing: false, json: [
+        { key: "early", start: base - 3500, boss_name: "Hakkar", outcome: "kill" },
+        { key: "never", start: base - 3600, outcome: "kill" },
+        { key: "late", start: base - 100, outcome: "wipe", live: true },
+      ] },
+      "/api/v1/commanders/track": { missing: false, json: { frames: [
+        { t: base - 3499, map: 309, bots: [[1, 31, 32, 100, 1, 309]] }, { t: base - 99, map: 309, bots: [[1, 41, 42, 100, 1, 309]] }] } },
+    };
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    assert.deepStrictEqual(Array.from(run("dgnPins.pins.map((p) => p.key)")), ["early", "late"], "the first refresh pins the two fights whose positions it could ask for");
+    assert.strictEqual(run("dgnPins.missing"), 1, "one listed fight has no pin");
+    // the next refresh asks only the last 30 min: the early fight can no longer be placed, its pin stays; the live one is updated
+    answers["/api/v1/commanders/track"] = { missing: false, json: { frames: [{ t: base - 99, map: 309, bots: [[1, 43, 44, 100, 1, 309]] }] } };
+    answers["/api/v1/combat/fights"].json[2] = { key: "late", start: base - 100, outcome: "wipe", live: false };
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    const kept = JSON.parse(JSON.stringify(run("dgnPins.pins")));
+    assert.deepStrictEqual(kept.map((p) => p.key), ["early", "late"], "a refresh never drops a resolved pin");
+    assert.deepStrictEqual([kept[0].x, kept[0].y], [31, 32], "the early pin keeps its place");
+    assert.deepStrictEqual([kept[1].x, kept[1].y, kept[1].live], [43, 44, false], "and the later pin is updated");
+    assert.strictEqual(run("dgnPins.missing"), 1, "the fight that never had a pin is still counted");
+    // a failed refresh leaves the pins and the count alone
+    answers = {};
+    nowMs += 31000;
+    run("dgnPinsSync(r, 'Cmd')", { r: longRun });
+    await settle(() => run("dgnPins.busy") === false);
+    assert.deepStrictEqual([run("dgnPins.pins.length"), run("dgnPins.missing")], [2, 1], "a failed request changes nothing");
+    run("dgnPinsMerge([], [])");
+    assert.strictEqual(run("dgnPins.missing"), 0);
+    run("dgnPinsMerge(arr, [])", { arr: Array.from({ length: 300 }, (_, i) => ({ key: "p" + i, x: 1, y: 1, label: "t", wipe: false, live: false })) });
+    assert.ok(run("dgnPins.pins.length") <= 200, "the kept pins are capped");
+    run("dgnPins.pins = []; dgnPins.missing = 0");
+  }
   // another run starts from no pins; a failing request keeps the page quiet
   answers = {};
   run("dgnPinsSync(r, 'Cmd')", { r: { key: "309:2", first_seen: base - 100 } });
@@ -362,7 +512,7 @@ const pinsDone = (async () => {
   assert.strictEqual(run("dgnPins.pins.length"), 0, "a 404 on both routes leaves none");
 })();
 // a click on a pin opens the fight in the debugger
-assert.ok(/const pin = e\.target\.closest && e\.target\.closest\('g\.fm-pin'\);\s*if \(pin && dgnPins\.cmd && pin\.getAttribute\('data-pin'\)\) \{ window\.location\.hash = raidFightHash\(dgnPins\.cmd, pin\.getAttribute\('data-pin'\)\); return; \}/.test(src), "the map's click opens the pin's fight");
+assert.ok(/const pin = e\.target\.closest && e\.target\.closest\('g\.fm-pin'\);\s*if \(pin && dgnPinOpen\(pin\)\) return;/.test(src), "the map's click hands a pin to dgnPinOpen");
 assert.strictEqual(run("raidFightHash('Cmd', 'k1')"), "#/commanders/Cmd/fight/k1");
 
 // ---- the legend names what is drawn
@@ -373,21 +523,23 @@ assert.strictEqual(run("fmLegendHtml(on)", { on: {} }), "", "no Fight layer, no 
 const draw1 = src.slice(src.indexOf("  function drawCmdMap("), src.indexOf("\n  }\n", src.indexOf("  function drawCmdMap(")));
 assert.ok(/const fmSrc = liveBind && fdCtx && fdCtx\.mode === 'debug' \? fdMapSource\(key, fdCtx, liveBind\) : null;/.test(draw1), "the source exists only in the debugger");
 assert.ok(/const fm = fmSrc && first \? fdFightModel\(card, fmSrc, fmOn, first\.map\) : null;/.test(draw1), "the model only with a source");
-assert.ok(/if \(fm\) \{[\s\S]{0,420}g \+= cmdFightMapSvg\(dc, fm, on, rp \? rp\.tMs : fmSrc\.nowMs, fmRoles, fmSrc\.fight && fmSrc\.fight\.boss_name\);\s*\}/.test(draw1), "the Fight layers are drawn only with a model, at the replay moment");
+assert.ok(/if \(fm\) \{[\s\S]{0,420}g \+= cmdFightMapSvg\(dc, fm, on, fmShown, fmRoles, fmSrc\.fight && fmSrc\.fight\.boss_name\);\s*\}/.test(draw1), "the Fight layers are drawn only with a model, at the fight-clock moment");
+assert.ok(/const fmShown = rp \? \(fmSrc \? fdFightClockMs\(fmSrc\.fight, rp\.tS\) : rp\.tMs\)/.test(draw1) && /\(!rp \|\| r\.t_ms <= fmShown\)/.test(draw1), "the layers and the deaths filter use the fight clock, not the run's");
 assert.ok(draw1.indexOf("cmdFightMapSvg(") < draw1.indexOf("if (on.healring)") && draw1.indexOf("cmdFightMapSvg(") < draw1.indexOf("bosses.forEach(m => { g += drawMob(m); });") && draw1.indexOf("cmdFightMapSvg(") < draw1.indexOf("onMap.slice().sort("), "the Fight layers sit under the units");
 assert.ok(draw1.indexOf("fdMapFit(ms, fm, fmSrc") > 0 && draw1.indexOf("fdMapFit(ms, fm, fmSrc") < draw1.indexOf("if (ms.follow || !ms.view)"), "the fit comes before the view is chosen");
 assert.ok(/fmSrc && fmSrc\.rest\) \|\| null\) : null;/.test(draw1), "with no replay the units stand at the end of the range");
 assert.ok(/facts\.ctx\.fightMap = !!fmSrc;/.test(draw1), "the Fight layers are available only with a source");
 assert.ok(/fdFocusPaint\(card, fdCtx\);/.test(draw1), "the chip follows the card");
+assert.ok(/earlier fight\$\{dgnPins\.missing === 1 \? ' has' : 's have'\} no pin \(positions are kept for 30 min\)/.test(draw1) && /\[awayNote, enemiesNote, pinNote\]/.test(draw1), "a note under the map counts the fights with no pin");
 assert.ok(draw1.includes("dgnPins.key === liveBind.dgn.key") && draw1.includes("cmdPullPinsSvg(dc, dgnPins.pins)"), "the open run's pins");
 assert.ok(src.includes("dgnPinsSync(open, fightCmd);\n    drawCmdMap(key);"), "the Dungeons card asks for its pins before it draws");
-assert.ok(/else if \(!tap\.guid\) fdFocusTap\(key, tap\.uid\);/.test(src) && /hideTip\(\); \/\/ a tap on nothing, or on the same unit that has no details\n\s*fdFocusTap\(key, tap\.uid\);/.test(src), "the map's taps reach the focus");
+assert.ok(/else if \(!tap\.guid\) fdFocusTap\(key, tap\.uid, tap\.empty\);/.test(src) && /empty: fdTapEmpty\(e\.target\)/.test(src) && /fdPickBotName\(key, t\.dataset\.fdBot\);/.test(src) && /hideTip\(\); \/\/ a tap on nothing, or on the same unit that has no details\n\s*fdFocusTap\(key, tap\.uid, tap\.empty\);/.test(src), "the map's taps reach the focus");
 assert.ok(/e\.target\.closest\('\[data-fm-unfocus\]'\) && fdFocusClear\(key\)\) fdFocusAfter\(key\)/.test(src), "the chip's × clears it");
 assert.ok(src.includes('<div class="fm-focus" hidden></div>\n            <div class="cmd-stage">'), "the chip sits above the map");
 const indexHtml = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
-const ft = indexHtml.indexOf('<script src="/static/js/fightmap.js?v=1"></script>'), at = indexHtml.indexOf('<script src="/static/js/app.js?v=');
+const ft = indexHtml.indexOf('<script src="/static/js/fightmap.js?v=2"></script>'), at = indexHtml.indexOf('<script src="/static/js/app.js?v=');
 assert.ok(ft > 0 && at > ft, "index.html loads fightmap.js before app.js");
-assert.ok(/maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=60/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
+assert.ok(/fightreplay\.js\?v=4/.test(indexHtml) && /fdlive\.js\?v=4/.test(indexHtml) && /maplayers\.js\?v=8/.test(indexHtml) && /static\/js\/app\.js\?v=61/.test(indexHtml) && /app\.css\?v=34/.test(indexHtml), "the changed assets carry new versions");
 const css = fs.readFileSync(path.join(jsDir, "..", "css", "app.css"), "utf8");
 const classes = new Set(src.match(/\bfm-[a-z-]+\b/g));
 ["fm-trail", "fm-cloud", "fm-anchor", "fm-puller", "fm-heat", "fm-pin", "fm-focus", "fm-stand", "fm-label", "fm-unfocus"].forEach((c) => assert.ok(classes.has(c), c + " is emitted"));
