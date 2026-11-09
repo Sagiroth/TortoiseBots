@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"tortoise-observability/internal/combat"
 )
@@ -136,17 +137,17 @@ func TestFoldJindoHexOnMT(t *testing.T) {
 		Auras: raws(fmt.Sprintf("[10000,2,%d,1]", hex), fmt.Sprintf("[25000,2,%d,-1]", hex), fmt.Sprintf("[50000,2,%d,1]", hex),
 			fmt.Sprintf("[5000,1,%d,1]", hex), "[1000,2,24306,1]"),
 	}
-	quiet := f // a second fight with no aura rows: not part of the Hex mean
+	quiet := f // a second fight with no aura rows in a night whose watch is deployed: Hex on the MT for 0 s, counted
 	quiet.ID, quiet.Auras = "j2", nil
 	quiet.Deaths = nil
 	r := row(t, Fold([]Input{{Key: "kj", Fight: f}, {Key: "kj2", Fight: quiet}}), 11380)
 	if r.Kind != "jindo" || r.Name != "Jin'do" || r.Fights != 2 || r.Wipes != 2 {
 		t.Fatalf("row: %+v", r)
 	}
-	if r.HexFights != 1 {
-		t.Fatalf("hex fights = %d, want 1 (only the fight with aura rows)", r.HexFights)
+	if r.HexFights != 2 {
+		t.Fatalf("hex fights = %d, want 2 (the rowless fight counts with 0 s)", r.HexFights)
 	}
-	near(t, "hex_mt_s_per_fight", r.HexMTSPerFight, 25)
+	near(t, "hex_mt_s_per_fight", r.HexMTSPerFight, 12.5)
 	near(t, "shade_deaths_per_fight", r.ShadeDeathsPerFight, 1.5) // 3 over 2 fights
 	near(t, "shade_share_pct", r.ShadeSharePct, 75)               // 3 of the 4 deaths
 	if r.Worst != "kj" {
@@ -282,7 +283,10 @@ func TestCastsByIDThenName(t *testing.T) {
 		`{"k":"cast","t":4000,"s":"Blood Siphon","sid":1}`,      // another id: the id decides
 		`{"k":"death","t":5000,"s":"Blood Siphon","sid":24324}`, // not a cast
 		`{"k":"cast","t":-5,"sid":24324}`, `{"k":"cast","sid":24324}`, `{"k":"cast","t":1e300,"sid":24324}`, `"x"`, `7`, `{`)}
-	got := Casts(f, 24324, "Blood Siphon")
+	got, cut := Casts(f, 24324, "Blood Siphon")
+	if cut {
+		t.Fatal("nothing was cut")
+	}
 	if len(got) != 2 || got[0] != 3000 || got[1] != 9000 {
 		t.Fatalf("casts: %v", got)
 	}
@@ -306,8 +310,8 @@ func TestFoldHostileInput(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows: %+v", rows)
 	}
-	if r := rows[0]; r.Casts > maxLogRows+2 {
-		t.Fatalf("the log scan is bounded: %d casts", r.Casts)
+	if r := rows[0]; r.Casts > maxCasts || !r.Lower {
+		t.Fatalf("the casts are bounded and the row says so: %d casts, lower %v", r.Casts, r.Lower)
 	}
 	if got := Fold(nil); len(got) != 0 {
 		t.Fatalf("no fights: %+v", got)
@@ -366,5 +370,137 @@ func TestDosedShareMatchesJS(t *testing.T) {
 		if !regexp.MustCompile(c.name + `\s*=\s*` + regexp.QuoteMeta(c.re)).MatchString(src) {
 			t.Errorf("fdmech.js %s is not %s", c.name, c.re)
 		}
+	}
+}
+
+// A night whose watch is deployed (some fight has aura rows) counts a fight with none as measured with nobody dosed: a fight where
+// nobody carried the aura writes no rows, and it is the worst one.
+func TestFoldRowlessFightInDeployedNight(t *testing.T) {
+	dosed := hakkar(fmt.Sprintf("[30000,3,%d,1]", poison), fmt.Sprintf("[30000,4,%d,1]", poison)) // 4/4 at 35 s, 2/3 at 95 s
+	none := hakkar()
+	none.ID, none.Auras = "none", nil // 0/4 and 0/3
+	r := row(t, Fold([]Input{{Key: "kd", Fight: dosed}, {Key: "kn", Fight: none}}), 14834)
+	if r.Worst != "kn" {
+		t.Fatalf("worst = %q, want the rowless fight kn", r.Worst)
+	}
+	if r.Cycles != 4 || r.DosedCycles != 1 || r.AuraFights != 1 {
+		t.Fatalf("cycles %d dosed %d aura fights %d, want 4 1 1", r.Cycles, r.DosedCycles, r.AuraFights)
+	}
+	near(t, "dosed_pct", r.DosedPct, 6.0/14.0*100) // (4+2) carried of (4+3+4+3) alive: the rowless fight's casts count at 0
+
+	// Jin'do: the rowless fight is 0 s on the MT, not excluded from the mean
+	j := func(id string, auras ...string) Input {
+		return Input{Key: id, Fight: combat.Fight{ID: id, Boss: 11380, DurMS: 60000, Bots: []combat.FightBot{bot(1, "T", "tank", 5)}, Auras: raws(auras...)}}
+	}
+	jr := row(t, Fold([]Input{j("a", fmt.Sprintf("[10000,1,%d,1]", hex), fmt.Sprintf("[30000,1,%d,-1]", hex)), j("b")}), 11380)
+	if jr.HexFights != 2 {
+		t.Fatalf("hex fights %d, want 2", jr.HexFights)
+	}
+	near(t, "hex_mt_s_per_fight", jr.HexMTSPerFight, 10)
+	// a night with no rows at all stays null (TestFoldNoAuraRowsNull)
+}
+
+// One boss rule: the boss, else the boss phase's entry, else the first preset entry among the engaged (the page's FdMech reads the same).
+func TestBossOfRule(t *testing.T) {
+	engaged := []combat.EngagedEntry{{E: 5, N: "Mob"}, {E: 11380, N: "Jin'do"}, {E: 14834, N: "Hakkar"}}
+	for _, c := range []struct {
+		name string
+		f    combat.Fight
+		want uint32
+	}{
+		{"boss first", combat.Fight{Boss: 4000, BossPhaseEntry: 14834, Engaged: engaged}, 4000},
+		{"phase entry second (not the preset the engaged list would give)", combat.Fight{BossPhaseEntry: 11380, Engaged: engaged}, 11380},
+		{"a phase entry that is no preset is still the entry", combat.Fight{BossPhaseEntry: 999, Engaged: engaged}, 999},
+		{"preset among engaged third (the first preset in the fixed order)", combat.Fight{Engaged: engaged}, 14834},
+		{"no preset engaged", combat.Fight{Engaged: []combat.EngagedEntry{{E: 5}}}, 0},
+	} {
+		if got := BossOf(c.f); got != c.want {
+			t.Errorf("%s: BossOf = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// Per-fight bounds: a raid past 80 members and a log past 500 casts are read from what the caps let through, and the row says so.
+func TestDosedBoundsAndBudget(t *testing.T) {
+	f := combat.Fight{ID: "x", Boss: 14834, DurMS: 3600000}
+	for i := 1; i <= 5000; i++ {
+		f.Bots = append(f.Bots, bot(uint32(i), "B"+strconv.Itoa(i), "dps", 0))
+	}
+	for i := 0; i < 5000; i++ {
+		f.Log = append(f.Log, json.RawMessage(fmt.Sprintf(`{"k":"cast","t":%d,"sid":%d}`, 1000+i, siphon)))
+	}
+	for i := 0; i < 20000; i++ {
+		f.Auras = append(f.Auras, json.RawMessage(fmt.Sprintf("[%d,%d,%d,1]", 1000+i, 1+i%5000, poison)))
+	}
+	start := time.Now()
+	r := row(t, Fold([]Input{{Key: "k", Fight: f}}), 14834)
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("a hostile fight took %v", d)
+	}
+	if r.Casts != maxCasts || r.Cycles != maxCasts || !r.Lower {
+		t.Fatalf("casts %d cycles %d lower %v, want %d %d true", r.Casts, r.Cycles, r.Lower, maxCasts, maxCasts)
+	}
+	// only the first maxBots members are read: alive per cast is at most 80
+	if got, ok := Casts(f, siphon, "Blood Siphon"); !ok || len(got) != maxCasts {
+		t.Fatalf("casts: %d, cut %v", len(got), ok)
+	}
+	_, _, _, alive, lower := Dosed(f, Intervals(f), Presets[EntryHakkar], []int64{5000})
+	if alive != maxBots || !lower {
+		t.Fatalf("alive %d lower %v, want %d true", alive, lower, maxBots)
+	}
+	// within the caps nothing is marked
+	small := hakkar()
+	if r := row(t, Fold([]Input{{Key: "k", Fight: small}}), 14834); r.Lower {
+		t.Fatal("a normal fight is not a lower bound")
+	}
+}
+
+// A death with no time (the typed field reads it as 0) is skipped, as the page skips a row without a numeric t_ms: it must not kill the
+// bot at the pull.
+func TestFirstDeathsSkipsNoTime(t *testing.T) {
+	f := hakkar()
+	f.Deaths = []combat.FightDeath{{Name: "A"}, {Name: "D", TMs: 60000}}
+	died := firstDeaths(f)
+	if _, bad := died["A"]; bad || died["D"] != 60000 {
+		t.Fatalf("first deaths: %v", died)
+	}
+	// so A is alive at the 35 s cast: 4 alive, A (10-40 s) and B carry it
+	_, _, on, alive, _ := Dosed(f, Intervals(f), Presets[EntryHakkar], []int64{35000})
+	if on != 2 || alive != 4 {
+		t.Fatalf("on %d alive %d, want 2 of 4", on, alive)
+	}
+}
+
+// One main-tank rule in the daemon and for the page's filed fights (fdmech_check.js reads the same file): the tank with the largest damage
+// taken, ties by name, whatever the raid layout names.
+func TestMainTankSharedFixture(t *testing.T) {
+	b, err := os.ReadFile("testdata/mt-rule.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		Fight  combat.Fight      `json:"fight"`
+		Layout map[string]string `json:"layout"`
+		Want   struct {
+			MT   string  `json:"mt"`
+			HexS float64 `json:"hex_s"`
+		} `json:"want"`
+	}
+	if err := json.Unmarshal(b, &fx); err != nil {
+		t.Fatal(err)
+	}
+	if fx.Layout["mt"] == fx.Want.MT || fx.Layout["mt"] == "" {
+		t.Fatal("the fixture's layout must name another tank than the one with the most damage taken")
+	}
+	mt, ok := MainTank(fx.Fight)
+	if !ok || mt.Name != fx.Want.MT {
+		t.Fatalf("main tank = %q, want %q", mt.Name, fx.Want.MT)
+	}
+	r := row(t, Fold([]Input{{Key: "k", Fight: fx.Fight}}), 11380)
+	near(t, "hex_mt_s_per_fight", r.HexMTSPerFight, fx.Want.HexS)
+	// ties go to the name
+	tie := combat.Fight{Bots: []combat.FightBot{bot(2, "B", "tank", 7), bot(1, "A", "tank", 7)}}
+	if mt, _ := MainTank(tie); mt.Name != "A" {
+		t.Fatalf("tie: %q", mt.Name)
 	}
 }

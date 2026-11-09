@@ -33,6 +33,11 @@ const (
 	maxAuraRows = 20000
 	maxRows     = 100 // boss entries in one answer
 	capRows     = 1000
+	// Per fight: the members read (the page's MAX_BOT_ROWS: a raid is at most 40), the casts of one spell and the deaths. A fight over
+	// a cap is still folded, from what the cap lets through, and its row says so (Lower).
+	maxBots   = 80
+	maxCasts  = 500
+	maxDeaths = 1000
 )
 
 // Preset is what the scorecard knows about one boss: the aura it reads, the boss cast it marks and the add that kills.
@@ -216,7 +221,8 @@ type Row struct {
 	DeathsPerFight float64 `json:"deaths_per_fight"`
 	Worst          string  `json:"worst"` // the fight key to open, "" when none stands out
 
-	// Hakkar. Casts are every Blood Siphon cast; cycles and dosed are counted over the fights that have aura rows (AuraFights).
+	// Hakkar. Casts are every Blood Siphon cast read; cycles and dosed count every Hakkar fight once any of them has aura rows (the watch
+	// is deployed; AuraFights counts the ones that have), and none when no fight has (dosed_pct is then null).
 	Casts             int      `json:"casts"`
 	AuraFights        int      `json:"aura_fights"`
 	Cycles            int      `json:"cycles"`
@@ -224,13 +230,14 @@ type Row struct {
 	DosedPct          *float64 `json:"dosed_pct"`
 	SonDeathsPerFight *float64 `json:"son_deaths_per_fight"`
 
-	// Jin'do. HexFights is the fights with aura rows and a main tank; HexMTSPerFight is nil when it is 0.
+	// Jin'do. HexFights is the fights with a main tank once any Jin'do fight has aura rows (a fight with none counts 0 s); 0 when no fight
+	// has, and HexMTSPerFight is then nil.
 	HexFights           int      `json:"hex_fights"`
 	HexMTSPerFight      *float64 `json:"hex_mt_s_per_fight"`
 	ShadeDeathsPerFight *float64 `json:"shade_deaths_per_fight"`
 	ShadeSharePct       *float64 `json:"shade_share_pct"`
 
-	// Lower is true when a capped aura list made some number a lower bound.
+	// Lower is true when a cap made some number a lower bound: the module's 1000-row aura list, or a fight past the per-fight bounds.
 	Lower bool `json:"lower"`
 }
 
@@ -241,12 +248,13 @@ type logEvent struct {
 	Sid *float64 `json:"sid"`
 }
 
-// Casts returns the times of the fight's log casts of one boss spell: by spell id when the event carries one, else by name
-// (case-insensitive), as FightAuras.markers does. Oldest first.
-func Casts(f combat.Fight, sid int, name string) []int64 {
-	var out []int64
+// Casts returns the times of the fight's log casts of one boss spell, oldest first: by spell id when the event carries one, else by
+// name (case-insensitive), as FightAuras.markers does. At most maxCasts are returned; cut says the log held more (or more rows than
+// the scan reads), so the list is a prefix.
+func Casts(f combat.Fight, sid int, name string) (out []int64, cut bool) {
 	for i, raw := range f.Log {
 		if i >= maxLogRows {
+			cut = true
 			break
 		}
 		var e logEvent
@@ -255,18 +263,31 @@ func Casts(f combat.Fight, sid int, name string) []int64 {
 		}
 		bySid := e.Sid != nil && sid != 0 && *e.Sid == float64(sid)
 		byName := (e.Sid == nil || sid == 0) && name != "" && strings.EqualFold(e.S, name)
-		if bySid || byName {
-			out = append(out, int64(*e.T))
+		if !bySid && !byName {
+			continue
 		}
+		if len(out) >= maxCasts {
+			cut = true
+			break
+		}
+		out = append(out, int64(*e.T))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
+	return out, cut
 }
 
-// firstDeaths is the time of each bot's first death by name (a bot stays dead: the module records no resurrection).
+// firstDeaths is the time of each bot's first death by name (a bot stays dead: the module records no resurrection). A death with no
+// time is skipped, as the page does for a row without a numeric t_ms (the typed field reads a missing one as 0, and no death
+// happens at the pull itself).
 func firstDeaths(f combat.Fight) map[string]int64 {
 	died := map[string]int64{}
-	for _, d := range f.Deaths {
+	for i, d := range f.Deaths {
+		if i >= maxDeaths {
+			break
+		}
+		if d.TMs == 0 {
+			continue
+		}
 		if _, ok := died[d.Name]; !ok {
 			died[d.Name] = int64(d.TMs)
 		}
@@ -274,10 +295,14 @@ func firstDeaths(f combat.Fight) map[string]int64 {
 	return died
 }
 
-// BossOf is the entry a fight is filed under: its boss, else the first preset entry among the engaged.
+// BossOf is the entry a fight is filed under, one rule for the daemon and the page (FdMech): its boss, else the boss phase's entry,
+// else the first preset entry among the engaged.
 func BossOf(f combat.Fight) uint32 {
 	if f.Boss != 0 {
 		return f.Boss
+	}
+	if f.BossPhaseEntry != 0 {
+		return f.BossPhaseEntry
 	}
 	for _, e := range presetOrder {
 		for _, g := range f.Engaged {
@@ -289,13 +314,18 @@ func BossOf(f combat.Fight) uint32 {
 	return 0
 }
 
-// Dosed counts, for one fight's Blood Siphon casts, the members alive at each cast and how many of them carried the aura. A
-// bot whose state lies in a capped list's unknown stretch counts as not carrying it and sets lower.
-func Dosed(f combat.Fight, iv AuraIntervals, p Preset) (cycles, dosed, on, alive int, lower bool) {
+// Dosed counts, for one fight's Blood Siphon casts (read once by the caller), the members alive at each cast and how many of them
+// carried the aura. A bot whose state lies in a capped list's unknown stretch counts as not carrying it and sets lower, as does a
+// raid over maxBots (the rest are not read).
+func Dosed(f combat.Fight, iv AuraIntervals, p Preset, casts []int64) (cycles, dosed, on, alive int, lower bool) {
 	died := firstDeaths(f)
-	for _, t := range Casts(f, p.MarkerSid, p.Marker) {
+	bots := f.Bots
+	if len(bots) > maxBots {
+		bots, lower = bots[:maxBots], true
+	}
+	for _, t := range casts {
 		a, o := 0, 0
-		for _, b := range f.Bots {
+		for _, b := range bots {
 			if d, dead := died[b.Name]; dead && t >= d {
 				continue
 			}
@@ -316,11 +346,15 @@ func Dosed(f combat.Fight, iv AuraIntervals, p Preset) (cycles, dosed, on, alive
 	return
 }
 
-// mainTank is the tank-role bot with the largest damage taken (ties by name).
-func mainTank(f combat.Fight) (combat.FightBot, bool) {
+// MainTank is the one main-tank rule of the night table and of the page's filed fights: the tank-role bot with the largest damage
+// taken, ties by name. (The page's running fight has no damage taken yet and reads the layout's tank instead.)
+func MainTank(f combat.Fight) (combat.FightBot, bool) {
 	var best combat.FightBot
 	found := false
-	for _, b := range f.Bots {
+	for i, b := range f.Bots {
+		if i >= maxBots {
+			break
+		}
 		if b.Role != "tank" {
 			continue
 		}
@@ -333,7 +367,10 @@ func mainTank(f combat.Fight) (combat.FightBot, bool) {
 
 func killedBy(f combat.Fight, killer string) int {
 	n := 0
-	for _, d := range f.Deaths {
+	for i, d := range f.Deaths {
+		if i >= maxDeaths {
+			break
+		}
 		if d.Killer == killer {
 			n++
 		}
@@ -343,20 +380,26 @@ func killedBy(f combat.Fight, killer string) int {
 
 func ptr(v float64) *float64 { return &v }
 
-// acc is one boss's running sums.
-type acc struct {
-	row                    Row
-	deaths                 int
-	sonDeaths, shadeDeaths int
-	sumOn, sumAlive        int
-	hexMS                  int64
-	worstKey               string
-	worstScore             float64
-	worstSet               bool
+// fightData is one counted fight and what is read from it once.
+type fightData struct {
+	key string
+	f   combat.Fight
+	iv  AuraIntervals
 }
 
-// Fold groups the fights (at least MinFightMS long) by boss and returns one row per boss, the most fought first. A fight
-// with no boss and no preset entry among its engaged units (trash) is not on the scorecard.
+// acc is one boss's fights and running sums.
+type acc struct {
+	row    Row
+	fights []fightData
+	deaths int
+}
+
+// Fold groups the fights (at least MinFightMS long) by boss and returns one row per boss, the most fought first. A fight with no boss
+// and no preset entry among its engaged units (trash) is not on the scorecard.
+//
+// Whether a boss's watch rows are deployed is decided over the whole window: when any of its fights has aura rows, one without
+// counts as measured with nobody dosed (a fight where nobody carried the aura writes no rows, and is the worst one); when none has,
+// the dose and Hex numbers are null.
 func Fold(in []Input) []Row {
 	by := map[uint32]*acc{}
 	var order []uint32
@@ -393,69 +436,15 @@ func Fold(in []Input) []Row {
 			a.row.Wipes++
 		}
 		a.deaths += len(f.Deaths)
-		// "Worst" takes the fight with the most deaths unless the preset has its own measure below.
-		score := -float64(len(f.Deaths))
-		measured := len(f.Deaths) > 0
-		iv := Intervals(f)
-		switch a.row.Kind {
-		case "hakkar":
-			p := Presets[boss]
-			casts := Casts(f, p.MarkerSid, p.Marker)
-			a.row.Casts += len(casts)
-			a.sonDeaths += killedBy(f, p.Killer)
-			measured = false
-			if iv.Rows > 0 {
-				a.row.AuraFights++
-				cycles, dosed, on, alive, lower := Dosed(f, iv, p)
-				a.row.Cycles += cycles
-				a.row.DosedCycles += dosed
-				a.sumOn += on
-				a.sumAlive += alive
-				a.row.Lower = a.row.Lower || lower
-				if alive > 0 {
-					score, measured = float64(on)/float64(alive), true
-				}
-			}
-		case "jindo":
-			p := Presets[boss]
-			shade := killedBy(f, p.Killer)
-			a.shadeDeaths += shade
-			score, measured = -float64(shade), shade > 0
-			if mt, ok := mainTank(f); ok && iv.Rows > 0 {
-				a.row.HexFights++
-				a.hexMS += iv.spanOn(p.AuraSid, mt.GUID)
-				if iv.Capped {
-					a.row.Lower = true
-				}
-			}
+		fd := fightData{key: it.Key, f: f}
+		if a.row.Kind != "generic" {
+			fd.iv = Intervals(f)
 		}
-		if measured && (!a.worstSet || score < a.worstScore) {
-			a.worstKey, a.worstScore, a.worstSet = it.Key, score, true
-		}
+		a.fights = append(a.fights, fd)
 	}
 	rows := make([]Row, 0, len(order))
 	for _, boss := range order {
-		a := by[boss]
-		r := a.row
-		n := float64(r.Fights)
-		r.DeathsPerFight = float64(a.deaths) / n
-		r.Worst = a.worstKey
-		switch r.Kind {
-		case "hakkar":
-			r.SonDeathsPerFight = ptr(float64(a.sonDeaths) / n)
-			if a.sumAlive > 0 {
-				r.DosedPct = ptr(float64(a.sumOn) / float64(a.sumAlive) * 100)
-			}
-		case "jindo":
-			r.ShadeDeathsPerFight = ptr(float64(a.shadeDeaths) / n)
-			if a.deaths > 0 {
-				r.ShadeSharePct = ptr(float64(a.shadeDeaths) / float64(a.deaths) * 100)
-			}
-			if r.HexFights > 0 {
-				r.HexMTSPerFight = ptr(float64(a.hexMS) / 1000 / float64(r.HexFights))
-			}
-		}
-		rows = append(rows, r)
+		rows = append(rows, by[boss].finish())
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Fights != rows[j].Fights {
@@ -464,4 +453,86 @@ func Fold(in []Input) []Row {
 		return rows[i].Boss < rows[j].Boss
 	})
 	return rows
+}
+
+// finish reads a boss's fights into its row.
+func (a *acc) finish() Row {
+	r := a.row
+	n := float64(r.Fights)
+	r.DeathsPerFight = float64(a.deaths) / n
+	deployed := false
+	for _, fd := range a.fights {
+		if fd.iv.Rows > 0 {
+			deployed = true
+			r.AuraFights++
+		}
+	}
+	var (
+		worstKey               string
+		worstScore             float64
+		worstSet               bool
+		sonDeaths, shadeDeaths int
+		sumOn, sumAlive        int
+		hexMS                  int64
+	)
+	consider := func(key string, score float64, measured bool) {
+		if measured && (!worstSet || score < worstScore) {
+			worstKey, worstScore, worstSet = key, score, true
+		}
+	}
+	for _, fd := range a.fights {
+		f, iv := fd.f, fd.iv
+		// "Worst" takes the fight with the most deaths unless the preset has its own measure below.
+		score, measured := -float64(len(f.Deaths)), len(f.Deaths) > 0
+		switch r.Kind {
+		case "hakkar":
+			p := Presets[r.Boss]
+			casts, cut := Casts(f, p.MarkerSid, p.Marker)
+			r.Casts += len(casts)
+			r.Lower = r.Lower || cut
+			sonDeaths += killedBy(f, p.Killer)
+			measured = false
+			if deployed {
+				cycles, dosed, on, alive, lower := Dosed(f, iv, p, casts)
+				r.Cycles += cycles
+				r.DosedCycles += dosed
+				sumOn += on
+				sumAlive += alive
+				r.Lower = r.Lower || lower
+				if alive > 0 {
+					score, measured = float64(on)/float64(alive), true
+				}
+			}
+		case "jindo":
+			p := Presets[r.Boss]
+			shade := killedBy(f, p.Killer)
+			shadeDeaths += shade
+			score, measured = -float64(shade), shade > 0
+			if mt, ok := MainTank(f); ok && deployed {
+				r.HexFights++
+				hexMS += iv.spanOn(p.AuraSid, mt.GUID)
+				if iv.Capped {
+					r.Lower = true
+				}
+			}
+		}
+		consider(fd.key, score, measured)
+	}
+	r.Worst = worstKey
+	switch r.Kind {
+	case "hakkar":
+		r.SonDeathsPerFight = ptr(float64(sonDeaths) / n)
+		if sumAlive > 0 {
+			r.DosedPct = ptr(float64(sumOn) / float64(sumAlive) * 100)
+		}
+	case "jindo":
+		r.ShadeDeathsPerFight = ptr(float64(shadeDeaths) / n)
+		if a.deaths > 0 {
+			r.ShadeSharePct = ptr(float64(shadeDeaths) / float64(a.deaths) * 100)
+		}
+		if r.HexFights > 0 {
+			r.HexMTSPerFight = ptr(float64(hexMS) / 1000 / float64(r.HexFights))
+		}
+	}
+	return r
 }

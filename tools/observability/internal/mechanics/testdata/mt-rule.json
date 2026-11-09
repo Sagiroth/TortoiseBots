@@ -1,0 +1,14 @@
+{
+  "fight": {
+    "id": "mt", "boss": 11380, "boss_name": "Jin'do the Hexxer", "dur_ms": 60000, "start": 1000,
+    "bots": [
+      {"name": "Tanka", "guid": 1, "role": "tank", "taken": 100},
+      {"name": "Tankb", "guid": 2, "role": "tank", "taken": 900},
+      {"name": "Heal", "guid": 3, "role": "healer", "taken": 5000}
+    ],
+    "deaths": [],
+    "auras": [[10000, 1, 17172, 1], [30000, 1, 17172, -1], [10000, 2, 17172, 1], [25000, 2, 17172, -1]]
+  },
+  "layout": {"mt": "Tanka"},
+  "want": {"mt": "Tankb", "hex_s": 15}
+}

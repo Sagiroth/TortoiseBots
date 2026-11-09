@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"tortoise-observability/internal/auth"
 	"tortoise-observability/internal/combat"
+	"tortoise-observability/internal/mechanics"
+	"tortoise-observability/internal/underperf"
 	"tortoise-observability/web"
 )
 
@@ -251,5 +254,54 @@ func TestCombatLiveRoute(t *testing.T) {
 	}
 	if code, _ := do("/api/v1/combat/live?commander=a&commander=b"); code != 400 {
 		t.Fatalf("two commanders: %d", code)
+	}
+}
+
+// TestMechanicsRouteIsBehindTheSession guards the boss mechanics route: it is registered behind requireAuth (the source pin, as for the
+// other inline routes) and the gate every requireAuth route shares answers a request with no session 401 on an API path, so the
+// handler is never reached.
+func TestMechanicsRouteIsBehindTheSession(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`mux.HandleFunc("GET /api/v1/combat/mechanics", requireAuth(mechanics.Handler(`,
+		"return sessionGate(authService, *devNoAuth, next)",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("main.go does not contain %q", want)
+		}
+	}
+	svc, err := auth.NewService(auth.Config{SecretKey: "mechanics-test-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached := false
+	h := sessionGate(svc, false, func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) {
+		reached = true
+		mechanics.Handler(underperf.Sources{})(w, r)
+	})
+	for _, target := range []string{"/api/v1/combat/mechanics?commander=T&day=2026-11-01", "/api/v1/combat/mechanics"} {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "Unauthorized") {
+			t.Errorf("%s with no session: %d %s, want 401", target, rec.Code, rec.Body.String())
+		}
+	}
+	if reached {
+		t.Fatal("the handler ran without a session")
+	}
+	// a page path is sent to the login instead
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/dashboard", nil))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
+		t.Fatalf("a page with no session: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	// the dev flag lets a request through
+	ok := httptest.NewRecorder()
+	sessionGate(svc, true, func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) { w.WriteHeader(http.StatusNoContent) })(ok, httptest.NewRequest(http.MethodGet, "/api/v1/x", nil))
+	if ok.Code != http.StatusNoContent {
+		t.Fatalf("dev no-auth: %d", ok.Code)
 	}
 }

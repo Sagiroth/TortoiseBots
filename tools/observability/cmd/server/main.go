@@ -554,25 +554,9 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/logout", logoutHandler(authService))
 
 	requireSession := func(next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if *devNoAuth {
-				next(w, r, nil)
-				return
-			}
-			session, err := authService.GetSessionFromRequest(r)
-			if err != nil {
-				if strings.HasPrefix(r.URL.Path, "/api/") {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized: GM session required"})
-					return
-				}
-				http.Redirect(w, r, "/login", http.StatusFound)
-				return
-			}
-			next(w, r, session)
-		}
+		return sessionGate(authService, *devNoAuth, next)
 	}
+
 	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
 		return requireSession(func(w http.ResponseWriter, r *http.Request, _ *auth.SessionData) {
 			next(w, r)
@@ -1088,6 +1072,29 @@ func serve(ctx context.Context, server *http.Server, udpListener *udp.Listener, 
 // stream); a missing, foreign or opaque (Origin: null) origin gets 403 and the
 // cookie is left alone. The dashboard's button posts with fetch and navigates to
 // /login itself.
+// sessionGate runs next for a request with a GM session (or for every request with noAuth, the dev flag): an API path without one
+// gets 401 and a JSON error, any other path a redirect to the login page.
+func sessionGate(authService *auth.Service, noAuth bool, next func(http.ResponseWriter, *http.Request, *auth.SessionData)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if noAuth {
+			next(w, r, nil)
+			return
+		}
+		session, err := authService.GetSessionFromRequest(r)
+		if err != nil {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized: GM session required"})
+				return
+			}
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		next(w, r, session)
+	}
+}
+
 func logoutHandler(authService *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
