@@ -36,6 +36,11 @@ assert.strictEqual(tr.frames[0].bots[813].x, 0);
 assert.strictEqual(tr.frames[1].mobs.m1.v, 814);
 assert.strictEqual(tr.names[7], "Warder");
 
+{
+  const hk = R.prep({ frames: [{ t: 5, bots: [[1, 1, 1], [2, 1, 1, 50, 1]], mobs: [{ id: "a", e: 1, x: 1, y: 1 }, { id: "b", e: 1, x: 1, y: 1, hp: 0 }] }] }).frames[0];
+  assert.deepStrictEqual([hk.bots[1].hk, hk.bots[2].hk, hk.mobs.a.hk, hk.mobs.b.hk], [false, true, false, true], "prep says whether a health was carried (a real 0 is known)");
+  assert.strictEqual(hk.bots[1].hp, 0, "the placeholder stays 0 for the replay");
+}
 const unsorted = R.prep({ frames: [synthetic.frames[2], synthetic.frames[0], synthetic.frames[1]], names: synthetic.names });
 assert.deepStrictEqual(unsorted.frames.map((f) => f.t), [100, 102, 104]);
 const dirty = R.prep({ frames: [null, { t: "x" }, { t: 5, bots: [null, [1, 2, 3]], mobs: [{ id: "bad" }] }] });

@@ -219,16 +219,16 @@
     return added;
   }
 
-  // One SSE `pos` frame (0.5 s): where the bots and mobs stood. Bots as [guid, x, y, hp %, alive], mobs as [id, x, y, hp %].
+  // One SSE `pos` frame (0.5 s): where the bots and mobs stood. Bots as [guid, x, y, hp %, alive], mobs as [id, x, y, hp %]; a health the frame did not carry is null (unknown, not 0).
   function applyPos(st, frame) {
     if (!st || !frame) return false;
     const t = num(frame.ts_ms);
     if (!t) return false;
     if (st.pos.length && t <= st.pos[st.pos.length - 1].t) return false;
     const bots = (Array.isArray(frame.bots) ? frame.bots : []).filter((b) => b && b.g != null)
-      .map((b) => [b.g, num(b.x), num(b.y), num(b.mhp) ? Math.round(num(b.hp) * 100 / b.mhp) : 0, b.a === 1 ? 1 : 0]);
+      .map((b) => [b.g, num(b.x), num(b.y), num(b.mhp) > 0 && typeof b.hp === "number" && isFinite(b.hp) ? Math.round(num(b.hp) * 100 / b.mhp) : null, b.a === 1 ? 1 : 0]);
     const mobs = (Array.isArray(frame.mobs) ? frame.mobs : []).filter((m) => m && m.id != null)
-      .map((m) => [String(m.id), num(m.x), num(m.y), num(m.hp)]);
+      .map((m) => [String(m.id), num(m.x), num(m.y), typeof m.hp === "number" && isFinite(m.hp) ? m.hp : null]);
     st.pos.push({ t, bots, mobs });
     if (st.pos.length > POS_MAX) st.pos.splice(0, st.pos.length - POS_MAX);
     st.version++;

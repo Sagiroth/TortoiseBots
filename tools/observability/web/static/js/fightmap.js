@@ -30,9 +30,15 @@
   const PIN_SLACK_S = 10;       // the lead's frame must be within this many seconds after the fight's start
   const TRACK_EDGE_S = 4;       // the seconds before the start and after the end of a fight that its frames reach (FightReplay's own)
   const MAX_NAME = 80;          // FdFilter's longest text value
+  const MAX_BOTS = 80;          // bots read per frame
+  const MAX_COORD = 50000;      // a coordinate beyond this is no place in the game world
+  const MAX_RADIUS_YD = 100;    // the largest circle drawn for a mechanic or a cloud
+  const OUTLIER_YD = 300;       // a point farther than this from the median of the fight's points does not count for the fit
+  const WIPE_TAIL_MS = 4000;    // a unit that vanishes in the last seconds of a wipe is the reset, not a death
 
   const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const place = (v) => num(v) !== null && Math.abs(v) <= MAX_COORD;
 
   function inRange(t, range) {
     return !range || (num(range.from) !== null && num(range.to) !== null ? t >= range.from && t <= range.to : true);
@@ -59,16 +65,17 @@
       if (out.length >= MAX_FRAMES || !isObj(f) || num(f.t) === null) return;
       if (f.t < startS - TRACK_EDGE_S || f.t > endS + TRACK_EDGE_S) return;
       const bots = {};
-      Object.keys(isObj(f.bots) ? f.bots : {}).forEach((g) => {
+      Object.keys(isObj(f.bots) ? f.bots : {}).slice(0, MAX_BOTS).forEach((g) => {
         const b = f.bots[g];
-        if (!isObj(b) || num(b.x) === null || num(b.y) === null) return;
-        bots[g] = { x: b.x, y: b.y, hp: num(b.hp) === null ? 0 : b.hp, alive: b.alive !== false, m: num(b.map) === null ? 0 : b.map };
+        if (!isObj(b) || !place(b.x) || !place(b.y)) return;
+        // FightReplay.prep marks a health the report did not carry (hk false): it is unknown, not 0
+        bots[g] = { x: b.x, y: b.y, hp: b.hk === false || num(b.hp) === null ? null : b.hp, alive: b.alive !== false, m: num(b.map) === null ? 0 : b.map };
       });
       const mobs = {};
       Object.keys(isObj(f.mobs) ? f.mobs : {}).forEach((id) => {
         const m = f.mobs[id];
-        if (!isObj(m) || num(m.x) === null || num(m.y) === null || num(m.e) === null) return;
-        mobs[id] = { e: m.e, x: m.x, y: m.y, hp: num(m.hp) === null ? 0 : m.hp, v: num(m.v) || 0 };
+        if (!isObj(m) || !place(m.x) || !place(m.y) || num(m.e) === null) return;
+        mobs[id] = { e: m.e, x: m.x, y: m.y, hp: m.hk === false || num(m.hp) === null ? null : m.hp, v: num(m.v) || 0 };
       });
       out.push({ t: Math.round((f.t - startS) * 1000), bots, mobs });
     });
@@ -90,15 +97,15 @@
       const victim = {};
       if (j >= 0) (Array.isArray(samples[j].mobs) ? samples[j].mobs : []).forEach((m) => { if (m && m.id != null) victim[String(m.id)] = m.v; });
       const bots = {};
-      (Array.isArray(p.bots) ? p.bots : []).forEach((r) => {
-        if (!Array.isArray(r) || r.length < 3 || r[0] == null || num(r[1]) === null || num(r[2]) === null || (r[1] === 0 && r[2] === 0)) return;
-        bots[String(r[0])] = { x: r[1], y: r[2], hp: num(r[3]) === null ? 0 : r[3], alive: r[4] !== 0, m: 0 };
+      (Array.isArray(p.bots) ? p.bots : []).slice(0, MAX_BOTS).forEach((r) => {
+        if (!Array.isArray(r) || r.length < 3 || r[0] == null || !place(r[1]) || !place(r[2]) || (r[1] === 0 && r[2] === 0)) return;
+        bots[String(r[0])] = { x: r[1], y: r[2], hp: num(r[3]) === null ? null : r[3], alive: r[4] !== 0, m: 0 };
       });
       const mobs = {};
       (Array.isArray(p.mobs) ? p.mobs : []).forEach((r) => {
-        if (!Array.isArray(r) || r.length < 3 || r[0] == null || num(r[1]) === null || num(r[2]) === null || (r[1] === 0 && r[2] === 0)) return;
+        if (!Array.isArray(r) || r.length < 3 || r[0] == null || !place(r[1]) || !place(r[2]) || (r[1] === 0 && r[2] === 0)) return;
         const id = String(r[0]);
-        mobs[id] = { e: entry[id] || 0, x: r[1], y: r[2], hp: num(r[3]) === null ? 0 : r[3], v: num(Number(victim[id])) || 0 };
+        mobs[id] = { e: entry[id] || 0, x: r[1], y: r[2], hp: num(r[3]) === null ? null : r[3], v: num(Number(victim[id])) || 0 };
       });
       out.push({ t: p.t - st.startMs, bots, mobs });
     });
@@ -142,6 +149,8 @@
       Object.keys(isObj(f.bots) ? f.bots : {}).forEach((g) => {
         const b = f.bots[g];
         if (!isObj(b) || num(b.x) === null || num(b.y) === null) return;
+        // a position on another map than the fight's is not on this map
+        if (num(o.mapId) && num(b.m) && b.m !== o.mapId) return;
         if (b.alive === false) { if (acc[g]) { acc[g].last = null; acc[g].seg++; } return; }
         step(g, b, num(b.m) || 0);
       });
@@ -155,7 +164,7 @@
           if (mobIds.length >= MAX_MOBS) return;
           mobIds.push(key);
         }
-        if (num(m.hp) !== null && m.hp <= 0) { if (acc[key]) acc[key].last = null; return; }
+        if (num(m.hp) !== null && m.hp <= 0) { if (acc[key]) { acc[key].last = null; acc[key].seg++; } return; }
         step(key, m, 0);
       });
     });
@@ -206,7 +215,7 @@
     tacticRows(tactics).forEach((r) => {
       if (out.length >= MAX_MECHANICS || r.map !== mapId || r.boss !== bossEntry || !hasSpot(r)) return;
       if (r.kind === "anchor") {
-        const rad = num(r.param) !== null && r.param > 0 ? r.param : 0;
+        const rad = num(r.param) !== null && r.param > 0 ? Math.min(r.param, MAX_RADIUS_YD) : 0;
         if (!rad) return;
         const tank = num(r.priority) !== null && r.priority > 0 && r.priority < rad ? r.priority : 0;
         out.push({ kind: "anchor", x: r.spotX, y: r.spotY, r: rad, rTank: tank, label: "Anchor " + rad + " yd" + (tank ? " · tanks " + tank + " yd" : "") });
@@ -222,12 +231,14 @@
     const src = CLOUD_SOURCES[e];
     if (!src) return 0;
     const row = tacticRows(tactics).find((r) => r.kind === "seek_aura" && r.target === e && num(r.param) !== null && r.param > 0);
-    return row ? row.param : src.defaultR;
+    return row ? Math.min(row.param, MAX_RADIUS_YD) : src.defaultR;
   }
 
   // The clouds of the range: a unit of CLOUD_SOURCES seen in one frame and not in the next (or at 1 % health or less) leaves a cloud at its
   // last place, at that frame's time. A unit still there in the last frame at some health has not died yet.
-  function clouds(frames, range, tactics) {
+  // opts.endMs and opts.wipe: a unit that merely vanishes in the last seconds of a wipe or reset is the reset, not a death, and leaves no cloud.
+  function clouds(frames, range, tactics, opts) {
+    const o = opts || {};
     const out = [];
     const list = (Array.isArray(frames) ? frames : []).filter((f) => isObj(f) && num(f.t) !== null);
     const done = {};
@@ -237,8 +248,10 @@
         if (!isObj(m) || !CLOUD_SOURCES[m.e] || done[id] || num(m.x) === null || num(m.y) === null) return;
         const next = list[i + 1];
         const gone = !!next && !(isObj(next.mobs) && next.mobs[id]);
-        if (!(gone || (num(m.hp) !== null && m.hp <= 1))) return;
+        const dying = num(m.hp) !== null && m.hp <= 1;
+        if (!(gone || dying)) return;
         done[id] = true;
+        if (!dying && o.wipe && num(o.endMs) !== null && f.t >= o.endMs - WIPE_TAIL_MS) return;
         if (!inRange(f.t, range) || out.length >= MAX_CLOUDS) return;
         out.push({ x: m.x, y: m.y, t: f.t, r: cloudRadius(tactics, m.e), label: "Son cloud" });
       });
@@ -331,23 +344,40 @@
 
   // ---- fit
 
-  // The box the map fits when a fight opens: every unit position of the frames, the deaths and the mechanics (an anchor circle with its
-  // radius). null when there is nothing to fit.
-  function bounds(frames, marks) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    const grow = (x, y, pad) => {
-      if (num(x) === null || num(y) === null) return;
-      const p = num(pad) || 0;
-      x0 = Math.min(x0, x - p); x1 = Math.max(x1, x + p);
-      y0 = Math.min(y0, y - p); y1 = Math.max(y1, y + p);
-    };
+  const median = (list) => {
+    const v = list.slice().sort((p, q) => p - q);
+    return v.length ? v[v.length >> 1] : 0;
+  };
+
+  // The box the map fits when a fight opens: the unit positions of the frames (on the card's map: a position on another map is left out),
+  // the deaths and the mechanics (an anchor circle with its radius, at most MAX_RADIUS_YD). A point farther than OUTLIER_YD from the median
+  // of all of them is an outlier (a corrupt report) and does not count. null when nothing is left.
+  function bounds(frames, marks, mapId) {
+    const pts = [];       // [x, y, pad]
     (Array.isArray(frames) ? frames : []).forEach((f) => {
       if (!isObj(f) || !isObj(f.bots)) return;
-      Object.keys(f.bots).forEach((g) => { if (isObj(f.bots[g])) grow(f.bots[g].x, f.bots[g].y, 0); });
+      Object.keys(f.bots).slice(0, MAX_BOTS).forEach((g) => {
+        const b = f.bots[g];
+        if (!isObj(b) || !place(b.x) || !place(b.y)) return;
+        if (num(mapId) && num(b.m) && b.m !== mapId) return;
+        pts.push([b.x, b.y, 0]);
+      });
     });
     const m = marks || {};
-    (Array.isArray(m.deaths) ? m.deaths : []).forEach((d) => { if (isObj(d)) grow(d.x, d.y, 0); });
-    (Array.isArray(m.mechanics) ? m.mechanics : []).forEach((d) => { if (isObj(d)) grow(d.x, d.y, d.kind === "anchor" ? d.r : 0); });
+    (Array.isArray(m.deaths) ? m.deaths : []).forEach((d) => { if (isObj(d) && place(d.x) && place(d.y)) pts.push([d.x, d.y, 0]); });
+    (Array.isArray(m.mechanics) ? m.mechanics : []).forEach((d) => {
+      if (isObj(d) && place(d.x) && place(d.y)) pts.push([d.x, d.y, d.kind === "anchor" && num(d.r) !== null ? Math.max(0, Math.min(d.r, MAX_RADIUS_YD)) : 0]);
+    });
+    if (!pts.length) return null;
+    const stride = Math.max(1, Math.ceil(pts.length / 4000));
+    const sample = pts.filter((_, i) => i % stride === 0);
+    const mx = median(sample.map((p) => p[0])), my = median(sample.map((p) => p[1]));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pts.forEach((p) => {
+      if (Math.hypot(p[0] - mx, p[1] - my) > OUTLIER_YD) return;
+      x0 = Math.min(x0, p[0] - p[2]); x1 = Math.max(x1, p[0] + p[2]);
+      y0 = Math.min(y0, p[1] - p[2]); y1 = Math.max(y1, p[1] + p[2]);
+    });
     return x1 >= x0 && y1 >= y0 ? { x0, y0, x1, y1 } : null;
   }
 
@@ -359,18 +389,19 @@
     const mech = flags.marks || i.fit ? mechanics(i.tactics, i.mapId, i.boss) : [];
     const out = { trails: {}, clouds: [], puller: null, mechanics: flags.marks ? mech : [], heat: null, bounds: null };
     if (flags.trails || flags.summons) {
-      const all = trails(frames, i.range, { mobs: !!flags.summons, boss: i.boss });
+      const all = trails(frames, i.range, { mobs: !!flags.summons, boss: i.boss, mapId: i.mapId });
       Object.keys(all).forEach((k) => {
         const isMob = k.indexOf("m:") === 0;
         if ((isMob && flags.summons) || (!isMob && flags.trails)) out.trails[k] = all[k];
       });
     }
     if (flags.marks) {
-      out.clouds = clouds(frames, i.range, i.tactics);
+      const f = i.fight || {};
+      out.clouds = clouds(frames, i.range, i.tactics, { endMs: num(f.dur_ms), wipe: f.outcome === "wipe" || f.outcome === "reset" });
       out.puller = pullerPath(frames, i.range);
     }
     if (flags.heat) out.heat = heat(frames, i.fight, i.range, HEAT_CELL_YD);
-    if (i.fit) out.bounds = bounds(frames, { deaths: deathMarks(i.fight, null), mechanics: mech });
+    if (i.fit) out.bounds = bounds(frames, { deaths: deathMarks(i.fight, null), mechanics: mech }, i.mapId);
     return out;
   }
 

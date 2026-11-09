@@ -153,6 +153,9 @@ const bind = (t, db, extra) => Object.assign({
   const st = F.create("Gbmage");
   assert.ok(F.applyPos(st, { ts_ms: 1, bots: [{ g: 1, x: 2, y: 3, hp: 50, mhp: 100, a: 1 }], mobs: [{ id: "9", x: 4, y: 5, hp: 60 }] }));
   assert.deepStrictEqual(st.pos[0], { t: 1, bots: [[1, 2, 3, 50, 1]], mobs: [["9", 4, 5, 60]] });
+  assert.ok(F.applyPos(st, { ts_ms: 1.5, bots: [{ g: 2, x: 1, y: 1, a: 1 }, { g: 3, x: 1, y: 1, hp: 5, a: 1 }], mobs: [{ id: "8", x: 1, y: 1 }] }));
+  assert.deepStrictEqual(st.pos[1], { t: 1.5, bots: [[2, 1, 1, null, 1], [3, 1, 1, null, 1]], mobs: [["8", 1, 1, null]] }, "a health the frame did not carry is null, not 0");
+  st.pos.pop();
   assert.ok(!F.applyPos(st, { ts_ms: 1, bots: [], mobs: [] }), "not newer");
   for (let i = 2; i <= F.POS_MAX + 10; i++) F.applyPos(st, { ts_ms: i, bots: [], mobs: [] });
   assert.strictEqual(st.pos.length, F.POS_MAX);

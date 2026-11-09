@@ -279,6 +279,6 @@ const deathsOf = (p) => p.body.split("<h4>Deaths</h4>")[1];
   const html = fs.readFileSync(path.join(jsDir, "..", "..", "index.html"), "utf8");
   const at = (n) => html.indexOf("/static/js/" + n);
   assert.ok(at("fightmeters.js") > 0 && at("fightmeters.js") < at("app.js"), "fightmeters.js loads before app.js");
-  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=3/.test(html) && /static\/js\/app\.js\?v=58/.test(html) && /app\.css\?v=32/.test(html), "the changed assets carry new versions");
+  assert.ok(/fightmeters\.js\?v=1/.test(html) && /fightreplay\.js\?v=4/.test(html) && /static\/js\/app\.js\?v=59/.test(html) && /app\.css\?v=32/.test(html), "the changed assets carry new versions");
 }
 console.log("fdmeters_ui_check.js ok");
