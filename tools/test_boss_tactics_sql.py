@@ -48,7 +48,7 @@ INSERT_COLUMNS = {
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
     r"(?: AND `boss_entry` IN \(([\d, ]+)\)| AND `boss_entry` = (\d+))?"
-    r"(?: AND `kind` = '(\w+)')?"
+    r"(?: AND `kind` IN \('([\w', ]+)'\)| AND `kind` = '(\w+)')?"
     r"(?: AND `target_entry` = (\d+) AND `spell_id` = (\d+))?"
     r"(?: AND `hp_min` = (\d+) AND `hp_max` = (\d+))?;?$"
 )
@@ -189,27 +189,33 @@ def _matches(row, wanted):
 
 
 def delete_scope(match):
-    """(map, bosses, single entry, kind, target, spell, hp_min, hp_max) of a parsed DELETE, None when absent."""
+    """(map, bosses, single entry, kinds, kind, target, spell, hp_min, hp_max) of a parsed DELETE, None when absent."""
+    kinds = None
+    if match.group(4):
+        kinds = {word.strip().strip("'") for word in match.group(4).split(",")}
     return (
         int(match.group(1)),
         {int(entry) for entry in match.group(2).split(",")} if match.group(2) else None,
         int(match.group(3)) if match.group(3) else None,
-        match.group(4),
-        int(match.group(5)) if match.group(5) else None,
+        kinds,
+        match.group(5),
         int(match.group(6)) if match.group(6) else None,
         int(match.group(7)) if match.group(7) else None,
         int(match.group(8)) if match.group(8) else None,
+        int(match.group(9)) if match.group(9) else None,
     )
 
 
 def delete_covers(scope, key):
     """Whether the parsed DELETE removes one (map, boss_entry, kind, target_entry, spell_id[, hp_min, hp_max]) key."""
-    map_id, bosses, entry, kind, target, spell, hp_min, hp_max = scope
+    map_id, bosses, entry, kinds, kind, target, spell, hp_min, hp_max = scope
     if key[0] != map_id:
         return False
     if entry is not None and key[1] != entry:
         return False
     if bosses is not None and key[1] not in bosses:
+        return False
+    if kinds is not None and key[2] not in kinds:
         return False
     if kind is not None and key[2] != kind:
         return False
@@ -791,7 +797,8 @@ class BossTacticsSql(unittest.TestCase):
                          "the Hakkar anchor row drifted")
         self.assertIsNone(new_kind_problem(anchor))
         anchors = [key for key in live if key[2] == "anchor"]
-        self.assertEqual([(309, 14834, "anchor", 0, 0)], anchors, "only Hakkar is anchored")
+        self.assertEqual([(309, 14834, "anchor", 0, 0), (249, 10184, "anchor", 0, 0)], anchors,
+                         "only Hakkar and Onyxia are anchored")
         seek = live[(309, 14834, "seek_aura", 11357, 24321)]
         self.assertEqual(name, seek["file"], "the anchor migration re-inserts the seek_aura row")
         self.assertEqual((-11787.4, -1664.3, 54.0), (seek["spot_x"], seek["spot_y"], seek["spot_z"]))
@@ -838,6 +845,55 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
+
+    def test_onyxia_walk2a_rows_are_live(self):
+        # 20261110120000_world.sql: slot 1 posts at the NE spot T for Cindarion 50143 from 65-41 %, damage holds
+        # off Onyxia 10184 at 42 % while he fights, and the room-centre anchor keeps the raid out of the
+        # respawned room-mouth Warder. The core ids are pinned in BossTacticsCoreData below; here the live
+        # table shape is, so a wrong number or a delete that reaches too far fails.
+        name = "20261110120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2a migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        post = live.get((249, 10184, "tank_post", 50143, 0))
+        self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
+        self.assertEqual(name, post["file"], "the walk 2a migration owns the tank_post row")
+        self.assertEqual((1, 25.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
+                         (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
+                          post["spot_x"], post["spot_y"], post["spot_z"]),
+                         "the Onyxia tank_post row drifted")
+        gate = live.get((249, 10184, "gate_hold", 50143, 0))
+        self.assertIsNotNone(gate, "the Onyxia gate_hold row is missing")
+        self.assertEqual(name, gate["file"], "the walk 2a migration owns the gate_hold row")
+        self.assertEqual((0, 42.0, 0, 100, 0.0),
+                         (gate["priority"], gate["param"], gate["hp_min"], gate["hp_max"], gate["window_s"]),
+                         "the Onyxia gate_hold row drifted")
+        anchor = live.get((249, 10184, "anchor", 0, 0))
+        self.assertIsNotNone(anchor, "the Onyxia anchor row is missing")
+        self.assertEqual(name, anchor["file"], "the walk 2a migration owns the anchor row")
+        self.assertEqual((0, 60.0, 0, 100, -22.0, -213.5, -86.5),
+                         (anchor["priority"], anchor["param"], anchor["hp_min"], anchor["hp_max"],
+                          anchor["spot_x"], anchor["spot_y"], anchor["spot_z"]),
+                         "the Onyxia anchor row drifted")
+        for row in (post, gate, anchor):
+            self.assertIsNone(new_kind_problem(row))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` IN ('tank_post', 'gate_hold', 'anchor');", text)
+        self.assertEqual(3, len(re.findall(r"(?m)^\(249, 10184, '", text)))
+        # Onyxia 10184 carries exactly the three walk 2a rows: the migration's DELETE would drop any other
+        # 10184 row, and its INSERT writes only these three.
+        self.assertEqual([(249, 10184, "anchor", 0, 0), (249, 10184, "gate_hold", 50143, 0),
+                          (249, 10184, "tank_post", 50143, 0)],
+                         sorted(key for key in live if key[0] == 249 and key[1] == 10184),
+                         "Onyxia 10184 carries more or fewer rows than the walk 2a migration's three")
+        # The 50143/50144 rows of 20261109200100 stay.
+        for key in ((249, 50143, "taunt_after_cast", 0, 0), (249, 50143, "interrupt", 0, 33439),
+                    (249, 50143, "behind", 0, 33439), (249, 50143, "kill_first", 50143, 0),
+                    (249, 50144, "kill_first", 50144, 0), (249, 50144, "taunt_after_cast", 0, 0),
+                    (249, 50144, "behind", 0, 33441)):
+            self.assertIn(key, live, "the Cindarion/Hatcher rows must stay: %s" % (key,))
 
     def test_arlokk_rows(self):
         # 20261105190000_world.sql: the boss-first grid entries (Arlokk herself, then the Zulian Prowler while she is
@@ -1221,7 +1277,7 @@ class BossTacticsSql(unittest.TestCase):
         line = next(line for line in text.splitlines() if DELETE_LINE.match(line))
         match = DELETE.match(line)
         self.assertIsNotNone(match, line)
-        self.assertEqual("linked_death", match.group(4))
+        self.assertEqual("linked_death", match.group(5))
         live = {
             (309, 14599, "linked_death", 11347, 0),
             (309, 14599, "linked_death", 11348, 0),
@@ -1629,6 +1685,71 @@ class BossTacticsSql(unittest.TestCase):
                     del live[stand_row]
             for own_row in own:
                 live[own_row] = name
+
+    def test_every_comment_fits_its_column(self):
+        # The world updater stopped on 20261110120000: the anchor comment ran 256
+        # characters against ai_boss_tactic.comment VARCHAR(255). Every comment
+        # written to a 255-wide comment column must fit, whatever table it is in.
+        # MySQL stores '' inside a quoted value as one apostrophe, so the length
+        # that counts is the value after doubling and backslash escapes are undone.
+        def stored_length(raw):
+            inner = raw.strip()[1:-1].replace("''", "'")
+            out = []
+            index = 0
+            while index < len(inner):
+                if inner[index] == "\\" and index + 1 < len(inner):
+                    out.append(inner[index + 1])
+                    index += 2
+                else:
+                    out.append(inner[index])
+                    index += 1
+            return len("".join(out))
+
+        targets = {
+            "ai_boss_tactic": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_tactic`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_boss_stand": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_stand`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_plan": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_plan`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_leg": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_leg`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_step": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_step`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+        }
+        for path in migration_paths():
+            name = os.path.basename(path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            for table, insert in targets.items():
+                if "`%s`" % table not in text:
+                    continue
+                for statement in _sql_statements(text):
+                    match = insert.match(statement.strip())
+                    if not match:
+                        continue
+                    columns = [column.strip().strip("`") for column in match.group(1).split(",")]
+                    if "comment" not in columns:
+                        continue
+                    comment = columns.index("comment")
+                    for tuple_text in _tuples(match.group(2)):
+                        values = _selected_values(tuple_text, {comment})
+                        if comment not in values:
+                            continue
+                        raw = values[comment].strip()
+                        if raw == "NULL" or raw == "":
+                            continue
+                        self.assertTrue(raw.startswith("'"), "unparsable comment in %s: %s" % (name, raw[:80]))
+                        length = stored_length(raw)
+                        self.assertLessEqual(length, 255,
+                                             "%s `%s` comment is %d characters: %r"
+                                             % (name, table, length, raw[1:81]))
+
 
 
 def _sql_statements(text):
