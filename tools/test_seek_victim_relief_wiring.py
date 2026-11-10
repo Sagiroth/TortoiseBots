@@ -1,10 +1,10 @@
 """Wiring pins for the victim relief (Hakkar's Sons on the boss's victim tank, walk 66).
 
 The rules are pure and tested in tools/test_seek_aura_policy.cpp (the dwell, the
-retake latch, the reliever, the keep, the wrap). These pins only prove the live
-code calls them: FindBossSeekTank answers a relief for the other off-tank, after
-the boss-victim return and the own-Son block, and the relief take logs its own
-row. Flag off keeps today's takes exactly.
+retake latch, the reliever, the claim, the keep, the wrap). These pins only prove
+the live code calls them: FindBossSeekTank answers a relief for any raid tank
+while two or more are alive, after the boss-victim return and the own-Son block,
+and the relief take logs its own row. Flag off keeps today's takes exactly.
 Run: python3 -m unittest tools/test_seek_victim_relief_wiring.py
 """
 import pathlib
@@ -25,7 +25,7 @@ class SeekVictimReliefWiring(unittest.TestCase):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         self.assertIn("Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,", ACTIONS)
         boss_victim = fn.index("if ((thirdTank || pickupTank || healerTaker) &&")
-        relief_call = fn.index("if (thirdTank || healerTaker)")
+        relief_call = fn.index("if (roles.botIndex >= 0)")
         relief = fn.index("FindSeekVictimRelief(ai, bot, roles, state)")
         third_pickup = fn.index("if (thirdTank || pickupTank)")
         on_son = fn.index("if (onTank)")
@@ -33,14 +33,15 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertIn("SeekTankTakeAllowed", fn[boss_victim:fn.rindex("return task;", boss_victim, relief)])
         self.assertLess(on_son, relief_call)
         self.assertLess(fn.index("return task;", on_son), relief_call)
-        third_healer = fn[relief_call:third_pickup]
-        self.assertIn("task.takeSrc = \"victim_relief\";", third_healer)
-        self.assertEqual(third_healer.count("task.take = true;"),
-                         third_healer.count("task.takeSrc = "))
+        relief_block = fn[relief_call:third_pickup]
+        self.assertIn("task.takeSrc = \"victim_relief\";", relief_block)
+        self.assertEqual(relief_block.count("task.take = true;"),
+                         relief_block.count("task.takeSrc = "))
 
-    def test_the_call_is_for_the_two_off_tanks(self):
+    def test_the_call_is_for_every_raid_tank(self):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
-        self.assertIn("if (thirdTank || healerTaker)\n    {\n        if (Unit* const reliefSon =", fn)
+        self.assertIn("if (roles.botIndex >= 0)\n    {\n        if (Unit* const reliefSon =", fn)
+        self.assertNotIn("if (thirdTank || healerTaker)\n    {\n        if (Unit* const reliefSon =", fn)
 
     def test_the_function_reads_the_flag_and_names_the_take(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
@@ -52,6 +53,25 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertNotIn("SeekVictimReliefDue(", fn)
         self.assertNotIn("SeekVictimReliefStart(", fn)
         self.assertNotIn('"seek relief son=', fn)
+
+    def test_VictimRelief_TwoTanksAliveRelieves(self):
+        fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
+        # Two living tanks are enough, and every raid tank may relieve (roles.tanks holds live members only).
+        self.assertIn("SeekVictimReliefAllowed(roles.tanks.size())", fn)
+        self.assertNotIn("roles.tanks.size() < 3", fn)
+        self.assertIn("const bool tankRole = roles.botIndex >= 0;", fn)
+        self.assertIn("SeekVictimRelieverOk(tankRole,", fn)
+        # The claim carries the pick's rank, so a nearer reliever can win it.
+        self.assertIn("SeekVictimReliefClaimFor(true, latch, self, nowMs, roles.botIndex, sonYd)", fn)
+        self.assertIn("const float sonYd = bot->GetDistance(son);", fn)
+        self.assertIn("inline bool SeekVictimReliefAllowed(std::size_t livingTanks)", POLICY)
+        self.assertIn("return livingTanks >= 2;", POLICY)
+        self.assertIn("inline bool SeekReliefClaimBeats(float selfYd, int selfIdx, float claimYd, int claimIdx)",
+                      POLICY)
+        claim = POLICY[POLICY.index("inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch,"):
+                        POLICY.index("inline bool SeekVictimReliefKept(")]
+        self.assertIn("if (latch.claimTaker == self)", claim)
+        self.assertIn("SeekReliefClaimBeats(selfYd, selfIdx, latch.claimYd, latch.claimIdx)", claim)
 
     def test_VictimRelief_LatchKeyedByInstanceAndSon(self):
         self.assertIn(

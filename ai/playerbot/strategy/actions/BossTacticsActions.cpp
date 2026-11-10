@@ -9932,10 +9932,12 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
 
-// DungeonRunSeekVictimRelief: a Son whose victim is the boss's own victim tank is taken off it by a free off-tank.
+// DungeonRunSeekVictimRelief: a Son whose victim is the boss's own victim tank is taken off it by another living
+// tank of the raid.
 Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
 {
-    if (!sPlayerbotAIConfig.dungeonRunSeekVictimRelief || !state.row || !state.boss || roles.tanks.size() < 3)
+    if (!sPlayerbotAIConfig.dungeonRunSeekVictimRelief || !state.row || !state.boss ||
+        !SeekVictimReliefAllowed(roles.tanks.size()))
         return nullptr;
     const std::uint32_t nowMs = state.nowMs;
     Unit* const bossVictim = state.boss->GetVictim();
@@ -9949,8 +9951,9 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
         return false;
     }();
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
-    // This read's own call answers: one of the two off-tanks (never tanks[0], never a two-tank pickup).
-    const bool offTank = roles.tanks.size() >= 3 && (roles.tanks[1] == bot || roles.tanks[2] == bot);
+    // This read's own call answers: any tank of the raid's order; roles.tanks holds live members only, so a dead
+    // tank is not in it.
+    const bool tankRole = roles.botIndex >= 0;
     Unit* kept = nullptr;
     Unit* due = nullptr;
     {
@@ -9978,7 +9981,7 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
             if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
                 kept = son;
         }
-        if (!kept && offTank)
+        if (!kept && tankRole)
         {
             const bool selfIsBossVictim = state.boss->GetVictim() == bot;
             const bool selfCharmed = !bot->GetCharmerGuid().IsEmpty();
@@ -9994,11 +9997,12 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
                 if (found == g_seekReliefLatches.end())
                     continue;
                 SeekReliefLatch& latch = found->second;
-                // Eligible first, so a bot that cannot take never holds the claim; the claim stops the other
-                // off-tank from picking the same Son before this take stamps it.
-                if (SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
-                                         bot->GetDistance(son)) &&
-                    SeekVictimReliefClaimFor(true, latch, self, nowMs))
+                // Eligible first, so a bot that cannot take never holds the claim; the claim stops another tank
+                // from picking the same Son before this take stamps it, and a nearer one may take it over.
+                const float sonYd = bot->GetDistance(son);
+                if (SeekVictimRelieverOk(tankRole, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
+                                         sonYd) &&
+                    SeekVictimReliefClaimFor(true, latch, self, nowMs, roles.botIndex, sonYd))
                 {
                     due = son;
                     break;
@@ -10311,7 +10315,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             return task;
         }
     }
-    if (thirdTank || healerTaker)
+    if (roles.botIndex >= 0)
     {
         if (Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state))
         {

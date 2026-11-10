@@ -1023,8 +1023,8 @@ int main()
         CHECK(SeekTakenCapRowDue(other, true));
     }
 
-    // The victim relief (DungeonRunSeekVictimRelief): a Son on the boss's victim tank is taken off it by the other
-    // off-tank, at most twice per Son and 8 s apart. Named failing case VictimRelief_DueAfterDwell: a fresh latch
+    // The victim relief (DungeonRunSeekVictimRelief): a Son on the boss's victim tank is taken off it by another
+    // living tank, at most twice per Son and 8 s apart. Named failing case VictimRelief_DueAfterDwell: a fresh latch
     // ticks true at 5000, due at 6000, not at 5999.
     {
         SeekReliefLatch latch;
@@ -1060,8 +1060,8 @@ int main()
         CHECK(!SeekVictimReliefDue(true, latch, 22000));
         CHECK(!SeekVictimReliefDue(true, latch, 30000));
     }
-    // The reliever: one of the two off-tanks, not the boss's victim, not charmed, holding no Son, its taunt ready,
-    // within 20 yd.
+    // The reliever: any living tank of the raid's order, not the boss's victim, not charmed, holding no Son, its
+    // taunt ready, within 20 yd.
     {
         CHECK(SeekVictimRelieverOk(true, false, false, false, true, 20.0f));
         CHECK(!SeekVictimRelieverOk(false, false, false, false, true, 5.0f));
@@ -1182,6 +1182,42 @@ int main()
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 999));
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 1000));
         CHECK(latch.claimTaker == 8);
+    }
+    // VictimRelief_TwoTanksAliveRelieves: relief runs with two living tanks, and the free tank takes the Son off the
+    // boss's victim; one tank alone never relieves.
+    {
+        CHECK(SeekVictimReliefAllowed(2));
+        CHECK(SeekVictimReliefAllowed(3));
+        CHECK(SeekVictimReliefAllowed(5));
+        CHECK(!SeekVictimReliefAllowed(1));
+        CHECK(!SeekVictimReliefAllowed(0));
+        // The boss's victim is tanks[0] and holds the Son; tanks[1] is free and its taunt is ready, 5 yd off.
+        CHECK(!SeekVictimRelieverOk(true, true, false, false, true, 5.0f));
+        CHECK(SeekVictimRelieverOk(true, false, false, false, true, 5.0f));
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefDue(true, latch, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 1, 5.0f));
+        CHECK(SeekVictimReliefNoteExec(latch, 8, 6000, true));
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_ReliefPicksNearer: of two qualifying relievers the nearer wins the claim without moving its
+    // stamp, a tie goes to the lower tank index, and the displaced picker cannot stamp over the new one.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 1, 8.0f));  // the farther tank picks first
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 2, 4.0f));  // nearer: takes the claim over
+        CHECK(latch.claimTaker == 8);
+        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 9.0f)); // farther than the holder: refused
+        CHECK(SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 4.0f));  // equal distance, lower index: wins
+        CHECK(latch.claimTaker == 9);
+        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 10, 6000, 2, 4.0f)); // equal distance, higher index: refused
+        CHECK(!SeekVictimReliefNoteExec(latch, 7, 6000, true));           // the first picker cannot stamp over it
+        CHECK(SeekVictimReliefNoteExec(latch, 9, 6000, true));
+        CHECK(latch.takes == 1);
     }
     // VictimRelief_ClaimExpires: an unconfirmed claim stops blocking after 1000 ms.
     {

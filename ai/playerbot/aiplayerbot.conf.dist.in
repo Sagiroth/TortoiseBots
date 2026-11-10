@@ -1162,10 +1162,10 @@ AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 # Hakkar dies, leaves combat or evades. Off keeps the old behaviour.
 AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 
-# The victim relief (Hakkar's Sons, needs DungeonRunSeekAura; keep off for now: the relief claim fix is still in
-# review, follow-up commits on this branch): a seek source whose victim is the boss's own victim tank for 1 s is
-# taken off it by the other off-tank (within 20 yd, its taunt ready, holding no source, not the boss's victim), at
-# most twice per source and 8 s apart. Off keeps today's takes.
+# The victim relief (Hakkar's Sons, needs DungeonRunSeekAura; keep off for now: the relief claim fix is in, it is on
+# only after a live walk shows a gain): with two or more tanks alive, a seek source whose victim is the boss's own
+# victim tank for 1 s is taken off it by another living tank (within 20 yd, its taunt ready, holding no source, not
+# the boss's victim; the nearer one wins), at most twice per source and 8 s apart. Off keeps today's takes.
 AiPlayerbot.DungeonRunSeekVictimRelief = 0
 
 # The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son

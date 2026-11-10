@@ -728,10 +728,10 @@ namespace ai
         return !isBossVictim;
     }
 
-    // A Son whose victim is the boss's own victim tank is taken off it by the other off-tank (DungeonRunSeekVictimRelief,
-    // walk 66): a Son that sits on the boss's victim tank (Hakkar with a Son, after Cause Insanity hands him to a tank
-    // already holding one) kills it in a median 3 s. The dwell keeps a passing frame from starting a take. Pure so the
-    // sweep's latch map stays a caller detail.
+    // A Son whose victim is the boss's own victim tank is taken off it by another living tank of the raid
+    // (DungeonRunSeekVictimRelief, walks 66 and 71): a Son that sits on the boss's victim tank (Hakkar with a Son,
+    // after Cause Insanity hands him to a tank already holding one) kills it in a median 3 s. The dwell keeps a
+    // passing frame from starting a take. Pure so the sweep's latch map stays a caller detail.
     constexpr std::uint32_t kSeekVictimReliefDwellMs = 1000;
     constexpr std::uint32_t kSeekVictimReliefKeepMs = 6000;
     constexpr std::uint32_t kSeekVictimReliefRetakeMs = 8000;
@@ -753,6 +753,8 @@ namespace ai
         std::uint32_t activeSinceMs = 0;  // that attempt's first stamp; later ticks never move it
         std::uint64_t claimTaker = 0;     // the pending selection claim; 0: none
         std::uint32_t claimMs = 0;        // the claim's tick; it expires 1000 ms later
+        int claimIdx = -1;                // the claimant's tank position (roles.tanks); -1: unranked
+        float claimYd = 0.0f;             // the claimant's distance to the Son at the pick
         std::uint8_t takes = 0;
         std::uint32_t seenMs = 0;      // the last read that touched the latch (the sweep's clock)
     };
@@ -797,33 +799,55 @@ namespace ai
         return latch.lastStartMs == 0 || nowMs - latch.lastStartMs >= kSeekVictimReliefRetakeMs;
     }
 
-    // This tank may start it: one of the two off-tanks, not the boss's victim, not charmed, holding no Son of the
-    // fight, its taunt ready, within 20 yd of the Son.
-    inline bool SeekVictimRelieverOk(bool offTank, bool selfIsBossVictim, bool selfCharmed, bool selfHoldsSon,
+    // Relief runs while two or more tanks of the raid are alive (roles.tanks holds live members only): with two
+    // tanks the survivor is the only reliever, so the old three-tank rule left it nothing to take with.
+    inline bool SeekVictimReliefAllowed(std::size_t livingTanks)
+    {
+        return livingTanks >= 2;
+    }
+
+    // This tank may start it: any living tank of the raid's order (the main tank included), not the boss's victim,
+    // not charmed, holding no Son of the fight, its taunt ready, within 20 yd of the Son.
+    inline bool SeekVictimRelieverOk(bool tankRole, bool selfIsBossVictim, bool selfCharmed, bool selfHoldsSon,
                                      bool tauntReady, float sonYd)
     {
-        return offTank && !selfIsBossVictim && !selfCharmed && !selfHoldsSon && tauntReady &&
+        return tankRole && !selfIsBossVictim && !selfCharmed && !selfHoldsSon && tauntReady &&
             sonYd <= kSeekVictimReliefReachYd;
     }
 
-    // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two off-tanks
-    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms, and a read
-    // by the same tank is answered from its own live claim, so a tank whose ticks keep going to a higher action
-    // still executes the pick it made. Another taker is refused while the claim lives. The claim is never refreshed:
-    // it expires 1000 ms after the first pick, and then the same tank may claim again. The caller checks the tank's
-    // eligibility first, so a bot that cannot take never holds the claim.
-    inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
+    // Of two qualifying relievers the nearer one wins the claim; a tie goes to the lower tank index.
+    inline bool SeekReliefClaimBeats(float selfYd, int selfIdx, float claimYd, int claimIdx)
+    {
+        return selfYd < claimYd || (selfYd == claimYd && selfIdx < claimIdx);
+    }
+
+    // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two tanks
+    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms; a read by
+    // the same taker is answered from its own live claim, so a tank whose ticks keep going to a higher action still
+    // executes the pick it made. The claim is never refreshed: it expires 1000 ms after the first pick, and then
+    // the same tank may claim again. Another tank is refused while the claim lives unless it stands nearer the Son
+    // (a tie goes to the lower tank index), which takes the claim over on its first stamp. The caller checks the
+    // tank's eligibility first, so a bot that cannot take never holds the claim.
+    inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self,
+                                         std::uint32_t nowMs, int selfIdx = -1, float selfYd = 0.0f)
     {
         if (!SeekVictimReliefDue(flagOn, latch, nowMs))
             return false;
         if (SeekVictimReliefAttemptLive(latch, nowMs))
             return false;
-        // Own live claim: still the pick, so the trigger's read does not shut its own action out. Never refreshed:
-        // the claim still expires 1000 ms after it was first made.
         if (SeekVictimReliefClaimLive(latch, nowMs))
-            return latch.claimTaker == self;
+        {
+            if (latch.claimTaker == self)
+                return true;
+            if (selfIdx < 0 || latch.claimIdx < 0 ||
+                !SeekReliefClaimBeats(selfYd, selfIdx, latch.claimYd, latch.claimIdx))
+                return false;
+        }
+        else
+            latch.claimMs = nowMs;
         latch.claimTaker = self;
-        latch.claimMs = nowMs;
+        latch.claimIdx = selfIdx;
+        latch.claimYd = selfYd;
         return true;
     }
 
