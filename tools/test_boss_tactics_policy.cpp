@@ -612,7 +612,8 @@ static void TestTankPost_UnselectableSubjectNotArrived()
 // Onyxia walk 2: the raid guard needs to know which units a tank row assigns to a tank slot (AiPlayerbot.
 // DungeonRunGuardLeavesAssignedTank). An until_tank row with a slot names the unit it taunts; a tank_post row names the
 // unit it waits for; the lowest slot wins when several rows name one unit; a row without a slot, or one of another
-// mode, assigns nothing; the table answers nothing before the seal.
+// mode, assigns nothing; the table answers nothing before the seal. The kinds are kept with the slot: the guard asks
+// the assigning kind's own key.
 static void TestAssignedTankSlot_UntilTankAndTankPostRows()
 {
     BossTacticRow untilTank = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 1, 10.0f);
@@ -624,31 +625,40 @@ static void TestAssignedTankSlot_UntilTankAndTankPostRows()
     post.windowSec = 120.0f;
     {
         BossTacticTable table;
-        CHECK(table.AssignedTankSlot(249, 50143) == -1); // not sealed
+        CHECK(table.AssignedTankSlotOf(249, 50143).slot == 0); // not sealed
         CHECK(table.Add(untilTank));
-        CHECK(table.AssignedTankSlot(249, 50143) == -1); // still not sealed
+        CHECK(table.AssignedTankSlotOf(249, 50143).slot == 0); // still not sealed
         table.Seal();
-        CHECK(table.AssignedTankSlot(249, 50143) == 1);
-        CHECK(table.AssignedTankSlot(249, 50144) == -1);
-        CHECK(table.AssignedTankSlot(1, 50143) == -1);
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.slot == 1);
+        CHECK(assigned.untilTank);
+        CHECK(!assigned.tankPost);
+        CHECK(table.AssignedTankSlotOf(249, 50144).slot == 0);
+        CHECK(table.AssignedTankSlotOf(1, 50143).slot == 0);
         // Only one map's own rows count.
-        CHECK(table.AssignedTankSlot(250, 50143) == -1);
+        CHECK(table.AssignedTankSlotOf(250, 50143).slot == 0);
     }
     {
-        // An until_tank row and a tank_post row on the same unit: the lower slot stays.
+        // An until_tank row and a tank_post row on the same unit: the lower slot stays, and both kinds stay set.
         BossTacticTable table;
         CHECK(table.Add(untilTank));
         CHECK(table.Add(post));
         table.Seal();
-        CHECK(table.AssignedTankSlot(249, 50143) == 1);
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.slot == 1);
+        CHECK(assigned.untilTank);
+        CHECK(assigned.tankPost);
     }
     {
-        // The post alone: the unit it waits for is assigned to its slot.
+        // The post alone: the unit it waits for is assigned to its slot, by the post kind only.
         BossTacticTable table;
         CHECK(table.Add(post));
         table.Seal();
-        CHECK(table.AssignedTankSlot(249, 50143) == 2);
-        CHECK(table.AssignedTankSlot(249, 10184) == -1);
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.slot == 2);
+        CHECK(!assigned.untilTank);
+        CHECK(assigned.tankPost);
+        CHECK(table.AssignedTankSlotOf(249, 10184).slot == 0);
     }
     {
         // A slot-less until_tank row assigns nothing, nor does a blink row.
@@ -660,8 +670,8 @@ static void TestAssignedTankSlot_UntilTankAndTankPostRows()
         CHECK(table.Add(slotless));
         CHECK(table.Add(blink));
         table.Seal();
-        CHECK(table.AssignedTankSlot(249, 50143) == -1);
-        CHECK(table.AssignedTankSlot(249, 50144) == -1);
+        CHECK(table.AssignedTankSlotOf(249, 50143).slot == 0);
+        CHECK(table.AssignedTankSlotOf(249, 50144).slot == 0);
     }
 }
 

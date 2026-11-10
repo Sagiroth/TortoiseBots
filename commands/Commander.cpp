@@ -11810,6 +11810,9 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
         // AiPlayerbot.DungeonRunGuardLeavesAssignedTank: a unit a tank row assigns to a slot stays with that tank.
         f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;
+        // ... only while the assigning row's own key reads that kind: until_tank is an aura tactic, tank_post its own.
+        f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;
+        f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).

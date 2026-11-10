@@ -26196,6 +26196,7 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
     r.liveTactics = &table;
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true; // the row's own key: an until_tank row is read only with it
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     CHECK(!RaidGuardTick(r, f, kTickMs, order));
@@ -26205,6 +26206,100 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
     f.partyAttackers = {Hitter(45002, 11262, 20, true)};
     CHECK(RaidGuardTick(r, f, kTickMs, order));
     CHECK(order == "attack 45002 Offy");
+}
+
+// The guard flag is on but the assigning row's own key is off: an until_tank row is not read without
+// AiPlayerbot.DungeonRunAuraTactics, so no tank is on the unit and the guard must take it (the failure before this
+// fix: the guard skipped it and a healer was left unprotected).
+static void TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+// A tank_post row without AiPlayerbot.DungeonRunTankPost is not read either, so the guard takes the unit even with the
+// aura tactic key on (it is the post kind that names the unit, and that key is off).
+static void TestRaidGuard_TakesAssignedUnitWhenTankPostOff()
+{
+    DungeonPlan plan;
+    plan.map = 249;
+    ai::BossTacticTable table;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TankPost;
+    row.targetEntry = 50143;
+    row.priority = 2;
+    row.param = 25.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.windowSec = 120.0f;
+    CHECK(table.Add(row));
+    table.Seal();
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+}
+
+// Both kinds name the unit and only one key is on: the enabled source still assigns it, so the guard leaves it. The
+// until_tank row is slot 1 and the post slot 2; the lower slot stays, but either kind may keep the unit.
+static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
+{
+    for (bool const untilTankOn : {true, false})
+    {
+        DungeonPlan plan;
+        plan.map = 249;
+        ai::BossTacticTable table;
+        ai::BossTacticRow untilTank;
+        untilTank.map = 249;
+        untilTank.bossEntry = 10184;
+        untilTank.kind = ai::BossTacticKind::TauntAfterCast;
+        untilTank.targetEntry = 50143;
+        untilTank.priority = 1;
+        untilTank.param = 10.0f;
+        untilTank.mode = ai::TacticMode::UntilTank;
+        CHECK(table.Add(untilTank));
+        ai::BossTacticRow post;
+        post.map = 249;
+        post.bossEntry = 10184;
+        post.kind = ai::BossTacticKind::TankPost;
+        post.targetEntry = 50143;
+        post.priority = 2;
+        post.param = 25.0f;
+        post.spotX = 8.0f;
+        post.spotY = -200.0f;
+        post.spotZ = -85.8f;
+        post.windowSec = 120.0f;
+        CHECK(table.Add(post));
+        table.Seal();
+        Run r = RaidBossRun(plan);
+        r.liveTactics = &table;
+        Facts f = RaidBossGuardFacts();
+        f.raid.guardLeavesAssigned = true;
+        f.raid.auraTactics = untilTankOn;
+        f.raid.tankPost = !untilTankOn;
+        f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+        std::string order;
+        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+        CHECK(r.offTankTurn == 0); // no turn spent on it
+    }
 }
 
 // The same unit with the key off: today's order, the off-tank takes it.
@@ -37513,6 +37608,9 @@ int main()
     TestRaidBossWhelpsGoPastTheFightOrderCap();
     TestRaidBossWhelpOnlyTwiceAtTheSameMob();
     TestRaidGuardLeavesAssignedTankUnitToItsRows();
+    TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff();
+    TestRaidGuard_TakesAssignedUnitWhenTankPostOff();
+    TestRaidGuard_LeavesUnitWhenAnySourceOn();
     TestRaidGuardAssignedUnitTakenWithFlagOff();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();

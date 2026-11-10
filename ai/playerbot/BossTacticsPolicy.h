@@ -413,6 +413,15 @@ namespace ai
         std::uint32_t anchor = 0;
         std::uint8_t group = 0;
     };
+    // The tank slot a unit is assigned to by its own rows, and which kinds of row name it: an until_tank row (read only
+    // with AiPlayerbot.DungeonRunAuraTactics) or a tank_post row (read only with AiPlayerbot.DungeonRunTankPost). Both
+    // are set when both name the unit, so either key can make the assignment live. slot 0: no row assigns the unit.
+    struct AssignedTankSlot
+    {
+        std::uint32_t slot = 0;
+        bool untilTank = false;
+        bool tankPost = false;
+    };
 
     class BossTacticTable
     {
@@ -613,8 +622,8 @@ namespace ai
                 anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::TankPost)
                 tankPostMaps_[row.map] = true;
-            // A row that assigns the unit to a tank slot: the raid guard leaves the unit to that tank, so the
-            // table keeps the lowest slot a unit is named by.
+            // A row that assigns the unit to a tank slot: the raid guard leaves the unit to that tank, so the table
+            // keeps the lowest slot a unit is named by, and which kinds of row name it (both when both do).
             std::uint32_t slot = 0;
             if (row.kind == BossTacticKind::TankPost)
                 slot = row.priority;
@@ -622,9 +631,13 @@ namespace ai
                 slot = row.priority;
             if (slot > 0)
             {
-                std::uint32_t& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)];
-                if (have == 0 || slot < have)
-                    have = slot;
+                AssignedTankSlot& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)];
+                if (have.slot == 0 || slot < have.slot)
+                    have.slot = slot;
+                if (row.kind == BossTacticKind::TankPost)
+                    have.tankPost = true;
+                else
+                    have.untilTank = true;
             }
             if (row.kind == BossTacticKind::NeedsAura)
                 requiredAura_[row.map][row.targetEntry] = row.spellId;
@@ -754,18 +767,20 @@ namespace ai
             return sealed_.load(std::memory_order_acquire) && tankPostMaps_.find(map) != tankPostMaps_.end();
         }
 
-        // The raid tank slot (1-7) a unit of `entry` is assigned to by a row of its own: a taunt_after_cast row in
-        // mode until_tank or a tank_post row. The lowest slot when several rows name the unit. -1 before the seal or
-        // when no row does: the raid guard reads it to leave such a unit to its tank.
-        int AssignedTankSlot(std::uint32_t map, std::uint32_t entry) const
+        // The raid tank slot (1-7) a unit of `entry` is assigned to by a row of its own, with the kinds of row that
+        // name it: a taunt_after_cast row in mode until_tank or a tank_post row. The lowest slot when several rows
+        // name the unit; both kinds stay set when both name it. slot 0 before the seal or when no row does: the raid
+        // guard reads it to leave such a unit to its tank.
+        AssignedTankSlot AssignedTankSlotOf(std::uint32_t map, std::uint32_t entry) const
         {
+            static const AssignedTankSlot none;
             if (!sealed_.load(std::memory_order_acquire))
-                return -1;
+                return none;
             auto const byMap = assignedTankSlots_.find(map);
             if (byMap == assignedTankSlots_.end())
-                return -1;
+                return none;
             auto const it = byMap->second.find(entry);
-            return it == byMap->second.end() ? -1 : static_cast<int>(it->second);
+            return it == byMap->second.end() ? none : it->second;
         }
 
         // The aura a map's needs_aura row requires on a bot before it may target the entry (0: none). The gate is the
@@ -952,8 +967,9 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, bool> tankPostMaps_;
-        // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to.
-        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> assignedTankSlots_;
+        // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to, and which
+        // kinds of row name it.
+        std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, AssignedTankSlot>> assignedTankSlots_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, std::uint32_t>> requiredAura_;
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, float>> rangedOnlyGaps_;
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> threatSuccessors_;

@@ -334,6 +334,8 @@ struct RaidFacts
   bossRules: bool
   healerGuard: bool
   guardLeavesAssigned: bool
+  auraTactics: bool
+  tankPost: bool
   offTanksAlive: std::vector<std::string>
   bossOffTanksAlive: std::vector<std::string>
   walkAttackers: std::vector<UnitFact>

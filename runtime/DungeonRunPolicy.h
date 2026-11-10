@@ -1467,6 +1467,11 @@ struct RaidFacts
     // off-tank at a unit a tank row assigns to a tank slot (an until_tank row with priority >= 1, or a tank_post
     // row): the unit stays with that tank, through its until_tank window or its post.
     bool guardLeavesAssigned = false;
+    // The two keys that make such an assignment live: AiPlayerbot.DungeonRunAuraTactics reads the until_tank rows and
+    // AiPlayerbot.DungeonRunTankPost the tank_post ones. With a key off its rows are not read at all, so they assign
+    // nothing and guardLeavesAssigned must not skip the unit (a healer would go unprotected).
+    bool auraTactics = false;
+    bool tankPost = false;
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
@@ -18173,7 +18178,8 @@ inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepte
 // holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). With
 // AiPlayerbot.DungeonRunRaidHealerGuard (CheckGuard, which runs RaidHealerGuard first) the off-tanks take no other
 // add; with AiPlayerbot.DungeonRunGuardLeavesAssignedTank they never take a unit a tank row assigns to a tank slot
-// either (RaidFacts::guardLeavesAssigned). True when `order` holds it.
+// either, as long as the assigning row's own key reads it (AiPlayerbot.DungeonRunAuraTactics for until_tank,
+// AiPlayerbot.DungeonRunTankPost for tank_post; RaidFacts::guardLeavesAssigned). True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (f.raid.bossOffTanksAlive.empty())
@@ -18229,10 +18235,16 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // A unit a tank row assigns to a tank slot (until_tank, tank_post) stays with that tank: its window
-            // hands it to the next usable tank itself, and its post takes it.
-            if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan &&
-                r.liveTactics->AssignedTankSlot(r.plan->map, u.entry) >= 1)
-                continue;
+            // hands it to the next usable tank itself, and its post takes it. Only while the row's own key reads
+            // that kind: with AiPlayerbot.DungeonRunAuraTactics (until_tank) or AiPlayerbot.DungeonRunTankPost
+            // (tank_post) off the row does nothing, so the unit is a loose add like any other.
+            if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan)
+            {
+                ai::AssignedTankSlot const assigned = r.liveTactics->AssignedTankSlotOf(r.plan->map, u.entry);
+                if (assigned.slot >= 1 &&
+                    ((assigned.untilTank && f.raid.auraTactics) || (assigned.tankPost && f.raid.tankPost)))
+                    continue;
+            }
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
             if (healerGuardOn && (!u.victimHealer || r.healerGuardDps.count(u.guid) ||
