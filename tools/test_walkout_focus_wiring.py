@@ -163,7 +163,7 @@ class WalkoutHoldCombatWiring(unittest.TestCase):
         self.assertIn("bool IsLiveWalkoutPuller(Player* bot);", ACTIONS_H)
 
     def test_the_live_puller_read_is_the_record_match_and_the_pure_rule(self):
-        fn = body(ACTIONS, "Creature* LiveWalkoutPullerBoss(Player* bot, std::uint64_t* son, std::uint32_t* startMs)")
+        fn = body(ACTIONS, "bool ai::IsLiveWalkoutPuller(Player* bot)")
         fast = fn.index("g_walkoutsRunning.load(std::memory_order_relaxed) == 0")
         seek = fn.index("!GetBossTactics().HasSeekAuraMap(bot->GetMapId())")
         read = fn.index("WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());")
@@ -175,14 +175,10 @@ class WalkoutHoldCombatWiring(unittest.TestCase):
         self.assertIn("bot->GetMap()->GetCreature(ObjectGuid(bossGuid))", fn)
         self.assertIn("bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),\n"
                       "                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());", fn)
-        self.assertIn("if (!WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs, shot,\n"
-                      "            bossFighting))", fn)
-        self.assertIn("return boss;", fn)
+        self.assertIn("return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,\n"
+                      "                              shot, bossFighting);", fn)
         # The boss lookup runs after the lock is released.
         self.assertLess(fn.index("bossGuid = record->bossGuid;"), fn.index("GetCreature(ObjectGuid(bossGuid))"))
-        # The puller read and the fight scan's kept boss are the one helper.
-        puller = body(ACTIONS, "bool ai::IsLiveWalkoutPuller(Player* bot)")
-        self.assertIn("return LiveWalkoutPullerBoss(bot) != nullptr;", puller)
         # The focus read shares the same record match (another instance's record never matches; behaviour-tested in
         # TestWalkoutPullerRecordPerInstance).
         focus = body(ACTIONS, "bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& in,")

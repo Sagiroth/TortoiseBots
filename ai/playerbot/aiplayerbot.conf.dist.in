@@ -1162,15 +1162,6 @@ AiPlayerbot.DungeonRunSeekWalkoutFocus = 0
 # Hakkar dies, leaves combat or evades. Off keeps the old behaviour.
 AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 
-# The walk-out's kept boss for Hakkar's seek pull (recommended on): a walk-out puller more than AiPlayerbot.SightDistance
-# from the raid loses the seek boss from its attackers list, so the seek row's boss tactics trigger closes while the
-# walk-out focus holds its other actions and it stands frozen at its stand. With this on, the fight scan adds the boss of
-# that bot's running, unshot walk-out task to the fight while the boss still fights (alive, in combat, not evading), for
-# that bot only, and logs one "seek pull: walk-out kept boss" row a walk-out. It works for any seek_aura boss and needs no
-# boss constants. Needs AiPlayerbot.DungeonRunSeekWalkoutFocus = 1 (the focus is what holds the puller's other actions;
-# without it the kept boss saves nothing). Off keeps today's scan.
-AiPlayerbot.DungeonRunSeekPullerKeepsFight = 0
-
 # The victim relief (Hakkar's Sons, recommended on, needs DungeonRunSeekAura): a seek source whose victim is the
 # boss's own victim tank for 1 s is taken off it by the other off-tank (within 20 yd, its taunt ready, holding no
 # source, not the boss's victim), at most twice per source and 8 s apart. Off keeps today's takes.

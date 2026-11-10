@@ -709,11 +709,6 @@ public:
     // or drinks; it needs dungeonRunSeekWalkoutFocus (without it nothing is held); off,
     // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
     bool dungeonRunSeekWalkoutHoldCombat = false;
-    // The walk-out's kept boss (Hakkar's seek pull): on, the fight scan adds the live, unshot walk-out puller's boss
-    // while that boss is missing from its attackers (a puller more than SightDistance from the raid), so the seek row's
-    // trigger stays open and its own tick keeps running. It needs dungeonRunSeekWalkoutFocus (without it the puller runs
-    // its other actions anyway); off, such a puller loses the scan as before (default off, recommended on).
-    bool dungeonRunSeekPullerKeepsFight = false;
     // The victim relief (Hakkar's Sons): on, a seek source whose victim is the boss's own victim tank for 1 s is taken
     // off it by the other off-tank (within 20 yd, its taunt ready, holding no source, not the boss's victim), at most
     // twice per source and 8 s apart; off, today's takes hold (default off, recommended on).

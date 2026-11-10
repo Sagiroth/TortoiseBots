@@ -4,7 +4,7 @@ The rules live in ai/playerbot/BossEngagedPolicy.h (pure, tested by
 tools/test_boss_engaged_policy.cpp). These pins prove the live code calls them:
 
  - the fight scan notes every boss its attacker list shows and appends the
-   registry's bosses to the fight exactly as the walk-out kept boss;
+   registry's bosses to the fight like any attacker;
  - the stand lookup reads the registry too, after the attacker list;
  - only a unit in combat whose entry has boss-tactic or boss-stand rows is noted;
  - a bucket whose map instance is gone (or whose rows all expired) is swept at most
@@ -38,7 +38,7 @@ class EngagedBossWiring(unittest.TestCase):
         registry = fn.index("RegisteredEngagedBosses(bot, seen)")
         self.assertIn("for (Creature* const registered : RegisteredEngagedBosses(bot, seen))", fn)
         self.assertLess(fn.index("fight.units.push_back(unit);"), registry)
-        # Exactly the walk-out kept-boss append: the fight's unit list and the entry's unit list.
+        # The fight's unit list and the entry's unit list, like any attacker's append.
         self.assertIn("fight.units.push_back(registered);", fn)
         self.assertIn("entryUnits[known - seen.begin()].push_back(registered);", fn)
         self.assertLess(registry, fn.index("entryUnits[known - seen.begin()].push_back(registered);"))
