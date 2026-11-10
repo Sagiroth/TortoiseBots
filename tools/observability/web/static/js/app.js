@@ -10352,8 +10352,8 @@
     else fdWinFights(fd, bind, fd.winSince, l => { hist = l; both(); });
   }
 
-  // The debugger's pick: the user's own click stands; otherwise the worst finished fight (the newest while no details are loaded),
-  // or the live fight while one runs. A live fight that ended hands the pick back even when the user had chosen it.
+  // The debugger's pick: the user's own click stands; otherwise the live fight while one runs, then the worst finished fight
+  // (the newest while no details are loaded). A live fight that ended hands the pick back even when the user had chosen it.
   function fdSyncSel(fd, bind, list, details, layout) {
     const live = FightDebug.liveSummary(bind); // null for a parked group: the LIVE checks panel belongs to a fight
     const before = fd.sel;
@@ -10373,9 +10373,11 @@
       else if (!short) { fd.sel = null; fd.userSel = false; }
     }
     if (!fd.userSel) {
-      // The worst fight by its summary (a wipe, then deaths, then fired rules): the details are no longer all loaded.
+      // While a fight runs the map, the live bar and the log all show the same running fight; with no live fight the worst
+      // finished fight by its summary (a wipe, then deaths, then fired rules): the details are no longer all loaded.
       const worst = FightDebug.worstSummaryIndex(list);
-      fd.sel = worst >= 0 ? list[worst].key : !fd.day && live ? 'live' : list.length ? list[0].key : null;
+      fd.sel = !fd.day && live ? 'live'
+        : worst >= 0 ? list[worst].key : list.length ? list[0].key : null;
     }
     // A pick the page made itself keeps the URL's fight segment current without adding a history entry per redraw.
     if (fd.sel !== before) fdFightHash(fd, true);

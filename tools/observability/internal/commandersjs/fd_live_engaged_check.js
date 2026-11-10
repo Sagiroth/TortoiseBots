@@ -75,6 +75,20 @@ assert.strictEqual(F.liveSummary(closed), null, "no hostile engaged for 10 s: th
 assert.strictEqual(run("fdRailHtml(cards, live, null, null)", { cards: [], live: F.liveSummary(closed) }),
   "", "and its Live card goes");
 
+// A wipe already filed, a fight still running, no click: the map and the log both land on the running fight.
+// (The pick reads the running fight from the bind's live summary, not from the list's live row.)
+const wipeRow = { key: "fight:1", outcome: "wipe", deaths: 5, start: 100 };
+const liveRow = { key: "fight:2", live: true, start: 200 };
+assert.strictEqual(F.worstSummaryIndex([wipeRow, liveRow]), 0, "the summary rank ignores the live row");
+const selWith = (fd, bind, rows) => { run("fdSyncSel(fd, bind, list, [], null)", { fd: fd, bind: bind, list: rows }); return fd; };
+assert.strictEqual(selWith({ sel: null, userSel: false, day: null }, engaged, [wipeRow, liveRow]).sel, "live",
+  "with a wipe filed and a fight running the page picks live");
+const keepWipe = { sel: wipeRow.key, userSel: true, day: null };
+assert.strictEqual(selWith(keepWipe, engaged, [wipeRow, liveRow]).sel, "fight:1",
+  "a click on the wipe wins over the running fight");
+assert.strictEqual(selWith({ sel: null, userSel: false, day: null }, parked, [wipeRow, liveRow]).sel, "fight:1",
+  "with no live fight the worst filed fight wins");
+
 // ---- the page's pick: no live selection without a fight, so the LIVE checks panel is never shown for a parked raid -
 const pick = (fd, bind) => { run("fdSyncSel(fd, bind, [], [], null)", { fd: fd, bind: bind }); return fd; };
 assert.strictEqual(pick({ sel: null, userSel: false, day: null }, parked).sel, null,
