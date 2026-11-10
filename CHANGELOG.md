@@ -1,6 +1,6 @@
 # Changelog
 
-- Fixed: the spread slot's own-cast clock restarts after any gap over 1.5 s (so the first cast after a gather is not cut at once), the slot read runs once per bot per AI update, and the `BossTacticsSpread` row adds `centre=anchor|spot`.
+- Fixed: the spread slot's own-cast clock restarts after any gap over 1.5 s (so the first cast after a gather is not cut at once), the slot read runs once per bot per AI update, and the `BossTacticsSpread` row adds `centre=anchor|spot|none`.
 - New: behind AiPlayerbot.DungeonRunBossSpreadSlots (default 0, recommended on, needs AiPlayerbot.DungeonRunBossSpread), each ranged bot and healer of a live spread row owns a fixed point on two rings around the boss anchor, the row's yards apart, stands on it between the doses, walks to the seek gather for the dose and back, and the new `BossTacticsSpread` row logs the slot verdict with the flag on (the old step-away keeps its gate words with it off, one writer per state).
 - New: behind AiPlayerbot.DungeonRunSeekPullerKeepsFight (default 0, recommended on, needs AiPlayerbot.DungeonRunSeekWalkoutFocus), a Hakkar walk-out puller more than its sight distance from the raid keeps the boss in its own fight scan, so its walk-out keeps running instead of standing frozen until the 15 s no-sight cut, with one `seek pull: walk-out kept boss` row a walk-out.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.

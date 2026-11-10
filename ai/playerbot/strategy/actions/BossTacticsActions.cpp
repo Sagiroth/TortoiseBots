@@ -4802,7 +4802,7 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
 // distance, the spare point the walk goes to, and the numbers the walk reads. The throttle is checked before any
 // distance is computed. A no-op unless bot_events.csv is an allowed log.
 void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
-                       bool replaceSameTick)
+                       const char* centre, bool replaceSameTick)
 {
     if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
@@ -4846,9 +4846,14 @@ void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int sl
             dueIn = static_cast<int>(state.dueInMs / 1000);
     }
     char info1[192];
-    // Which centre this read worked from: a scan that missed the boss for a tick drops the anchor and shows here.
-    BossAnchorCircle circle;
-    const char* centre = LiveBossAnchor(ai, bot, circle) ? "anchor" : "spot";
+    // The read knows the centre it used; the legacy writer derives it. No anchor and no seek spot is `none`, never
+    // `spot`: the field exists to show exactly that failure.
+    if (!centre)
+    {
+        BossAnchorCircle circle;
+        const bool anchored = LiveBossAnchor(ai, bot, circle);
+        centre = SpreadCentreWord(SpreadCentreFor(anchored, FindBossSeek(ai, bot).valid));
+    }
     snprintf(info1, sizeof(info1),
              "flag=%d,verdict=%s,slot=%d,slot_yd=%.1f,fallback=%d,centre=%s,nearest_yd=%.1f,within=%d,aura=%d,due_in=%d",
              sPlayerbotAIConfig.dungeonRunBossSpreadSlots ? 1 : 0, verdict ? verdict : "no_centre", slot, slotYd,
@@ -9044,6 +9049,7 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
 
     // D3's preference point: the seek spot when the fight has one, else the centre.
     const bool hasSeekSpot = fightRead && state.row;
+    task.centreKind = SpreadCentreFor(anchored, hasSeekSpot);
     const float prefX = hasSeekSpot ? state.row->spotX : cx;
     const float prefY = hasSeekSpot ? state.row->spotY : cy;
 
@@ -9133,7 +9139,8 @@ BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
     // step-away writes its gate words and this read writes nothing. The action only adds move_failed for a move it
     // could not send.
     if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))
-        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);
+        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback,
+                      SpreadCentreWord(task.centreKind));
     return task;
 }
 }  // namespace
@@ -10053,7 +10060,7 @@ bool BossTacticsSpreadSlotAction::Execute(Event& event)
     if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true))
     {
         hasLast = false;
-        LogBossSpread(ai, bot, "move_failed", task.slot, task.slotYd, task.fallback, true);
+        LogBossSpread(ai, bot, "move_failed", task.slot, task.slotYd, task.fallback, nullptr, true);
         return false;
     }
     lastX = task.x;

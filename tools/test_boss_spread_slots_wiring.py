@@ -38,7 +38,8 @@ class SpreadSlotsWiring(unittest.TestCase):
         self.assertIn("BossSpreadLive(", fn)
         self.assertIn(
             "    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))\n"
-            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);",
+            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback,\n"
+            "                      SpreadCentreWord(task.centreKind));",
             fn)
 
     def test_the_read_row_is_guarded_by_the_key(self):
@@ -65,8 +66,13 @@ class SpreadSlotsWiring(unittest.TestCase):
 
     def test_the_row_names_its_centre(self):
         fn = body(ACTIONS, "void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot,")
-        self.assertIn('LiveBossAnchor(ai, bot, circle) ? "anchor" : "spot"', fn)
+        # The legacy writer derives the word from the anchor and the seek spot, so neither is `none`.
+        self.assertIn("SpreadCentreWord(SpreadCentreFor(anchored, FindBossSeek(ai, bot).valid))", fn)
         self.assertIn("centre=%s", fn)
+        # The read writer passes the centre it actually used.
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("task.centreKind = SpreadCentreFor(anchored, hasSeekSpot);", read)
+        self.assertIn("SpreadCentreWord(task.centreKind)", read)
 
     def test_the_legacy_row_is_guarded_by_not_the_key(self):
         trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
@@ -97,7 +103,8 @@ class SpreadSlotsWiring(unittest.TestCase):
         read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         self.assertIn(
             "    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))\n"
-            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);\n"
+            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback,\n"
+            "                      SpreadCentreWord(task.centreKind));\n"
             "    return task;",
             read)
         self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("LogBossSpread("))

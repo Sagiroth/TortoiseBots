@@ -260,6 +260,34 @@ namespace ai
         return slotsKey ? caller == SpreadLogCaller::Read : caller == SpreadLogCaller::Legacy;
     }
 
+    // Which centre a slot read worked from: the live anchor, the fight's seek spot when no anchor
+    // exists, or neither (the `no_centre` verdict). The row names it so a scan that missed the boss
+    // for a tick shows up instead of passing as a spot read.
+    enum class SpreadCentreKind
+    {
+        Anchor,
+        Spot,
+        None,
+    };
+
+    inline SpreadCentreKind SpreadCentreFor(bool anchored, bool seekSpot)
+    {
+        if (anchored)
+            return SpreadCentreKind::Anchor;
+        return seekSpot ? SpreadCentreKind::Spot : SpreadCentreKind::None;
+    }
+
+    inline const char* SpreadCentreWord(SpreadCentreKind kind)
+    {
+        switch (kind)
+        {
+            case SpreadCentreKind::Anchor: return "anchor";
+            case SpreadCentreKind::Spot: return "spot";
+            case SpreadCentreKind::None: return "none";
+        }
+        return "none";
+    }
+
     // The `cast` run behind SpreadSlotCastCutDue: its start and when the last cast
     // verdict was read. A read more than kSpreadSlotCastGapMs after the last one
     // starts the run over.

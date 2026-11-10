@@ -22,6 +22,9 @@ using ai::ShouldRaidSurvivalSpread;
 using ai::SpreadLogCaller;
 using ai::SpreadLogOwned;
 using ai::SpreadCastClock;
+using ai::SpreadCentreFor;
+using ai::SpreadCentreKind;
+using ai::SpreadCentreWord;
 using ai::SpreadSlotCastCutDue;
 using ai::SpreadSlotCastStart;
 using ai::SpreadSlotFallback;
@@ -300,6 +303,17 @@ int main()
     CHECK(SpreadSlotCastCutDue(false, 5000u, 5000u + 6000u));
     CHECK(SpreadSlotCastCutDue(false, 0xFFFFFF00u, 0xFFFFFF00u + 6000u));
     std::cout << "  [PASS] only a damage dealer's cast is cut, after 6 s\n";
+
+    // SpreadSlot_CentreKindDistinct: the row's centre word separates a live anchor, a seek spot and
+    // neither, so a no_centre read is not logged as a spot read.
+    CHECK(SpreadCentreFor(true, true) == SpreadCentreKind::Anchor);
+    CHECK(SpreadCentreFor(true, false) == SpreadCentreKind::Anchor);
+    CHECK(SpreadCentreFor(false, true) == SpreadCentreKind::Spot);
+    CHECK(SpreadCentreFor(false, false) == SpreadCentreKind::None);
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::Anchor)) == "anchor");
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::Spot)) == "spot");
+    CHECK(std::string(SpreadCentreWord(SpreadCentreKind::None)) == "none");
+    std::cout << "  [PASS] the centre kind keeps anchor, spot and none distinct\n";
 
     // SpreadSlot_CastClockRestartsAfterGap: the action only runs on cast, slot_move and slot_hold, so a stamp left
     // by another verdict (or the previous pull) must not cut the first cast after a gather. A gap of more than

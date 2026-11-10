@@ -698,16 +698,19 @@ namespace ai
         int slot = -1;
         // The spare point the walk goes to when the owned slot is unusable; the row still reports `slot` and `slotYd`.
         int fallback = -1;
+        // The centre the ring order was built around (`anchor`, `spot`, `none`); the row reports it.
+        SpreadCentreKind centreKind = SpreadCentreKind::None;
         float x = 0.0f, y = 0.0f, z = 0.0f;
         float slotYd = -1.0f;
     };
     BossSpreadSlotTask FindBossSpreadSlot(PlayerbotAI* ai, Player* bot);
     // One `BossTacticsSpread` row per bot and 5 s: the key, the verdict word, the owned slot, the distance to it, the
-    // fallback point actually used (-1 when none), the nearest living group member, how many members stand inside the
-    // row's spacing, the seek aura and the clock. `replaceSameTick` lets a failed move correct the row its own tick's
-    // read wrote instead of being swallowed by it.
+    // fallback point actually used (-1 when none), the centre (`anchor`, `spot` or `none`), the nearest living group
+    // member, how many members stand inside the row's spacing, the seek aura and the clock. A null `centre` derives it
+    // from the live anchor and the seek spot (the legacy writer); `replaceSameTick` lets a failed move correct the row
+    // its own tick's read wrote instead of being swallowed by it.
     void LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
-                       bool replaceSameTick = false);
+                       const char* centre = nullptr, bool replaceSameTick = false);
 
     // The source a free DPS bot damages or burns: the one the gather stands around, while the dose window is open and
     // the row's hold allows the damage (the pre-damage, or the burn once the gather is ready). Null otherwise.
