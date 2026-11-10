@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <limits>
 #include <iostream>
+#include <map>
+#include <utility>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -1180,6 +1182,29 @@ int main()
         CHECK(latch.claimTaker == 0);
         CHECK(latch.takes == 0);
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
+    }
+    // VictimRelief_LatchesIsolatedByInstance: the same Son guid in two map instances is two latches. A claim, a
+    // start and the count in one leave the other's latch untouched, and back.
+    {
+        using ReliefKey = std::pair<std::uint32_t, std::uint64_t>;
+        std::map<ReliefKey, SeekReliefLatch> latches;
+        const ReliefKey first(1, 99);
+        const ReliefKey second(2, 99);
+        SeekReliefClockTick(latches[first], true, 5000);
+        SeekReliefClockTick(latches[second], true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latches[first], 7, 6000));
+        CHECK(SeekVictimReliefNoteExec(latches[first], 7, 6000, true));
+        CHECK(latches[first].takes == 1);
+        CHECK(latches[second].takes == 0);
+        CHECK(latches[second].claimTaker == 0);
+        CHECK(latches[second].lastStartMs == 0);
+        CHECK(SeekVictimReliefClaimFor(true, latches[second], 8, 6000));
+        CHECK(SeekVictimReliefNoteExec(latches[second], 8, 6000, true));
+        CHECK(latches[second].takes == 1);
+        CHECK(latches[first].takes == 1);
+        CHECK(latches[first].claimTaker == 0);
+        CHECK(latches[first].lastTaker == 7);
+        CHECK(latches[second].lastTaker == 8);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

@@ -5644,10 +5644,13 @@ namespace
 std::mutex g_seekTakenCapMutex;
 std::unordered_map<std::uint64_t, SeekTakenCapLatch> g_seekTakenCapLatches;
 // The victim relief's per-Son latch (SeekReliefLatch, DungeonRunSeekVictimRelief): one per Son of the fight, keyed by
-// the Son's raw guid. It carries the dwell clock (the run on the boss's tank), the last start and its count (the
-// anti-ping-pong). Swept on each locked use: entries untouched for more than 120 s (a dead Son, a wiped fight) drop.
+// the map instance and the Son's raw guid. Instance copies of one DB spawn can share the guid, so a guid alone would
+// let one raid's claim, cap or spacing block another raid's relief. It carries the dwell clock (the run on the
+// boss's tank), the last start and its count (the anti-ping-pong). Swept on each locked use: entries untouched for
+// more than 120 s (a dead Son, a wiped fight) drop.
 std::mutex g_seekReliefMutex;
-std::map<std::uint64_t, SeekReliefLatch> g_seekReliefLatches;
+using SeekReliefKey = std::pair<std::uint32_t, std::uint64_t>;
+std::map<SeekReliefKey, SeekReliefLatch> g_seekReliefLatches;
 
 void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct, std::uint32_t sinceTakeMs)
 {
@@ -9344,13 +9347,13 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
         {
             if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
                 continue;
-            const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+            const SeekReliefKey key(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
             const bool reliefSon = bossTank && son->GetVictim() == bossVictim;
-            auto found = g_seekReliefLatches.find(guid);
+            auto found = g_seekReliefLatches.find(key);
             if (found == g_seekReliefLatches.end() && !reliefSon)
                 continue;
             SeekReliefLatch& latch =
-                found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[guid];
+                found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[key];
             SeekReliefClockTick(latch, reliefSon, nowMs);
             SeekVictimReliefKeepTick(latch, self, son->GetVictim() == bot, nowMs);
             if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
@@ -9367,8 +9370,8 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
                 if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) ||
                     !son->IsInCombat())
                     continue;
-                const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
-                const auto found = g_seekReliefLatches.find(guid);
+                const SeekReliefKey key(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+                const auto found = g_seekReliefLatches.find(key);
                 if (found == g_seekReliefLatches.end())
                     continue;
                 SeekReliefLatch& latch = found->second;
@@ -9399,8 +9402,8 @@ void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& r
     if (!son)
         return;
     std::lock_guard<std::mutex> lock(g_seekReliefMutex);
-    const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
-    auto found = g_seekReliefLatches.find(guid);
+    const SeekReliefKey key(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+    auto found = g_seekReliefLatches.find(key);
     if (found == g_seekReliefLatches.end())
         return;
     SeekReliefLatch& latch = found->second;

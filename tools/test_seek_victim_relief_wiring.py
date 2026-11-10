@@ -53,6 +53,14 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertNotIn("SeekVictimReliefStart(", fn)
         self.assertNotIn('"seek relief son=', fn)
 
+    def test_VictimRelief_LatchKeyedByInstanceAndSon(self):
+        self.assertIn("using SeekReliefKey = std::pair<std::uint32_t, std::uint64_t>;", ACTIONS)
+        self.assertIn("std::map<SeekReliefKey, SeekReliefLatch> g_seekReliefLatches;", ACTIONS)
+        fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
+        self.assertEqual(2, fn.count("SeekReliefKey key(bot->GetInstanceId(),"))
+        note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
+        self.assertIn("SeekReliefKey key(bot->GetInstanceId(),", note)
+
     def test_VictimRelief_SelectionClaimsOnlyWhenEligible(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
         self.assertLess(fn.index("SeekVictimRelieverOk("), fn.index("SeekVictimReliefClaimFor("))
