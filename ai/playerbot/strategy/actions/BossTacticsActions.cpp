@@ -9389,8 +9389,8 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
 // The relief take's execution result (DungeonRunSeekVictimRelief): the latch of `son` is stamped and counted only once
 // the take really started (the attack order or the taunt cast went out, the tank was already after it); a refused or
 // failed one counts nothing. The `seek relief` row goes out with the stamp, so the row and the count agree.
-void SeekVictimReliefNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
-                              bool started, std::uint32_t nowMs)
+void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
+                            bool started, std::uint32_t nowMs)
 {
     if (!son)
         return;
@@ -10190,8 +10190,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                     SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                         task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
                 if (reliefTake)
-                    SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, true,
-                                             WorldTimer::getMSTime());
+                    SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, true,
+                                           WorldTimer::getMSTime());
                 return true;
             }
         }
@@ -10203,8 +10203,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                     task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
             if (reliefTake)
-                SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started,
-                                         WorldTimer::getMSTime());
+                SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started,
+                                       WorldTimer::getMSTime());
             return false;
         }
         const bool cast = ai->CastSpell(taunt, task.source);
@@ -10212,8 +10212,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                 task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
         if (reliefTake)
-            SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started || cast,
-                                     WorldTimer::getMSTime());
+            SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started || cast,
+                                   WorldTimer::getMSTime());
         return cast;
     }
     if (task.pull)

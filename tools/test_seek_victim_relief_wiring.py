@@ -63,11 +63,11 @@ class SeekVictimReliefWiring(unittest.TestCase):
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
         # Three exits, three notes: the attack-only return stamps true, the
         # refusal stamps this tick's `started`, the cast stamps `started || cast`.
-        self.assertEqual(3, take.count("SeekVictimReliefNoteExec(ai, bot,"))
+        self.assertEqual(3, take.count("SeekReliefTakeNoteExec(ai, bot,"))
         self.assertIn("task.source, true,\n", take)
         self.assertIn("task.source, started,\n", take)
         self.assertIn("task.source, started || cast,\n", take)
-        note = body(ACTIONS, "void SeekVictimReliefNoteExec(PlayerbotAI* ai, Player* bot,")
+        note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
         self.assertIn("SeekVictimReliefNoteExec(latch,", note)
         self.assertIn('"seek relief son=', note)
 
