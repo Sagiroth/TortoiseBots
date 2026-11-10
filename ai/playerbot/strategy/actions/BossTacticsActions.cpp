@@ -10024,20 +10024,49 @@ bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles,
     if (!reliefSon)
         return false;
     task.valid = true;
+    task.row = state.row;
     task.source = reliefSon;
     task.take = true;
     task.takeSrc = "victim_relief";
     task.boss = state.boss;
+    task.pickMs = state.nowMs;
     return true;
 }
 
-// The relief take's execution result (DungeonRunSeekVictimRelief): the selection's claim is confirmed and counted
-// only once the take really started (the attack order or the taunt cast went out, the tank was already after it); a
-// refused or failed one rolls the claim back and counts nothing. `from` is the Son's victim read before the take's
-// taunt cast: after it the victim may already be the reliever. The `seek relief` row goes out with the stamp, so the
-// row and the count agree; it is built and written after the latch mutex is released.
+// The relief take's gate (DungeonRunSeekVictimRelief): under the latch lock, immediately before the attack order or
+// the taunt cast, the take's claim is re-read on the pick's clock (the task carries it). A take a nearer tank has
+// taken over since its pick is refused here, so it issues no attack and no taunt; this tank's live claim is confirmed
+// and counted before the action.
+SeekReliefGate SeekReliefTakeGate(Player* bot, const SeekTankTask& task)
+{
+    if (!task.source)
+        return SeekReliefGate::Refuse;
+    std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+    const auto key = SeekReliefKey(bot->GetInstanceId(), task.source->GetObjectGuid().GetRawValue());
+    const auto found = g_seekReliefLatches.find(key);
+    if (found == g_seekReliefLatches.end())
+        return SeekReliefGate::Refuse;
+    return SeekVictimReliefPreExec(found->second, bot->GetObjectGuid().GetRawValue(), task.pickMs);
+}
+
+// A confirmed take that issued neither an attack order nor a taunt after all: its stamp, count and keep window are
+// undone, so the take counts nothing and the Son is claimable again.
+void SeekReliefTakeRollback(Player* bot, Unit* son, std::uint32_t pickMs)
+{
+    if (!son)
+        return;
+    std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+    const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+    const auto found = g_seekReliefLatches.find(key);
+    if (found != g_seekReliefLatches.end())
+        SeekVictimReliefRollback(found->second, bot->GetObjectGuid().GetRawValue(), pickMs);
+}
+
+// The confirmed take's start row, once its attack order or taunt cast went out: the stamps the gate took are read
+// under the lock, and `from` is the Son's victim read before the cast (after it the victim may already be the
+// reliever). The row is built and written after the mutex is released, so the count it prints is the confirmed one.
 void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
-                            Unit* from, bool started, std::uint32_t nowMs)
+                            Unit* from, std::uint32_t pickMs)
 {
     if (!son)
         return;
@@ -10049,10 +10078,10 @@ void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& r
         const auto found = g_seekReliefLatches.find(key);
         if (found == g_seekReliefLatches.end())
             return;
-        SeekReliefLatch& latch = found->second;
-        if (!SeekVictimReliefNoteExec(latch, bot->GetObjectGuid().GetRawValue(), nowMs, started))
+        const SeekReliefLatch& latch = found->second;
+        if (latch.lastTaker != bot->GetObjectGuid().GetRawValue() || latch.lastStartMs != pickMs)
             return;
-        dwellMs = nowMs - latch.sinceMs;
+        dwellMs = pickMs - latch.sinceMs;
         takes = latch.takes;
     }
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
@@ -10155,8 +10184,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         {
             // The pull paths never run for this bot. The victim relief still does when it is a raid tank (the main
             // tank, a fourth tank, a two-tank off-tank's partner): a Son on the boss's victim is taken, never pulled,
-            // and nothing else here answers.
-            if (roles.botIndex >= 0)
+            // and nothing else here answers. Key off: the block reads nothing at all.
+            if (roles.botIndex >= 0 && sPlayerbotAIConfig.dungeonRunSeekVictimRelief)
             {
                 SeekFight reliefState;
                 if (ReadSeekFightCached(ai, bot, reliefState))
@@ -10884,6 +10913,22 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // The taunt gate (a taunt-immune boss, a Shade) is read before the row, so the row never says `taunt` for a
         // cast that the gate then refuses.
         const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);
+        // A cap-guarded take (DungeonRunSeekNearestTakeReach: `nearest_reach`, `healer_clock`) is latched only once it
+        // really starts (the attack or chase command went out, the tank is already after it, or the taunt cast), and a
+        // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
+        const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
+            (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
+        const bool reliefTake = sPlayerbotAIConfig.dungeonRunSeekVictimRelief && task.takeSrc &&
+            std::strcmp(task.takeSrc, "victim_relief") == 0;
+        // The relief take's claim is confirmed here, before the row and before any attack or taunt, on the pick's
+        // clock: a take a nearer tank has taken over since its pick issues nothing at all.
+        SeekReliefGate reliefGate = SeekReliefGate::Refuse;
+        if (reliefTake)
+        {
+            reliefGate = SeekReliefTakeGate(bot, task);
+            if (reliefGate == SeekReliefGate::Refuse)
+                return false;
+        }
         float beyondYd = -99.0f;
         BossAnchorCircle raidCircle;
         if (task.row && BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, false, raidCircle))
@@ -10898,13 +10943,6 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             SET_AI_VALUE(Unit*, "current target", nullptr);
             ai->StopMoving();
         }
-        // A cap-guarded take (DungeonRunSeekNearestTakeReach: `nearest_reach`, `healer_clock`) is latched only once it
-        // really starts (the attack or chase command went out, the tank is already after it, or the taunt cast), and a
-        // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
-        const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
-            (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
-        const bool reliefTake = sPlayerbotAIConfig.dungeonRunSeekVictimRelief && task.takeSrc &&
-            std::strcmp(task.takeSrc, "victim_relief") == 0;
         bool started = false;
         // The meet take re-checks its tuple (this receiver, the current meet Son, the bounded exemption) right before
         // its Attack (DungeonRunSeekMeetTakeReach): a meet that closed or left the allowance since the pick sends none.
@@ -10919,9 +10957,9 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (capGuarded)
                     SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                         task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
-                if (reliefTake)
+                if (reliefTake && reliefGate == SeekReliefGate::Confirm)
                     SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source,
-                                           task.source->GetVictim(), true, WorldTimer::getMSTime());
+                                           task.source->GetVictim(), task.pickMs);
                 return true;
             }
         }
@@ -10932,9 +10970,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (capGuarded)
                 SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                     task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
-            if (reliefTake)
-                SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, task.source->GetVictim(),
-                                       started, WorldTimer::getMSTime());
+            if (reliefTake && reliefGate == SeekReliefGate::Confirm)
+            {
+                if (started)
+                    SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source,
+                                           task.source->GetVictim(), task.pickMs);
+                else
+                    SeekReliefTakeRollback(bot, task.source, task.pickMs);
+            }
             return false;
         }
         // The Son's victim is read before the cast: the taunt's own effect may already hand the Son to this tank, and
@@ -10944,9 +10987,14 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         if (capGuarded)
             SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                 task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
-        if (reliefTake)
-            SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, reliefFrom, started || cast,
-                                   WorldTimer::getMSTime());
+        if (reliefTake && reliefGate == SeekReliefGate::Confirm)
+        {
+            if (started || cast)
+                SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, reliefFrom,
+                                       task.pickMs);
+            else
+                SeekReliefTakeRollback(bot, task.source, task.pickMs);
+        }
         return cast;
     }
     if (task.pull)

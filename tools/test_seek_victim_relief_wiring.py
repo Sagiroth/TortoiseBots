@@ -43,6 +43,10 @@ class SeekVictimReliefWiring(unittest.TestCase):
         helper = body(ACTIONS, "bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot,")
         self.assertIn("task.takeSrc = \"victim_relief\";", helper)
         self.assertIn("FindSeekVictimRelief(ai, bot, roles, state)", helper)
+        # The row and the pick's clock come from the same state at both sites, so both log the same `beyond=` and the
+        # take's confirm measures the claim on the clock its pick used.
+        self.assertIn("task.row = state.row;", helper)
+        self.assertIn("task.pickMs = state.nowMs;", helper)
         self.assertEqual(1, ACTIONS.count("task.takeSrc = \"victim_relief\";"))
 
     def test_VictimRelief_MainAndFourthTankReachRelief(self):
@@ -53,15 +57,29 @@ class SeekVictimReliefWiring(unittest.TestCase):
         # two-tank raid's main tank) still ask for the victim relief when they are raid tanks. No tank position is
         # a filter: roles.tanks[0] and roles.tanks[3] are raid tanks as much as tanks[1] and tanks[2].
         class_test = gate.index("if (bot->GetClass() != CLASS_HUNTER")
-        self.assertIn("if (roles.botIndex >= 0)", gate[class_test:])
+        self.assertIn("if (roles.botIndex >= 0 && sPlayerbotAIConfig.dungeonRunSeekVictimRelief)",
+                      gate[class_test:])
         self.assertIn("SeekReliefTaskFor(ai, bot, roles, reliefState, task)", gate[class_test:])
         self.assertLess(gate.index("SeekReliefTaskFor(", class_test), gate.index("return task;", class_test))
         # And the relief is all they get: no pull, walk-out, drag, pre-place, swing hold or anchor branch starts
         # for a tank the gate drops (the pull paths keep their own eligibility exactly).
-        early = gate[gate.index("if (roles.botIndex >= 0)", class_test):]
+        early = gate[gate.index("if (roles.botIndex >= 0", class_test):]
         for field in ("task.pull", "task.rangedPull", "task.fromAnchor", "task.walkout", "task.walkToSpot",
                       "task.holdSwing", "task.prePlaceHold", "task.row"):
             self.assertNotIn(field, early)
+
+    def test_VictimRelief_KeyOffTheEarlyBlockReadsNothing(self):
+        fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
+        gate_start = fn.index("if (!thirdTank && !pickupTank && !healerTaker)\n    {")
+        gate = fn[gate_start:fn.index("SeekFight state;", gate_start)]
+        flag = gate.index("if (roles.botIndex >= 0 && sPlayerbotAIConfig.dungeonRunSeekVictimRelief)")
+        read = gate.index("ReadSeekFightCached(ai, bot, reliefState)")
+        fill = gate.index("SeekReliefTaskFor(ai, bot, roles, reliefState, task)")
+        # The flagged branch owns the whole relief read: key 0 reads no fight state and fills no task here.
+        self.assertLess(flag, read)
+        self.assertLess(read, fill)
+        self.assertNotIn("dungeonRunSeekVictimRelief", gate[:flag])
+        self.assertNotIn("ReadSeekFightCached", gate[:flag])
 
     def test_the_function_reads_the_flag_and_names_the_take(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
@@ -92,6 +110,12 @@ class SeekVictimReliefWiring(unittest.TestCase):
                         POLICY.index("inline bool SeekVictimReliefKept(")]
         self.assertIn("if (latch.claimTaker == self)", claim)
         self.assertIn("SeekReliefClaimBeats(selfYd, selfIdx, latch.claimYd, latch.claimIdx)", claim)
+        # The main tank (tanks[0]) is the raid's Hakkar tank: the ranking puts any off-tank ahead of it, and an
+        # off-tank may take a claim over from it, never the reverse.
+        beats = POLICY[POLICY.index("inline bool SeekReliefClaimBeats("):
+                       POLICY.index("inline bool SeekVictimReliefClaimFor(")]
+        self.assertIn("if ((selfIdx == 0) != (claimIdx == 0))", beats)
+        self.assertIn("return claimIdx == 0;", beats)
 
     def test_VictimRelief_LatchKeyedByInstanceAndSon(self):
         self.assertIn(
@@ -117,8 +141,9 @@ class SeekVictimReliefWiring(unittest.TestCase):
     def test_VictimRelief_SelectionClaimsOnlyWhenEligible(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
         self.assertLess(fn.index("SeekVictimRelieverOk("), fn.index("SeekVictimReliefClaimFor("))
-        note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
-        self.assertIn("SeekVictimReliefNoteExec(latch,", note)
+        gate = body(ACTIONS, "SeekReliefGate SeekReliefTakeGate(")
+        self.assertIn("SeekReliefKey(bot->GetInstanceId(),", gate)
+        self.assertIn("SeekVictimReliefPreExec(found->second,", gate)
 
     def test_VictimRelief_TauntPickIgnoresNearestTake(self):
         take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
@@ -128,22 +153,47 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertIn("SeekTakeUsesKnownTaunt(bool nearestTakeOn, const char* takeSrc)", POLICY)
         self.assertIn('std::strcmp(takeSrc, "victim_relief") == 0', POLICY)
 
+    def test_VictimRelief_GateStandsBeforeAnySideEffect(self):
+        take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
+        gate = take.index("SeekReliefTakeGate(bot, task)")
+        self.assertLess(gate, take.index("LogSeekTake("))
+        self.assertLess(gate, take.index("if (reliefGate == SeekReliefGate::Refuse)"))
+        self.assertLess(gate, take.index("Attack(bot, task.source)"))
+        self.assertLess(gate, take.index("ai->CastSpell(taunt, task.source)"))
+
+    def test_VictimRelief_ConfirmOnThePickClock(self):
+        gate = body(ACTIONS, "SeekReliefGate SeekReliefTakeGate(")
+        rollback = body(ACTIONS, "void SeekReliefTakeRollback(")
+        row = body(ACTIONS, "void SeekReliefTakeNoteExec(")
+        for src in (gate, rollback, row):
+            self.assertIn("pickMs", src)
+            self.assertNotIn("WorldTimer", src)
+        self.assertIn("SeekVictimReliefPreExec(found->second, bot->GetObjectGuid().GetRawValue(), task.pickMs)",
+                      gate)
+        pre = body(POLICY, "inline SeekReliefGate SeekVictimReliefPreExec(")
+        pre = pre[:pre.index("inline void SeekVictimReliefRollback(")]
+        self.assertIn("SeekVictimReliefClaimLive(latch, pickMs)", pre)
+        self.assertIn("SeekVictimReliefStart(latch, self, pickMs)", pre)
+        rb = body(POLICY, "inline void SeekVictimReliefRollback(")
+        self.assertIn("latch.activeSinceMs != pickMs", rb)
+        self.assertIn("latch.lastStartMs = latch.rollbackStartMs;", rb)
+
     def test_VictimRelief_CountsOnlyStartedTakes(self):
         take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
         take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
-        # Three exits, three notes: the attack-only return stamps true, the
-        # refusal stamps this tick's `started`, the cast stamps `started || cast`.
+        # Three exits, three rows: the attack-only return, the refusal, the cast. Only a confirmed take writes a row;
+        # each exit reads the pick's clock, and a confirmed take that issues nothing rolls back.
         self.assertEqual(3, take.count("SeekReliefTakeNoteExec(ai, bot,"))
-        self.assertIn("task.source->GetVictim(), true, WorldTimer::getMSTime());", take)
-        self.assertIn("task.source, task.source->GetVictim(),\n", take)
-        self.assertIn("task.source, reliefFrom, started || cast,", take)
+        self.assertEqual(2, take.count("SeekReliefTakeRollback(bot, task.source, task.pickMs);"))
+        self.assertEqual(5, take.count("task.pickMs"))
         # `from=` is the Son's victim read before the cast, not after the taunt may have handed it over.
         self.assertLess(take.index("Unit* const reliefFrom = task.source->GetVictim();"),
                         take.index("ai->CastSpell(taunt, task.source)"))
         note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
-        self.assertIn("SeekVictimReliefNoteExec(latch,", note)
+        self.assertIn("latch.lastStartMs != pickMs", note)
         self.assertIn('"seek relief son=', note)
-        self.assertIn("dwellMs = nowMs - latch.sinceMs;", note)
+        self.assertIn("dwellMs = pickMs - latch.sinceMs;", note)
         # The row is built and written after the lock: its cap read and logEvent never run under it.
         self.assertEqual(1, note.count("g_seekReliefMutex"))
         self.assertLess(note.index("snprintf(info1"), note.index("SeekTankLeaveCollapsesCap("))

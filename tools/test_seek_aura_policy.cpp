@@ -1101,19 +1101,26 @@ int main()
         CHECK(SeekTakeUsesKnownTaunt(true, "nearest"));
         CHECK(!SeekTakeUsesKnownTaunt(false, nullptr));
     }
-    // VictimRelief_CountsOnlyStartedTakes: a refused start leaves the count and the stamp at 0; a claimed real start
-    // stamps and counts once.
+    // VictimRelief_ConfirmStampsAndRollbackUndoes: the gate confirms a claimed take (counts it, opens its keep
+    // window) before the attack or taunt; a take that then issues neither rolls the confirmation back, so it counts
+    // nothing, its window and start stamp go back to what they were, and the Son is claimable again.
     {
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 5000);
-        CHECK(!SeekVictimReliefNoteExec(latch, 7, 6000, false));
-        CHECK(latch.takes == 0);
-        CHECK(latch.lastStartMs == 0);
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 6000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
         CHECK(latch.takes == 1);
         CHECK(latch.lastStartMs == 6000);
         CHECK(latch.lastTaker == 7);
+        CHECK(latch.activeTaker == 7);
+        CHECK(latch.activeSinceMs == 6000);
+        SeekVictimReliefRollback(latch, 7, 6000);
+        CHECK(latch.takes == 0);
+        CHECK(latch.lastStartMs == 0);
+        CHECK(latch.lastTaker == 0);
+        CHECK(latch.activeTaker == 0);
+        CHECK(latch.activeSinceMs == 0);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
     }
     // VictimRelief_KeptAttemptStampsOnce: the same kept, already-targeted relief executes every tick while the tank
     // chases it, but only the first execution stamps and counts.
@@ -1121,11 +1128,11 @@ int main()
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 9000);
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 10000));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 10000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 10000) == SeekReliefGate::Confirm);
         CHECK(latch.takes == 1);
         const auto firstStartMs = latch.lastStartMs;
         for (unsigned tick = 11000; tick <= 14000; tick += 1000)
-            CHECK(!SeekVictimReliefNoteExec(latch, 7, tick, true));
+            CHECK(SeekVictimReliefPreExec(latch, 7, tick) == SeekReliefGate::Keep);
         CHECK(SeekVictimReliefKept(true, latch, 7, false, 14000));
         CHECK(latch.takes == 1);
         CHECK(latch.lastStartMs == firstStartMs);
@@ -1136,9 +1143,9 @@ int main()
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 0, true));
-        CHECK(!SeekVictimReliefNoteExec(latch, 7, 2000, true));
-        CHECK(!SeekVictimReliefNoteExec(latch, 7, 4000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Confirm);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 2000) == SeekReliefGate::Keep);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 4000) == SeekReliefGate::Keep);
         CHECK(SeekVictimReliefKept(true, latch, 7, false, 2000));
         CHECK(SeekVictimReliefKept(true, latch, 7, false, 4000));
         CHECK(SeekVictimReliefKept(true, latch, 7, false, 5999));
@@ -1153,8 +1160,8 @@ int main()
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 0));
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 500));
-        CHECK(!SeekVictimReliefNoteExec(latch, 8, 500, true));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 500, true));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 500) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 500) == SeekReliefGate::Confirm);
         CHECK(latch.takes == 1);
     }
     // VictimRelief_TriggerThenActionSameTick (the walk 71 failing case): the trigger's read claims the Son, and the
@@ -1164,7 +1171,8 @@ int main()
         SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 0, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Confirm);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Keep); // a second read of the same take
         CHECK(latch.takes == 1);
         CHECK(latch.lastTaker == 7);
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 500));
@@ -1183,6 +1191,20 @@ int main()
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 1000));
         CHECK(latch.claimTaker == 8);
     }
+    // VictimRelief_ConfirmOnThePickClock: a take picked at 999 confirms on that clock even though a live read at 1999
+    // finds the claim lapsed (1000 ms after the pick); the gate never reads the live clock, so a task that executes a
+    // tick late still stamps, counts and opens its keep window instead of lapsing into another tank's claim.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 999));
+        CHECK(!SeekVictimReliefClaimLive(latch, 1999));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 999) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastStartMs == 999);
+        CHECK(latch.activeSinceMs == 999);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 1999));
+    }
     // VictimRelief_TwoTanksAliveRelieves: relief runs with two living tanks, and the free tank takes the Son off the
     // boss's victim; one tank alone never relieves.
     {
@@ -1198,27 +1220,43 @@ int main()
         SeekReliefClockTick(latch, true, 5000);
         CHECK(SeekVictimReliefDue(true, latch, 6000));
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 1, 5.0f));
-        CHECK(SeekVictimReliefNoteExec(latch, 8, 6000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Confirm);
         CHECK(latch.takes == 1);
     }
-    // VictimRelief_MainAndFourthTankRelieve: no tank position is a filter. The main tank (index 0) and a fourth tank
-    // (index 3) both claim and stamp a due Son when they are not the boss's victim.
+    // VictimRelief_MainAndFourthTankRelieve: no tank position is a filter; the main tank (index 0) and a fourth tank
+    // (index 3) each claim and confirm a due Son when no other tank holds it. The ranking only decides contention.
     {
         SeekReliefLatch mainTank;
         SeekReliefClockTick(mainTank, true, 5000);
         CHECK(SeekVictimReliefDue(true, mainTank, 6000));
         CHECK(SeekVictimReliefClaimFor(true, mainTank, 7, 6000, 0, 5.0f));
-        CHECK(SeekVictimReliefNoteExec(mainTank, 7, 6000, true));
+        CHECK(SeekVictimReliefPreExec(mainTank, 7, 6000) == SeekReliefGate::Confirm);
         CHECK(mainTank.takes == 1);
         SeekReliefLatch fourthTank;
         SeekReliefClockTick(fourthTank, true, 5000);
         CHECK(SeekVictimReliefDue(true, fourthTank, 6000));
         CHECK(SeekVictimReliefClaimFor(true, fourthTank, 8, 6000, 3, 5.0f));
-        CHECK(SeekVictimReliefNoteExec(fourthTank, 8, 6000, true));
+        CHECK(SeekVictimReliefPreExec(fourthTank, 8, 6000) == SeekReliefGate::Confirm);
         CHECK(fourthTank.takes == 1);
     }
-    // VictimRelief_ReliefPicksNearer: of two qualifying relievers the nearer wins the claim without moving its
-    // stamp, a tie goes to the lower tank index, and the displaced picker cannot stamp over the new one.
+    // VictimRelief_OffTankRankedBeforeTheMainTank: the main tank (tanks[0]) is the raid's Hakkar tank, so it is the
+    // last reliever. A main tank's claim is taken over by any off-tank whatever the distance, never the reverse; among
+    // off-tanks the nearer one takes over, and an equal-distance higher index is refused.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 0, 4.0f));  // the main tank, nearest, picks first
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 2, 9.0f));  // an off-tank takes it over
+        CHECK(latch.claimTaker == 8);
+        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 3.0f));  // the main tank cannot take it back
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 10, 6000, 2, 9.0f)); // equal distance, higher index: refused
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Refuse); // displaced: acts on nothing
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_OffTankNearerTakesOver: among off-tanks the nearer wins the claim without moving its stamp, a tie
+    // goes to the lower tank index, and the displaced picker cannot confirm over the new one.
     {
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 5000);
@@ -1226,14 +1264,37 @@ int main()
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 2, 4.0f));  // nearer: takes the claim over
         CHECK(latch.claimTaker == 8);
         CHECK(latch.claimMs == 6000);
-        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 9.0f)); // farther than the holder: refused
-        CHECK(SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 4.0f));  // equal distance, lower index: wins
-        CHECK(latch.claimTaker == 9);
-        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 3, 6.0f));  // farther than the holder: refused
         CHECK(!SeekVictimReliefClaimFor(true, latch, 10, 6000, 2, 4.0f)); // equal distance, higher index: refused
-        CHECK(!SeekVictimReliefNoteExec(latch, 7, 6000, true));           // the first picker cannot stamp over it
-        CHECK(SeekVictimReliefNoteExec(latch, 9, 6000, true));
-        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_OnlyTheOwnerActs (the takeover finding): the farther tank picks, the nearer one takes over, then
+    // both execute, in both orders: only the owner's take produces a side effect (a counted call at the gate), and
+    // only its confirmation is counted. The displaced task fails before any attack or taunt.
+    {
+        auto sideEffects = [](SeekReliefLatch& latch, std::uint64_t self)
+        {
+            return SeekVictimReliefPreExec(latch, self, 6000) != SeekReliefGate::Refuse ? 1 : 0;
+        };
+        SeekReliefLatch displacedFirst;
+        SeekReliefClockTick(displacedFirst, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, displacedFirst, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, displacedFirst, 8, 6000, 2, 4.0f));
+        int effects = sideEffects(displacedFirst, 7);
+        CHECK(effects == 0);
+        effects += sideEffects(displacedFirst, 8);
+        CHECK(effects == 1);
+        CHECK(displacedFirst.takes == 1);
+        CHECK(displacedFirst.lastTaker == 8);
+        SeekReliefLatch ownerFirst;
+        SeekReliefClockTick(ownerFirst, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, ownerFirst, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, ownerFirst, 8, 6000, 2, 4.0f));
+        effects = sideEffects(ownerFirst, 8);
+        CHECK(effects == 1);
+        effects += sideEffects(ownerFirst, 7);
+        CHECK(effects == 1);
+        CHECK(ownerFirst.takes == 1);
+        CHECK(ownerFirst.lastTaker == 8);
     }
     // VictimRelief_ClaimExpires: an unconfirmed claim stops blocking after 1000 ms.
     {
@@ -1250,29 +1311,56 @@ int main()
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 5000);
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 6000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
         const auto firstStartMs = latch.lastStartMs;
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 14000));
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 14000));
-        CHECK(SeekVictimReliefNoteExec(latch, 7, 14000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Confirm);
         CHECK(latch.takes == 2);
         CHECK(latch.lastStartMs - firstStartMs >= kSeekVictimReliefRetakeMs);
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 22000));
-        CHECK(!SeekVictimReliefNoteExec(latch, 8, 22000, true));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 22000) == SeekReliefGate::Refuse);
         CHECK(latch.takes == 2);
     }
-    // VictimRelief_FailedTakeRollsBack: a failed take clears its own claim and counts nothing; another taker's
-    // claim is untouched, and the Son is claimable at once.
+    // VictimRelief_FailedTakeRollsBack: a take another tank already lost is refused before any side effect and leaves
+    // the owner's claim alone; a confirmed take that then issues neither order rolls its own confirmation back (no
+    // count, no window) and the Son is claimable at once.
     {
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 5000);
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
-        CHECK(!SeekVictimReliefNoteExec(latch, 8, 6000, false));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Refuse);
         CHECK(latch.claimTaker == 7);
-        CHECK(!SeekVictimReliefNoteExec(latch, 7, 6000, false));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        SeekVictimReliefRollback(latch, 7, 6000);
         CHECK(latch.claimTaker == 0);
         CHECK(latch.takes == 0);
+        CHECK(latch.activeTaker == 0);
+        CHECK(latch.lastStartMs == 0);
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
+    }
+    // VictimRelief_TakeoverFailedCastRollsBack: the new owner's confirmed take issues nothing (its cast fails): its
+    // rollback restores the previous take's stamps, so the 8 s spacing still runs from it, and the displaced tank
+    // cannot act.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        // 8 s later a fresh claim passes to the nearer off-tank, whose take then fails.
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 14000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 14000, 2, 4.0f));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Refuse); // displaced: acts on nothing
+        CHECK(SeekVictimReliefPreExec(latch, 8, 14000) == SeekReliefGate::Confirm);
+        SeekVictimReliefRollback(latch, 8, 14000);
+        CHECK(latch.takes == 1);          // the first take still stands
+        CHECK(latch.lastStartMs == 6000); // and so does its spacing
+        CHECK(latch.lastTaker == 7);
+        CHECK(latch.activeTaker == 0);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefPreExec(latch, 8, 14000) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefDue(true, latch, 14000)); // a retry is due 8 s after the take that stands
     }
     // VictimRelief_LatchesIsolatedByInstance: the same Son guid in two map instances is two latches (the production
     // key helper). A claim, a start and the count in one leave the other's latch untouched, and back.
@@ -1283,13 +1371,13 @@ int main()
         SeekReliefClockTick(latches[first], true, 5000);
         SeekReliefClockTick(latches[second], true, 5000);
         CHECK(SeekVictimReliefClaimFor(true, latches[first], 7, 6000));
-        CHECK(SeekVictimReliefNoteExec(latches[first], 7, 6000, true));
+        CHECK(SeekVictimReliefPreExec(latches[first], 7, 6000) == SeekReliefGate::Confirm);
         CHECK(latches[first].takes == 1);
         CHECK(latches[second].takes == 0);
         CHECK(latches[second].claimTaker == 0);
         CHECK(latches[second].lastStartMs == 0);
         CHECK(SeekVictimReliefClaimFor(true, latches[second], 8, 6000));
-        CHECK(SeekVictimReliefNoteExec(latches[second], 8, 6000, true));
+        CHECK(SeekVictimReliefPreExec(latches[second], 8, 6000) == SeekReliefGate::Confirm);
         CHECK(latches[second].takes == 1);
         CHECK(latches[first].takes == 1);
         CHECK(latches[first].claimTaker == 0);

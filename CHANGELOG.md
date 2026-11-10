@@ -1,5 +1,8 @@
 # Changelog
 
+- Fixed: with AiPlayerbot.DungeonRunSeekVictimRelief on, a relief take is confirmed under the latch lock on the clock of its own pick immediately before any attack or taunt, so a tank whose claim a nearer tank took over issues nothing at all, and a take that still held its claim when picked is no longer refused for confirming on a later clock.
+- Changed: with AiPlayerbot.DungeonRunSeekVictimRelief on, an off-tank outranks the main tank for a relief claim (any off-tank may take a claim over from it, never the reverse; among off-tanks the nearer wins), so the main tank's taunt stays for Hakkar unless no off-tank can take the Son.
+
 - Changed: with AiPlayerbot.DungeonRunSeekVictimRelief on, relief runs while two or more tanks are alive instead of three, any living tank of the raid that is not the boss's victim may relieve (the main tank included), and of two qualifying tanks the nearer one wins the claim.
 - Fixed: the Hakkar victim relief's trigger read used the Son's selection claim up, so the action never got the relief task and no relief take ever started; the claim now answers its own taker and still expires 1 s after the first pick.
 - Changed: Onyxia's Lair walk 2c rows: slot 1's tank post arrival radius is now 40, so Cindarion's 21-26 yd touchdown latches on the first tick, and a 10 yd ranged_only row sends melee and tanks to Cindarion and the whelps while she hovers, behind AiPlayerbot.DungeonRunRangedOnly.

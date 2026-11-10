@@ -739,6 +739,9 @@ namespace ai
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
         Unit* boss = nullptr;     // the fight's boss (the relief row's cap read)
+        // The relief pick's clock (the tick's state.nowMs): the take's claim, confirm and rollback all use it, so a
+        // task that executes a tick later confirms a claim it still held at the pick.
+        std::uint32_t pickMs = 0;
         bool prePlaceHold = false; // the pre-placed tank stands at its point (x, y): stop a walk, leave the rotation free
         bool walkToSpot = false;
         bool holdSwing = false;
