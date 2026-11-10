@@ -10758,7 +10758,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostRecord& stored = g_tankPost[self];
         stored = record;
         stored.lastReadMs = nowMs;
-        if (step == TankPostDecision::Engage && !stored.arrivedLogged)
+        if (TankPostLatchesArrival(in, step) && !stored.arrivedLogged)
         {
             stored.arrivedLogged = true;
             arrivedNow = true;

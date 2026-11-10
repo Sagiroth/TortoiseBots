@@ -632,6 +632,29 @@ static void TestTankPost_HoldSpotDragsSubjectBackToSpot()
     CHECK(TankPostStep(in) == TankPostDecision::Walk);
 }
 
+// The mutation case: latching only on Engage leaves a first arrival that chose Drag unlatched, so once the unit walks
+// off the spot the window ends a post that really arrived (the window applies only before the arrival).
+static void TestTankPost_HoldSpotFirstArrivalAsDragLatches()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;   // the unit lands on the spot
+    in.botToSpotYd = 12.0f;      // the tank is already more than 8 yd from it
+    in.subjectOnTank = true;
+    TankPostDecision const first = TankPostStep(in);
+    CHECK(first == TankPostDecision::Drag);
+    CHECK(TankPostLatchesArrival(in, first));
+    // Next tick: the unit left the radius and the window has passed. The latched arrival keeps the post live.
+    in.arrivedBefore = true;
+    in.subjectToSpotYd = 30.0f;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) != TankPostDecision::End);
+    // Without the latch that same read ends the post on its window.
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
 // The mutation case: dropping `in.subjectOnTank` from the drag test makes this fail (a unit that is not on the tank
 // would be dragged too).
 static void TestTankPost_HoldSpotNoDragWhileSubjectOffTank()
@@ -757,6 +780,7 @@ int main()
     TestTankPost_UnselectableSubjectNotArrived();
     TestTankPost_EngagesSelectableOutOfCombatSubject();
     TestTankPost_HoldSpotDragsSubjectBackToSpot();
+    TestTankPost_HoldSpotFirstArrivalAsDragLatches();
     TestTankPost_HoldSpotNoDragWhileSubjectOffTank();
     TestTankPost_HoldSpotSubjectOutranksOtherHostile();
     TestTankPost_HoldSpotYieldsToSeat();

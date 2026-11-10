@@ -1060,9 +1060,10 @@ AiPlayerbot.DungeonRunTankSwap = 0
 
 # The tank_post boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): a tank named by the
 # row's priority waits at the row's spot (spot_x/y/z) for a unit of target_entry that is not in the fight yet, then
-# attacks it when it arrives (within the row's param, alive, selectable and in combat). The row's boss_entry health band
-# arms the post, and it ends on the unit's death or evade, the row's window_s, the tank's death or charm, or the band
-# closing. The awaiting tank drops only the row's boss (or nothing) and keeps another hostile that attacks the group.
+# attacks it when it arrives (within the row's param, alive and selectable; combat is not asked). The row's boss_entry
+# health band arms the post, and it ends on the unit's death or evade, the row's window_s, the tank's death or charm,
+# or the band closing. The awaiting tank drops only the row's boss (or nothing) and keeps another hostile that attacks
+# the group.
 # With this key off the rows are ignored, so the table behaves exactly as before the kind. This is its own key on top of
 # AiPlayerbot.DungeonTactics (or a commander-bound group) because the kind changes what a tank does mid-fight.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.

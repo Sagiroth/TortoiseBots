@@ -3618,6 +3618,18 @@ namespace ai
         return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
     }
 
+    // Whether this tick latches (and logs) the post's arrival: the unit physically stands arrived, whatever the step
+    // chose. A first arrival can come out as Drag (the tank already more than 8 yd from the spot with the unit on it)
+    // or Yield (a stand seat is due); it must still latch, or the post would later treat it as never arrived and end
+    // on its window.
+    inline bool TankPostLatchesArrival(const TankPostIn& in, TankPostDecision step)
+    {
+        if (in.arrivedBefore || step == TankPostDecision::None || step == TankPostDecision::End)
+            return false;
+        return TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable, in.subjectToSpotYd,
+            in.arrivalRadiusYd);
+    }
+
     // One creature of the awaited entry as the grid search saw it ("tank post units" value).
     struct TankPostUnit
     {

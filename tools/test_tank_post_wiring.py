@@ -85,6 +85,8 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;", find)
         self.assertIn("if (step == TankPostDecision::Yield)\n        return out;", find)
         self.assertIn("TankPostStep(in)", find)
+        # The arrival latches on the physical condition, whatever step it chose (a first Drag or Yield included).
+        self.assertIn("TankPostLatchesArrival(in, step)", find)
         self.assertIn("TankPostTankCanAct(bot)", find)
         self.assertIn('LogTankPost', find)
 
