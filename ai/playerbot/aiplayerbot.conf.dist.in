@@ -1394,6 +1394,12 @@ AiPlayerbot.DungeonRunTauntGate = 0
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 
+# Fixed ranged slots for a boss's spread row (recommended on, needs DungeonRunBossSpread): each ranged bot and healer
+# owns a point on rings around the boss anchor, the row's yards apart, and stands on it whenever the seek does not
+# need it; it walks to the gather for the dose and back. Off keeps the step-away. The BossTacticsSpread row is
+# written either way.
+AiPlayerbot.DungeonRunBossSpreadSlots = 0
+
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
 # tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
 # With the key off the row behaves like a default row (a tank the caster is on still holds it). This is its own

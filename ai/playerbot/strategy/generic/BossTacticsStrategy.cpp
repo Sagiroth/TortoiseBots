@@ -150,6 +150,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tactics stand",
         NextAction::array(0, new NextAction("boss tactics stand", ACTION_EMERGENCY), NULL)));
 
+    // A fixed slot between the doses (DungeonRunBossSpreadSlots): a ranged bot or healer at its own ring point stops
+    // there and walks back to it the tick the seek lets go, below the emergency walk-ins that own their own ticks.
+    triggers.push_back(new TriggerNode(
+        "boss tactics spread slot",
+        NextAction::array(0, new NextAction("boss tactics spread slot", ACTION_EMERGENCY + 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "boss tactics front",
         NextAction::array(0, new NextAction("boss tactics step behind", ACTION_HIGH), NULL)));

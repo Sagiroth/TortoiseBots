@@ -489,17 +489,27 @@ bool RaidSpreadNeededTrigger::IsActive()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
         return false;
+    // A live spread row widens the spacing and outranks a stay: the run holds the ranged bots on their spots, and the
+    // row's splash (Hakkar's Corrupted Blood) still has to be answered there. Read before the seek gate so the spread
+    // row can name that gate.
+    bool const spreadLive = BossSpreadLive(ai, bot);
+    const bool logSpread = spreadLive && ai->IsRanged(bot);
     // A seek_aura row is walking the bot into a cloud or to the gather: the step-out would undo the walk.
     if (BossSeeking(ai, bot))
+    {
+        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+            LogBossSpread(ai, bot, "seek", -1, -1.0f);
         return false;
+    }
     // Generic combat spread (donor "combat formation move" without the opt-in
     // disperse knob): only while fighting, so idle/questing stacking is free.
     Unit* target = GetTarget();
     if (!target)
+    {
+        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+            LogBossSpread(ai, bot, "no_target", -1, -1.0f);
         return false;
-    // A live spread row widens the spacing and outranks a stay: the run holds the ranged bots on their spots, and the
-    // row's splash (Hakkar's Corrupted Blood) still has to be answered there.
-    bool const spreadLive = BossSpreadLive(ai, bot);
+    }
     // Explicit orders win: a bot told to hug a spot (stay/follow/attack/pull
     // anchors, wait-for-attack, grind) holds it; spread never overrides.
     // Owned/hired bots are exempt via live master OR owner record, so an
@@ -512,13 +522,26 @@ bool RaidSpreadNeededTrigger::IsActive()
         ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
+    {
+        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+            LogBossSpread(ai, bot, "order", -1, -1.0f);
         return false;
+    }
     // Melee/tanks stack by design; spread is a ranged survival behavior.
     if (!ai->IsRanged(bot))
         return false;
     Group* group = bot->GetGroup();
     if (!group)
         return false;
+    // A slot bot holds its fixed point: the old step-away would undo the walk back to it (and the hold).
+    if (sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive)
+    {
+        const BossSpreadSlotTask slot = FindBossSpreadSlot(ai, bot);
+        if (slot.slotBot && (slot.verdict == SpreadSlotVerdict::SlotMove ||
+                             slot.verdict == SpreadSlotVerdict::SlotHold ||
+                             slot.verdict == SpreadSlotVerdict::Cast))
+            return false;
+    }
     float const spreadYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     for (Player* member : LiveGroupMembers(group))
     {
@@ -529,6 +552,8 @@ bool RaidSpreadNeededTrigger::IsActive()
         if (sServerFacade.getDistance2d(bot, member) < spreadYd)
             return true;
     }
+    if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        LogBossSpread(ai, bot, "clear", -1, -1.0f);
     return false;
 }
 

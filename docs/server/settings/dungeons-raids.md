@@ -38,6 +38,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAuraGatedTargets`](#aiplayerbotdungeonrunauragatedtargets) | `0` | `1`: a unit a `needs_aura` boss-tactic row gates is left alone by bots without the aura (target picks, taunts, guard and attack orders). |
 | [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
+| [`AiPlayerbot.DungeonRunBossSpreadSlots`](#aiplayerbotdungeonrunbossspreadslots) | `0` | `1`: each ranged bot and healer of a live `spread` row owns a fixed ring slot and stands on it between the doses; off keeps the step-away (recommended on, needs `DungeonRunBossSpread`). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -702,6 +703,16 @@ Whether the boss tactics widen the ranged raid's spacing while a `spread` row's 
 <summary>How it works in detail</summary>
 
 **Boss spread:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)): while a row's boss is in the fight the ranged bots and the healers keep the row's `param` yards apart instead of the ordinary spacing, and a stay order no longer exempts a bot from spreading. The row's spell only documents the splash the spacing answers (Hakkar's row: Corrupted Blood 24328 hits 10 yd around a random attacker, the row keeps 12). Melee and tanks never spread.
+
+</details>
+### `AiPlayerbot.DungeonRunBossSpreadSlots`
+Whether a live `spread` row gives each ranged bot and healer a fixed slot to stand on between the doses.
+**Default:** `0` · **Values:** `0` off (today's step-away out of a stack, no fixed points), `1` on (recommended on; needs `AiPlayerbot.DungeonRunBossSpread`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Fixed slots:** while the row's boss fights, each ranged bot and healer that is not a tank owns one point on rings around the boss anchor, the row's `param` yards apart: ring 1 has 6 points at `param`, ring 2 has 12 at `2 * param` (the largest ring that still fits 2 yd inside the anchor's circle, at most 3; two rings when no anchor is live and the seek spot is the centre). Points are ordered nearest the fight's seek spot first, and a bot owns the point at its index among the group's ranged non-tanks by raw guid (dead ones keep their place, so a death moves nobody). An unusable point (the anchor refuses it, the clamp moves it by more than 0.5 yd, or the floor is more than 4 yd off the centre) falls back to a spare point; if that one is unusable too the bot keeps the step-away. The bot stands within 2 yd and leaves only to seek (the `seek_aura` walk to the gather or a cloud, the same read that releases it), for a stand set, as the boss's victim or charmed, as the walk-out puller, when its point is more than 30 yd from its target (a healer measures from the boss's victim) or while a cast blocks the move: a healer's cast is never cut, a damage dealer's own is cut after 6 s. It walks back to the point the tick the seek lets go, and the landing also becomes its stay spot when it has the `stay` strategy. The `BossTacticsSpread` row is written with this key on and off (see [`refusal-rows.md`](../../play/refusal-rows.md)).
 
 </details>
 ### `AiPlayerbot.DungeonRunAvoidCastAll`

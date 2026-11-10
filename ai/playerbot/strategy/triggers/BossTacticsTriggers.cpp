@@ -500,6 +500,19 @@ bool BossTacticsSeekTrigger::IsActive()
     return FindBossSeek(ai, bot).valid;
 }
 
+bool BossTacticsSpreadSlotTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        return false;
+    const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
+    if (!task.slotBot)
+        return false;
+    return task.verdict == SpreadSlotVerdict::SlotMove || task.verdict == SpreadSlotVerdict::SlotHold ||
+           task.verdict == SpreadSlotVerdict::Cast;
+}
+
 bool BossTacticsSeekPetTrigger::IsActive()
 {
     if (!Ready(ai, bot))

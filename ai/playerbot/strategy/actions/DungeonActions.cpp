@@ -531,7 +531,13 @@ bool RaidSpreadAction::isUseful()
 {
     if (!MovementAction::isUseful())
         return false;
-    return !FindBossStand(ai, bot).valid;
+    if (FindBossStand(ai, bot).valid)
+    {
+        if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots && BossSpreadLive(ai, bot))
+            LogBossSpread(ai, bot, "stand", -1, -1.0f);
+        return false;
+    }
+    return true;
 }
 
 bool RaidSpreadAction::Execute(Event& event)
@@ -544,6 +550,8 @@ bool RaidSpreadAction::Execute(Event& event)
     bool const optIn = ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT);
     // A live spread row widens the legacy spacing and outranks a stay (the run holds the ranged bots on their spots).
     bool const spreadLive = BossSpreadLive(ai, bot);
+    // With the slots key off, the row still names the gate that stopped today's step-away.
+    bool const logSpread = !sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive;
     float radius = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     if (optIn)
     {
@@ -583,10 +591,18 @@ bool RaidSpreadAction::Execute(Event& event)
     // (#903: spacing is not a hazard escape - a step-out mid-cast cancels
     // the bar. Finish the cast first; the trigger re-fires next tick.)
     if (ai::MoveBlockedByCast(bot->IsNonMeleeSpellCasted(false, true, true), false))
+    {
+        if (logSpread)
+            LogBossSpread(ai, bot, "cast", -1, -1.0f);
         return false;
+    }
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
+    {
+        if (logSpread)
+            LogBossSpread(ai, bot, "cooldown", -1, -1.0f);
         return false;
+    }
     // Step out directly away from the nearest stacked friendly.
     Group* group = bot->GetGroup();
     if (!group)
@@ -646,6 +662,8 @@ bool RaidSpreadAction::Execute(Event& event)
             }
             if (MoveTo(bot->GetMapId(), stepX, stepY, stepZ, false, IsReaction(), false, true))
             {
+                if (logSpread)
+                    LogBossSpread(ai, bot, "stepped", -1, -1.0f);
                 lastMove.spreadFailures.BeginAttempt(nearest->GetObjectGuid().GetRawValue(),
                     bot->GetMapId(), botPos.GetAngleTo(out), nearestDist, nowMs, bot->movespline->GetId());
                 lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
@@ -664,6 +682,8 @@ bool RaidSpreadAction::Execute(Event& event)
     // on the next tick.
     if (anchorRejected)
         lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
+    if (logSpread)
+        LogBossSpread(ai, bot, anchorRejected ? "anchor" : "no_step", -1, -1.0f);
     return false;
 }
 bool DragonTankFaceAwayAction::Execute(Event& event)

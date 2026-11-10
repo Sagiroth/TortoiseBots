@@ -391,6 +391,7 @@ namespace ai
             creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekAction(ai); };
             creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankAction(ai); };
             creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillAction(ai); };
+            creators["boss tactics spread slot"] = [](PlayerbotAI* ai) { return new BossTacticsSpreadSlotAction(ai); };
             creators["boss tactics seek pet"] = [](PlayerbotAI* ai) { return new BossTacticsSeekPetAction(ai); };
             creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemAction(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterAction(ai); };

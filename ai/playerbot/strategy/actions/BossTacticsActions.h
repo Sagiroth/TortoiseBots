@@ -2,6 +2,7 @@
 #include <limits>
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/CombatSpreadPolicy.h"
 #include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
@@ -686,6 +687,23 @@ namespace ai
     float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
     bool BossSpreadLive(PlayerbotAI* ai, Player* bot);
 
+    // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
+    // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false
+    // for every bot the row does not apply to. The read does not look at the key (the caller does), so the spread row
+    // can be written with the key off too.
+    struct BossSpreadSlotTask
+    {
+        bool slotBot = false;
+        SpreadSlotVerdict verdict = SpreadSlotVerdict::NoCentre;
+        int slot = -1;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        float slotYd = -1.0f;
+    };
+    BossSpreadSlotTask FindBossSpreadSlot(PlayerbotAI* ai, Player* bot);
+    // One `BossTacticsSpread` row per bot and 5 s: the key, the verdict word, the owned slot, the distance to it, the
+    // nearest living group member, how many members stand inside the row's spacing, the seek aura and the clock.
+    void LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd);
+
     // The source a free DPS bot damages or burns: the one the gather stands around, while the dose window is open and
     // the row's hold allows the damage (the pre-damage, or the burn once the gather is ready). Null otherwise.
     Unit* FindBossSeekKill(PlayerbotAI* ai, Player* bot);
@@ -733,6 +751,24 @@ namespace ai
         float lastX = 0.0f;
         float lastY = 0.0f;
         bool hasLast = false;
+    };
+
+    // The fixed slot between the doses (DungeonRunBossSpreadSlots): stand on the owned point, walk back to it once the
+    // seek lets go. A healer's cast is never cut for the walk; a damage dealer cuts its own after 6 s.
+    class BossTacticsSpreadSlotAction : public MovementAction
+    {
+    public:
+        BossTacticsSpreadSlotAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics spread slot") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+        // The first read of an unbroken run of `cast` verdicts; 0: the last verdict was another.
+        std::uint32_t castSinceMs = 0;
     };
 
     // The second off-tank's source: take it, pull it, drag it to the row's spot.
