@@ -9,7 +9,11 @@
 // No core includes: the translation reads the game state into EngagedBossView, and the rules stay testable in
 // tools/test_boss_engaged_policy.cpp.
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
+#include <utility>
+#include <vector>
 
 namespace ai
 {
@@ -41,4 +45,96 @@ namespace ai
         return v.known && static_cast<std::uint32_t>(nowMs - v.lastSeenMs) < kEngagedBossFreshMs && v.alive &&
                v.inCombat && !v.evading && v.botInCombat && v.botToBossYd <= kEngagedBossReachYd;
     }
+
+    // What the bots remember of one boss: the unit last seen and when.
+    struct EngagedBossNote
+    {
+        std::uint64_t guid = 0;
+        std::uint32_t lastSeenMs = 0;
+    };
+
+    // The raid's engaged bosses, partitioned by map instance: a note, a read and the sweep of expired entries touch
+    // only the caller's own bucket, so one instance's fight never costs another instance's bots a walk over its rows.
+    // The caller holds its own lock (BossTacticsActions.cpp) and passes the clock it read under that lock.
+    struct EngagedBossRegistry
+    {
+        // An entry no bot refreshed for three freshness windows belongs to a fight that is over.
+        static constexpr std::uint32_t kExpireMs = 3 * kEngagedBossFreshMs;
+
+        typedef std::pair<std::uint32_t, std::uint32_t> InstanceKey;  // (mapId, instanceId)
+        typedef std::map<std::uint32_t, EngagedBossNote> InstanceBucket;  // boss entry -> note
+        std::map<InstanceKey, InstanceBucket> buckets;
+        std::uint32_t size = 0;
+
+        static InstanceKey InstanceOf(std::uint32_t mapId, std::uint32_t instanceId)
+        {
+            return InstanceKey(mapId, instanceId);
+        }
+
+        // Records that a bot in this instance saw the boss; then drops the bucket's expired entries and the bucket
+        // itself when it empties. Nothing outside this instance is read, written or expired.
+        void Note(std::uint32_t mapId, std::uint32_t instanceId, std::uint32_t entry, std::uint64_t guid,
+                  std::uint32_t nowMs)
+        {
+            std::map<InstanceKey, InstanceBucket>::iterator instance = buckets.find(InstanceOf(mapId, instanceId));
+            if (instance == buckets.end())
+                instance = buckets.insert(std::make_pair(InstanceOf(mapId, instanceId), InstanceBucket())).first;
+            InstanceBucket& bucket = instance->second;
+            std::map<std::uint32_t, EngagedBossNote>::iterator note = bucket.find(entry);
+            const bool have = note != bucket.end();
+            if (!EngagedBossNoteDue(have, nowMs, have ? note->second.lastSeenMs : 0))
+                return;
+            if (have)
+                note->second = EngagedBossNote{ guid, nowMs };
+            else
+            {
+                bucket[entry] = EngagedBossNote{ guid, nowMs };
+                ++size;
+            }
+            Prune(mapId, instanceId, nowMs);
+        }
+
+        // Drops the instance's expired entries and the bucket when none is left; false when no note remains there.
+        // Only this instance's bucket is walked.
+        bool Prune(std::uint32_t mapId, std::uint32_t instanceId, std::uint32_t nowMs)
+        {
+            std::map<InstanceKey, InstanceBucket>::iterator instance = buckets.find(InstanceOf(mapId, instanceId));
+            if (instance == buckets.end())
+                return false;
+            InstanceBucket& bucket = instance->second;
+            for (std::map<std::uint32_t, EngagedBossNote>::iterator old = bucket.begin(); old != bucket.end();)
+            {
+                if (static_cast<std::uint32_t>(nowMs - old->second.lastSeenMs) > kExpireMs)
+                {
+                    old = bucket.erase(old);
+                    --size;
+                }
+                else
+                    ++old;
+            }
+            if (bucket.empty())
+            {
+                buckets.erase(instance);
+                return false;
+            }
+            return true;
+        }
+
+        // The notes of this instance whose entry the caller has not read yet, after its bucket is pruned (and dropped
+        // with its last expired row). Other instances are not visited.
+        std::vector<EngagedBossNote> Read(std::uint32_t mapId, std::uint32_t instanceId, std::uint32_t nowMs,
+                                          const std::vector<std::uint32_t>& seenEntries)
+        {
+            std::vector<EngagedBossNote> out;
+            if (!Prune(mapId, instanceId, nowMs))
+                return out;
+            const InstanceBucket& bucket = buckets.find(InstanceOf(mapId, instanceId))->second;
+            for (const InstanceBucket::value_type& row : bucket)
+            {
+                if (std::find(seenEntries.begin(), seenEntries.end(), row.first) == seenEntries.end())
+                    out.push_back(row.second);
+            }
+            return out;
+        }
+    };
 }

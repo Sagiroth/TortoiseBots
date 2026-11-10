@@ -1282,6 +1282,44 @@ int main()
         CHECK(!out.assigned && !out.arrived);
     }
 
+    // StandEpisode_FreshAssignedArrivedLogsOnce: a fresh episode whose first read assigns and arrives together logs
+    // each row once. The record the start read stores carries those flags, so the next read of the same window logs
+    // neither (the caller's sequence: step, then keep the read on the record, then log what the step says).
+    {
+        StandEpisode record;
+        int assignedRows = 0, arrivedRows = 0, unseatedRows = 0;
+        for (int read = 0; read < 2; ++read)
+        {
+            StandEpisodeIn in;
+            in.have = read > 0;
+            in.sameWindow = read > 0;
+            in.windowOn = true;
+            in.seatValid = true;
+            in.arrived = true;
+            in.assignedLogged = record.assignedLogged;
+            in.arrivedLogged = record.arrivedLogged;
+            in.unseatedLogged = record.unseatedLogged;
+            const StandEpisodeOut out = StandEpisodeStep(in);
+            if (read == 0)
+                CHECK(out.start);
+            else
+                CHECK(!out.start);
+            CHECK(!out.release);
+            StandEpisodeKeep(record, out, 1000);
+            if (out.assigned)
+                ++assignedRows;
+            if (out.arrived)
+                ++arrivedRows;
+            if (out.unseated)
+                ++unseatedRows;
+        }
+        CHECK(assignedRows == 1);
+        CHECK(arrivedRows == 1);
+        CHECK(unseatedRows == 0);
+        CHECK(record.assignedLogged && record.arrivedLogged);
+        CHECK(record.assignedMs == 1000);
+    }
+
     // AiPlayerbot.BossStandWholeRaid: a member counts while it is in combat with the boss, so Onyxia's Fireball
     // (-100 % threat on its target) no longer costs the wiped bot its seat; with the key off only threat and the
     // victim count, as before.

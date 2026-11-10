@@ -57,12 +57,19 @@ class EngagedBossWiring(unittest.TestCase):
         fn = body(ACTIONS, "void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)")
         self.assertIn("if (!unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())", fn)
         self.assertIn("if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))", fn)
-        self.assertIn("EngagedBossNoteDue(have, nowMs, have ? it->second.second : 0)", fn)
-        self.assertIn("3 * kEngagedBossFreshMs", fn)
+        # The note and its expiry rules live in the policy's instance bucket; the clock is read under the registry lock.
+        self.assertIn("g_engagedBosses.Note(mapId, instanceId, entry, guid, WorldTimer::getMSTime());", fn)
+        self.assertLess(fn.index("std::lock_guard"), fn.index("WorldTimer::getMSTime()"))
+        self.assertIn("EngagedBossNoteDue(have, nowMs, have ? note->second.lastSeenMs : 0)", POLICY)
+        self.assertIn("static_cast<std::uint32_t>(nowMs - old->second.lastSeenMs) > kExpireMs", POLICY)
+        self.assertIn("kExpireMs = 3 * kEngagedBossFreshMs", POLICY)
         registered = body(ACTIONS, "std::vector<Creature*> RegisteredEngagedBosses(")
         self.assertIn("g_engagedBossCount.load(std::memory_order_relaxed) == 0", registered)
+        # The read collects the caller's bucket (and prunes it) under one lock, its clock read there too.
+        self.assertIn("g_engagedBosses.Read(mapId, instanceId, WorldTimer::getMSTime(), seenEntries)", registered)
+        self.assertLess(registered.index("std::lock_guard"), registered.index("WorldTimer::getMSTime()"))
         self.assertIn("EngagedBossUsable(view, nowMs)", registered)
-        self.assertIn("bot->GetMap()->GetCreature(ObjectGuid(row.first))", registered)
+        self.assertIn("bot->GetMap()->GetCreature(ObjectGuid(row.guid))", registered)
         for field in ("view.alive = sServerFacade.IsAlive(creature);", "view.inCombat = creature->IsInCombat();",
                       "view.evading = creature->IsInEvadeMode();", "view.botInCombat = bot->IsInCombat();",
                       "view.botToBossYd = bot->GetDistance(creature);"):

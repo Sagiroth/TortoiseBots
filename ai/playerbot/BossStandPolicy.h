@@ -1146,7 +1146,20 @@ namespace ai
         return stand_detail::Dist2(botX, botY, slotX, slotY) > kBossStandKeepCastRange * kBossStandKeepCastRange;
     }
 
-    // AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid + anchor). What this read logs.
+    // AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid + anchor), holding the rows of that window
+    // already logged.
+    struct StandEpisode
+    {
+        std::uint64_t boss = 0;
+        std::uint32_t anchor = 0;
+        std::uint32_t windowSpell = 0;
+        std::uint8_t role = 0;
+        std::uint32_t assignedMs = 0;
+        bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
+    };
+
+    // AiPlayerbot.BossStandEvents: what a read logs. The first read of a window can assign and arrive at once, so the
+    // record it stores carries the flags of the rows that read logs; later reads only add the rows they log.
     struct StandEpisodeIn
     {
         bool have = false;            // an episode is recorded for this bot
@@ -1160,9 +1173,26 @@ namespace ai
     struct StandEpisodeOut
     {
         bool release = false;   // log `released` for the recorded episode and drop it
-        bool start = false;     // record a new episode (all logged flags false)
+        bool start = false;     // record a new episode, its flags the rows this read logs
         bool assigned = false, arrived = false, unseated = false;
     };
+
+    // The episode one read belongs to, after the read: a start read begins a fresh record carrying the flags of the
+    // rows it logs (a first read can assign and arrive at once), a later read adds the rows it logs to the record it
+    // finds. The caller fills boss, anchor, spell and role on the fresh record; the episode to log is what this
+    // returns, so a row that went out is never logged again in the same episode.
+    inline StandEpisode& StandEpisodeKeep(StandEpisode& record, const StandEpisodeOut& step, std::uint32_t nowMs)
+    {
+        if (step.start)
+        {
+            record = StandEpisode();
+            record.assignedMs = nowMs;
+        }
+        record.assignedLogged = record.assignedLogged || step.assigned;
+        record.arrivedLogged = record.arrivedLogged || step.arrived;
+        record.unseatedLogged = record.unseatedLogged || step.unseated;
+        return record;
+    }
 
     inline StandEpisodeOut StandEpisodeStep(const StandEpisodeIn& in)
     {

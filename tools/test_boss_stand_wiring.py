@@ -349,6 +349,9 @@ class BossStandWiring(unittest.TestCase):
         # The recorded episode is read only with the key on, and the read is decided in one place.
         self.assertIn("if (events && recorded != g_standEpisodes.end())", fn)
         self.assertIn("const StandEpisodeOut step = StandEpisodeStep(in);", fn)
+        # A start read stores the flags of the rows it logs, so a fresh assigned-and-arrived read logs each row once.
+        self.assertIn("StandEpisodeKeep(fresh, step, nowMs);", fn)
+        self.assertIn("logged = StandEpisodeKeep(it->second, step, nowMs);", fn)
         self.assertIn("return finishStandRead(target, false, nullptr);", fn)
         self.assertIn("return finishStandRead(target, false, selfCounts ? \"side_full\" : \"not_counted\");", fn)
         self.assertIn('return finishStandRead(target, false, "given_up");', fn)

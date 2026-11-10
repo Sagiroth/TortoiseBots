@@ -928,13 +928,13 @@ void LogSeekWalkout(PlayerbotAI* ai, const char* text, const char* info2);
 
 namespace
 {
-// AiPlayerbot.BossTacticsKeepsEngagedBoss: the raid's engaged bosses, one row per (map, instance, entry), holding the
-// guid of the unit the bots last saw and when. The bots whose attacker list shows a boss note it here; a bot that lost
-// it reads it back while the entry is fresh (BossEngagedPolicy.h). One map lookup per entry per read, never a grid
-// search. Guarded by g_engagedBossMutex; g_engagedBossCount is the cheap "is anything registered" read.
+// AiPlayerbot.BossTacticsKeepsEngagedBoss: the raid's engaged bosses, one row per (instance, entry), holding the guid
+// of the unit the bots last saw and when. The bots whose attacker list shows a boss note it here; a bot that lost it
+// reads it back while the entry is fresh (BossEngagedPolicy.h). One map lookup per entry per read, never a grid
+// search. Guarded by g_engagedBossMutex; g_engagedBossCount is the cheap "is anything registered" read, and the
+// registry buckets by map instance so a read or a note touches only the caller's own boss list.
 std::mutex g_engagedBossMutex;
-std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>, std::pair<std::uint64_t, std::uint32_t> >
-    g_engagedBosses;
+EngagedBossRegistry g_engagedBosses;
 std::atomic<std::uint32_t> g_engagedBossCount{0};
 
 // A boss a bot sees in its attacker list: recorded, at most once per half second per boss. Nothing is read or written
@@ -946,27 +946,12 @@ void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)
     const std::uint32_t entry = unit->GetEntry();
     if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))
         return;
-    const std::uint32_t nowMs = WorldTimer::getMSTime();
-    const std::tuple<std::uint32_t, std::uint32_t, std::uint32_t> key(mapId, unit->GetInstanceId(), entry);
+    const std::uint32_t instanceId = unit->GetInstanceId();
+    const std::uint64_t guid = unit->GetObjectGuid().GetRawValue();
     std::lock_guard<std::mutex> lock(g_engagedBossMutex);
-    auto it = g_engagedBosses.find(key);
-    const bool have = it != g_engagedBosses.end();
-    if (!EngagedBossNoteDue(have, nowMs, have ? it->second.second : 0))
-        return;
-    const std::pair<std::uint64_t, std::uint32_t> note(unit->GetObjectGuid().GetRawValue(), nowMs);
-    if (have)
-        it->second = note;
-    else
-        g_engagedBosses[key] = note;
-    // An entry no bot refreshed for three freshness windows belongs to a fight that is over.
-    for (auto old = g_engagedBosses.begin(); old != g_engagedBosses.end();)
-    {
-        if (static_cast<std::uint32_t>(nowMs - old->second.second) > 3 * kEngagedBossFreshMs)
-            old = g_engagedBosses.erase(old);
-        else
-            ++old;
-    }
-    g_engagedBossCount.store(static_cast<std::uint32_t>(g_engagedBosses.size()), std::memory_order_relaxed);
+    // The clock is read under the lock: an entry is never judged stale (or fresh) against a tick taken before the wait.
+    g_engagedBosses.Note(mapId, instanceId, entry, guid, WorldTimer::getMSTime());
+    g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
 }
 
 // The registered bosses of the bot's map instance whose entry the bot has not read yet, still usable: alive, in
@@ -977,29 +962,25 @@ std::vector<Creature*> RegisteredEngagedBosses(Player* bot, const std::vector<st
     if (!bot || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss ||
         g_engagedBossCount.load(std::memory_order_relaxed) == 0)
         return out;
-    std::vector<std::pair<std::uint64_t, std::uint32_t> > registered;
+    const std::uint32_t mapId = bot->GetMapId();
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    std::vector<EngagedBossNote> registered;
     {
         std::lock_guard<std::mutex> lock(g_engagedBossMutex);
-        const std::uint32_t mapId = bot->GetMapId();
-        const std::uint32_t instanceId = bot->GetInstanceId();
-        for (const auto& row : g_engagedBosses)
-        {
-            if (std::get<0>(row.first) != mapId || std::get<1>(row.first) != instanceId)
-                continue;
-            if (std::find(seenEntries.begin(), seenEntries.end(), std::get<2>(row.first)) != seenEntries.end())
-                continue;
-            registered.push_back(row.second);
-        }
+        // The clock is read under the lock: the read's own prune never judges an entry against a tick taken before
+        // the wait.
+        registered = g_engagedBosses.Read(mapId, instanceId, WorldTimer::getMSTime(), seenEntries);
+        g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
     }
     const std::uint32_t nowMs = WorldTimer::getMSTime();
-    for (const std::pair<std::uint64_t, std::uint32_t>& row : registered)
+    for (const EngagedBossNote& row : registered)
     {
-        Creature* const creature = bot->GetMap()->GetCreature(ObjectGuid(row.first));
+        Creature* const creature = bot->GetMap()->GetCreature(ObjectGuid(row.guid));
         if (!creature)
             continue;
         EngagedBossView view;
         view.known = true;
-        view.lastSeenMs = row.second;
+        view.lastSeenMs = row.lastSeenMs;
         view.alive = sServerFacade.IsAlive(creature);
         view.inCombat = creature->IsInCombat();
         view.evading = creature->IsInEvadeMode();
@@ -8143,15 +8124,6 @@ std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;
 // seat and the arrival are logged once per episode, a read that ends without a seat logs `unseated` once, and the
 // episode is released when its window is over or another window takes over. Guarded by g_standHoldMutex and counted
 // into g_standStateCount; with the key off nothing is read, written or logged.
-struct StandEpisode
-{
-    std::uint64_t boss = 0;
-    std::uint32_t anchor = 0;
-    std::uint32_t windowSpell = 0;
-    std::uint8_t role = 0;
-    std::uint32_t assignedMs = 0;
-    bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
-};
 std::unordered_map<uint64, StandEpisode> g_standEpisodes;
 
 const char* StandRoleName(std::uint8_t role)
@@ -8476,26 +8448,19 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             {
                 if (step.start)
                 {
-                    logged.boss = boss->GetObjectGuid().GetRawValue();
-                    logged.anchor = points[0]->anchor;
-                    logged.windowSpell = points[0]->windowSpell;
-                    logged.role = static_cast<uint8>(role);
-                    logged.assignedMs = nowMs;
-                    g_standEpisodes[selfKey] = logged;
+                    StandEpisode& fresh = g_standEpisodes[selfKey];
+                    StandEpisodeKeep(fresh, step, nowMs);
+                    fresh.boss = boss->GetObjectGuid().GetRawValue();
+                    fresh.anchor = points[0]->anchor;
+                    fresh.windowSpell = points[0]->windowSpell;
+                    fresh.role = static_cast<uint8>(role);
+                    logged = fresh;
                 }
                 else
                 {
                     auto it = g_standEpisodes.find(selfKey);
                     if (it != g_standEpisodes.end())
-                    {
-                        logged = it->second;
-                        if (step.assigned)
-                            it->second.assignedLogged = true;
-                        if (step.arrived)
-                            it->second.arrivedLogged = true;
-                        if (step.unseated)
-                            it->second.unseatedLogged = true;
-                    }
+                        logged = StandEpisodeKeep(it->second, step, nowMs);
                 }
                 assignedMs = logged.assignedMs;
                 logAssigned = step.assigned;

@@ -78,6 +78,62 @@ int main()
         CHECK(EngagedBossNoteDue(true, 0x00000200u, 0xFFFFFF00u));   // wrapped: 768 ms, due
     }
 
+    // EngagedBossRegistry_InstanceBucketsIsolated: a note, a read and the expiry sweep of one map instance never visit,
+    // return or expire another instance's entries, and a bucket whose last entry expires goes with it. A read is
+    // passed the reading bot's clock, so a stale row of another instance is only ever judged by that instance's bots.
+    {
+        const std::vector<std::uint32_t> none;
+        EngagedBossRegistry registry;
+        registry.Note(249, 1, 10184, 0x1000, 0);
+        registry.Note(249, 2, 10184, 0x2000, 0);
+        CHECK(registry.size == 2 && registry.buckets.size() == 2);
+
+        // A second note inside the half second is not due: the earlier guid and time stay.
+        registry.Note(249, 1, 10184, 0x9999, 300);
+        std::vector<EngagedBossNote> one = registry.Read(249, 1, 300, none);
+        CHECK(one.size() == 1 && one[0].guid == 0x1000 && one[0].lastSeenMs == 0);
+
+        // Instance 1 refreshes its row at 60 s; instance 2's row, long stale by that clock, is still returned by
+        // instance 2's read at its own clock 0: instance 1's note never expired it.
+        registry.Note(249, 1, 10184, 0x1001, 60000);
+        CHECK(registry.size == 2 && registry.buckets.size() == 2);
+        one = registry.Read(249, 1, 60000, none);
+        CHECK(one.size() == 1 && one[0].guid == 0x1001 && one[0].lastSeenMs == 60000);
+        std::vector<EngagedBossNote> two = registry.Read(249, 2, 0, none);
+        CHECK(two.size() == 1 && two[0].guid == 0x2000 && two[0].lastSeenMs == 0);
+
+        // Reads return the caller's instance only, and skip the entries the caller already read.
+        CHECK(registry.Read(249, 1, 60000, std::vector<std::uint32_t>(1, 10184)).empty());
+        CHECK(registry.Read(249, 3, 60000, none).empty());
+        CHECK(registry.Read(0, 1, 60000, none).empty());
+
+        // A second boss in instance 1: its own bucket grows, instance 2's row is still there.
+        registry.Note(249, 1, 15000, 0x3000, 61000);
+        CHECK(registry.size == 3 && registry.buckets.size() == 2);
+        CHECK(registry.Read(249, 1, 61000, none).size() == 2);
+        two = registry.Read(249, 2, 0, none);
+        CHECK(two.size() == 1 && two[0].guid == 0x2000 && two[0].lastSeenMs == 0);
+
+        // An instance 1 note at 95 s expires its own 15000 row and keeps the bucket (10184 is fresh); instance 2's
+        // row survives both the sweep and the size.
+        registry.Note(249, 1, 10184, 0x1002, 95000);
+        CHECK(registry.size == 2 && registry.buckets.size() == 2);
+        one = registry.Read(249, 1, 95000, std::vector<std::uint32_t>(1, 10184));
+        CHECK(one.empty());  // 15000 went, the refreshed 10184 is the entry the caller read
+        two = registry.Read(249, 2, 0, none);
+        CHECK(two.size() == 1 && two[0].guid == 0x2000 && two[0].lastSeenMs == 0);
+
+        // Instance 2's own read at 95 s drops its stale row and, with it, the empty bucket.
+        two = registry.Read(249, 2, 95000, none);
+        CHECK(two.empty());
+        CHECK(registry.size == 1 && registry.buckets.size() == 1);
+
+        // Instance 1's last row expires on its next read: its bucket goes too.
+        one = registry.Read(249, 1, 130000, none);
+        CHECK(one.empty());
+        CHECK(registry.size == 0 && registry.buckets.size() == 0);
+    }
+
     std::cout << "All engaged boss policy tests passed.\n";
     return 0;
 }
