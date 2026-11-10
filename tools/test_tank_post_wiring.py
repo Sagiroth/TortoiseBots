@@ -71,7 +71,19 @@ class TankPostWiring(unittest.TestCase):
         # Arrival reads selectable, and the step skips the target only when it is the row's boss.
         self.assertIn("UNIT_FLAG_NOT_SELECTABLE", blockers)
         self.assertIn("in.subjectSelectable = subjectUnit && subjectUnit->selectable;", find)
-        self.assertIn("TankPostHoldsOtherHostile(bot, AI_VALUE(Unit*, \"current target\"), row->bossEntry)", find)
+        self.assertIn("TankPostHoldsOtherHostile(bot, currentTarget, row->bossEntry)", find)
+        self.assertIn("holdSpot = sPlayerbotAIConfig.dungeonRunTankPostHoldSpot && row->mode == TacticMode::HoldSpot",
+                      find)
+        self.assertIn("in.arrivedBefore = haveRecord && record.arrivedLogged", find)
+        self.assertIn("in.subjectOnTank = subject && subject->GetVictim() == bot", find)
+        self.assertIn("in.seated = holdSpot && FindBossStand(ai, bot).valid", find)
+        self.assertIn("if (holdSpot && currentTarget == subject)\n        in.holdingOtherHostile = false;", find)
+        self.assertIn("(!holdSpot && in.holdingOtherHostile)", find)
+        # The step's arrived decision reaches the trigger and the action: a hold_spot post does not stand down for
+        # another hostile once the subject has arrived (Engage/Drag).
+        self.assertIn("holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag)", find)
+        self.assertIn("out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;", find)
+        self.assertIn("if (step == TankPostDecision::Yield)\n        return out;", find)
         self.assertIn("TankPostStep(in)", find)
         self.assertIn("TankPostTankCanAct(bot)", find)
         self.assertIn('LogTankPost', find)
@@ -84,6 +96,11 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("current->GetEntry() != task.row->bossEntry", action)
         self.assertIn("bot->AttackStop();", action)
         self.assertIn("UpdateGroundPositionZ(task.x, task.y, z)", action)
+        # The drag walks back to the spot keeping the target: no target change and no attack stop on that path.
+        drag = action[action.index("if (task.step == TankPostDecision::Drag)"):]
+        drag = drag[:drag.index("// Walk or hold")]
+        self.assertIn("MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true)", drag)
+        self.assertNotIn("AttackStop", drag)
         # One row per post event, named as the spec has it.
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', ACTIONS)
         self.assertIn('snprintf(info2, sizeof(info2), "event=%s,reason=%s", event, reason)', ACTIONS)
@@ -113,6 +130,17 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("`tank_post`", BOSS_DOCS)
         self.assertIn("DungeonRunTankPost", BOSS_DOCS)
         self.assertIn("DungeonRunTankPost", CHANGELOG)
+        # The hold_spot key: read, defaulted, templated, documented and named beside the mode in the boss docs.
+        self.assertIn('dungeonRunTankPostHoldSpot = config.GetBoolDefault('
+                      '"AiPlayerbot.DungeonRunTankPostHoldSpot", false);', CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostHoldSpot = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostHoldSpot = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostHoldSpot", DOCS)
+        self.assertIn("recommended on",
+                      DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostHoldSpot`"):][:600])
+        self.assertIn("`hold_spot`", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostHoldSpot", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostHoldSpot", CHANGELOG)
 
 
 if __name__ == "__main__":
