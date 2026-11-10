@@ -730,6 +730,181 @@ static void TestTankPost_UnselectableSubjectNotArrived()
     CHECK(TankPostStep(in) == TankPostDecision::End);
 }
 
+// The case that fails without the drag: the arrived unit walks off with the tank following it, and only a walk back
+// keeping the target brings it to the spot; without the mode the arrived post engages wherever the unit stands.
+static void TestTankPost_HoldSpotDragsSubjectBackToSpot()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;  // the unit walked away from the spot
+    in.botToSpotYd = 12.0f;      // the tank followed it
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    // At 8 yd or less the tank stays engaged; the rule is "more than 8 yd".
+    in.botToSpotYd = 8.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // One yard past it the drag resumes.
+    in.botToSpotYd = 9.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    // Not arrived yet: the tank walks back to the spot instead, whatever the unit does.
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+}
+
+// The mutation case: latching only on Engage leaves a first arrival that chose Drag unlatched, so once the unit walks
+// off the spot the window ends a post that really arrived (the window applies only before the arrival).
+static void TestTankPost_HoldSpotFirstArrivalAsDragLatches()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;   // the unit lands on the spot
+    in.botToSpotYd = 12.0f;      // the tank is already more than 8 yd from it
+    in.subjectOnTank = true;
+    TankPostDecision const first = TankPostStep(in);
+    CHECK(first == TankPostDecision::Drag);
+    CHECK(TankPostLatchesArrival(in, first));
+    // Next tick: the unit left the radius and the window has passed. The latched arrival keeps the post live.
+    in.arrivedBefore = true;
+    in.subjectToSpotYd = 30.0f;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) != TankPostDecision::End);
+    // Without the latch that same read ends the post on its window.
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// The mutation case: removing the plain-post guard latches (and logs) an arrival while the tank still holds another
+// hostile; a plain post latches only when it engages.
+static void TestTankPost_PlainPostLatchesOnlyOnEngage()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;  // arrived
+    in.botToSpotYd = 1.0f;
+    in.holdingOtherHostile = true;
+    in.holdSpot = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    CHECK(!TankPostLatchesArrival(in, TankPostDecision::Hold));
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    CHECK(TankPostLatchesArrival(in, TankPostDecision::Engage));
+}
+
+// The mutation case: a latch that does not name its unit counts for any later unit of the entry, so a new unit would
+// inherit an arrival it never made and the post would outlive its window with that unit unarrived.
+static void TestTankPost_LatchIsPerSubject()
+{
+    bool const latchedOld = TankPostLatchCounts(true, 42, 42);
+    bool const latchedNew = TankPostLatchCounts(true, 42, 43);
+    CHECK(latchedOld);
+    CHECK(!latchedNew);
+    CHECK(!TankPostLatchCounts(false, 42, 42));
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.windowExpired = true;
+    // The same unit's latched arrival keeps the post past its window; a second unit of the entry starts unarrived.
+    in.arrivedBefore = latchedOld;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.arrivedBefore = latchedNew;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// The mutation case: dropping `in.subjectOnTank` from the drag test makes this fail (a unit that is not on the tank
+// would be dragged too).
+static void TestTankPost_HoldSpotNoDragWhileSubjectOffTank()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;
+    in.botToSpotYd = 12.0f;
+    in.arrivedBefore = true;
+    in.subjectOnTank = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// hold_spot: the arrived subject outranks another hostile the tank holds; a plain post keeps the other hostile.
+static void TestTankPost_HoldSpotSubjectOutranksOtherHostile()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    in.subjectOnTank = false;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.holdSpot = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// hold_spot: a boss stand seat yields the post, before and after the arrival; a plain post never yields.
+static void TestTankPost_HoldSpotYieldsToSeat()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.seated = true;
+    in.holdingOtherHostile = true;  // it also started during another fight, and still yields
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;  // arrived
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    in.botToSpotYd = 12.0f;     // a drag is due, and the seat still wins
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+    in.holdSpot = false;
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// hold_spot: the window ends a post only before its arrival; a plain post still ends on it either way.
+static void TestTankPost_HoldSpotWindowKeepsArrivedPost()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;
+    in.botToSpotYd = 2.0f;
+    in.arrivedBefore = true;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.holdSpot = false;
+    in.arrivedBefore = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// hold_spot is tank_post's own mode word: parsed there, refused by every other kind, and both modes load.
+static void TestTankPost_HoldSpotModeLoadsOnlyOnTankPost()
+{
+    CHECK(static_cast<int>(TacticMode::HoldSpot) == 14);
+    CHECK(ParseTacticMode(BossTacticKind::TankPost, "hold_spot") == TacticMode::HoldSpot);
+    CHECK(ParseTacticMode(BossTacticKind::TankPost, "until_tank") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::KillFirst, "hold_spot") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Anchor, "hold_spot") == TacticMode::Invalid);
+    BossTacticTable table;
+    BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, 50143, 0, 1, 25.0f);
+    row.windowSec = 120.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.mode = ParseTacticMode(row.kind, "hold_spot");
+    CHECK(table.Add(row));
+    BossTacticRow plain = Row(249, 10184, BossTacticKind::TankPost, 50144, 0, 2, 25.0f);
+    plain.windowSec = 120.0f;
+    plain.spotX = 8.0f;
+    plain.spotY = -200.0f;
+    plain.spotZ = -85.8f;
+    CHECK(table.Add(plain));  // the empty word stays the plain post
+    table.Seal();
+    CHECK(table.Size() == 2);
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -766,6 +941,15 @@ int main()
     TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable();
     TestTankPost_UnselectableSubjectNotArrived();
     TestTankPost_EngagesSelectableOutOfCombatSubject();
+    TestTankPost_HoldSpotDragsSubjectBackToSpot();
+    TestTankPost_HoldSpotFirstArrivalAsDragLatches();
+    TestTankPost_PlainPostLatchesOnlyOnEngage();
+    TestTankPost_LatchIsPerSubject();
+    TestTankPost_HoldSpotNoDragWhileSubjectOffTank();
+    TestTankPost_HoldSpotSubjectOutranksOtherHostile();
+    TestTankPost_HoldSpotYieldsToSeat();
+    TestTankPost_HoldSpotWindowKeepsArrivedPost();
+    TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
@@ -1286,7 +1470,8 @@ int main()
     }
 
     // Loader: a tank_post row names the awaited unit, a tank slot 1-7, a spot, an arrival radius of 5-40 yd and a
-    // window of 10-120 s. No spell, no mode word, no cycle columns; its health band is the kind's own arming gate.
+    // window of 10-120 s. No spell; `hold_spot` is the only mode word (TestTankPost_HoldSpotModeLoadsOnlyOnTankPost
+    // proves a foreign word is refused), no cycle columns; its health band is the kind's own arming gate.
     {
         BossTacticTable table;
         auto tankPost = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, float param,

@@ -35,6 +35,7 @@ MODE_WORDS = {
     "use_object": {"tank_anchor"},
     "avoid_cast": {"all"},
     "threat_successor": {"strict"},
+    "tank_post": {"hold_spot"},
 }
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
@@ -257,6 +258,8 @@ def new_kind_problem(row):
     """BossTacticTable::Add's refusals of a seek_aura, pull_gate or spread row, or None for a usable one."""
     kind = row["kind"]
     has_spot = any(row[column] for column in ("spot_x", "spot_y", "spot_z"))
+    if row["tactic_mode"] not in MODE_WORDS.get(kind, set()) | {""}:
+        return "a mode word the kind does not take"
     if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor",
                 "tank_ignore", "seek_pull", "gate_hold") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
@@ -379,7 +382,7 @@ def new_kind_problem(row):
         return None
     if kind == "tank_post":
         # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-40 yd)
-        # and the longest hold (window_s 10-120 s). No spell, no mode word, no cycle columns.
+        # and the longest hold (window_s 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
         if row["spell_id"]:
@@ -392,8 +395,6 @@ def new_kind_problem(row):
             return "tank_post arrival radius outside [5, 40]"
         if not 10.0 <= row["window_s"] <= 120.0:
             return "tank_post window outside [10, 120]"
-        if row["tactic_mode"]:
-            return "a mode word on tank_post"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
         return None
@@ -1059,6 +1060,18 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIsNotNone(new_kind_problem(dict(shade, bot_aura=24306)), "a bot aura on needs_aura")
         self.assertIsNotNone(new_kind_problem(dict(shade, hp_max=50)), "a health band on needs_aura")
         self.assertIsNotNone(new_kind_problem(dict(shade, tactic_mode="now")), "a mode word on needs_aura")
+
+    def test_tank_post_hold_spot_mode_shape(self):
+        # tank_post takes one mode word: hold_spot. A plain row and a hold_spot row are both loadable, any other word
+        # is refused, and the word belongs to the kind (a kill_first row with it is refused).
+        post = dict(INSERT_COLUMNS, map=249, boss_entry=10184, kind="tank_post", target_entry=50143, priority=1,
+                    param=25.0, window_s=120.0, spot_x=8.0, spot_y=-200.0, spot_z=-85.8)
+        self.assertIsNone(new_kind_problem(post))
+        self.assertIsNone(new_kind_problem(dict(post, tactic_mode="hold_spot")))
+        self.assertIsNotNone(new_kind_problem(dict(post, tactic_mode="until_tank")), "a foreign word on tank_post")
+        kill = dict(INSERT_COLUMNS, map=249, boss_entry=10184, kind="kill_first", target_entry=50143, priority=1,
+                    tactic_mode="hold_spot")
+        self.assertIsNotNone(new_kind_problem(kill), "hold_spot on kill_first")
 
     def test_jindo_rows(self):
         # 20261105100000_world.sql: the off-tank cover after a Hex or a charm of the tank, and the Shade's aura gate.
