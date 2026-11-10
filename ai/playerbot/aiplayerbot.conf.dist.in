@@ -1078,13 +1078,14 @@ AiPlayerbot.DungeonRunTankPost = 0
 # while the assigning kind's own key reads it: `until_tank` needs AiPlayerbot.DungeonRunAuraTactics, `tank_post` needs
 # AiPlayerbot.DungeonRunTankPost (with a key off its rows assign nothing, so the off-tanks take the unit as before).
 # Each kind keeps its own slot: when both name the unit, the enabled kind's slot counts, the lower one when both are on.
-# The slot's tank must hold the unit too: it keeps it while its current target is that unit, and a tank not on it yet
-# has 8 s from the tick the unit first went loose, without pausing while the guard cannot take it (out of reach,
-# polymorphed, no off-tank free, or the tick goes to the healer guard or the main tank's join). A dead or charmed
-# tank holds nothing, and past the grace the off-tanks take the unit
-# as today, so an inactive row or a tank that lost it never leaves a healer unprotected. Everything else is unchanged
-# (the boss pick-up, the healer guard's ranged dps, and the party guard with no off-tank alive). Off, the off-tanks
-# take such a unit as before.
+# The slot's tank must hold the unit too: it keeps it for 8 s from the tick the unit first went loose, without
+# pausing while the guard cannot take it (out of reach, polymorphed, no off-tank free, or the tick goes to the healer
+# guard or the main tank's join). The tank's selected target is no hold: a tank that cannot take the unit (taunt-immune,
+# parked on a breath seat, stuck) must not keep it on a healer. A charmed tank holds nothing, and a dead tank leaves the
+# raid tank order, so the next tank inherits its slot and the unit's clock runs on. Past the grace the off-tanks take
+# the unit as today, so an inactive row or a tank that lost it never leaves a healer unprotected. Everything else is
+# unchanged (the boss pick-up, the healer guard's ranged dps, and the party guard with no off-tank alive). Off, the
+# off-tanks take such a unit as before.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
 # 0 - off: the off-tanks take an assigned unit as before (Default)
 # 1 - on (recommended on where a tank row assigns a second boss to a tank slot)

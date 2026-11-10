@@ -60,9 +60,8 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertIn("bool auraTactics = false;", RUN)
         self.assertIn("bool tankPost = false;", RUN)
         self.assertIn("std::vector<RaidTankFact> tanks;", RUN)
-        self.assertIn(
-            "struct RaidTankFact\n{\n    bool alive = false;\n    bool charmed = false;\n"
-            "    std::uint64_t targetGuid = 0;\n};", RUN)
+        self.assertIn("struct RaidTankFact\n{\n    bool alive = false;\n    bool charmed = false;\n};", RUN)
+        self.assertNotIn("targetGuid", body(RUN, "struct RaidTankFact\n{"))  # the tank's selection is no hold
         self.assertIn("std::unordered_map<std::uint64_t, std::uint64_t> guardAssignedLooseSinceMs;", RUN)
         self.assertIn("std::uint64_t guardAssignedClockMs = 0;", RUN)
         self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
@@ -120,16 +119,18 @@ class GuardAssignedTankWiring(unittest.TestCase):
             "                {\n"
             "                    bool const tankHolds = slot < f.raid.tanks.size() &&\n"
             "                        f.raid.tanks[slot].alive && !f.raid.tanks[slot].charmed;\n"
-            "                    bool const tankOnIt = tankHolds && f.raid.tanks[slot].targetGuid == u.guid;\n"
             "                    auto const had = r.guardAssignedLooseSinceMs.find(u.guid);\n"
             "                    std::uint64_t const looseSince = had == r.guardAssignedLooseSinceMs.end() ? 0 : had->second;\n"
-            "                    if (tankHolds && (tankOnIt || r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs))\n"
+            "                    if (tankHolds && r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs)\n"
             "                        continue;\n", tick)
         # Only that one read: the boss pick, the healer guard and the party guard keep their rules.
         self.assertEqual(tick.count("AssignedTankSlotOf"), 1)
         self.assertEqual(tick.count("guardLeavesAssigned"), 1)
-        # The skip needs a live, uncharmed tank on the unit or inside the grace, never the slot alone.
+        # The skip needs a live, uncharmed tank and the unit inside the grace, never the slot alone and never the
+        # tank's selected target: a tank that cannot take the unit must not keep it on a healer.
         self.assertNotIn("if (tankHolds)\n                    {", tick)
+        self.assertNotIn("tankOnIt", tick)
+        self.assertNotIn("targetGuid", tick)
         self.assertNotIn("kGuardAssignedGraceMs =", tick)  # the constant is the policy header's, not a local
 
     def test_the_commander_reads_the_keys_into_the_raid_facts(self):
@@ -137,11 +138,11 @@ class GuardAssignedTankWiring(unittest.TestCase):
             "f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;", COMMANDER)
         self.assertIn("f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;", COMMANDER)
         self.assertIn("f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;", COMMANDER)
-        # The slot order the rows' priority names, with the state the grace reads.
+        # The slot order the rows' priority names, with the state the grace reads (the order drops dead tanks).
         self.assertIn("for (Player* const tank : ai::GetRaidTankRoles(leadAi).tanks)", COMMANDER)
         self.assertIn("tankFact.alive = tank->IsAlive();", COMMANDER)
         self.assertIn("tankFact.charmed = tank->IsCharmed();", COMMANDER)
-        self.assertIn("tankFact.targetGuid = tank->GetSelectionGuid().GetRawValue();", COMMANDER)
+        self.assertNotIn("tankFact.targetGuid", COMMANDER)
         self.assertIn("f.raid.tanks.push_back(tankFact);", COMMANDER)
 
     def test_config_key_is_read_templated_and_documented(self):

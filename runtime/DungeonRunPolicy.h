@@ -738,10 +738,11 @@ constexpr float kRaidBossGuardYd = 100.0f;
 // ... and a mob that had kGuardOrdersPerUnit of its orders gets the next ones this long after its last order: a whelp
 // an off-tank lost again is never left on the healers for the rest of the fight.
 constexpr std::uint32_t kRaidGuardRearmMs = 20000;
-// A unit a tank row assigns to a tank slot is left to that tank while the tank targets it; a tank that is not on it
-// yet gets this long to pick it up (the until_tank window's own cast and walk, a tank_post waiting for the unit to
-// land). Past it the unit is the guard's like any loose add: a tank that lost it or never came must not leave a
-// healer unprotected.
+// A unit a tank row assigns to a tank slot is left to that tank for this long from the tick the unit first went loose
+// (the until_tank window's own cast and walk, a tank_post waiting for the unit to land). Past it the unit is the
+// guard's like any loose add: a tank that lost it, never came, or cannot pick it up (taunt-immune, parked on a breath
+// seat, stuck) must not leave a healer unprotected. A unit already on its tank is the tank's through
+// UnitFact::victimTank, not through this clock.
 constexpr std::uint32_t kGuardAssignedGraceMs = 8000;
 // A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, RaidHealerGuard): with the main tank holding
 // the boss an add on a healer goes to that many ranged dps of the raid at most, nearest first, one order a tick; the
@@ -1455,13 +1456,12 @@ struct HostileSpot
     bool engaged = false;
 };
 // One tank of the raid order (GetRaidTankRoles), as the assigning row's `priority` slot counts it, and the state the
-// guard's assignment grace reads: a dead or charmed tank holds nothing, and its current target says whether it picked
-// the assigned unit up.
+// guard's assignment grace reads: a tank that is dead or charmed holds nothing. The order already drops a dead tank,
+// so the next tank inherits its slot.
 struct RaidTankFact
 {
     bool alive = false;
     bool charmed = false;
-    std::uint64_t targetGuid = 0;
 };
 
 // The raid's shape for this tick (a raid binding with AiPlayerbot.DungeonRunRaid only).
@@ -18280,9 +18280,11 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             // A unit a tank row assigns to a tank slot (until_tank, tank_post) stays with that tank: its window
             // hands it to the next usable tank itself, and its post takes it. Only the kind whose own key is on
             // names a slot (AiPlayerbot.DungeonRunAuraTactics for until_tank, AiPlayerbot.DungeonRunTankPost for
-            // tank_post), the slot's tank can hold it, and that tank is on it or the unit has been loose for less
-            // than kGuardAssignedGraceMs: a dead or charmed tank, or one that let the unit run loose past the grace,
-            // leaves it to the guard.
+            // tank_post), the slot's tank can hold it, and the unit has been loose for less than
+            // kGuardAssignedGraceMs: a dead or charmed tank, or one that let the unit run loose past the grace,
+            // leaves it to the guard. The tank's selected target is no hold: a unit hitting a non-tank is with an
+            // off-tank only while the tank holds it (UnitFact::victimTank), and a tank that cannot take the unit
+            // (taunt-immune, on a breath seat, stuck) must not keep it on a healer forever.
             if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan)
             {
                 ai::AssignedTankSlot const assigned = r.liveTactics->AssignedTankSlotOf(r.plan->map, u.entry);
@@ -18291,10 +18293,9 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 {
                     bool const tankHolds = slot < f.raid.tanks.size() &&
                         f.raid.tanks[slot].alive && !f.raid.tanks[slot].charmed;
-                    bool const tankOnIt = tankHolds && f.raid.tanks[slot].targetGuid == u.guid;
                     auto const had = r.guardAssignedLooseSinceMs.find(u.guid);
                     std::uint64_t const looseSince = had == r.guardAssignedLooseSinceMs.end() ? 0 : had->second;
-                    if (tankHolds && (tankOnIt || r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs))
+                    if (tankHolds && r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs)
                         continue;
                 }
             }

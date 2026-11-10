@@ -26187,13 +26187,12 @@ static void AssignCindarionToTankSlotOne(DungeonPlan& plan, ai::BossTacticTable&
     table.Seal();
 }
 
-// The assigned slot's tank is alive and targets `targetGuid` (0: something else).
-static void AssignTankSlot(Facts& f, std::size_t slot, std::uint64_t targetGuid)
+// The assigned slot's tank is alive (the raid tank order drops dead tanks, so this is the tank in the slot).
+static void AssignTankSlot(Facts& f, std::size_t slot)
 {
     if (f.raid.tanks.size() <= slot)
         f.raid.tanks.resize(slot + 1);
     f.raid.tanks[slot].alive = true;
-    f.raid.tanks[slot].targetGuid = targetGuid;
 }
 
 // One guard tick as CheckGuard runs it: the assignment clocks first, then the off-tank picks.
@@ -26213,7 +26212,7 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true; // the row's own key: an until_tank row is read only with it
-    AssignTankSlot(f, 1, 45001); // its tank is on it
+    AssignTankSlot(f, 1); // alive: inside the 8 s grace
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     CHECK(!AssignedGuardTick(r, f, kTickMs, order));
@@ -26226,7 +26225,7 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
 }
 
 // The guard flag is on but the assigning row's own key is off: an until_tank row is not read without
-// AiPlayerbot.DungeonRunAuraTactics, so no tank is on the unit and the guard must take it (the failure before this
+// AiPlayerbot.DungeonRunAuraTactics, so no tank holds the unit and the guard must take it (the failure before this
 // fix: the guard skipped it and a healer was left unprotected).
 static void TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff()
 {
@@ -26275,8 +26274,8 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankPostOff()
 }
 
 // Both kinds name the unit and only one key is on: the enabled kind's own slot assigns it, so the guard leaves it. The
-// until_tank row is slot 1 and the post slot 2: only the enabled kind's tank holds the unit (the other slot's tank is
-// alive but on something else), so a shared slot would read the wrong tank.
+// until_tank row is slot 1 and the post slot 2; only the enabled kind's slot has a tank, so a shared slot or the other
+// kind's slot would read no tank and the guard would take the unit.
 static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
 {
     for (bool const untilTankOn : {true, false})
@@ -26312,8 +26311,7 @@ static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
         f.raid.guardLeavesAssigned = true;
         f.raid.auraTactics = untilTankOn;
         f.raid.tankPost = !untilTankOn;
-        AssignTankSlot(f, untilTankOn ? 1 : 2, 45001); // the enabled kind's tank is on it
-        AssignTankSlot(f, untilTankOn ? 2 : 1, 0);      // the other kind's tank is alive, on something else
+        AssignTankSlot(f, untilTankOn ? 1 : 2); // the enabled kind's slot has a tank
         f.partyAttackers = {Hitter(45001, 50143, 20, true)};
         std::string order;
         CHECK(!AssignedGuardTick(r, f, kTickMs, order));
@@ -26322,9 +26320,9 @@ static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
     }
 }
 
-// The row's own key is on and its slot's tank is alive, but the tank is not on the unit: the guard leaves it to the
-// tank for kGuardAssignedGraceMs (t = 0 to 7999), then takes it as today (t = 8000). The clock is the guard's own: a
-// tank that lost the unit or never came must not leave a healer unprotected.
+// The row's own key is on and its slot's tank is alive, but the tank has not taken the unit: the guard leaves it for
+// kGuardAssignedGraceMs (t = 0 to 7999), then takes it (t = 8000). The clock is the guard's own: a tank that lost the
+// unit or never came must not leave a healer unprotected.
 static void TestRaidGuard_TakesAssignedUnitAfterGrace()
 {
     DungeonPlan plan;
@@ -26335,7 +26333,7 @@ static void TestRaidGuard_TakesAssignedUnitAfterGrace()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignTankSlot(f, 1, 0); // alive, on something else
+    AssignTankSlot(f, 1); // alive
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
@@ -26347,8 +26345,11 @@ static void TestRaidGuard_TakesAssignedUnitAfterGrace()
     CHECK(order == "attack 45001 Offy");
 }
 
-// A dead tank holds nothing: the guard takes the unit at once, no grace.
-static void TestRaidGuard_TakesAssignedUnitWhenTankDead()
+// The raid tank order drops a dead tank, so slot 1's tank dying moves the next tank into slot 1 rather than emptying
+// the slot: that tank has not taken the unit, and the unit's loose clock is not restarted, so the guard leaves it for
+// the rest of the grace and takes it at t = 8000 (the failure before: a dead slot read as no hold and the unit went at
+// once to a tank the row did not name).
+static void TestRaidGuard_TakesAssignedUnitWhenItsSlotTankDies()
 {
     DungeonPlan plan;
     ai::BossTacticTable table;
@@ -26358,35 +26359,42 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankDead()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    f.raid.tanks.resize(2);
-    f.raid.tanks[1].alive = false;
+    AssignTankSlot(f, 0); // the main tank's slot
+    AssignTankSlot(f, 1); // the next tank, in the dead one's place
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(AssignedGuardTick(r, f, kTickMs, order));
-    CHECK(order == "attack 45001 Offy");
-}
-
-// The assigned tank is on the unit: the guard leaves it however long it stays on the healer (20 s here), the tank's
-// target, not the clock, keeping it there.
-static void TestRaidGuard_LeavesAssignedUnitWhileTankOnIt()
-{
-    DungeonPlan plan;
-    ai::BossTacticTable table;
-    AssignCindarionToTankSlotOne(plan, table);
-    Run r = RaidBossRun(plan);
-    r.liveTactics = &table;
-    Facts f = RaidBossGuardFacts();
-    f.raid.guardLeavesAssigned = true;
-    f.raid.auraTactics = true;
-    AssignTankSlot(f, 1, 45001);
-    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
-    std::string order;
-    for (int k = 0; k < 20; ++k)
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
     {
         CHECK(!AssignedGuardTick(r, f, kTickMs, order));
         CHECK(order.empty());
     }
-    CHECK(r.offTankTurn == 0); // no turn spent on it
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(order == "attack 45001 Offy");
+}
+
+// The slot's tank is alive and the unit is on a healer: the grace alone bounds the hold, and at t = 8000 the guard
+// takes the unit; a tank's selected target is no hold, so a tank that cannot take the unit (taunt-immune, parked on a
+// breath seat, stuck) does not keep it on the healer.
+static void TestRaidGuard_TakesAssignedUnitAfterGraceEvenIfTankTargetsIt()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1);
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000: the tank's selection did not keep it
+    CHECK(order == "attack 45001 Offy");
 }
 
 // The loose clock runs while the unit cannot be picked: loose at t = 0, out of the guard's reach (polymorphed) from
@@ -26402,7 +26410,7 @@ static void TestRaidGuard_GraceRunsWhileUnitIneligible()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignTankSlot(f, 1, 0); // alive, on something else
+    AssignTankSlot(f, 1); // alive
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     CHECK(!AssignedGuardTick(r, f, kTickMs, order)); // t = 0: loose, its grace starts
@@ -26431,7 +26439,7 @@ static void TestRaidGuard_GraceRunsWithNoFreeOffTank()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignTankSlot(f, 1, 0); // alive, on something else
+    AssignTankSlot(f, 1); // alive
     f.raid.offTanksAlive.clear();
     f.raid.bossOffTanksAlive.clear();
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
@@ -26462,7 +26470,7 @@ static void TestRaidGuard_GraceRunsThroughHealerGuardOrders()
     f.leadHeldEntries = {10184}; // the main tank holds the boss: the healer guard's gate
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignTankSlot(f, 1, 0); // alive, on something else
+    AssignTankSlot(f, 1); // alive
     MemberFact dps = Mem("NearDps", 21);
     dps.ranged = true;
     dps.rangedDps = true;
@@ -26496,7 +26504,7 @@ static void TestRaidGuard_GraceRunsThroughLeadJoin()
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
     f.carrier = "Lead";
-    AssignTankSlot(f, 1, 0); // alive, on something else
+    AssignTankSlot(f, 1); // alive
     UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
     boss.victimTank = true;
     boss.victimName = "Offy"; // held by an off-tank, the join's case
@@ -37841,8 +37849,8 @@ int main()
     TestRaidGuard_TakesAssignedUnitWhenTankPostOff();
     TestRaidGuard_LeavesUnitWhenAnySourceOn();
     TestRaidGuard_TakesAssignedUnitAfterGrace();
-    TestRaidGuard_TakesAssignedUnitWhenTankDead();
-    TestRaidGuard_LeavesAssignedUnitWhileTankOnIt();
+    TestRaidGuard_TakesAssignedUnitWhenItsSlotTankDies();
+    TestRaidGuard_TakesAssignedUnitAfterGraceEvenIfTankTargetsIt();
     TestRaidGuard_GraceRunsWhileUnitIneligible();
     TestRaidGuard_GraceRunsWithNoFreeOffTank();
     TestRaidGuard_GraceRunsThroughHealerGuardOrders();

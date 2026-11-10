@@ -11814,8 +11814,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         // ... only while the assigning row's own key reads that kind: until_tank is an aura tactic, tank_post its own.
         f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;
         f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;
-        // The slot order those rows' `priority` names, with the state the guard's assigned-tank grace reads: a dead
-        // or charmed tank cannot hold the unit, and its target says whether it picked it up.
+        // The slot order those rows' `priority` names, with the state the guard's assigned-tank grace reads: a charmed
+        // tank cannot hold the unit. The order drops a dead tank, so the next tank inherits its slot.
         if (f.raid.guardLeavesAssigned)
             if (PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead))
                 for (Player* const tank : ai::GetRaidTankRoles(leadAi).tanks)
@@ -11823,7 +11823,6 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                     RaidTankFact tankFact;
                     tankFact.alive = tank->IsAlive();
                     tankFact.charmed = tank->IsCharmed();
-                    tankFact.targetGuid = tank->GetSelectionGuid().GetRawValue();
                     f.raid.tanks.push_back(tankFact);
                 }
     }
