@@ -1,10 +1,11 @@
-# TortoiseBots
-
+<img width="2752" height="1536" alt="Gemini_Generated_Image_wvulffwvulffwvul" src="https://github.com/user-attachments/assets/4175aca4-107f-413f-bde7-f55136eb5ff2" />
 
 [![Latest release](https://img.shields.io/github/v/release/Sagiroth/TortoiseBots?label=release&logo=github)](https://github.com/Sagiroth/TortoiseBots/releases/latest)
 [![Linux + Windows build](https://img.shields.io/github/actions/workflow/status/Sagiroth/TortoiseBots/build.yml?branch=main&event=push&label=Linux%20%2B%20Windows%20build&logo=github)](https://github.com/Sagiroth/TortoiseBots/actions/workflows/build.yml?query=branch%3Amain)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/sagiroth)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/FT2rZcXm3)
+
+# TortoiseBots
 
 An independent, native PlayerBots module for the canonical **Tortoise WoW 1.18.1** core repository ([`tortoise-wow`](https://github.com/tortoise-wow/tortoise-wow), `main` branch). This is an unofficial, community-driven project, not affiliated with Turtle WoW or Blizzard Entertainment.
 
