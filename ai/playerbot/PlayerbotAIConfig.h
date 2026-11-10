@@ -626,11 +626,6 @@ public:
     // Backstab from the front) before it probes the core's CheckCast, which broadcasts a spell failure on every probe.
     // Off = as before (the probe runs, and a Gouge from behind reads as castable and fails in the real cast).
     bool spellFacingPrecheck = false;
-    // The threat back-off counts a single-target damage cast's own expected threat (average direct damage, threat
-    // modifiers applied): the cast is held while the bot's threat plus it would reach the tank's threat on the target,
-    // so a slow nuke started under the 80 % high-threat line no longer lands past the core's pull line. Read with the
-    // run keys, so `.reload config` applies it. Off = as before (only the threat at cast start is checked).
-    bool threatCapCountsCastThreat = false;
     // Mortal Wound stacks at which an opt-in "fankriss tank" swaps (1-9).
     uint32 fankrissSwapStacks = 5;
     // Seconds the DPS hold Patchwerk once an opt-in "patchwerk main" engages him (0 = off, else 3-5).

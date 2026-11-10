@@ -1559,16 +1559,6 @@ AiPlayerbot.InterruptIgnoresThreat = 0
 # 0 - off: the probe runs as before (Default)
 # 1 - on
 AiPlayerbot.SpellFacingPrecheck = 0
-# The threat back-off counts the cast's own threat. A bot in a group holds single-target spells while its threat on the
-# target reads at or above 80 % of the tank's, but that check sees only the threat it has when the cast starts: a
-# Fireball started at 79 % lands about 3 s later as one 400-690 threat hit and carries the mage past the core's 130 %
-# ranged pull line (Tortoise Trials, non-fire mages: 48 of 87 aggro onsets within 5 s of a Fireball hit). With 1 a
-# single-target damage spell aimed at a mob a tank holds is also held while the bot's threat plus the spell's expected
-# threat (its average direct damage with spell power, threat modifiers applied; no crits) reaches 100 % of the tank's.
-# Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
-# 0 - off: only the threat at cast start is checked, as before (Default)
-# 1 - on
-AiPlayerbot.ThreatCapCountsCastThreat = 0
 
 # A raid binding's healer seats (.bot commander bind <LeadBot> raid, only read with AiPlayerbot.DungeonRunRaid = 1):
 # with 1 the seats go by class instead of member order. The raid seats take a group healer first (priest, then druid,

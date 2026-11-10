@@ -532,30 +532,4 @@ namespace ai
             return held;
         }
     };
-    // AiPlayerbot.ThreatCapCountsCastThreat: whether a single-target damage cast is held because its own expected
-    // threat would carry the bot to the tank's threat on the target. The high-threat veto (HighThreatTrigger, 80 %)
-    // reads only the threat the bot has at cast start, so a Fireball started at 79 % landed about 3 s later as one
-    // 400-690 threat hit and jumped the mage past the core's 130 % ranged pull line (non-fire mages: 48 of 87 aggro
-    // onsets came within 5 s of a Fireball hit). The line is 100 % of the tank's threat, not the 110/130 % pull line,
-    // because the estimate leaves out crits (x1.5) and threat talents. False without the key, without tank threat on
-    // the target (the old veto keeps that case) and without an estimate (a cast with no direct damage).
-    inline bool ThreatCapCastOvershoots(bool key, float botThreat, float castThreat, float tankThreat)
-    {
-        return key && tankThreat > 0.0f && castThreat > 0.0f && botThreat + castThreat >= tankThreat;
-    }
-
-    // The average of one spell effect's points, the same arithmetic as the core's WorldObject::CalculateSpellDamage
-    // without its dice roll: the base plus the per-level growth, plus the middle of the roll range (irand between the
-    // base dice and the die sides, both grown per level). levelDelta is the caster's level clamped to the spell's
-    // base/max level, minus the spell level, as the core computes it. Spell mods and the level-damage attribute are
-    // the caller's.
-    inline float ThreatCapAverageEffectPoints(int basePoints, int baseDice, int dieSides, float pointsPerLevel,
-                                              float dicePerLevel, int levelDelta)
-    {
-        int points = basePoints + int(levelDelta * pointsPerLevel);
-        int const randomPoints = int(dieSides + levelDelta * dicePerLevel);
-        if (randomPoints == 0 || randomPoints == 1)
-            return float(points + baseDice);
-        return float(points) + (float(baseDice) + float(randomPoints)) / 2.0f;
-    }
 }
