@@ -131,6 +131,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     raidHealerSeatsByClass = config.GetBoolDefault("AiPlayerbot.RaidHealerSeatsByClass", false);
     raidTankHealerAssist = config.GetBoolDefault("AiPlayerbot.RaidTankHealerAssist", false);
     dungeonRunRaidHealerGuard = config.GetBoolDefault("AiPlayerbot.DungeonRunRaidHealerGuard", false);
+    interruptIgnoresThreat = config.GetBoolDefault("AiPlayerbot.InterruptIgnoresThreat", false);
+    spellFacingPrecheck = config.GetBoolDefault("AiPlayerbot.SpellFacingPrecheck", false);
     fankrissSwapStacks = std::min(9, std::max(1, config.GetIntDefault("AiPlayerbot.FankrissSwapStacks", 5)));
     {
         int const patchwerkDelay = config.GetIntDefault("AiPlayerbot.PatchwerkOpeningDelay", 4);
@@ -401,7 +403,7 @@ bool PlayerbotAIConfig::Initialize()
     poolTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.PoolTickBudgetUs", 22000);
     if (poolTickBudgetUs > 0 && poolTickBudgetUs < 1000) poolTickBudgetUs = 1000;
     if (poolTickBudgetUs > 100000) poolTickBudgetUs = 100000;
-    poolNearPlayerYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.PoolNearPlayerYd", 80.0f));
+    poolNearPlayerYd = std::max(0.0f, config.GetFloatDefault("AiPlayerbot.PoolNearPlayerYd", 0.0f));
     poolBudgetWhenTickOverMs = (uint32)config.GetIntDefault("AiPlayerbot.PoolBudgetWhenTickOverMs", 0);
     if (poolBudgetWhenTickOverMs > 10000) poolBudgetWhenTickOverMs = 10000;
     combatTickBudgetUs = (uint32)config.GetIntDefault("AiPlayerbot.CombatTickBudgetUs", 15000);
