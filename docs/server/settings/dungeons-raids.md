@@ -95,9 +95,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPlaceUnstick`](#aiplayerbotdungeonrunplaceunstick) | `0` | `1` (recommended): a bot in a dungeon or raid cut off on a navmesh island (every move fails NOPATH for 10 s and a navmesh query proves its spot cut off) is teleported beside its master, combat kept, at most once per 30 s. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
-| [`AiPlayerbot.DungeonRunSeekVictimRelief`](#aiplayerbotdungeonrunseekvictimrelief) | `0` | `1` (recommended): the other Hakkar off-tank takes a Son off the boss's victim tank (within 20 yd, taunt ready) after it sat there 1 s, at most twice per Son and 8 s apart (needs `DungeonRunSeekAura`). |
+| [`AiPlayerbot.DungeonRunSeekVictimRelief`](#aiplayerbotdungeonrunseekvictimrelief) | `0` | `1` (keep off for now: the relief claim fix is still in review, follow-up commits on this branch): the other Hakkar off-tank takes a Son off the boss's victim tank (within 20 yd, taunt ready) after it sat there 1 s, at most twice per Son and 8 s apart (needs `DungeonRunSeekAura`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
-| [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
+| [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekMeetTakeReach`](#aiplayerbotdungeonrunseekmeettakereach) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): the waiting receiver takes the walked Son within 25 yd (Intercept range) instead of 8 yd, so a healer cannot peel it on its last yards. |
 | [`AiPlayerbot.DungeonRunSeekTakenSonThreatCap`](#aiplayerbotdungeonrunseektakensonthreatcap) | `0` | `1` (recommended on with `DungeonRunSeekSonMeet`): a damage dealer at 85 % of the taking tank's threat on the just-taken Son holds its attacks on it (until under 75 %) for up to 15 s, so the burn does not pull it off the tank. |
@@ -105,6 +105,9 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunSeekCycleRoll`](#aiplayerbotdungeonrunseekcycleroll) | `0` | `1` (recommended on with `DungeonRunSeekPullCycle`): a missed Blood Siphon sighting advances the fight's cycle number with the rolled due time, so the walk-out's spent cycle reopens instead of staying shut for the rest of the fight (one `BossTacticsSeekCycleRoll` row per roll). |
 | [`AiPlayerbot.DungeonRunThreatResetWindow`](#aiplayerbotdungeonrunthreatresetwindow) | `0` | A/B only, **not recommended**; tested in walk 68, made things worse; keep off (needs `DungeonRunSeekAura`): around Hakkar's expected Cause Insanity, a damage dealer at 95 % of the best tank that does not hold him holds its damage on him (resuming under 90 %), so the reset hands him to a tank. Walk 68: tank-turn share 58 % to 46 % (casts 4+ 68 % to 49 %), target not met. |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceHold`](#aiplayerbotdungeonrunseekmeetpreplacehold) | `0` | `1` (recommended on with `DungeonRunSeekMeetPrePlace`): once its pre-place walk began, the pre-placed third tank's reach actions and warrior gap closer skip the anchored boss, so its own rotation no longer drags it back into Hakkar's melee. |
+| [`AiPlayerbot.DungeonRunCarrierStrike`](#aiplayerbotdungeonruncarrierstrike) | `0` | `1` (recommended on): a cursed healer or off-tank turns on its own Shade of Jin'do for one cast, placed just below a critical heal, while the raid can spare it (needs the boss tactics). |
+| [`AiPlayerbot.DungeonRunCarrierScan`](#aiplayerbotdungeonruncarrierscan) | `0` | `1` (not recommended on): a Delusions carrier whose attackers list never showed a Shade finds it by a grid search; while `DungeonRunKillFirstGrid` is on the ordinary grid pass already finds it (needs the aura tactics). |
+| [`AiPlayerbot.DungeonRunTauntGate`](#aiplayerbotdungeonruntauntgate) | `0` | `1` (recommended on): a tank does not taunt a Shade of Jin'do, a creature immune to taunts, or a `needs_aura` subject it lacks the aura for, across every single-target taunt. |
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunGateHold`](#aiplayerbotdungeonrungatehold) | `0` | `1` (recommended on): the boss tactics keep their `gate_hold` rows — damage dealers stop on a boss at or below the row's health gate while its second unit still fights (needs the boss tactics and the rows). |
@@ -751,21 +754,26 @@ Whether the boss tactics keep their `ranged_only` rows: melee bots leave a subje
 
 </details>
 ### `AiPlayerbot.DungeonRunGateHold`
-Whether the boss tactics keep their `gate_hold` rows: damage dealers leave a boss alone at or below its health gate while a second unit still fights.
+Whether the boss tactics keep their `gate_hold` rows: damage dealers leave a boss alone at or below its health gate while a second unit still fights. Recommended on.
 **Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
-### `AiPlayerbot.BossStandOutranksBreathDodge`
-Whether a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic breath safe spots.
-**Default:** `0` (recommended on) · **Values:** `0` off (the breath dodge runs as before, even for a seated bot), `1` on (needs the boss tactics and Onyxia stand rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
 **Gate hold:** a boss tactic row of the `gate_hold` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the spared unit (`boss_entry`), the blocker that must not be left alive (`target_entry`, a different unit from the spared one; the loader skips a row that names the spared boss itself), the health gate in percent (`param`, 1 to 99), how many blockers may still fight (`priority`, 0 = not one more) and the blocker search radius in yards (`window_s`, 0 = 200, else 50 to 250). While the spared unit is at or below the gate and more than `priority` units of the blocker within the radius are alive, in combat and not evading, a free damage dealer leaves it alone: the damage-dealer and area picks, the group tank's victim and the raid mark drop it, and an area cast or a DoT within 10 yd of it is stood down (DoTs already ticking keep ticking). Tanks and healers keep their own pick, and an explicit attack order wins. An evaded, out-of-combat or dead blocker never counts, so a second boss that leaves the encounter cannot stall the spared one's kill. The rows are read by the fight scan; the band columns are refused because the kind's own gate is `param`. The `BossTacticsHoldKill` row records the drop like a `hold_kill` one.
+</details>
+### `AiPlayerbot.BossStandOutranksBreathDodge`
+Whether a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic breath safe spots. Recommended on.
+**Default:** `0` · **Values:** `0` off (the breath dodge runs as before, even for a seated bot), `1` on (needs the boss tactics and Onyxia stand rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
 **Stand over dodge:** the stand seats already stand clear of their breath lane, so the generic dodge only walks a seated bot back into it. With the key on, the Onyxia breath dodge action is not useful while the bot holds a stand seat, the same rule DragonFlank and RaidSpread already follow; the stand action walks the bot to its seat instead.
 
 </details>
 ### `AiPlayerbot.BossStandEvents`
-Whether the stand seats write one `BossStand` row per bot and window: assigned, arrived, unseated, released.
+Whether the stand seats write one `BossStand` row per bot and window: assigned, arrived, unseated, released. Diagnostic: changes no behaviour, safe to turn on for test walks.
 **Default:** `0` · **Values:** `0` off (no row, and the stand code keeps no episode state), `1` on (needs the boss stand rows and a `bot_events.csv` log) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -984,7 +992,7 @@ Whether the boss tactics keep their `seek_aura` rows: the raid gathers in a dyin
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekPullCycle`
-Whether the boss tactics keep their `seek_pull` rows: the seek walk-out pulls and kills one source in every cycle.
+Whether the boss tactics keep their `seek_pull` rows: the seek walk-out pulls and kills one source in every cycle. Recommended on.
 **Default:** `0` · **Values:** `0` off (the walk-out keeps its old one-walk-out-per-cycle rules), `1` on (needs `AiPlayerbot.DungeonRunSeekAura` and the boss tactics, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -995,7 +1003,7 @@ Whether the boss tactics keep their `seek_pull` rows: the seek walk-out pulls an
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekSonMeet`
-Whether the pulled Son meets a waiting off-tank instead of walking back to the tanks' circle edge with the puller.
+Whether the pulled Son meets a waiting off-tank instead of walking back to the tanks' circle edge with the puller. Recommended on.
 **Default:** `0` · **Values:** `0` off (the walk back ends at the circle's edge, as before), `1` on (needs `AiPlayerbot.DungeonRunSeekPullCycle` and a `seek_pull` row) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1008,7 +1016,7 @@ Whether the pulled Son meets a waiting off-tank instead of walking back to the t
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekTakeEdge`
-Whether a tank takes a Son of Hakkar that stands just outside the raid's circle when the Son's victim stands inside it.
+Whether a tank takes a Son of Hakkar that stands just outside the raid's circle when the Son's victim stands inside it. Recommended on.
 **Default:** `0` · **Values:** `0` off (the take refuses every Son outside the raid circle, as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1177,7 +1185,7 @@ Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon c
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekVictimRelief`
-Whether the other off-tank takes a Son of Hakkar off the boss's victim tank. Recommended on.
+Whether the other off-tank takes a Son of Hakkar off the boss's victim tank. Keep off for now: the relief claim fix is still in review (follow-up commits on this branch).
 **Default:** `0` · **Values:** `0` off (today's takes hold: the boss's victim keeps both the boss and the Son, as before), `1` on (needs `DungeonRunSeekAura` and three tanks) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1218,7 +1226,7 @@ Known limits (not fixed):
 </details>
 
 ### `AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`
-Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's puller nears its stand, instead of walking when the walk-out starts. Recommended on (its value is still being tested on the A/B arm).
+Whether the pre-placed third tank at Hakkar waits on Hakkar until the walk-out's puller nears its stand, instead of walking when the walk-out starts. Recommended on.
 **Default:** `0` · **Values:** `0` off (the walk starts with the walk-out, as before), `1` on (needs `DungeonRunSeekMeetPrePlace`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1298,7 +1306,7 @@ Whether the damage dealers cap their threat on the meet's just-taken Son. Recomm
 <details>
 <summary>How it works in detail</summary>
 
-**Why:** in walk 60 (m910q) a taken Son killed 1.00 times per fight after the burn opened: 18 of 25 victims were damage dealers, a median 13 s after the take. The burn opens the moment the Son's victim is a tank, and the taker holds only one taunt plus a few seconds of threat.
+**Why:** in walk 60 (our test server) a taken Son killed 1.00 times per fight after the burn opened: 18 of 25 victims were damage dealers, a median 13 s after the take. The burn opens the moment the Son's victim is a tank, and the taker holds only one taunt plus a few seconds of threat.
 
 **The taken state:** when the meet closes because its Son is on a tank, the walk-out record keeps that Son, the tank and the time (one per instance). It is cleared when that Son is dead or gone, 15 s after the take, or when a new walk-out task starts.
 
@@ -1353,7 +1361,7 @@ Whether the damage dealers hold their damage on Hakkar around each expected Caus
 <details>
 <summary>How it works in detail</summary>
 
-**Why (walk 61-62):** after a tank is charmed Hakkar turns to a tank 58-61 % of the time (85 % in the kill); of the 83 non-tank turns in walk 62's m910q, 49 were a damage dealer above the best remaining tank's threat. A non-tank turn cost 0.69 non-tank deaths to Hakkar in the next 15 s against 0.28 after a tank turn, with 6.2 tank-charm CIs before 180 s per fight.
+**Why (walk 61-62):** after a tank is charmed Hakkar turns to a tank 58-61 % of the time (85 % in the kill); of the 83 non-tank turns in walk 62 on our test server, 49 were a damage dealer above the best remaining tank's threat. A non-tank turn cost 0.69 non-tank deaths to Hakkar in the next 15 s against 0.28 after a tank turn, with 6.2 tank-charm CIs before 180 s per fight.
 
 **The timer comes from the data:** the boss's `threat_successor` row carries a nonzero `cycle_spell` (which arms the window), `param` and `window_s` (the earliest and latest gap in seconds, 19 and 26), and `priority` (the hold percent, 95). The clock itself is the code's Cause Insanity scan, and it needs `AiPlayerbot.DungeonRunSeekAura`: that fight read runs the group-wide charm scan (`SeekCharmScan`, every 500 ms) that looks for the Cause Insanity aura 24327 on a group member and sets `lastResetMs` on a new charmed guid. Without the seek read there is no scan, so the window never opens; the config load logs one line naming both keys when `ThreatResetWindow = 1` meets `SeekAura = 0`. The window is open when the time since the last reset lies in `[k × 19 s, k × 26 s]` for k = 1, 2 or 3 (the 40-48 s double gaps included); before the first reset it is `fight age + 3 s`, so the first window is fight time 16-23 s. It is open about 7 of every 22.5 s.
 
@@ -1443,6 +1451,36 @@ Whether a `hold_spot` `tank_post` row leashes its tank before the awaited unit a
 
 </details>
 
+### `AiPlayerbot.DungeonRunCarrierStrike`
+Whether a cursed healer or off-tank turns on its own Shade of Jin'do while the raid can spare it. Recommended on.
+**Default:** `0` · **Values:** `0` off (no carrier strike), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Carrier strike:** only a Delusions carrier can damage a Shade of Jin'do, and the kill-first row already sends the damage dealers at it, so the strike belongs to the cursed healer and off-tank that the raid can spare: the bot turns on its own Shade for one cast, placed just below a critical heal in its rotation, so a critical heal, every emergency row and reaching a party member to heal all win over the strike. The main tank never leaves the boss, and an off-tank strikes only while the boss is not on it.
+
+**Refusals:** no Delusions, no Shade within 40 yd, an off-tank holding the boss, or a fight whose boss has a `threat_successor` row (leaving a boss that cannot be taunted would drop the damage dealers under half the main tank's threat and hand him to one on the next threat wipe; the one exception is a Shade on a healer under `AiPlayerbot.DungeonRunShadeHealerCover`). A healer stays on the raid while a `now` dispel waits that it could cure, while the lowest member in heal reach is under `AiPlayerbot.LowHealth` (default 50 %), while the main tank is under 60 %, while fewer than two other live, uncharmed healers in reach are out of the troll pit, while its mana is under 30 %, or while a `now` dispel on a member in reach is pending.
+
+**Rows:** the kill-first and strike picks log to `BossTacticsKillFirst`, and `BossTacticsShadeCover` names each cursed damage dealer and off-tank that leaves a Shade on a healer alone and why.
+
+</details>
+
+### `AiPlayerbot.DungeonRunCarrierScan`
+Whether a Delusions carrier whose attackers list never showed a Shade finds it by a grid search. Not recommended on: while `AiPlayerbot.DungeonRunKillFirstGrid` is on, the ordinary grid pass already finds the same Shade.
+**Default:** `0` · **Values:** `0` off (only the attackers list and the kill-first grid pass pick), `1` on (needs `AiPlayerbot.DungeonRunAuraTactics` for the needs_aura rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Finding the Shade:** the Shades are summoned on a carrier and only a carrier can see them, so a carrier's attackers list can miss the Shade standing beside it (walk 53: 65 % of Shade frames had no cursed bot attacking the Shade). With the key on, a carrier (a free DPS or one under the run's own order) reads the Shade's entry straight off the nearby grid and takes the nearest one that passes every check, in this order: a living Shade of that entry is there (`no_unit` when none is), it belongs to this fight (`ineligible`), it stands within 40 yd (`beyond_reach`), the bot can see it (`no_los`), and the bot may attack it (`invalid_target`).
+
+**Why it stays off:** `AiPlayerbot.DungeonRunKillFirstGrid` reads the same kill-first units, and the Shade's `kill_first` row has priority 0, which beats the ward and the totem (walk 54: every `no_unit` row was an honest "no Shade within 40 yd"). The scan stays in the code for a run without the grid; run it off.
+
+**Rows:** the `BossTacticsKillFirst` no-switch row names the check that kept every grid hit out of the pick and carries `codes=<word>:<n>...`, `grid=<hits>` and `pickable=<0|1>`; when the scan's Shade replaces an ordinary pick, one row per bot per 5 s says `reason=scan_over`.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunShadeHealerCover`
 Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
@@ -1455,7 +1493,7 @@ A Shade of Jin'do copies the boss's threat list, where heal threat is top, so it
 </details>
 
 ### `AiPlayerbot.DungeonRunCarrierHold`
-Whether a Delusions carrier standing on its Shade of Jin'do keeps it: the "not dps target active" trigger stays quiet for it, so "dps assist" no longer pulls it to the boss, and the kill-first trigger checks every second.
+Whether a Delusions carrier standing on its Shade of Jin'do keeps it: the "not dps target active" trigger stays quiet for it, so "dps assist" no longer pulls it to the boss, and the kill-first trigger checks every second. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's rules), `1` on (needs `AiPlayerbot.DungeonRunAuraTactics` for the needs_aura rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 ### `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`
@@ -1483,7 +1521,7 @@ A cure on a party member (`dispel magic`, `cure poison`, `cure disease`, `abolis
 </details>
 
 ### `AiPlayerbot.DungeonRunThreatSuccessorStrict`
-Whether the 80 % line on a boss whose `threat_successor` row carries the mode word `strict` holds: no projection escape, and white damage stops near the line. The shipped data sets `strict` on Jin'do's row only; Hakkar's row stays plain. Recommended on, together with `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`.
+Whether the 80 % line on a boss whose `threat_successor` row carries the mode word `strict` holds: no projection escape, and white damage stops near the line. The shipped data sets `strict` on Jin'do's row only; Hakkar's row stays plain. Not recommended on: the Zul'Gurub walk ran with it off.
 **Default:** `0` · **Values:** `0` off (today's escape, white damage never stopped), `1` on (on a boss whose `threat_successor` row carries `strict` only: no projection escape; the melee swing and the auto-repeat stop at 92 % of the reference) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1500,7 +1538,7 @@ A 65 % white stop was removed in 405801e86 because it cost a fifth of the raid's
 </details>
 
 ### `AiPlayerbot.DungeonRunThreatSuccessorKeepsAway`
-Whether the successor pick on a boss with a `threat_successor` row keeps a tank cursed by Delusions of Jin'do, which stands on its Shade by design. Recommended on, together with `AiPlayerbot.DungeonRunThreatSuccessorNotHolder`.
+Whether the successor pick on a boss with a `threat_successor` row keeps a tank cursed by Delusions of Jin'do, which stands on its Shade by design. Not recommended on: the Zul'Gurub walk ran with it off.
 **Default:** `0` · **Values:** `0` off (a cursed tank that is not hitting the boss drops out of the pick), `1` on (a tank wearing Delusions 24306 counts as on the boss while its threat is above 0 and at least half the highest tank's) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
@@ -1518,6 +1556,21 @@ Whether the run leader judges its fight by an uncharmed bot while the lead bot i
 <summary>How it works in detail</summary>
 
 The run reads its fight against the lead bot. A charmed lead (Jin'do's Brain Wash, any Mind Control or Dominate Mind) is friendly to its charmer's side, so the kill-first read dropped the Brain Wash Totem's owner Jin'do as not engaged, the engaged units came back empty (the fight read as stale and its clock stopped), the raid guard measured and filtered its attackers from the charmed lead, and the run's own focus order was refused as "friendly"; the totem focus (`AiPlayerbot.DungeonRunTotemFocus`) went silent while the main tank stayed charmed (ZG walk 57: 16 of 19 main-tank charm windows of 10 s or more had no focus row; median charm 86 s, meleeing the raid). With the key on, while the lead is charmed and a fit judge exists (`RunJudge`: the first living, uncharmed commanded bot on the lead's map, the judge `GroupCanAttack` already used; real players are never the judge), it replaces the lead (`RunFactJudgeReplacesLead`) in the kill-first friendliness test and the owner's engagement, the engaged units read, the crowd-control hold read, the raid guard's anchor (`RaidGuardAnchor`: the off-tank or first living bot the dead-lead path already picks, skipping charmed bots), and the order's target check (`CommanderOrder::judge`, which also serves `cmd attack`, `cmd cc` and `cmd state`). With the key on a dead lead's order judge and guard anchor also skip charmed bots. With the whole party charmed, or the lead not charmed, nothing changes. Generic: any charm on the lead, every raid and dungeon, no boss id. The per-member engaged read (`ReadMemberEngaged`, the combat drop) and the party's attacker list for a party run still judge against the lead.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTauntGate`
+Whether a tank refuses to taunt a creature it must not hold. Recommended on.
+**Default:** `0` · **Values:** `0` off (every taunt goes out as before), `1` on (needs no rows or tactics) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Taunt gate:** a tank does not taunt a Shade of Jin'do (only a carrier may damage it, and a taunt only pulls its Shadow Shock onto a second tank) or a creature the core marks immune to taunts (Jin'do, where a taunt moves the tank's threat onto a damage dealer). A `needs_aura` subject is refused only when the bot lacks the aura, so a Delusions carrier may taunt the Shade it can damage; a carrier that is the boss's current victim does not taunt a Shade either.
+
+**What is gated:** every single-target taunt — the warrior's Taunt (the taunt row, the snare-target and off-target forms) and Mocking Blow, the druid's Growl, the paladin's Hand of Reckoning, the shaman's Earthshaker Slam (each with its on-attacker form) — and the boss actions that cast a class taunt themselves (the tank swap, the seek take, the taunt-after window). Challenging Shout is an area taunt with no single target and is not covered.
+
+**Rows:** a refusal logs `BossTacticsTauntGate` once per bot and reason per 5 s, and the seek take's row says `reason=taunt_gated`.
 
 </details>
 

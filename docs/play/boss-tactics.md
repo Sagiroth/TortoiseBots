@@ -293,7 +293,7 @@ With the key on, the grid-found Shades are also seen by the two other readers of
 
 Behind `AiPlayerbot.DungeonRunCarrierHold` (default `0`): a Delusions carrier standing on its Shade keeps it. The "not dps target active" trigger fires whenever the bot's current target differs from its "dps target" (the skull, Jin'do), and its action "dps assist" (relevance 60) outranks kill-first (21), so a carrier was pulled off a live Shade for the boss (76 times in walk 54, 65 in walk 53). With the key on the trigger stays quiet when the current target is a needs_aura subject the bot carries the aura for (`CarrierHoldsCurrent`); a bot without the aura on the Shade, a carrier on any other target, and every bot with the key off keep today's rule. The kill-first trigger is also checked every second under the key, whatever `DungeonRunTotemFocus` says, so the re-pick after a Shade dies no longer waits up to two seconds (median 2.0 s before the key). Needs `DungeonRunAuraTactics` for the needs_aura rows.
 
-CarrierScan is redundant while KillFirstGrid is on: the ordinary grid pass reads the same kill-first units, and the Shade's kill_first row has priority 0, which beats the ward and the totem (walk 54: every `no_unit` row was an honest "no Shade within 40 yd"). The scan stays in the code; run with `DungeonRunCarrierScan` off.
+Not recommended on: CarrierScan is redundant while KillFirstGrid is on, because the ordinary grid pass reads the same kill-first units and the Shade's kill_first row has priority 0, which beats the ward and the totem (walk 54: every `no_unit` row was an honest "no Shade within 40 yd"). The scan stays in the code; run with `DungeonRunCarrierScan` off.
 
 ### The taunt gate
 
