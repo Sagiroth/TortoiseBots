@@ -28,6 +28,8 @@ bool OnyxiaBreathSafeZoneAction::isUseful()
 {
     if (!MovementAction::isUseful())
         return false;
+    if (!sPlayerbotAIConfig.bossStandOutranksBreathDodge)
+        return true;
     return !BreathDodgeYieldsToStand(sPlayerbotAIConfig.bossStandOutranksBreathDodge, FindBossStand(ai, bot).valid);
 }
 

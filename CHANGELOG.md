@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: the Onyxia breath dodge skips the boss stand lookup while AiPlayerbot.BossStandOutranksBreathDodge is off, so bots pay nothing extra.
 - New: behind AiPlayerbot.BossStandOutranksBreathDodge (default 0, recommended on), a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots.
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).
 - New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off while they would not pull the caster off the tank, so a damage dealer at the high-threat line still interrupts a cast (found by Tortoise Trials, #1556).

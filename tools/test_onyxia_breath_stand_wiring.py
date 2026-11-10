@@ -36,8 +36,11 @@ class OnyxiaBreathStandWiring(unittest.TestCase):
         self.assertIn("bool isUseful() override;", ACTION_H)
         useful = body(ACTION_CPP, "bool OnyxiaBreathSafeZoneAction::isUseful()")
         self.assertIn("if (!MovementAction::isUseful())\n        return false;", useful)
+        self.assertIn("if (!sPlayerbotAIConfig.bossStandOutranksBreathDodge)\n        return true;", useful)
         self.assertIn("!BreathDodgeYieldsToStand(sPlayerbotAIConfig.bossStandOutranksBreathDodge, "
                       "FindBossStand(ai, bot).valid)", useful)
+        self.assertLess(useful.index("if (!sPlayerbotAIConfig.bossStandOutranksBreathDodge)"),
+                        useful.index("FindBossStand(ai, bot)"))
         self.assertIn('#include "playerbot/BossTacticsStand.h"', ACTION_CPP)
 
     def test_the_key_ships_off(self):
