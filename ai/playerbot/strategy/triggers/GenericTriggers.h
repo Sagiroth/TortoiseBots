@@ -743,6 +743,14 @@ namespace ai
         virtual bool IsActive() override;
     };
 
+    class ResumeEatTrigger : public Trigger
+    {
+    public:
+        ResumeEatTrigger(PlayerbotAI* ai) : Trigger(ai, "resume eat") {}
+
+        virtual bool IsActive() override;
+    };
+
     // Donor EnoughManaTrigger verdict (mod-playerbots GenericTriggers.cpp):
     // fires while mana sits ABOVE the high-mana line, gating spenders like
     // consecration. Deliberately separate from HighManaTrigger, whose local

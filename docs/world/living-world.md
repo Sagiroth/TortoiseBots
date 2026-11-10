@@ -239,7 +239,7 @@ Bots manage their inventory dynamically to prevent stalls:
 Bots manage health and mana between fights to maintain continuous activity:
 
 - **Simultaneous eating and drinking:** Out of combat, bots consume food and water at the same time in a single resting cycle.
-- **Health and mana thresholds:** Bots using rations eat and drink until reaching 90% health and mana. Bots without ration cheats rest until reaching 50% health and 85% mana.
+- **Health and mana thresholds:** Bots using rations eat and drink until reaching 90% health and mana. Bots without ration cheats rest until reaching 50% health and 85% mana. A [rest order](../play/commands/party-actions.md#bot-action-rest) tops bots up to 100% instead.
 - **Combat response:** A resting bot stands up immediately and engages if an enemy attacks or if a nearby party member within 60 yards enters combat.
 - **Crowd control discipline:** A bot assigned a crowd control mark (such as Moon) will not start a non-essential meal if its health is at or above 70% while the target is alive and in sight.
 - **Ration restocking:** Pool bots receive level-appropriate food and water automatically. Hired companions get an hourly restock of food, water, reagents, potions and bandages. Your own alts buy their food from vendors (or use [`.bot maintenance`](../play/commands/roster-and-hiring.md#bot-maintenance) when the server allows it).

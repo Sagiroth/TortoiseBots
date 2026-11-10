@@ -702,10 +702,29 @@ namespace ai
             if (bot->GetPowerType() != POWER_MANA)
                 return false;
 
+            // A seated bot already drinking keeps that drink: a new one would
+            // stand it up first, and standing ends the drink.
+            if (bot->IsSittingDown() && ai->HasSeatedMeal(true))
+            {
+                SetDuration(SitFor());
+                SET_AI_VALUE(bool, "drink unfinished", true);
+                return true;
+            }
+
             if (ai->HasCheat(BotCheatMask::item))
             {
                 if (bot->IsNonMeleeSpellCasted(true))
                     return false;
+
+                // Seated over food: the drink joins the meal, a cast would
+                // stand the bot up and end it.
+                if (bot->IsSittingDown() && ai->HasSeatedMeal(false))
+                {
+                    ai->AddAura(bot, 24355);
+                    SetDuration(SitFor());
+                    SET_AI_VALUE(bool, "drink unfinished", true);
+                    return true;
+                }
 
                 bot->ClearUnitState(UNIT_STAT_CHASE);
                 bot->ClearUnitState(UNIT_STAT_FOLLOW);
@@ -725,7 +744,7 @@ namespace ai
                 bot->AddUnitState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
-                float drinkDuration = AI_VALUE(float, "drink duration");
+                float drinkDuration = SitFor();
 
                 const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(24355);
                 if (!pSpellInfo)
@@ -771,6 +790,15 @@ namespace ai
         {
             return !sServerFacade.IsInCombat(bot) && UseAction::isPossible();
         }
+
+    private:
+        // "drink duration" guesses the time to full and runs short, so a bot
+        // resting to full sits the whole 30 s drink; it stands as soon as
+        // it is full (PlayerbotAI::UpdateAI).
+        float SitFor()
+        {
+            return AI_VALUE(bool, "rest to full") ? 30000.0f : AI_VALUE(float, "drink duration");
+        }
     };
 
     class EatAction : public UseAction
@@ -783,10 +811,23 @@ namespace ai
             if (sServerFacade.IsInCombat(bot))
                 return false;
 
+            if (bot->IsSittingDown() && ai->HasSeatedMeal(false))
+            {
+                SetDuration(SitFor());
+                return true;
+            }
+
             if (ai->HasCheat(BotCheatMask::item))
             {
                 if (bot->IsNonMeleeSpellCasted(true))
                     return false;
+
+                if (bot->IsSittingDown() && ai->HasSeatedMeal(true))
+                {
+                    ai->AddAura(bot, 24005);
+                    SetDuration(SitFor());
+                    return true;
+                }
 
                 bot->ClearUnitState(UNIT_STAT_CHASE);
                 bot->ClearUnitState(UNIT_STAT_FOLLOW);
@@ -806,7 +847,7 @@ namespace ai
                 bot->AddUnitState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
-                float eatDuration = AI_VALUE(float, "eat duration");
+                float eatDuration = SitFor();
 
                 const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(24005);
                 if (!pSpellInfo)
@@ -859,6 +900,12 @@ namespace ai
         bool isPossible() override
         {
             return !sServerFacade.IsInCombat(bot) && UseAction::isPossible();
+        }
+
+    private:
+        float SitFor()
+        {
+            return AI_VALUE(bool, "rest to full") ? 30000.0f : AI_VALUE(float, "eat duration");
         }
     };
 }

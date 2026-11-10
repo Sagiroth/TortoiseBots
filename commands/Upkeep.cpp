@@ -332,14 +332,7 @@ bool HandleRest(ChatHandler* handler, char const* args)
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
         if (!ai)
             continue;
-        bool rested = false;
-        if (bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA))
-            rested = ExecuteQuietAction(ai, "drink", ai::Event("bot command", "drink", requester)) || rested;
-        if (bot->GetHealth() < bot->GetMaxHealth())
-            rested = ExecuteQuietAction(ai, "food", ai::Event("bot command", "food", requester)) || rested;
-        if (rested)
-            ++succeeded;
-        else if (bot->GetHealth() >= bot->GetMaxHealth() && (bot->GetPowerType() != POWER_MANA || bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA)))
+        if (OrderRest(ai, ai::Event("bot command", "", requester)))
             ++succeeded;
     }
     handler->PSendSysMessage("Commanded %u companion bot(s) to rest and restore health/mana.", succeeded);
