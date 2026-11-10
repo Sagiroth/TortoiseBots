@@ -848,21 +848,16 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
 
     def test_onyxia_walk2a_rows_are_live(self):
-        # 20261110120000_world.sql: slot 1 posts at the NE spot T for Cindarion 50143 from 65-41 %, damage holds
-        # off Onyxia 10184 at 42 % while he fights, and the room-centre anchor keeps the raid out of the
-        # respawned room-mouth Warder. The core ids are pinned in BossTacticsCoreData below; here the live
-        # table shape is, so a wrong number or a delete that reaches too far fails.
+        # 20261110120000_world.sql: damage holds off Onyxia 10184 at 42 % while Cindarion 50143
+        # fights, and the room-centre anchor keeps the raid out of the respawned room-mouth
+        # Warder. The tank_post row moved to 20261110120200_world.sql (hold_spot, pinned in
+        # test_onyxia_walk2b_post_is_hold_spot). The core ids are pinned in BossTacticsCoreData
+        # below; here the live table shape is, so a wrong number or a delete that reaches too far
+        # fails.
         name = "20261110120000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2a migration is missing")
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
-        post = live.get((249, 10184, "tank_post", 50143, 0))
-        self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
-        self.assertEqual(name, post["file"], "the walk 2a migration owns the tank_post row")
-        self.assertEqual((1, 25.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
-                         (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
-                          post["spot_x"], post["spot_y"], post["spot_z"]),
-                         "the Onyxia tank_post row drifted")
         gate = live.get((249, 10184, "gate_hold", 50143, 0))
         self.assertIsNotNone(gate, "the Onyxia gate_hold row is missing")
         self.assertEqual(name, gate["file"], "the walk 2a migration owns the gate_hold row")
@@ -876,19 +871,13 @@ class BossTacticsSql(unittest.TestCase):
                          (anchor["priority"], anchor["param"], anchor["hp_min"], anchor["hp_max"],
                           anchor["spot_x"], anchor["spot_y"], anchor["spot_z"]),
                          "the Onyxia anchor row drifted")
-        for row in (post, gate, anchor):
+        for row in (gate, anchor):
             self.assertIsNone(new_kind_problem(row))
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
                       "AND `kind` IN ('tank_post', 'gate_hold', 'anchor');", text)
         self.assertEqual(3, len(re.findall(r"(?m)^\(249, 10184, '", text)))
-        # Onyxia 10184 carries exactly the three walk 2a rows: the migration's DELETE would drop any other
-        # 10184 row, and its INSERT writes only these three.
-        self.assertEqual([(249, 10184, "anchor", 0, 0), (249, 10184, "gate_hold", 50143, 0),
-                          (249, 10184, "tank_post", 50143, 0)],
-                         sorted(key for key in live if key[0] == 249 and key[1] == 10184),
-                         "Onyxia 10184 carries more or fewer rows than the walk 2a migration's three")
         # The 50143/50144 rows of 20261109200100 stay.
         for key in ((249, 50143, "taunt_after_cast", 0, 0), (249, 50143, "interrupt", 0, 33439),
                     (249, 50143, "behind", 0, 33439), (249, 50143, "kill_first", 50143, 0),
@@ -954,6 +943,30 @@ class BossTacticsSql(unittest.TestCase):
                 for role, quota in zip(("healer", "ranged", "melee"), quotas):
                     self.assertEqual(quota, counts.get((anchor, side, role), 0),
                                      "anchor %d side %d role %s" % (anchor, side, role))
+
+    def test_onyxia_walk2b_post_is_hold_spot(self):
+        # 20261110120200_world.sql: the walk 2a tank_post row becomes hold_spot (needs
+        # AiPlayerbot.DungeonRunTankPostHoldSpot = 1): same slot, spot, band and window,
+        # so the post starts off a whelp, drags Cindarion back to T and yields to a seat.
+        # The mode pin is the gate: without the migration the row is still a plain post.
+        name = "20261110120200_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b post migration is missing")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        post = live.get((249, 10184, "tank_post", 50143, 0))
+        self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
+        self.assertEqual(name, post["file"], "the walk 2b migration owns the tank_post row")
+        self.assertEqual("hold_spot", post["tactic_mode"], "the Onyxia tank_post row is not hold_spot")
+        self.assertEqual((1, 25.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
+                         (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
+                          post["spot_x"], post["spot_y"], post["spot_z"]),
+                         "the Onyxia tank_post row drifted")
+        self.assertIsNone(new_kind_problem(post))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post';", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(249, 10184, '", text)))
 
     def test_arlokk_rows(self):
         # 20261105190000_world.sql: the boss-first grid entries (Arlokk herself, then the Zulian Prowler while she is
