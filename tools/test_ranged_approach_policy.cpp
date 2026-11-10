@@ -251,6 +251,19 @@ int main()
         std::cout << "  [PASS] hover target: hostile only, attackable for attack reaches\n";
     }
 
+    // A healer never takes the walk under the boss: "healers are unchanged" in the
+    // spec, so her reach spell on the hovering boss keeps today's path walk; a
+    // ranged DPS still walks.
+    {
+        bool const hoverApplies = ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -86.0f);
+        CHECK(hoverApplies);
+        CHECK(!ai::HoverReachTakerIsDps(true));                   // healer: no hover destination
+        CHECK(ai::HoverReachTakerIsDps(false));                   // ranged DPS: the walk
+        CHECK(!(hoverApplies && ai::HoverReachTakerIsDps(true)));
+        CHECK(hoverApplies && ai::HoverReachTakerIsDps(false));
+        std::cout << "  [PASS] hover taker: healers keep today's reach\n";
+    }
+
     // No line of sight from the ground side: the second pass keeps the geometry
     // (standing still is no damage; the next tick's trigger re-judges).
     {

@@ -579,6 +579,12 @@ namespace ai
                 return false;
             }
 
+            // A healer's reach spell on her keeps today's path walk: the walk is a DPS
+            // position, and taking it would move her off her heal spot and put her mana
+            // and deaths into the walk's readings of a spot only damage dealers take.
+            if (!HoverReachTakerIsDps(PlayerbotAI::IsHeal(bot)))
+                return false;
+
             if (!bot->IsStopped() && !bot->movespline->Finalized())
                 return true;
 

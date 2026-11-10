@@ -10,6 +10,7 @@ the glue in ai/playerbot/strategy/actions/ReachTargetActions.h:
 - the hover walk paths to the floor under the target, never to the target;
 - the walk runs only for a hostile target (the trigger's own IsHostileTo), and for
   an attack reach only one the core lets the bot attack;
+- healers keep today's reach (PlayerbotAI::IsHeal read before the walk);
 - the BossReachHover row is written only inside the key-on branch;
 and the key's read and shipped default.
 """
@@ -67,6 +68,17 @@ class HoverReachWiringTest(unittest.TestCase):
         self.assertIn("if (!HoverReachTargetEligible(hostile, attackReach, attackable))", fn)
         self.assertLess(fn.index("if (!HoverReachTargetEligible(hostile, attackReach, attackable))"),
                         fn.index("if (!HoverReachApplies(true, map->IsDungeon()"))
+
+    def test_healer_with_a_hovering_boss_does_not_select_a_hover_destination(self):
+        fn = body(ACTIONS, "bool MoveIntoRangeUnderHover(Unit* target, float distance)", "\n        }")
+        # The spec says healers are unchanged, so the role is read (PlayerbotAI::IsHeal,
+        # the module's helper) before the walk, and after the hover gate so only a walk
+        # that would otherwise run pays the read.
+        gate = "if (!HoverReachTakerIsDps(PlayerbotAI::IsHeal(bot)))"
+        self.assertIn(gate, fn)
+        self.assertGreater(fn.index(gate), fn.index("if (!HoverReachApplies(true, map->IsDungeon()"))
+        self.assertLess(fn.index(gate), fn.index("if (!bot->IsStopped()"))
+        self.assertLess(fn.index(gate), fn.index("HoverReachResult::NoPath"))
 
     def test_key_is_read_and_ships_zero(self):
         self.assertIn('rangedReachHoverTarget = config.GetBoolDefault("AiPlayerbot.RangedReachHoverTarget", false);',

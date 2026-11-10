@@ -160,6 +160,15 @@ namespace ai
         return hostile && (!attackReach || attackable);
     }
 
+    // AiPlayerbot.RangedReachHoverTarget: the walk under the boss is a DPS position. A healer whose reach
+    // spell points at the hovering boss keeps today's path walk ("healers are unchanged" in the spec); the
+    // walk would move her off her heal spot and put healer mana and deaths-per-breath into the walk's DPS
+    // measures. The role is read at the call site, only once the walk would otherwise run.
+    inline bool HoverReachTakerIsDps(bool healer)
+    {
+        return !healer;
+    }
+
     // AiPlayerbot.RangedReachHoverTarget: a hostile at least this high above the floor under it is "hovering"
     // (Onyxia's P2 hover points stand 19-23 yd above the floor; a jumping or stair-stepping mob is never 8 yd up).
     constexpr float kHoverTargetMinHeightYd = 8.0f;
