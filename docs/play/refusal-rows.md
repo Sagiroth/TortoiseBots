@@ -129,6 +129,7 @@ seek take: Vanthas -> 49033 victim=Mira reason=chase_refused meet=0 src=receiver
 | `receiver` | The third tank (the receiver) takes a fighting Son near the spot. |
 | `pickup` | With two tanks, the first off-tank takes a fighting Son near the spot. |
 | `pull_join` | The third tank's own pull target joined the fight before the pull finished. |
+| `victim_relief` | The other off-tank takes a Son off the boss's victim tank (`DungeonRunSeekVictimRelief`). |
 | `other` | Any take without its own word. |
 
 `+edge` follows the word (e.g. `nearest+edge`) when the Son stood outside the raid circle and only the take edge
@@ -168,7 +169,7 @@ ref survives line drift.
 | 17 | per-bot pull step | `seek pull: <name> -> <son> <yd> <step>` | LogSeekPull | not a refusal (the step is `walk`, `hit` or `done`) | document |
 | 18 | seek take | `seek take: <name> -> <son> victim=<name> reason=<word> meet=<0\|1> src=<word> reach_yd=<yd> beyond_yd=<yd>` | LogSeekTake | yes: `reason=` from the take's words (`chase_refused`, `edge_far`, `no_taunt`, `attack`, `taunt`) (the walk-out pick's codes above are a different set) | now `reason=` (the take's taunt state), `meet=`, `src=` (the take path) and `reach_yd=` (the tank's distance to the Son; DungeonRunSeekMeetTakeReach) and `beyond_yd=` (the Son's distance past the raid circle, negative inside, -99.0 with no anchor) |
 | 18a | seek take held | `seek take held son=%u taker=<name> reason=cap_guard ref=<name> share=%.0f src=<nearest_reach\|healer_clock> victim=<name> on_nontank_ms=%u victim_hp=%.0f` | LogSeekTakeHeld (FindSeekNearestTake, SeekHealerClockCapOk) | yes: `cap_guard` (with `DungeonRunSeekNearestTakeReach`, the collapse guard held this tank's reach or healer-clock take of the Son back: its leave would collapse the damage dealers' threat cap; `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's, 0 when no off-tank reference is left; `victim`, `on_nontank_ms` and `victim_hp` are the Son's victim, its time on it and its health); once per tank and Son per 2 s; a held row and a take row can share a tick, so join them on time | new |
-| 18b | seek take capped | `seek take capped son=<son> bot=<name> pct=<pct> since_take_ms=<ms>` | LogSeekTakenSonCapped | no: one row per bot and take (Son and take time) when the taken Son's threat cap (DungeonRunSeekTakenSonThreatCap) holds a damage dealer at 85 % of the taker's threat (held down to 75 %); limit: like every dps hold, area damage, ticking damage over time and pets still hit the held Son | new |
+| 18b | seek relief | `seek relief son=%u from=<name> by=<name> dwell_ms=%u n=%u cap=%d reach_yd=%.1f` | FindSeekVictimRelief | not a refusal (with `DungeonRunSeekVictimRelief`, one per relief start: the other off-tank takes a Son off the boss's victim tank; `n` the Son's relief count, `cap` the cap guard's read, logged but never holding the take) | new |
 
 ### Other boss-tactics rows
 

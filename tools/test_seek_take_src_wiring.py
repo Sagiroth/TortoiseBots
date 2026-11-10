@@ -31,7 +31,7 @@ class SeekTakeSrcWiring(unittest.TestCase):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         # One word per `task.take = true;`.
         self.assertEqual(fn.count("task.take = true;"), fn.count("task.takeSrc = "))
-        for word in ('"meet"', '"healer_clock"', '"pull_join"'):
+        for word in ('"meet"', '"healer_clock"', '"pull_join"', '"victim_relief"'):
             self.assertIn("task.takeSrc = " + word + ";", fn)
         # The nearest take names the reach when only the reach took it (walk 57 F4: `src=nearest_reach`).
         self.assertIn('task.takeSrc = viaReach ? "nearest_reach" : "nearest";', fn)
@@ -52,7 +52,7 @@ class SeekTakeSrcWiring(unittest.TestCase):
 
     def test_the_field_is_documented(self):
         self.assertIn("meet=<0\\|1> src=<word>", ROWS)
-        for word in ("`nearest`", "`nearest_reach`", "`healer_clock`", "`receiver`", "`meet`", "`pickup`", "`pull_join`", "`+edge`"):
+        for word in ("`nearest`", "`nearest_reach`", "`healer_clock`", "`receiver`", "`meet`", "`pickup`", "`pull_join`", "`victim_relief`", "`+edge`"):
             self.assertIn(word, ROWS)
 
 

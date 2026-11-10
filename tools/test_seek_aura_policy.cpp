@@ -1021,6 +1021,63 @@ int main()
         CHECK(SeekTakenCapRowDue(other, true));
     }
 
+    // The victim relief (DungeonRunSeekVictimRelief): a Son on the boss's victim tank is taken off it by the other
+    // off-tank, at most twice per Son and 8 s apart. Named failing case: the dwell (a fresh latch ticks true at 5000,
+    // due at 6000, not at 5999).
+    {
+        SeekReliefLatch latch;
+        CHECK(!SeekVictimReliefDue(true, latch, 5000));
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(!SeekVictimReliefDue(true, latch, 5999));
+        CHECK(SeekVictimReliefDue(true, latch, 6000));
+        SeekReliefClockTick(latch, false, 6100);
+        CHECK(!SeekVictimReliefDue(true, latch, 9000));
+        CHECK(!SeekVictimReliefDue(false, latch, 9000));
+    }
+    // The retake latch: after a start the same Son waits 8 s, and a second start is the last one.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 6000);
+        SeekVictimReliefStart(latch, 7, 6000);
+        CHECK(!SeekVictimReliefDue(true, latch, 13999));
+        CHECK(SeekVictimReliefDue(true, latch, 14000));
+        SeekVictimReliefStart(latch, 7, 14000);
+        CHECK(!SeekVictimReliefDue(true, latch, 22000));
+        CHECK(!SeekVictimReliefDue(true, latch, 30000));
+    }
+    // The reliever: one of the two off-tanks, not the boss's victim, not charmed, holding no Son, its taunt ready,
+    // within 20 yd.
+    {
+        CHECK(SeekVictimRelieverOk(true, false, false, false, true, 20.0f));
+        CHECK(!SeekVictimRelieverOk(false, false, false, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, true, false, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, true, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, true, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, false, false, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, false, true, 20.1f));
+    }
+    // The keep: a started relief stays valid for its tank for 6 s without the taunt and dwell checks.
+    {
+        SeekReliefLatch latch;
+        latch.sinceMs = 6000;
+        latch.seenMs = 6000;
+        SeekVictimReliefStart(latch, 7, 6000);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 12000));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 12001));
+        CHECK(!SeekVictimReliefKept(true, latch, 8, false, 7000));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, true, 7000));
+        CHECK(!SeekVictimReliefKept(false, latch, 7, false, 7000));
+    }
+    // The clock wraps: a tick at 0 starts the clock, and a dwell across the 32-bit wrap is due.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 0);
+        CHECK(latch.sinceMs == 1);
+        SeekReliefLatch wrapped;
+        SeekReliefClockTick(wrapped, true, 0xFFFFFE00u);
+        CHECK(SeekVictimReliefDue(true, wrapped, 0x00000300u));
+    }
+
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
 }

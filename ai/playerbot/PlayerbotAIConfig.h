@@ -702,6 +702,10 @@ public:
     // trigger stays open and its own tick keeps running. It needs dungeonRunSeekWalkoutFocus (without it the puller runs
     // its other actions anyway); off, such a puller loses the scan as before (default off, recommended on).
     bool dungeonRunSeekPullerKeepsFight = false;
+    // The victim relief (Hakkar's Sons): on, a seek source whose victim is the boss's own victim tank for 1 s is taken
+    // off it by the other off-tank (within 20 yd, its taunt ready, holding no source, not the boss's victim), at most
+    // twice per source and 8 s apart; off, today's takes hold (default off, recommended on).
+    bool dungeonRunSeekVictimRelief = false;
     // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the
     // instant forced turn and casts in the same tick, UpdateFaceTarget leaves the live unshot puller's facing alone, and
     // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out

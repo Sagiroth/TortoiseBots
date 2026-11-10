@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunSeekVictimRelief (default 0, recommended on, needs AiPlayerbot.DungeonRunSeekAura), a Son of Hakkar on the boss's victim tank is taken off it by the other off-tank after 1 s (within 20 yd, taunt ready), at most twice per Son and 8 s apart, with one `seek relief` row per start and `src=victim_relief` on the take row.
 - New: behind AiPlayerbot.DungeonRunSeekPullerKeepsFight (default 0, recommended on, needs AiPlayerbot.DungeonRunSeekWalkoutFocus), a Hakkar walk-out puller more than its sight distance from the raid keeps the boss in its own fight scan, so its walk-out keeps running instead of standing frozen until the 15 s no-sight cut, with one `seek pull: walk-out kept boss` row a walk-out.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank stays on a Shade it pulled off a healer, its own low health still keeps it home, and it is never sent at a Shade in the troll pit; the BossTacticsShadeCover row gains the guard word and writes dead once.

@@ -1592,8 +1592,8 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
 // One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
 // why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
 // names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
-// pull_join, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance to the Son this
-// tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
+// pull_join, victim_relief, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance
+// to the Son this tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
 // circle of the row's boss anchor (negative inside; -99.0 with no anchor row).
 void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src,
                  float beyondYd)
@@ -5643,6 +5643,11 @@ namespace
 // take time). It carries the hysteresis (held on the last read) and the take's one `seek take capped` row.
 std::mutex g_seekTakenCapMutex;
 std::unordered_map<std::uint64_t, SeekTakenCapLatch> g_seekTakenCapLatches;
+// The victim relief's per-Son latch (SeekReliefLatch, DungeonRunSeekVictimRelief): one per Son of the fight, keyed by
+// the Son's raw guid. It carries the dwell clock (the run on the boss's tank), the last start and its count (the
+// anti-ping-pong). Swept on each locked use: entries untouched for more than 120 s (a dead Son, a wiped fight) drop.
+std::mutex g_seekReliefMutex;
+std::map<std::uint64_t, SeekReliefLatch> g_seekReliefLatches;
 
 void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct, std::uint32_t sinceTakeMs)
 {
@@ -9308,6 +9313,93 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
 
+// DungeonRunSeekVictimRelief: a Son whose victim is the boss's own victim tank is taken off it by a free off-tank.
+Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekVictimRelief || !state.row || !state.boss || roles.tanks.size() < 3)
+        return nullptr;
+    const std::uint32_t nowMs = state.nowMs;
+    Unit* const bossVictim = state.boss->GetVictim();
+    const bool bossTank = bossVictim != nullptr && [bossVictim, &roles]()
+    {
+        for (Player* tank : roles.tanks)
+        {
+            if (tank && tank == bossVictim && sServerFacade.IsAlive(tank))
+                return true;
+        }
+        return false;
+    }();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    // This read's own call answers: one of the two off-tanks (never tanks[0], never a two-tank pickup).
+    const bool offTank = roles.tanks.size() >= 3 && (roles.tanks[1] == bot || roles.tanks[2] == bot);
+    Unit* kept = nullptr;
+    Unit* due = nullptr;
+    unsigned dwellMs = 0;
+    unsigned n = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+        for (auto it = g_seekReliefLatches.begin(); it != g_seekReliefLatches.end();)
+        {
+            it = nowMs - it->second.seenMs > 120000 ? g_seekReliefLatches.erase(it) : std::next(it);
+        }
+        for (Unit* son : state.sons)
+        {
+            if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
+                continue;
+            const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+            const bool reliefSon = bossTank && son->GetVictim() == bossVictim;
+            auto found = g_seekReliefLatches.find(guid);
+            if (found == g_seekReliefLatches.end() && !reliefSon)
+                continue;
+            SeekReliefLatch& latch =
+                found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[guid];
+            SeekReliefClockTick(latch, reliefSon, nowMs);
+            if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
+                kept = son;
+        }
+        if (!kept && offTank)
+        {
+            const bool selfIsBossVictim = state.boss->GetVictim() == bot;
+            const bool selfCharmed = !bot->GetCharmerGuid().IsEmpty();
+            const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+            const bool tauntReady = SeekTankTauntReady(bot);
+            for (Unit* son : state.sons)
+            {
+                if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) ||
+                    !son->IsInCombat())
+                    continue;
+                const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+                const auto found = g_seekReliefLatches.find(guid);
+                if (found == g_seekReliefLatches.end())
+                    continue;
+                SeekReliefLatch& latch = found->second;
+                if (SeekVictimReliefDue(true, latch, nowMs) &&
+                    SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
+                                         bot->GetDistance(son)))
+                {
+                    SeekVictimReliefStart(latch, self, nowMs);
+                    due = son;
+                    dwellMs = static_cast<unsigned>(nowMs - latch.sinceMs);
+                    n = latch.takes;
+                    break;
+                }
+            }
+        }
+    }
+    if (kept)
+        return kept;
+    if (due && sPlayerbotAIConfig.hasLog("bot_events.csv"))
+    {
+        Unit* const victim = due->GetVictim();
+        char info1[192];
+        snprintf(info1, sizeof(info1), "seek relief son=%u from=%s by=%s dwell_ms=%u n=%u cap=%d reach_yd=%.1f",
+                 due->GetGUIDLow(), victim ? victim->GetName() : "none", bot->GetName(), dwellMs, n,
+                 SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, nullptr) ? 1 : 0, bot->GetDistance(due));
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+    }
+    return due;
+}
+
 // The pre-placed receiver's walk (DungeonRunSeekMeetPrePlace, walk 56 F2): true while a live pre-place names this bot.
 // More than kSeekMeetPrePlaceArriveYd from its point, the task walks it there (walkToSpot); at the point the task stays
 // valid and holds it (prePlaceHold: Execute stops a walk and otherwise leaves the tick to the rotation), until the meet
@@ -9571,6 +9663,17 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                                                static_cast<float>(state.row->priority));
             if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
                 task.walkToSpot = true;
+            return task;
+        }
+    }
+    if (thirdTank || healerTaker)
+    {
+        if (Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state))
+        {
+            task.valid = true;
+            task.source = reliefSon;
+            task.take = true;
+            task.takeSrc = "victim_relief";
             return task;
         }
     }

@@ -725,13 +725,86 @@ namespace ai
         return !isBossVictim;
     }
 
+    // A Son whose victim is the boss's own victim tank is taken off it by the other off-tank (DungeonRunSeekVictimRelief,
+    // walk 66): a Son that sits on the boss's victim tank (Hakkar with a Son, after Cause Insanity hands him to a tank
+    // already holding one) kills it in a median 3 s. The dwell keeps a passing frame from starting a take. Pure so the
+    // sweep's latch map stays a caller detail.
+    constexpr std::uint32_t kSeekVictimReliefDwellMs = 1000;
+    constexpr std::uint32_t kSeekVictimReliefKeepMs = 6000;
+    constexpr std::uint32_t kSeekVictimReliefRetakeMs = 8000;
+    constexpr std::uint8_t kSeekVictimReliefMaxPerSon = 2;
+    constexpr float kSeekVictimReliefReachYd = 20.0f;
+
+    struct SeekReliefLatch
+    {
+        std::uint32_t sinceMs = 0;     // first read of the unbroken "on the boss's tank" run; 0: not running
+        std::uint32_t lastTakeMs = 0;  // the last relief start; 0: none
+        std::uint64_t lastTaker = 0;
+        std::uint8_t takes = 0;
+        std::uint32_t seenMs = 0;      // the last read that touched the latch (the sweep's clock)
+    };
+
+    // The per-Son clock: starts on the first read that sees the Son on the boss's tank, clears on the first that does
+    // not.
+    inline void SeekReliefClockTick(SeekReliefLatch& latch, bool sonOnBossTank, std::uint32_t nowMs)
+    {
+        if (sonOnBossTank)
+        {
+            if (latch.sinceMs == 0)
+                latch.sinceMs = nowMs != 0 ? nowMs : 1;
+        }
+        else
+            latch.sinceMs = 0;
+        latch.seenMs = nowMs;
+    }
+
+    // A new start is due: the flag on, the Son on the boss's tank for the dwell, under two starts, and 8 s or more
+    // since the last one. Unsigned subtraction throughout, so the 32-bit clock may wrap.
+    inline bool SeekVictimReliefDue(bool flagOn, const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        if (!flagOn || latch.sinceMs == 0)
+            return false;
+        if (nowMs - latch.sinceMs < kSeekVictimReliefDwellMs)
+            return false;
+        if (latch.takes >= kSeekVictimReliefMaxPerSon)
+            return false;
+        return latch.lastTakeMs == 0 || nowMs - latch.lastTakeMs >= kSeekVictimReliefRetakeMs;
+    }
+
+    // This tank may start it: one of the two off-tanks, not the boss's victim, not charmed, holding no Son of the
+    // fight, its taunt ready, within 20 yd of the Son.
+    inline bool SeekVictimRelieverOk(bool offTank, bool selfIsBossVictim, bool selfCharmed, bool selfHoldsSon,
+                                     bool tauntReady, float sonYd)
+    {
+        return offTank && !selfIsBossVictim && !selfCharmed && !selfHoldsSon && tauntReady &&
+            sonYd <= kSeekVictimReliefReachYd;
+    }
+
+    // A started relief of this tank is kept: the taunt's own cooldown would otherwise drop the task the tick after the
+    // cast, so the dwell and the taunt check are skipped for 6 s while the Son lives and is not on this tank yet.
+    inline bool SeekVictimReliefKept(bool flagOn, const SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
+                                     std::uint32_t nowMs)
+    {
+        return flagOn && latch.lastTakeMs != 0 && latch.lastTaker == self && !sonOnSelf &&
+            nowMs - latch.lastTakeMs <= kSeekVictimReliefKeepMs;
+    }
+
+    // The start itself: names this tank as the taker, stamps the take, counts it.
+    inline void SeekVictimReliefStart(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
+    {
+        latch.lastTakeMs = nowMs;
+        latch.lastTaker = self;
+        ++latch.takes;
+    }
+
+
     // Why a take this tick did or did not taunt: `chase_refused` (the Son stands outside the anchor and this class
     // cannot taunt it from here), `no_taunt` (the class has no taunt), `attack` (the taunt is on cooldown or out of
     // range, so Attack only), or `taunt` (the taunt is being cast). The first three are refusal codes. `edge_far` replaces
     // `chase_refused` when DungeonRunSeekTakeEdge refused a Son whose victim is inside but that stands too far out.
     // The take's source word (walk 56 F4, the `src=` field of the `seek take` row): which take path produced the task.
     // FindBossSeekTank names the path (`meet`, `nearest`, `nearest_reach`, `healer_clock`, `receiver`, `pickup`,
-    // `pull_join`, else `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the
+    // `pull_join`, `victim_relief`, else `other`); a take the take edge let through (DungeonRunSeekTakeEdge: the Son stood outside the
     // circle, and only the edge rule allowed the chase) gets `+edge` after it, e.g. `nearest+edge`, so the path stays
     // countable by prefix.
     inline std::string SeekTakeSrcWord(const char* path, bool edgeTake)
