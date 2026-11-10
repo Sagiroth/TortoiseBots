@@ -11864,6 +11864,7 @@ struct TankPostRecord
     bool arrivedLogged = false;
     std::uint64_t arrivedSubjectGuid = 0;
     std::uint32_t looseSinceMs = 0;
+    std::uint32_t unhittableSinceMs = 0;
     std::uint8_t lastStep = 0;
 };
 
@@ -11969,7 +11970,8 @@ const char* TankPostEndReason(const TankPostIn& in)
 // a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
 // reservation also ends while its tank is farther than kTankPostReserveRangeYd from the subject, or once the subject
 // has been loose off it for kGuardAssignedGraceMs from the first selectable tick it was off it, so a stranded tank
-// cannot hold the unit off the other tanks and a subject still in the air does not spend its grace before it lands.
+// cannot hold the unit off the other tanks and a subject still in the air does not spend its grace before it lands; a
+// short unhittable blip keeps the original start, a lift-off of the grace length starts a new one at the next landing.
 bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
 {
     if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
@@ -11999,9 +12001,8 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
         float const ownerYd = TankPostDistanceYd(tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(),
             target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
         bool const onOwner = target->GetVictim() == tank;
-        // The loose clock is the record's and is read under its lock: the first look at a loose subject that can be hit
-        // starts it, so a subject still in the air (unselectable, not attackable) does not spend its grace before it
-        // lands.
+        // The loose clock is the record's and is read under its lock: a subject that cannot be hit does not start it
+        // before the first landing, and keeps a running clock through short unhittable blips.
         std::uint32_t looseMs = 0;
         if (!onOwner)
         {
@@ -12010,10 +12011,13 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
             if (it == g_tankPost.end())
                 continue;
             std::uint32_t const nowMs = WorldTimer::getMSTime();
-            it->second.looseSinceMs = TankPostLooseClock(it->second.looseSinceMs, onOwner,
+            TankPostLooseClockState const loose = TankPostLooseClock(it->second.looseSinceMs,
+                it->second.unhittableSinceMs, onOwner,
                 !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE), tank->IsValidAttackTarget(target),
                 nowMs);
-            looseMs = it->second.looseSinceMs == 0 ? 0 : nowMs - it->second.looseSinceMs;
+            it->second.looseSinceMs = loose.looseSinceMs;
+            it->second.unhittableSinceMs = loose.unhittableSinceMs;
+            looseMs = loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs;
         }
         if (TankPostReserves(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, true, true, false,
                 ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs))
@@ -12279,10 +12283,13 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
         TankPostRecord& stored = g_tankPost[self];
         std::uint32_t const priorLoose = stored.looseSinceMs;
+        std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
         stored = record;
         stored.lastReadMs = nowMs;
-        stored.looseSinceMs = TankPostLooseClock(priorLoose, in.subjectOnTank, in.subjectSelectable,
-            subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
+        TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
+            in.subjectSelectable, subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
+        stored.looseSinceMs = loose.looseSinceMs;
+        stored.unhittableSinceMs = loose.unhittableSinceMs;
         stepEntered = TankPostStepEntered(stored.lastStep, step);
         stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))

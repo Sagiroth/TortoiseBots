@@ -197,7 +197,8 @@ namespace ai
     // this tank does not taunt it (the post's own slot takes it). False unless the key is on, the bot is a tank and the
     // target a creature; the other tank must be in the bot's instance, able to act, within kTankPostReserveRangeYd of
     // the target, and its record read within kTankPostLiveMs. The reservation lapses once the target has been loose off
-    // that tank for kGuardAssignedGraceMs from the first selectable tick it was off it. The two area taunts read it
+    // that tank for kGuardAssignedGraceMs from the first selectable tick it was off it (a lift-off of 8 s or more
+    // starts a new grace at the next landing; shorter blips keep the original start). The two area taunts read it
     // directly; every single-target taunt reads it through the gate above.
     bool TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target);
 

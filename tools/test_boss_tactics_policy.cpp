@@ -412,6 +412,22 @@ static void TestTankPostOwns_SubjectOnOwnerStaysReserved()
     CHECK(TankPostReserves(true, true, true, false, true, true, kGuardAssignedGraceMs * 10));
 }
 
+// One post record's loose clock across a run of ticks (`unhittableSinceMs` is the record's other field). Returns the
+// loose age in ms, 0 while the clock is not running: exactly what TankPostReserves reads.
+struct LooseClockRun
+{
+    std::uint32_t looseSinceMs = 0;
+    std::uint32_t unhittableSinceMs = 0;
+    std::uint32_t Tick(bool onOwner, bool selectable, bool attackable, std::uint32_t nowMs)
+    {
+        const TankPostLooseClockState next =
+            TankPostLooseClock(looseSinceMs, unhittableSinceMs, onOwner, selectable, attackable, nowMs);
+        looseSinceMs = next.looseSinceMs;
+        unhittableSinceMs = next.unhittableSinceMs;
+        return looseSinceMs == 0 ? 0 : nowMs - looseSinceMs;
+    }
+};
+
 // Walk 2d T round 2: an unselectable subject (a boss still in the air) never starts the loose clock, so the grace runs
 // from the first selectable tick off the post tank, not from the tick the post started waiting. A subject that waited
 // longer than the grace in the air is therefore still reserved on its landing tick, and lapses 8 s after it if it stays
@@ -421,21 +437,93 @@ static void TestTankPostOwns_LooseClockStartsOnTheLandingTick()
     const std::uint32_t airborneMs = 5000;
     const std::uint32_t landMs = airborneMs + 12000; // 12 s in the air, past the guard's 8 s grace
     // Every read while it is airborne: off the post tank, unselectable, not attackable.
-    std::uint32_t clock = 0;
+    LooseClockRun air;
     for (std::uint32_t tick = airborneMs; tick < landMs; tick += 500)
-        clock = TankPostLooseClock(clock, false, false, false, tick);
+        CHECK(air.Tick(false, false, false, tick) == 0);
     // It lands on another unit (selectable, attackable), still off the post tank: the grace starts here, so the unit is
     // reserved at this tick. A clock started in the air would already read 12000 ms loose and release it.
-    clock = TankPostLooseClock(clock, false, true, true, landMs);
-    CHECK(TankPostReserves(true, true, true, false, true, false, landMs - clock));
+    CHECK(air.Tick(false, true, true, landMs) == 0);
+    CHECK(air.looseSinceMs == landMs);
+    CHECK(TankPostReserves(true, true, true, false, true, false, landMs - air.looseSinceMs));
     // Still loose: reserved through 7999 ms from the landing tick, released at 8000 ms.
-    CHECK(TankPostReserves(true, true, true, false, true, false, landMs + kGuardAssignedGraceMs - 1 - clock));
-    CHECK(!TankPostReserves(true, true, true, false, true, false, landMs + kGuardAssignedGraceMs - clock));
-    // Back on the post tank the clock clears, so a later loose tick starts a fresh grace; a selectable subject that is
-    // still not attackable neither starts nor keeps it.
-    CHECK(TankPostLooseClock(clock, true, true, true, landMs + 1000) == 0);
-    CHECK(TankPostLooseClock(0, false, true, true, landMs + 9000) == landMs + 9000);
-    CHECK(TankPostLooseClock(landMs + 9000, false, true, false, landMs + 10000) == 0);
+    CHECK(TankPostReserves(true, true, true, false, true, false,
+        landMs + kGuardAssignedGraceMs - 1 - air.looseSinceMs));
+    CHECK(!TankPostReserves(true, true, true, false, true, false,
+        landMs + kGuardAssignedGraceMs - air.looseSinceMs));
+    // A selectable subject that is still not attackable does not start it either.
+    LooseClockRun shielded;
+    CHECK(shielded.Tick(false, true, false, 9000) == 0);
+    CHECK(shielded.looseSinceMs == 0);
+}
+
+// Walk 2d T round 3: a loose subject that blips unhittable keeps its ORIGINAL loose start; only a lift-off of the
+// grace length or more restarts the grace, so short blips cannot roll the 8 s forward and hold the reservation forever.
+static void TestTankPostOwns_ShortUnhittableBlipKeepsTheOriginalGrace()
+{
+    const std::uint32_t startMs = 10000;
+    LooseClockRun run;
+    CHECK(run.Tick(false, true, true, startMs) == 0);             // the clock starts on the first hittable loose tick
+    CHECK(run.looseSinceMs == startMs);
+    CHECK(run.Tick(false, false, false, startMs + 1000) == 1000); // 1 s into a 2 s unhittable blip
+    CHECK(run.Tick(false, false, false, startMs + 3000) == 3000); // 2 s blip: still the original start
+    CHECK(run.Tick(false, true, true, startMs + 3000) == 3000);   // hittable again: no new grace
+    CHECK(run.looseSinceMs == startMs);
+    CHECK(run.unhittableSinceMs == 0);
+    // Expiry stays measured from the original start.
+    CHECK(TankPostReserves(true, true, true, false, true, false,
+        startMs + kGuardAssignedGraceMs - 1 - run.looseSinceMs));
+    CHECK(!TankPostReserves(true, true, true, false, true, false,
+        startMs + kGuardAssignedGraceMs - run.looseSinceMs));
+}
+
+// Repeated 2 s blips cannot extend the reservation either: the start never moves, so the unit is still released 8 s
+// after the original start.
+static void TestTankPostOwns_RepeatedBlipsDoNotExtendTheGrace()
+{
+    const std::uint32_t startMs = 10000;
+    LooseClockRun run;
+    run.Tick(false, true, true, startMs);
+    for (std::uint32_t blipMs = startMs; blipMs < startMs + 12000; blipMs += 4000)
+    {
+        run.Tick(false, false, false, blipMs + 1000);
+        run.Tick(false, false, false, blipMs + 3000);
+        run.Tick(false, true, true, blipMs + 3000);
+        CHECK(run.looseSinceMs == startMs);
+    }
+    CHECK(!TankPostReserves(true, true, true, false, true, false, startMs + 12000 - run.looseSinceMs));
+}
+
+// A real lift-off of 12 s clears the clock; the next hittable tick starts a new grace from the landing tick.
+static void TestTankPostOwns_LiftOffRestartsTheGrace()
+{
+    const std::uint32_t startMs = 10000;
+    const std::uint32_t landMs = startMs + 12000;
+    LooseClockRun run;
+    run.Tick(false, true, true, startMs);
+    for (std::uint32_t tick = startMs; tick <= landMs; tick += 1000)
+        run.Tick(false, false, false, tick);
+    CHECK(run.looseSinceMs == 0);
+    CHECK(run.Tick(false, true, true, landMs) == 0);
+    CHECK(run.looseSinceMs == landMs);
+    CHECK(TankPostReserves(true, true, true, false, true, false,
+        landMs + kGuardAssignedGraceMs - 1 - run.looseSinceMs));
+    CHECK(!TankPostReserves(true, true, true, false, true, false,
+        landMs + kGuardAssignedGraceMs - run.looseSinceMs));
+}
+
+// Back on the post tank the clock and the unhittable spell clear, so a later loose tick starts a fresh grace.
+static void TestTankPostOwns_LooseClockClearsOnTheOwner()
+{
+    LooseClockRun run;
+    run.Tick(false, true, true, 10000);
+    run.Tick(false, false, false, 11000); // a spell in progress
+    CHECK(run.Tick(true, true, true, 12000) == 0);
+    CHECK(run.looseSinceMs == 0 && run.unhittableSinceMs == 0);
+    CHECK(run.Tick(false, true, true, 13000) == 0 && run.looseSinceMs == 13000);
+    // On the owner while unhittable clears the spell too, so the next loose tick is not already a lift-off.
+    run.Tick(false, false, false, 14000);
+    run.Tick(true, false, false, 15000);
+    CHECK(run.unhittableSinceMs == 0);
 }
 
 // The area taunts scan every hostile in the spell's radius, not only the selected target: a second unit 6 yd away that
@@ -1268,6 +1356,10 @@ int main()
     TestTankPostOwns_LooseSubjectReleasesAfterGrace();
     TestTankPostOwns_SubjectOnOwnerStaysReserved();
     TestTankPostOwns_LooseClockStartsOnTheLandingTick();
+    TestTankPostOwns_ShortUnhittableBlipKeepsTheOriginalGrace();
+    TestTankPostOwns_RepeatedBlipsDoNotExtendTheGrace();
+    TestTankPostOwns_LiftOffRestartsTheGrace();
+    TestTankPostOwns_LooseClockClearsOnTheOwner();
     TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestCarrierHold();

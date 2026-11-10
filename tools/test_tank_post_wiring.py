@@ -220,21 +220,31 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("target->GetVictim() == tank", reserve)
         self.assertIn("ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs)", reserve)
         # The clock starts on the first selectable, attackable tick the subject is off the post tank, so a subject still
-        # in the air does not spend its grace.
-        self.assertIn("inline std::uint32_t TankPostLooseClock(std::uint32_t prior, bool subjectOnOwner, "
-                      "bool subjectSelectable,", POLICY)
-        self.assertIn("if (subjectOnOwner || !subjectSelectable || !subjectAttackable)", POLICY)
-        self.assertIn("return prior != 0 ? prior : nowMs;", POLICY)
-        self.assertIn("it->second.looseSinceMs = TankPostLooseClock(it->second.looseSinceMs, onOwner,", reserve)
+        # in the air does not spend its grace; a running clock keeps its start through short unhittable blips and only
+        # a lift-off of the grace length clears it (the unhittable spell is tracked in the record).
+        self.assertIn("struct TankPostLooseClockState", POLICY)
+        self.assertIn("inline TankPostLooseClockState TankPostLooseClock(std::uint32_t prior, "
+                      "std::uint32_t unhittableSince,", POLICY)
+        self.assertIn("out.looseSinceMs = prior != 0 ? prior : nowMs;", POLICY)
+        self.assertIn("out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;", POLICY)
+        self.assertIn("out.looseSinceMs = nowMs - out.unhittableSinceMs >= kGuardAssignedGraceMs ? 0 : prior;",
+                      POLICY)
+        self.assertIn("TankPostLooseClockState const loose = TankPostLooseClock(it->second.looseSinceMs,", reserve)
+        self.assertIn("it->second.unhittableSinceMs, onOwner,", reserve)
         self.assertIn("!target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE), "
                       "tank->IsValidAttackTarget(target),", reserve)
-        self.assertIn("looseMs = it->second.looseSinceMs == 0 ? 0 : nowMs - it->second.looseSinceMs;", reserve)
-        # The action's store keeps the clock current through the same rule: on its tank clears it, a subject in the
-        # air does not start it.
-        self.assertIn("stored.looseSinceMs = TankPostLooseClock(priorLoose, in.subjectOnTank, "
-                      "in.subjectSelectable,", ACTIONS)
+        self.assertIn("it->second.looseSinceMs = loose.looseSinceMs;", reserve)
+        self.assertIn("it->second.unhittableSinceMs = loose.unhittableSinceMs;", reserve)
+        self.assertIn("looseMs = loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs;", reserve)
+        # The action's store keeps the clock current through the same rule: on its tank clears both fields, and a
+        # subject in the air neither starts the clock nor loses the start it had.
+        self.assertIn("TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, "
+                      "in.subjectOnTank,", ACTIONS)
         self.assertIn("subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);", ACTIONS)
+        self.assertIn("stored.looseSinceMs = loose.looseSinceMs;", ACTIONS)
+        self.assertIn("stored.unhittableSinceMs = loose.unhittableSinceMs;", ACTIONS)
         self.assertIn("std::uint32_t looseSinceMs = 0;", ACTIONS)
+        self.assertIn("std::uint32_t unhittableSinceMs = 0;", ACTIONS)
         # The gate refuses before it reads its own key: the reservation does not need DungeonRunTauntGate.
         gate = body(ACTIONS, "bool ai::TauntRefusedByGate(")
         self.assertLess(gate.index("TankPostReservesSubject(ai, bot, target)"),

@@ -3634,17 +3634,33 @@ namespace ai
             (subjectOnOwner || looseMs < kGuardAssignedGraceMs);
     }
 
-    // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on
-    // its post tank, and while the subject cannot be hit (unselectable or not attackable: a boss still in the air, out
-    // of reach of every tank), so the grace never runs out before it lands. It starts on the first selectable,
-    // attackable tick with the subject off the tank, and stays at that start while it remains loose. `prior` is the
-    // record's clock (0: not started).
-    inline std::uint32_t TankPostLooseClock(std::uint32_t prior, bool subjectOnOwner, bool subjectSelectable,
-                                            bool subjectAttackable, std::uint32_t nowMs)
+    // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on its
+    // post tank, and while the subject cannot be hit before the clock has started (unselectable or not attackable: a
+    // boss still in the air, out of reach of every tank), so the grace is not spent before it lands. It starts on the
+    // first hittable tick with the subject off the tank. A running clock keeps its start through unhittable spells
+    // shorter than the grace (a shrug, a blink, a brief immunity). A spell of the grace length or more is a real
+    // lift-off: the clock clears, so the next hittable tick starts a new grace. `prior` is the record's clock (0: not
+    // started); `unhittableSince` is the start of the current unhittable spell (0: none).
+    struct TankPostLooseClockState
     {
-        if (subjectOnOwner || !subjectSelectable || !subjectAttackable)
-            return 0;
-        return prior != 0 ? prior : nowMs;
+        std::uint32_t looseSinceMs = 0;
+        std::uint32_t unhittableSinceMs = 0;
+    };
+    inline TankPostLooseClockState TankPostLooseClock(std::uint32_t prior, std::uint32_t unhittableSince,
+                                                      bool subjectOnOwner, bool subjectSelectable,
+                                                      bool subjectAttackable, std::uint32_t nowMs)
+    {
+        TankPostLooseClockState out;
+        if (subjectOnOwner)
+            return out;
+        if (subjectSelectable && subjectAttackable)
+        {
+            out.looseSinceMs = prior != 0 ? prior : nowMs;
+            return out;
+        }
+        out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;
+        out.looseSinceMs = nowMs - out.unhittableSinceMs >= kGuardAssignedGraceMs ? 0 : prior;
+        return out;
     }
 
     // The area taunts (challenging shout, challenging roar) taunt every hostile within their radius of the caster, not
