@@ -1,5 +1,6 @@
 # Changelog
 
+- New: Onyxia's Lair walk 2b rows: 601 Deep Breath stand seats, one anchor per hover point opening on that point's breath while she hovers and holding 12 s, every seat more than 33 yd from its lane's ticks, so seated bots keep their seat instead of the generic breath dodge.
 - New: Onyxia's Lair walk 2a rows: slot 1 posts at the NE spot for Cindarion from 65-41 %, damage holds off Onyxia at 42 % while he fights, and the raid stays within 60 yd of the room centre so the respawned room-mouth Warder is never chased into.
 - New: behind AiPlayerbot.DungeonRunSeekPullerKeepsFight (default 0, recommended on, needs AiPlayerbot.DungeonRunSeekWalkoutFocus), a Hakkar walk-out puller more than its sight distance from the raid keeps the boss in its own fight scan, so its walk-out keeps running instead of standing frozen until the 15 s no-sight cut, with one `seek pull: walk-out kept boss` row a walk-out.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.

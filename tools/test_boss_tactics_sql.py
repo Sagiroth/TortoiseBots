@@ -895,6 +895,65 @@ class BossTacticsSql(unittest.TestCase):
                     (249, 50144, "behind", 0, 33441)):
             self.assertIn(key, live, "the Cindarion/Hatcher rows must stay: %s" % (key,))
 
+    def test_onyxia_walk2b_stand_seats_are_live(self):
+        # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
+        # points, one stand anchor per point opening on that point's breath spell while she
+        # hovers (aura 17131, stopped_no_target) and releasing at the far point. The count pin
+        # is the gate: without the migration no 10184 stand row is live.
+        name = "20261110120300_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_stand` WHERE `map` = 249 AND `boss_entry` = 10184;", text)
+        stand_insert = re.compile(
+            r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_stand`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+            re.IGNORECASE | re.S)
+        columns = None
+        rows = []
+        for statement in _sql_statements(text):
+            match = stand_insert.match(statement.strip())
+            if not match:
+                continue
+            columns = [column.strip().strip("`") for column in match.group(1).split(",")]
+            for tuple_text in _tuples(match.group(2)):
+                values = _selected_values(tuple_text, set(range(len(columns))))
+                rows.append({column: _value(values[index]) for index, column in enumerate(columns)})
+        self.assertIsNotNone(columns, "the walk 2b migration writes no ai_boss_stand rows")
+        self.assertEqual(601, len(rows), "the walk 2b migration must carry the 601 Deep Breath seats")
+        hover = {1: (10.2191, -247.912, 18617), 2: (-31.4963, -250.123, 18576),
+                 3: (-63.5156, -240.096, 18564), 4: (-65.8444, -213.809, 18351),
+                 5: (-58.2509, -189.020, 18596), 6: (-33.5561, -182.682, 18609),
+                 7: (6.8951, -180.246, 18584), 8: (22.8763, -217.152, 17086)}
+        counts = {}
+        for row in rows:
+            where = "%s anchor %s side %s seq %s" % (name, row["anchor"], row["side"], row["seq"])
+            self.assertEqual(249, row["map"], where)
+            self.assertEqual(10184, row["boss_entry"], where)
+            point = hover[row["anchor"]]
+            self.assertAlmostEqual(point[0], row["anchor_x"], places=3, msg=where)
+            self.assertAlmostEqual(point[1], row["anchor_y"], places=3, msg=where)
+            self.assertEqual(point[2], row["window_spell"], where)
+            self.assertEqual(17131, row["aura"], where)
+            self.assertEqual("stopped_no_target", row["window_signal"], where)
+            self.assertEqual(12000, row["hold_ms"], where)
+            self.assertEqual((row["anchor"] + 3) % 8 + 1, row["release_anchor"], where)
+            key = (row["anchor"], row["side"], row["role"])
+            counts[key] = counts.get(key, 0) + 1
+        expected = {1: {0: (10, 16, 8), 1: (10, 16, 13)},
+                    2: {0: (10, 16, 11), 1: (10, 16, 13)},
+                    3: {0: (10, 16, 13), 1: (10, 16, 13)},
+                    4: {0: (10, 16, 13), 1: (10, 16, 7)},
+                    5: {0: (10, 16, 13), 1: (10, 16, 13)},
+                    6: {0: (10, 16, 13), 1: (10, 16, 11)},
+                    7: {0: (10, 16, 13), 1: (10, 16, 5)},
+                    8: {0: (10, 16, 13), 1: (10, 16, 13)}}
+        for anchor, sides in expected.items():
+            for side, quotas in sides.items():
+                for role, quota in zip(("healer", "ranged", "melee"), quotas):
+                    self.assertEqual(quota, counts.get((anchor, side, role), 0),
+                                     "anchor %d side %d role %s" % (anchor, side, role))
+
     def test_arlokk_rows(self):
         # 20261105190000_world.sql: the boss-first grid entries (Arlokk herself, then the Zulian Prowler while she is
         # vanished), the until_tank cover after an Ambush or a Gouge, and the 2 s hold on her panther transform. The

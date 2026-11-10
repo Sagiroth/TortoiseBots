@@ -216,6 +216,7 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Boss | Rows |
 | :--- | :--- |
 | Onyxia | `tank_post` slot 1 at the NE spot T (8.0, -200.0, -85.8) from 65-41 %, attacks Cindarion within 25 yd of it once selectable; `gate_hold` 42 % on her while Cindarion fights (200 yd); `anchor` room centre (-22.0, -213.5, -86.5) radius 60 (the respawned room-mouth Warder is never chased into). Needs `AiPlayerbot.DungeonRunTankPost = 1` and `AiPlayerbot.DungeonRunGateHold = 1` |
+| Onyxia's Deep Breath seats | 601 stand seats (anchors 1-8 at her hover points): each lane's seats open on that point's breath while she hovers, hold 12 s, and sit more than 33 yd from every tick of the lane; seated bots keep their seat instead of the generic breath dodge (`AiPlayerbot.BossStandOutranksBreathDodge = 1`) |
 | Cindarion | `taunt_after_cast` mode `until_tank`, tank 1, 4 s (no fixate, plain threat; the first off-tank takes him back whenever he stands on a non-tank); `interrupt` Flame Breath 33439; `behind` 30 yd; `kill_first` self (2, before Onyxia whenever targetable). Needs `AiPlayerbot.DungeonRunAuraTactics = 1` |
 | Onyxian Hatcher | `kill_first` self (1, first in P3); `taunt_after_cast` mode `until_tank`, tank 2, 4 s (opens on a random raid member; the second off-tank takes it off a non-tank); `behind` Flaming Cleave 33441, 12 yd. Needs `AiPlayerbot.DungeonRunAuraTactics = 1` |
 | Onyxian Warder | healer stand set (9 seats, 34 yd) and ranged stand set (5 seats, 26 yd) at the corridor junction where the room-mouth pack is fought |
