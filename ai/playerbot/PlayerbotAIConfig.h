@@ -790,6 +790,9 @@ public:
     // A seated bot keeps its boss stand seat through Onyxia's Deep Breath instead of walking to the generic safe
     // spots: off, the breath dodge runs as before even for a seated bot (default off).
     bool bossStandOutranksBreathDodge = false;
+    // The fixed ranged slots of a live spread row (each ranged bot and healer owns a ring point and stands on it
+    // whenever the seek does not need it): off, today's step-away (default off, recommended on).
+    bool dungeonRunBossSpreadSlots = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).

@@ -335,7 +335,14 @@ class BossStandWiring(unittest.TestCase):
             self.assertIn("bool isUseful() override;", declared)
             fn = body(DUNGEON_ACTIONS, "bool %s::isUseful()" % cls)
             self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
-            self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
+            # Both read the seat before they report themselves usable; the spread action's slot verdict row logs the
+            # stand on the way, and it still answers false for a seated bot.
+            self.assertIn("FindBossStand(ai, bot).valid", fn)
+        self.assertIn("return !FindBossStand(ai, bot).valid;",
+                      body(DUNGEON_ACTIONS, "bool DragonFlankAction::isUseful()"))
+        spread = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
+        self.assertIn("if (FindBossStand(ai, bot).valid)", spread)
+        self.assertIn("\n        return false;\n    }\n    return true;", spread)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

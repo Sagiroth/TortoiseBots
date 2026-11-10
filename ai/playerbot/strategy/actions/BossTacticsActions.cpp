@@ -18,6 +18,7 @@
 #include "playerbot/BossTacticsMgr.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/SeekAuraPolicy.h"
+#include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/SeekFightStatePolicy.h"
 #include "playerbot/SeekWalkoutPolicy.h"
 #include "Maps/PathFinder.h"
@@ -893,6 +894,27 @@ void ResetSeekTickCache()
     t_seekTick.read = false;
     t_seekTick.fight = SeekFight();
 }
+
+// The slot read's answer for one bot and one AI update. The slot trigger, the old spread trigger and the action all
+// ask within the same update, and the read builds the ring points, maps the group and samples the floor.
+struct SpreadSlotTickCache
+{
+    bool live = false;
+    PlayerbotAI* ai = nullptr;
+    std::uint64_t botGuid = 0;
+    std::uint32_t tick = 0;
+    BossSpreadSlotTask task;
+};
+thread_local SpreadSlotTickCache t_spreadSlotTick;
+
+void ResetSpreadSlotTickCache()
+{
+    t_spreadSlotTick.live = false;
+    t_spreadSlotTick.ai = nullptr;
+    t_spreadSlotTick.botGuid = 0;
+    t_spreadSlotTick.tick = 0;
+    t_spreadSlotTick.task = BossSpreadSlotTask();
+}
 }
 
 bool ai::IsBattleDps(Player* bot)
@@ -904,6 +926,7 @@ ai::BossTacticsScanScope::BossTacticsScanScope()
 {
     t_fightScan.live = true;
     t_seekTick.live = true;
+    t_spreadSlotTick.live = true;
 }
 
 ai::BossTacticsScanScope::~BossTacticsScanScope()
@@ -914,6 +937,7 @@ ai::BossTacticsScanScope::~BossTacticsScanScope()
     t_fightScan.table = nullptr;
     t_fightScan.fight = BossTacticsFight();
     ResetSeekTickCache();
+    ResetSpreadSlotTickCache();
 }
 
 namespace
@@ -1143,6 +1167,11 @@ const float kSeekTankArriveYd = 4.0f;
 const std::uint32_t kSeekLogGapMs = 5000;
 std::mutex g_seekLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekLog;
+// The spread slot rows have their own throttle: a seek row or a take row on the same bot must not swallow them.
+std::mutex g_spreadLogMutex;
+// The update tick is kept with the window so a failed move can correct the row its own tick's read wrote.
+struct SpreadLogWindow { std::uint32_t ms = 0; std::uint32_t tick = 0; };
+std::map<std::uint64_t, SpreadLogWindow> g_spreadLog;
 // The pull rows' own throttle, so a pull that keeps walking does not swallow the seek rows' 5 s window.
 std::mutex g_seekPullLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
@@ -4769,6 +4798,70 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
                              static_cast<float>(state.row->priority));
 }
 }  // namespace
+
+// One `BossTacticsSpread` row per bot and 5 s: the slot read writes it with the key on, the old step-away with it off,
+// and that one writer per state is SpreadLogOwned. The row carries the key, the verdict word, the owned slot and its
+// distance, the spare point the walk goes to, and the numbers the walk reads. The throttle is checked before any
+// distance is computed. A no-op unless bot_events.csv is an allowed log.
+void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
+                       const char* centre, bool replaceSameTick)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint32_t tick = ai->UpdateTick();
+    {
+        std::lock_guard<std::mutex> lock(g_spreadLogMutex);
+        SpreadLogWindow& last = g_spreadLog[bot->GetObjectGuid().GetRawValue()];
+        // A failed move corrects the verdict row its own tick's read wrote; any older row keeps the bot's window.
+        if (last.ms != 0 && nowMs - last.ms < kSeekLogGapMs &&
+            !(replaceSameTick && tick != 0 && last.tick == tick))
+            return;
+        last.ms = nowMs;
+        last.tick = tick;
+    }
+    float nearestYd = -1.0f;
+    int within = 0;
+    const float spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !member->IsInWorld() || !sServerFacade.IsAlive(member) ||
+                member->GetMapId() != bot->GetMapId())
+                continue;
+            const float yd = sServerFacade.getDistance2d(bot, member);
+            if (nearestYd < 0.0f || yd < nearestYd)
+                nearestYd = yd;
+            if (yd < spacingYd)
+                ++within;
+        }
+    }
+    int aura = 0;
+    int dueIn = -1;
+    SeekFight state;
+    if (ReadSeekFightCached(ai, bot, state))
+    {
+        aura = state.row && bot->HasAura(state.row->spellId) ? 1 : 0;
+        // No cycle sighted yet: the clock is unknown, not due now.
+        if (state.dueMs != 0)
+            dueIn = static_cast<int>(state.dueInMs / 1000);
+    }
+    char info1[192];
+    // The read knows the centre it used; the legacy writer derives it. No anchor and no seek spot is `none`, never
+    // `spot`: the field exists to show exactly that failure.
+    if (!centre)
+    {
+        BossAnchorCircle circle;
+        const bool anchored = LiveBossAnchor(ai, bot, circle);
+        centre = SpreadCentreWord(SpreadCentreFor(anchored, FindBossSeek(ai, bot).valid));
+    }
+    snprintf(info1, sizeof(info1),
+             "flag=%d,verdict=%s,slot=%d,slot_yd=%.1f,fallback=%d,centre=%s,nearest_yd=%.1f,within=%d,aura=%d,due_in=%d",
+             sPlayerbotAIConfig.dungeonRunBossSpreadSlots ? 1 : 0, verdict ? verdict : "no_centre", slot, slotYd,
+             fallback, centre, nearestYd, within, aura, dueIn);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSpread", info1, "");
+}
 
 std::uint64_t ai::SeekMeetHealPuller(std::uint32_t instanceId)
 {
@@ -8881,6 +8974,201 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
     return WidestSpreadYd(params, fallback);
 }
 
+namespace
+{
+// D5: one slot point, clamped into the live anchor and standing on the centre's floor. False when the anchor refuses
+// it, the clamp moves it, or no ground within the height rule lies under it.
+bool SpreadSlotPointUsable(PlayerbotAI* ai, Player* bot, float centreZ, const SpreadSlotPoint& point, float& x, float& y,
+                           float& z)
+{
+    x = point.x;
+    y = point.y;
+    z = centreZ;
+    float clampX = x;
+    float clampY = y;
+    float clampZ = z;
+    if (!ClampMoveToBossAnchor(ai, bot, clampX, clampY, clampZ))
+        return false;
+    if (std::fabs(clampX - x) > 0.5f || std::fabs(clampY - y) > 0.5f)
+        return false;
+    Map* const map = bot->GetMap();
+    const float floor = map ? map->GetHeight(clampX, clampY, centreZ + 5.0f) : INVALID_HEIGHT;
+    if (floor <= INVALID_HEIGHT || std::fabs(floor - centreZ) > kBossAnchorFloorYd)
+        return false;
+    x = clampX;
+    y = clampY;
+    z = floor;
+    return true;
+}
+
+// The read proper. It never reads the key for its decision, so the caller decides whether the slot moves the bot;
+// only the row it writes is keyed, and with the key off the old step-away owns the row.
+BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+{
+    BossSpreadSlotTask task;
+    if (!ai || !bot)
+        return task;
+    // D1: a ranged bot that is not a tank, alive in the world and in the fight, under a live spread row.
+    if (!ai->IsRanged(bot) || PlayerbotAI::IsTank(bot))
+        return task;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot) ||
+        !sServerFacade.IsInCombat(bot))
+        return task;
+    if (!BossSpreadLive(ai, bot))
+        return task;
+    task.slotBot = true;
+    AiObjectContext* const context = ai->GetAiObjectContext();
+
+    // D6's early gates.
+    const SeekTask seek = FindBossSeek(ai, bot);
+    const BossStandTarget stand = FindBossStand(ai, bot);
+    SeekFight state;
+    const bool fightRead = ReadSeekFightCached(ai, bot, state);
+    Unit* const boss = fightRead ? state.boss : nullptr;
+    const bool charmed = !bot->GetCharmerGuid().IsEmpty();
+    const bool victimOrCharmed = charmed || (boss && boss->GetVictim() == bot);
+    const bool walkout = SeekWalkoutExemptsBot(bot);
+
+    // D2: the centre is the live anchor's circle, else the fight's seek_aura spot.
+    bool anchored = false;
+    float cx = 0.0f, cy = 0.0f, cz = 0.0f, radius = 0.0f;
+    BossAnchorCircle circle;
+    if (LiveBossAnchor(ai, bot, circle))
+    {
+        anchored = true;
+        cx = circle.x;
+        cy = circle.y;
+        cz = circle.z;
+        radius = circle.radius;
+    }
+    else if (fightRead && state.row)
+    {
+        cx = state.row->spotX;
+        cy = state.row->spotY;
+        cz = state.row->spotZ;
+    }
+    const bool hasCentre = anchored || (fightRead && state.row);
+
+    // D3's preference point: the seek spot when the fight has one, else the centre.
+    const bool hasSeekSpot = fightRead && state.row;
+    task.centreKind = SpreadCentreFor(anchored, hasSeekSpot);
+    const float prefX = hasSeekSpot ? state.row->spotX : cx;
+    const float prefY = hasSeekSpot ? state.row->spotY : cy;
+
+    std::vector<SpreadSlotPoint> points;
+    if (hasCentre)
+    {
+        const float spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+        points = SpreadSlotPoints(cx, cy, spacingYd, SpreadSlotRings(spacingYd, anchored, radius));
+        SpreadSlotOrder(points, prefX, prefY);
+    }
+
+    // D4: the bot's index among the slot-eligible members, dead ones included so a death moves nobody.
+    std::vector<std::uint64_t> eligible;
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member->GetMapId() != bot->GetMapId())
+                continue;
+            if (!ai->IsRanged(member) || PlayerbotAI::IsTank(member))
+                continue;
+            eligible.push_back(member->GetObjectGuid().GetRawValue());
+        }
+    }
+    const int index = SpreadSlotIndexOf(eligible, bot->GetObjectGuid().GetRawValue());
+    const int count = static_cast<int>(eligible.size());
+    const int total = static_cast<int>(points.size());
+    const bool hasSlot = hasCentre && index >= 0 && index < total;
+    const int owned = hasSlot ? index : -1;
+
+    // D5: the owned slot; one spare-slot fallback when it is unusable, then the floor verdict.
+    bool ownedUsable = false;
+    int fallback = -1;
+    bool fallbackUsable = false;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    if (owned >= 0)
+    {
+        ownedUsable = SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(owned)], x, y, z);
+        if (!ownedUsable)
+        {
+            fallback = SpreadSlotFallback(index, count, total);
+            fallbackUsable = fallback >= 0 && fallback < total &&
+                             SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(fallback)], x, y, z);
+        }
+    }
+    const SpreadSlotSelection selection = SpreadSlotSelect(owned, fallback, ownedUsable, fallbackUsable);
+    const bool slotUsable = selection.moveSlot >= 0;
+
+    // The row always reports the owned slot and its distance; the walk and the arrival use the point actually stood on.
+    const auto pointYd = [bot](const SpreadSlotPoint& point) {
+        const float dx = bot->GetPositionX() - point.x;
+        const float dy = bot->GetPositionY() - point.y;
+        return std::sqrt(dx * dx + dy * dy);
+    };
+    float slotYd = -1.0f;
+    bool arrived = false;
+    bool inRange = true;
+    if (owned >= 0)
+    {
+        slotYd = pointYd(points[static_cast<std::size_t>(owned)]);
+        if (selection.moveSlot >= 0)
+            arrived = pointYd(points[static_cast<std::size_t>(selection.moveSlot)]) <= kSpreadSlotArriveYd;
+        // A healer measures from the boss's victim, a damage dealer from its own target; no target is in range.
+        Unit* const targetUnit = ai->IsHeal(bot) ? (boss ? boss->GetVictim() : nullptr) :
+                                                  AI_VALUE(Unit*, "current target");
+        if (slotUsable && targetUnit)
+        {
+            const float tx = x - targetUnit->GetPositionX();
+            const float ty = y - targetUnit->GetPositionY();
+            inRange = std::sqrt(tx * tx + ty * ty) <= kSpreadSlotMaxTargetYd;
+        }
+    }
+
+    const bool castBlocked = MoveBlockedByCast(bot->IsNonMeleeSpellCasted(false, true, true), false);
+    task.verdict = SpreadSlotWanted(seek.valid, stand.valid, victimOrCharmed, walkout, hasCentre, hasSlot,
+                                    slotUsable, inRange, castBlocked, arrived);
+    task.slot = selection.slot;
+    task.fallback = selection.fallback;
+    task.slotYd = selection.slot >= 0 ? slotYd : -1.0f;
+    if (slotUsable)
+    {
+        task.x = x;
+        task.y = y;
+        task.z = z;
+    }
+    // The row has one writer per key state: with the key on this read writes every slot verdict; with it off the old
+    // step-away writes its gate words and this read writes nothing. The action only adds move_failed for a move it
+    // could not send.
+    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))
+        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback,
+                      SpreadCentreWord(task.centreKind));
+    return task;
+}
+}  // namespace
+
+// One read per bot and AI update: the slot trigger, the old spread trigger and the action all ask on the same tick.
+// Outside an update (an explicit command moved the world on) the answer is read fresh and not kept.
+BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return BossSpreadSlotTask();
+    const std::uint32_t tick = ai->UpdateTick();
+    const std::uint64_t guid = bot->GetObjectGuid().GetRawValue();
+    const bool cache = t_spreadSlotTick.live;
+    if (cache && t_spreadSlotTick.ai == ai && t_spreadSlotTick.botGuid == guid && t_spreadSlotTick.tick == tick)
+        return t_spreadSlotTick.task;
+    const BossSpreadSlotTask task = ReadBossSpreadSlot(ai, bot);
+    if (cache)
+    {
+        t_spreadSlotTick.ai = ai;
+        t_spreadSlotTick.botGuid = guid;
+        t_spreadSlotTick.tick = tick;
+        t_spreadSlotTick.task = task;
+    }
+    return task;
+}
+
 void ai::ReleaseWalkoutPet(Player* bot)
 {
     if (!bot || g_petHoldCount.load(std::memory_order_relaxed) == 0)
@@ -9709,6 +9997,83 @@ bool BossTacticsSeekAction::Execute(Event& event)
     lastX = x;
     lastY = y;
     hasLast = true;
+    return true;
+}
+
+bool BossTacticsSpreadSlotAction::isUseful()
+{
+    return ai->CanMove();
+}
+
+bool BossTacticsSpreadSlotAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsSpreadSlotAction::Execute(Event& event)
+{
+    (void)event;
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        return false;
+    const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
+    if (!task.slotBot)
+        return false;
+    // A damage dealer that has read `cast` for 6 s in a row stops its own cast for the walk; a healer never does.
+    bool castCut = false;
+    if (task.verdict == SpreadSlotVerdict::Cast)
+    {
+        const std::uint32_t nowMs = WorldTimer::getMSTime();
+        SpreadCastClock clock;
+        clock.sinceMs = castSinceMs;
+        clock.seenMs = castSeenMs;
+        castSinceMs = SpreadSlotCastStart(clock, nowMs);
+        castSeenMs = clock.seenMs;
+        if (SpreadSlotCastCutDue(ai->IsHeal(bot), castSinceMs, nowMs))
+        {
+            bot->CastStop();
+            castSinceMs = 0;
+            castSeenMs = 0;
+            castCut = true;
+        }
+    }
+    else
+    {
+        castSinceMs = 0;
+        castSeenMs = 0;
+    }
+    if (task.verdict == SpreadSlotVerdict::SlotHold)
+    {
+        // At the slot: stop a walk once, then leave the tick to the rotation (the seek action's atSpot branch,
+        // without CastStop).
+        hasLast = false;
+        const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
+        if (SeekActionConsumesTick(true, moving))
+        {
+            ai->StopMoving();
+            return true;
+        }
+        return false;
+    }
+    if (task.verdict != SpreadSlotVerdict::SlotMove && !castCut)
+        return false;
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
+        std::fabs(lastY - task.y) < 1.0f)
+        return true;
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true))
+    {
+        hasLast = false;
+        LogBossSpread(ai, bot, "move_failed", task.slot, task.slotYd, task.fallback, nullptr, true);
+        return false;
+    }
+    lastX = task.x;
+    lastY = task.y;
+    hasLast = true;
+    // The landing becomes the stay spot, as the raid spread step does, so the return to the stay keeps the slot.
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT))
+    {
+        ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+        posMap["stay"].Set(task.x, task.y, task.z, bot->GetMapId());
+    }
     return true;
 }
 

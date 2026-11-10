@@ -183,6 +183,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // A ranged bot owns a fixed slot between the doses and has to hold it or walk back to it
+    // (DungeonRunBossSpreadSlots).
+    class BossTacticsSpreadSlotTrigger : public Trigger
+    {
+    public:
+        BossTacticsSpreadSlotTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tactics spread slot", 1) {}
+        bool IsActive() override;
+    };
+
     // The second off-tank has a source to take, to pull, or to drag back to the row's spot.
     class BossTacticsSeekTankTrigger : public Trigger
     {

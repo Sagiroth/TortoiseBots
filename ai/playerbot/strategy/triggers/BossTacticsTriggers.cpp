@@ -500,6 +500,22 @@ bool BossTacticsSeekTrigger::IsActive()
     return FindBossSeek(ai, bot).valid;
 }
 
+bool BossTacticsSpreadSlotTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // The key gate comes first: with it off the slot read writes nothing and the old step-away owns the row, so the
+    // read is not even taken. With it on, the read writes the row on the tick path and only the verdicts that need a
+    // walk or a hold fire the action.
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        return false;
+    const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
+    if (!task.slotBot)
+        return false;
+    return task.verdict == SpreadSlotVerdict::SlotMove || task.verdict == SpreadSlotVerdict::SlotHold ||
+           task.verdict == SpreadSlotVerdict::Cast;
+}
+
 bool BossTacticsSeekPetTrigger::IsActive()
 {
     if (!Ready(ai, bot))
