@@ -735,14 +735,17 @@ namespace ai
     constexpr std::uint32_t kSeekVictimReliefRetakeMs = 8000;
     constexpr std::uint8_t kSeekVictimReliefMaxPerSon = 2;
     constexpr float kSeekVictimReliefReachYd = 20.0f;
+    constexpr std::uint32_t kSeekVictimReliefClaimMs = 1000;
 
     struct SeekReliefLatch
     {
         std::uint32_t sinceMs = 0;     // first read of the unbroken "on the boss's tank" run; 0: not running
-        std::uint32_t lastTakeMs = 0;  // the last counted relief start; 0: none
+        std::uint32_t lastStartMs = 0;  // the last confirmed relief start; 0: none
         std::uint64_t lastTaker = 0;
         std::uint64_t activeTaker = 0;    // the reliever whose attempt the keep window still covers; 0: none
         std::uint32_t activeSinceMs = 0;  // that attempt's first stamp; later ticks never move it
+        std::uint64_t claimTaker = 0;     // the pending selection claim; 0: none
+        std::uint32_t claimMs = 0;        // the claim's tick; it expires 1000 ms later
         std::uint8_t takes = 0;
         std::uint32_t seenMs = 0;      // the last read that touched the latch (the sweep's clock)
     };
@@ -761,8 +764,22 @@ namespace ai
         latch.seenMs = nowMs;
     }
 
+    // A live selection claim, whatever taker holds it: pending for 1000 ms after its tick. Unsigned subtraction
+    // throughout, so the 32-bit clock may wrap.
+    inline bool SeekVictimReliefClaimLive(const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        return latch.claimTaker != 0 && nowMs - latch.claimMs < kSeekVictimReliefClaimMs;
+    }
+
+    // A live relief attempt: a confirmed start whose 6 s keep window still runs.
+    inline bool SeekVictimReliefAttemptLive(const SeekReliefLatch& latch, std::uint32_t nowMs)
+    {
+        return latch.activeTaker != 0 && nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs;
+    }
+
     // A new start is due: the flag on, the Son on the boss's tank for the dwell, under two starts, and 8 s or more
-    // since the last one. Unsigned subtraction throughout, so the 32-bit clock may wrap.
+    // since the last confirmed one. Unsigned subtraction throughout, so the 32-bit clock may wrap. This gates the
+    // selection claim; the execution confirm re-checks the cap and the spacing under the same lock.
     inline bool SeekVictimReliefDue(bool flagOn, const SeekReliefLatch& latch, std::uint32_t nowMs)
     {
         if (!flagOn || latch.sinceMs == 0)
@@ -771,7 +788,7 @@ namespace ai
             return false;
         if (latch.takes >= kSeekVictimReliefMaxPerSon)
             return false;
-        return latch.lastTakeMs == 0 || nowMs - latch.lastTakeMs >= kSeekVictimReliefRetakeMs;
+        return latch.lastStartMs == 0 || nowMs - latch.lastStartMs >= kSeekVictimReliefRetakeMs;
     }
 
     // This tank may start it: one of the two off-tanks, not the boss's victim, not charmed, holding no Son of the
@@ -783,38 +800,70 @@ namespace ai
             sonYd <= kSeekVictimReliefReachYd;
     }
 
+    // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two off-tanks
+    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms; a live
+    // claim by another taker, or a live attempt, leaves this bot with nothing. The caller checks the tank's
+    // eligibility first, so a bot that cannot take never holds the claim.
+    inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
+    {
+        if (!SeekVictimReliefDue(flagOn, latch, nowMs))
+            return false;
+        if (SeekVictimReliefAttemptLive(latch, nowMs))
+            return false;
+        if (SeekVictimReliefClaimLive(latch, nowMs) && latch.claimTaker != self)
+            return false;
+        latch.claimTaker = self;
+        latch.claimMs = nowMs;
+        return true;
+    }
+
     // A started relief of this tank is kept: the taunt's own cooldown would otherwise drop the task the tick after the
     // cast, so the dwell and the taunt check are skipped for 6 s from the attempt's first stamp while the Son lives
     // and is not on this tank yet. Later execution ticks neither recount nor extend the window.
     inline bool SeekVictimReliefKept(bool flagOn, const SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
                                      std::uint32_t nowMs)
     {
-        return flagOn && latch.activeTaker != 0 && latch.activeTaker == self && !sonOnSelf &&
-            nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs;
+        return flagOn && latch.activeTaker == self && !sonOnSelf &&
+            SeekVictimReliefAttemptLive(latch, nowMs);
     }
 
-    // The start itself: names this tank as the taker, stamps the take, counts it, and opens the keep window. Pick
-    // time asks only whether a start is due; the caller stamps it once the take really starts (the attack order or
-    // the taunt cast went out), so a refused or blocked start counts nothing.
+    // The start itself: names this tank as the taker, stamps the take, counts it, and opens the keep window. Only
+    // the execution confirm calls it, once the take really started (the attack order or the taunt cast went out),
+    // so a refused or blocked start counts nothing.
     inline void SeekVictimReliefStart(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
     {
-        latch.lastTakeMs = nowMs;
+        latch.lastStartMs = nowMs;
         latch.lastTaker = self;
         latch.activeTaker = self;
         latch.activeSinceMs = nowMs;
         ++latch.takes;
     }
-    // The execution stamp: the started latch only when the take really started (a taunt cast, or the attack order
-    // issued) and no attempt by this taker is already active. A start that is refused or blocked, or a tick of an
-    // attempt the keep window still covers, leaves the latch untouched: no stamp, no count.
+    // The execution confirm: stamps the claimed start only when the take really started (a taunt cast, or the attack
+    // order issued), the claim is this taker's and live, and the cap and the 8 s spacing still hold; then clears the
+    // claim. A refused or failed take rolls this taker's claim back and stamps nothing, and a tick of an already
+    // active attempt by this taker stamps nothing either. Any failed check leaves the count and the stamps untouched.
     inline bool SeekVictimReliefNoteExec(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs, bool started)
     {
         if (!started)
+        {
+            if (latch.claimTaker == self)
+            {
+                latch.claimTaker = 0;
+                latch.claimMs = 0;
+            }
             return false;
-        if (latch.activeTaker != 0 && latch.activeTaker == self &&
-            nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs)
+        }
+        if (latch.activeTaker == self && SeekVictimReliefAttemptLive(latch, nowMs))
+            return false;
+        if (latch.claimTaker != self || !SeekVictimReliefClaimLive(latch, nowMs))
+            return false;
+        if (latch.takes >= kSeekVictimReliefMaxPerSon)
+            return false;
+        if (latch.lastStartMs != 0 && nowMs - latch.lastStartMs < kSeekVictimReliefRetakeMs)
             return false;
         SeekVictimReliefStart(latch, self, nowMs);
+        latch.claimTaker = 0;
+        latch.claimMs = 0;
         return true;
     }
     // The active attempt's end: the Son reached its reliever, or the 6 s from the first stamp ran out. The sweep

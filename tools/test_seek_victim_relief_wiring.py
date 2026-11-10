@@ -47,9 +47,17 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekVictimRelief", fn)
         self.assertIn("SeekTankTauntReady(", fn)
         self.assertIn("PlayerHoldsFightSon(", fn)
+        self.assertIn("SeekVictimReliefClaimFor(", fn)
         self.assertIn("SeekVictimReliefKeepTick(", fn)
+        self.assertNotIn("SeekVictimReliefDue(", fn)
         self.assertNotIn("SeekVictimReliefStart(", fn)
         self.assertNotIn('"seek relief son=', fn)
+
+    def test_VictimRelief_SelectionClaimsOnlyWhenEligible(self):
+        fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
+        self.assertLess(fn.index("SeekVictimRelieverOk("), fn.index("SeekVictimReliefClaimFor("))
+        note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
+        self.assertIn("SeekVictimReliefNoteExec(latch,", note)
 
     def test_VictimRelief_TauntPickIgnoresNearestTake(self):
         take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")

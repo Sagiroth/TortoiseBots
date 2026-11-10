@@ -9372,9 +9372,11 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
                 if (found == g_seekReliefLatches.end())
                     continue;
                 SeekReliefLatch& latch = found->second;
-                if (SeekVictimReliefDue(true, latch, nowMs) &&
-                    SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
-                                         bot->GetDistance(son)))
+                // Eligible first, so a bot that cannot take never holds the claim; the claim stops the other
+                // off-tank from picking the same Son before this take stamps it.
+                if (SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
+                                         bot->GetDistance(son)) &&
+                    SeekVictimReliefClaimFor(true, latch, self, nowMs))
                 {
                     due = son;
                     break;
@@ -9387,9 +9389,10 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
     return due;
 }
 
-// The relief take's execution result (DungeonRunSeekVictimRelief): the latch of `son` is stamped and counted only once
-// the take really started (the attack order or the taunt cast went out, the tank was already after it); a refused or
-// failed one counts nothing. The `seek relief` row goes out with the stamp, so the row and the count agree.
+// The relief take's execution result (DungeonRunSeekVictimRelief): the selection's claim is confirmed and counted
+// only once the take really started (the attack order or the taunt cast went out, the tank was already after it); a
+// refused or failed one rolls the claim back and counts nothing. The `seek relief` row goes out with the stamp, so
+// the row and the count agree.
 void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
                             bool started, std::uint32_t nowMs)
 {
