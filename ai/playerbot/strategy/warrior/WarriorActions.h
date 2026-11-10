@@ -89,8 +89,9 @@ namespace ai
     // shouts
     MELEE_ACTION_U(CastBattleShoutTauntAction, "battle shout", CastSpellAction::isUseful()); // useful to rebuff
     MELEE_DEBUFF_ACTION_R(CastDemoralizingShoutAction, "demoralizing shout", 8.0f); // low range debuff
-    // The AoE taunt: re-runs the "loose adds near" trigger's count at cast time, because a shout queued while loose
-    // adds were on a non-tank outlives its reach prerequisite and would otherwise fire after the pack settled.
+    // The AoE taunt: re-walks the loose-add count at cast time, uncached, because a shout queued while loose adds
+    // were on a non-tank outlives its reach prerequisite and would otherwise fire after the pack settled, inside
+    // the "trigger active" value's one-second cache.
     class CastChallengingShoutAction : public CastMeleeSpellAction
     {
     public:
@@ -98,7 +99,7 @@ namespace ai
 
         virtual bool isUseful() override
         {
-            return CastMeleeSpellAction::isUseful() && AI_VALUE2(bool, "trigger active", "loose adds near");
+            return CastMeleeSpellAction::isUseful() && AoeTauntStillNeeded(ai, bot);
         }
     };
     class CastIntimidatingShoutAction : public CastMeleeDebuffSpellAction

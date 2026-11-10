@@ -30,7 +30,7 @@
 #include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
-#include "playerbot/policy/combat/TauntHeldTargetPolicy.h"
+#include "playerbot/policy/combat/AoeTauntPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/policy/raid/TankSwapPolicy.h"
 #include "playerbot/policy/raid/BurnManaPolicy.h"
@@ -6843,6 +6843,53 @@ bool ai::TauntTargetHeldByOtherTank(Player* bot, Unit* target)
     return TauntStandsDownForTank(in);
 }
 
+bool ai::AoeTauntStillNeeded(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return false;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return false;
+    // The "attackers" value collapses to the focus RTI mark while a "focus
+    // rti targets" strategy runs, so a marked pack hides its own loose adds.
+    // Count group victims straight from the core instead: every group member
+    // (and the bot) reports the units attacking it, before any strategy
+    // filter runs. Players are not mobs (PvP: skip them).
+    std::set<ObjectGuid> seen;
+    std::vector<LooseAddCandidate> facts;
+    std::list<Unit*> members;
+    members.push_back(bot);
+    for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+    {
+        if (Player* member = sObjectMgr.GetPlayer(itr->guid))
+            members.push_back(member);
+    }
+    for (Unit* member : members)
+    {
+        if (!member || !member->IsInWorld())
+            continue;
+        for (Unit* attacker : member->GetAttackers())
+        {
+            if (!attacker || !attacker->IsAlive())
+                continue;
+            if (attacker->IsPlayer())
+                continue;
+            if (!seen.insert(attacker->getObjectGuid()).second)
+                continue;
+            if (!attacker->GetVictim())
+                continue;
+            Player* victimPlayer = attacker->GetVictim()->ToPlayer();
+            if (!victimPlayer || !group->IsMember(victimPlayer->GetObjectGuid()))
+                continue;
+            LooseAddCandidate in;
+            in.victimIsGroupPlayer = true;
+            in.victimIsTank = PlayerbotAI::IsTank(victimPlayer);
+            in.distanceToBot = bot->GetDistance(attacker);
+            facts.push_back(in);
+        }
+    }
+    return LooseAddsStillNeedAoeTaunt(facts);
+}
 // The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
 // with the guard numbers behind the verdict. One row per bot whenever the verdict changes, and at most one every
 // kCarrierStrikeLogGapMs while it stays the same: the trigger evaluates it every second and a healer can sit under one

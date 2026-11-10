@@ -15,7 +15,7 @@ SHAMAN = ROOT / "ai/playerbot/strategy/shaman"
 ACTIONS = ROOT / "ai/playerbot/strategy/actions"
 IS_USEFUL_CALL = "TauntTargetHeldByOtherTank(bot, GetTarget())"
 IS_USEFUL_CALL_RE = re.compile(r"&&\s*!TauntTargetHeldByOtherTank\s*\(\s*bot\s*,\s*GetTarget\s*\(\s*\)\s*\)")
-LOOSE_ADDS_CHECK_RE = re.compile(r'AI_VALUE2\s*\(\s*bool\s*,\s*"trigger active"\s*,\s*"loose adds near"\s*\)')
+AOE_TAUNT_CALL_RE = re.compile(r"&&\s*AoeTauntStillNeeded\s*\(\s*ai\s*,\s*bot\s*\)")
 
 
 def class_body(text, name):
@@ -64,8 +64,19 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
             with self.subTest(action=name):
                 body = class_body(path.read_text(), name)
                 self.assertIn("isUseful()", body)
-                self.assertRegex(body, LOOSE_ADDS_CHECK_RE)
+                self.assertRegex(body, AOE_TAUNT_CALL_RE)
 
+    def test_aoe_taunts_skip_the_cached_trigger_read(self):
+        for path, name in [
+            (WARRIOR / "WarriorActions.h", "CastChallengingShoutAction"),
+            (DRUID / "DruidActions.h", "CastChallengingRoarAction"),
+        ]:
+            with self.subTest(action=name):
+                self.assertNotIn('"trigger active"', class_body(path.read_text(), name))
+        trigger = (TRIGGERS / "GenericTriggers.cpp").read_text()
+        start = trigger.index("bool LooseAddsNearTrigger::IsActive()")
+        end = trigger.index("\n}\n", start)
+        self.assertIn("AoeTauntStillNeeded(ai, bot)", trigger[start:end])
 
     def test_taunt_gate_does_not_stand_down(self):
         text = (ACTIONS / "BossTacticsActions.cpp").read_text()

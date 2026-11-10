@@ -181,7 +181,14 @@ namespace ai
     // than `bot` that PlayerbotAI::IsTank reads as a tank. Builds the victim facts in call order (TauntHeldInputs) and
     // answers through TauntStandsDownForTank. Only the class taunt actions call it; TauntRefusedByGate and
     // the boss-tactics taunts never do, so a planned tank swap still taunts off another tank.
-    bool TauntTargetHeldByOtherTank(Player* bot, Unit* target);
+
+    // An area taunt's cast-time check (AoeTauntPolicy.h): true while 3+ mobs
+    // inside the shout radius are still hitting non-tank group members. Walks
+    // the group victims' attackers and their victims now, uncached: a shout
+    // queued while loose adds were on a non-tank stands down once the pack
+    // settles, even inside the "trigger active" value's one-second cache.
+    // The "loose adds near" trigger calls it too, so both agree on the count.
+    bool AoeTauntStillNeeded(PlayerbotAI* ai, Player* bot);
 
     // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
     // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").

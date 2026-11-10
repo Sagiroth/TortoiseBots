@@ -11,7 +11,7 @@
 #include "playerbot/HealerManaPolicy.h"
 #include "playerbot/MainTankPolicy.h"
 #include "playerbot/TankAddPickupPolicy.h"
-#include "playerbot/policy/combat/AoeTauntPolicy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/policy/combat/LoseAggroPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/travel/PointDangerPolicy.h"
@@ -388,50 +388,7 @@ bool LoseAggroTrigger::IsActive()
 
 bool LooseAddsNearTrigger::IsActive()
 {
-    Group* group = bot->GetGroup();
-    if (!group)
-        return false;
-
-    // The "attackers" value collapses to the focus RTI mark while a "focus
-    // rti targets" strategy runs, so a marked pack hides its own loose adds.
-    // Count group victims straight from the core instead: every group member
-    // (and the bot) reports the units attacking it, before any strategy
-    // filter runs. Players are not mobs (PvP: skip them).
-    std::vector<LooseAddCandidate> candidates;
-    std::set<ObjectGuid> seen;
-    std::list<Unit*> members;
-    members.push_back(bot);
-    for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
-    {
-        if (Player* member = sObjectMgr.GetPlayer(itr->guid))
-            members.push_back(member);
-    }
-    for (Unit* member : members)
-    {
-        if (!member || !member->IsInWorld())
-            continue;
-        for (Unit* attacker : member->GetAttackers())
-        {
-            if (!attacker || !attacker->IsAlive())
-                continue;
-            if (attacker->IsPlayer())
-                continue;
-            if (!seen.insert(attacker->getObjectGuid()).second)
-                continue;
-            if (!attacker->GetVictim())
-                continue;
-            Player* victimPlayer = attacker->GetVictim()->ToPlayer();
-            if (!victimPlayer || !group->IsMember(victimPlayer->GetObjectGuid()))
-                continue;
-            LooseAddCandidate candidate;
-            candidate.victimIsGroupPlayer = true;
-            candidate.victimIsTank = ai->IsTank(victimPlayer);
-            candidate.distanceToBot = bot->GetDistance(attacker);
-            candidates.push_back(candidate);
-        }
-    }
-
-    return ShouldAoeTaunt(CountLooseAddsInReach(candidates));
+    return AoeTauntStillNeeded(ai, bot);
 }
 
 bool HasAggroTrigger::IsActive()
