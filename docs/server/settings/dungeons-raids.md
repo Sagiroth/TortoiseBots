@@ -41,6 +41,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
 | [`AiPlayerbot.BossStandEvents`](#aiplayerbotbossstandevents) | `0` | `1`: one `BossStand` row per bot and window (assigned, arrived, unseated, released) into `bot_events.csv`. |
 | [`AiPlayerbot.BossStandWholeRaid`](#aiplayerbotbossstandwholeraid) | `0` | `1`: every bot in combat with the boss counts toward its stand seats (a threat wipe keeps its seat), a bot already clear of the lane stays put, and a seated bot does not flee (recommended on). |
+| [`AiPlayerbot.BossTacticsKeepsEngagedBoss`](#aiplayerbotbosstacticskeepsengagedboss) | `0` | `1`: a boss the raid fights stays in a bot's fight for 10 s after the last bot saw it, within 150 yd and while the bot is in combat (recommended on). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -770,6 +771,16 @@ Whether every bot in the fight with the boss takes a stand seat, and whether a b
 <summary>How it works in detail</summary>
 
 **Whole raid:** without the key a bot takes part in an anchor's seats only with threat on the boss or while it is the boss's victim, so a boss that wipes threat (Onyxia's Fireball, -100 %) drops its target out of the seat plan until it gains threat again. With the key on, a member that is in combat while the boss is in combat counts too; nothing else about the plan changes. **Stay:** a bot already on its seat's side of the lane and at least as far from the lane line as its seat stays where it stands: the seat becomes the bot's own position, so the reach, the reactive dodge, the flee gate and the tank post's seated read all treat it as seated and the stand action sees it arrived. **Flee:** a seated bot's `flee` is not useful (the seat is the escape); the step-out from a ground cloud keeps its own rule and still runs. The `BossStand` row of a stay says `stay=1`.
+
+</details>
+### `AiPlayerbot.BossTacticsKeepsEngagedBoss`
+Whether a boss the raid is fighting stays in every raid bot's fight after that bot's own attacker list lost it.
+**Default:** `0` (recommended on) · **Values:** `0` off (a boss is read only from the bot's own attacker list), `1` on (needs the boss tactics or the boss stand rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Kept boss:** a melee bot that cannot reach an airborne boss gives up on it, and she vanishes from that bot's attacker list: its boss-tactic rows and its stand seat went dark for that bot, and a tank post ended with `band` mid-band because the post could not find her. With the key on, a bot whose attacker list shows a boss in combat with boss-tactic or boss-stand rows notes it in one registry per map instance and entry (at most one write per boss per half second); a bot that lost it reads it back after its own attacker list. The entry is used while it is less than 10 s old, the boss is alive, in combat and not evading, the bot itself is in combat, and the boss is within 150 yd (3D); an entry no bot refreshed for 30 s is dropped. The kept unit is appended to the fight like the walked-out puller's kept boss, so its rows and seats are read with the same health gate, and the boss stand lookup reads it too.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

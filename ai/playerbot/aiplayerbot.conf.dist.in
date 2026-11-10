@@ -1486,6 +1486,14 @@ AiPlayerbot.BossStandEvents = 0
 # 0 - off: a stand seats only bots on the boss's threat list or its victim, every seat is walked to (Default)
 # 1 - on
 AiPlayerbot.BossStandWholeRaid = 0
+# A boss the raid is fighting stays in every raid bot's fight for 10 s after the last bot saw it in its attacker list
+# (a melee bot that cannot reach an airborne Onyxia gives up on her, so she vanishes from that bot's attacker list and
+# every row and seat for her goes dark for it). The bots that see the boss note it in one registry; a bot that lost it
+# reads it back while it is alive, in combat, not evading, within 150 yd, and while the bot itself is in combat.
+# Recommended on. Needs the boss tactics or the boss stand rows.
+# 0 - off: a boss is read only from the bot's own attacker list (Default)
+# 1 - on
+AiPlayerbot.BossTacticsKeepsEngagedBoss = 0
 
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables

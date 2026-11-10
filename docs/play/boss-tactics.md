@@ -32,6 +32,8 @@ The `boss tactics` strategy is added to a bot by the `enter boss tactics` trigge
 
 A boss that vanishes mid-fight (invisible and off the bot's attackers list while alive and in combat, like Arlokk) keeps its rows for up to 90 s as long as the bot still has attackers and the boss stays within 60 yd and out of evade mode (`BossPresenceMemory`), so rows for its adds, such as the Zulian Prowler `kill_first`, stay active during the vanish. The rows end with the fight, the boss's death or evade, or the grace window.
 
+A boss the raid is fighting also stays in every raid bot's fight for 10 s after the last bot saw it in its attacker list, once `AiPlayerbot.BossTacticsKeepsEngagedBoss = 1` (default `0`, recommended on): the bots that see the boss note it in one registry, and a bot that lost it (a melee bot that cannot reach an airborne boss gives up on it) reads it back while the boss is alive, in combat, not evading and within 150 yd, and while the bot itself is in combat. Its rows and its stand seats stay active for it.
+
 Commander-bound groups use it because commanders cannot give interrupt and kill orders fast enough. The key stays `0` because it changes how bots play.
 
 Two extra opt-ins:

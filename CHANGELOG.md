@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.BossTacticsKeepsEngagedBoss (default 0, recommended on), a boss the raid fights stays in a bot's fight for 10 s after the last bot saw it in its attacker list (within 150 yd, while the bot is in combat), so a melee bot that gave up on an airborne boss keeps her boss-tactic rows and her stand seats.
 - New: behind AiPlayerbot.BossStandWholeRaid (default 0, recommended on), every bot in combat with the boss counts toward its stand seats (a threat wipe such as Onyxia's Fireball no longer drops the wiped bot's seat), a bot that already stands clear of its breath lane stays where it stands instead of walking back toward the lane, and a seated bot does not flee.
 - New: behind AiPlayerbot.BossStandEvents (default 0), each bot in a boss stand window logs one `BossStand` episode with its seat, arrival, the reason it went unseated and the reason the stand ended, so a walk can tell a bot that never got a seat from one that got it late or walked off it.
 - Changed: Onyxia's Lair walk 2b post: slot 1's tank post for Cindarion is now mode hold_spot, so it starts even off a whelp, drags him back to the NE spot after each breath seat and yields to a seat, behind AiPlayerbot.DungeonRunTankPostHoldSpot.

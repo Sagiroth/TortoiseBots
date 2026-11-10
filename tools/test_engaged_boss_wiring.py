@@ -1,0 +1,85 @@
+"""Wiring pins for the engaged boss registry (AiPlayerbot.BossTacticsKeepsEngagedBoss).
+
+The rules live in ai/playerbot/BossEngagedPolicy.h (pure, tested by
+tools/test_boss_engaged_policy.cpp). These pins prove the live code calls them:
+
+ - the fight scan notes every boss its attacker list shows and appends the
+   registry's bosses to the fight exactly as the walk-out kept boss;
+ - the stand lookup reads the registry too, after the attacker list;
+ - only a unit in combat whose entry has boss-tactic or boss-stand rows is noted;
+ - the key is read, documented and off by default.
+
+Run: python3 -m unittest tools/test_engaged_boss_wiring.py
+"""
+import pathlib
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+AI = ROOT / "ai/playerbot"
+ACTIONS = (AI / "strategy/actions/BossTacticsActions.cpp").read_text()
+POLICY = (AI / "BossEngagedPolicy.h").read_text()
+CONFIG = (AI / "PlayerbotAIConfig.cpp").read_text()
+TEMPLATE = (AI / "aiplayerbot.conf.dist.in").read_text()
+SETTINGS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+
+
+def body(text, start, end="\n}\n"):
+    i = text.index(start)
+    return text[i:text.index(end, i + len(start))]
+
+
+class EngagedBossWiring(unittest.TestCase):
+    def test_fight_scan_adds_registered_boss(self):
+        fn = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
+        # Every living attacker is noted, and the registry read appends its units to the fight.
+        self.assertLess(fn.index("NoteEngagedBoss(unit, mapId);"), fn.index("fight.units.push_back(unit);"))
+        registry = fn.index("RegisteredEngagedBosses(bot, seen)")
+        self.assertIn("for (Creature* const registered : RegisteredEngagedBosses(bot, seen))", fn)
+        self.assertLess(fn.index("fight.units.push_back(unit);"), registry)
+        # Exactly the walk-out kept-boss append: the fight's unit list and the entry's unit list.
+        self.assertIn("fight.units.push_back(registered);", fn)
+        self.assertIn("entryUnits[known - seen.begin()].push_back(registered);", fn)
+        self.assertLess(registry, fn.index("entryUnits[known - seen.begin()].push_back(registered);"))
+        self.assertLess(fn.index("entryUnits[known - seen.begin()].push_back(registered);"),
+                        fn.index("addRows(*rows, bossHpPct);"))
+
+    def test_find_boss_stand_reads_registry(self):
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("NoteEngagedBoss(unit, mapId);", fn)
+        self.assertIn("readEntries.push_back(unit->GetEntry());", fn)
+        self.assertIn("RegisteredEngagedBosses(bot, readEntries)", fn)
+        # The registry read only runs when the attacker list opened no window, and it feeds the same read.
+        self.assertLess(fn.index("if (readStandUnit(unit))"), fn.index("if (!openedWindow)"))
+        self.assertLess(fn.index("if (!openedWindow)"), fn.index("readStandUnit(registered)"))
+        self.assertIn("const auto readStandUnit = [&](Unit* unit)", fn)
+
+    def test_note_only_for_units_with_rows(self):
+        fn = body(ACTIONS, "void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)")
+        self.assertIn("if (!unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())", fn)
+        self.assertIn("if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))", fn)
+        self.assertIn("EngagedBossNoteDue(have, nowMs, have ? it->second.second : 0)", fn)
+        self.assertIn("3 * kEngagedBossFreshMs", fn)
+        registered = body(ACTIONS, "std::vector<Creature*> RegisteredEngagedBosses(")
+        self.assertIn("g_engagedBossCount.load(std::memory_order_relaxed) == 0", registered)
+        self.assertIn("EngagedBossUsable(view, nowMs)", registered)
+        self.assertIn("bot->GetMap()->GetCreature(ObjectGuid(row.first))", registered)
+        for field in ("view.alive = sServerFacade.IsAlive(creature);", "view.inCombat = creature->IsInCombat();",
+                      "view.evading = creature->IsInEvadeMode();", "view.botInCombat = bot->IsInCombat();",
+                      "view.botToBossYd = bot->GetDistance(creature);"):
+            self.assertIn(field, registered)
+
+    def test_the_key_is_documented_and_off(self):
+        self.assertIn('bossTacticsKeepsEngagedBoss = config.GetBoolDefault("AiPlayerbot.BossTacticsKeepsEngagedBoss", false);',
+                      CONFIG)
+        self.assertIn("AiPlayerbot.BossTacticsKeepsEngagedBoss = 0", TEMPLATE)
+        self.assertIn("### `AiPlayerbot.BossTacticsKeepsEngagedBoss`", SETTINGS)
+        self.assertIn("### `AiPlayerbot.BossTacticsKeepsEngagedBoss`", SETTINGS)
+        # The policy holds the three constants the glue reads, and no boss name.
+        for constant in ("kEngagedBossFreshMs", "kEngagedBossNoteMs", "kEngagedBossReachYd"):
+            self.assertIn(constant, POLICY)
+        self.assertNotIn("Onyxia", POLICY)
+        self.assertNotIn("10184", POLICY)
+
+
+if __name__ == "__main__":
+    unittest.main()
