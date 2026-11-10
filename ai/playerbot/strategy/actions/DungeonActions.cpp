@@ -529,7 +529,12 @@ bool DragonFlankAction::Execute(Event& event)
 
 bool RaidSpreadAction::isUseful()
 {
-    if (!MovementAction::isUseful())
+    // The base movement gate refuses a bot its current engine holds on a stay. With the reaction raid rows on, a
+    // live spread row outranks that stay (the trigger and Execute already read the order that way through
+    // ShouldSpreadStayVeto), so the refusal stands only while no row is live. Key off: today's logic.
+    if (!MovementAction::isUseful() &&
+        !IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions,
+            ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), BossSpreadLive(ai, bot)))
         return false;
     return !FindBossStand(ai, bot).valid;
 }
@@ -569,7 +574,7 @@ bool RaidSpreadAction::Execute(Event& event)
         // maps. Inside a raid companions spread like pool bots.
         if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
             ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-            !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive),
             ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))

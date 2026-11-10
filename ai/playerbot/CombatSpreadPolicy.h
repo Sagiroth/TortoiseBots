@@ -205,6 +205,26 @@ namespace ai
             stayOrdered, followOrdered, waitOrdered, grindOrdered);
     }
 
+    // The stay term the universal spread gate receives: a live spread row outranks the stay order (the run holds the
+    // ranged bots on their spots, and the row's splash still has to be answered there), so the order only vetoes
+    // while no row widened the spacing. RaidSpreadNeededTrigger::IsActive, RaidSpreadAction::Execute and
+    // RaidSpreadAction::isUseful all read the order through this one construction.
+    inline bool ShouldSpreadStayVeto(bool stayOrdered, bool spreadLive)
+    {
+        return stayOrdered && !spreadLive;
+    }
+
+    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses a stay-held bot before the action's own
+    // exemption is reached. With AiPlayerbot.RaidReactions on, the row's spacing outranks a stay exactly as the
+    // trigger and Execute read it, so the refusal stands only while no row is live. Off: today's logic, whatever
+    // the caller's stay read.
+    inline bool IsRaidSpreadStayExempt(bool raidReactions, bool stayOrdered, bool spreadLive)
+    {
+        if (!raidReactions)
+            return false;
+        return !ShouldSpreadStayVeto(stayOrdered, spreadLive);
+    }
+
     // Spread re-step throttle: a step-out within the cooldown of the last
     // recorded flee/spread dispatch holds position instead of stepping again.
     // Wrap-safe via unsigned subtraction; 0 (no dispatch yet) never throttles.
