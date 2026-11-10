@@ -70,6 +70,8 @@ On install:
 
 Module database updates live in `data/sql/world/` and `data/sql/character/` of the module source tree. The core's automatic database updater reads these directories and applies new migrations at startup. No manual SQL patches needed.
 
+> Caution: the updater applies every pending migration file it finds, including ones older than your newest applied migration (for example after a crash, a stale container, or a restored database). If your world database holds custom or hand-applied rows, either set `Database.AutoUpdate.Enabled = 0` in `mangosd.conf` before restarting and apply migrations by hand, or keep a known-good backup and confirm the pending list first. See `CONTRIBUTING.md` (migrations are re-run when their content changes).
+
 ## Verifying Your Build Version
 
 The version comes from the repository root `VERSION` file, written by the release workflow on every release. If the file is unreadable or absent, the build reports `dev`.
@@ -98,5 +100,5 @@ If the log shows `dev`, the build had no readable root `VERSION` file.
    cmake --build build -j"$(nproc)"
    cmake --install build
    ```
-3. Restart `mangosd`. The core auto-updater applies new SQL migrations automatically, and your `aiplayerbot.conf` settings stay intact.
+3. Restart `mangosd`. The core auto-updater applies new SQL migrations automatically, and your `aiplayerbot.conf` settings stay intact. If the database may hold custom content or a stale container may have rendered an old config, check the pending migrations first (or set `Database.AutoUpdate.Enabled = 0` and apply them by hand).
 4. If the update adds new settings, check `aiplayerbot.conf.dist` and merge the keys you want.
