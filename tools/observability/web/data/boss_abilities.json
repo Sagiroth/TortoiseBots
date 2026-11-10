@@ -41805,7 +41805,7 @@
       "name": "dragon flank",
       "text": "everyone but the tank leaves her front and tail cones and works the flanks",
       "source": [
-        "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
+        "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
       ]
     },
@@ -41821,7 +41821,7 @@
       "name": "dragon flank",
       "text": "everyone but the tank leaves her front and tail cones and works the flanks",
       "source": [
-        "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
+        "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
       ]
     },
@@ -41837,7 +41837,7 @@
       "name": "dragon flank",
       "text": "everyone but the tank leaves her front and tail cones and works the flanks",
       "source": [
-        "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
+        "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
       ]
     },
@@ -41965,7 +41965,7 @@
       "text": "the tank holds the head away and everyone else works the flanks",
       "source": [
         "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
-        "ai/playerbot/strategy/generic/ReactionStrategy.cpp",
+        "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/EmeraldSanctumDungeonTriggers.h"
       ]
     },
