@@ -148,12 +148,14 @@ class SeekNearestTakeWiring(unittest.TestCase):
     def test_the_take_casts_the_known_taunt_with_the_flag(self):
         fn = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
         take = fn[fn.index("if (task.take)"):fn.index("if (task.pull)")]
-        self.assertIn("if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)\n        {", take)
+        self.assertIn("if (SeekTakeUsesKnownTaunt(sPlayerbotAIConfig.dungeonRunSeekNearestTake, task.takeSrc))", take)
         self.assertIn("taunt = KnownTaunt(ai);", take)
         # Flag off: today's warrior/druid switch.
         self.assertIn('case CLASS_WARRIOR: taunt = "taunt"; break;', take)
         self.assertIn("const bool cast = ai->CastSpell(taunt, task.source);", take)
         self.assertIn("return cast;", take)
+        # The relief take always casts it (round 1: the flag-off paladin only attacked).
+        self.assertIn('std::strcmp(takeSrc, "victim_relief") == 0', POLICY)
 
     def test_the_cap_latch_is_set_only_once_the_take_starts(self):
         # Codex round 2: a cap-guarded take (`nearest_reach`, `healer_clock`, key on) latches only after the attack or
@@ -164,11 +166,11 @@ class SeekNearestTakeWiring(unittest.TestCase):
         self.assertIn('(std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);',
                       take)
         self.assertEqual(3, take.count("SeekCapTakeNoteExec("))
-        self.assertIn("task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());\n                return true;",
-                      take)
-        self.assertIn("task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());\n            return false;",
-                      take)
-        self.assertIn("started || cast, WorldTimer::getMSTime());\n        return cast;", take)
+        self.assertIn("task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());", take)
+        self.assertIn("task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());", take)
+        self.assertIn("started || cast, WorldTimer::getMSTime());", take)
+        self.assertIn("\n                return true;", take)
+        self.assertIn("\n            return false;", take)
         self.assertIn("else if (!chaseRefused)\n            started = true; // already after it", take)
         # No latch is set at pick time any more.
         self.assertNotIn("SeekCapTakeLatch(", ACTIONS)

@@ -1163,6 +1163,11 @@ AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 # without it the kept boss saves nothing). Off keeps today's scan.
 AiPlayerbot.DungeonRunSeekPullerKeepsFight = 0
 
+# The victim relief (Hakkar's Sons, recommended on, needs DungeonRunSeekAura): a seek source whose victim is the
+# boss's own victim tank for 1 s is taken off it by the other off-tank (within 20 yd, its taunt ready, holding no
+# source, not the boss's victim), at most twice per source and 8 s apart. Off keeps today's takes.
+AiPlayerbot.DungeonRunSeekVictimRelief = 0
+
 # The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son
 # with an instant turn and casts in the same tick, and the bot's own per-update facing no longer turns the live, unshot
 # puller back to Hakkar; the 6 s no-shot clock counts only the time in shot position (range, sight, the stand's floor,

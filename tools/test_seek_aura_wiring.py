@@ -191,7 +191,15 @@ class FightStateWiring(unittest.TestCase):
         self.assertIn("record.cycleMs = cycleMs;", ACTIONS)
         self.assertIn("record.cycleSpell = row->cycleSpell;", ACTIONS)
         self.assertIn("kSeekRecordIdleMs = 120000", ACTIONS)
-        self.assertIn("nowMs - it->second.lastSeenMs > kSeekRecordIdleMs", ACTIONS)
+        # The sweep names its own instance, reads its clock under g_seekMutex, and marks the instance as reading.
+        self.assertIn("SweepSeekRecords(bot->GetInstanceId());", ACTIONS)
+        sweep = body(ACTIONS, "void SweepSeekRecords(std::uint32_t instanceId)")
+        self.assertIn("const std::uint32_t nowMs = WorldTimer::getMSTime();", sweep)
+        self.assertIn("if (std::get<0>(it->first) != instanceId)", sweep)
+        self.assertIn("static_cast<std::int32_t>(nowMs - it->second.lastSeenMs)", sweep)
+        self.assertIn("kSeekRecordSweepGapMs", sweep)
+        # An instance that stopped reading takes its records with its sweep clock.
+        self.assertIn("std::get<0>(record->first) == it->first ? g_seekRecords.erase(record)", sweep)
         # The clock: the engage, the accepted siphon and the gather latch.
         self.assertIn("SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,",
                       ACTIONS)

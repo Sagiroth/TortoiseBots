@@ -1152,6 +1152,11 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
+// Each instance's record sweep runs at most this often: every bot of a fight reads it every tick.
+const std::uint32_t kSeekRecordSweepGapMs = 1000;
+// The per-instance sweep clock. It also marks whether the instance still reads at all: an entry that idles out takes
+// its instance's records with it, so a fight abandoned without an evade read does not stay in the map for ever.
+std::unordered_map<std::uint32_t, std::uint32_t> g_seekRecordSweepMs;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -1270,27 +1275,60 @@ bool ClaimWalkoutKeptBossRow(std::uint32_t instanceId, std::uint32_t startMs)
     return true;
 }
 
-// Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
-// per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
-// itself runs at most once per idle window.
-void SweepSeekRecords(std::uint32_t nowMs)
+// Drops the records of this instance's fights that nobody evaluated for the idle window, and the per-bot log
+// throttles that old: one entry per bot guid that ever logged, so the map is bounded with the fights. Called with
+// g_seekMutex held, at most once a second per instance; the clock is read here, under the lock, because a fight
+// read's nowMs is taken before the lock and a record stamped after it would look older than it is. A record's age is
+// a signed difference for the same reason. Only this instance's records are swept: another instance's reader stamps
+// them, and the clock it read is the fresher one.
+void SweepSeekRecords(std::uint32_t instanceId)
 {
-    static std::uint32_t lastSweepMs = 0;
-    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordIdleMs)
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint32_t& lastSweepMs = g_seekRecordSweepMs[instanceId];
+    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordSweepGapMs)
         return;
-    lastSweepMs = nowMs;
+    lastSweepMs = nowMs != 0 ? nowMs : 1;
+    // An instance whose sweep clock idled out stopped reading (its fight ended, or the raid left): its records go too.
+    for (auto it = g_seekRecordSweepMs.begin(); it != g_seekRecordSweepMs.end();)
+    {
+        if (it->first == instanceId || nowMs - it->second <= kSeekRecordIdleMs)
+        {
+            ++it;
+            continue;
+        }
+        for (auto record = g_seekRecords.begin(); record != g_seekRecords.end();)
+            record = std::get<0>(record->first) == it->first ? g_seekRecords.erase(record) : std::next(record);
+        it = g_seekRecordSweepMs.erase(it);
+    }
     for (auto it = g_seekRecords.begin(); it != g_seekRecords.end();)
-        it = nowMs - it->second.lastSeenMs > kSeekRecordIdleMs ? g_seekRecords.erase(it) : std::next(it);
+    {
+        if (std::get<0>(it->first) != instanceId)
+        {
+            ++it;
+            continue;
+        }
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second.lastSeenMs);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekRecords.erase(it) : std::next(it);
+    }
     // Lock order: the record map, then the log. LogSeek takes the log alone, after the record lock is released.
     std::lock_guard<std::mutex> logLock(g_seekLogMutex);
     for (auto it = g_seekLog.begin(); it != g_seekLog.end();)
-        it = nowMs - it->second > kSeekRecordIdleMs ? g_seekLog.erase(it) : std::next(it);
+    {
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekLog.erase(it) : std::next(it);
+    }
     {
         std::lock_guard<std::mutex> pullLock(g_seekPullLogMutex);
         for (auto it = g_seekPullLog.begin(); it != g_seekPullLog.end();)
-            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekPullLog.erase(it) : std::next(it);
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekPullLog.erase(it) : std::next(it);
+        }
         for (auto it = g_seekMeetWaitLog.begin(); it != g_seekMeetWaitLog.end();)
-            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekMeetWaitLog.erase(it) : std::next(it);
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekMeetWaitLog.erase(it) : std::next(it);
+        }
     }
 }
 
@@ -1621,8 +1659,8 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
 // One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
 // why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
 // names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
-// pull_join, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance to the Son this
-// tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
+// pull_join, victim_relief, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance
+// to the Son this tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
 // circle of the row's boss anchor (negative inside; -99.0 with no anchor row).
 void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src,
                  float beyondYd)
@@ -3657,7 +3695,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
-        SweepSeekRecords(nowMs);
+        SweepSeekRecords(bot->GetInstanceId());
         auto it = g_seekRecords.find(key);
         if (it == g_seekRecords.end())
             it = g_seekRecords.emplace(key, SeekCycleRecord()).first;
@@ -5738,6 +5776,18 @@ namespace
 // take time). It carries the hysteresis (held on the last read) and the take's one `seek take capped` row.
 std::mutex g_seekTakenCapMutex;
 std::unordered_map<std::uint64_t, SeekTakenCapLatch> g_seekTakenCapLatches;
+// The victim relief's per-Son latch (SeekReliefLatch, DungeonRunSeekVictimRelief): one per Son of the fight, keyed by
+// the map instance and the Son's raw guid (SeekReliefKey). Instance copies of one DB spawn can share the guid, so a
+// guid alone would let one raid's claim, cap or spacing block another raid's relief. It carries the dwell clock (the
+// run on the boss's tank), the last start and its count (the anti-ping-pong). Each instance sweeps its own latches,
+// at most once a second: entries untouched for more than 120 s (a dead Son, a wiped fight) drop.
+std::mutex g_seekReliefMutex;
+SeekReliefLatches g_seekReliefLatches;
+// The relief's sweep clock, one per map instance. The sweep's own clock is read here, under the mutex: a fight read's
+// nowMs is taken before the lock, so a stamp another thread lands after it would look older than it is and the
+// unsigned age would wrap, dropping a live latch.
+std::unordered_map<std::uint32_t, std::uint32_t> g_seekReliefSweepMs;
+constexpr std::uint32_t kSeekReliefSweepGapMs = 1000;
 
 void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct, std::uint32_t sinceTakeMs)
 {
@@ -9598,6 +9648,119 @@ Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& rol
     return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
 }
 
+// DungeonRunSeekVictimRelief: a Son whose victim is the boss's own victim tank is taken off it by a free off-tank.
+Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekVictimRelief || !state.row || !state.boss || roles.tanks.size() < 3)
+        return nullptr;
+    const std::uint32_t nowMs = state.nowMs;
+    Unit* const bossVictim = state.boss->GetVictim();
+    const bool bossTank = bossVictim != nullptr && [bossVictim, &roles]()
+    {
+        for (Player* tank : roles.tanks)
+        {
+            if (tank && tank == bossVictim && sServerFacade.IsAlive(tank))
+                return true;
+        }
+        return false;
+    }();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    // This read's own call answers: one of the two off-tanks (never tanks[0], never a two-tank pickup).
+    const bool offTank = roles.tanks.size() >= 3 && (roles.tanks[1] == bot || roles.tanks[2] == bot);
+    Unit* kept = nullptr;
+    Unit* due = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+        const std::uint32_t sweepNowMs = WorldTimer::getMSTime();
+        std::uint32_t& sweptMs = g_seekReliefSweepMs[bot->GetInstanceId()];
+        if (sweptMs == 0 || sweepNowMs - sweptMs >= kSeekReliefSweepGapMs)
+        {
+            sweptMs = sweepNowMs;
+            SweepSeekReliefLatches(g_seekReliefLatches, bot->GetInstanceId(), sweepNowMs);
+        }
+        for (Unit* son : state.sons)
+        {
+            if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
+                continue;
+            const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+            const bool reliefSon = bossTank && son->GetVictim() == bossVictim;
+            auto found = g_seekReliefLatches.find(key);
+            if (found == g_seekReliefLatches.end() && !reliefSon)
+                continue;
+            SeekReliefLatch& latch =
+                found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[key];
+            SeekReliefClockTick(latch, reliefSon, nowMs);
+            SeekVictimReliefKeepTick(latch, self, son->GetVictim() == bot, nowMs);
+            if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
+                kept = son;
+        }
+        if (!kept && offTank)
+        {
+            const bool selfIsBossVictim = state.boss->GetVictim() == bot;
+            const bool selfCharmed = !bot->GetCharmerGuid().IsEmpty();
+            const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+            const bool tauntReady = SeekTankTauntReady(bot);
+            for (Unit* son : state.sons)
+            {
+                if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) ||
+                    !son->IsInCombat())
+                    continue;
+                const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+                const auto found = g_seekReliefLatches.find(key);
+                if (found == g_seekReliefLatches.end())
+                    continue;
+                SeekReliefLatch& latch = found->second;
+                // Eligible first, so a bot that cannot take never holds the claim; the claim stops the other
+                // off-tank from picking the same Son before this take stamps it.
+                if (SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
+                                         bot->GetDistance(son)) &&
+                    SeekVictimReliefClaimFor(true, latch, self, nowMs))
+                {
+                    due = son;
+                    break;
+                }
+            }
+        }
+    }
+    if (kept)
+        return kept;
+    return due;
+}
+
+// The relief take's execution result (DungeonRunSeekVictimRelief): the selection's claim is confirmed and counted
+// only once the take really started (the attack order or the taunt cast went out, the tank was already after it); a
+// refused or failed one rolls the claim back and counts nothing. `from` is the Son's victim read before the take's
+// taunt cast: after it the victim may already be the reliever. The `seek relief` row goes out with the stamp, so the
+// row and the count agree; it is built and written after the latch mutex is released.
+void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
+                            Unit* from, bool started, std::uint32_t nowMs)
+{
+    if (!son)
+        return;
+    std::uint32_t dwellMs = 0;
+    std::uint8_t takes = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+        const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+        const auto found = g_seekReliefLatches.find(key);
+        if (found == g_seekReliefLatches.end())
+            return;
+        SeekReliefLatch& latch = found->second;
+        if (!SeekVictimReliefNoteExec(latch, bot->GetObjectGuid().GetRawValue(), nowMs, started))
+            return;
+        dwellMs = nowMs - latch.sinceMs;
+        takes = latch.takes;
+    }
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[192];
+    snprintf(info1, sizeof(info1), "seek relief son=%u from=%s by=%s dwell_ms=%u n=%u cap=%d reach_yd=%.1f",
+             son->GetGUIDLow(), from ? from->GetName() : "none", bot->GetName(), static_cast<unsigned>(dwellMs),
+             static_cast<unsigned>(takes), SeekTankLeaveCollapsesCap(ai, roles, boss, bot, nullptr) ? 1 : 0,
+             bot->GetDistance(son));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
 // The pre-placed receiver's walk (DungeonRunSeekMeetPrePlace, walk 56 F2): true while a live pre-place names this bot.
 // More than kSeekMeetPrePlaceArriveYd from its point, the task walks it there (walkToSpot); at the point the task stays
 // valid and holds it (prePlaceHold: Execute stops a walk and otherwise leaves the tick to the rotation), until the meet
@@ -9861,6 +10024,18 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                                                static_cast<float>(state.row->priority));
             if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
                 task.walkToSpot = true;
+            return task;
+        }
+    }
+    if (thirdTank || healerTaker)
+    {
+        if (Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state))
+        {
+            task.valid = true;
+            task.source = reliefSon;
+            task.take = true;
+            task.takeSrc = "victim_relief";
+            task.boss = state.boss;
             return task;
         }
     }
@@ -10359,10 +10534,11 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // Class-correct taunt (the Gluth swap's list: 1.12 has no paladin taunt). Attack() sticks even when the taunt
         // itself cannot fire yet (cooldown, range).
         const char* taunt = nullptr;
-        if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
+        if (SeekTakeUsesKnownTaunt(sPlayerbotAIConfig.dungeonRunSeekNearestTake, task.takeSrc))
         {
             // With the nearest take on, the take casts the taunt the readiness read counts (KnownTaunt), so a paladin's
-            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do.
+            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do. The relief take always
+            // casts it: the taunt that qualified the tank is the taunt it casts.
             taunt = KnownTaunt(ai);
         }
         else
@@ -10422,6 +10598,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
         const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
             (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
+        const bool reliefTake = sPlayerbotAIConfig.dungeonRunSeekVictimRelief && task.takeSrc &&
+            std::strcmp(task.takeSrc, "victim_relief") == 0;
         bool started = false;
         // The meet take re-checks its tuple (this receiver, the current meet Son, the bounded exemption) right before
         // its Attack (DungeonRunSeekMeetTakeReach): a meet that closed or left the allowance since the pick sends none.
@@ -10436,6 +10614,9 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (capGuarded)
                     SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                         task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
+                if (reliefTake)
+                    SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source,
+                                           task.source->GetVictim(), true, WorldTimer::getMSTime());
                 return true;
             }
         }
@@ -10446,12 +10627,21 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (capGuarded)
                 SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                     task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
+            if (reliefTake)
+                SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, task.source->GetVictim(),
+                                       started, WorldTimer::getMSTime());
             return false;
         }
+        // The Son's victim is read before the cast: the taunt's own effect may already hand the Son to this tank, and
+        // `from=` names the tank the Son was taken off.
+        Unit* const reliefFrom = task.source->GetVictim();
         const bool cast = ai->CastSpell(taunt, task.source);
         if (capGuarded)
             SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                 task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
+        if (reliefTake)
+            SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, reliefFrom, started || cast,
+                                   WorldTimer::getMSTime());
         return cast;
     }
     if (task.pull)

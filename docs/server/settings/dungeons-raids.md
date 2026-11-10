@@ -93,6 +93,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunPlaceUnstick`](#aiplayerbotdungeonrunplaceunstick) | `0` | `1` (recommended): a bot in a dungeon or raid cut off on a navmesh island (every move fails NOPATH for 10 s and a navmesh query proves its spot cut off) is teleported beside its master, combat kept, at most once per 30 s. |
 | [`AiPlayerbot.DungeonRunSeekNearestTake`](#aiplayerbotdungeonrunseeknearesttake) | `0` | `1` (recommended): the first off-tank takes a Son of Hakkar on a non-tank at once when the receiving tank is too far or its taunt is on cooldown and the first off-tank's taunt reaches. |
 | [`AiPlayerbot.DungeonRunSeekNearestTakeReach`](#aiplayerbotdungeonrunseeknearesttakereach) | `0` | `1` (recommended): the first off-tank also takes a walked Son of Hakkar on a non-tank from up to 20 yd when the receiving tank is more than 15 yd from it or its meet was just lost (needs `DungeonRunSeekNearestTake`). |
+| [`AiPlayerbot.DungeonRunSeekVictimRelief`](#aiplayerbotdungeonrunseekvictimrelief) | `0` | `1` (recommended): the other Hakkar off-tank takes a Son off the boss's victim tank (within 20 yd, taunt ready) after it sat there 1 s, at most twice per Son and 8 s apart (needs `DungeonRunSeekAura`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlace`](#aiplayerbotdungeonrunseekmeetpreplace) | `0` | `1` (recommended): when a Hakkar walk-out starts, the receiving third tank walks to the tanks' circle edge on the puller's way back and waits there for the pulled Son (needs `DungeonRunSeekSonMeet`). |
 | [`AiPlayerbot.DungeonRunSeekMeetPrePlaceLate`](#aiplayerbotdungeonrunseekmeetpreplacelate) | `0` | `1` (recommended, still being tested): the pre-placed third tank stays on Hakkar until the puller is within 10 yd of its stand or in position, then walks (needs `DungeonRunSeekMeetPrePlace`). |
 | [`AiPlayerbot.DungeonRunSeekShotWaitsReceiver`](#aiplayerbotdungeonrunseekshotwaitsreceiver) | `0` | `1` (recommended): the Hakkar walk-out shot waits until the pre-placed receiver is within 5 yd of its point, at most 6 s, and not when the next Blood Siphon is 15 s or less away (needs `DungeonRunSeekMeetPrePlace`). |
@@ -1158,6 +1159,21 @@ The take row says `src=nearest_reach` when only the reach let the take through (
 Diagnostics (always on with the key, walk 58 F3: the guard logged nothing, so its effect could not be measured): a `BossTacticsSeekPull` row `seek take held son=<g> taker=<name> reason=cap_guard ref=<name> share=<pct> src=nearest_reach|healer_clock victim=<name> on_nontank_ms=<ms> victim_hp=<pct>` whenever the collapse guard holds back a reach take (the reach would take the Son, the guard alone stops it) or a healer-clock take, once per tank and Son per 2 s. `ref` is today's cap reference tank, `share` the reference left after the leave as a percent of today's (0: no off-tank reference left); `victim`, `on_nontank_ms` (the Son's time on that non-tank, the fight's non-tank clock) and `victim_hp` say what the hold cost. A held row and a take row can come from the same tick (a held reach take while another path takes the Son, or the healer clock's later override): join them on time, not by order.
 
 Limits (documented, not fixed): "walked" is scoped to the current Blood Siphon cycle (the walk-out record forgets the Sons of earlier cycles), so a Son walked last cycle and never lost counts as one that joined by itself.
+
+</details>
+
+### `AiPlayerbot.DungeonRunSeekVictimRelief`
+Whether the other off-tank takes a Son of Hakkar off the boss's victim tank. Recommended on.
+**Default:** `0` · **Values:** `0` off (today's takes hold: the boss's victim keeps both the boss and the Son, as before), `1` on (needs `DungeonRunSeekAura` and three tanks) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Victim relief:** in walks 64-66 a tank died to a Son 1.28 times a fight, and 46 % of those tanks were Hakkar's victim (an off-tank that becomes the boss's victim keeps both, the receiver skips a Son on the other off-tank, and the other off-tank takes only Sons on non-tanks). With the key on, a living Son of the fight in combat whose victim is a living tank that is also the boss's victim is taken off it by the other off-tank: after the Son sat there 1 s without a break, the other off-tank (tanks[1] or tanks[2], never tanks[0], never a two-tank pickup) taunts or attacks it (`take` row `src=victim_relief`) when it is not the boss's victim, not charmed, holds no Son of the fight, has its taunt ready (in control, not silenced, a known taunt off its own cooldown, Defensive Stance or Bear Form; the global cooldown does not count) and stands within 20 yd of the Son. A started relief stays valid for that tank for 6 s without the taunt and dwell checks (the taunt's own cooldown would otherwise drop the task the tick after the cast), while the Son lives and is not on this tank yet; once the Son is on it the own-Son branch takes over. The cap guard is read and logged (`cap=1`) but never holds the take back: a tank about to die outranks the damage dealers' cap. At most two relief starts per Son, 8 s or more apart; the first pick claims the Son for 1 s, so the other off-tank cannot start it in the same tick. The relieved tank takes nothing back: it is the boss's victim, so `SeekTankTakeAllowed` already returns it out. Off keeps today's takes exactly.
+
+Diagnostics (always on with the key): one `BossTacticsSeekPull` row `seek relief son=<guid> from=<tank> by=<tank> dwell_ms=<ms> n=<1|2> cap=<0|1> reach_yd=<yd>` per relief start (`from` the relieved tank, `by` the taking one, `n` this Son's relief count, `cap` the cap guard's read).
+
+Cost: one latch per Son of the fight; each instance sweeps its own latches at most once a second (entries untouched for more than 120 s drop).
 
 </details>
 
