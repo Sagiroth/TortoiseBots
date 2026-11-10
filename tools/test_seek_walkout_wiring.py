@@ -632,9 +632,10 @@ class PullerKeepsFightWiring(unittest.TestCase):
         self.assertIn("Creature* const liveBoss = LiveWalkoutPullerBoss(bot, &sonGuid, &startMs);", scan)
         self.assertIn("WalkoutPullerKeepsBoss(keepsBossOn, liveBoss != nullptr, bossInAttackers)", scan)
         # Exactly as an attacker is added, and after the attackers loop, before the rows loop: the kept entry goes into
-        # both lists (the attackers loop's push and the kept boss's), or the rows never load for it.
+        # both lists (the attackers loop's push and the kept boss's), or the rows never load for it. The third pair is
+        # the engaged-boss registry's append (test_engaged_boss_wiring.py).
         self.assertIn("fight.units.push_back(liveBoss);", scan)
-        self.assertEqual(scan.count("seen.push_back(entry);"), 2)
+        self.assertEqual(scan.count("seen.push_back(entry);"), 3)
         self.assertIn("entryUnits.push_back(std::vector<Unit*>(1, liveBoss));", scan)
         self.assertIn("entryUnits[known - seen.begin()].push_back(liveBoss);", scan)
         self.assertLess(scan.index("for (const ObjectGuid& guid : attackers)"), scan.index("LiveWalkoutPullerBoss(bot"))
