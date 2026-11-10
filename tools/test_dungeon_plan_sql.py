@@ -6277,8 +6277,8 @@ class DungeonPlanSql(unittest.TestCase):
         # radii, the raid ring and margin). Walk 1's five resumed plain pulls of pack 0 killed it in about a minute
         # with 0-3 deaths; the stand's sight line is a vmap question the offline navmesh cannot answer.
         name, text = newest_plan_text("onyxias_lair")
-        self.assertEqual(name, "20261110120100_world.sql")
-        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent f752900f", text)
+        self.assertEqual(name, "20261111090100_world.sql")
+        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent 143052b9", text)
         self.assertEqual([v[0] for v in leg_rows(text, "onyxias_lair").values()], ["tunnel", "onyxia"])
         rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
         leg0 = leg_steps(rows, 0)
@@ -6287,7 +6287,7 @@ class DungeonPlanSql(unittest.TestCase):
         pulls = [r for r in rows if r["kind"] == "pull"]
         self.assertEqual(len(pulls), 7)
         self.assertEqual([(r["entries"], r["radius"]) for r in pulls],
-                         [("12129", "1"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
+                         [("12129", "28"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
                           ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
         # Pulls 2, 4, 5 and 6 carry the stand-pull flag with param 0; pack 0 and the rest carry no flag.
         flagged = {int(r["seq"]) for r in leg0 if r["kind"] == "pull" and int(r["flags"]) & 8192}
@@ -6297,9 +6297,9 @@ class DungeonPlanSql(unittest.TestCase):
                 self.assertEqual(r["param"], "0", r["seq"])
             else:
                 self.assertEqual(r["flags"], "0", r["seq"])
-        # Pack 0 is the plain pull: same spot and radius, no stand-pull flag or comment.
+        # Pack 0 is the plain pull: same spot, radius 28, no stand-pull flag or comment.
         pack0 = [r for r in pulls if r["entries"] == "12129"][0]
-        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "1"))
+        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "28"))
         self.assertEqual(pack0["comment"], "pull group 0")
         # The boss leg: the corridor-junction `to`, the two floor approach points, the stand, then Onyxia.
         self.assertEqual([(r["kind"], r["comment"]) for r in leg1],
@@ -6313,6 +6313,21 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertGreaterEqual(dist3(stand, 0.69628, -211.972, -86.075), 75.0)
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["onyxias_lair"])
 
-
+    def test_onyxias_lair_walk2d_pack0_radius28(self):
+        # 20261111090100 (walk 2d, TA 143052b9): pack 0 radius 1 -> 28. Only its pull row (seq 2, radius 28) and
+        # the plan row's source rev differ from 20261110120100; the cut used the same flags and mmaps state (no
+        # approach-path re-cut), so every other row is byte-identical. This pins the new file's own rows.
+        text = open("data/sql/world/20261111090100_world.sql").read()
+        self.assertIn("'turtle-agent 143052b9 ", text)
+        rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 7)
+        pack0 = [r for r in pulls if r["entries"] == "12129"][0]
+        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "28"))
+        self.assertEqual(pack0["comment"], "pull group 0")
+        self.assertEqual(pack0["flags"], "0")
+        self.assertEqual([(r["entries"], r["radius"]) for r in pulls],
+                         [("12129", "28"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
+                          ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
 if __name__ == "__main__":
     unittest.main()
