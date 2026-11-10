@@ -12,7 +12,6 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/BotActionLog.h"
 #include "Spells/SpellMgr.h"
-#include "Threat/ThreatManager.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
@@ -131,123 +130,45 @@ bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
         LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
     return held;
 }
-// One effect's average points for this caster (ThreatCapAverageEffectPoints: WorldObject::CalculateSpellDamage without
-// the roll, the level clamped to the spell's base/max level as the core does), the caster's all-effects spell mods and
-// the level-damage attribute.
-float AverageEffectPoints(Player* bot, SpellEntry const* info, uint32 effect)
+// The threat one cast of `spellId` adds on `target` when it lands, as an average (AiPlayerbot.ThreatCapCountsCastThreat):
+// for every direct school-damage effect of that rank, the middle of the core's damage roll with level growth
+// (ThreatCapAverageEffectPoints, WorldObject::CalculateSpellDamage without the roll), the caster's all-effects spell
+// mods and the level-damage attribute, then spell power and damage modifiers (SpellDamageBonusDone); on the sum the
+// spell's threat mods and the caster's threat modifiers, as ThreatCalcHelper::CalcThreat applies them to the hit.
+// Left out, so the estimate stays an average and on the low side: crits, the target's damage-taken modifiers, damage
+// over time and the spell threat table. 0 for a spell without direct damage. The mod reads pass no Spell, so no spell
+// mod charge (Clearcasting, Presence of Mind) is used up by the estimate (Player::DropModCharge).
+float ExpectedCastThreat(Player* bot, Unit* target, uint32 spellId)
 {
+    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!info || !target)
+        return 0.0f;
     int32 level = int32(bot->GetLevel());
     if (level > int32(info->maxLevel) && info->maxLevel > 0)
         level = int32(info->maxLevel);
     else if (level < int32(info->baseLevel))
         level = int32(info->baseLevel);
     level -= int32(info->spellLevel);
-    float points = ThreatCapAverageEffectPoints(info->EffectBasePoints[effect], int(info->EffectBaseDice[effect]),
-                                                info->EffectDieSides[effect], info->EffectRealPointsPerLevel[effect],
-                                                info->EffectDicePerLevel[effect], level);
-    bot->ApplySpellMod(info->Id, SPELLMOD_ALL_EFFECTS, points);
-    if ((info->Attributes & SPELL_ATTR_LEVEL_DAMAGE_CALCULATION) && info->spellLevel)
-        points *= 0.25f * std::exp(bot->GetLevel() * (70 - int32(info->spellLevel)) / 1000.0f);
-    return points;
-}
-
-// The average direct damage of one cast of `info` on `target`: every SPELL_EFFECT_SCHOOL_DAMAGE effect's average
-// points plus spell power and damage modifiers (SpellDamageBonusDone, SPELL_DIRECT_DAMAGE), as Spell::EffectSchoolDMG.
-float AverageDirectDamage(Player* bot, Unit* target, SpellEntry const* info)
-{
     float damage = 0.0f;
     for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
     {
         if (info->Effect[effect] != SPELL_EFFECT_SCHOOL_DAMAGE)
             continue;
-        float const points = AverageEffectPoints(bot, info, effect);
+        float points = ThreatCapAverageEffectPoints(info->EffectBasePoints[effect], int(info->EffectBaseDice[effect]),
+                                                    info->EffectDieSides[effect], info->EffectRealPointsPerLevel[effect],
+                                                    info->EffectDicePerLevel[effect], level);
+        bot->ApplySpellMod(info->Id, SPELLMOD_ALL_EFFECTS, points);
+        if ((info->Attributes & SPELL_ATTR_LEVEL_DAMAGE_CALCULATION) && info->spellLevel)
+            points *= 0.25f * std::exp(bot->GetLevel() * (70 - int32(info->spellLevel)) / 1000.0f);
         if (points < 1.0f)
             continue;
         damage += float(bot->SpellDamageBonusDone(target, info, SpellEffectIndex(effect), uint32(points),
                                                   SPELL_DIRECT_DAMAGE));
     }
-    return damage;
-}
-
-// The caster's threat mods on `info` as two numbers for ThreatCapCastThreat: the SPELLMOD_THREAT percent (read by
-// applying the mods to 100; a flat SPELLMOD_THREAT mod reads as part of the percent) and the caster's total threat
-// modifier for the spell's school (ApplyTotalThreatModifier on 1).
-void CasterThreatMods(Player* bot, SpellEntry const* info, float& modPct, float& totalMod)
-{
-    float probe = 100.0f;
-    bot->ApplySpellMod(info->Id, SPELLMOD_THREAT, probe);
-    modPct = probe - 100.0f;
-    totalMod = bot->ApplyTotalThreatModifier(1.0f, info->GetSpellSchoolMask());
-}
-
-// The threat one cast of `spellId` adds on `target` when it lands, as an average (AiPlayerbot.ThreatCapCountsCastThreat).
-// - Direct damage: AverageDirectDamage.
-// - A CHANNELED spell's whole channel: each periodic damage or leech effect (Mind Flay, Drain Life) as its average
-//   points through SpellDamageBonusDone(DOT), times the ticks (duration / amplitude, ThreatCapChannelDamage); a
-//   periodic trigger effect (Arcane Missiles) as the triggered spell's average direct damage times the ticks, with the
-//   triggered spell's own threat multiplier. A DoT that is not channeled counts only its direct part: its threat
-//   comes a tick at a time and every later cast is checked again.
-// - Threat: ThreatCapCastThreat, as the core adds it when the hit lands: the damage times the spell threat table's
-//   multiplier (Unit::DealDamage, sSpellMgr.GetSpellThreatMultiplier), plus the table's flat threat and AP bonus
-//   (Spell::HandleThreatSpells), each through the caster's SPELLMOD_THREAT and total threat modifier
-//   (ThreatCalcHelper::CalcThreat).
-// Left out, so the estimate stays an average and on the low side: crits, the target's damage-taken modifiers and a
-// non-channeled DoT's ticks. 0 for a spell the core gives no harmful threat (SPELL_ATTR_EX4_NO_HARMFUL_THREAT). The
-// mod reads pass no Spell, so no spell mod charge (Clearcasting, Presence of Mind) is used up (Player::DropModCharge).
-float ExpectedCastThreat(Player* bot, Unit* target, uint32 spellId)
-{
-    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
-    if (!info || !target || info->HasAttribute(SPELL_ATTR_EX4_NO_HARMFUL_THREAT))
+    if (damage <= 0.0f)
         return 0.0f;
-    bool const channeled = info->IsChanneledSpell();
-    int32 const durationMs = info->GetDuration();
-    float damage = AverageDirectDamage(bot, target, info);
-    float triggeredThreat = 0.0f;
-    float modPct = 0.0f;
-    float totalMod = 1.0f;
-    CasterThreatMods(bot, info, modPct, totalMod);
-    if (channeled)
-    {
-        for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
-        {
-            if (info->Effect[effect] != SPELL_EFFECT_APPLY_AURA)
-                continue;
-            uint32 const aura = info->EffectApplyAuraName[effect];
-            int32 const amplitudeMs = int32(info->EffectAmplitude[effect]);
-            if (aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_LEECH)
-            {
-                float const points = AverageEffectPoints(bot, info, effect);
-                if (points < 1.0f)
-                    continue;
-                float const perTick = float(bot->SpellDamageBonusDone(target, info, SpellEffectIndex(effect),
-                                                                      uint32(points), DOT));
-                damage += ThreatCapChannelDamage(channeled, perTick, durationMs, amplitudeMs);
-            }
-            else if (aura == SPELL_AURA_PERIODIC_TRIGGER_SPELL)
-            {
-                SpellEntry const* triggered = sServerFacade.LookupSpellInfo(info->EffectTriggerSpell[effect]);
-                if (!triggered || triggered->HasAttribute(SPELL_ATTR_EX4_NO_HARMFUL_THREAT))
-                    continue;
-                float const perTick = AverageDirectDamage(bot, target, triggered);
-                float const channel = ThreatCapChannelDamage(channeled, perTick, durationMs, amplitudeMs);
-                float triggeredPct = 0.0f;
-                float triggeredTotal = 1.0f;
-                CasterThreatMods(bot, triggered, triggeredPct, triggeredTotal);
-                triggeredThreat += ThreatCapCastThreat(channel, sSpellMgr.GetSpellThreatMultiplier(triggered), 0.0f,
-                                                       0.0f, 0.0f, triggeredPct, triggeredTotal);
-            }
-        }
-    }
-    float flatThreat = 0.0f;
-    float apBonus = 0.0f;
-    if (SpellThreatEntry const* threatEntry = sSpellMgr.GetSpellThreatEntry(info->Id))
-    {
-        flatThreat = float(threatEntry->threat);
-        apBonus = threatEntry->ap_bonus;
-    }
-    float const attackPower = apBonus != 0.0f ? bot->GetTotalAttackPowerValue(info->GetWeaponAttackType()) : 0.0f;
-    return ThreatCapCastThreat(damage, sSpellMgr.GetSpellThreatMultiplier(info), flatThreat, apBonus, attackPower,
-                               modPct, totalMod) + triggeredThreat;
+    bot->ApplySpellMod(info->Id, SPELLMOD_THREAT, damage);
+    return bot->ApplyTotalThreatModifier(damage, info->GetSpellSchoolMask());
 }
 
 // One row per bot and 2 s while a damage cast is held by AiPlayerbot.ThreatCapCountsCastThreat: the bot's threat, the
@@ -384,15 +305,12 @@ float ThreatMultiplier::GetValue(Action* action)
     // AiPlayerbot.ThreatCapCountsCastThreat: the high-threat veto below reads only the threat the bot has now, so a
     // slow nuke started under its 80 % line (a Fireball at 79 %) landed as one big hit past the core's pull line. A
     // single-target damage spell from a non-tank at a mob whose victim is a tank is also held while the bot's threat
-    // plus the cast's expected threat reaches the victim's threat, capped by the top tank's (ThreatCapPolicy.h
-    // ThreatCapCastReference, ThreatCapCastOvershoots). Measured on the action's own target. Interrupt actions (Kick,
-    // Pummel, Shield Bash, Earth Shock...) are left to their own rules: stopping the cast is the point. The key is read
-    // first: off, nothing more is computed.
+    // plus the cast's expected threat reaches the top tank's (ThreatCapPolicy.h ThreatCapCastOvershoots). Measured on
+    // the action's own target. The key is read first: off, nothing more is computed.
     if (sPlayerbotAIConfig.threatCapCountsCastThreat &&
         action->GetThreatType() == ActionThreatType::ACTION_THREAT_SINGLE && !PlayerbotAI::IsTank(bot))
     {
-        CastSpellAction const* castAction = dynamic_cast<CastSpellAction*>(action);
-        if (castAction && !dynamic_cast<CastInterruptSpellAction*>(action))
+        if (CastSpellAction const* castAction = dynamic_cast<CastSpellAction*>(action))
         {
             Unit* const castTarget = action->GetTarget();
             Unit* const castVictim = castTarget ? castTarget->GetVictim() : nullptr;
@@ -400,19 +318,13 @@ float ThreatMultiplier::GetValue(Action* action)
             if (castTarget && !sServerFacade.IsFriendlyTo(castTarget, bot) && castVictimPlayer &&
                 castVictimPlayer != bot && PlayerbotAI::IsTank(castVictimPlayer))
             {
-                // The current target's numbers are the cached values the high-threat trigger reads too.
-                bool const onCurrent = castTarget == AI_VALUE(Unit*, "current target");
-                float const castTankThreat = onCurrent ? AI_VALUE2(float, "tank threat", "current target")
-                                                       : ThreatValue::GetTankThreat(ai, castTarget);
-                float const castBotThreat = onCurrent ? AI_VALUE2(float, "my threat", "current target")
-                                                      : ThreatValue::GetThreat(bot, castTarget);
-                float const castLine = ThreatCapCastReference(
-                    sServerFacade.GetThreatManager(castTarget).getThreat(castVictimPlayer), castTankThreat);
+                float const castTankThreat = ThreatValue::GetTankThreat(ai, castTarget);
+                float const castBotThreat = ThreatValue::GetThreat(bot, castTarget);
                 float const castThreat = ExpectedCastThreat(bot, castTarget, castAction->GetSpellID());
                 if (ThreatCapCastOvershoots(sPlayerbotAIConfig.threatCapCountsCastThreat, castBotThreat, castThreat,
-                                            castLine))
+                                            castTankThreat))
                 {
-                    LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castLine);
+                    LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castTankThreat);
                     return 0.0f;
                 }
             }

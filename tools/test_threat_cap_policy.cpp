@@ -3,7 +3,6 @@
 //   /tmp/test_threat_cap_policy
 #include "../ai/playerbot/ThreatCapPolicy.h"
 
-#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -751,57 +750,6 @@ int main()
     CHECK(ThreatCapAverageEffectPoints(99, 1, 0, 0.0f, 0.0f, 0) == 100.0f);
     // Level growth: 4 levels at 0.5 per level adds 2 to the base and 4 levels at 1 per level widens the roll by 4.
     CHECK(ThreatCapAverageEffectPoints(100, 1, 9, 0.5f, 1.0f, 4) == 102.0f + (1.0f + 13.0f) / 2.0f);
-
-    // ThreatCapCastThreat: the core's threat for a landed cast (Unit::DealDamage, Spell::HandleThreatSpells, CalcThreat).
-    CASE("mind_blast_threat_multiplier_counts");
-    // Mind Blast-like: 500 damage, spell threat table x2 = 1000 threat; from bot 0 against tank 1000 that is the line.
-    CHECK(ThreatCapCastThreat(500.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f) == 1000.0f);
-    CHECK(ThreatCapCastOvershoots(true, 0.0f, ThreatCapCastThreat(500.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    // Without the multiplier the same cast read 500 and passed.
-    CHECK(!ThreatCapCastOvershoots(true, 0.0f, ThreatCapCastThreat(500.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    CASE("searing_pain_threat_multiplier_counts");
-    // Searing Pain-like: 220 damage x2 = 440; bot 600 + 440 passes tank 1000, x1 (220) would not.
-    CHECK(ThreatCapCastThreat(220.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f) == 440.0f);
-    CHECK(ThreatCapCastOvershoots(true, 600.0f, ThreatCapCastThreat(220.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    CHECK(!ThreatCapCastOvershoots(true, 600.0f, ThreatCapCastThreat(220.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    CASE("flat_threat_entry_counts");
-    // A spell threat table entry with flat threat 180 and AP bonus 0.1 at 1000 AP: 100 damage + 180 + 100 = 380.
-    CHECK(ThreatCapCastThreat(100.0f, 1.0f, 180.0f, 0.1f, 1000.0f, 0.0f, 1.0f) == 380.0f);
-    // A flat-threat-only cast (no damage) still counts.
-    CHECK(ThreatCapCastThreat(0.0f, 1.0f, 300.0f, 0.0f, 0.0f, 0.0f, 1.0f) == 300.0f);
-    CASE("threat_mods_scale_the_whole_cast");
-    // A -30 % SPELLMOD_THREAT talent and a 1.3 total modifier (Defensive Stance-like) scale damage and flat alike.
-    CHECK(std::fabs(ThreatCapCastThreat(100.0f, 2.0f, 100.0f, 0.0f, 0.0f, -30.0f, 1.3f) - 300.0f * 0.7f * 1.3f) < 0.01f);
-    CHECK(ThreatCapCastThreat(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f) == 0.0f);
-
-    // ThreatCapChannelDamage: a channel counts every tick; a DoT that is not channeled counts none here.
-    CASE("channel_ticks_reach_the_line_vetoed");
-    // Arcane Missiles-like: 5 s channel, a missile every 1 s at 60 = 300; bot 750 + 300 >= tank 1000.
-    CHECK(ThreatCapChannelDamage(true, 60.0f, 5000, 1000) == 300.0f);
-    CHECK(ThreatCapCastOvershoots(true, 750.0f, ThreatCapCastThreat(ThreatCapChannelDamage(true, 60.0f, 5000, 1000),
-                                                                    1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    // Mind Flay-like: 3 s, 1 s ticks.
-    CHECK(ThreatCapChannelDamage(true, 50.0f, 3000, 1000) == 150.0f);
-    CASE("dot_only_spell_not_vetoed");
-    // A DoT that is not channeled (Corruption-like, 18 s, 3 s ticks) adds nothing here: bot 750 is not vetoed.
-    CHECK(ThreatCapChannelDamage(false, 60.0f, 18000, 3000) == 0.0f);
-    CHECK(!ThreatCapCastOvershoots(true, 750.0f, ThreatCapCastThreat(ThreatCapChannelDamage(false, 60.0f, 18000, 3000),
-                                                                     1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f), 1000.0f));
-    CHECK(ThreatCapChannelDamage(true, 60.0f, 0, 1000) == 0.0f);
-    CHECK(ThreatCapChannelDamage(true, 60.0f, 5000, 0) == 0.0f);
-
-    // ThreatCapCastReference: the line is the mob's victim, capped by the top tank.
-    CASE("off_tank_above_victim_no_cover");
-    // Victim (main tank) 800, an off-tank on 1200: bot 600 + cast 250 = 850 passes the victim and pulls in the core;
-    // measured against the top tank (1200) it would pass.
-    CHECK(ThreatCapCastReference(800.0f, 1200.0f) == 800.0f);
-    CHECK(ThreatCapCastOvershoots(true, 600.0f, 250.0f, ThreatCapCastReference(800.0f, 1200.0f)));
-    CHECK(!ThreatCapCastOvershoots(true, 600.0f, 250.0f, 1200.0f));
-    CASE("cast_reference_falls_back_to_top_tank");
-    CHECK(ThreatCapCastReference(1000.0f, 800.0f) == 800.0f);
-    CHECK(ThreatCapCastReference(0.0f, 800.0f) == 800.0f);
-    CHECK(ThreatCapCastReference(500.0f, 0.0f) == 0.0f);
-    CHECK(ThreatCapCastReference(500.0f, -1.0f) == -1.0f);
 
     std::cout << "threat cap policy: all tests passed\n";
     return 0;

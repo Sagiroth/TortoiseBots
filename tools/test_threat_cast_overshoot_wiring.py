@@ -88,60 +88,29 @@ class CastThreatCap(unittest.TestCase):
 
     def test_measured_on_the_action_target_held_by_a_tank(self):
         block = body(multiplier(), CAST_CAP_IF)
-        self.assertIn("CastSpellAction const* castAction = dynamic_cast<CastSpellAction*>(action);", block)
+        self.assertIn("dynamic_cast<CastSpellAction*>(action)", block)
         self.assertIn("Unit* const castTarget = action->GetTarget();", block)
         self.assertIn("PlayerbotAI::IsTank(castVictimPlayer)", block)
-        # The cached current-target values when the action aims there, the direct reads otherwise.
-        self.assertIn('bool const onCurrent = castTarget == AI_VALUE(Unit*, "current target");', block)
-        self.assertIn('AI_VALUE2(float, "tank threat", "current target")\n'
-                      '                                                       : ThreatValue::GetTankThreat(ai, castTarget);',
-                      block)
-        self.assertIn('AI_VALUE2(float, "my threat", "current target")\n'
-                      '                                                      : ThreatValue::GetThreat(bot, castTarget);',
-                      block)
-        # The line is the victim's threat capped by the top tank's (ThreatCapCastReference).
-        self.assertIn("float const castLine = ThreatCapCastReference(\n"
-                      "                    sServerFacade.GetThreatManager(castTarget).getThreat(castVictimPlayer), "
-                      "castTankThreat);", block)
+        self.assertIn("float const castTankThreat = ThreatValue::GetTankThreat(ai, castTarget);", block)
+        self.assertIn("float const castBotThreat = ThreatValue::GetThreat(bot, castTarget);", block)
         self.assertIn("ThreatCapCastOvershoots(sPlayerbotAIConfig.threatCapCountsCastThreat, castBotThreat, castThreat,\n"
-                      "                                            castLine))", block)
-
-    def test_interrupts_are_skipped(self):
-        block = body(multiplier(), CAST_CAP_IF)
-        self.assertIn("if (castAction && !dynamic_cast<CastInterruptSpellAction*>(action))", block)
-        # The skip guards the estimate and the veto.
-        skip = block.index("!dynamic_cast<CastInterruptSpellAction*>(action)")
-        self.assertLess(skip, block.index("ExpectedCastThreat("))
-        self.assertLess(skip, block.index("return 0.0f;"))
+                      "                                            castTankThreat))", block)
+        self.assertNotIn("current target", block)
 
     def test_the_estimate_is_the_average_with_threat_modifiers(self):
         est = body(STRATEGY, "float ExpectedCastThreat(Player* bot, Unit* target, uint32 spellId)")
-        direct = body(STRATEGY, "float AverageDirectDamage(Player* bot, Unit* target, SpellEntry const* info)")
-        self.assertIn("SPELL_EFFECT_SCHOOL_DAMAGE", direct)
-        self.assertIn("SPELL_DIRECT_DAMAGE", direct)
-        self.assertIn("ThreatCapAverageEffectPoints(", body(STRATEGY, "float AverageEffectPoints("))
-        mods = body(STRATEGY, "void CasterThreatMods(")
-        self.assertIn("SPELLMOD_THREAT", mods)
-        self.assertIn("ApplyTotalThreatModifier(1.0f, info->GetSpellSchoolMask())", mods)
-        # The spell threat table: multiplier, flat threat and AP bonus, through the pure ThreatCapCastThreat.
-        self.assertIn("sSpellMgr.GetSpellThreatEntry(info->Id)", est)
-        self.assertIn("return ThreatCapCastThreat(damage, sSpellMgr.GetSpellThreatMultiplier(info), flatThreat, apBonus, "
-                      "attackPower,\n                               modPct, totalMod) + triggeredThreat;", est)
-        self.assertIn("SPELL_ATTR_EX4_NO_HARMFUL_THREAT", est)
-        # Channels: periodic damage/leech ticks through DOT, a periodic trigger through the triggered spell.
-        self.assertIn("SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_LEECH", est)
-        self.assertIn("uint32(points), DOT));", est)
-        self.assertIn("SPELL_AURA_PERIODIC_TRIGGER_SPELL", est)
-        self.assertIn("AverageDirectDamage(bot, target, triggered)", est)
-        self.assertIn("ThreatCapChannelDamage(channeled, perTick, durationMs, amplitudeMs)", est)
-        # No rolled value (CalculateSpellDamage rolls the dice).
-        for text in (est, direct):
-            self.assertNotIn("CalculateSpellDamage(", text)
-            self.assertNotIn("irand(", text)
+        self.assertIn("SPELL_EFFECT_SCHOOL_DAMAGE", est)
+        self.assertIn("ThreatCapAverageEffectPoints(", est)
+        self.assertIn("SpellDamageBonusDone(", est)
+        self.assertIn("SPELLMOD_THREAT", est)
+        self.assertIn("return bot->ApplyTotalThreatModifier(damage, info->GetSpellSchoolMask());", est)
+        # No rolled value (CalculateSpellDamage rolls the dice) and no Spell passed, so no spell mod charge is used.
+        self.assertNotIn("CalculateSpellDamage(", est)
+        self.assertNotIn("irand(", est)
 
     def test_a_veto_logs_its_numbers(self):
         block = body(multiplier(), CAST_CAP_IF)
-        self.assertIn("LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castLine);\n"
+        self.assertIn("LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castTankThreat);\n"
                       "                    return 0.0f;", block)
         log = body(STRATEGY, "void LogCastVeto(")
         self.assertIn('"ThreatCap cast spell=%s pct=%.0f cast=%.0f bot=%.0f tank=%.0f"', log)
@@ -157,12 +126,7 @@ class CastThreatCap(unittest.TestCase):
         self.assertIn("ThreatCapCast", section)
         self.assertIn("ThreatCapCast", LOGGING)
         self.assertIn("Recommended on", CONF[CONF.index("# The threat back-off counts the cast's own threat."):])
-        # The entry by its text, wherever later entries push it.
-        entries = [line for line in CHANGELOG.splitlines() if "AiPlayerbot.ThreatCapCountsCastThreat" in line]
-        self.assertEqual(len(entries), 1)
-        self.assertTrue(entries[0].startswith("- New: "))
-        for limit in ("combo-point", "crits", "damage-taken", "Interrupt"):
-            self.assertIn(limit, section)
+        self.assertIn("ThreatCapCountsCastThreat", CHANGELOG.split("\n- ", 2)[1])
 
 
 if __name__ == "__main__":
