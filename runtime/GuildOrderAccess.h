@@ -70,5 +70,9 @@ uint32_t GuildBankTabCount(uint32_t guildId);
 // so the supply planner can ask on every tick without a database read.
 bool GuildHasBank(uint32_t guildId);
 
+// How many of the item the guild bank holds, all tabs. Cached for half a
+// minute per guild like GuildHasBank, so the supply planner may ask per tick.
+uint32_t GuildBankItemCount(uint32_t guildId, uint32_t itemId);
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

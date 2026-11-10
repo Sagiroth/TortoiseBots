@@ -92,6 +92,9 @@
     botsIssueOnly: false,
     botsPvpOnly: false,
     botsGuild: '',
+    botsFaction: '',
+    botsRace: '',
+    botsProf: '',
     botsSort: { key: null, dir: 1 }, // null = online first, then by name
     anomalyTypeFilter: 'all',
     anomalySeverityFilter: 'all',
@@ -135,6 +138,9 @@
     1: 'Human', 2: 'Orc', 3: 'Dwarf', 4: 'Night Elf', 5: 'Undead',
     6: 'Tauren', 7: 'Gnome', 8: 'Troll', 9: 'Goblin', 10: 'High Elf'
   };
+
+  // Orc, Undead, Tauren, Troll, Goblin; every other race is Alliance.
+  const HORDE_RACES = [2, 5, 6, 8, 9];
 
   const CLASS_NAMES = {
     1: 'Warrior', 2: 'Paladin', 3: 'Hunter', 4: 'Rogue', 5: 'Priest',
@@ -2484,6 +2490,9 @@
       money: db ? (parseInt(db.money, 10) || 0) : 0,
       online: !!live || !!(db && db.online),
       guild: (live && live.guild) || (db && db.guild) || '',
+      race: db ? raceNameById(db.race) : '',
+      faction: db ? (HORDE_RACES.includes(db.race) ? 'Horde' : RACE_NAMES[db.race] ? 'Alliance' : '') : '',
+      profs: db && db.professions ? db.professions : [],
       live,
       db
     };
@@ -2501,6 +2510,20 @@
   }
 
   const DASH = '<span class="cell-muted">–</span>';
+
+  // Secondary skills read short and muted after the trade professions.
+  const SECONDARY_PROF_SHORT = { 129: 'First Aid', 185: 'Cook', 356: 'Fish' };
+
+  function profCell(r) {
+    if (!r.profs.length) return DASH;
+    const sorted = [...r.profs].sort((a, b) => b.value - a.value);
+    const main = sorted.filter(p => !SECONDARY_PROF_SHORT[p.skill])
+      .map(p => `${esc(skillNameById(p.skill))} <span class="mono">${esc(p.value)}</span>`);
+    const side = sorted.filter(p => SECONDARY_PROF_SHORT[p.skill])
+      .map(p => `${SECONDARY_PROF_SHORT[p.skill]} ${p.value}`);
+    const title = sorted.map(p => `${skillNameById(p.skill)} ${p.value}/${p.max}`).join(' · ');
+    return `<span title="${esc(title)}">${main.join(', ')}${side.length ? ` <span class="cell-muted">${esc(side.join(', '))}</span>` : ''}</span>`;
+  }
 
   function stateTag(s) {
     const key = s || 'idle';
@@ -2561,6 +2584,13 @@
       label: 'Class',
       sort: r => `${r.cls} ${r.spec}`.toLowerCase(),
       cell: r => `${esc(capClass(r.cls))}${r.spec ? ` <span class="cell-muted">${esc(specLabel(r.spec, r.cls, r.live))}</span>` : ''}`
+    },
+    race: { label: 'Race', sort: r => r.race.toLowerCase(), cell: r => (r.race ? esc(r.race) : DASH) },
+    prof: {
+      label: 'Professions',
+      title: 'Trade professions with skill level; cooking, fishing and first aid muted',
+      sort: r => r.profs.map(p => skillNameById(p.skill)).join(' ').toLowerCase(),
+      cell: profCell
     },
     level: { label: 'Lvl', sort: r => r.level || 0, cell: r => esc(r.level) },
     state: {
@@ -2664,9 +2694,9 @@
   };
 
   const BOT_VIEWS = {
-    live: ['name', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone', 'guild'],
-    progress: ['name', 'class', 'level', 'xp', 'gear', 'gold'],
-    activity: ['name', 'class', 'level', 'quests', 'loot', 'notable', 'kills', 'deaths', 'money', 'vendors', 'repairs', 'giveups', 'gather', 'ah']
+    live: ['name', 'race', 'class', 'level', 'state', 'hp', 'power', 'target', 'zone', 'guild', 'prof'],
+    progress: ['name', 'race', 'class', 'level', 'xp', 'gear', 'gold', 'prof'],
+    activity: ['name', 'race', 'class', 'level', 'quests', 'loot', 'notable', 'kills', 'deaths', 'money', 'vendors', 'repairs', 'giveups', 'gather', 'ah']
   };
 
   function renderBotChips(base, issues, stateOk, classOk) {
@@ -2754,18 +2784,21 @@
     };
   }
 
-  // Guild filter: every guild any listed character is in, with its size.
-  function paintGuildFilter(rows) {
-    const sel = document.getElementById('bots-guild');
+  // Dropdown filter (guild, race, profession): every value any listed
+  // character has, with its count; "-" picks the characters with none.
+  function paintSelectFilter(id, rows, valuesOf, anyLabel, noneLabel, current) {
+    const sel = document.getElementById(id);
     if (!sel) return;
     const counts = {};
-    rows.forEach(r => { if (r.guild) counts[r.guild] = (counts[r.guild] || 0) + 1; });
+    rows.forEach(r => valuesOf(r).forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
     const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
-    const html = '<option value="">Any guild</option><option value="-">No guild</option>' +
+    const html = `<option value="">${esc(anyLabel)}</option>${noneLabel ? `<option value="-">${esc(noneLabel)}</option>` : ''}` +
       names.map(n => `<option value="${esc(n)}">${esc(n)} (${counts[n]})</option>`).join('');
     if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
-    sel.value = state.botsGuild || '';
+    sel.value = current || '';
   }
+
+  const profNames = r => r.profs.map(p => skillNameById(p.skill));
 
   function renderRoster() {
     if (!el.rosterTable) return;
@@ -2785,16 +2818,22 @@
     const text = words.filter((w, i) => !fields[i]);
     const tests = fields.filter(Boolean);
     const queryOk = r => tests.every(t => t(r)) &&
-      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w));
+      text.every(w => r.name.toLowerCase().includes(w) || r.cls.includes(w) || r.spec.toLowerCase().includes(w) || r.kind.includes(w) || r.guild.toLowerCase().includes(w) || r.race.toLowerCase().includes(w));
     const stateOk = r => state.botsState === 'all' || (r.live && (r.live.state || 'idle') === state.botsState);
     const classOk = r => state.botsClass === 'all' || r.cls === state.botsClass;
     const specOk = r => state.botsClass === 'all' || state.botsSpec === 'all' || r.spec === state.botsSpec;
     const issueOk = r => !state.botsIssueOnly || !!issues[r.guid];
     const pvpOk = r => !state.botsPvpOnly || !!(r.live && r.live.pvp) || inWorldPvp(r.live);
     const guildOk = r => !state.botsGuild || (state.botsGuild === '-' ? !r.guild : r.guild === state.botsGuild);
-    paintGuildFilter(rows);
+    const raceOk = r => !state.botsRace || r.race === state.botsRace;
+    const factionOk = r => !state.botsFaction || r.faction === state.botsFaction;
+    const profOk = r => !state.botsProf || (state.botsProf === '-' ? !r.profs.length : profNames(r).includes(state.botsProf));
+    paintSelectFilter('bots-guild', rows, r => (r.guild ? [r.guild] : []), 'Any guild', 'No guild', state.botsGuild);
+    paintSelectFilter('bots-faction', rows, r => (r.faction ? [r.faction] : []), 'Any faction', '', state.botsFaction);
+    paintSelectFilter('bots-race', rows.filter(factionOk), r => (r.race ? [r.race] : []), 'Any race', '', state.botsRace);
+    paintSelectFilter('bots-prof', rows, profNames, 'Any profession', 'No profession', state.botsProf);
 
-    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r) && guildOk(r));
+    const base = rows.filter(r => presenceOk(r) && segOk(r) && queryOk(r) && guildOk(r) && factionOk(r) && raceOk(r) && profOk(r));
     renderBotChips(base, issues, stateOk, classOk);
     renderKindChips(base);
     const list = base.filter(r => kindOk(r) && stateOk(r) && classOk(r) && specOk(r) && issueOk(r) && pvpOk(r));
@@ -3272,6 +3311,12 @@
     bindSeg(el.kindSeg, v => { state.botsKind = v; renderRoster(); });
     const guildSel = document.getElementById('bots-guild');
     if (guildSel) guildSel.addEventListener('change', () => { state.botsGuild = guildSel.value; renderRoster(); });
+    const factionSel = document.getElementById('bots-faction');
+    if (factionSel) factionSel.addEventListener('change', () => { state.botsFaction = factionSel.value; renderRoster(); });
+    const raceSel = document.getElementById('bots-race');
+    if (raceSel) raceSel.addEventListener('change', () => { state.botsRace = raceSel.value; renderRoster(); });
+    const profSel = document.getElementById('bots-prof');
+    if (profSel) profSel.addEventListener('change', () => { state.botsProf = profSel.value; renderRoster(); });
     bindSeg(el.viewSeg, v => {
       state.botsView = v;
       try { localStorage.setItem(BOTS_VIEW_STORAGE_KEY, v); } catch (e) {}

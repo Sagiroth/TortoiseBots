@@ -26,4 +26,15 @@ namespace ai
 
         bool IsActive();
     };
+
+    // Every tick while a guild craft order sits on its craft step: the bot
+    // crafts the batch in one go instead of one cast per few seconds with
+    // travel walking it off (and breaking the cast) in between.
+    class GuildCraftStepTrigger : public Trigger {
+    public:
+        GuildCraftStepTrigger(PlayerbotAI* ai) :
+            Trigger(ai, "guild craft step", 1) {}
+
+        bool IsActive() override;
+    };
 }

@@ -438,5 +438,41 @@ bool GuildHasBank(uint32_t guildId)
     return has;
 }
 
+uint32_t GuildBankItemCount(uint32_t guildId, uint32_t itemId)
+{
+    if (!guildId || !itemId)
+        return 0;
+    using Stock = std::unordered_map<uint32_t, uint32_t>;
+    static std::mutex lock;
+    static std::unordered_map<uint32_t, std::pair<Stock, std::chrono::steady_clock::time_point>> cache;
+    auto const now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> guard(lock);
+        auto it = cache.find(guildId);
+        if (it != cache.end() && now - it->second.second < std::chrono::seconds(30))
+        {
+            auto found = it->second.first.find(itemId);
+            return found == it->second.first.end() ? 0 : found->second;
+        }
+    }
+    Stock stock;
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `item_template`, SUM(`count`) FROM `guild_bank` "
+        "WHERE `guildid` = '%u' AND `isInferno` = '0' GROUP BY `item_template`", guildId));
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            stock[fields[0].GetUInt32()] = fields[1].GetUInt32();
+        } while (result->NextRow());
+    }
+    auto found = stock.find(itemId);
+    uint32_t const count = found == stock.end() ? 0 : found->second;
+    std::lock_guard<std::mutex> guard(lock);
+    cache[guildId] = { std::move(stock), now };
+    return count;
+}
+
 } // namespace GuildOrders
 } // namespace TortoiseBots

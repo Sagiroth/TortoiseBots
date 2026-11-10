@@ -168,7 +168,7 @@ New here? Read [Getting Started](getting-started.md) first.
 
 | Feature | On? | Setting | More |
 | :--- | :---: | :--- | :--- |
-| Pool bots invite you to their group (not while you are `/dnd`) | Yes | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Invites](../world/social.md#grouping--party-invites) |
+| Pool bots invite you to their group (not while you are `/dnd`) | No | [`AiPlayerbot.RandomBotInvitePlayer`](../server/settings/world-population.md#aiplayerbotrandombotinviteplayer) | [Invites](../world/social.md#grouping--party-invites) |
 | Pool bots group with each other | No | [`AiPlayerbot.RandomBotGroupNearby`](../server/settings/world-population.md#aiplayerbotrandombotgroupnearby) | [Invites](../world/social.md#grouping--party-invites) |
 | Pool bots join your guild when invited (hires, your own alts, full guilds and queued bots excluded) | Always | — | [Guilds](../world/social.md#guilds) |
 | Bots found guilds of their own | No | [`AiPlayerbot.RandomBotFormGuild`](../server/settings/world-population.md#aiplayerbotrandombotformguild) | [Guilds](../world/social.md#guilds) |
