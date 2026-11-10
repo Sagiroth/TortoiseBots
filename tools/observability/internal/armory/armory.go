@@ -146,7 +146,33 @@ func (s *Service) ListBots(query string) ([]BotSummary, error) {
 	}
 	s.resolveBotSpecs(bots)
 	s.resolveBotGuilds(bots)
+	s.resolveBotProfessions(bots)
 	return bots, nil
+}
+
+// professionSkillIDs are the trade and secondary skills (core SharedDefines.h
+// SKILL_*), Turtle's Jewelcrafting included.
+const professionSkillIDs = "129,164,165,171,182,185,186,197,202,333,356,393,755"
+
+// resolveBotProfessions reads every character's profession skills in one
+// single-table read (no join to characters), for the list column and filter.
+func (s *Service) resolveBotProfessions(bots []BotSummary) {
+	rows, err := s.db.Query("SELECT guid, skill, value, `max` FROM character_skills WHERE skill IN (" + professionSkillIDs + ")")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	byGUID := map[uint32][]SkillEntry{}
+	for rows.Next() {
+		var guid uint32
+		var se SkillEntry
+		if rows.Scan(&guid, &se.Skill, &se.Value, &se.Max) == nil {
+			byGUID[guid] = append(byGUID[guid], se)
+		}
+	}
+	for i := range bots {
+		bots[i].Professions = byGUID[bots[i].GUID]
+	}
 }
 
 // resolveBotGuilds names each character's guild from the database, so the

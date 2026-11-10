@@ -39,6 +39,8 @@ type BotSummary struct {
 	Kind string `json:"kind,omitempty"`
 	// Guild is the guild name from the database (empty when guildless).
 	Guild string `json:"guild,omitempty"`
+	// Professions are the trade and secondary skills the character knows.
+	Professions []SkillEntry `json:"professions,omitempty"`
 }
 
 // ItemDetail carries the tooltip-relevant fields from world.item_template:

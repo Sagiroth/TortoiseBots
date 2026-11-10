@@ -1713,8 +1713,9 @@ AiPlayerbot.LevelCheck = 30
 # Spells that won't affect bots
 AiPlayerbot.ImmuneSpellIds = 19428
 
-# Randombots will invite players to groups/raids/guilds. (This can also be disabled by turning on DnD on your character)
-# AiPlayerbot.RandomBotInvitePlayer = 1
+# Randombots will invite players to groups/raids/guilds. Off by default: the
+# repeated invites annoy players. (Turning on DnD also stops them.)
+# AiPlayerbot.RandomBotInvitePlayer = 0
 
 # Randombots will invite nearby bots to groups/raids/guilds. Off by default
 # (mod-playerbots parity): bot-only groups leash members and stall the pool.

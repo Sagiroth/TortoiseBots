@@ -440,6 +440,21 @@ bool FindSupplyCandidate(PlayerbotAI* ai, Player* bot, uint32_t itemId, uint32_t
             results.push_back(SupplyCandidate{ reagentId, 0, false });
             continue;
         }
+        // A craftable component the guild bank holds is fetched there before
+        // the ladder descends to its own reagents (banked Light Leather, not
+        // farmed scraps). A visit that found none, or a refused withdrawal,
+        // lets the descent go ahead.
+        if (order && sPlayerbotAIConfig.guildOrderBankWithdraw && SnapshotCraftSpell(bot, snap, reagentId) &&
+            !BankLegSkipped(reagentId, order->bankEmptyItemId, snap.nowMs, order->bankEmptyMs) &&
+            !(order->supplyItemId == reagentId && order->reason == OrderReason::BankDenied) &&
+            TortoiseBots::GuildOrders::GuildHasBank(bot->GetGuildId()) &&
+            TortoiseBots::GuildOrders::GuildBankItemCount(bot->GetGuildId(), reagentId) > 0)
+        {
+            results.push_back(SupplyCandidate{ reagentId,
+                TreeTotalFor(*totals, depth + 1, reagentId, required - owned, ReagentAggregate::ExtShort), false });
+            outcomes.push_back(MaterialOutcome::Missing);
+            continue;
+        }
         SupplyCandidate nested;
         if (!FindSupplyCandidate(ai, bot, reagentId, required - owned, path, depth + 1, nested, order, &snap,
                 totals))

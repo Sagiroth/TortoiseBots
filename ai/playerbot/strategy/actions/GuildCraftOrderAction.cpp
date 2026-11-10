@@ -115,8 +115,9 @@ bool GuildCraftOrderAction::Execute(Event& event)
         return true;
     }
 
+    // Mid-cast: hold the tick so no travel step walks off and breaks it.
     if (bot->IsNonMeleeSpellCasted(false, true, true))
-        return false;
+        return true;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(craftSpellId);
     if (!pSpellInfo)
@@ -317,9 +318,7 @@ bool GuildCraftOrderAction::isUseful()
     // Moving or mounted is no reason to wait: Execute stops and dismounts
     // right before the cast. A bot jittering on a failed path never stood
     // still, so its craft step never ran (live: Copper Tubes for 30 min).
-    if (bot->IsNonMeleeSpellCasted(false, true, true))
-        return false;
-
+    // A running cast stays useful too: Execute holds the bot still for it.
     GuildOrder order = AI_VALUE(GuildOrder, "guild order");
     if (!order.IsCraftOrder())
         return false;
