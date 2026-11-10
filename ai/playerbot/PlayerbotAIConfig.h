@@ -797,6 +797,18 @@ public:
     // The fixed ranged slots of a live spread row (each ranged bot and healer owns a ring point and stands on it
     // whenever the seek does not need it): off, today's step-away (default off, recommended on).
     bool dungeonRunBossSpreadSlots = false;
+    // One BossStand row per bot's stand episode (assigned, arrived, unseated, released) into bot_events.csv: off, the
+    // stand code writes nothing and reads no episode state (needs the boss stand rows and the bot_events.csv log;
+    // default off).
+    bool bossStandEvents = false;
+    // The boss stand seats of the whole raid: a bot in combat with the boss counts even after a threat wipe (threat
+    // 0, not the victim), a bot already clear of its lane stays where it stands instead of walking to its seat, and a
+    // seated bot does not flee (default off).
+    bool bossStandWholeRaid = false;
+    // A boss the raid is fighting stays in every raid bot's fight for 10 s after the last bot saw it in its attacker
+    // list (a melee bot that cannot reach an airborne boss gives up on it): within 150 yd and while the bot itself is
+    // in combat, so its boss-tactic rows and stand seats stay active (default off).
+    bool bossTacticsKeepsEngagedBoss = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).

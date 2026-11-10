@@ -78,7 +78,8 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid)", find)
         self.assertIn("stored.arrivedSubjectGuid = in.subjectGuid;", find)
         self.assertIn("in.subjectOnTank = subject && subject->GetVictim() == bot", find)
-        self.assertIn("in.seated = holdSpot && FindBossStand(ai, bot).valid", find)
+        self.assertIn("const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();", find)
+        self.assertIn("in.seated = TankPostSeated(stand.valid, stand.stay);", find)
         self.assertIn("if (holdSpot && currentTarget == subject)\n        in.holdingOtherHostile = false;", find)
         self.assertIn("(!holdSpot && in.holdingOtherHostile)", find)
         # The step's arrived decision reaches the trigger and the action: a hold_spot post does not stand down for
