@@ -131,6 +131,9 @@ bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
         LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
     return held;
 }
+
+namespace
+{
 // One effect's average points for this caster (ThreatCapAverageEffectPoints: WorldObject::CalculateSpellDamage without
 // the roll, the level clamped to the spell's base/max level as the core does), the caster's all-effects spell mods and
 // the level-damage attribute.
