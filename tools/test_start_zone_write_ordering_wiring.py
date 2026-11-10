@@ -2,7 +2,7 @@
 
 Goblin and high elf pool characters are created with their custom-island
 PlayerInfo coordinates, so RandomBotService rewrites the character position and
-its character_homebind row to Valley of Trials / Northshire right after
+its character_homebind row to a mainland start zone of their faction right after
 CharacterCreation::CreateCharacter returned. That seam is synchronous
 (SaveToDB(false, true, false)), but the bot's headless session starts reading
 `characters` and `character_homebind` immediately afterwards, so those two
@@ -27,31 +27,18 @@ def creation_block(text):
     return text[i:text.index("Candidate created;", i)]
 
 
-def race_block(block, race, stop=None):
-    i = block.index("if (race == RACE_%s)" % race)
-    return block[i:block.index(stop, i)] if stop else block[i:]
-
-
 class StartZoneWriteOrderingWiringTest(unittest.TestCase):
     def setUp(self):
         self.block = creation_block(SERVICE)
 
-    def assert_direct_pair(self, block, position):
+    def test_flexible_race_start_zone_writes_are_direct(self):
+        block = self.block
+        self.assertIn("if (IsFlexibleStartRace(race))", block)
         self.assertEqual(block.count("CharacterDatabase.DirectPExecute("), 2, block)
-        self.assertIn(position, block)
+        self.assertIn("UPDATE characters SET map = %u, zone = %u,", block)
         self.assertIn("REPLACE INTO character_homebind", block)
         # Never the async queue: it can land after the login SELECT.
         self.assertNotIn("CharacterDatabase.PExecute(", block)
-
-    def test_goblin_start_zone_writes_are_direct(self):
-        self.assert_direct_pair(
-            race_block(self.block, "GOBLIN", "else if (race == RACE_HIGH_ELF)"),
-            "UPDATE characters SET map = 1, zone = 14,")
-
-    def test_high_elf_start_zone_writes_are_direct(self):
-        self.assert_direct_pair(
-            race_block(self.block, "HIGH_ELF"),
-            "UPDATE characters SET map = 0, zone = 12,")
 
 
 if __name__ == "__main__":

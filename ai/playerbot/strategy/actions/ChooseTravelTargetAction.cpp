@@ -1,7 +1,9 @@
-
+#include "host/ModuleLog.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/LootObjectStack.h"
+#include "Maps/PathFinder.h"
+#include "playerbot/strategy/actions/MovementActions.h"
 #include "ChooseTravelTargetAction.h"
 #include "FishAction.h"
 #include "MoveToTravelTargetAction.h"
@@ -148,7 +150,8 @@ static bool IsGuildOrderTravelName(std::string const& name)
 // keeps its zone move, the vendor leg keeps retrying (a vendor-unlimited
 // reagent is bought, never farmed or delegated); focus has no ladder exit
 // and only parks.
-static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey)
+static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const& purposeKey,
+    bool someInactive = false)
 {
     using namespace TortoiseBots::GuildOrders;
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -231,7 +234,10 @@ static bool OrderLegSearchEmpty(PlayerbotAI* ai, Player* bot, std::string const&
         // Three consecutive rejected or empty searches in one zone move the
         // order to the next plan zone, so a bad zone costs about a minute,
         // not the hour the death rules would take.
-        NoteSearchFailed(bot->GetGUIDLow(), record->farmZoneId);
+        // A source that is inactive right now (taken, respawning) are
+        // not a bad zone: the bot waits for them instead of leaving.
+        if (!someInactive)
+            NoteSearchFailed(bot->GetGUIDLow(), record->farmZoneId);
     }
     return false;
 }
@@ -347,7 +353,8 @@ static void WanderOnEmptyPick(PlayerbotAI* ai, Player* bot)
         if (path.size() < 2 || !spot.isPathTo(path, 3.0f) || spot.IsGuardedHostileTownFor(bot))
             continue;
 
-        bot->GetMotionMaster()->MovePoint(spot.GetMapId(), spot.getX(), spot.getY(), spot.getZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+        if (!MovementAction::LaunchLandWalk(bot, spot))
+            continue;
         if (AI_VALUE2(time_t, "manual time", "empty pick wander log") <= time(0))
         {
             SET_AI_VALUE2(time_t, "manual time", "empty pick wander log", time(0) + 5 * MINUTE);
@@ -718,7 +725,10 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         bool const orderLeg = IsGuildOrderTravelName(purposeKey);
         if (orderLeg)
         {
-            bool orderLegSwitched = OrderLegSearchEmpty(ai, bot, purposeKey);
+            // A source that is only inactive right now (taken, respawning) will
+            // come back: the zone is not bad, even when other spots are unreachable.
+            bool const someInactive = lastRejectReasons.find("inactive=") != std::string::npos;
+            bool orderLegSwitched = OrderLegSearchEmpty(ai, bot, purposeKey, someInactive);
             if (orderLegSwitched)
             {
                 // The order moved to a new leg (bank, AH, farm, sub, need):
@@ -1013,6 +1023,10 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         if (pickedFromNull)
             destZone += " (from null)";
         sPlayerbotAIConfig.logEvent(ai, "TravelTarget", purpose, destZone);
+        if (newPickDest && IsGuildOrderTravelName(purpose) && newPickPos)
+            TB_LOG_DETAIL("TortoiseBots: order %s walks to %s at map %u (%.0f, %.0f) in %s, purpose %s",
+                bot->GetName(), newPickDest->GetTitle().c_str(), newPickPos->getMapId(), newPickPos->getX(),
+                newPickPos->getY(), destZone.c_str(), purpose.c_str());
 
         // One vendor journey at a time: a walk to a vendor has just started, and
         // the request gate refuses another until this is ten minutes old, a sale
@@ -1678,6 +1692,16 @@ ai::TravelPickOutcome ChooseTravelTargetAction::SetBestTargetSliced(Player* requ
                     {
                         ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - fishing spot guarded by hostile creatures", "debug travel");
                         ++rejects["fishguard"];
+                        if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
+                        continue;
+                    }
+
+                    if (ai::PurposeRemembersUnreachablePoints(destination->GetPurpose() == TravelDestinationPurpose::GatherFishing,
+                            destination->GetPurpose() == TravelDestinationPurpose::GenericRpg) &&
+                        sTravelMgr.IsUnreachablePointRefused(*position))
+                    {
+                        ai->TellDebug(requester, "Skipping " + destination->GetTitle() + " - point nobody can walk to", "debug travel");
+                        ++rejects["unreachable"];
                         if (slicing) scan.verdicts[{ destination, position }] = PICK_VERDICT_REJECT;
                         continue;
                     }
@@ -2679,6 +2703,9 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
         if (!mailRecord || mailRecord->state != TortoiseBots::GuildOrders::OrderState::Working)
             return false;
         bool ahSupply = mailRecord->supplyStep == TortoiseBots::GuildOrders::SupplyStep::AuctionHouse;
+        TB_LOG_DETAIL("TortoiseBots: order %s travel request: step %s item %u zone %u (travel order %s, farm item %u)",
+            bot->GetName(), TortoiseBots::GuildOrders::SupplyStepToken(mailRecord->supplyStep),
+            mailRecord->itemId, mailRecord->farmZoneId, order.IsTravelOrder() ? "yes" : "no", orderFarmItem);
 
         if (!order.IsTravelOrder() && !(order.IsCraftOrder() && orderFarmItem) && !ahSupply &&
             (!mailRecord || mailRecord->type != TortoiseBots::GuildOrders::OrderType::Enchant))
@@ -2723,7 +2750,7 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 });
             mailboxLeg = true;
         }
-        else if (!mailRecord->supplyItemId &&
+        else if ((!mailRecord->supplyItemId || mailRecord->supplyItemId == mailRecord->itemId) &&
             TortoiseBots::GuildOrders::CollectOrderMailFirst(
                 ai->GetInventoryItemsCountWithId(order.itemId), mailRecord->delivered,
                 OrderMailboxItems(bot, order.itemId), order.amount, false, false))
@@ -2775,6 +2802,12 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
             // to the first when the list is exhausted.
             uint32_t farmZoneId = record->farmZoneId;
             TortoiseBots::GuildOrders::SourcePlan plan = planFor(itemId);
+            // Pool bots never travel to another continent: when the bot's own
+            // map has zones, the ones across the sea are no candidates, or
+            // the zone moves burn through them with empty searches.
+            if (!plan.zones.empty() && plan.zones.front().onBotMap)
+                plan.zones.erase(std::remove_if(plan.zones.begin(), plan.zones.end(),
+                    [](TortoiseBots::GuildOrders::FarmZone const& z) { return !z.onBotMap; }), plan.zones.end());
             bool listed = false;
             bool listedOnBotMap = false;
             size_t listedIndex = 0;
@@ -2812,10 +2845,15 @@ bool RequestNamedTravelTargetAction::Execute(Event& event)
                 if (plan.zones.size() <= pick)
                 {
                     OrderReason reason = plan.verdict == OrderReason::None ? OrderReason::NoSource : plan.verdict;
+                    TB_LOG_DETAIL("TortoiseBots: order %s farm item %u: no zone to farm (plan has %u zones, verdict %s, bot map %u)",
+                        bot->GetName(), itemId, uint32_t(plan.zones.size()),
+                        TortoiseBots::GuildOrders::ReasonToken(reason), bot->GetMapId());
                     SetState(bot->GetGUIDLow(), TortoiseBots::GuildOrders::StateForReason(reason), reason);
                     return false;
                 }
                 farmZoneId = plan.zones[pick].zoneId;
+                TB_LOG_DETAIL("TortoiseBots: order %s farm item %u: zone %u picked (%u of %u, bot map %u)",
+                    bot->GetName(), itemId, farmZoneId, uint32_t(pick + 1), uint32_t(plan.zones.size()), bot->GetMapId());
                 SetFarmZone(bot->GetGUIDLow(), farmZoneId, plan.zones[pick].chance, uint32_t(pick), itemId);
             }
 

@@ -67,7 +67,7 @@ class ScoutCommandWiringTest(unittest.TestCase):
         # Every distance and both paths come from origin, never from the mover's
         # spot: the scout asks from a start the mover is not standing on.
         self.assertIn("RemoteCommander::LeadMoveFacts(originPoint, point,", fn)
-        self.assertEqual(fn.count(".calculate(origin,"), 2)  # main path and the raised-floor snap path
+        self.assertEqual(fn.count(".calculate(origin,"), 3)  # strict path, its permissive retry, the raised-floor snap path
         self.assertIn("RemoteCommander::LeadMoveFacts(", fn)
         self.assertNotIn("GetPositionX()", fn)
         self.assertIn("check.startSwim = terrain->IsSwimmable(origin.x, origin.y, origin.z);", fn)

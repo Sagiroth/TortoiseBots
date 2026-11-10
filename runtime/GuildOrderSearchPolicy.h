@@ -115,7 +115,26 @@ inline bool OrderSearchShows(OrderType type, OrderItemFacts const& item)
         case OrderType::Enchant:
             return false;
     }
-    return false;
+}
+
+// Final per-bot search order: usable rows (verdict ok) first across all
+// matches, keeping name rank then A-Z inside each group. The 30-row cut
+// runs after this sort, so a craftable match survives unknown recipes that
+// rank better by name alone.
+struct SearchOrderRow
+{
+    uint32_t rank = 3;
+    std::string name;
+    bool usable = false;
+};
+
+inline bool SearchOrderLess(SearchOrderRow const& a, SearchOrderRow const& b)
+{
+    if (a.usable != b.usable)
+        return a.usable;
+    if (a.rank != b.rank)
+        return a.rank < b.rank;
+    return a.name < b.name;
 }
 
 } // namespace GuildOrders

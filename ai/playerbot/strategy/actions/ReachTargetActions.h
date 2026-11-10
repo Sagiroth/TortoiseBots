@@ -15,6 +15,7 @@
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/policy/pull/PullFiringPolicy.h"
 #include "playerbot/policy/combat/RangedApproachPolicy.h"
+#include "playerbot/HunterSwitchPolicy.h"
 #include "playerbot/policy/combat/EvadeChasePolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/BossTacticsStand.h"
@@ -437,7 +438,8 @@ namespace ai
             // and a bot already walking its approach never pays a second path
             // search. MoveTo relaunches the spline every call, so without this
             // the reach re-pathed and restarted the walk on every tick.
-            if (!UseRangedApproach(map->IsDungeon(), distance, ATTACK_DISTANCE))
+            bool const partyHunter = bot->GetClass() == CLASS_HUNTER && GetMaster() && bot->GetGroup();
+            if (!UseRangedApproach(map->IsDungeon() || partyHunter, distance, ATTACK_DISTANCE))
                 return false;
 
             if (!bot->IsStopped() && !bot->movespline->Finalized())
@@ -498,6 +500,32 @@ namespace ai
             WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
             if (IsHazardNearPosition(destination))
                 return false;
+
+            // A party hunter holds while its walk would pass an idle pack: the
+            // tank's pull ends the hold, so the bow never drags extra mobs in.
+            if (partyHunter)
+            {
+                float const choiceSq = ApproachDistanceSq(choice.point, goal);
+                std::vector<Unit*> idle;
+                for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+                {
+                    Unit* unit = ai->GetUnit(guid);
+                    if (unit && unit != target && sServerFacade.IsAlive(unit) && !unit->IsFriendlyTo(bot) && !unit->GetVictim())
+                        idle.push_back(unit);
+                }
+
+                for (std::size_t i = 1; i < points.size(); ++i)
+                {
+                    ApproachPoint const& point = points[i];
+                    if (ApproachDistanceSq(point, goal) < choiceSq)
+                        continue;
+                    for (Unit* unit : idle)
+                    {
+                        if (!IsShootingSpotSafeFromUnpulled(sServerFacade.getDistance2d(unit, point.x, point.y), sPlayerbotAIConfig.aggroDistance))
+                            return true;
+                    }
+                }
+            }
 
             return MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ());
         }

@@ -2757,6 +2757,18 @@ void TravelMgr::GetPopulatedGrids(uint32 mapId)
     }
 }
 
+void TravelMgr::NoteUnreachablePoint(WorldPosition const& pos)
+{
+    ai::NoteUnreachablePoint(unreachableNoted, unreachableRefused, pos.GetMapId(), pos.getX(), pos.getY(),
+        WorldTimer::getMSTime());
+}
+
+bool TravelMgr::IsUnreachablePointRefused(WorldPosition const& pos) const
+{
+    return ai::IsDeathPositionAvoided(pos.GetMapId(), pos.getX(), pos.getY(), WorldTimer::getMSTime(),
+        unreachableRefused, ai::kUnreachablePointSlots);
+}
+
 uint32 TravelMgr::GetFishZone(const AsyncGuidPosition& pos) const
 {
     uint32 zone, subzone;

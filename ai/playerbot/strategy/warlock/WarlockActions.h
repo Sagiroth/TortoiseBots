@@ -15,7 +15,14 @@ namespace ai
 	SNARE_ACTION(CastDeathCoilSnareAction, "death coil");
 	SNARE_ACTION(CastCurseOfExhaustionSnareAction, "curse of exhaustion");
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
-	INTERRUPT_SPELL_ACTION(CastDeathCoilAction, "death coil");
+	// The "death coil interrupt" row: a real nuke, so the threat back-off keeps gating it
+	// (AiPlayerbot.InterruptIgnoresThreat covers pure interrupts only).
+	class CastDeathCoilAction : public CastInterruptSpellAction
+	{
+	public:
+		CastDeathCoilAction(PlayerbotAI* ai) : CastInterruptSpellAction(ai, "death coil") {}
+		bool IgnoresThreatCap() const override { return false; }
+	};
     BUFF_ACTION(CastShadowWardAction, "shadow ward");
 
 	class CastDemonSkinAction : public CastBuffSpellAction

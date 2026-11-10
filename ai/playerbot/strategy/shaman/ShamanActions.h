@@ -608,6 +608,8 @@ namespace ai
     {
     public:
         CastEarthShockInterruptAction(PlayerbotAI* ai) : CastInterruptSpellAction(ai, "earth shock") {}
+        // A real nuke: the threat back-off keeps gating it (AiPlayerbot.InterruptIgnoresThreat covers pure interrupts).
+        bool IgnoresThreatCap() const override { return false; }
     };
 
     ENEMY_HEALER_ACTION(CastEarthShockOnEnemyHealerAction, "earth shock");

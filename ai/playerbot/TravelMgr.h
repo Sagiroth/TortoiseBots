@@ -6,6 +6,7 @@
 #include <utility>
 #include "strategy/values/TravelValues.h"
 #include "WorldSquare.h"
+#include "UnreachablePointPolicy.h"
 #include <unordered_set>
 
 namespace ai
@@ -482,6 +483,11 @@ namespace ai
 
 		uint32 GetFishZone(const AsyncGuidPosition& pos) const;
 
+		// Fishing points no bot could walk to (UnreachablePointPolicy.h): shared by
+		// all bots, so one wedged bot spares the rest of the pool.
+		void NoteUnreachablePoint(WorldPosition const& pos);
+		bool IsUnreachablePointRefused(WorldPosition const& pos) const;
+
 		void LoadFishLocations();
 		void GetFishLocations();
 		void GetFishLocations(uint32 mapId);
@@ -593,6 +599,8 @@ namespace ai
 		// above: the order planner asks per search row, so it reads the zone's
 		// spots, never a point walk.
 		std::unordered_map<uint32, std::vector<WorldPosition>> fishSpotsByZone;
+		ai::DeathAvoidSpot unreachableNoted[ai::kUnreachablePointSlots] = {};
+		ai::DeathAvoidSpot unreachableRefused[ai::kUnreachablePointSlots] = {};
 		std::unordered_map<uint32, int32> areaLevels;
 		// Taxi-node zone cache (#426 flight transport): node id -> zone area id
 		// (0 = unresolvable at build, fail closed at use). Built once at startup

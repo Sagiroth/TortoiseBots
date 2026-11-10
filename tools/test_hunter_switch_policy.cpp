@@ -31,6 +31,9 @@ using ai::kHunterTrapReachYd;
 using ai::kHunterKitMinDwellMs;
 using ai::kHunterStepOutWindowMs;
 using ai::kHunterStepOutRetryMs;
+using ai::IsShootingSpotSafeFromUnpulled;
+using ai::IsShootingSpotSafeFromEnemy;
+using ai::ScoreShootingSpot;
 
 int main()
 {
@@ -208,6 +211,34 @@ int main()
         CHECK(HunterMeleeRowIgnoresThreatBackoff(true));
         CHECK(!HunterMeleeRowIgnoresThreatBackoff(false));
         std::cout << "  [PASS] melee row: exempt from the threat back-off only for a mob on the hunter\n";
+    }
+
+    {
+        // Shooting spot safety and scoring: unpulled hostile avoidance,
+        // active enemy dead-zone and approaching enemy clearance.
+        float const aggroDist = 20.0f;
+        CHECK(IsShootingSpotSafeFromUnpulled(20.0f, aggroDist));
+        CHECK(IsShootingSpotSafeFromUnpulled(25.0f, aggroDist));
+        CHECK(!IsShootingSpotSafeFromUnpulled(19.9f, aggroDist));
+        CHECK(!IsShootingSpotSafeFromUnpulled(5.0f, aggroDist));
+
+        float const minRange = 8.0f;
+        // Outside dead zone + 1 yd: safe
+        CHECK(IsShootingSpotSafeFromEnemy(9.0f, minRange, 12.0f, false));
+        CHECK(IsShootingSpotSafeFromEnemy(15.0f, minRange, 12.0f, false));
+        // Inside dead zone: refused
+        CHECK(!IsShootingSpotSafeFromEnemy(8.9f, minRange, 12.0f, false));
+        CHECK(!IsShootingSpotSafeFromEnemy(4.0f, minRange, 12.0f, false));
+        // Target itself stepping out: moving further than current dist is fine
+        CHECK(IsShootingSpotSafeFromEnemy(15.0f, minRange, 5.0f, false));
+        // Approaching enemy on the bot: stepping closer than current distance is refused
+        CHECK(!IsShootingSpotSafeFromEnemy(10.0f, minRange, 12.0f, true));
+        CHECK(IsShootingSpotSafeFromEnemy(14.0f, minRange, 12.0f, true));
+
+        // Score: higher clearance wins; tie-break prefers smaller deflection angle
+        CHECK(ScoreShootingSpot(15.0f, 0.0f) > ScoreShootingSpot(15.0f, 0.5f));
+        CHECK(ScoreShootingSpot(15.0f, 0.5f) > ScoreShootingSpot(10.0f, 0.0f));
+        std::cout << "  [PASS] shooting spot safety and scoring\n";
     }
 
     std::cout << "All hunter-switch checks PASSED!\n";

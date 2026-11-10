@@ -90,6 +90,61 @@ int main()
     // The cap is only for the successor target: the plain max ignores the flag.
     CHECK(ThreatCapReference({{40000.0f, false}, {2000.0f, true, false}}, false) == 40000.0f);
 
+    // ThreatCapInterruptExempt(interrupt, key, botThreat, tankThreat, flatThreat, ranged) is the call
+    // ThreatMultiplier::GetValue makes before its high-threat veto (heals are exempt beside it). Tank 1000 throughout.
+
+    // interrupt_exempt_behind_key: key off is never exempt, at any threat; a non-interrupt never is either.
+    CHECK(ThreatCapInterruptExempt(true, true, 800.0f, 1000.0f, 0.0f, false));
+    CHECK(!ThreatCapInterruptExempt(true, false, 800.0f, 1000.0f, 0.0f, false));
+    CHECK(!ThreatCapInterruptExempt(true, false, 0.0f, 1000.0f, 0.0f, true));
+    CHECK(!ThreatCapInterruptExempt(false, true, 800.0f, 1000.0f, 0.0f, false));
+    CHECK(!ThreatCapInterruptExempt(false, false, 0.0f, 1000.0f, 0.0f, false));
+
+    // The core's pull line (ThreatManager::getHostileTarget): 110 % in melee reach, 130 % from range.
+    CHECK(kAggroPullMeleeFactor == 1.1f);
+    CHECK(kAggroPullRangedFactor == 1.3f);
+    CHECK(AggroPullFactor(false) == 1.1f);
+    CHECK(AggroPullFactor(true) == 1.3f);
+
+    // kick_at_105_exempt: the failing case under round 1's 100 % ceiling. A rogue at 105 % of the tank in melee with
+    // Kick (no flat threat) does not pull the mob, so it kicks (live AFTER round 1: 3594 `MULT threat x0.000` on the
+    // rogue against 42 OK, Kick 0.469).
+    CHECK(ThreatCapInterruptExempt(true, true, 1050.0f, 1000.0f, 0.0f, false));
+    // kick_at_111_melee_vetoed: over the 110 % melee line the veto stands.
+    CHECK(!ThreatCapInterruptExempt(true, true, 1110.0f, 1000.0f, 0.0f, false));
+    // The same 111 % from range is under the 130 % line.
+    CHECK(ThreatCapInterruptExempt(true, true, 1110.0f, 1000.0f, 0.0f, true));
+    // At the line itself it is vetoed (strictly under): 1300 ranged.
+    CHECK(!ThreatCapInterruptExempt(true, true, 1300.0f, 1000.0f, 0.0f, true));
+
+    // counterspell_flat_threat_counts: Counterspell carries 300 flat threat (tw_world_spell_threat 2139). A mage at
+    // 100 % of the tank plus 300 is 130 %, at the ranged line: vetoed. At 80 % plus 300 = 110 % it is under: exempt.
+    CHECK(!ThreatCapInterruptExempt(true, true, 1000.0f, 1000.0f, 300.0f, true));
+    CHECK(ThreatCapInterruptExempt(true, true, 800.0f, 1000.0f, 300.0f, true));
+    // Without the flat threat the 100 % mage would read exempt: the flat threat is what vetoes it.
+    CHECK(ThreatCapInterruptExempt(true, true, 1000.0f, 1000.0f, 0.0f, true));
+    // Shield Bash (180 flat) in melee at 95 %: 1130 is over 1100, vetoed; at 90 % (1080) exempt.
+    CHECK(!ThreatCapInterruptExempt(true, true, 950.0f, 1000.0f, 180.0f, false));
+    CHECK(ThreatCapInterruptExempt(true, true, 900.0f, 1000.0f, 180.0f, false));
+
+    // interrupt_no_tank_keeps_the_veto: with no tank threat on the mob (0, or GetTankThreat's -1 for no tank on it)
+    // there is no line to stay under; the back-off answers as today.
+    CHECK(!ThreatCapInterruptExempt(true, true, 0.0f, 0.0f, 0.0f, false));
+    CHECK(!ThreatCapInterruptExempt(true, true, 50.0f, 0.0f, 0.0f, true));
+    CHECK(!ThreatCapInterruptExempt(true, true, 0.0f, -1.0f, 0.0f, false));
+
+    // interrupt_uses_interrupt_target_numbers: the caster to kick is not always the current target. The bot sits at
+    // 120 % on its current target and at 50 % on the caster: the caster's numbers decide, so the Kick goes.
+    CHECK(!ThreatCapInterruptExempt(true, true, 1200.0f, 1000.0f, 0.0f, false));
+    CHECK(ThreatCapInterruptExempt(true, true, 500.0f, 1000.0f, 0.0f, false));
+
+    // ThreatCapPercentOf (the veto row's pct=): unsaturated; a tank with no threat reads 100, no tank on the target
+    // (-1) reads 0 like the high-threat line.
+    CHECK(ThreatCapPercentOf(800.0f, 1000.0f) == 80.0f);
+    CHECK(ThreatCapPercentOf(3000.0f, 1000.0f) == 300.0f);
+    CHECK(ThreatCapPercentOf(50.0f, 0.0f) == 100.0f);
+    CHECK(ThreatCapPercentOf(50.0f, -1.0f) == 0.0f);
+
     std::cout << "threat cap policy: all tests passed\n";
     return 0;
 }

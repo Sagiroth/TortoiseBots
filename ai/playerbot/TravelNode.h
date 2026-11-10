@@ -385,7 +385,9 @@ namespace ai
 
 
         std::vector<PathNodePoint>& getPath() { return fullPath; }
+        std::vector<PathNodePoint> const& getPath() const { return fullPath; }
         std::vector<PathNodePoint>& GetPath() { return getPath(); }
+        std::vector<PathNodePoint> const& GetPath() const { return getPath(); }
         WorldPosition getFront() { return fullPath.front().point; }
         WorldPosition GetFront() { return getFront(); }
         WorldPosition getBack() { return fullPath.back().point; }
