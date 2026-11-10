@@ -14,6 +14,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+GRACE = (ROOT / "ai/playerbot/GuardGracePolicy.h").read_text()
 RUN = (ROOT / "runtime/DungeonRunPolicy.h").read_text()
 COMMANDER = (ROOT / "commands/Commander.cpp").read_text()
 CONFIG_CPP = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
@@ -64,7 +65,8 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertNotIn("targetGuid", body(RUN, "struct RaidTankFact\n{"))  # the tank's selection is no hold
         self.assertIn("std::unordered_map<std::uint64_t, std::uint64_t> guardAssignedLooseSinceMs;", RUN)
         self.assertIn("std::uint64_t guardAssignedClockMs = 0;", RUN)
-        self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
+        self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", GRACE)
+        self.assertIn("using ai::kGuardAssignedGraceMs;", RUN)
         tick = body(RUN, "inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
         # The clocks are CheckGuard's, once a fight tick and before any order path can return: the healer guard's and
         # the lead join's orders must not pause them, and the tick itself never runs them. With the key off they are

@@ -56,6 +56,7 @@
 
 #include "../ai/playerbot/CombatSpreadPolicy.h"
 #include "../ai/playerbot/DungeonPlanPolicy.h"
+#include "../ai/playerbot/GuardGracePolicy.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
 #include "../ai/playerbot/policy/dungeon/ReturnHoldPolicy.h"
@@ -742,8 +743,8 @@ constexpr std::uint32_t kRaidGuardRearmMs = 20000;
 // (the until_tank window's own cast and walk, a tank_post waiting for the unit to land). Past it the unit is the
 // guard's like any loose add: a tank that lost it, never came, or cannot pick it up (taunt-immune, parked on a breath
 // seat, stuck) must not leave a healer unprotected. A unit already on its tank is the tank's through
-// UnitFact::victimTank, not through this clock.
-constexpr std::uint32_t kGuardAssignedGraceMs = 8000;
+// UnitFact::victimTank, not through this clock. Shared with the boss table's post reservation: GuardGracePolicy.h.
+using ai::kGuardAssignedGraceMs;
 // A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, RaidHealerGuard): with the main tank holding
 // the boss an add on a healer goes to that many ranged dps of the raid at most, nearest first, one order a tick; the
 // off-tanks take such an add only when none is free for it.

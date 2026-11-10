@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "BossAnchorPolicy.h"
+#include "GuardGracePolicy.h"
 #include "policy/combat/RearFlankPolicy.h"
 #include "policy/heal/DispelTargetPolicy.h"
 
@@ -3619,6 +3620,34 @@ namespace ai
     inline bool TankPostSubjectReserved(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost)
     {
         return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
+    }
+
+    // The post's reservation also needs its tank able to take the unit back: the tank within this of the subject (3D),
+    // and the subject still on it or loose (not its victim) for less than the guard's own grace. A tank stranded
+    // across the room, or one that lost the unit past kGuardAssignedGraceMs, reserves nothing, so the other tanks may
+    // taunt it.
+    constexpr float kTankPostReserveRangeYd = 30.0f;
+    inline bool TankPostReserves(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost,
+                                 bool ownerWithinRange, bool subjectOnOwner, std::uint32_t looseMs)
+    {
+        return TankPostSubjectReserved(keyOn, otherPostLive, otherTankCanAct, botOwnsPost) && ownerWithinRange &&
+            (subjectOnOwner || looseMs < kGuardAssignedGraceMs);
+    }
+
+    // The area taunts (challenging shout, challenging roar) taunt every hostile within their radius of the caster, not
+    // only the selected target: one unit of the scan that another live post reserves refuses the cast.
+    constexpr float kAreaTauntRadiusYd = 10.0f;
+    struct AreaTauntUnit
+    {
+        float yd = 0.0f;
+        bool reservedByOther = false;
+    };
+    inline bool AreaTauntHitsReservedSubject(const std::vector<AreaTauntUnit>& units, float radius)
+    {
+        for (const AreaTauntUnit& unit : units)
+            if (unit.reservedByOther && unit.yd <= radius)
+                return true;
+        return false;
     }
 
     // The gate's refusal row is throttled per (bot, gate word), not per bot: the 495 taunt_immune rows at Jin'do (walk

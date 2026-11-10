@@ -1123,9 +1123,11 @@ AiPlayerbot.DungeonRunTankPostLeash = 0
 
 # A live tank_post owns the unit it waits for (needs DungeonRunTankPost): while another tank's post is live on it, a
 # tank does not taunt it, and the post's own slot takes it. The taunt gate and both area taunts (Challenging Shout,
-# Challenging Roar) refuse the subject of a post whose tank is alive and whose record was read in the last 3 s, so the
-# tanks stop competing for it (walk 2c a-1: slots 3, 0 and 2 taunted Cindarion before slot 1 arrived). The refusal
-# does not need AiPlayerbot.DungeonRunTauntGate. Off, every tank may taunt the subject as before.
+# Challenging Roar, whose whole 10 yd radius is checked) refuse the subject of a post whose tank is alive, whose record
+# was read in the last 3 s and that stands within 30 yd of the unit; the unit stays reserved only while it is on that
+# tank or loose off it for less than 8 s. A tank stranded across the room, or one that lost the unit past 8 s, reserves
+# nothing, so another tank may taunt it again. The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off, every
+# tank may taunt the subject as before.
 # 0 - off: every tank may taunt the post's subject (Default)
 # 1 - on (recommended on for a fight whose second boss lands later)
 AiPlayerbot.DungeonRunTankPostOwnsSubject = 0

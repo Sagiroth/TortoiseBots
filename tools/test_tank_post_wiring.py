@@ -197,9 +197,10 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("DungeonRunTankPostHoldSpot", CHANGELOG)
 
     def test_a_live_post_reserves_its_subject(self):
-        # The rule is pure (TankPostSubjectReserved, TankPostEndWord) and tested in the policy test; the glue reads the
-        # shared record. A record read in the last 3 s, on this map and the target's entry, by a tank in the bot's
-        # instance that can act, keeps every other tank off the unit.
+        # The rule is pure (TankPostSubjectReserved, TankPostReserves, TankPostEndWord) and tested in the policy test;
+        # the glue reads the shared record. A record read in the last 3 s, on this map and the target's entry, by a tank
+        # in the bot's instance that can act, within 30 yd of the subject, keeps every other tank off the unit until the
+        # subject has been loose off that tank past the guard's grace.
         reserve = body(ACTIONS, "bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)")
         self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject", reserve)
         self.assertIn("!target->IsCreature()", reserve)
@@ -210,11 +211,19 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("entry.first == self", reserve)
         # Only the keys leave the lock; the player lookup and the instance compare happen after it.
         lock = reserve.index("std::lock_guard<std::mutex> lock(g_tankPostMutex);")
-        self.assertLess(reserve.index("    }\n    bool canAct = false;"), reserve.index("sObjectMgr.GetPlayer("))
         self.assertLess(lock, reserve.index("sObjectMgr.GetPlayer("))
         self.assertIn("tank->GetInstanceId() != bot->GetInstanceId()", reserve)
         self.assertIn("TankPostTankCanAct(tank)", reserve)
-        self.assertIn("TankPostSubjectReserved(true, !others.empty(), canAct, false)", reserve)
+        # The distance is the post tank's to the subject (3D), and the loose clock is the record's, read under its lock.
+        self.assertIn("ownerYd = TankPostDistanceYd(tank->GetPositionX()", reserve)
+        self.assertIn("target->GetPositionZ())", reserve)
+        self.assertIn("target->GetVictim() == tank", reserve)
+        self.assertIn("ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs)", reserve)
+        self.assertIn("if (it->second.looseSinceMs == 0)\n                it->second.looseSinceMs = nowMs;\n            looseMs = nowMs - it->second.looseSinceMs;", reserve)
+        # The action's store keeps the clock current: on its tank clears it, loose at 0 starts it.
+        self.assertIn("stored.looseSinceMs = in.subjectOnTank ? 0 : (priorLoose != 0 ? priorLoose : nowMs);",
+                      ACTIONS)
+        self.assertIn("std::uint32_t looseSinceMs = 0;", ACTIONS)
         # The gate refuses before it reads its own key: the reservation does not need DungeonRunTauntGate.
         gate = body(ACTIONS, "bool ai::TauntRefusedByGate(")
         self.assertLess(gate.index("TankPostReservesSubject(ai, bot, target)"),
@@ -224,9 +233,15 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('"reason=%s", TauntGateWord(gate)', gate_log)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);', gate_log)
 
-    def test_area_taunts_read_the_gate(self):
-        # The two area taunts are no longer a documented limit: each reads the gate on its current target, so a live
-        # post's subject (and a refused single target) keeps it quiet.
+    def test_area_taunts_scan_their_radius(self):
+        # The two area taunts read the gate on their current target and then scan the whole radius: the shout/roar
+        # taunts every hostile in it, so another post's subject anywhere inside refuses the cast.
+        area = body(ACTIONS, "bool ai::AreaTauntRefusedByPost(PlayerbotAI* ai, Player* bot, const char* spell)")
+        self.assertIn("MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, kAreaTauntRadiusYd)", area)
+        self.assertIn("Cell::VisitAllObjects(bot, searcher, kAreaTauntRadiusYd)", area)
+        self.assertIn("fact.reservedByOther = TankPostReservesSubject(ai, bot, unit)", area)
+        self.assertIn("AreaTauntHitsReservedSubject(units, kAreaTauntRadiusYd)", area)
+        self.assertIn("LogTauntGateRefusal(ai, bot, reserved, TauntGate::PostSubject, spell)", area)
         for text, cls, spell in (
                 (WARRIOR, "class CastChallengingShoutAction", '"challenging shout"'),
                 (DRUID, "class CastChallengingRoarAction", '"challenging roar"')):
@@ -235,6 +250,7 @@ class TankPostWiring(unittest.TestCase):
             self.assertIn("virtual bool isUseful() override", taunt)
             self.assertIn("CastMeleeSpellAction::isUseful()", taunt)
             self.assertIn(f"!(GetTarget() && TauntRefusedByGate(ai, bot, GetTarget(), {spell}))", taunt)
+            self.assertIn(f"!AreaTauntRefusedByPost(ai, bot, {spell})", taunt)
 
     def test_slot_end_word(self):
         find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")

@@ -181,8 +181,8 @@ class JindoR1Wiring(unittest.TestCase):
         # but each re-walks the "loose adds near" count at cast time, uncached (a stale queued shout must not fire).
         self.assertIn('CastChallengingShoutAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "challenging shout")', WARRIOR)
         self.assertIn('AoeTauntStillNeeded(ai, bot)', member(WARRIOR, "class CastChallengingShoutAction", "};"))
-        # The area taunts read the same gate on their current target: a live tank_post's subject and a refused
-        # single target keep them quiet, their area is unchanged.
+        # The area taunts read the same gate on their current target, and their own radius scan covers the rest: a
+        # live tank_post's subject anywhere in it, and a refused single target, keep them quiet.
         for text, cls, spell in (
                 (WARRIOR, "class CastChallengingShoutAction", '"challenging shout"'),
                 (DRUID, "class CastChallengingRoarAction", '"challenging roar"')):

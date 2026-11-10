@@ -11863,6 +11863,7 @@ struct TankPostRecord
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
     std::uint64_t arrivedSubjectGuid = 0;
+    std::uint32_t looseSinceMs = 0;
     std::uint8_t lastStep = 0;
 };
 
@@ -11965,7 +11966,9 @@ const char* TankPostEndReason(const TankPostIn& in)
 }  // namespace
 
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
-// a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again.
+// a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
+// reservation also ends while its tank is farther than kTankPostReserveRangeYd from the subject, or once the subject
+// has been loose off it for kGuardAssignedGraceMs, so a stranded tank cannot hold the unit off the other tanks.
 bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
 {
     if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
@@ -11973,11 +11976,11 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
     if (!ai || !bot || !target || !target->IsCreature() || !PlayerbotAI::IsTank(bot))
         return false;
     std::uint64_t const self = bot->GetObjectGuid().GetRawValue();
-    std::uint32_t const nowMs = WorldTimer::getMSTime();
     std::vector<std::uint64_t> others;
     {
         // Only the keys leave the lock: resolving a player does not happen under it.
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        std::uint32_t const nowMs = WorldTimer::getMSTime();
         for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)
         {
             if (entry.first == self || entry.second.map != bot->GetMapId() ||
@@ -11987,16 +11990,64 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
             others.push_back(entry.first);
         }
     }
-    bool canAct = false;
     for (std::uint64_t const key : others)
     {
         Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(key));
         if (!tank || tank->GetInstanceId() != bot->GetInstanceId() || !TankPostTankCanAct(tank))
             continue;
-        canAct = true;
-        break;
+        float const ownerYd = TankPostDistanceYd(tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(),
+            target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        bool const onOwner = target->GetVictim() == tank;
+        // The loose clock is the record's and is read under its lock: the first look at a loose subject starts it.
+        std::uint32_t looseMs = 0;
+        if (!onOwner)
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            auto const it = g_tankPost.find(key);
+            if (it == g_tankPost.end())
+                continue;
+            std::uint32_t const nowMs = WorldTimer::getMSTime();
+            if (it->second.looseSinceMs == 0)
+                it->second.looseSinceMs = nowMs;
+            looseMs = nowMs - it->second.looseSinceMs;
+        }
+        if (TankPostReserves(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, true, true, false,
+                ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs))
+            return true;
     }
-    return TankPostSubjectReserved(true, !others.empty(), canAct, false);
+    return false;
+}
+
+// AiPlayerbot.DungeonRunTankPostOwnsSubject for the two area taunts: challenging shout/roar taunts every hostile within
+// kAreaTauntRadiusYd of the caster, so a unit of that radius another live post reserves refuses the cast, whatever
+// the selected target is. The refusal row names that unit.
+bool ai::AreaTauntRefusedByPost(PlayerbotAI* ai, Player* bot, const char* spell)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject || !ai || !bot || !PlayerbotAI::IsTank(bot))
+        return false;
+    std::list<Unit*> nearby;
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck check(bot, bot, kAreaTauntRadiusYd);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(nearby, check);
+    Cell::VisitAllObjects(bot, searcher, kAreaTauntRadiusYd);
+    std::vector<AreaTauntUnit> units;
+    Unit* reserved = nullptr;
+    for (Unit* unit : nearby)
+    {
+        if (!unit || !bot->IsHostileTo(unit))
+            continue;
+        AreaTauntUnit fact;
+        fact.yd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ());
+        fact.reservedByOther = TankPostReservesSubject(ai, bot, unit);
+        if (fact.reservedByOther && !reserved)
+            reserved = unit;
+        units.push_back(fact);
+    }
+    if (!AreaTauntHitsReservedSubject(units, kAreaTauntRadiusYd))
+        return false;
+    if (reserved)
+        LogTauntGateRefusal(ai, bot, reserved, TauntGate::PostSubject, spell);
+    return true;
 }
 
 BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -12223,8 +12274,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     {
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
         TankPostRecord& stored = g_tankPost[self];
+        std::uint32_t const priorLoose = stored.looseSinceMs;
         stored = record;
         stored.lastReadMs = nowMs;
+        stored.looseSinceMs = in.subjectOnTank ? 0 : (priorLoose != 0 ? priorLoose : nowMs);
         stepEntered = TankPostStepEntered(stored.lastStep, step);
         stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))

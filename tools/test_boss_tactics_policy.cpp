@@ -389,6 +389,39 @@ static void TestTankPostSubjectReserved_KeyOff()
     CHECK(!TankPostSubjectReserved(true, false, true, false)); // no live post on the unit
 }
 
+// Walk 2d T: the post's tank must be close enough to take the subject back. A living post tank stranded across the room
+// does not reserve the unit, so another tank's rescue taunt goes out.
+static void TestTankPostOwns_RemoteOwnerDoesNotReserve()
+{
+    // TankPostReserves(keyOn, otherPostLive, otherTankCanAct, botOwnsPost, ownerWithinRange, subjectOnOwner, looseMs)
+    CHECK(!TankPostReserves(true, true, true, false, false, true, 0));  // owner 45 yd away: not reserved
+    CHECK(TankPostReserves(true, true, true, false, true, true, 0));    // owner within 30 yd: reserved
+}
+
+// ... and the subject stays reserved only through the guard's own grace once it is loose: on its post tank it is
+// reserved whatever the clock.
+static void TestTankPostOwns_LooseSubjectReleasesAfterGrace()
+{
+    CHECK(TankPostReserves(true, true, true, false, true, false, 0));                          // loose at 0
+    CHECK(TankPostReserves(true, true, true, false, true, false, kGuardAssignedGraceMs - 1));  // 7999 ms
+    CHECK(!TankPostReserves(true, true, true, false, true, false, kGuardAssignedGraceMs));     // 8000 ms: released
+}
+
+static void TestTankPostOwns_SubjectOnOwnerStaysReserved()
+{
+    CHECK(TankPostReserves(true, true, true, false, true, true, kGuardAssignedGraceMs * 10));
+}
+
+// The area taunts scan every hostile in the spell's radius, not only the selected target: a second unit 6 yd away that
+// another post reserves refuses the cast; the same unit past 10 yd does not.
+static void TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius()
+{
+    std::vector<AreaTauntUnit> inRadius = { { 0.0f, false }, { 6.0f, true } };
+    CHECK(AreaTauntHitsReservedSubject(inRadius, kAreaTauntRadiusYd));
+    std::vector<AreaTauntUnit> pastRadius = { { 0.0f, false }, { 12.0f, true } };
+    CHECK(!AreaTauntHitsReservedSubject(pastRadius, kAreaTauntRadiusYd));
+}
+
 // The end word: a post whose row moved to another slot index (a tank died and GetRaidTankRoles renumbered) says
 // "slot", not "band". A live post keeps the step's own order; slotMoved is never a step end.
 static void TestTankPostEndWord_SlotMoved()
@@ -1205,6 +1238,10 @@ int main()
     TestTankPostSubjectReserved_OwnerTaunts();
     TestTankPostSubjectReserved_DeadPostTank();
     TestTankPostSubjectReserved_KeyOff();
+    TestTankPostOwns_RemoteOwnerDoesNotReserve();
+    TestTankPostOwns_LooseSubjectReleasesAfterGrace();
+    TestTankPostOwns_SubjectOnOwnerStaysReserved();
+    TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestCarrierHold();
     TestNotDpsTargetFires();
