@@ -7,6 +7,7 @@ import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+TRIGGERS = ROOT / "ai/playerbot/strategy/triggers"
 WARRIOR = ROOT / "ai/playerbot/strategy/warrior"
 PALADIN = ROOT / "ai/playerbot/strategy/paladin"
 DRUID = ROOT / "ai/playerbot/strategy/druid"
@@ -87,6 +88,18 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
         self.assertIn("TauntStandsDownForTank(", body)
         self.assertIn("PlayerbotAI::IsTank(", body)
 
+    def test_lose_aggro_trigger_stays_quiet_without_victim(self):
+        text = (TRIGGERS / "GenericTriggers.cpp").read_text()
+        start = text.index("bool LoseAggroTrigger::IsActive()")
+        end = text.index("\n}\n", start)
+        body = text[start:end]
+        self.assertIn("LoseAggroTankBranch(", body)
+        self.assertIn("LoseAggroSeen", body)
+        seen = body[body.index("LoseAggroSeen seen;"):]
+        self.assertLess(seen.index("seen.victimExists"), seen.index("seen.victimIsPlayer"))
+        self.assertLess(seen.index("seen.victimIsPlayer"), seen.index("seen.victimIsTank"))
+        self.assertIn("return LoseAggroTankBranch(seen);", body)
+
     def test_helper_passes_victim_facts_in_order(self):
         text = (ACTIONS / "BossTacticsActions.cpp").read_text()
         start = text.index("bool ai::TauntTargetHeldByOtherTank(")
@@ -96,7 +109,6 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
         self.assertLess(call.index("in.victimIsPlayer"), call.index("in.victimIsSelf"))
         self.assertLess(call.index("in.victimIsSelf"), call.index("in.victimIsTank"))
         self.assertIn("return TauntStandsDownForTank(in);", body)
-
 
 if __name__ == "__main__":
     unittest.main()

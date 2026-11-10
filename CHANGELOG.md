@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: the "lose aggro" trigger stays quiet while a fresh mob has no victim yet (no flag).
 - Fixed: the AoE taunts also stand down at cast time. Challenging Shout and Challenging Roar re-check the "loose adds near" count before they fire, so a shout queued for loose adds no longer fires after the pack settles (no flag, no per-mob tank check).
 - Fixed: a tank bot no longer taunts a mob off a tank player. A taunt queued while a fresh mob had no victim yet outlived its reach walk and fired after the mob turned onto the tank player, so each generic taunt now stands down at cast time while its mob stands on another tank (no flag).
 - Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.

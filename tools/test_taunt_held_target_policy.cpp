@@ -3,7 +3,9 @@
 // than the casting bot that PlayerbotAI::IsTank reads as a tank (the rule the
 // "lose aggro" and "party member attacked" triggers already apply at decision
 // time; a taunt queued while a fresh mob had no victim yet survives its
-// reach prerequisite and runs after the mob turned onto a tank player).
+// reach prerequisite and runs after the mob turned onto a tank player, which
+// is why "lose aggro" (LoseAggroPolicy.h) stays quiet until the mob picks a
+// victim).
 //
 // Build and run:
 //   g++ -std=c++17 -Wall -Wextra tools/test_taunt_held_target_policy.cpp -o /tmp/test_taunt_held_target_policy

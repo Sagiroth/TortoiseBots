@@ -1,12 +1,13 @@
 #pragma once
 
 // Pure policy for a queued taunt at cast time: the taunt stands down when the
-// mob is already on another tank. The triggers that queue a taunt ("lose
-// aggro", "party member attacked") check this when they fire, but a taunt
-// queued while a fresh mob had no victim yet survives its reach prerequisite
-// and runs after the mob has turned onto a tank player (Tortoise Trials
-// tank-*-no-taunt-tank-player, 2026-11-10). Kept std-only so the standalone
-// g++ policy test compiles the real rule.
+// mob is already on another tank. The triggers that queue a taunt refuse a
+// mob held by a tank when they fire (a victimless mob is not held by
+// anyone: "lose aggro" stays quiet until it picks a victim), but a taunt
+// queued on that older build while a fresh mob had no victim yet could
+// survive its reach prerequisite and run after the mob turned onto a tank
+// player (Tortoise Trials tank-*-no-taunt-tank-player, 2026-11-10). Kept
+// std-only so the standalone g++ policy test compiles the real rule.
 
 namespace ai
 {
