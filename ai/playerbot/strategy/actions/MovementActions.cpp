@@ -29,6 +29,7 @@
 #include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
+#include "playerbot/TravelLegChainPolicy.h"
 // The stored route only says where to go: the dispatch replays the leg over
 // the live navmesh and walks the mesh's answer (RouteReplayPolicy.h).
 #include "playerbot/RouteReplayPolicy.h"

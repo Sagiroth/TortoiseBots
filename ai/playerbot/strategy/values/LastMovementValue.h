@@ -88,6 +88,7 @@ namespace ai
             positionMoveFailMs = other.positionMoveFailMs;
             moveTries = other.moveTries;
             magmaLogAt = other.magmaLogAt;
+            swimHandoffLogAt = other.swimHandoffLogAt;
             routeReplayLogAt = other.routeReplayLogAt;
             magmaRefusal = other.magmaRefusal;
             stayWalk = other.stayWalk;
@@ -176,6 +177,7 @@ namespace ai
         time_t magmaLogAt = 0;
         // Wall-clock of the last "swim hand-off" log line (one per bot per 10 s, MovementActions.cpp);
         // clear() leaves it alone.
+        time_t swimHandoffLogAt = 0;
         // Wall-clock of the last "route replay kept the stored leg" line (one
         // per bot per kRouteReplayLogSeconds, MovementActions.cpp); clear()
         // leaves it alone.
