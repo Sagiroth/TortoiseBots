@@ -29,7 +29,9 @@
 #include "../../../../runtime/policy/movement/WalkModePolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
-#include "playerbot/TravelLegChainPolicy.h"
+// The stored route only says where to go: the dispatch replays the leg over
+// the live navmesh and walks the mesh's answer (RouteReplayPolicy.h).
+#include "playerbot/RouteReplayPolicy.h"
 #include "playerbot/MagmaHazardPolicy.h"
 // The shared checked step's verdict (WalkChecked below).
 #include "playerbot/LandWalkPolicy.h"
@@ -65,7 +67,60 @@ static_assert(ai::kMagmaLiquidTypeFlag == MAP_LIQUID_TYPE_MAGMA, "magma type fla
 static_assert(ai::kSlimeLiquidTypeFlag == MAP_LIQUID_TYPE_SLIME, "slime type flag differs from the core");
 static_assert(ai::kLiquidStatusWaterWalk == static_cast<uint32>(LIQUID_MAP_WATER_WALK), "water-walk status differs from the core");
 static_assert(ai::kLiquidStatusInWater == static_cast<uint32>(LIQUID_MAP_IN_WATER), "in-water status differs from the core");
-static_assert(ai::kLiquidStatusUnderWater == static_cast<uint32>(LIQUID_MAP_UNDER_WATER), "under-water status differs from the core");
+
+// One "replay kept the stored leg" line per bot per this many seconds: the
+// lead measures how often the raw fallback below still runs.
+static constexpr time_t kRouteReplayLogSeconds = 60;
+
+// The leg replay (RouteReplayPolicy.h): the navmesh replays the stored
+// stretch instead of the spline walking the stored points. `stored` are the
+// leg's points past the bot (head first); `botPos` is the live start. Tries
+// the leg's end first, then nearer stored points (half the index, a bounded
+// number of times), and walks the mesh's answer to the first goal it
+// reaches without an absurd detour (a jump down, a gap). Sets `replayedOut`
+// and `replayedGoal` (index into `stored`) then. A refused grade falls back
+// to the stored points, like getPathStepFrom's own strict answer does.
+static bool ReplayStoredLeg(Player* bot, const WorldPosition& botPos, const std::vector<WorldPosition>& stored,
+    std::size_t& replayedGoal, std::vector<WorldPosition>& replayedOut)
+{
+    replayedOut.clear();
+    if (stored.size() < 2)
+        return false;
+    for (std::size_t goal : ai::RouteReplayGoals(stored.size()))
+    {
+        WorldPosition const& goalPos = stored[goal];
+        if (goalPos.GetMapId() != botPos.GetMapId())
+            break;
+        std::vector<WorldPosition> meshPath = goalPos.getPathStepFrom(botPos, bot);
+        uint32 const type = WorldPosition::LastPathStepType();
+        if (type & (ai::kPathTypeNoPath | ai::kPathTypeNotUsingPath | ai::kPathTypeShortcut))
+            continue;
+        if (meshPath.size() < 2)
+            continue;
+        float const gap = meshPath.back().distance(goalPos);
+        float storedLen = 0.0f;
+        WorldPosition prev = botPos;
+        for (std::size_t i = 0; i <= goal; ++i)
+        {
+            storedLen += prev.distance(stored[i]);
+            prev = stored[i];
+        }
+        float meshLen = 0.0f;
+        for (std::size_t i = 1; i < meshPath.size(); ++i)
+            meshLen += meshPath[i - 1].distance(meshPath[i]);
+        ai::RouteReplayProbe probe;
+        probe.reachable = gap <= sPlayerbotAIConfig.targetPosRecalcDistance;
+        probe.meshLengthYd = meshLen;
+        probe.storedLengthYd = storedLen;
+        probe.lastPoint = goal + 1 == stored.size();
+        if (!ai::RouteReplayAcceptsProbe(probe))
+            continue;
+        replayedOut = std::move(meshPath);
+        replayedGoal = goal;
+        return true;
+    }
+    return false;
+}
 
 // One "move refused: magma" line per bot per this many seconds.
 static constexpr time_t kMagmaLogSeconds = 10;
@@ -1087,18 +1142,55 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         return true;
     }
 
-    // The spline below is what moves the bot. The point generator stays under
-    // it: code that asks "is a walk in flight" reads POINT_MOTION_TYPE (the
-    // ghost corpse run), and it re-paths in the core when the speed changes.
-    mm.MovePoint(path.back().GetMapId(), path.back().getX(), path.back().getY(), path.back().getZ(),
-        (moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
-
-    GeneratePathAvoidingHazards(path);
+    bool const hazardRewrote = GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
     {
         AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_HAZARD_SHORT;
         return false; // the hazard rewrite left nothing to walk
     }
+
+    // The stored stretch only says where to go: ask the live navmesh for a
+    // path from the bot to the leg's end and walk that instead; when the end
+    // cannot be reached, try a nearer stored point (half the index, a bounded
+    // number of times). Only on land, and never over a hazard rewrite (which
+    // keeps its own bent shape): a mesh answer over a water or missing leg
+    // must never replace the stored points. The fallback keeps today's stored
+    // points, rate-limited on its own stamp so the lead can measure how often
+    // it still runs.
+    LastMovement& replayLog = AI_VALUE(LastMovement&, "last movement");
+    if (!hazardRewrote && ai::RouteReplayApplies(hazardRewrote,
+            bot->IsInWater() || bot->IsUnderwater() || bot->HasMovementFlag(MOVEFLAG_SWIMMING) ||
+            sServerFacade.IsUnderwater(bot)))
+    {
+        std::vector<WorldPosition> replayPath;
+        std::size_t replayedGoal = 0;
+        if (ReplayStoredLeg(bot, botPos, path, replayedGoal, replayPath))
+        {
+            // Walk the mesh's answer to the goal, then the stored tail past
+            // it: progress (makeShortCut, leg chaining) still matches the
+            // bot's position to stored points within TooCloseDistance.
+            replayPath.insert(replayPath.end(), path.begin() + replayedGoal + 1, path.end());
+            path = std::move(replayPath);
+        }
+        else
+        {
+            time_t const now = time(nullptr);
+            if (now - replayLog.routeReplayLogAt >= kRouteReplayLogSeconds)
+            {
+                replayLog.routeReplayLogAt = now;
+                TB_LOG_DETAIL("TortoiseBots: %s: route replay kept the stored leg (%u points) to %.1f %.1f %.1f",
+                    bot->GetName(), static_cast<uint32>(path.size()),
+                    path.back().getX(), path.back().getY(), path.back().getZ());
+            }
+        }
+    }
+
+    // The spline below is what moves the bot. The point generator stays under
+    // it, aimed at the last walked point: code that asks "is a walk in flight"
+    // reads POINT_MOTION_TYPE (the ghost corpse run), and it re-paths in the
+    // core when the speed changes.
+    mm.MovePoint(path.back().GetMapId(), path.back().getX(), path.back().getY(), path.back().getZ(),
+        (moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
 
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
