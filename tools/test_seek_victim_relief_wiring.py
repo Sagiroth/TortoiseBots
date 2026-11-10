@@ -47,6 +47,7 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekVictimRelief", fn)
         self.assertIn("SeekTankTauntReady(", fn)
         self.assertIn("PlayerHoldsFightSon(", fn)
+        self.assertIn("SeekVictimReliefKeepTick(", fn)
         self.assertNotIn("SeekVictimReliefStart(", fn)
         self.assertNotIn('"seek relief son=', fn)
 

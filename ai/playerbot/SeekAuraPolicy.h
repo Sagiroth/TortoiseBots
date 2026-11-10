@@ -739,8 +739,10 @@ namespace ai
     struct SeekReliefLatch
     {
         std::uint32_t sinceMs = 0;     // first read of the unbroken "on the boss's tank" run; 0: not running
-        std::uint32_t lastTakeMs = 0;  // the last relief start; 0: none
+        std::uint32_t lastTakeMs = 0;  // the last counted relief start; 0: none
         std::uint64_t lastTaker = 0;
+        std::uint64_t activeTaker = 0;    // the reliever whose attempt the keep window still covers; 0: none
+        std::uint32_t activeSinceMs = 0;  // that attempt's first stamp; later ticks never move it
         std::uint8_t takes = 0;
         std::uint32_t seenMs = 0;      // the last read that touched the latch (the sweep's clock)
     };
@@ -782,31 +784,52 @@ namespace ai
     }
 
     // A started relief of this tank is kept: the taunt's own cooldown would otherwise drop the task the tick after the
-    // cast, so the dwell and the taunt check are skipped for 6 s while the Son lives and is not on this tank yet.
+    // cast, so the dwell and the taunt check are skipped for 6 s from the attempt's first stamp while the Son lives
+    // and is not on this tank yet. Later execution ticks neither recount nor extend the window.
     inline bool SeekVictimReliefKept(bool flagOn, const SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
                                      std::uint32_t nowMs)
     {
-        return flagOn && latch.lastTakeMs != 0 && latch.lastTaker == self && !sonOnSelf &&
-            nowMs - latch.lastTakeMs <= kSeekVictimReliefKeepMs;
+        return flagOn && latch.activeTaker != 0 && latch.activeTaker == self && !sonOnSelf &&
+            nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs;
     }
 
-    // The start itself: names this tank as the taker, stamps the take, counts it. Pick time asks only whether a start
-    // is due; the caller stamps it once the take really starts (the attack order or the taunt cast went out), so a
-    // refused or blocked start counts nothing.
+    // The start itself: names this tank as the taker, stamps the take, counts it, and opens the keep window. Pick
+    // time asks only whether a start is due; the caller stamps it once the take really starts (the attack order or
+    // the taunt cast went out), so a refused or blocked start counts nothing.
     inline void SeekVictimReliefStart(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
     {
         latch.lastTakeMs = nowMs;
         latch.lastTaker = self;
+        latch.activeTaker = self;
+        latch.activeSinceMs = nowMs;
         ++latch.takes;
     }
     // The execution stamp: the started latch only when the take really started (a taunt cast, or the attack order
-    // issued). A start that is refused or blocked leaves the latch untouched: no stamp, no count.
+    // issued) and no attempt by this taker is already active. A start that is refused or blocked, or a tick of an
+    // attempt the keep window still covers, leaves the latch untouched: no stamp, no count.
     inline bool SeekVictimReliefNoteExec(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs, bool started)
     {
         if (!started)
             return false;
+        if (latch.activeTaker != 0 && latch.activeTaker == self &&
+            nowMs - latch.activeSinceMs < kSeekVictimReliefKeepMs)
+            return false;
         SeekVictimReliefStart(latch, self, nowMs);
         return true;
+    }
+    // The active attempt's end: the Son reached its reliever, or the 6 s from the first stamp ran out. The sweep
+    // calls it per Son; afterwards a new start counts again.
+    inline void SeekVictimReliefKeepTick(SeekReliefLatch& latch, std::uint64_t self, bool sonOnSelf,
+                                         std::uint32_t nowMs)
+    {
+        if (latch.activeTaker == 0)
+            return;
+        if ((sonOnSelf && latch.activeTaker == self) ||
+            nowMs - latch.activeSinceMs >= kSeekVictimReliefKeepMs)
+        {
+            latch.activeTaker = 0;
+            latch.activeSinceMs = 0;
+        }
     }
 
     // Whether the relief take casts its tank's known taunt: any take from the relief path does, whatever the nearest

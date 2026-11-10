@@ -9352,6 +9352,7 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
             SeekReliefLatch& latch =
                 found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[guid];
             SeekReliefClockTick(latch, reliefSon, nowMs);
+            SeekVictimReliefKeepTick(latch, self, son->GetVictim() == bot, nowMs);
             if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
                 kept = son;
         }

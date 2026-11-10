@@ -1062,8 +1062,8 @@ int main()
         latch.sinceMs = 6000;
         latch.seenMs = 6000;
         SeekVictimReliefStart(latch, 7, 6000);
-        CHECK(SeekVictimReliefKept(true, latch, 7, false, 12000));
-        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 12001));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 11999));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 12000));
         CHECK(!SeekVictimReliefKept(true, latch, 8, false, 7000));
         CHECK(!SeekVictimReliefKept(true, latch, 7, true, 7000));
         CHECK(!SeekVictimReliefKept(false, latch, 7, false, 7000));
@@ -1097,6 +1097,32 @@ int main()
         CHECK(latch.takes == 1);
         CHECK(latch.lastTakeMs == 6000);
         CHECK(latch.lastTaker == 7);
+    }
+    // VictimRelief_KeptAttemptStampsOnce: the same kept, already-targeted relief executes every tick while the tank
+    // chases it, but only the first execution stamps and counts.
+    {
+        SeekReliefLatch latch;
+        CHECK(SeekVictimReliefNoteExec(latch, 7, 10000, true));
+        CHECK(latch.takes == 1);
+        const auto firstTakeMs = latch.lastTakeMs;
+        for (unsigned tick = 11000; tick <= 14000; tick += 1000)
+            CHECK(!SeekVictimReliefNoteExec(latch, 7, tick, true));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 14000));
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastTakeMs == firstTakeMs);
+    }
+    // VictimRelief_KeepWindowNotExtended: later execution ticks stamp nothing, so the keep still ends 6 s after the
+    // first stamp.
+    {
+        SeekReliefLatch latch;
+        CHECK(SeekVictimReliefNoteExec(latch, 7, 0, true));
+        CHECK(!SeekVictimReliefNoteExec(latch, 7, 2000, true));
+        CHECK(!SeekVictimReliefNoteExec(latch, 7, 4000, true));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 2000));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 4000));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 5999));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 6000));
+        CHECK(latch.takes == 1);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";
