@@ -807,19 +807,21 @@ namespace ai
     }
 
     // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two off-tanks
-    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms; a live
-    // claim blocks every taker, its own included: a tank whose ticks keep going to a higher action would otherwise
-    // hold the Son against the other off-tank for as long as it keeps reading. The claim expires 1000 ms after the
-    // first pick, and then the same tank may claim again. The caller checks the tank's eligibility first, so a bot
-    // that cannot take never holds the claim.
+    // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms, and a read
+    // by the same tank is answered from its own live claim, so a tank whose ticks keep going to a higher action
+    // still executes the pick it made. Another taker is refused while the claim lives. The claim is never refreshed:
+    // it expires 1000 ms after the first pick, and then the same tank may claim again. The caller checks the tank's
+    // eligibility first, so a bot that cannot take never holds the claim.
     inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
     {
         if (!SeekVictimReliefDue(flagOn, latch, nowMs))
             return false;
         if (SeekVictimReliefAttemptLive(latch, nowMs))
             return false;
+        // Own live claim: still the pick, so the trigger's read does not shut its own action out. Never refreshed:
+        // the claim still expires 1000 ms after it was first made.
         if (SeekVictimReliefClaimLive(latch, nowMs))
-            return false;
+            return latch.claimTaker == self;
         latch.claimTaker = self;
         latch.claimMs = nowMs;
         return true;

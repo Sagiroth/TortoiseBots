@@ -1157,14 +1157,26 @@ int main()
         CHECK(SeekVictimReliefNoteExec(latch, 7, 500, true));
         CHECK(latch.takes == 1);
     }
-    // VictimRelief_OwnClaimNotRefreshed: a live claim is never moved by its own taker's later reads, so a tank whose
-    // ticks keep picking higher actions cannot hold the Son; 1 s after the first pick the other off-tank may claim.
+    // VictimRelief_TriggerThenActionSameTick (the walk 71 failing case): the trigger's read claims the Son, and the
+    // action's read of the same tick must get the Son back, so the take starts and stamps once.
     {
         SeekReliefLatch latch;
         SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
         CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
-        CHECK(!SeekVictimReliefClaimFor(true, latch, 7, 500));
-        CHECK(!SeekVictimReliefClaimFor(true, latch, 7, 900));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefNoteExec(latch, 7, 0, true));
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastTaker == 7);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 500));
+    }
+    // VictimRelief_OwnClaimNotRefreshed: a live own claim answers its taker's later reads, and they never move it:
+    // the claim still expires 1 s after the first pick, when the other tank may claim.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 500));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 900));
         CHECK(latch.claimMs == 0);
         CHECK(latch.claimTaker == 7);
         CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 999));

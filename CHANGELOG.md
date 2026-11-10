@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: the Hakkar victim relief's trigger read used the Son's selection claim up, so the action never got the relief task and no relief take ever started; the claim now answers its own taker and still expires 1 s after the first pick.
 - Changed: Onyxia's Lair walk 2c rows: slot 1's tank post arrival radius is now 40, so Cindarion's 21-26 yd touchdown latches on the first tick, and a 10 yd ranged_only row sends melee and tanks to Cindarion and the whelps while she hovers, behind AiPlayerbot.DungeonRunRangedOnly.
 - New: behind AiPlayerbot.BossTacticsKeepsEngagedBoss (default 0, recommended on), a boss the raid fights stays in a bot's fight for 10 s after the last bot saw it in its attacker list (within 150 yd, while the bot is in combat), so a melee bot that gave up on an airborne boss keeps her boss-tactic rows and her stand seats.
 - New: behind AiPlayerbot.BossStandWholeRaid (default 0, recommended on), every bot in combat with the boss counts toward its stand seats (a threat wipe such as Onyxia's Fireball no longer drops the wiped bot's seat), a bot that already stands clear of its breath lane stays where it stands instead of walking back toward the lane, and a seated bot does not flee.
