@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: a tank bot no longer taunts a mob off a tank player. A taunt queued while a fresh mob had no victim yet outlived its reach walk and fired after the mob turned onto the tank player, so each generic taunt now stands down at cast time while its mob stands on another tank (no flag).
 - Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.
 - New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: with AiPlayerbot.DungeonRunSeekVictimRelief on, a relief take is confirmed under the latch lock on the clock of its own pick immediately before any attack or taunt, so a tank whose claim a nearer tank took over issues nothing at all, and a take that still held its claim when picked is no longer refused for confirming on a later clock.

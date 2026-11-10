@@ -603,7 +603,7 @@ namespace ai
     };
 
     // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
-    // inherits this isUseful, and GetTarget() there is the value's pick.
+    // inherits this isUseful, and GetTarget() there is the value's pick. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
     class CastGrowlAction : public CastSpellAction
     {
     public:
@@ -611,7 +611,8 @@ namespace ai
 
         virtual bool isUseful() override
         {
-            return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "growl");
+            return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "growl") &&
+                !TauntTargetHeldByOtherTank(bot, GetTarget());
         }
     };
 

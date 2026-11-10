@@ -486,7 +486,7 @@ namespace ai
     // peels onto a non-tank member; the target check mirrors the warrior
     // CastTauntAction guard (victim exists and is not us).
     // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
-    // inherits this isUseful.
+    // inherits this isUseful. Stands down at cast time when the mob is already on another tank (TauntHeldTargetPolicy.h).
     class CastEarthshakerSlamAction : public CastMeleeSpellAction
     {
     public:
@@ -495,7 +495,8 @@ namespace ai
         virtual bool isUseful() override
         {
             return GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot &&
-                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam");
+                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam") &&
+                !TauntTargetHeldByOtherTank(bot, GetTarget());
         }
     };
 

@@ -177,6 +177,11 @@ namespace ai
     // BossTacticsTauntGate row per bot per 5 s while it refuses. `spell` is the taunt being tried, for the row.
     bool TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell);
 
+    // A generic taunt's cast-time check (TauntHeldTargetPolicy.h): true when `target`'s current victim is a player other
+    // than `bot` that PlayerbotAI::IsTank reads as a tank. Only the class taunt actions call it; TauntRefusedByGate and
+    // the boss-tactics taunts never do, so a planned tank swap still taunts off another tank.
+    bool TauntTargetHeldByOtherTank(Player* bot, Unit* target);
+
     // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
     // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
     // A no-op without bot_events.csv.

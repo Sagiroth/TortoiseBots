@@ -30,6 +30,7 @@
 #include "playerbot/CharmYieldPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
+#include "playerbot/policy/combat/TauntHeldTargetPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/policy/raid/TankSwapPolicy.h"
 #include "playerbot/policy/raid/BurnManaPolicy.h"
@@ -6827,6 +6828,16 @@ bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const ch
         sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
     }
     return true;
+}
+
+bool ai::TauntTargetHeldByOtherTank(Player* bot, Unit* target)
+{
+    if (!bot || !target)
+        return false;
+    Unit* victim = target->GetVictim();
+    Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+    return TauntStandsDownForTank(victimPlayer != nullptr, victimPlayer == bot,
+        victimPlayer && PlayerbotAI::IsTank(victimPlayer));
 }
 
 // The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
