@@ -32,7 +32,7 @@ class SpreadSlotsWiring(unittest.TestCase):
         self.assertLess(fn.index("dungeonRunBossSpreadSlots"), fn.index("FindBossSpreadSlot("))
 
     def test_the_slot_read_decides_without_the_key(self):
-        fn = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        fn = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         # The decision never branches on the key: the only mention is the row's ownership guard at the end.
         self.assertEqual(fn.count("dungeonRunBossSpreadSlots"), 1)
         self.assertIn("BossSpreadLive(", fn)
@@ -42,10 +42,31 @@ class SpreadSlotsWiring(unittest.TestCase):
             fn)
 
     def test_the_read_row_is_guarded_by_the_key(self):
-        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         # With the key off the read writes nothing: the old step-away owns the row and its gate words.
         self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("SpreadLogOwned("))
         self.assertNotIn("LogBossSpread(ai, bot, SpreadSlotVerdictWord", read[:read.index("SpreadLogOwned(")])
+
+    def test_the_read_is_cached_per_bot_and_tick(self):
+        # One read per bot per AI update: the slot trigger, the old spread trigger and the action all ask, and the
+        # read builds the ring points, maps the group and samples the floor.
+        fn = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("t_spreadSlotTick", fn)
+        self.assertIn("ai->UpdateTick()", fn)
+        self.assertIn("ReadBossSpreadSlot(ai, bot)", fn)
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertNotIn("t_spreadSlotTick", read)
+        for text, signature in ((TRIGGERS, "bool BossTacticsSpreadSlotTrigger::IsActive()"),
+                                (DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()"),
+                                (ACTIONS, "bool BossTacticsSpreadSlotAction::Execute(Event& event)")):
+            caller = body(text, signature)
+            self.assertIn("FindBossSpreadSlot(ai, bot)", caller)
+            self.assertNotIn("ReadBossSpreadSlot(", caller)
+
+    def test_the_row_names_its_centre(self):
+        fn = body(ACTIONS, "void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot,")
+        self.assertIn('LiveBossAnchor(ai, bot, circle) ? "anchor" : "spot"', fn)
+        self.assertIn("centre=%s", fn)
 
     def test_the_legacy_row_is_guarded_by_not_the_key(self):
         trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
@@ -73,7 +94,7 @@ class SpreadSlotsWiring(unittest.TestCase):
     def test_SpreadVerdict_EveryVerdictIsLogged(self):
         # Every verdict word the enum can produce reaches the one log call: it is the read's statement after the
         # verdict is assigned, behind the key-on ownership guard, and it takes SpreadSlotVerdictWord(task.verdict).
-        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         self.assertIn(
             "    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))\n"
             "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);\n"
@@ -89,7 +110,7 @@ class SpreadSlotsWiring(unittest.TestCase):
         self.assertIn('LogBossSpread(ai, bot, "move_failed"', action)
 
     def test_the_read_reports_the_owned_slot_not_the_fallback(self):
-        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        read = body(ACTIONS, "BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         self.assertIn("SpreadSlotSelect(owned, fallback, ownedUsable, fallbackUsable)", read)
         self.assertIn("task.slot = selection.slot;", read)
         self.assertIn("task.fallback = selection.fallback;", read)

@@ -21,7 +21,9 @@ using ai::ShouldCombatSpread;
 using ai::ShouldRaidSurvivalSpread;
 using ai::SpreadLogCaller;
 using ai::SpreadLogOwned;
+using ai::SpreadCastClock;
 using ai::SpreadSlotCastCutDue;
+using ai::SpreadSlotCastStart;
 using ai::SpreadSlotFallback;
 using ai::SpreadSlotIndexOf;
 using ai::SpreadSlotOrder;
@@ -298,6 +300,19 @@ int main()
     CHECK(SpreadSlotCastCutDue(false, 5000u, 5000u + 6000u));
     CHECK(SpreadSlotCastCutDue(false, 0xFFFFFF00u, 0xFFFFFF00u + 6000u));
     std::cout << "  [PASS] only a damage dealer's cast is cut, after 6 s\n";
+
+    // SpreadSlot_CastClockRestartsAfterGap: the action only runs on cast, slot_move and slot_hold, so a stamp left
+    // by another verdict (or the previous pull) must not cut the first cast after a gather. A gap of more than
+    // 1.5 s between two cast reads starts the run over.
+    {
+        SpreadCastClock clock;
+        CHECK(SpreadSlotCastStart(clock, 0u) == 1u);
+        CHECK(SpreadSlotCastStart(clock, 3000u) == 3000u);
+        CHECK(SpreadSlotCastStart(clock, 33000u) == 33000u);
+        CHECK(!SpreadSlotCastCutDue(false, clock.sinceMs, 33000u + 5999u));
+        CHECK(SpreadSlotCastCutDue(false, clock.sinceMs, 33000u + 6000u));
+    }
+    std::cout << "  [PASS] the cast clock restarts after a gap\n";
 
     std::cout << "TortoiseBots combat-spread policy tests passed.\n";
     return 0;

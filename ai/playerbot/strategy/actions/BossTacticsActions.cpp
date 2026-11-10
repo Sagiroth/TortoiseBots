@@ -894,6 +894,27 @@ void ResetSeekTickCache()
     t_seekTick.read = false;
     t_seekTick.fight = SeekFight();
 }
+
+// The slot read's answer for one bot and one AI update. The slot trigger, the old spread trigger and the action all
+// ask within the same update, and the read builds the ring points, maps the group and samples the floor.
+struct SpreadSlotTickCache
+{
+    bool live = false;
+    PlayerbotAI* ai = nullptr;
+    std::uint64_t botGuid = 0;
+    std::uint32_t tick = 0;
+    BossSpreadSlotTask task;
+};
+thread_local SpreadSlotTickCache t_spreadSlotTick;
+
+void ResetSpreadSlotTickCache()
+{
+    t_spreadSlotTick.live = false;
+    t_spreadSlotTick.ai = nullptr;
+    t_spreadSlotTick.botGuid = 0;
+    t_spreadSlotTick.tick = 0;
+    t_spreadSlotTick.task = BossSpreadSlotTask();
+}
 }
 
 bool ai::IsBattleDps(Player* bot)
@@ -905,6 +926,7 @@ ai::BossTacticsScanScope::BossTacticsScanScope()
 {
     t_fightScan.live = true;
     t_seekTick.live = true;
+    t_spreadSlotTick.live = true;
 }
 
 ai::BossTacticsScanScope::~BossTacticsScanScope()
@@ -915,6 +937,7 @@ ai::BossTacticsScanScope::~BossTacticsScanScope()
     t_fightScan.table = nullptr;
     t_fightScan.fight = BossTacticsFight();
     ResetSeekTickCache();
+    ResetSpreadSlotTickCache();
 }
 
 namespace
@@ -4823,10 +4846,13 @@ void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int sl
             dueIn = static_cast<int>(state.dueInMs / 1000);
     }
     char info1[192];
+    // Which centre this read worked from: a scan that missed the boss for a tick drops the anchor and shows here.
+    BossAnchorCircle circle;
+    const char* centre = LiveBossAnchor(ai, bot, circle) ? "anchor" : "spot";
     snprintf(info1, sizeof(info1),
-             "flag=%d,verdict=%s,slot=%d,slot_yd=%.1f,fallback=%d,nearest_yd=%.1f,within=%d,aura=%d,due_in=%d",
+             "flag=%d,verdict=%s,slot=%d,slot_yd=%.1f,fallback=%d,centre=%s,nearest_yd=%.1f,within=%d,aura=%d,due_in=%d",
              sPlayerbotAIConfig.dungeonRunBossSpreadSlots ? 1 : 0, verdict ? verdict : "no_centre", slot, slotYd,
-             fallback, nearestYd, within, aura, dueIn);
+             fallback, centre, nearestYd, within, aura, dueIn);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSpread", info1, "");
 }
 
@@ -8967,11 +8993,10 @@ bool SpreadSlotPointUsable(PlayerbotAI* ai, Player* bot, float centreZ, const Sp
     z = floor;
     return true;
 }
-}  // namespace
 
-// The fixed slot read (DungeonRunBossSpreadSlots). It never reads the key for its decision, so the caller decides
-// whether the slot moves the bot; only the row it writes is keyed, and with the key off the old step-away owns the row.
-BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+// The read proper. It never reads the key for its decision, so the caller decides whether the slot moves the bot;
+// only the row it writes is keyed, and with the key off the old step-away owns the row.
+BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
 {
     BossSpreadSlotTask task;
     if (!ai || !bot)
@@ -9109,6 +9134,29 @@ BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
     // could not send.
     if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))
         LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);
+    return task;
+}
+}  // namespace
+
+// One read per bot and AI update: the slot trigger, the old spread trigger and the action all ask on the same tick.
+// Outside an update (an explicit command moved the world on) the answer is read fresh and not kept.
+BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return BossSpreadSlotTask();
+    const std::uint32_t tick = ai->UpdateTick();
+    const std::uint64_t guid = bot->GetObjectGuid().GetRawValue();
+    const bool cache = t_spreadSlotTick.live;
+    if (cache && t_spreadSlotTick.ai == ai && t_spreadSlotTick.botGuid == guid && t_spreadSlotTick.tick == tick)
+        return t_spreadSlotTick.task;
+    const BossSpreadSlotTask task = ReadBossSpreadSlot(ai, bot);
+    if (cache)
+    {
+        t_spreadSlotTick.ai = ai;
+        t_spreadSlotTick.botGuid = guid;
+        t_spreadSlotTick.tick = tick;
+        t_spreadSlotTick.task = task;
+    }
     return task;
 }
 
@@ -9966,17 +10014,24 @@ bool BossTacticsSpreadSlotAction::Execute(Event& event)
     if (task.verdict == SpreadSlotVerdict::Cast)
     {
         const std::uint32_t nowMs = WorldTimer::getMSTime();
-        if (castSinceMs == 0)
-            castSinceMs = nowMs != 0 ? nowMs : 1;
+        SpreadCastClock clock;
+        clock.sinceMs = castSinceMs;
+        clock.seenMs = castSeenMs;
+        castSinceMs = SpreadSlotCastStart(clock, nowMs);
+        castSeenMs = clock.seenMs;
         if (SpreadSlotCastCutDue(ai->IsHeal(bot), castSinceMs, nowMs))
         {
             bot->CastStop();
             castSinceMs = 0;
+            castSeenMs = 0;
             castCut = true;
         }
     }
     else
+    {
         castSinceMs = 0;
+        castSeenMs = 0;
+    }
     if (task.verdict == SpreadSlotVerdict::SlotHold)
     {
         // At the slot: stop a walk once, then leave the tick to the rotation (the seek action's atSpot branch,

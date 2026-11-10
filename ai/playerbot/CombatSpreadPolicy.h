@@ -57,6 +57,10 @@ namespace ai
     // A damage dealer stops its own cast for the walk after this long; a healer
     // never does.
     constexpr std::uint32_t kSpreadSlotCastWaitMs = 6000;
+    // A `cast` read this long after the previous one starts a new run: the
+    // action only runs on cast, slot_move and slot_hold, so the stamp left by
+    // another verdict (or the previous pull) must not cut the first cast.
+    constexpr std::uint32_t kSpreadSlotCastGapMs = 1500;
     constexpr int kSpreadSlotMaxRings = 3;
 
     struct SpreadSlotPoint
@@ -254,6 +258,24 @@ namespace ai
     inline bool SpreadLogOwned(bool slotsKey, SpreadLogCaller caller)
     {
         return slotsKey ? caller == SpreadLogCaller::Read : caller == SpreadLogCaller::Legacy;
+    }
+
+    // The `cast` run behind SpreadSlotCastCutDue: its start and when the last cast
+    // verdict was read. A read more than kSpreadSlotCastGapMs after the last one
+    // starts the run over.
+    struct SpreadCastClock
+    {
+        std::uint32_t sinceMs = 0;
+        std::uint32_t seenMs = 0;
+    };
+
+    inline std::uint32_t SpreadSlotCastStart(SpreadCastClock& clock, std::uint32_t nowMs)
+    {
+        const std::uint32_t now = nowMs != 0 ? nowMs : 1;
+        if (clock.sinceMs == 0 || now - clock.seenMs > kSpreadSlotCastGapMs)
+            clock.sinceMs = now;
+        clock.seenMs = now;
+        return clock.sinceMs;
     }
 
     // A heal never waits for the cast; a damage dealer cuts its own cast after

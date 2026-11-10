@@ -774,6 +774,9 @@ namespace ai
         bool hasLast = false;
         // The first read of an unbroken run of `cast` verdicts; 0: the last verdict was another.
         std::uint32_t castSinceMs = 0;
+        // When the `cast` verdict was last read: a read more than kSpreadSlotCastGapMs later starts the run over, so a
+        // stamp left by another verdict or the previous pull cannot cut the first cast after a gather.
+        std::uint32_t castSeenMs = 0;
     };
 
     // The second off-tank's source: take it, pull it, drag it to the row's spot.
