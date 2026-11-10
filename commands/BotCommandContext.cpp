@@ -13,6 +13,7 @@
 #include "../ai/playerbot/strategy/AiObjectContext.h"
 #include "../ai/playerbot/PullExecutorPolicy.h"
 #include "../ai/playerbot/strategy/generic/PullStrategy.h"
+#include "../ai/playerbot/strategy/actions/UseItemAction.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/WorldPosition.h"
 // pi-lens-ignore: clang:pp_file_not_found
@@ -118,6 +119,44 @@ bool ExecuteOrderedAction(PlayerbotAI* ai, std::string const& action, ai::Event 
     ScopedSilentStrategy silent(ai);
     ai::Event copy(event);
     return ordered->Execute(copy);
+}
+
+bool OrderRest(PlayerbotAI* ai, ai::Event const& event)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || !ai->GetAiObjectContext())
+        return false;
+    bool const needMana = bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA);
+    bool const needHealth = bot->GetHealth() < bot->GetMaxHealth();
+    if (!needMana && !needHealth)
+        return true;
+    if (!bot->IsAlive() || ai::GroupIsFighting(ai))
+        return false;
+
+    // One 30 s meal may not fill a bar; the resume-drink and resume-eat
+    // triggers go on past the downtime stop lines until both are full.
+    ai::Value<bool>* restToFull = ai->GetAiObjectContext()->GetValue<bool>("rest to full");
+    restToFull->Set(true);
+
+    ScopedSilentStrategy silent(ai);
+    bool rested = false;
+    for (char const* meal : { "drink", "food" })
+    {
+        if (!(meal[0] == 'd' ? needMana : needHealth))
+            continue;
+        ai::Action* action = ai->GetAiObjectContext()->GetAction(meal);
+        ai::Event copy(event);
+        if (action && action->Execute(copy))
+            rested = true;
+    }
+    // Sit out the whole 30 s meal: each meal's own sleep is a short guess, and
+    // the later meal overwrites the earlier one's. The bot stands as soon as
+    // it is full (PlayerbotAI::UpdateAI).
+    if (rested)
+        ai->SetActionDuration(30000);
+    else
+        restToFull->Set(false);
+    return rested;
 }
 
 void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal)

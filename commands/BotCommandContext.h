@@ -124,6 +124,9 @@ bool ExecuteQuietAction(PlayerbotAI* ai, std::string const& action, ai::Event co
 // (a movement action is useless while the bot holds "stay"), and the order put
 // the bot on that stay itself. The action's own checks still apply.
 bool ExecuteOrderedAction(PlayerbotAI* ai, std::string const& action, ai::Event const& event);
+// The rest order: eat and drink up to full, past the stop lines the bot's own
+// downtime uses. True when the bot rests or is already full.
+bool OrderRest(PlayerbotAI* ai, ai::Event const& event);
 // Run one normal AI step without exposing incidental bot chat to the owner.
 void ExecuteQuietNextAction(PlayerbotAI* ai, bool minimal = false);
 // Put a named mature action on the active engine so its existing prerequisite

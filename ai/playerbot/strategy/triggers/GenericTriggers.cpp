@@ -89,7 +89,8 @@ bool ResumeDrinkTrigger::IsActive()
 {
     if (!AI_VALUE(bool, "drink unfinished"))
         return false;
-    uint32 const stop = DrinkStopManaPct(ai->HasCheat(BotCheatMask::item), sPlayerbotAIConfig.almostFullHealth);
+    uint32 const stop = AI_VALUE(bool, "rest to full") ? 100 :
+        DrinkStopManaPct(ai->HasCheat(BotCheatMask::item), sPlayerbotAIConfig.almostFullHealth);
     uint8 const mana = AI_VALUE2(uint8, "mana", "self target");
     if (!ShouldDrinkAtManaPct(HasManaPool(bot), mana, stop))
     {
@@ -97,6 +98,21 @@ bool ResumeDrinkTrigger::IsActive()
         return false;
     }
     return ShouldResumeDrink(true, true, mana, stop, ai->HasAura("drink", bot));
+}
+
+// The food side of a rest order: one 30 s meal may not fill the health bar.
+// The order ends here once both bars are full.
+bool ResumeEatTrigger::IsActive()
+{
+    if (!AI_VALUE(bool, "rest to full"))
+        return false;
+    bool const healthFull = bot->GetHealth() >= bot->GetMaxHealth();
+    if (healthFull && (!HasManaPool(bot) || bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA)))
+    {
+        SET_AI_VALUE(bool, "rest to full", false);
+        return false;
+    }
+    return !healthFull && !ai->HasSeatedMeal(false);
 }
 
 bool EnoughManaTrigger::IsActive()
