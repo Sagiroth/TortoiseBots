@@ -8,6 +8,8 @@ the glue in ai/playerbot/strategy/actions/ReachTargetActions.h:
 - the base MoveIntoRange asks the hover walk first, only with the key on, before
   the plain path walk;
 - the hover walk paths to the floor under the target, never to the target;
+- the walk runs only for a hostile target (the trigger's own IsHostileTo), and for
+  an attack reach only one the core lets the bot attack;
 - the BossReachHover row is written only inside the key-on branch;
 and the key's read and shipped default.
 """
@@ -53,6 +55,18 @@ class HoverReachWiringTest(unittest.TestCase):
         self.assertLess(guard, fn.index('sPlayerbotAIConfig.logEvent(ai, "BossReachHover"'))
         self.assertEqual(ACTIONS.count('logEvent(ai, "BossReachHover"'), 1)
         self.assertIn("lastHoverLogMs != 0 && nowMs - lastHoverLogMs < kHoverLogMs", fn)
+
+    def test_neutral_or_unattackable_target_cannot_select_a_hover_destination(self):
+        fn = body(ACTIONS, "bool MoveIntoRangeUnderHover(Unit* target, float distance)", "\n        }")
+        # EnemyOutOfSpellRangeTrigger judges with IsHostileTo; !IsFriendlyTo also
+        # takes neutral units, which would get a hover destination.
+        self.assertIn("bool const hostile = sServerFacade.IsHostileTo(bot, target);", fn)
+        self.assertNotIn("IsFriendlyTo(bot, target)", fn)
+        self.assertIn("bool const attackReach = RequiresAttackableTarget();", fn)
+        self.assertIn("bool const attackable = !attackReach || bot->IsValidAttackTarget(target);", fn)
+        self.assertIn("if (!HoverReachTargetEligible(hostile, attackReach, attackable))", fn)
+        self.assertLess(fn.index("if (!HoverReachTargetEligible(hostile, attackReach, attackable))"),
+                        fn.index("if (!HoverReachApplies(true, map->IsDungeon()"))
 
     def test_key_is_read_and_ships_zero(self):
         self.assertIn('rangedReachHoverTarget = config.GetBoolDefault("AiPlayerbot.RangedReachHoverTarget", false);',

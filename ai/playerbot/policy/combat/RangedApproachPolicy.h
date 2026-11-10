@@ -151,6 +151,15 @@ namespace ai
         return result;
     }
 
+    // Only a hostile body is a hover reach target: "enemy out of spell range" judges with IsHostileTo, and
+    // !IsFriendlyTo also takes neutral units. An attack reach (melee, pull) also needs a target the core lets
+    // the bot attack; a spell reach may close on a hostile it cannot hit yet (a boss still unselectable in the
+    // air), which is why the walk runs before the plain path's gates.
+    inline bool HoverReachTargetEligible(bool hostile, bool attackReach, bool attackable)
+    {
+        return hostile && (!attackReach || attackable);
+    }
+
     // AiPlayerbot.RangedReachHoverTarget: a hostile at least this high above the floor under it is "hovering"
     // (Onyxia's P2 hover points stand 19-23 yd above the floor; a jumping or stair-stepping mob is never 8 yd up).
     constexpr float kHoverTargetMinHeightYd = 8.0f;

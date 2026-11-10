@@ -237,6 +237,20 @@ int main()
         std::cout << "  [PASS] hover gate: exactly 8 yd counts\n";
     }
 
+    // Only a hostile body is a hover destination, and an attack reach also needs
+    // one the core lets the bot attack. A neutral unit is the case !IsFriendlyTo
+    // let through; a hostile airborne one still walks.
+    {
+        CHECK(!ai::HoverReachTargetEligible(false, false, false)); // neutral, spell reach
+        CHECK(!ai::HoverReachTargetEligible(false, true, true));   // neutral, attack reach
+        CHECK(!ai::HoverReachTargetEligible(true, true, false));   // hostile, not attackable
+        CHECK(ai::HoverReachTargetEligible(true, false, false));   // hostile spell reach
+        CHECK(ai::HoverReachTargetEligible(true, true, true));     // hostile attack reach
+        CHECK(ai::HoverReachTargetEligible(true, false, false) &&
+              ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -86.0f)); // airborne hostile
+        std::cout << "  [PASS] hover target: hostile only, attackable for attack reaches\n";
+    }
+
     // No line of sight from the ground side: the second pass keeps the geometry
     // (standing still is no damage; the next tick's trigger re-judges).
     {

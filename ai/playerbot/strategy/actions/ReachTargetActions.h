@@ -554,18 +554,27 @@ namespace ai
             if (!map || !target || bot->GetTransport())
                 return false;
 
+            // The trigger judges with IsHostileTo and this walk runs before the plain
+            // path's gates, so a neutral body - which !IsFriendlyTo also takes - must
+            // not pick a hover destination. An attack reach also needs a target the
+            // core lets the bot attack (see HoverReachTargetEligible).
+            bool const attackReach = RequiresAttackableTarget();
+            bool const hostile = sServerFacade.IsHostileTo(bot, target);
+            bool const attackable = !attackReach || bot->IsValidAttackTarget(target);
+            if (!HoverReachTargetEligible(hostile, attackReach, attackable))
+                return false;
+
             float const targetX = target->GetPositionX();
             float const targetY = target->GetPositionY();
             float const targetZ = target->GetPositionZ();
             float const groundZ = map->GetHeight(targetX, targetY, targetZ, true);
             bool const groundValid = groundZ > INVALID_HEIGHT + 1.0f;
-            bool const hostile = !sServerFacade.IsFriendlyTo(bot, target);
 
             if (!HoverReachApplies(true, map->IsDungeon(), hostile, distance, ATTACK_DISTANCE, groundValid, targetZ, groundZ))
             {
                 // A hostile in the air in a dungeon with no floor under it cannot be walked
                 // under at all; every other refusal is "not hovering" and says nothing.
-                if (hostile && map->IsDungeon() && !groundValid)
+                if (map->IsDungeon() && !groundValid)
                     HoverReachRow(HoverReachResult::NoGround, target, distance, groundZ, 0);
                 return false;
             }
