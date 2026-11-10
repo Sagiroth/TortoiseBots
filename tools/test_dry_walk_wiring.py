@@ -5,8 +5,8 @@ the lead bot's path crossed the pool on its surface; an approach hop or a too-fa
 leg picked there landed in the water, and the core's straight swim chord (0x81)
 held the lead against a bank. The policy is tested in
 tools/test_dungeon_run_policy.cpp; this pins the glue in commands/Commander.cpp:
-- DryWayPath asks Detour for a NAV_GROUND-only path (never the shim's
-  NAV_MAGMA_SLIME / NAV_GROUND_STEEP, which name other bits in this core);
+ - DryWayPath asks Detour for a walkable NAV_GROUND path (steep excluded; never the shim's
+   NAV_MAGMA_SLIME / NAV_GROUND_STEEP, which name other bits in this core);
 - the walk's own order is intercepted before IssueRunOrder (DryWalkWanted, DryWalkOrder,
   DryLegTaken), and a refused dry leg falls back to the walk's order once in the same tick;
 - ApproachOnPath, ReadPullStand and DirectNavPath read the dry flag; a target point in deep
@@ -33,7 +33,7 @@ class DryWayPathWiringTest(unittest.TestCase):
     def test_ground_only_filter(self):
         fn = body(COMMANDS, "static bool DryWayPath(Player* lead,", "\n}\n")
         self.assertIn("filter.setIncludeFlags(NAV_GROUND);", fn)
-        self.assertIn("filter.setExcludeFlags(0);", fn)
+        self.assertIn("filter.setExcludeFlags(NAV_STEEP_SLOPES);", fn)
         # This core's NavTerrain: 0x18 is WATER|STEEP_SLOPES and 0x02 is MAGMA, not the shim's names.
         self.assertNotIn("NAV_MAGMA_SLIME", fn)
         self.assertNotIn("NAV_GROUND_STEEP", fn)

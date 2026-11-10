@@ -65,6 +65,9 @@
 #include "playerbot/FollowUrgencyPolicy.h"
 #include "playerbot/WandPolicy.h"
 #include "playerbot/PortalFollowPolicy.h"
+#include "Maps/PathFinder.h"
+// The portal walk's verdict (UpdatePortalFollow below).
+#include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/PartyFlightPolicy.h"
 #include "playerbot/TaxiRouteGuard.h"
 #include "BotDiagnostics.h"
@@ -3612,9 +3615,10 @@ void PlayerbotAI::UpdatePortalFollow(Player* master, Group* group)
 
         if (!CanMove())
             return;
-        bot->GetMotionMaster()->MovePoint(m_portalFollowMap,
-            portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(),
-            MOVE_RUN_MODE | MOVE_PATHFINDING);
+        // The portal walk, checked like every other short walk: with no real
+        // navmesh path the bot holds (the episode retries) instead of
+        // cutting straight through the dungeon.
+        MovementAction::LaunchLandWalk(bot, WorldPosition(m_portalFollowMap, portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ()));
         return;
     }
 
@@ -3829,8 +3833,9 @@ void PlayerbotAI::UpdatePartyFlight(Player* master, Group* group)
                     if (!bot->IsMoving() || nowMs - m_partyFlightMoveMs >= 1000)
                     {
                         m_partyFlightMoveMs = nowMs;
-                        bot->GetMotionMaster()->MovePoint(fromEntry->map_id, destX, destY, destZ,
-                            MOVE_RUN_MODE | MOVE_PATHFINDING);
+                        // The flight-master walk, checked like the portal walk
+                        // above: no navmesh path means hold, not a shortcut.
+                        MovementAction::LaunchLandWalk(bot, WorldPosition(fromEntry->map_id, destX, destY, destZ));
                     }
                     return;
                 }

@@ -59,7 +59,7 @@ class MoveFailNoteWiringTest(unittest.TestCase):
 
     def test_path_type_is_recorded_around_the_route(self):
         step = body(WORLDPOS, "std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder", "\n}\n")
-        self.assertIn("type = pathfinder->getPathType();\n    LastPathStepType() = static_cast<uint32>(type);", step)
+        self.assertIn("type = permissiveKept ? pathfinder->getPathType() : strictType;\n    LastPathStepType() = static_cast<uint32>(type);", step)
         move = body(MOVES, "bool MovementAction::MoveTo2(", "\n}\n")
         self.assertIn("    WorldPosition::LastPathStepType() = 0;\n    TravelPath movePath = ResolveMovePath(startPos, endPos, mover, lastMove);\n"
                       "    lastMove.movePathType = WorldPosition::LastPathStepType();", move)
@@ -79,7 +79,7 @@ class MoveFailNoteWiringTest(unittest.TestCase):
         # The path type is read in the shared check (CheckLeadMove) and captured by
         # `cmd move` only when it asked for a path (not "hold here").
         check = body(COMMANDS, "static LeadMoveCheck CheckLeadMove(", "\n}\n\nstatic bool CommanderMove(")
-        self.assertIn("check.rawPathType = static_cast<uint32>(path.getPathType());", check)
+        self.assertIn("check.rawPathType = static_cast<uint32>(active->getPathType());", check)
         self.assertIn("check.facts.pathType = check.rawPathType;", check)
         fn = body(COMMANDS, "static bool CommanderMove(", "\n}\n")
         self.assertIn("if (s_runOrderCapture.active && !RemoteCommander::IsAtLead(facts.distanceFromLead))\n    {\n"

@@ -27,8 +27,6 @@
 #include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/JumpPolicy.h"
 #include "../../../../runtime/policy/movement/WalkModePolicy.h"
-#include "playerbot/MagmaHazardPolicy.h"
-#include "playerbot/TravelLegChainPolicy.h"
 #include "playerbot/SwimPathPolicy.h"
 #include "playerbot/MoveFailNotePolicy.h"
 #include "playerbot/PlaceUnstickPolicy.h"
@@ -36,6 +34,13 @@
 #include "Maps/PathFinder.h"
 #include "Maps/MoveMap.h" // the navmesh-island unstick's isolation query
 #include "Pet.h"
+#include "playerbot/TravelLegChainPolicy.h"
+// The stored route only says where to go: the dispatch replays the leg over
+// the live navmesh and walks the mesh's answer (RouteReplayPolicy.h).
+#include "playerbot/RouteReplayPolicy.h"
+#include "playerbot/MagmaHazardPolicy.h"
+// The shared checked step's verdict (WalkChecked below).
+#include "playerbot/LandWalkPolicy.h"
 #include "playerbot/BoundRunMapGuard.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "host/ModuleLog.h"
@@ -68,7 +73,63 @@ static_assert(ai::kMagmaLiquidTypeFlag == MAP_LIQUID_TYPE_MAGMA, "magma type fla
 static_assert(ai::kSlimeLiquidTypeFlag == MAP_LIQUID_TYPE_SLIME, "slime type flag differs from the core");
 static_assert(ai::kLiquidStatusWaterWalk == static_cast<uint32>(LIQUID_MAP_WATER_WALK), "water-walk status differs from the core");
 static_assert(ai::kLiquidStatusInWater == static_cast<uint32>(LIQUID_MAP_IN_WATER), "in-water status differs from the core");
-static_assert(ai::kLiquidStatusUnderWater == static_cast<uint32>(LIQUID_MAP_UNDER_WATER), "under-water status differs from the core");
+
+// One "replay kept the stored leg" line per bot per this many seconds: the
+// lead measures how often the raw fallback below still runs.
+static constexpr time_t kRouteReplayLogSeconds = 60;
+static constexpr float kRouteReplayReachYd = 3.0f;
+static constexpr float kRouteReplayReachZYd = 5.0f;
+
+// The leg replay (RouteReplayPolicy.h): the navmesh replays the stored
+// stretch instead of the spline walking the stored points. `stored` are the
+// leg's points past the bot (head first); `botPos` is the live start. Tries
+// the leg's end first, then nearer stored points (half the index, a bounded
+// number of times), and walks the mesh's answer to the first goal it
+// reaches without an absurd detour (a jump down, a gap). Sets `replayedOut`
+// and `replayedGoal` (index into `stored`) then. A refused grade falls back
+// to the stored points, like getPathStepFrom's own strict answer does.
+static bool ReplayStoredLeg(Player* bot, const WorldPosition& botPos, const std::vector<WorldPosition>& stored,
+    std::size_t& replayedGoal, std::vector<WorldPosition>& replayedOut)
+{
+    replayedOut.clear();
+    if (stored.size() < 2)
+        return false;
+    for (std::size_t goal : ai::RouteReplayGoals(stored.size()))
+    {
+        WorldPosition const& goalPos = stored[goal];
+        if (goalPos.GetMapId() != botPos.GetMapId())
+            break;
+        std::vector<WorldPosition> meshPath = goalPos.getPathStepFrom(botPos, bot);
+        uint32 const type = WorldPosition::LastPathStepType();
+        if (type & (ai::kPathTypeNoPath | ai::kPathTypeNotUsingPath | ai::kPathTypeShortcut))
+            continue;
+        if (meshPath.size() < 2)
+            continue;
+        float storedLen = 0.0f;
+        WorldPosition prev = botPos;
+        for (std::size_t i = 0; i <= goal; ++i)
+        {
+            storedLen += prev.distance(stored[i]);
+            prev = stored[i];
+        }
+        float meshLen = 0.0f;
+        for (std::size_t i = 1; i < meshPath.size(); ++i)
+            meshLen += meshPath[i - 1].distance(meshPath[i]);
+        ai::RouteReplayProbe probe;
+        // The mesh path ends on the mesh; a stored point sits a little beside or
+        // above it, so "reached" needs room.
+        probe.reachable = !(type & ai::kPathTypeIncomplete) && goalPos.isPathTo(meshPath, kRouteReplayReachYd, kRouteReplayReachZYd);
+        probe.meshLengthYd = meshLen;
+        probe.storedLengthYd = storedLen;
+        probe.lastPoint = goal + 1 == stored.size();
+        if (!ai::RouteReplayAcceptsProbe(probe))
+            continue;
+        replayedOut = std::move(meshPath);
+        replayedGoal = goal;
+        return true;
+    }
+    return false;
+}
 
 // One "move refused: magma" line per bot per this many seconds.
 static constexpr time_t kMagmaLogSeconds = 10;
@@ -209,6 +270,59 @@ bool MovementAction::MoveNear(uint32 mapId, float x, float y, float z, float dis
     float angle = GetFollowAngle();
     return MoveTo(mapId, x + cos(angle) * distance, y + sin(angle) * distance, z);
 }
+
+// A short walk that never leaves the navmesh: the path comes from the same
+// query the routes use (steep ground excluded, stairs allowed), and with no
+// real path the bot does not move. The point generator under the spline only
+// marks a walk in flight and re-paths in the core when the bot's speed changes.
+bool MovementAction::LaunchLandWalk(Player* bot, const WorldPosition& endPos, bool walk, uint32* pathTypeOut)
+{
+    WorldPosition botPos(bot);
+    std::vector<WorldPosition> path = endPos.getPathStepFrom(botPos, bot);
+    uint32 const type = WorldPosition::LastPathStepType();
+    if (pathTypeOut)
+        *pathTypeOut = type;
+    if (path.size() < 2)
+        return false;
+    WorldPosition const& reached = path.back();
+    if (ai::ClassifyLandPath(type, botPos.getX(), botPos.getY(), botPos.getZ(),
+            reached.getX(), reached.getY(), reached.getZ(), endPos.getX(), endPos.getY(), endPos.getZ()) !=
+        ai::LandWalkVerdict::Walk)
+        return false;
+
+    bot->GetMotionMaster()->MovePoint(endPos.GetMapId(), reached.getX(), reached.getY(), reached.getZ(),
+        (walk ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
+    Movement::MoveSplineInit init(*bot, "LandWalk");
+    init.MovebyPath(WorldPosition().toPointsArray(path));
+    init.SetWalk(walk);
+    init.Launch();
+    return true;
+}
+
+// Water, transports, flight and ghosts keep their own movement.
+bool MovementAction::WalkChecked(const WorldPosition& endPos, bool walk)
+{
+    if (!ai->CanMove() || !endPos.isValid() || endPos.GetMapId() != bot->GetMapId() ||
+        bot->IsFlying() || bot->IsTaxiFlying() || bot->GetTransport() || !bot->IsAlive() ||
+        bot->IsInWater() || bot->IsUnderwater() || bot->HasMovementFlag(MOVEFLAG_SWIMMING) ||
+        sServerFacade.IsUnderwater(bot))
+        return false;
+
+    WorldPosition botPos(bot);
+    if (botPos.distance(endPos) < sPlayerbotAIConfig.targetPosRecalcDistance)
+        return false;
+
+    uint32 type = 0;
+    if (!LaunchLandWalk(bot, endPos, walk, &type))
+    {
+        AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_NO_LAND_PATH;
+        AI_VALUE(LastMovement&, "last movement").movePathType = type;
+        return false;
+    }
+    WaitForReach(botPos.distance(endPos));
+    return true;
+}
+
 
 bool MovementAction::MoveNear(WorldObject* target, float distance)
 {
@@ -1009,179 +1123,183 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     if (singlePointMove)
     {
         // A single point ahead cannot seed a spline (path[0] is the current
-        // position), so it walks as a plain MovePoint with pathfinding, the same
-        // launch the normal path ends with below. The hazard rewrite is skipped:
-        // with no segment there is nothing to bend around a hazard.
+        // position). A leg the pathfinder owns (generatePath) walks as a
+        // checked launch; a noPath/fly/swim leg keeps its old MovePoint, as
+        // before. The hazard rewrite is skipped: with no segment there is
+        // nothing to bend around a hazard.
         WorldPosition movePosition = path.back();
-        uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
-        moveOptions |= MOVE_PATHFINDING;
-        mm.MovePoint(movePosition.GetMapId(),
-            movePosition.getX(),
-            movePosition.getY(),
-            movePosition.getZ(),
-            moveOptions);
-        WaitForReach(botPos.distance(movePosition));
+        if (!generatePath)
+        {
+            // A noPath/fly/swim leg keeps its old launch exactly (a MovePoint
+            // with pathfinding, as before): these legs asked for no module
+            // route, so there is nothing checked to walk.
+            uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
+            moveOptions |= MOVE_PATHFINDING;
+            mm.MovePoint(movePosition.GetMapId(),
+                movePosition.getX(),
+                movePosition.getY(),
+                movePosition.getZ(),
+                moveOptions);
+            WaitForReach(botPos.distance(movePosition));
+            return true;
+        }
+        if (!WalkChecked(movePosition, moveMode == FORCED_MOVEMENT_WALK))
+        {
+            AI_VALUE(LastMovement&, "last movement").setPath(TravelPath());
+            return false;
+        }
         return true;
     }
 
-    if (!generatePath || !bot->IsFlying())
-    {
-        WorldPosition movePosition = path.back();
-
-        // Tortoise's MovePoint signature is (id, x, y, z, options, speed, orientation),
-        // NOT cmangos's (id, x, y, z, ForcedMovement, bool generatePath). The ported call
-        // below used to pass `moveMode` into `options` and the `generatePath` bool into the
-        // `speed` float — so generatePath==true set the velocity to 1.0 yd/s, making bots
-        // crawl slower than walking. Translate the intent into proper MoveOptions instead and
-        // leave speed at its default so it is derived from the run/walk movement flags.
-        uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
-        if (generatePath)
-            moveOptions |= MOVE_PATHFINDING;
-        mm.MovePoint(movePosition.GetMapId(),
-            movePosition.getX(),
-            movePosition.getY(),
-            movePosition.getZ(),
-            moveOptions);
-    }
-
-    GeneratePathAvoidingHazards(path);
+    bool const hazardRewrote = GeneratePathAvoidingHazards(path);
     if (path.size() < 2)
     {
         AI_VALUE(LastMovement&, "last movement").moveFailReason = MOVE_FAIL_HAZARD_SHORT;
         return false; // the hazard rewrite left nothing to walk
     }
 
+    // The stored stretch only says where to go: ask the live navmesh for a
+    // path from the bot to the leg's end and walk that instead; when the end
+    // cannot be reached, try a nearer stored point (half the index, a bounded
+    // number of times). Only on land, and never over a hazard rewrite (which
+    // keeps its own bent shape): a mesh answer over a water or missing leg
+    // must never replace the stored points. The fallback keeps today's stored
+    // points, rate-limited on its own stamp so the lead can measure how often
+    // it still runs.
+    LastMovement& replayLog = AI_VALUE(LastMovement&, "last movement");
+    if (!hazardRewrote && ai::RouteReplayApplies(hazardRewrote,
+            bot->IsInWater() || bot->IsUnderwater() || bot->HasMovementFlag(MOVEFLAG_SWIMMING) ||
+            sServerFacade.IsUnderwater(bot)))
+    {
+        std::vector<WorldPosition> replayPath;
+        std::size_t replayedGoal = 0;
+        if (ReplayStoredLeg(bot, botPos, path, replayedGoal, replayPath))
+        {
+            // Walk the mesh's answer to the goal, then the stored tail past
+            // it: progress (makeShortCut, leg chaining) still matches the
+            // bot's position to stored points within TooCloseDistance.
+            replayPath.insert(replayPath.end(), path.begin() + replayedGoal + 1, path.end());
+            path = std::move(replayPath);
+        }
+        else
+        {
+            time_t const now = time(nullptr);
+            if (now - replayLog.routeReplayLogAt >= kRouteReplayLogSeconds)
+            {
+                replayLog.routeReplayLogAt = now;
+                TB_LOG_DETAIL("TortoiseBots: %s: route replay kept the stored leg (%u points) to %.1f %.1f %.1f",
+                    bot->GetName(), static_cast<uint32>(path.size()),
+                    path.back().getX(), path.back().getY(), path.back().getZ());
+            }
+        }
+    }
+
+    // The spline below is what moves the bot. The point generator stays under
+    // it, aimed at the last walked point: code that asks "is a walk in flight"
+    // reads POINT_MOTION_TYPE (the ghost corpse run), and it re-paths in the
+    // core when the speed changes.
+    mm.MovePoint(path.back().GetMapId(), path.back().getX(), path.back().getY(), path.back().getZ(),
+        (moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE) | MOVE_PATHFINDING);
+
     std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
     float size = WorldPosition().GetPathLength(path);
-    bool usePath = true;
 
-    if (usePath)
+    // Hoisted for the magma floor guard below: the loop runs per path
+    // point, the two liquid lookups only on a lowered point.
+    TerrainInfo const* dispatchTerrain = bot->GetMap()->GetTerrain();
+    bool const dispatchMagmaGuard = ai::MagmaGuardApplies(bot->GetMap()->IsDungeon());
+    LastMovement& dispatchMove = AI_VALUE(LastMovement&, "last movement");
+
+    for (auto& p : pointPath)
     {
-        bool normalizeZ = true;
-
-        // Hoisted for the magma floor guard below: the loop runs per path
-        // point, the two liquid lookups only on a lowered point.
-        TerrainInfo const* dispatchTerrain = bot->GetMap()->GetTerrain();
-        bool const dispatchMagmaGuard = ai::MagmaGuardApplies(bot->GetMap()->IsDungeon());
-        LastMovement& dispatchMove = AI_VALUE(LastMovement&, "last movement");
-
-        for (auto& p : pointPath)
-        {
-            if (bot->GetTransport())
-                bot->GetTransport()->CalculatePassengerPosition(p.x, p.y, p.z);
-            float const navmeshZ = p.z;
-            bot->UpdateAllowedPositionZ(p.x, p.y, p.z);
-            // ORIGINAL clamp, before either restore path below: the magma/slime
-            // classification must see what the core produced, not what the
-            // stair workaround already restored.
-            float const clampedZ = p.z;
-            bool const magmaFloorLowered = clampedZ < navmeshZ;
-            // Cheap first: the clamped point's liquid status is usually dry, so
-            // it gates the navmesh lookup and the vmap query behind it. Both
-            // WorldPosition overloads are null-terrain safe.
-            bool magmaFloorClampedWet = false;
-            bool magmaFloorNavmeshWet = false;
-            if (!bot->GetTransport() && magmaFloorLowered && dispatchMagmaGuard &&
-                (WorldPosition(bot->GetMapId(), p.x, p.y, clampedZ).isInMagma(dispatchTerrain) ||
-                    WorldPosition(bot->GetMapId(), p.x, p.y, clampedZ).isInSlime(dispatchTerrain)))
-            {
-                magmaFloorClampedWet = true;
-                magmaFloorNavmeshWet =
-                    WorldPosition(bot->GetMapId(), p.x, p.y, navmeshZ).isInMagma(dispatchTerrain);
-            }
-            // Crypt stairs (issue #217): a 3D navmesh waypoint carries the true
-            // floor elevation. UpdateAllowedPositionZ re-derives the floor with a
-            // downward raycast; when that ray starts underneath an uphill step it
-            // misses the structure and the waypoint is clamped to the
-            // subterranean terrain fallback - the bot then walks through the
-            // floor. Keep the navmesh elevation on a big dry drop only: a big
-            // drop into magma/slime (an unconfirmed polygon over a hole or an
-            // open liquid pool) needs the confirmed-floor path below instead.
-            bool const stairRestore = ai::KeepStairNavmeshZ(magmaFloorLowered,
-                navmeshZ - clampedZ > kMaxWaypointDrop, magmaFloorClampedWet);
-            if (stairRestore)
-                p.z = navmeshZ;
-            // Thin floor over magma (specs/dmr-step453.md Fix B): over a WMO
-            // magma bed under a floor the core's GetWaterOrGroundLevel answers
-            // liquid level - 2 (swim=true, LIQUID_MAP_ABOVE_WATER), inside the
-            // magma; the 2.35 yd drop there is under the stair limit above.
-            // Keep the navmesh floor only when the core's COLLISION (vmap-only,
-            // no .map terrain, no dynamic tree) height confirms a real floor at
-            // the navmesh point: a dry navmesh z alone is no proof (bridged or
-            // eroded point over a hole, or a polygon a little above open lava).
-            // The vmap query runs only on the guard path that would otherwise
-            // restore — small drops want it (the thin floor), big drops too
-            // (the hole the stair path above refused to restore blindly).
-            bool magmaFloorConfirmed = false;
-            bool magmaFloorGuardFire = false;
-            if (!bot->GetTransport() && magmaFloorLowered && dispatchMagmaGuard && magmaFloorClampedWet &&
-                !magmaFloorNavmeshWet && !stairRestore)
-            {
-                // VMapManager2::getHeight is a pure vmap raycast down from
-                // navmeshZ + 1.0 over 2.0 yd: it reaches a thin floor at the
-                // navmesh point but not the lava bed or a deck far below/above.
-                // VMAP_INVALID_HEIGHT_VALUE (IVMapManager.h) means no hit.
-                float const collisionFloor = VMAP::VMapFactory::createOrGetVMapManager()->getHeight(
-                    bot->GetMapId(), p.x, p.y, navmeshZ + kMagmaFloorProbeAboveZ, kMagmaFloorSearchDistZ);
-                magmaFloorConfirmed = collisionFloor > VMAP_INVALID_HEIGHT_VALUE &&
-                    fabs(collisionFloor - navmeshZ) <= kMagmaFloorWindowZ;
-                magmaFloorGuardFire = ai::KeepNavmeshZOverMagma(dispatchMagmaGuard, magmaFloorLowered,
-                    true, false, magmaFloorConfirmed);
-            }
-            if (magmaFloorGuardFire)
-            {
-                p.z = navmeshZ;
-                time_t const now = time(nullptr);
-                if (!dispatchMove.magmaLogAt || now - dispatchMove.magmaLogAt >= kMagmaLogSeconds)
-                {
-                    dispatchMove.magmaLogAt = now;
-                    TB_LOG_DETAIL("TortoiseBots: %s: waypoint kept on the floor over magma at %.1f %.1f %.1f (clamp %.2f)",
-                        bot->GetName(), p.x, p.y, navmeshZ, clampedZ);
-                }
-            }
-            if (bot->GetTransport())
-                bot->GetTransport()->CalculatePassengerOffset(p.x, p.y, p.z);
-        }
-
-        Movement::MoveSplineInit init(*bot, "DispatchMovement");
-        init.MovebyPath(pointPath);
-        init.SetWalk(moveMode == FORCED_MOVEMENT_WALK);
         if (bot->GetTransport())
-            init.SetTransport(bot->GetTransport()->GetGUIDLow());
-        init.Launch();
+            bot->GetTransport()->CalculatePassengerPosition(p.x, p.y, p.z);
+        float const navmeshZ = p.z;
+        bot->UpdateAllowedPositionZ(p.x, p.y, p.z);
+        // ORIGINAL clamp, before either restore path below: the magma/slime
+        // classification must see what the core produced, not what the
+        // stair workaround already restored.
+        float const clampedZ = p.z;
+        bool const magmaFloorLowered = clampedZ < navmeshZ;
+        // Cheap first: the clamped point's liquid status is usually dry, so
+        // it gates the navmesh lookup and the vmap query behind it. Both
+        // WorldPosition overloads are null-terrain safe.
+        bool magmaFloorClampedWet = false;
+        bool magmaFloorNavmeshWet = false;
+        if (!bot->GetTransport() && magmaFloorLowered && dispatchMagmaGuard &&
+            (WorldPosition(bot->GetMapId(), p.x, p.y, clampedZ).isInMagma(dispatchTerrain) ||
+                WorldPosition(bot->GetMapId(), p.x, p.y, clampedZ).isInSlime(dispatchTerrain)))
+        {
+            magmaFloorClampedWet = true;
+            magmaFloorNavmeshWet =
+                WorldPosition(bot->GetMapId(), p.x, p.y, navmeshZ).isInMagma(dispatchTerrain);
+        }
+        // Crypt stairs (issue #217): a 3D navmesh waypoint carries the true
+        // floor elevation. UpdateAllowedPositionZ re-derives the floor with a
+        // downward raycast; when that ray starts underneath an uphill step it
+        // misses the structure and the waypoint is clamped to the
+        // subterranean terrain fallback - the bot then walks through the
+        // floor. Keep the navmesh elevation on a big dry drop only: a big
+        // drop into magma/slime (an unconfirmed polygon over a hole or an
+        // open liquid pool) needs the confirmed-floor path below instead.
+        bool const stairRestore = ai::KeepStairNavmeshZ(magmaFloorLowered,
+            navmeshZ - clampedZ > kMaxWaypointDrop, magmaFloorClampedWet);
+        if (stairRestore)
+            p.z = navmeshZ;
+        // Thin floor over magma (specs/dmr-step453.md Fix B): over a WMO
+        // magma bed under a floor the core's GetWaterOrGroundLevel answers
+        // liquid level - 2 (swim=true, LIQUID_MAP_ABOVE_WATER), inside the
+        // magma; the 2.35 yd drop there is under the stair limit above.
+        // Keep the navmesh floor only when the core's COLLISION (vmap-only,
+        // no .map terrain, no dynamic tree) height confirms a real floor at
+        // the navmesh point: a dry navmesh z alone is no proof (bridged or
+        // eroded point over a hole, or a polygon a little above open lava).
+        // The vmap query runs only on the guard path that would otherwise
+        // restore — small drops want it (the thin floor), big drops too
+        // (the hole the stair path above refused to restore blindly).
+        bool magmaFloorConfirmed = false;
+        bool magmaFloorGuardFire = false;
+        if (!bot->GetTransport() && magmaFloorLowered && dispatchMagmaGuard && magmaFloorClampedWet &&
+            !magmaFloorNavmeshWet && !stairRestore)
+        {
+            // VMapManager2::getHeight is a pure vmap raycast down from
+            // navmeshZ + 1.0 over 2.0 yd: it reaches a thin floor at the
+            // navmesh point but not the lava bed or a deck far below/above.
+            // VMAP_INVALID_HEIGHT_VALUE (IVMapManager.h) means no hit.
+            float const collisionFloor = VMAP::VMapFactory::createOrGetVMapManager()->getHeight(
+                bot->GetMapId(), p.x, p.y, navmeshZ + kMagmaFloorProbeAboveZ, kMagmaFloorSearchDistZ);
+            magmaFloorConfirmed = collisionFloor > VMAP_INVALID_HEIGHT_VALUE &&
+                fabs(collisionFloor - navmeshZ) <= kMagmaFloorWindowZ;
+            magmaFloorGuardFire = ai::KeepNavmeshZOverMagma(dispatchMagmaGuard, magmaFloorLowered,
+                true, false, magmaFloorConfirmed);
+        }
+        if (magmaFloorGuardFire)
+        {
+            p.z = navmeshZ;
+            time_t const now = time(nullptr);
+            if (!dispatchMove.magmaLogAt || now - dispatchMove.magmaLogAt >= kMagmaLogSeconds)
+            {
+                dispatchMove.magmaLogAt = now;
+                TB_LOG_DETAIL("TortoiseBots: %s: waypoint kept on the floor over magma at %.1f %.1f %.1f (clamp %.2f)",
+                    bot->GetName(), p.x, p.y, navmeshZ, clampedZ);
+            }
+        }
+        if (bot->GetTransport())
+            bot->GetTransport()->CalculatePassengerOffset(p.x, p.y, p.z);
     }
-    else
-    {
-        WorldPosition movePosition = path.back();
 
-        // Tortoise's MovePoint signature is (id, x, y, z, options, speed, orientation),
-        // NOT cmangos's (id, x, y, z, ForcedMovement, bool generatePath). The ported call
-        // below used to pass `moveMode` into `options` and the `generatePath` bool into the
-        // `speed` float — so generatePath==true set the velocity to 1.0 yd/s, making bots
-        // crawl slower than walking. Translate the intent into proper MoveOptions instead and
-        // leave speed at its default so it is derived from the run/walk movement flags.
-        uint32 moveOptions = (moveMode == FORCED_MOVEMENT_WALK) ? MOVE_WALK_MODE : MOVE_RUN_MODE;
-        if (generatePath)
-            moveOptions |= MOVE_PATHFINDING;
-        mm.MovePoint(movePosition.GetMapId(),
-            movePosition.getX(),
-            movePosition.getY(),
-            movePosition.getZ(),
-            moveOptions);
-    }
-    if (usePath)
-    {
-        // The spline keeps walking server-side; wake the next turn a margin
-        // BEFORE this leg ends so the travel action can chain the next leg in
-        // the same Execute instead of standing still until a fresh turn. A
-        // plain MovePoint leg keeps its own wait: it re-paths in the core and
-        // must not be cut short.
-        float const chainMarginDist = static_cast<float>(TRAVEL_LEG_CHAIN_REMAIN_MS) / 1000.0f * bot->GetSpeed(MOVE_RUN);
-        float chainWait = size > chainMarginDist ? size - chainMarginDist : 0.0f;
-        WaitForReach(chainWait);
-    }
-    else
-        WaitForReach(size);
+    Movement::MoveSplineInit init(*bot, "DispatchMovement");
+    init.MovebyPath(pointPath);
+    init.SetWalk(moveMode == FORCED_MOVEMENT_WALK);
+    if (bot->GetTransport())
+        init.SetTransport(bot->GetTransport()->GetGUIDLow());
+    init.Launch();
+    // The spline keeps walking server-side; wake the next turn a margin
+    // BEFORE this leg ends so the travel action can chain the next leg in
+    // the same Execute instead of standing still until a fresh turn.
+    float const chainMarginDist = static_cast<float>(TRAVEL_LEG_CHAIN_REMAIN_MS) / 1000.0f * bot->GetSpeed(MOVE_RUN);
+    float const chainWait = size > chainMarginDist ? size - chainMarginDist : 0.0f;
+    WaitForReach(chainWait);
     return true;
 }
 
@@ -1269,6 +1387,7 @@ MovementAction::SwimHandoffResult MovementAction::SwimHandoff(const WorldPositio
         return SwimHandoffResult::NotTaken;
 
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(endPos.getX(), endPos.getY(), endPos.getZ(), false);
     f.coreType = static_cast<uint32>(path.getPathType());
     Vector3 const coreEnd = path.getActualEndPosition();
@@ -2317,6 +2436,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
                 if (waterLevel > -200000.0f && waterLevel > bottom)
                 {
                     PathFinder pathfinder(bot);
+                    WorldPosition::ExcludeSteepSlopes(pathfinder);
                     //Use standard pathfinder to find a route.
                     WorldPosition prevPoint = botPos;
                     pathfinder.calculate(moveToPos.GetVector3(), tarPos.GetVector3());
@@ -3389,6 +3509,7 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     goal.z = target->GetPositionZ();
 
     PathFinder path(bot);
+    WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(goal.x, goal.y, goal.z, false);
     bool const incomplete = (path.getPathType() & PATHFIND_INCOMPLETE) != 0;
     float partialEndDistance = 0.0f;
@@ -3442,6 +3563,7 @@ bool MovementAction::StepDownOffLedge(Unit* target)
     auto const pathFromLanding = [this, &goal](LedgePoint const& point)
     {
         PathFinder probe(bot);
+        WorldPosition::ExcludeSteepSlopes(probe);
         probe.calculate(Vector3(point.x, point.y, point.z), Vector3(goal.x, goal.y, goal.z), false);
         LedgePathProbe result;
         result.normal = probe.getPathType() == PATHFIND_NORMAL;
@@ -3511,6 +3633,11 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
         return false;
 
     std::vector<WorldPosition> collidingHazards;
+    // The rewrite below moves points sideways off the navmesh route; the
+    // post-pass validates each moved leg and restores this snapshot when one
+    // has no real path (the callers then keep the original route).
+    std::vector<WorldPosition> const originalPath = movePath;
+    std::vector<WorldPosition> movedPoints;
     bool pathModified = false;
 
     // Start the iteration on the second point (the first and last points can't be modified)
@@ -3543,6 +3670,7 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
                     {
                         pathModified = true;
                         pathPoint = possiblePathPoint;
+                        movedPoints.push_back(possiblePathPoint);
                     }
                     else
                     {
@@ -3555,6 +3683,7 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
                         {
                             pathModified = true;
                             pathPoint = possiblePathPoint;
+                            movedPoints.push_back(possiblePathPoint);
                         }
                     }
                 }
@@ -3587,6 +3716,7 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
                         pathModified = true;
                         pointInserted = true;
                         movePath.insert(movePath.begin() + i, inBetweenPathPoint);
+                        movedPoints.push_back(inBetweenPathPoint);
                         pointsInserted++;
                         continue;
                     }
@@ -3606,6 +3736,41 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
             previousPosition.x = pathPoint.getX();
             previousPosition.y = pathPoint.getY();
             previousPosition.z = pathPoint.getZ();
+        }
+    }
+
+    // A moved point must lie on the navmesh and the leg into it must be a
+    // real path: IsValidPosition above only proved the bot reaches it and
+    // sees it from the leg start. Ask the navmesh for each moved leg; when
+    // one has no path, drop the whole rewrite and keep the original route.
+    if (pathModified && !movedPoints.empty() && !movePath.empty())
+    {
+        for (WorldPosition const& moved : movedPoints)
+        {
+            bool legOk = false;
+            for (uint32 i = 1; i < movePath.size(); ++i)
+            {
+                if (!(movePath[i] == moved))
+                    continue;
+                std::vector<WorldPosition> leg = movePath[i - 1].GetPathTo(moved, bot);
+                if (!leg.empty())
+                {
+                    WorldPosition const& legEnd = leg.back();
+                    float const dx = legEnd.getX() - moved.getX();
+                    float const dy = legEnd.getY() - moved.getY();
+                    if (ai::HazardLegReaches(legEnd.GetMapId() == moved.GetMapId(),
+                            dx * dx + dy * dy, legEnd.getZ() - moved.getZ()))
+                    {
+                        legOk = true;
+                        break;
+                    }
+                }
+            }
+            if (!legOk)
+            {
+                movePath = originalPath;
+                return false;
+            }
         }
     }
 

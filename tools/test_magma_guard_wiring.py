@@ -88,9 +88,10 @@ class MagmaGuardWiringTest(unittest.TestCase):
         self.assertNotIn("moveFailReason", f)
         self.assertIn("bool const guard = ai::MagmaGuardApplies(bot->GetMap()->IsDungeon());", f)
         self.assertIn("guard && ai::WorldPosition(bot->GetMapId(), task.stand.x, task.stand.y, task.stand.z).isInMagma(", f)
-        walk = at(f, "bot->GetMotionMaster()->MovePoint(0, task.stand.x, task.stand.y, task.stand.z,")
+        walk = at(f, "ai::MovementAction::LaunchLandWalk(bot, ai::WorldPosition(bot->GetMapId(), task.stand.x, task.stand.y, task.stand.z));")
         self.assertLess(blocked, walk)
-        self.assertEqual(f.count("MovePoint("), 1)  # the guarded walk is the only one
+        self.assertEqual(f.count("MovePoint("), 0)  # the guarded checked walk is the only launch
+        self.assertEqual(f.count("LaunchLandWalk("), 1)
         self.assertRegex(f[blocked:walk], r"isInMagma\(\s*bot->GetMap\(\)->GetTerrain\(\)\)\)\)\s*return;")
 
     def test_dispatch_keeps_the_confirmed_floor_only(self):

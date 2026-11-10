@@ -88,6 +88,7 @@
 #include "../ai/playerbot/strategy/actions/BossTacticsActions.h"
 #include "../ai/playerbot/PullAggroEstimatePolicy.h"
 #include "../ai/playerbot/WorldPosition.h"
+#include "../ai/playerbot/strategy/actions/MovementActions.h"
 #include "../runtime/policy/movement/TeleportLandingPolicy.h" // the feet probe an off-floor lead bot is read with
 #include "CreatureGroups.h"
 #include "Group/CreatureLinkingMgr.h"
@@ -2874,7 +2875,7 @@ bool HealerPullStand(Player* lead, Unit* target, Player* healer, float& ox, floa
         if (!map->isInLineOfSight(leadX, leadY, leadZ + 2.0f, px, py, ground + 2.0f))
             continue;
         PathFinder path(healer);
-        path.calculate(px, py, ground, false);
+        ai::WorldPosition::ExcludeSteepSlopes(path);
         if (path.getPathType() & PATHFIND_NOPATH)
             continue;
         Vector3 const end = path.getActualEndPosition();
@@ -3524,25 +3525,39 @@ static LeadMoveCheck CheckLeadMove(Unit* mover, Vector3 const& origin, RemoteCom
     if (!RemoteCommander::IsAtLead(check.facts.distanceFromLead))
     {
         PathFinder path(mover);
+        ai::WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(origin, Vector3(point.x, point.y, point.z), false);
-        check.rawPathType = static_cast<uint32>(path.getPathType());
-        check.facts.pathType = check.rawPathType;
-        Vector3 const end = path.getActualEndPosition();
-        check.actualEnd[0] = end.x;
-        check.actualEnd[1] = end.y;
-        check.actualEnd[2] = end.z;
-        float const ex = end.x - point.x;
-        float const ey = end.y - point.y;
-        float const ez = end.z - point.z;
-        check.facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
-        float const lx = end.x - origin.x;
-        float const ly = end.y - origin.y;
-        float const lz = end.z - origin.z;
-        check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
-        // PathInfo::Length asserts a non-empty path; a shortcut path always has
-        // two points, a refused one may have none.
-        if (path.getPath().size() >= 2)
-            check.length = path.Length();
+        // The flag over-marks stairs a player walks: when strict does not
+        // reach, the permissive retry walks the mover when a player could
+        // climb it, else the strict answer stands.
+        PathFinder permissive(mover);
+        PathFinder* active = &path;
+        if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
+        {
+            permissive.calculate(origin, Vector3(point.x, point.y, point.z), false);
+            if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+                active = &permissive;
+        }
+        {
+            check.rawPathType = static_cast<uint32>(active->getPathType());
+            check.facts.pathType = check.rawPathType;
+            Vector3 const end = active->getActualEndPosition();
+            check.actualEnd[0] = end.x;
+            check.actualEnd[1] = end.y;
+            check.actualEnd[2] = end.z;
+            float const ex = end.x - point.x;
+            float const ey = end.y - point.y;
+            float const ez = end.z - point.z;
+            check.facts.endOffset = std::sqrt(ex * ex + ey * ey + ez * ez);
+            float const lx = end.x - origin.x;
+            float const ly = end.y - origin.y;
+            float const lz = end.z - origin.z;
+            check.facts.endFromLead = std::sqrt(lx * lx + ly * ly + lz * lz);
+            // PathInfo::Length asserts a non-empty path; a shortcut path always has
+            // two points, a refused one may have none.
+            if (active->getPath().size() >= 2)
+                check.length = active->Length();
+        }
     }
     check.verdict = RemoteCommander::CheckMove(check.facts);
     return check;
@@ -3743,15 +3758,24 @@ static RemoteCommander::DirectJoin DirectFollowerJoin(Player* bot, Map* map, flo
     if (valid)
     {
         PathFinder path(bot);
+        ai::WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(leadX, leadY, leadZ, false);
-        Vector3 const end = path.getActualEndPosition();
-        uint32 const type = static_cast<uint32>(path.getPathType());
+        PathFinder permissive(bot);
+        PathFinder* active = &path;
+        if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
+        {
+            permissive.calculate(leadX, leadY, leadZ, false);
+            if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+                active = &permissive;
+        }
+        Vector3 const end = active->getActualEndPosition();
+        uint32 const type = static_cast<uint32>(active->getPathType());
         pathComplete = (type & PATHFIND_NORMAL) &&
             !(type & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH | PATHFIND_SHORTCUT)) &&
-            (end - leadSpot).length() <= 2.0f && path.getPath().size() >= 2;
-        pathLength = path.Length();
+            (end - leadSpot).length() <= 2.0f && active->getPath().size() >= 2;
+        pathLength = active->Length();
         if (pathComplete)
-            route = path.getPath();
+            route = active->getPath();
     }
     // The last resort: its own straight line to the point (on the lead bot's floor, the point in reach and sight).
     bool ownLine = false;
@@ -4805,8 +4829,10 @@ void NudgeTaskWalk(CommanderTask& task, Player* bot, uint32 diff)
                     bot->GetMap()->GetTerrain())))
             return;
     }
-    bot->GetMotionMaster()->MovePoint(0, task.stand.x, task.stand.y, task.stand.z,
-        MOVE_RUN_MODE | MOVE_PATHFINDING);
+    // The standing-point nudge, checked: with no real navmesh path the bot
+    // holds (the nudge retries next window) instead of walking the core's
+    // straight shortcut line through walls.
+    ai::MovementAction::LaunchLandWalk(bot, ai::WorldPosition(bot->GetMapId(), task.stand.x, task.stand.y, task.stand.z));
 }
 
 // The act hold (RemoteCommander::HoldsForAct): before each attempt to start the
@@ -7077,16 +7103,16 @@ bool GoodSpotCutOff(Player* lead, TortoiseBots::DungeonRun::Run const& run)
             run.goodLeadZ - lead->GetPositionZ()))
         return false;
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(run.goodLeadX, run.goodLeadY, run.goodLeadZ, false);
     return (static_cast<uint32>(path.getPathType()) & (PATHFIND_INCOMPLETE | PATHFIND_NOPATH)) != 0;
 }
 
-// The dry walk (AiPlayerbot.DungeonRunDryWalk): the lead bot's way to (x,y,z) over NAV_GROUND polys only,
-// deep water left out. The core's own player filter includes NAV_WATER, so where a pool is the shorter way
-// its path crosses it on the surface; `out` is the lead bot's spot then the way's corners, `lengthYd` its
-// length. False: no query or attached navmesh, no poly near either end, or a way that does not reach the
-// point. NAV_GROUND alone also leaves out magma and slime (the shim's NAV_MAGMA_SLIME and NAV_GROUND_STEEP
-// do not name this core's bits).
+// The dry walk (AiPlayerbot.DungeonRunDryWalk): the lead bot's way to (x,y,z) over walkable NAV_GROUND polys
+// only, steep and deep water left out. The core's own player filter includes NAV_WATER and excludes nothing,
+// so where a pool is the shorter way its path crosses it on the surface and where a cliff is it climbs;
+// `out` is the lead bot's spot then the way's corners, `lengthYd` its length. False: no query or attached
+// navmesh, no poly near either end, or a way that does not reach the point.
 static bool DryWayPath(Player* lead, float x, float y, float z,
     std::vector<TortoiseBots::DungeonRun::PathPoint>& out, float& lengthYd)
 {
@@ -7106,7 +7132,7 @@ static bool DryWayPath(Player* lead, float x, float y, float z,
         return false;
     dtQueryFilter filter;
     filter.setIncludeFlags(NAV_GROUND);
-    filter.setExcludeFlags(0);
+    filter.setExcludeFlags(NAV_STEEP_SLOPES);
     // Detour's coordinates and extents are Y, Z, X (the core's FindWalkPoly reads them the same way).
     float start[VERTEX_SIZE] = {lead->GetPositionY(), lead->GetPositionZ(), lead->GetPositionX()};
     float end[VERTEX_SIZE] = {y, z, x};
@@ -7243,6 +7269,7 @@ bool ApproachOnPath(Player* lead, float x, float y, float z, float& ox, float& o
 {
     using namespace TortoiseBots::DungeonRun;
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
     if (way)
         NoteLeadWay(path, lead, x, y, z, *way);
@@ -7285,6 +7312,7 @@ bool DirectNavPath(Player* lead, float x, float y, float z, std::vector<Tortoise
     using namespace TortoiseBots::DungeonRun;
     points.clear();
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(path.getPathType());
     Vector3 const end = path.getActualEndPosition();
@@ -7446,6 +7474,7 @@ void ReadStragglerWay(Player* lead, TortoiseBots::DungeonRun::Run const& run, To
 bool LegOnPath(Player* lead, float x, float y, float z, float maxYd, float& ox, float& oy, float& oz)
 {
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(path.getPathType());
     if (type & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE | PATHFIND_NOT_USING_PATH | PATHFIND_SHORTCUT))
@@ -7508,6 +7537,7 @@ bool ApproachStandSearch(Player* lead, TortoiseBots::DungeonRun::Run const& run,
             c.y = py;
             c.z = ground;
             PathFinder path(lead);
+            ai::WorldPosition::ExcludeSteepSlopes(path);
             path.calculate(px, py, ground, false);
             uint32 const type = static_cast<uint32>(path.getPathType());
             Vector3 const end = path.getActualEndPosition();
@@ -7554,6 +7584,7 @@ bool NearestReachablePoint(Player* lead, float x, float y, float z, float maxYd,
         if (dryOnly && map->GetTerrain()->getLiquidStatus(px, py, ground + 0.5f, MAP_ALL_LIQUIDS, nullptr) != LIQUID_MAP_NO_WATER)
             return false;
         PathFinder path(lead);
+        ai::WorldPosition::ExcludeSteepSlopes(path);
         path.calculate(px, py, ground, false);
         uint32 const type = static_cast<uint32>(path.getPathType());
         if (dryOnly && (type & (PATHFIND_UNDERWATER | PATHFIND_NOT_USING_PATH | PATHFIND_SHORTCUT)))
@@ -7569,6 +7600,7 @@ bool NearestReachablePoint(Player* lead, float x, float y, float z, float maxYd,
         // And its OWN path toward the plan's point leads on (r13-19z30 Uldaman: the
         // pit the tank fell into has a ring point the lead's path reaches, and no way out).
         PathFinder probe(lead);
+        ai::WorldPosition::ExcludeSteepSlopes(probe);
         probe.calculate(Vector3(px, py, ground), Vector3(x, y, z), false);
         uint32 const probeType = static_cast<uint32>(probe.getPathType());
         Vector3 const probeEnd = probe.getActualEndPosition();
@@ -7654,10 +7686,19 @@ bool RunBotWalk(Player* commander, std::string const& order, std::string& answer
         return false;
     }
     PathFinder path(bot);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(x, y, z, false);
-    Vector3 const end = path.getActualEndPosition();
+    PathFinder permissive(bot);
+    PathFinder* active = &path;
+    if (ai::WorldPosition::FellBackToPermissive(path.getPathType()))
+    {
+        permissive.calculate(x, y, z, false);
+        if (ai::WorldPosition::PermissivePathWalkable(permissive.getPath()))
+            active = &permissive;
+    }
+    Vector3 const end = active->getActualEndPosition();
     float const short_ = std::sqrt((end.x - x) * (end.x - x) + (end.y - y) * (end.y - y) + (end.z - z) * (end.z - z));
-    if ((path.getPathType() & PATHFIND_NOPATH) || short_ > 5.0f)
+    if ((active->getPathType() & PATHFIND_NOPATH) || short_ > 5.0f)
     {
         answer = "unreachable: " + std::string(name) + " has no navmesh path to the point (it ends " +
             std::to_string(static_cast<int>(short_)) + " yd short)";
@@ -7667,11 +7708,11 @@ bool RunBotWalk(Player* commander, std::string const& order, std::string& answer
     // the summon goes instead (DungeonRun::StragglerWalkRefused).
     {
         std::vector<TortoiseBots::DungeonRun::PathPoint> points;
-        for (Vector3 const& v : path.getPath())
+        for (Vector3 const& v : active->getPath())
             points.push_back(TortoiseBots::DungeonRun::PathPoint{v.x, v.y, v.z});
         float const bx = bot->GetPositionX(), by = bot->GetPositionY(), bz = bot->GetPositionZ();
         float const straight = std::sqrt((x - bx) * (x - bx) + (y - by) * (y - by) + (z - bz) * (z - bz));
-        float const pathYd = path.Length();
+        float const pathYd = active->Length();
         auto const run = DungeonRuns().find(commanderRaw);
         bool const hasRun = run != DungeonRuns().end() && run->second.run.plan;
         std::vector<TortoiseBots::DungeonRun::StandHostile> hostiles;
@@ -7799,6 +7840,7 @@ bool RunIslandEscape(Player* commander, std::string const& order, std::string& a
             if (!fits(px, py, pz))
                 continue;
             PathFinder probe(lead);
+            ai::WorldPosition::ExcludeSteepSlopes(probe);
             probe.calculate(Vector3(px, py, pz), Vector3(tx, ty, tz), false);
             Vector3 const end = probe.getActualEndPosition();
             uint32 const probeType = static_cast<uint32>(probe.getPathType());
@@ -9072,6 +9114,7 @@ void ComputeMemberReach(Player* lead, Player* bot, WedgeReachRead& read)
     if (!sameMap || !bot->IsInWorld() || !lead->IsInWorld())
         return;
     PathFinder path(bot);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ(), false);
     Vector3 const end = path.getActualEndPosition();
     uint32 const type = static_cast<uint32>(path.getPathType());
@@ -10181,6 +10224,7 @@ static std::vector<ai::AggroPoint> SampleWalkTo(Player* lead, float x, float y, 
     std::vector<ai::AggroPoint> path;
     path.push_back(ai::AggroPoint{lead->GetPositionX(), lead->GetPositionY(), lead->GetPositionZ()});
     PathFinder finder(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(finder);
     finder.calculate(x, y, z, false);
     uint32 const type = static_cast<uint32>(finder.getPathType());
     bool const walkable = (type & PATHFIND_NOPATH) == 0 &&
@@ -10551,6 +10595,7 @@ void ReadPullStand(DungeonRunSlot const& slot, Player* lead, std::vector<Player*
     if (!unit || !unit->IsAlive() || !unit->IsInWorld() || lead->GetTransport())
         return;
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), false);
     // As the ranged reach's own path (WorldPosition::getPathStepFrom): a complete or a partial path only.
     if (path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE)
@@ -11119,6 +11164,7 @@ static void ReadStandPullHold(DungeonRunSlot const& slot, Player* lead, std::vec
         return;
     // The path to the authored approach, walked back from its end: the last point outside every unit of the pack.
     PathFinder path(lead);
+    ai::WorldPosition::ExcludeSteepSlopes(path);
     path.calculate(row.x, row.y, row.z, false);
     if (path.getPathType() != PATHFIND_NORMAL && path.getPathType() != PATHFIND_INCOMPLETE)
         return;
@@ -12012,6 +12058,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.anchorPathRead = true;
         {
             PathFinder path(lead);
+            ai::WorldPosition::ExcludeSteepSlopes(path);
             path.calculate(ax, ay, az, false);
             uint32 const type = static_cast<uint32>(path.getPathType());
             Vector3 const end = path.getActualEndPosition();
@@ -12472,6 +12519,7 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
                 else
                 {
                     PathFinder path(lead);
+                    ai::WorldPosition::ExcludeSteepSlopes(path);
                     path.calculate(step->x, step->y, step->z, false);
                     NoteLeadWay(path, lead, step->x, step->y, step->z, f);
                     if (forward)
@@ -13079,6 +13127,7 @@ void SyncHoldStands(Player* commander, Player* lead, std::vector<Player*> const&
             if (ground > INVALID_HEIGHT && std::fabs(ground - stand->z) <= 5.0f)
             {
                 PathFinder path(lead);
+                ai::WorldPosition::ExcludeSteepSlopes(path);
                 path.calculate(stand->x, stand->y, ground, false);
                 Vector3 const end = path.getActualEndPosition();
                 if (!(path.getPathType() & PATHFIND_NOPATH) &&
@@ -13710,6 +13759,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
             float x = 0.0f, y = 0.0f, z = 0.0f;
             TortoiseBots::PlayerLed::StepSpot(run, step, x, y, z);
             PathFinder path(lead);
+            ai::WorldPosition::ExcludeSteepSlopes(path);
             path.calculate(x, y, z, false);
             uint32 const type = static_cast<uint32>(path.getPathType());
             // No path, or one that stops more than 5 yd short of the spot (a spot off the mesh by a little is fine).
@@ -13829,6 +13879,7 @@ void TickDungeonRun(uint64 commanderRaw, uint32 dt)
         {
             answer = facts;
             PathFinder path(lead);
+            ai::WorldPosition::ExcludeSteepSlopes(path);
             path.calculate(step->x, step->y, step->z, false);
             NoteLeadWay(path, lead, step->x, step->y, step->z, answer);
             told = &answer;

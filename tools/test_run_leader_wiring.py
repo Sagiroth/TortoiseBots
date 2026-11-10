@@ -1566,7 +1566,8 @@ class RunHoldsItsDeadWiringTest(unittest.TestCase):
         way = "NoteLeadWay(path, lead, step->x, step->y, step->z, answer);"
         self.assertIn(way, tick)
         self.assertLess(tick.index("{\n            answer = facts;"), tick.index(way))
-        self.assertIn("PathFinder path(lead);\n            path.calculate(step->x, step->y, step->z, false);\n"
+        self.assertIn("PathFinder path(lead);\n            ai::WorldPosition::ExcludeSteepSlopes(path);\n"
+                      "            path.calculate(step->x, step->y, step->z, false);\n"
                       "            NoteLeadWay(path, lead, step->x, step->y, step->z, answer);", tick)
         # The answer is the copy: the policy's island branch must not see the live facts' empty reading.
         self.assertIn("NoteLeadWay(path, lead, step->x, step->y, step->z, answer);\n            told = &answer;",

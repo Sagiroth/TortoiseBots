@@ -1,8 +1,9 @@
-
 #include "host/ModuleLog.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/LootObjectStack.h"
+#include "Maps/PathFinder.h"
+#include "playerbot/strategy/actions/MovementActions.h"
 #include "ChooseTravelTargetAction.h"
 #include "FishAction.h"
 #include "MoveToTravelTargetAction.h"
@@ -352,7 +353,8 @@ static void WanderOnEmptyPick(PlayerbotAI* ai, Player* bot)
         if (path.size() < 2 || !spot.isPathTo(path, 3.0f) || spot.IsGuardedHostileTownFor(bot))
             continue;
 
-        bot->GetMotionMaster()->MovePoint(spot.GetMapId(), spot.getX(), spot.getY(), spot.getZ(), MOVE_RUN_MODE | MOVE_PATHFINDING);
+        if (!MovementAction::LaunchLandWalk(bot, spot))
+            continue;
         if (AI_VALUE2(time_t, "manual time", "empty pick wander log") <= time(0))
         {
             SET_AI_VALUE2(time_t, "manual time", "empty pick wander log", time(0) + 5 * MINUTE);
