@@ -5,6 +5,7 @@
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
 #include "BossTacticsActions.h"
+#include "playerbot/BossStandPolicy.h"
 #include "playerbot/BossTacticsStand.h"
 #include "Movement/MotionMaster.h"
 #include "Movement/MovementGenerator.h"

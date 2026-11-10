@@ -383,6 +383,7 @@ class BossStandWiring(unittest.TestCase):
         self.assertLess(gate, flee.index("FindBossStand(ai, bot).valid"))
         self.assertIn("FleeYieldsToStand(true, FindBossStand(ai, bot).valid)", flee)
         self.assertIn('#include "playerbot/BossTacticsStand.h"', MOVEMENT_ACTIONS)
+        self.assertIn('#include "playerbot/BossStandPolicy.h"', MOVEMENT_ACTIONS)
         # The step-out from a ground cloud keeps its own rule.
         area = body(MOVEMENT_ACTIONS, "bool FleeFromAreaAction::isUseful()")
         self.assertNotIn("FindBossStand", area)
