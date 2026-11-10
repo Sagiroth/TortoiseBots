@@ -1113,6 +1113,14 @@ AiPlayerbot.DungeonRunGuardLeavesAssignedTank = 0
 # 1 - on: `hold_spot` rows run the mode
 AiPlayerbot.DungeonRunTankPostHoldSpot = 0
 
+# The leash of a `hold_spot` tank_post row (needs DungeonRunTankPost and DungeonRunTankPostHoldSpot): before the awaited
+# unit arrives, a tank more than 8 yd from the spot walks back to it keeping its current target, so it fights whatever
+# comes to the spot instead of following a whelp across the room (a stand seat still wins, and the guard order is undone
+# by the next leash tick). Off, the tank keeps the other hostile and the post waits exactly as before the leash.
+# 0 - off: the tank holds the other hostile and the post waits (Default)
+# 1 - on (recommended on for a fight whose second boss lands later)
+AiPlayerbot.DungeonRunTankPostLeash = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 

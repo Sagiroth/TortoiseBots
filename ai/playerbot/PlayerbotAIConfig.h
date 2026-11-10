@@ -678,6 +678,10 @@ public:
     // outlives the window, it drags the subject back to the spot, and it yields to a boss stand seat): on, the rows'
     // mode runs; off, every tank_post row is a plain post as before the mode (default off).
     bool dungeonRunTankPostHoldSpot = false;
+    // The tank_post `hold_spot` leash (before the arrival, a tank more than 8 yd from the spot walks back keeping its
+    // current target, so it fights what comes to the spot instead of following a whelp): on, it runs with the mode;
+    // off, the tank keeps the other hostile and the post waits as before (default off).
+    bool dungeonRunTankPostLeash = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

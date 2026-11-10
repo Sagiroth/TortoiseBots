@@ -84,7 +84,9 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("(!holdSpot && in.holdingOtherHostile)", find)
         # The step's arrived decision reaches the trigger and the action: a hold_spot post does not stand down for
         # another hostile once the subject has arrived (Engage/Drag).
-        self.assertIn("holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag)", find)
+        self.assertIn("const bool subjectOutranks = holdSpot && (step == TankPostDecision::Engage || "
+                      "step == TankPostDecision::Drag ||", find)
+        self.assertIn("step == TankPostDecision::Leash);", find)
         self.assertIn("out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;", find)
         self.assertIn("if (step == TankPostDecision::Yield)\n        return out;", find)
         self.assertIn("TankPostStep(in)", find)
@@ -101,14 +103,59 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("current->GetEntry() != task.row->bossEntry", action)
         self.assertIn("bot->AttackStop();", action)
         self.assertIn("UpdateGroundPositionZ(task.x, task.y, z)", action)
-        # The drag walks back to the spot keeping the target: no target change and no attack stop on that path.
-        drag = action[action.index("if (task.step == TankPostDecision::Drag)"):]
+        # The drag walks back to the spot keeping the target: no target change and no attack stop on that path, and
+        # the leash rides the same branch (a pre-arrival walk back with the tank's own target kept).
+        drag = action[action.index("if (task.step == TankPostDecision::Drag || task.step == TankPostDecision::Leash)"):]
         drag = drag[:drag.index("// Walk or hold")]
         self.assertIn("MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true)", drag)
         self.assertNotIn("AttackStop", drag)
         # One row per post event, named as the spec has it.
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', ACTIONS)
         self.assertIn('snprintf(info2, sizeof(info2), "event=%s,reason=%s", event, reason)', ACTIONS)
+
+    def test_leash_key_is_read_templated_and_documented(self):
+        # The key: read with the row's mode, defaulted off.
+        self.assertIn('dungeonRunTankPostLeash = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostLeash", false);',
+                      CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostLeash = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostLeash = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostLeash", DOCS)
+        self.assertIn("recommended on",
+                      DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostLeash`"):][:600])
+        self.assertIn("AiPlayerbot.DungeonRunTankPostLeash", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostLeash", CHANGELOG)
+        # It leashes a `hold_spot` post only: the flag is set from the key and the mode together.
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        self.assertIn("in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;", find)
+        # The leash rides the drag's branch, so the walk back keeps the target and never stops the attack.
+        action = body(ACTIONS, "bool BossTacticsTankPostAction::Execute(Event& event)")
+        self.assertIn("if (task.step == TankPostDecision::Drag || task.step == TankPostDecision::Leash)", action)
+        # Leash outranks the whelp like the arrived subject: the trigger fires instead of standing down for it.
+        self.assertIn("step == TankPostDecision::Leash", find)
+        self.assertIn("if (step == TankPostDecision::Yield)\n        return out;", find)
+
+    def test_step_rows_are_logged_once_and_entered_under_the_lock(self):
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        # The last step is stored with the record, inside the same lock that writes it, and the row is written when the
+        # step is entered only; it comes after the start/arrive rows and before the seat stands the post down.
+        store = find[find.index("bool arrivedNow = false;"):]
+        store = store[:store.index("if (startedNow)")]
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", store)
+        self.assertIn("TankPostRecord& stored = g_tankPost[self];", store)
+        self.assertIn("stepEntered = TankPostStepEntered(stored.lastStep, step);", store)
+        self.assertIn("stored.lastStep = static_cast<std::uint8_t>(step);", store)
+        logged = find.index("LogTankPostStep(ai, *row, step, in.botToSpotYd, in.subjectToSpotYd, in.subjectOnTank);")
+        self.assertGreater(logged, find.index('LogTankPost(ai, *row, "arrive", nullptr);'))
+        self.assertLess(logged, find.index("if (step == TankPostDecision::Yield)"))
+        self.assertIn("std::uint8_t lastStep = 0;", ACTIONS)
+        # The row shape: the three step words, both distances and the on-tank flag on the post's own event name.
+        step_log = body(ACTIONS, "void LogTankPostStep(")
+        self.assertIn('step == TankPostDecision::Drag ? "drag"', step_log)
+        self.assertIn('step == TankPostDecision::Yield            ? "yield"', step_log)
+        self.assertIn('"leash"', step_log)
+        self.assertIn('"event=%s,tank_yd=%.1f,subject_yd=%.1f,on_tank=%d"', step_log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', step_log)
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', step_log)
 
     def test_trigger_and_action_are_registered(self):
         self.assertIn('creators["boss tank post"] = [](PlayerbotAI* ai) '
