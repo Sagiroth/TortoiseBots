@@ -964,6 +964,32 @@ class BossTacticsSql(unittest.TestCase):
                     (249, 50144, "behind", 0, 33441)):
             self.assertIn(key, live, "the Cindarion/Hatcher rows must stay: %s" % (key,))
 
+    def test_onyxia_walk2d_opening_hold(self):
+        # 20261111090000_world.sql: walk 2d the 8 s opening threat hold on Onyxia 10184.
+        # Walk 2c b-2/b-3/b-4 opened with a damage dealer passing the tanks in the first 8 s
+        # (b-2: Ironmane 1,561 threat at +8 s), so she walked into the raid at (-55, -210) and
+        # Flame Breath 13 plus Cleave 12 kills wiped the pull at 67 %. The hold answers the pull
+        # only (mode engage); it is the Hakkar row's shape (pinned in
+        # test_hakkar_opening_hold_migration), so the loader's own checks pin it here too.
+        name = "20261111090000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2d opening hold migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'dps_hold_after';", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, text.count("(249, 10184, 'dps_hold_after'"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        hold = live.get((249, 10184, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Onyxia opening dps_hold_after row is missing")
+        self.assertEqual(name, hold["file"], "the walk 2d migration owns the opening hold")
+        self.assertEqual((0, 8.0, 0, 100, 0, "engage"),
+                         (hold["priority"], hold["param"], hold["hp_min"], hold["hp_max"],
+                          hold["bot_aura"], hold["tactic_mode"]),
+                         "the Onyxia opening dps_hold_after row drifted")
+        self.assertIsNone(new_kind_problem(hold))
+
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
         # points, one stand anchor per point opening on that point's breath spell while she

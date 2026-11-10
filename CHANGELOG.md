@@ -1,5 +1,6 @@
 # Changelog
 
+- New: Onyxia's Lair walk 2d row: damage dealers hold DPS 8 s from the first engagement on Onyxia (mode engage), so the tanks hold her where they take her instead of her walking into the raid, behind AiPlayerbot.DungeonRunAuraTactics.
 - Fixed: the hover reach (`AiPlayerbot.RangedReachHoverTarget`) walks under a hostile target only, and a melee or pull reach also needs one the bot may attack, so a neutral or unattackable body in the air no longer pulls a ranged bot off its spot, and only ranged damage dealers take the walk (tanks, melee and healers keep today's path walk), so tanks, melee and healers are unchanged.
 - New: behind AiPlayerbot.RangedReachHoverTarget (default 0, recommended on), a ranged reach at a hostile hovering 8 yd or more above the floor inside a dungeon walks to the floor under it and stops at the spell trigger's own combat-reach distance (Onyxia in P2: about 37 yd 2D from her hover point) instead of walking under her body out of range and standing still, and each step writes one `BossReachHover` row naming it.
 - Fixed: a `tank_post`'s `reason=post_lapsed` row re-arms as soon as the subject is back on its post tank within 60 yd (or loose within the 15 s grace), the post tank's own update included, so repeated lapses each write their own row instead of one swallowing the next.
