@@ -1201,6 +1201,22 @@ int main()
         CHECK(SeekVictimReliefNoteExec(latch, 8, 6000, true));
         CHECK(latch.takes == 1);
     }
+    // VictimRelief_MainAndFourthTankRelieve: no tank position is a filter. The main tank (index 0) and a fourth tank
+    // (index 3) both claim and stamp a due Son when they are not the boss's victim.
+    {
+        SeekReliefLatch mainTank;
+        SeekReliefClockTick(mainTank, true, 5000);
+        CHECK(SeekVictimReliefDue(true, mainTank, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, mainTank, 7, 6000, 0, 5.0f));
+        CHECK(SeekVictimReliefNoteExec(mainTank, 7, 6000, true));
+        CHECK(mainTank.takes == 1);
+        SeekReliefLatch fourthTank;
+        SeekReliefClockTick(fourthTank, true, 5000);
+        CHECK(SeekVictimReliefDue(true, fourthTank, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, fourthTank, 8, 6000, 3, 5.0f));
+        CHECK(SeekVictimReliefNoteExec(fourthTank, 8, 6000, true));
+        CHECK(fourthTank.takes == 1);
+    }
     // VictimRelief_ReliefPicksNearer: of two qualifying relievers the nearer wins the claim without moving its
     // stamp, a tie goes to the lower tank index, and the displaced picker cannot stamp over the new one.
     {

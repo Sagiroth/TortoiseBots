@@ -10015,6 +10015,22 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
     return due;
 }
 
+// The victim relief task for one tank: a Son on the boss's victim handed to `task`. False (task untouched) when the
+// tank takes nothing this read. One fill for both call sites, the off-tanks' late one and the raid tanks' early one.
+bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state,
+                       SeekTankTask& task)
+{
+    Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state);
+    if (!reliefSon)
+        return false;
+    task.valid = true;
+    task.source = reliefSon;
+    task.take = true;
+    task.takeSrc = "victim_relief";
+    task.boss = state.boss;
+    return true;
+}
+
 // The relief take's execution result (DungeonRunSeekVictimRelief): the selection's claim is confirmed and counted
 // only once the take really started (the attack order or the taunt cast went out, the tank was already after it); a
 // refused or failed one rolls the claim back and counts nothing. `from` is the Son's victim read before the take's
@@ -10122,7 +10138,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     // The third off-tank pulls a Son that is not fighting; with fewer than three tanks alive its fallback does (the
     // raid's nearest hunter, else a ranged damage dealer) and tanks[1] takes the Son over. Every other bot answers
-    // false before the fight read.
+    // false before the fight read; a raid tank's victim relief is the one answer these pull paths never made.
     const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
     const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
     // The first off-tank also takes a Son off a healer once the state's healer pick says it has waited long enough
@@ -10136,7 +10152,18 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             return task;
         // (With three tanks the fallback also pulls while the third off-tank is the boss's victim: the state says so.)
         if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
+        {
+            // The pull paths never run for this bot. The victim relief still does when it is a raid tank (the main
+            // tank, a fourth tank, a two-tank off-tank's partner): a Son on the boss's victim is taken, never pulled,
+            // and nothing else here answers.
+            if (roles.botIndex >= 0)
+            {
+                SeekFight reliefState;
+                if (ReadSeekFightCached(ai, bot, reliefState))
+                    SeekReliefTaskFor(ai, bot, roles, reliefState, task);
+            }
             return task;
+        }
     }
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
@@ -10315,18 +10342,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             return task;
         }
     }
-    if (roles.botIndex >= 0)
-    {
-        if (Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state))
-        {
-            task.valid = true;
-            task.source = reliefSon;
-            task.take = true;
-            task.takeSrc = "victim_relief";
-            task.boss = state.boss;
-            return task;
-        }
-    }
+    if (roles.botIndex >= 0 && SeekReliefTaskFor(ai, bot, roles, state, task))
+        return task;
     if (thirdTank || pickupTank)
     {
         // A Son camped on a healer is tanks[1]'s take here too when the third off-tank is dead (two tanks left) and

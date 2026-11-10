@@ -25,23 +25,43 @@ class SeekVictimReliefWiring(unittest.TestCase):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
         self.assertIn("Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,", ACTIONS)
         boss_victim = fn.index("if ((thirdTank || pickupTank || healerTaker) &&")
-        relief_call = fn.index("if (roles.botIndex >= 0)")
-        relief = fn.index("FindSeekVictimRelief(ai, bot, roles, state)")
+        relief_call = fn.index("if (roles.botIndex >= 0 && SeekReliefTaskFor(ai, bot, roles, state, task))")
         third_pickup = fn.index("if (thirdTank || pickupTank)")
         on_son = fn.index("if (onTank)")
-        self.assertLess(boss_victim, relief)
-        self.assertIn("SeekTankTakeAllowed", fn[boss_victim:fn.rindex("return task;", boss_victim, relief)])
+        self.assertLess(boss_victim, relief_call)
+        self.assertIn("SeekTankTakeAllowed",
+                      fn[boss_victim:fn.rindex("return task;", boss_victim, relief_call)])
         self.assertLess(on_son, relief_call)
         self.assertLess(fn.index("return task;", on_son), relief_call)
-        relief_block = fn[relief_call:third_pickup]
-        self.assertIn("task.takeSrc = \"victim_relief\";", relief_block)
-        self.assertEqual(relief_block.count("task.take = true;"),
-                         relief_block.count("task.takeSrc = "))
+        self.assertLess(relief_call, third_pickup)
 
     def test_the_call_is_for_every_raid_tank(self):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
-        self.assertIn("if (roles.botIndex >= 0)\n    {\n        if (Unit* const reliefSon =", fn)
-        self.assertNotIn("if (thirdTank || healerTaker)\n    {\n        if (Unit* const reliefSon =", fn)
+        self.assertIn("if (roles.botIndex >= 0 && SeekReliefTaskFor(ai, bot, roles, state, task))", fn)
+        self.assertNotIn("if (thirdTank || healerTaker)", fn)
+        # One fill for both call sites: the fields and the source word are written once, in the helper.
+        helper = body(ACTIONS, "bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot,")
+        self.assertIn("task.takeSrc = \"victim_relief\";", helper)
+        self.assertIn("FindSeekVictimRelief(ai, bot, roles, state)", helper)
+        self.assertEqual(1, ACTIONS.count("task.takeSrc = \"victim_relief\";"))
+
+    def test_VictimRelief_MainAndFourthTankReachRelief(self):
+        fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
+        gate_start = fn.index("if (!thirdTank && !pickupTank && !healerTaker)\n    {")
+        gate = fn[gate_start:fn.index("SeekFight state;", gate_start)]
+        # The bots the gate drops (no pull job, and no hunter/ranged fallback: the main tank, a fourth tank, a
+        # two-tank raid's main tank) still ask for the victim relief when they are raid tanks. No tank position is
+        # a filter: roles.tanks[0] and roles.tanks[3] are raid tanks as much as tanks[1] and tanks[2].
+        class_test = gate.index("if (bot->GetClass() != CLASS_HUNTER")
+        self.assertIn("if (roles.botIndex >= 0)", gate[class_test:])
+        self.assertIn("SeekReliefTaskFor(ai, bot, roles, reliefState, task)", gate[class_test:])
+        self.assertLess(gate.index("SeekReliefTaskFor(", class_test), gate.index("return task;", class_test))
+        # And the relief is all they get: no pull, walk-out, drag, pre-place, swing hold or anchor branch starts
+        # for a tank the gate drops (the pull paths keep their own eligibility exactly).
+        early = gate[gate.index("if (roles.botIndex >= 0)", class_test):]
+        for field in ("task.pull", "task.rangedPull", "task.fromAnchor", "task.walkout", "task.walkToSpot",
+                      "task.holdSwing", "task.prePlaceHold", "task.row"):
+            self.assertNotIn(field, early)
 
     def test_the_function_reads_the_flag_and_names_the_take(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")

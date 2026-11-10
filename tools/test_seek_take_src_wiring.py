@@ -29,9 +29,12 @@ class SeekTakeSrcWiring(unittest.TestCase):
 
     def test_every_take_path_names_itself(self):
         fn = body(ACTIONS, "SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)")
-        # One word per `task.take = true;`.
+        # One word per `task.take = true;`; the victim relief's fill is the shared helper both its call sites use.
         self.assertEqual(fn.count("task.take = true;"), fn.count("task.takeSrc = "))
-        for word in ('"meet"', '"healer_clock"', '"pull_join"', '"victim_relief"'):
+        relief = body(ACTIONS, "bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot,")
+        self.assertIn("task.take = true;", relief)
+        self.assertIn('task.takeSrc = "victim_relief";', relief)
+        for word in ('"meet"', '"healer_clock"', '"pull_join"'):
             self.assertIn("task.takeSrc = " + word + ";", fn)
         # The nearest take names the reach when only the reach took it (walk 57 F4: `src=nearest_reach`).
         self.assertIn('task.takeSrc = viaReach ? "nearest_reach" : "nearest";', fn)
