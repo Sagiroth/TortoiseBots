@@ -45,6 +45,7 @@
 #include "../ai/playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "../ai/playerbot/strategy/values/PositionValue.h"
 #include "../ai/playerbot/strategy/values/LastMovementValue.h"
+#include "../ai/playerbot/strategy/values/PartyMemberToHeal.h"
 #include "../ai/playerbot/MoveFailNotePolicy.h"
 #include "../ai/playerbot/strategy/values/ItemUsageValue.h"
 #include "../ai/playerbot/strategy/actions/EquipAction.h"
@@ -11854,6 +11855,22 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;
         // AiPlayerbot.DungeonRunRaidHealerGuard: an add on a healer goes to the ranged dps first (RaidHealerGuard).
         f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
+        // AiPlayerbot.DungeonRunGuardLeavesAssignedTank: a unit a tank row assigns to a slot stays with that tank.
+        f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;
+        // ... only while the assigning row's own key reads that kind: until_tank is an aura tactic, tank_post its own.
+        f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;
+        f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;
+        // The slot order those rows' `priority` names, with the state the guard's assigned-tank grace reads: a charmed
+        // tank cannot hold the unit. The order drops a dead tank, so the next tank inherits its slot.
+        if (f.raid.guardLeavesAssigned)
+            if (PlayerbotAI* const leadAi = PlayerbotAIStorage::Instance().GetAI(lead))
+                for (Player* const tank : ai::GetRaidTankRoles(leadAi).tanks)
+                {
+                    RaidTankFact tankFact;
+                    tankFact.alive = tank->IsAlive();
+                    tankFact.charmed = tank->IsCharmed();
+                    f.raid.tanks.push_back(tankFact);
+                }
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).
