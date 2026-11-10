@@ -1686,6 +1686,71 @@ class BossTacticsSql(unittest.TestCase):
             for own_row in own:
                 live[own_row] = name
 
+    def test_every_comment_fits_its_column(self):
+        # The world updater stopped on 20261110120000: the anchor comment ran 256
+        # characters against ai_boss_tactic.comment VARCHAR(255). Every comment
+        # written to a 255-wide comment column must fit, whatever table it is in.
+        # MySQL stores '' inside a quoted value as one apostrophe, so the length
+        # that counts is the value after doubling and backslash escapes are undone.
+        def stored_length(raw):
+            inner = raw.strip()[1:-1].replace("''", "'")
+            out = []
+            index = 0
+            while index < len(inner):
+                if inner[index] == "\\" and index + 1 < len(inner):
+                    out.append(inner[index + 1])
+                    index += 2
+                else:
+                    out.append(inner[index])
+                    index += 1
+            return len("".join(out))
+
+        targets = {
+            "ai_boss_tactic": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_tactic`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_boss_stand": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_boss_stand`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_plan": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_plan`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_leg": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_leg`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+            "ai_dungeon_step": re.compile(
+                r"^(?:INSERT|REPLACE)\s+INTO\s+`ai_dungeon_step`\s*\(([^)]*)\)\s*VALUES\s*(.+)$",
+                re.IGNORECASE | re.S),
+        }
+        for path in migration_paths():
+            name = os.path.basename(path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            for table, insert in targets.items():
+                if "`%s`" % table not in text:
+                    continue
+                for statement in _sql_statements(text):
+                    match = insert.match(statement.strip())
+                    if not match:
+                        continue
+                    columns = [column.strip().strip("`") for column in match.group(1).split(",")]
+                    if "comment" not in columns:
+                        continue
+                    comment = columns.index("comment")
+                    for tuple_text in _tuples(match.group(2)):
+                        values = _selected_values(tuple_text, {comment})
+                        if comment not in values:
+                            continue
+                        raw = values[comment].strip()
+                        if raw == "NULL" or raw == "":
+                            continue
+                        self.assertTrue(raw.startswith("'"), "unparsable comment in %s: %s" % (name, raw[:80]))
+                        length = stored_length(raw)
+                        self.assertLessEqual(length, 255,
+                                             "%s `%s` comment is %d characters: %r"
+                                             % (name, table, length, raw[1:81]))
+
+
 
 def _sql_statements(text):
     """Split a dump into statements: comments dropped, quotes and escapes respected."""
