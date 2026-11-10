@@ -6,6 +6,7 @@ using namespace ai;
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/raid/OnyxiaBreathPolicy.h"
 #include "playerbot/policy/raid/OnyxiaWhelpEggPolicy.h"
+#include "playerbot/BossTacticsStand.h"
 #include "ChooseTargetActions.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
@@ -22,6 +23,15 @@ BreathSafeSpot const kBreathSafeSpots[4][2] =
     { { 7.0f, -185.0f, -86.2f }, { -60.0f, -240.0f, -85.2f } },
 };
 } // namespace
+
+bool OnyxiaBreathSafeZoneAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    if (!sPlayerbotAIConfig.bossStandOutranksBreathDodge)
+        return true;
+    return !BreathDodgeYieldsToStand(sPlayerbotAIConfig.bossStandOutranksBreathDodge, FindBossStand(ai, bot).valid);
+}
 
 bool OnyxiaBreathSafeZoneAction::Execute(Event& event)
 {
