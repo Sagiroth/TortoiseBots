@@ -41,6 +41,7 @@ namespace ai
         // BOTPERF window counters for ResolveMovePath: a call answered from the cached
         // route is a reuse, a call that plans the route again is a rebuild. BotManager
         // reads and resets both when it writes the BOTPERF line.
+        static bool LaunchLandWalk(Player* bot, const WorldPosition& endPos, bool walk = false, uint32* pathTypeOut = nullptr);
         static std::atomic<uint32_t> routeReuseCount;
         static std::atomic<uint32_t> routeRebuildCount;
     protected:
@@ -103,7 +104,6 @@ namespace ai
         // shortcut and not-using-path refuse. In water, on a transport, flying
         // or dead the checked walk does not apply (false, the caller decides).
         bool WalkChecked(const WorldPosition& endPos, bool walk = false);
-        static bool LaunchLandWalk(Player* bot, const WorldPosition& endPos, bool walk = false, uint32* pathTypeOut = nullptr);
         float GetFollowAngle();
         bool Follow(Unit* target, float distance = 0);
         bool Follow(Unit* target, float distance, float angle);
