@@ -11968,7 +11968,8 @@ const char* TankPostEndReason(const TankPostIn& in)
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
 // a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
 // reservation also ends while its tank is farther than kTankPostReserveRangeYd from the subject, or once the subject
-// has been loose off it for kGuardAssignedGraceMs, so a stranded tank cannot hold the unit off the other tanks.
+// has been loose off it for kGuardAssignedGraceMs from the first selectable tick it was off it, so a stranded tank
+// cannot hold the unit off the other tanks and a subject still in the air does not spend its grace before it lands.
 bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
 {
     if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
@@ -11998,7 +11999,9 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
         float const ownerYd = TankPostDistanceYd(tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(),
             target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
         bool const onOwner = target->GetVictim() == tank;
-        // The loose clock is the record's and is read under its lock: the first look at a loose subject starts it.
+        // The loose clock is the record's and is read under its lock: the first look at a loose subject that can be hit
+        // starts it, so a subject still in the air (unselectable, not attackable) does not spend its grace before it
+        // lands.
         std::uint32_t looseMs = 0;
         if (!onOwner)
         {
@@ -12007,9 +12010,10 @@ bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
             if (it == g_tankPost.end())
                 continue;
             std::uint32_t const nowMs = WorldTimer::getMSTime();
-            if (it->second.looseSinceMs == 0)
-                it->second.looseSinceMs = nowMs;
-            looseMs = nowMs - it->second.looseSinceMs;
+            it->second.looseSinceMs = TankPostLooseClock(it->second.looseSinceMs, onOwner,
+                !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE), tank->IsValidAttackTarget(target),
+                nowMs);
+            looseMs = it->second.looseSinceMs == 0 ? 0 : nowMs - it->second.looseSinceMs;
         }
         if (TankPostReserves(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, true, true, false,
                 ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs))
@@ -12277,7 +12281,8 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         std::uint32_t const priorLoose = stored.looseSinceMs;
         stored = record;
         stored.lastReadMs = nowMs;
-        stored.looseSinceMs = in.subjectOnTank ? 0 : (priorLoose != 0 ? priorLoose : nowMs);
+        stored.looseSinceMs = TankPostLooseClock(priorLoose, in.subjectOnTank, in.subjectSelectable,
+            subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
         stepEntered = TankPostStepEntered(stored.lastStep, step);
         stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))

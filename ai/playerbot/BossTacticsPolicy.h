@@ -3634,6 +3634,19 @@ namespace ai
             (subjectOnOwner || looseMs < kGuardAssignedGraceMs);
     }
 
+    // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on
+    // its post tank, and while the subject cannot be hit (unselectable or not attackable: a boss still in the air, out
+    // of reach of every tank), so the grace never runs out before it lands. It starts on the first selectable,
+    // attackable tick with the subject off the tank, and stays at that start while it remains loose. `prior` is the
+    // record's clock (0: not started).
+    inline std::uint32_t TankPostLooseClock(std::uint32_t prior, bool subjectOnOwner, bool subjectSelectable,
+                                            bool subjectAttackable, std::uint32_t nowMs)
+    {
+        if (subjectOnOwner || !subjectSelectable || !subjectAttackable)
+            return 0;
+        return prior != 0 ? prior : nowMs;
+    }
+
     // The area taunts (challenging shout, challenging roar) taunt every hostile within their radius of the caster, not
     // only the selected target: one unit of the scan that another live post reserves refuses the cast.
     constexpr float kAreaTauntRadiusYd = 10.0f;

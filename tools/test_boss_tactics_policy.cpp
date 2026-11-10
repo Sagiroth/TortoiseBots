@@ -412,6 +412,32 @@ static void TestTankPostOwns_SubjectOnOwnerStaysReserved()
     CHECK(TankPostReserves(true, true, true, false, true, true, kGuardAssignedGraceMs * 10));
 }
 
+// Walk 2d T round 2: an unselectable subject (a boss still in the air) never starts the loose clock, so the grace runs
+// from the first selectable tick off the post tank, not from the tick the post started waiting. A subject that waited
+// longer than the grace in the air is therefore still reserved on its landing tick, and lapses 8 s after it if it stays
+// loose.
+static void TestTankPostOwns_LooseClockStartsOnTheLandingTick()
+{
+    const std::uint32_t airborneMs = 5000;
+    const std::uint32_t landMs = airborneMs + 12000; // 12 s in the air, past the guard's 8 s grace
+    // Every read while it is airborne: off the post tank, unselectable, not attackable.
+    std::uint32_t clock = 0;
+    for (std::uint32_t tick = airborneMs; tick < landMs; tick += 500)
+        clock = TankPostLooseClock(clock, false, false, false, tick);
+    // It lands on another unit (selectable, attackable), still off the post tank: the grace starts here, so the unit is
+    // reserved at this tick. A clock started in the air would already read 12000 ms loose and release it.
+    clock = TankPostLooseClock(clock, false, true, true, landMs);
+    CHECK(TankPostReserves(true, true, true, false, true, false, landMs - clock));
+    // Still loose: reserved through 7999 ms from the landing tick, released at 8000 ms.
+    CHECK(TankPostReserves(true, true, true, false, true, false, landMs + kGuardAssignedGraceMs - 1 - clock));
+    CHECK(!TankPostReserves(true, true, true, false, true, false, landMs + kGuardAssignedGraceMs - clock));
+    // Back on the post tank the clock clears, so a later loose tick starts a fresh grace; a selectable subject that is
+    // still not attackable neither starts nor keeps it.
+    CHECK(TankPostLooseClock(clock, true, true, true, landMs + 1000) == 0);
+    CHECK(TankPostLooseClock(0, false, true, true, landMs + 9000) == landMs + 9000);
+    CHECK(TankPostLooseClock(landMs + 9000, false, true, false, landMs + 10000) == 0);
+}
+
 // The area taunts scan every hostile in the spell's radius, not only the selected target: a second unit 6 yd away that
 // another post reserves refuses the cast; the same unit past 10 yd does not.
 static void TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius()
@@ -1241,6 +1267,7 @@ int main()
     TestTankPostOwns_RemoteOwnerDoesNotReserve();
     TestTankPostOwns_LooseSubjectReleasesAfterGrace();
     TestTankPostOwns_SubjectOnOwnerStaysReserved();
+    TestTankPostOwns_LooseClockStartsOnTheLandingTick();
     TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestCarrierHold();

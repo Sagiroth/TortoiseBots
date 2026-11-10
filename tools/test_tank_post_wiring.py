@@ -219,10 +219,21 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("target->GetPositionZ())", reserve)
         self.assertIn("target->GetVictim() == tank", reserve)
         self.assertIn("ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs)", reserve)
-        self.assertIn("if (it->second.looseSinceMs == 0)\n                it->second.looseSinceMs = nowMs;\n            looseMs = nowMs - it->second.looseSinceMs;", reserve)
-        # The action's store keeps the clock current: on its tank clears it, loose at 0 starts it.
-        self.assertIn("stored.looseSinceMs = in.subjectOnTank ? 0 : (priorLoose != 0 ? priorLoose : nowMs);",
-                      ACTIONS)
+        # The clock starts on the first selectable, attackable tick the subject is off the post tank, so a subject still
+        # in the air does not spend its grace.
+        self.assertIn("inline std::uint32_t TankPostLooseClock(std::uint32_t prior, bool subjectOnOwner, "
+                      "bool subjectSelectable,", POLICY)
+        self.assertIn("if (subjectOnOwner || !subjectSelectable || !subjectAttackable)", POLICY)
+        self.assertIn("return prior != 0 ? prior : nowMs;", POLICY)
+        self.assertIn("it->second.looseSinceMs = TankPostLooseClock(it->second.looseSinceMs, onOwner,", reserve)
+        self.assertIn("!target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE), "
+                      "tank->IsValidAttackTarget(target),", reserve)
+        self.assertIn("looseMs = it->second.looseSinceMs == 0 ? 0 : nowMs - it->second.looseSinceMs;", reserve)
+        # The action's store keeps the clock current through the same rule: on its tank clears it, a subject in the
+        # air does not start it.
+        self.assertIn("stored.looseSinceMs = TankPostLooseClock(priorLoose, in.subjectOnTank, "
+                      "in.subjectSelectable,", ACTIONS)
+        self.assertIn("subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);", ACTIONS)
         self.assertIn("std::uint32_t looseSinceMs = 0;", ACTIONS)
         # The gate refuses before it reads its own key: the reservation does not need DungeonRunTauntGate.
         gate = body(ACTIONS, "bool ai::TauntRefusedByGate(")
