@@ -697,6 +697,11 @@ public:
     // or drinks; it needs dungeonRunSeekWalkoutFocus (without it nothing is held); off,
     // the puller may drop to the non-combat engine mid-task as before (default off, recommended on).
     bool dungeonRunSeekWalkoutHoldCombat = false;
+    // The walk-out's kept boss (Hakkar's seek pull): on, the fight scan adds the live, unshot walk-out puller's boss
+    // while that boss is missing from its attackers (a puller more than SightDistance from the raid), so the seek row's
+    // trigger stays open and its own tick keeps running; off, such a puller loses the scan as before (default off,
+    // recommended on).
+    bool dungeonRunSeekPullerKeepsFight = false;
     // The walk-out's face-and-cast (Hakkar's seek pull): on, the puller at its stand stops, turns to the Son with the
     // instant forced turn and casts in the same tick, UpdateFaceTarget leaves the live unshot puller's facing alone, and
     // the 6 s no-shot clock counts only the time spent in shot position; off, the turn-then-cast-next-tick of the walk-out

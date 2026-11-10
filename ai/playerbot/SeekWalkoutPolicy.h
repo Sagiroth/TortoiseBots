@@ -248,6 +248,16 @@ namespace ai
         return found && alive && inCombat && !evading;
     }
 
+    // Whether the fight scan adds the live walk-out puller's boss to the fight (DungeonRunSeekPullerKeepsFight, walk 65):
+    // a puller more than AiPlayerbot.SightDistance from the raid loses the boss from its attackers, so the seek row's
+    // trigger closes while the walk-out focus holds every other action. The flag on, this bot the recorded puller and the
+    // boss outside its attackers list: the scan adds it exactly as an attacker. Another bot's scan, or a boss already
+    // among the attackers, is unchanged.
+    inline bool WalkoutPullerKeepsBoss(bool flagOn, bool livePuller, bool bossInAttackers)
+    {
+        return flagOn && livePuller && !bossInAttackers;
+    }
+
     // Whether a pick candidate's AI can run the walk-out at all (DungeonRunSeekWalkoutHoldCombat): the walk-out is a
     // combat-engine action, so a bot on the non-combat engine, or one eating or drinking, is not sent. The bot's own
     // engine state is read, never its pet's combat: a hunter whose pet fights while the hunter's AI sits on the

@@ -916,6 +916,15 @@ ai::BossTacticsScanScope::~BossTacticsScanScope()
     ResetSeekTickCache();
 }
 
+namespace
+{
+// The walk-out record reads the fight scan uses (defined with the record, below): the live puller's boss and its one
+// kept-boss row.
+Creature* LiveWalkoutPullerBoss(Player* bot, std::uint64_t* son = nullptr, std::uint32_t* startMs = nullptr);
+bool ClaimWalkoutKeptBossRow(std::uint32_t instanceId, std::uint32_t startMs);
+void LogSeekWalkout(PlayerbotAI* ai, const char* text, const char* info2);
+}
+
 BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 {
     const BossTacticTable& table = GetBossTactics();
@@ -949,6 +958,40 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         }
         else
             entryUnits[known - seen.begin()].push_back(unit);
+    }
+    // The live walk-out puller keeps its boss in the scan (DungeonRunSeekPullerKeepsFight, walk 65): more than
+    // AiPlayerbot.SightDistance from the raid its attackers list is empty, so the seek row's trigger closed while the
+    // focus held every other action. The record read is one lock, and only while a task runs.
+    bool const keepsBossOn = sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight;
+    if (keepsBossOn)
+    {
+        std::uint64_t sonGuid = 0;
+        std::uint32_t startMs = 0;
+        Creature* const liveBoss = LiveWalkoutPullerBoss(bot, &sonGuid, &startMs);
+        bool const bossInAttackers = liveBoss &&
+            std::find(fight.units.begin(), fight.units.end(), static_cast<Unit*>(liveBoss)) != fight.units.end();
+        if (WalkoutPullerKeepsBoss(keepsBossOn, liveBoss != nullptr, bossInAttackers))
+        {
+            // Alive, on this map, in combat and not evading is the helper's own read: from here on the boss is an
+            // attacker like the rest, rows and health gate included.
+            fight.units.push_back(liveBoss);
+            const uint32 entry = liveBoss->GetEntry();
+            const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
+            if (known == seen.end())
+            {
+                seen.push_back(entry);
+                entryUnits.push_back(std::vector<Unit*>(1, liveBoss));
+            }
+            else
+                entryUnits[known - seen.begin()].push_back(liveBoss);
+            if (ClaimWalkoutKeptBossRow(bot->GetInstanceId(), startMs))
+            {
+                char info1[128];
+                snprintf(info1, sizeof(info1), "seek pull: walk-out kept boss son=%u boss=%u dist=%.0f",
+                         ObjectGuid(sonGuid).GetCounter(), entry, bot->GetDistance(liveBoss));
+                LogSeekWalkout(ai, info1, "");
+            }
+        }
     }
     // One boss entry's rows into the fight, gated by the entry's health (inclusive; a boss that vanished carries the health
     // it was last seen at).
@@ -1127,6 +1170,7 @@ struct WalkoutRecord
     std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
     std::uint32_t lateLogMs = 0;            // the "late" row's throttle
     std::uint32_t preemptLogStartMs = 0;    // the "walk-out preempted" row's throttle: the task start it logged for
+    std::uint32_t keptBossLogStartMs = 0;   // the "walk-out kept boss" row's throttle: the task start it logged for
     // The stand rows (DungeonRunSeekWalkoutStandLog): the walk-out they count (its start), the last row, the last read
     // (tick_ms), and the castrefused rows written for that walk-out.
     std::uint32_t standLogStartMs = 0;
@@ -1143,6 +1187,57 @@ std::atomic<int> g_walkoutsRunning{0}; // records whose task runs (WalkoutActive
 // The held pets' stances by puller guid; the bot's own next update hands each back (ReleaseWalkoutPet).
 std::unordered_map<std::uint64_t, WalkoutPetStance> g_petHolds;
 std::atomic<int> g_petHoldCount{0};
+
+// The seek boss of this bot's running walk-out task (g_walkoutMutex held once): null unless the record names this bot as
+// the task's puller and WalkoutHoldsCombat's read holds (alive, not charmed, unshot, inside the 25 s, and the boss alive,
+// in combat and not evading). `son` and `startMs` carry the record's walk-out target and task start for the kept-boss row.
+Creature* LiveWalkoutPullerBoss(Player* bot, std::uint64_t* son, std::uint32_t* startMs)
+{
+    // No task runs (a walk back holds nothing), or the bot is off a seek map: no lock.
+    if (!bot || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return nullptr;
+    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return nullptr;
+    bool shot = false;
+    std::uint32_t sinceStartMs = 0;
+    std::uint64_t bossGuid = 0;
+    std::uint64_t taskSon = 0;
+    std::uint32_t taskStartMs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        const WalkoutRecord* const record =
+            WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+        if (!record)
+            return nullptr;
+        shot = record->state.shot;
+        sinceStartMs = WorldTimer::getMSTime() - record->state.startMs;
+        bossGuid = record->bossGuid;
+        taskSon = record->state.son;
+        taskStartMs = record->state.startMs;
+    }
+    Creature* const boss = bossGuid != 0 && bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),
+                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());
+    if (!WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs, shot,
+            bossFighting))
+        return nullptr;
+    if (son)
+        *son = taskSon;
+    if (startMs)
+        *startMs = taskStartMs;
+    return boss;
+}
+
+// The kept-boss row's one write per task (g_walkoutMutex): true for the first scan of a walk-out that had to add it.
+bool ClaimWalkoutKeptBossRow(std::uint32_t instanceId, std::uint32_t startMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end() || it->second.keptBossLogStartMs == startMs)
+        return false;
+    it->second.keptBossLogStartMs = startMs;
+    return true;
+}
 
 // Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
 // per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
@@ -4826,33 +4921,9 @@ float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)
 
 bool ai::IsLiveWalkoutPuller(Player* bot)
 {
-    // No task runs (a walk back holds nothing), or the bot is off a seek map: no lock.
-    if (!bot || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
-        return false;
-    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
-        return false;
-    // The focus's record read (WalkoutPullerRecordIn: the bot's own instance, a running task, this bot its puller),
-    // plus the record's boss.
-    bool shot = false;
-    std::uint32_t sinceStartMs = 0;
-    std::uint64_t bossGuid = 0;
-    {
-        std::lock_guard<std::mutex> lock(g_walkoutMutex);
-        const WalkoutRecord* const record =
-            WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
-        if (!record)
-            return false;
-        shot = record->state.shot;
-        sinceStartMs = WorldTimer::getMSTime() - record->state.startMs;
-        bossGuid = record->bossGuid;
-    }
-    // The fight still runs (review L2): the boss read the way the record's sweep reads it, plus its evade, so a wipe,
-    // an evade or a kill ends the hold at once.
-    Creature* const boss = bossGuid != 0 && bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
-    bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),
-                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());
-    return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,
-                              shot, bossFighting);
+    // The record's puller and fight read (LiveWalkoutPullerBoss, one lock), the same for the focus, the facing, the
+    // victim duty and the fight scan's kept boss.
+    return LiveWalkoutPullerBoss(bot) != nullptr;
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
