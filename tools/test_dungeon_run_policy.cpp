@@ -26516,6 +26516,21 @@ static void TestRaidGuard_GraceRunsThroughLeadJoin()
     CHECK(Tick(r, f, 2000) == "attack 45001 Offz"); // t = 8000: 8 s loose, no fresh grace
 }
 
+// With the key off the assignment clocks are no one's: loose attackers over several fight ticks leave them at zero,
+// and the map empty, so turning the key on mid-run starts its grace clean (the failure before: every raid-boss fight
+// tick advanced the clock and wrote each loose attacker).
+static void TestRaidGuard_ClockUntouchedWithKeyOff()
+{
+    DungeonPlan plan;
+    Run r = RaidBossRun(plan);
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45001, 11262, 20, true), Hitter(45002, 11262, 18, false)};
+    for (int k = 0; k < 10; ++k)
+        Tick(r, f);
+    CHECK(r.guardAssignedLooseSinceMs.empty());
+    CHECK(r.guardAssignedClockMs == 0);
+}
+
 // The same unit with the key off: today's order, the off-tank takes it.
 static void TestRaidGuardAssignedUnitTakenWithFlagOff()
 {
@@ -37832,6 +37847,7 @@ int main()
     TestRaidGuard_GraceRunsWithNoFreeOffTank();
     TestRaidGuard_GraceRunsThroughHealerGuardOrders();
     TestRaidGuard_GraceRunsThroughLeadJoin();
+    TestRaidGuard_ClockUntouchedWithKeyOff();
     TestRaidGuardAssignedUnitTakenWithFlagOff();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();

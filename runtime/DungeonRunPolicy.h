@@ -19056,9 +19056,16 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // but never while the main tank holds a plan boss (LeadHoldsPlanBoss).
         if (RaidBossRulesFight(r, f))
         {
-            // The assignment grace's clocks run once on every fight tick, before any order path can return: a healer
-            // guard's order or a lead join must not pause them.
-            UpdateGuardAssignedLoose(r, f, dt);
+            // The assignment grace's clocks (AiPlayerbot.DungeonRunGuardLeavesAssignedTank) run once on every fight
+            // tick, before any order path can return: a healer guard's order or a lead join must not pause them. With
+            // the key off nothing reads them, so they are cleared once: turning it on at runtime starts clean.
+            if (f.raid.guardLeavesAssigned)
+                UpdateGuardAssignedLoose(r, f, dt);
+            else if (r.guardAssignedClockMs != 0 || !r.guardAssignedLooseSinceMs.empty())
+            {
+                r.guardAssignedClockMs = 0;
+                r.guardAssignedLooseSinceMs.clear();
+            }
             // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to
             // the ranged dps first, with no off-tank in range too (RaidHealerGuard); the off-tanks take such an add
             // only when none of the ranged dps is free for it (RaidGuardTick).

@@ -68,7 +68,8 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
         tick = body(RUN, "inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
         # The clocks are CheckGuard's, once a fight tick and before any order path can return: the healer guard's and
-        # the lead join's orders must not pause them, and the tick itself never runs them.
+        # the lead join's orders must not pause them, and the tick itself never runs them. With the key off they are
+        # cleared instead, so a key turned on mid-run starts clean.
         helper = body(RUN, "inline void UpdateGuardAssignedLoose(Run& r, const Facts& f, std::uint32_t dt)")
         self.assertIn(
             "    r.guardAssignedClockMs += dt;\n"
@@ -84,10 +85,18 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertNotIn("r.guardAssignedClockMs += dt;", tick)  # the clock advances in CheckGuard only
         self.assertNotIn("guardAssignedLooseSinceMs.emplace", tick)
         check = body(RUN, "inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
-        call = "            UpdateGuardAssignedLoose(r, f, dt);\n"
-        self.assertEqual(check.count(call), 1)
-        self.assertLess(check.index(call), check.index("RaidHealerGuard(r, f, dt, order)"))
-        self.assertLess(check.index(call), check.index("RaidBossLeadJoin(r, f, dt, order)"))
+        self.assertIn(
+            "            if (f.raid.guardLeavesAssigned)\n"
+            "                UpdateGuardAssignedLoose(r, f, dt);\n"
+            "            else if (r.guardAssignedClockMs != 0 || !r.guardAssignedLooseSinceMs.empty())\n"
+            "            {\n"
+            "                r.guardAssignedClockMs = 0;\n"
+            "                r.guardAssignedLooseSinceMs.clear();\n"
+            "            }\n", check)
+        self.assertEqual(check.count("UpdateGuardAssignedLoose(r, f, dt);"), 1)
+        self.assertEqual(check.count("guardAssignedClockMs += dt;"), 0)
+        self.assertLess(check.index("UpdateGuardAssignedLoose(r, f, dt);"), check.index("RaidHealerGuard(r, f, dt, order)"))
+        self.assertLess(check.index("UpdateGuardAssignedLoose(r, f, dt);"), check.index("RaidBossLeadJoin(r, f, dt, order)"))
         # With no off-tank alive the branch falls through to the party guard as before: the clock ran above it.
         self.assertIn(
             "            if (!f.raid.bossOffTanksAlive.empty())\n"
