@@ -153,6 +153,29 @@ namespace ai
         return count + index % (total - count);
     }
 
+    // The point the bot walks to and the telemetry it reports: the row keeps the
+    // owned slot and its distance even when the spare point is what is stood on.
+    struct SpreadSlotSelection
+    {
+        int slot = -1;      // the owned slot
+        int moveSlot = -1;  // the point to stand on
+        int fallback = -1;  // the spare point on the row, -1 when unused
+    };
+
+    inline SpreadSlotSelection SpreadSlotSelect(int index, int fallback, bool ownedUsable, bool fallbackUsable)
+    {
+        SpreadSlotSelection selection;
+        selection.slot = index >= 0 ? index : -1;
+        if (ownedUsable && index >= 0)
+            selection.moveSlot = index;
+        else if (fallback >= 0 && fallbackUsable)
+        {
+            selection.moveSlot = fallback;
+            selection.fallback = fallback;
+        }
+        return selection;
+    }
+
     enum class SpreadSlotVerdict
     {
         SlotHold,

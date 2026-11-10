@@ -498,7 +498,7 @@ bool RaidSpreadNeededTrigger::IsActive()
     if (BossSeeking(ai, bot))
     {
         if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
-            LogBossSpread(ai, bot, "seek", -1, -1.0f);
+            LogBossSpread(ai, bot, "seek", -1, -1.0f, -1);
         return false;
     }
     // Generic combat spread (donor "combat formation move" without the opt-in
@@ -507,7 +507,7 @@ bool RaidSpreadNeededTrigger::IsActive()
     if (!target)
     {
         if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
-            LogBossSpread(ai, bot, "no_target", -1, -1.0f);
+            LogBossSpread(ai, bot, "no_target", -1, -1.0f, -1);
         return false;
     }
     // Explicit orders win: a bot told to hug a spot (stay/follow/attack/pull
@@ -524,7 +524,7 @@ bool RaidSpreadNeededTrigger::IsActive()
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
     {
         if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
-            LogBossSpread(ai, bot, "order", -1, -1.0f);
+            LogBossSpread(ai, bot, "order", -1, -1.0f, -1);
         return false;
     }
     // Melee/tanks stack by design; spread is a ranged survival behavior.
@@ -553,7 +553,7 @@ bool RaidSpreadNeededTrigger::IsActive()
             return true;
     }
     if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
-        LogBossSpread(ai, bot, "clear", -1, -1.0f);
+        LogBossSpread(ai, bot, "clear", -1, -1.0f, -1);
     return false;
 }
 

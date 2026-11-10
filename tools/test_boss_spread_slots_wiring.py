@@ -10,6 +10,7 @@ import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+POLICY = (ROOT / "ai/playerbot/CombatSpreadPolicy.h").read_text()
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 DUNGEON_ACTIONS = (ROOT / "ai/playerbot/strategy/actions/DungeonActions.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
@@ -40,6 +41,44 @@ class SpreadSlotsWiring(unittest.TestCase):
         self.assertIn("dungeonRunBossSpreadSlots", fn)
         for verdict in ("SpreadSlotVerdict::SlotMove", "SpreadSlotVerdict::SlotHold", "SpreadSlotVerdict::Cast"):
             self.assertIn(verdict, fn)
+        # The read (and its row) runs before the key gates the action, so the key off still names every verdict.
+        self.assertLess(fn.index("FindBossSpreadSlot("), fn.index("dungeonRunBossSpreadSlots"))
+
+    def test_SpreadVerdict_EveryVerdictIsLogged(self):
+        # Every verdict word the enum can produce reaches the one log call: it is an unconditional statement in the
+        # slot read, after the verdict is assigned, and it takes SpreadSlotVerdictWord(task.verdict).
+        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn(
+            "    LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);\n"
+            "    return task;",
+            read)
+        self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("LogBossSpread("))
+        words = re.findall(r'case SpreadSlotVerdict::\w+: return "([a-z_]+)";', POLICY)
+        self.assertEqual(len(words), 12)
+        self.assertEqual(len(set(words)), 12)
+        # The action logs no verdict of its own; only a move it could not send.
+        action = body(ACTIONS, "bool BossTacticsSpreadSlotAction::Execute(Event& event)")
+        self.assertNotIn("SpreadSlotVerdictWord", action)
+        self.assertIn('LogBossSpread(ai, bot, "move_failed"', action)
+
+    def test_the_read_reports_the_owned_slot_not_the_fallback(self):
+        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        self.assertIn("SpreadSlotSelect(owned, fallback, ownedUsable, fallbackUsable)", read)
+        self.assertIn("task.slot = selection.slot;", read)
+        self.assertIn("task.fallback = selection.fallback;", read)
+
+    def test_flag_off_keeps_the_spread_live_stay_precedence(self):
+        # With the slots key at 0 a live spread row still widens the spacing and outranks a stay: both the old trigger
+        # and the step-away test the stay only while no spread row is live, and the stand check still answers false.
+        trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
+        self.assertIn('!spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT)', trigger)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive", trigger)
+        action = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")
+        self.assertIn('!spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT)', action)
+        useful = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
+        self.assertLess(useful.index("FindBossStand(ai, bot).valid"), useful.index("return true;"))
+        self.assertIn("if (FindBossStand(ai, bot).valid)", useful)
+        self.assertNotIn("FindBossSpreadSlot(", useful)
 
     def test_the_old_trigger_names_the_gate_that_stopped_it(self):
         fn = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")

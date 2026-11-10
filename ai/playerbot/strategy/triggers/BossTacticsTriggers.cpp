@@ -504,10 +504,10 @@ bool BossTacticsSpreadSlotTrigger::IsActive()
 {
     if (!Ready(ai, bot))
         return false;
-    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
-        return false;
+    // The read writes the spread row for every verdict, with the key on or off, on the tick path the old action
+    // logging never had; only the verdicts that need a walk or a hold fire the action.
     const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
-    if (!task.slotBot)
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots || !task.slotBot)
         return false;
     return task.verdict == SpreadSlotVerdict::SlotMove || task.verdict == SpreadSlotVerdict::SlotHold ||
            task.verdict == SpreadSlotVerdict::Cast;

@@ -26,6 +26,7 @@ using ai::SpreadSlotOrder;
 using ai::SpreadSlotPoint;
 using ai::SpreadSlotPoints;
 using ai::SpreadSlotRings;
+using ai::SpreadSlotSelect;
 using ai::SpreadSlotVerdict;
 using ai::SpreadSlotVerdictWord;
 using ai::SpreadSlotWanted;
@@ -235,6 +236,22 @@ int main()
     CHECK(SpreadSlotFallback(7, 13, 18) == 15);
     CHECK(SpreadSlotFallback(0, 18, 18) == -1);
     std::cout << "  [PASS] slots are stable and the spare slots catch the overflow\n";
+
+    // SpreadSlot_FallbackKeepsOwnedTelemetry: the row reports the owned
+    // slot and its distance, while the walk goes to the spare point.
+    {
+        const ai::SpreadSlotSelection here = SpreadSlotSelect(7, 15, true, false);
+        CHECK(here.slot == 7 && here.moveSlot == 7 && here.fallback == -1);
+        const ai::SpreadSlotSelection spare = SpreadSlotSelect(7, 15, false, true);
+        CHECK(spare.slot == 7);
+        CHECK(spare.moveSlot == 15);
+        CHECK(spare.fallback == 15);
+        const ai::SpreadSlotSelection refused = SpreadSlotSelect(7, 15, false, false);
+        CHECK(refused.slot == 7 && refused.moveSlot == -1 && refused.fallback == -1);
+        const ai::SpreadSlotSelection none = SpreadSlotSelect(7, -1, false, false);
+        CHECK(none.slot == 7 && none.moveSlot == -1 && none.fallback == -1);
+    }
+    std::cout << "  [PASS] fallback keeps the owned slot telemetry\n";
 
     // The verdict precedence of the slot decision, in D6 order.
     CHECK(SpreadSlotWanted(true, true, true, true, false, false, false, false, true, true) ==

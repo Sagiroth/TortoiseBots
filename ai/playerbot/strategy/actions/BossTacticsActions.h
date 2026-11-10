@@ -696,13 +696,18 @@ namespace ai
         bool slotBot = false;
         SpreadSlotVerdict verdict = SpreadSlotVerdict::NoCentre;
         int slot = -1;
+        // The spare point the walk goes to when the owned slot is unusable; the row still reports `slot` and `slotYd`.
+        int fallback = -1;
         float x = 0.0f, y = 0.0f, z = 0.0f;
         float slotYd = -1.0f;
     };
     BossSpreadSlotTask FindBossSpreadSlot(PlayerbotAI* ai, Player* bot);
     // One `BossTacticsSpread` row per bot and 5 s: the key, the verdict word, the owned slot, the distance to it, the
-    // nearest living group member, how many members stand inside the row's spacing, the seek aura and the clock.
-    void LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd);
+    // fallback point actually used (-1 when none), the nearest living group member, how many members stand inside the
+    // row's spacing, the seek aura and the clock. `replaceSameTick` lets a failed move correct the row its own tick's
+    // read wrote instead of being swallowed by it.
+    void LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
+                       bool replaceSameTick = false);
 
     // The source a free DPS bot damages or burns: the one the gather stands around, while the dose window is open and
     // the row's hold allows the damage (the pre-damage, or the burn once the gather is ready). Null otherwise.

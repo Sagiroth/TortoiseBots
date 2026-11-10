@@ -534,7 +534,7 @@ bool RaidSpreadAction::isUseful()
     if (FindBossStand(ai, bot).valid)
     {
         if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots && BossSpreadLive(ai, bot))
-            LogBossSpread(ai, bot, "stand", -1, -1.0f);
+            LogBossSpread(ai, bot, "stand", -1, -1.0f, -1);
         return false;
     }
     return true;
@@ -593,14 +593,14 @@ bool RaidSpreadAction::Execute(Event& event)
     if (ai::MoveBlockedByCast(bot->IsNonMeleeSpellCasted(false, true, true), false))
     {
         if (logSpread)
-            LogBossSpread(ai, bot, "cast", -1, -1.0f);
+            LogBossSpread(ai, bot, "cast", -1, -1.0f, -1);
         return false;
     }
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
     if (IsSpreadOnCooldown(WorldTimer::getMSTime(), lastMove.lastSpreadStepMs))
     {
         if (logSpread)
-            LogBossSpread(ai, bot, "cooldown", -1, -1.0f);
+            LogBossSpread(ai, bot, "cooldown", -1, -1.0f, -1);
         return false;
     }
     // Step out directly away from the nearest stacked friendly.
@@ -663,7 +663,7 @@ bool RaidSpreadAction::Execute(Event& event)
             if (MoveTo(bot->GetMapId(), stepX, stepY, stepZ, false, IsReaction(), false, true))
             {
                 if (logSpread)
-                    LogBossSpread(ai, bot, "stepped", -1, -1.0f);
+                    LogBossSpread(ai, bot, "stepped", -1, -1.0f, -1);
                 lastMove.spreadFailures.BeginAttempt(nearest->GetObjectGuid().GetRawValue(),
                     bot->GetMapId(), botPos.GetAngleTo(out), nearestDist, nowMs, bot->movespline->GetId());
                 lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
@@ -683,7 +683,7 @@ bool RaidSpreadAction::Execute(Event& event)
     if (anchorRejected)
         lastMove.lastSpreadStepMs = WorldTimer::getMSTime();
     if (logSpread)
-        LogBossSpread(ai, bot, anchorRejected ? "anchor" : "no_step", -1, -1.0f);
+        LogBossSpread(ai, bot, anchorRejected ? "anchor" : "no_step", -1, -1.0f, -1);
     return false;
 }
 bool DragonTankFaceAwayAction::Execute(Event& event)
