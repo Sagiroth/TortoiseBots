@@ -336,9 +336,14 @@ struct RaidFacts
   guardLeavesAssigned: bool
   auraTactics: bool
   tankPost: bool
+  tanks: std::vector<RaidTankFact>
   offTanksAlive: std::vector<std::string>
   bossOffTanksAlive: std::vector<std::string>
   walkAttackers: std::vector<UnitFact>
+struct RaidTankFact
+  alive: bool
+  charmed: bool
+  targetGuid: std::uint64_t
 struct RestLines
   startHealth: std::uint32_t
   startHealerMana: std::uint32_t
@@ -886,6 +891,7 @@ struct Run
   offTankTurn: std::size_t
   raidBossFight: bool
   raidGuardUnits: std::unordered_map<std::uint64_t, Run::RaidGuardMark>
+  guardAssignedLooseMs: std::unordered_map<std::uint64_t, std::uint32_t>
   healerGuardDps: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
   healerGuardTried: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
   healerGuardClockMs: std::uint64_t

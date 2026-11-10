@@ -1,10 +1,11 @@
 """Wiring pins for AiPlayerbot.DungeonRunGuardLeavesAssignedTank (the raid guard leaves an assigned unit to its tank).
 
 The rule is pure (ai/playerbot/BossTacticsPolicy.h: AssignedTankSlotOf, filled in Add; runtime/DungeonRunPolicy.h:
-RaidFacts::guardLeavesAssigned with the two assigning kinds' keys, read in RaidGuardTick's add pick) and tested in
-tools/test_boss_tactics_policy.cpp and tools/test_dungeon_run_policy.cpp. These pins prove the live code reads the keys
-into the facts the guard tests, that the skip sits in the add-pick loop and nowhere else, that a row only counts while
-the key that reads its kind is on, and that the key is templated and documented.
+RaidFacts::guardLeavesAssigned with the two assigning kinds' keys and the slot's tank state, read in RaidGuardTick's
+add pick) and tested in tools/test_boss_tactics_policy.cpp and tools/test_dungeon_run_policy.cpp. These pins prove the
+live code reads the keys into the facts the guard tests, that the skip sits in the add-pick loop and nowhere else, that
+a row only counts while the key that reads its kind is on and the slot's tank holds the unit or is inside the grace,
+and that the key is templated and documented.
 
 Run: python3 -m unittest tools/test_guard_assigned_tank_wiring.py
 """
@@ -54,34 +55,56 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertIn("bool guardLeavesAssigned = false;", RUN)
         self.assertIn("bool auraTactics = false;", RUN)
         self.assertIn("bool tankPost = false;", RUN)
+        self.assertIn("std::vector<RaidTankFact> tanks;", RUN)
+        self.assertIn(
+            "struct RaidTankFact\n{\n    bool alive = false;\n    bool charmed = false;\n"
+            "    std::uint64_t targetGuid = 0;\n};", RUN)
+        self.assertIn("std::unordered_map<std::uint64_t, std::uint32_t> guardAssignedLooseMs;", RUN)
+        self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
         tick = body(RUN, "inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
         # The skip sits right after the boss/held/linked_death pass, inside the add pick (the boss branch above is
         # untouched: it names PlanBossEntry positively, not negatively).
         self.assertIn(
             "            if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))\n"
-            "                continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose\n"
-            "            // A unit a tank row assigns to a tank slot (until_tank, tank_post) stays with that tank: its window\n"
-            "            // hands it to the next usable tank itself, and its post takes it. Only while the row's own key reads\n"
-            "            // that kind: with AiPlayerbot.DungeonRunAuraTactics (until_tank) or AiPlayerbot.DungeonRunTankPost\n"
-            "            // (tank_post) off the row does nothing, so the unit is a loose add like any other.\n"
+            "                continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose\n", tick)
+        self.assertIn(
             "            if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan)\n"
             "            {\n"
             "                ai::AssignedTankSlot const assigned = r.liveTactics->AssignedTankSlotOf(r.plan->map, u.entry);\n"
             "                if (assigned.slot >= 1 &&\n"
             "                    ((assigned.untilTank && f.raid.auraTactics) || (assigned.tankPost && f.raid.tankPost)))\n"
-            "                    continue;\n"
-            "            }", tick)
+            "                {\n"
+            "                    bool const tankHolds = assigned.slot < f.raid.tanks.size() &&\n"
+            "                        f.raid.tanks[assigned.slot].alive && !f.raid.tanks[assigned.slot].charmed;\n"
+            "                    bool const tankOnIt = tankHolds && f.raid.tanks[assigned.slot].targetGuid == u.guid;\n"
+            "                    auto const had = r.guardAssignedLooseMs.find(u.guid);\n"
+            "                    std::uint32_t const looseMs = had == r.guardAssignedLooseMs.end() ? 0 : had->second;\n"
+            "                    if (tankHolds && (tankOnIt || looseMs < kGuardAssignedGraceMs))\n"
+            "                    {\n", tick)
+        self.assertIn(
+            "                        if (tankOnIt)\n"
+            "                            r.guardAssignedLooseMs.erase(u.guid);\n"
+            "                        else\n"
+            "                            r.guardAssignedLooseMs[u.guid] = looseMs + dt;\n"
+            "                        continue;\n", tick)
         # Only that one read: the boss pick, the healer guard and the party guard keep their rules.
         self.assertEqual(tick.count("AssignedTankSlotOf"), 1)
         self.assertEqual(tick.count("guardLeavesAssigned"), 1)
-        # The skip needs a source whose key is on, never the slot alone.
-        self.assertNotIn("assigned.slot >= 1)\n                    continue;", tick)
+        # The skip needs a live, uncharmed tank on the unit or inside the grace, never the slot alone.
+        self.assertNotIn("if (tankHolds)\n                    {", tick)
+        self.assertNotIn("kGuardAssignedGraceMs =", tick)  # the constant is the policy header's, not a local
 
     def test_the_commander_reads_the_keys_into_the_raid_facts(self):
         self.assertIn(
             "f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;", COMMANDER)
         self.assertIn("f.raid.auraTactics = sPlayerbotAIConfig.dungeonRunAuraTactics;", COMMANDER)
         self.assertIn("f.raid.tankPost = sPlayerbotAIConfig.dungeonRunTankPost;", COMMANDER)
+        # The slot order the rows' priority names, with the state the grace reads.
+        self.assertIn("for (Player* const tank : ai::GetRaidTankRoles(leadAi).tanks)", COMMANDER)
+        self.assertIn("tankFact.alive = tank->IsAlive();", COMMANDER)
+        self.assertIn("tankFact.charmed = tank->IsCharmed();", COMMANDER)
+        self.assertIn("tankFact.targetGuid = tank->GetSelectionGuid().GetRawValue();", COMMANDER)
+        self.assertIn("f.raid.tanks.push_back(tankFact);", COMMANDER)
 
     def test_config_key_is_read_templated_and_documented(self):
         self.assertIn(

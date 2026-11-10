@@ -738,6 +738,11 @@ constexpr float kRaidBossGuardYd = 100.0f;
 // ... and a mob that had kGuardOrdersPerUnit of its orders gets the next ones this long after its last order: a whelp
 // an off-tank lost again is never left on the healers for the rest of the fight.
 constexpr std::uint32_t kRaidGuardRearmMs = 20000;
+// A unit a tank row assigns to a tank slot is left to that tank while the tank targets it; a tank that is not on it
+// yet gets this long to pick it up (the until_tank window's own cast and walk, a tank_post waiting for the unit to
+// land). Past it the unit is the guard's like any loose add: a tank that lost it or never came must not leave a
+// healer unprotected.
+constexpr std::uint32_t kGuardAssignedGraceMs = 8000;
 // A raid boss fight's healer guard (AiPlayerbot.DungeonRunRaidHealerGuard, RaidHealerGuard): with the main tank holding
 // the boss an add on a healer goes to that many ranged dps of the raid at most, nearest first, one order a tick; the
 // off-tanks take such an add only when none is free for it.
@@ -1449,8 +1454,17 @@ struct HostileSpot
     // timeout such a hostile still pauses the step, whatever its dz.
     bool engaged = false;
 };
-// The raid's shape for this tick (a raid binding with AiPlayerbot.DungeonRunRaid only).
+// One tank of the raid order (GetRaidTankRoles), as the assigning row's `priority` slot counts it, and the state the
+// guard's assignment grace reads: a dead or charmed tank holds nothing, and its current target says whether it picked
+// the assigned unit up.
+struct RaidTankFact
+{
+    bool alive = false;
+    bool charmed = false;
+    std::uint64_t targetGuid = 0;
+};
 
+// The raid's shape for this tick (a raid binding with AiPlayerbot.DungeonRunRaid only).
 struct RaidFacts
 {
     bool on = false;                                                    // a raid binding with AiPlayerbot.DungeonRunRaid
@@ -1472,6 +1486,9 @@ struct RaidFacts
     // nothing and guardLeavesAssigned must not skip the unit (a healer would go unprotected).
     bool auraTactics = false;
     bool tankPost = false;
+    // With guardLeavesAssigned: the raid's tanks in the slot order an assigning row's `priority` names (the
+    // GetRaidTankRoles order), with the state the guard's grace reads. Empty when the key is off.
+    std::vector<RaidTankFact> tanks;
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
@@ -3150,6 +3167,10 @@ struct Run
         std::uint32_t at = 0;
     };
     std::unordered_map<std::uint64_t, RaidGuardMark> raidGuardUnits;
+    // AiPlayerbot.DungeonRunGuardLeavesAssignedTank: each assigned unit's loose time (ms) while its tank is not on it,
+    // the clock kGuardAssignedGraceMs bounds. Reset when the unit attacks a tank, its tank takes it, or it leaves the
+    // fight.
+    std::unordered_map<std::uint64_t, std::uint32_t> guardAssignedLooseMs;
     // A raid boss fight's healer guard (RaidHealerGuard): a ranged dps sent at an add on a healer, or a bot whose
     // order for it was refused, and when (`atMs`, on healerGuardClockMs).
     struct HealerGuardMark
@@ -3902,6 +3923,7 @@ inline void ResetStep(Run& r)
     r.linkedStateNote.clear();
     r.linkedEvents.clear();
     r.raidGuardUnits.clear();
+    r.guardAssignedLooseMs.clear();
     r.healerGuardDps.clear();
     r.healerGuardTried.clear();
     r.healerGuardClockMs = 0;
@@ -18236,14 +18258,32 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
             // A unit a tank row assigns to a tank slot (until_tank, tank_post) stays with that tank: its window
             // hands it to the next usable tank itself, and its post takes it. Only while the row's own key reads
-            // that kind: with AiPlayerbot.DungeonRunAuraTactics (until_tank) or AiPlayerbot.DungeonRunTankPost
-            // (tank_post) off the row does nothing, so the unit is a loose add like any other.
+            // that kind (AiPlayerbot.DungeonRunAuraTactics for until_tank, AiPlayerbot.DungeonRunTankPost for
+            // tank_post), the slot's tank can hold it, and that tank is on it or still within kGuardAssignedGraceMs
+            // of getting there: a dead or charmed tank, or one that let the unit run loose past the grace, leaves it
+            // to the guard.
             if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan)
             {
                 ai::AssignedTankSlot const assigned = r.liveTactics->AssignedTankSlotOf(r.plan->map, u.entry);
                 if (assigned.slot >= 1 &&
                     ((assigned.untilTank && f.raid.auraTactics) || (assigned.tankPost && f.raid.tankPost)))
-                    continue;
+                {
+                    bool const tankHolds = assigned.slot < f.raid.tanks.size() &&
+                        f.raid.tanks[assigned.slot].alive && !f.raid.tanks[assigned.slot].charmed;
+                    bool const tankOnIt = tankHolds && f.raid.tanks[assigned.slot].targetGuid == u.guid;
+                    auto const had = r.guardAssignedLooseMs.find(u.guid);
+                    std::uint32_t const looseMs = had == r.guardAssignedLooseMs.end() ? 0 : had->second;
+                    if (tankHolds && (tankOnIt || looseMs < kGuardAssignedGraceMs))
+                    {
+                        // The loose clock runs while the unit is on a non-tank (a unit on a tank never gets
+                        // here): the tank taking it up starts it over.
+                        if (tankOnIt)
+                            r.guardAssignedLooseMs.erase(u.guid);
+                        else
+                            r.guardAssignedLooseMs[u.guid] = looseMs + dt;
+                        continue;
+                    }
+                }
             }
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
@@ -18256,6 +18296,13 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
             if (!pick || u.distLead < pick->distLead)
                 pick = &u;
         }
+    // The assignment grace's clocks: a unit back on a tank, or one out of the fight, is not loose any more.
+    for (auto it = r.guardAssignedLooseMs.begin(); it != r.guardAssignedLooseMs.end();)
+    {
+        bool const loose = std::any_of(f.partyAttackers.begin(), f.partyAttackers.end(),
+            [&it](const UnitFact& u) { return u.guid == it->first && !u.victimTank; });
+        it = loose ? std::next(it) : r.guardAssignedLooseMs.erase(it);
+    }
     if (!pick || tanks.empty())
     {
         r.guardMs = 0;
@@ -22329,6 +22376,7 @@ inline std::string TickBody(Run& r, const Facts& f, std::uint32_t dt, const Rest
         r.linkedStateNote.clear();
         r.linkedEvents.clear();
         r.raidGuardUnits.clear();
+        r.guardAssignedLooseMs.clear();
         r.healerGuardDps.clear();
         r.healerGuardTried.clear();
         r.healerGuardClockMs = 0;
