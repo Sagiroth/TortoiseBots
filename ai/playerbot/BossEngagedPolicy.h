@@ -55,7 +55,9 @@ namespace ai
 
     // The raid's engaged bosses, partitioned by map instance: a note, a read and the sweep of expired entries touch
     // only the caller's own bucket, so one instance's fight never costs another instance's bots a walk over its rows.
-    // The caller holds its own lock (BossTacticsActions.cpp) and passes the clock it read under that lock.
+    // The one full walk is SweepAbandoned (a map instance with no bots left can never be touched by its own holders
+    // again), which the caller throttles. The caller holds its own lock (BossTacticsActions.cpp) and passes the clock
+    // it read under that lock.
     struct EngagedBossRegistry
     {
         // An entry no bot refreshed for three freshness windows belongs to a fight that is over.
@@ -135,6 +137,33 @@ namespace ai
                     out.push_back(row.second);
             }
             return out;
+        }
+
+        // The registry's only full walk: drops every bucket whose map instance no longer exists (`instanceAlive` is
+        // the caller's map-manager lookup) and every entry older than the expiry, so a bucket nobody holds any more
+        // cannot outlive its fight; a bucket with one fresh row stays, without them. The caller throttles this.
+        template <typename InstanceAlive>
+        void SweepAbandoned(std::uint32_t nowMs, InstanceAlive instanceAlive)
+        {
+            for (std::map<InstanceKey, InstanceBucket>::iterator instance = buckets.begin(); instance != buckets.end();)
+            {
+                const bool gone = !instanceAlive(instance->first.first, instance->first.second);
+                InstanceBucket& bucket = instance->second;
+                for (std::map<std::uint32_t, EngagedBossNote>::iterator row = bucket.begin(); row != bucket.end();)
+                {
+                    if (gone || static_cast<std::uint32_t>(nowMs - row->second.lastSeenMs) > kExpireMs)
+                    {
+                        row = bucket.erase(row);
+                        --size;
+                    }
+                    else
+                        ++row;
+                }
+                if (bucket.empty())
+                    instance = buckets.erase(instance);
+                else
+                    ++instance;
+            }
         }
     };
 }

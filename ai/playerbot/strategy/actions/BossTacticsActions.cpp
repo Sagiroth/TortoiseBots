@@ -936,6 +936,10 @@ namespace
 std::mutex g_engagedBossMutex;
 EngagedBossRegistry g_engagedBosses;
 std::atomic<std::uint32_t> g_engagedBossCount{0};
+// The registry's one full walk (a bucket whose instance is gone is never touched by its own bots again) runs at most
+// once a minute, from the note path that already holds the lock; 0 = never swept.
+constexpr std::uint32_t kEngagedBossSweepMs = 60000;
+std::uint32_t g_engagedBossSweepMs = 0;  // guarded by g_engagedBossMutex
 
 // A boss a bot sees in its attacker list: recorded, at most once per half second per boss. Nothing is read or written
 // with the key off, and only a unit in combat whose entry has rows is a boss of the raid's fights.
@@ -950,7 +954,17 @@ void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)
     const std::uint64_t guid = unit->GetObjectGuid().GetRawValue();
     std::lock_guard<std::mutex> lock(g_engagedBossMutex);
     // The clock is read under the lock: an entry is never judged stale (or fresh) against a tick taken before the wait.
-    g_engagedBosses.Note(mapId, instanceId, entry, guid, WorldTimer::getMSTime());
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    g_engagedBosses.Note(mapId, instanceId, entry, guid, nowMs);
+    // A bucket nothing holds any more (the last bot left, the instance was destroyed) only this walk can find.
+    if (g_engagedBossSweepMs == 0 || nowMs - g_engagedBossSweepMs >= kEngagedBossSweepMs)
+    {
+        g_engagedBosses.SweepAbandoned(nowMs, [](std::uint32_t sweepMapId, std::uint32_t sweepInstanceId)
+        {
+            return sMapMgr.FindMap(sweepMapId, sweepInstanceId) != nullptr;
+        });
+        g_engagedBossSweepMs = nowMs;
+    }
     g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
 }
 

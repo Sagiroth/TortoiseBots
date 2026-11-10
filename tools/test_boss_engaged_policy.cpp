@@ -134,6 +134,40 @@ int main()
         CHECK(registry.size == 0 && registry.buckets.size() == 0);
     }
 
+    // EngagedBossRegistry_AbandonedBucketSwept: the global sweep drops a bucket whose map instance is gone and a live
+    // instance's bucket whose entries all expired, with no caller from either instance. A live bucket keeps the fresh
+    // rows and loses its stale ones, and the count returns to 0 when every bucket is gone.
+    {
+        const std::vector<std::uint32_t> none;
+        EngagedBossRegistry registry;
+        registry.Note(249, 1, 10184, 0x1000, 0);                // instance destroyed
+        registry.Note(249, 2, 10184, 0x2000, 0);                // live instance, every row expired
+        registry.Note(249, 3, 15000, 0x3001, 0);                // live instance, row stale by the sweep
+        registry.Note(249, 3, 10184, 0x3000, 25000);            // ... and a fresh one
+        registry.Note(249, 4, 10184, 0x4000, 25000);            // live instance, fresh row
+        CHECK(registry.size == 5 && registry.buckets.size() == 4);
+
+        const auto alive = [](std::uint32_t mapId, std::uint32_t instanceId)
+        {
+            return mapId == 249 && instanceId >= 2 && instanceId <= 4;
+        };
+        registry.SweepAbandoned(30001, alive);
+
+        // Instance 1 (gone) and instance 2 (all rows expired) are gone; instances 3 and 4 stay, and only each one's
+        // fresh row is left.
+        CHECK(registry.size == 2 && registry.buckets.size() == 2);
+        CHECK(registry.Read(249, 1, 30001, none).empty());
+        CHECK(registry.Read(249, 2, 30001, none).empty());
+        std::vector<EngagedBossNote> one = registry.Read(249, 3, 30001, none);
+        CHECK(one.size() == 1 && one[0].guid == 0x3000 && one[0].lastSeenMs == 25000);
+        std::vector<EngagedBossNote> two = registry.Read(249, 4, 30001, none);
+        CHECK(two.size() == 1 && two[0].guid == 0x4000 && two[0].lastSeenMs == 25000);
+
+        // No instance holds a bot any more: the sweep empties the registry and the count with it.
+        registry.SweepAbandoned(35000, [](std::uint32_t, std::uint32_t) { return false; });
+        CHECK(registry.size == 0 && registry.buckets.size() == 0);
+    }
+
     std::cout << "All engaged boss policy tests passed.\n";
     return 0;
 }

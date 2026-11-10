@@ -7,6 +7,8 @@ tools/test_boss_engaged_policy.cpp). These pins prove the live code calls them:
    registry's bosses to the fight exactly as the walk-out kept boss;
  - the stand lookup reads the registry too, after the attacker list;
  - only a unit in combat whose entry has boss-tactic or boss-stand rows is noted;
+ - a bucket whose map instance is gone (or whose rows all expired) is swept at most
+   once a minute from the note path, under the registry lock;
  - the key is read, documented and off by default.
 
 Run: python3 -m unittest tools/test_engaged_boss_wiring.py
@@ -58,7 +60,7 @@ class EngagedBossWiring(unittest.TestCase):
         self.assertIn("if (!unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())", fn)
         self.assertIn("if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))", fn)
         # The note and its expiry rules live in the policy's instance bucket; the clock is read under the registry lock.
-        self.assertIn("g_engagedBosses.Note(mapId, instanceId, entry, guid, WorldTimer::getMSTime());", fn)
+        self.assertIn("g_engagedBosses.Note(mapId, instanceId, entry, guid, nowMs);", fn)
         self.assertLess(fn.index("std::lock_guard"), fn.index("WorldTimer::getMSTime()"))
         self.assertIn("EngagedBossNoteDue(have, nowMs, have ? note->second.lastSeenMs : 0)", POLICY)
         self.assertIn("static_cast<std::uint32_t>(nowMs - old->second.lastSeenMs) > kExpireMs", POLICY)
@@ -74,6 +76,19 @@ class EngagedBossWiring(unittest.TestCase):
                       "view.evading = creature->IsInEvadeMode();", "view.botInCombat = bot->IsInCombat();",
                       "view.botToBossYd = bot->GetDistance(creature);"):
             self.assertIn(field, registered)
+
+    def test_abandoned_buckets_are_swept_from_the_note_path(self):
+        # A bucket no bot of its instance touches any more is only found by the registry's one full walk: it runs from
+        # the note path, under the same lock, at most once a minute, gated on the map instance still existing.
+        fn = body(ACTIONS, "void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)")
+        self.assertIn("g_engagedBosses.SweepAbandoned(nowMs,", fn)
+        self.assertIn("return sMapMgr.FindMap(sweepMapId, sweepInstanceId) != nullptr;", fn)
+        self.assertIn("kEngagedBossSweepMs = 60000", ACTIONS)
+        self.assertIn("nowMs - g_engagedBossSweepMs >= kEngagedBossSweepMs", fn)
+        self.assertLess(fn.index("std::lock_guard"), fn.index("WorldTimer::getMSTime()"))
+        self.assertLess(fn.index("std::lock_guard"), fn.index("SweepAbandoned"))
+        self.assertIn("g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);", fn.split("SweepAbandoned")[1])
+        self.assertIn("void SweepAbandoned(std::uint32_t nowMs, InstanceAlive instanceAlive)", POLICY)
 
     def test_the_key_is_documented_and_off(self):
         self.assertIn('bossTacticsKeepsEngagedBoss = config.GetBoolDefault("AiPlayerbot.BossTacticsKeepsEngagedBoss", false);',
