@@ -1522,6 +1522,23 @@ Whether a Delusions carrier whose attackers list never showed a Shade finds it b
 
 </details>
 
+### `AiPlayerbot.DungeonRunTankPostOwnsSubject`
+Whether a live `tank_post` owns the unit it waits for: while another tank's post is live on it, no tank taunts it, so the post's own slot takes it. It is recommended on for a fight whose second boss lands later.
+**Default:** `0` · **Values:** `0` off (every tank may taunt the subject as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`; does not need `AiPlayerbot.DungeonRunTauntGate`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The reservation:** a post record read within the last 3 s, in the bot's instance, on the target's creature entry, by a tank that is alive and not creature-charmed, reserves that unit to the post's tank. Any other tank's taunt is refused: every single-target taunt through the taunt gate (`BossTacticsTauntGate` with `reason=post_subject`), and the two area taunts, the warrior's Challenging Shout and the druid's Challenging Roar, whose `isUseful` reads the same gate on the bot's current target. The refusal is throttled like the gate's other words, once per bot per 5 s. The post's own tank is never refused.
+
+**Why:** walk 2c a-1 lost the second boss to the healers: Cindarion landed on a healer, slot 3's Challenging Shout at +1 s, slot 0's Taunt at +13 s and slot 2's Taunt at +58 s took him first, and slot 1's `taunt_after_cast` row stays quiet while he stands on any tank, so the post tank only got him at +21 s, after the mages passed every tank.
+
+**The end:** the reservation ends by itself when the post ends (the unit dies, evades or leaves the band), when its tank dies or is charmed, or when the record goes stale (no read for 3 s). A post tank that stands still on its spot keeps the subject reserved for the post's whole window, so the `taunt_after_cast` row of its slot is what takes the unit.
+
+**The end word:** a post that ends because the raid tank order renumbered after a tank death (its row is still in the fight, for another slot index) now logs `reason=slot`; `reason=band` is left for the band really closing.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunShadeHealerCover`
 Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)

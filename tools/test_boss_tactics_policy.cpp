@@ -352,6 +352,70 @@ static void TestTauntGateLogThrottlePerWord()
     CHECK(TauntGateLogDueFor(other, TauntGate::TauntImmune, 7003, gap));       // another bot has its own array
 }
 
+// The new gate word: a refusal that comes from a live tank_post, not from the aura/immunity rules.
+static void TestTauntGateWord_PostSubject()
+{
+    CHECK(std::strcmp(TauntGateWord(TauntGate::PostSubject), "post_subject") == 0);
+    CHECK(kTauntGateWords == 5);
+    TauntGateLogTimes last{};  // the fifth word has its own slot in the per-word throttle
+    constexpr std::uint32_t gap = 5000;
+    CHECK(TauntGateLogDueFor(last, TauntGate::PostSubject, 1000, gap));
+    CHECK(!TauntGateLogDueFor(last, TauntGate::PostSubject, 6000 - 1, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::PostSubject, 6000, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::HoldingBoss, 6001, gap));
+}
+
+// Walk 2c a-1: Cindarion landed on a healer and slots 3, 0 and 2 taunted him before slot 1 (the post's tank) arrived,
+// because he was on non-tanks and the post's row stays quiet while any tank holds him. A live post reserves its unit.
+static void TestTankPostSubjectReserved_OtherLivePost()
+{
+    // TankPostSubjectReserved(keyOn, otherPostLive, otherTankCanAct, botOwnsPost)
+    CHECK(TankPostSubjectReserved(true, true, true, false));  // another tank's live post: this tank does not taunt
+}
+
+static void TestTankPostSubjectReserved_OwnerTaunts()
+{
+    CHECK(!TankPostSubjectReserved(true, true, true, true));  // the post's own tank takes the unit
+}
+
+static void TestTankPostSubjectReserved_DeadPostTank()
+{
+    CHECK(!TankPostSubjectReserved(true, true, false, false)); // the post's tank is dead or charmed: no reservation
+}
+
+static void TestTankPostSubjectReserved_KeyOff()
+{
+    CHECK(!TankPostSubjectReserved(false, true, true, false)); // key off: today's taunts
+    CHECK(!TankPostSubjectReserved(true, false, true, false)); // no live post on the unit
+}
+
+// The end word: a post whose row moved to another slot index (a tank died and GetRaidTankRoles renumbered) says
+// "slot", not "band". A live post keeps the step's own order; slotMoved is never a step end.
+static void TestTankPostEndWord_SlotMoved()
+{
+    CHECK(std::strcmp(TankPostEndWord(false, true, true, false, true, true, false), "slot") == 0);
+    CHECK(std::strcmp(TankPostEndWord(false, false, true, false, true, true, false), "band") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, false, true, true, true, false), "tank") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, true, true, true, true, false), "window") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, true, false, false, true, false), "gone") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, true, false, true, false, false), "dead") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, true, false, true, true, true), "evade") == 0);
+    CHECK(std::strcmp(TankPostEndWord(true, false, true, false, true, true, false), "band") == 0);
+    // The step ignores slotMoved: a live post with a renumbered row has no end of its own.
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.tankCanAct = true;
+    in.subjectFound = true;
+    in.subjectAlive = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.arrivalRadiusYd = 15.0f;
+    in.botToSpotYd = 1.0f;
+    in.slotMoved = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
 // interval is 1 s under the hold.
 static void TestCarrierHold()
@@ -1135,7 +1199,13 @@ int main()
     TestCarrierScanWord();
     TestCarrierScanTakesPrecedence();
     TestTauntGate();
+    TestTauntGateWord_PostSubject();
     TestTauntGateLogThrottlePerWord();
+    TestTankPostSubjectReserved_OtherLivePost();
+    TestTankPostSubjectReserved_OwnerTaunts();
+    TestTankPostSubjectReserved_DeadPostTank();
+    TestTankPostSubjectReserved_KeyOff();
+    TestTankPostEndWord_SlotMoved();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

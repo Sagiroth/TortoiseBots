@@ -1121,6 +1121,15 @@ AiPlayerbot.DungeonRunTankPostHoldSpot = 0
 # 1 - on (recommended on for a fight whose second boss lands later)
 AiPlayerbot.DungeonRunTankPostLeash = 0
 
+# A live tank_post owns the unit it waits for (needs DungeonRunTankPost): while another tank's post is live on it, a
+# tank does not taunt it, and the post's own slot takes it. The taunt gate and both area taunts (Challenging Shout,
+# Challenging Roar) refuse the subject of a post whose tank is alive and whose record was read in the last 3 s, so the
+# tanks stop competing for it (walk 2c a-1: slots 3, 0 and 2 taunted Cindarion before slot 1 arrived). The refusal
+# does not need AiPlayerbot.DungeonRunTauntGate. Off, every tank may taunt the subject as before.
+# 0 - off: every tank may taunt the post's subject (Default)
+# 1 - on (recommended on for a fight whose second boss lands later)
+AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 
@@ -1425,8 +1434,9 @@ AiPlayerbot.DungeonRunFactJudgeCharmedLead = 0
 # carrier can damage) or a creature the core marks immune to taunts (Jin'do himself). A Delusions carrier that is the
 # boss's current victim (the main tank holding Jin'do) does not taunt a Shade either (reason holding_boss); a cursed
 # off-tank may. The warrior taunts are gated
-# (Taunt, Mocking Blow, the off-target taunt); Challenging Shout is an area taunt with no single target and is not
-# covered. Each refusal logs BossTacticsTauntGate once per bot and reason per 5 s. `.reload config` reads it again with the other
+# (Taunt, Mocking Blow, the off-target taunt); the area taunts, Challenging Shout and Challenging Roar, are not cast at
+# a current target this gate refuses, and a live tank_post's subject is refused under TankPostOwnsSubject whatever this
+# key says. Each refusal logs BossTacticsTauntGate once per bot and reason per 5 s. `.reload config` reads it again with the other
 # AiPlayerbot.DungeonRun* keys.
 # 0 - off: every taunt goes out as before (Default)
 # 1 - on (recommended on)

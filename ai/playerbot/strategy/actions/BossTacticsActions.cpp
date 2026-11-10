@@ -6780,21 +6780,36 @@ void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fig
 
 // The taunt gate (AiPlayerbot.DungeonRunTauntGate): a tank never taunts a needs_aura subject (the Shade of Jin'do,
 // which only a carrier can damage and which the core answers with a copy of the boss's threat list) or a creature the
-// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). The gate sits
-// in the taunt actions, not in "attacker of non-tank target": that value also picks the warrior gap closer's Charge,
-// which is no taunt.
-//   info1 = "reason=<needs_aura|taunt_immune|holding_boss>"
+// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). A live
+// tank_post on the subject refuses every other tank first, whatever the gate key says (AiPlayerbot.
+// DungeonRunTankPostOwnsSubject). The gate sits in the taunt actions, not in "attacker of non-tank target": that value
+// also picks the warrior gap closer's Charge, which is no taunt.
+//   info1 = "reason=<needs_aura|taunt_immune|holding_boss|post_subject>"
 //   info2 = "target=<entry>:<guid low>,spell=<spell>"
 constexpr uint32 kTauntGateLogGapMs = 5000;
 std::mutex g_tauntGateLogMutex;
 std::unordered_map<uint64, TauntGateLogTimes> g_tauntGateLog;
 
-// One row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
+// One refusal row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
 static bool TauntGateLogDue(Player* bot, TauntGate gate)
 {
     const uint32 nowMs = WorldTimer::getMSTime();
     std::lock_guard<std::mutex> lock(g_tauntGateLogMutex);
     return TauntGateLogDueFor(g_tauntGateLog[bot->GetObjectGuid().GetRawValue()], gate, nowMs, kTauntGateLogGapMs);
+}
+
+//   info1 = "reason=<gate word>"
+//   info2 = "target=<entry>:<guid low>,spell=<spell>"
+static void LogTauntGateRefusal(PlayerbotAI* ai, Player* bot, Unit* target, TauntGate gate, const char* spell)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !TauntGateLogDue(bot, gate))
+        return;
+    char info1[32];
+    snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
+    char info2[64];
+    snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
+             spell ? spell : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
 }
 
 // The bot is the current victim of a boss of the fight: a creature with tactic rows (or a world boss) that is not the
@@ -6816,6 +6831,12 @@ static bool BotHoldsBoss(PlayerbotAI* ai, Player* bot, Unit* exclude)
 
 bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
 {
+    // A live post on the subject keeps every other tank off it, whatever the taunt gate key says.
+    if (TankPostReservesSubject(ai, bot, target))
+    {
+        LogTauntGateRefusal(ai, bot, target, TauntGate::PostSubject, spell);
+        return true;
+    }
     if (!sPlayerbotAIConfig.dungeonRunTauntGate)
         return false;
     if (!ai || !bot || !target)
@@ -6828,15 +6849,7 @@ bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const ch
         TargetTauntImmune(target), holdsBoss);
     if (gate == TauntGate::Allow)
         return false;
-    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot, gate))
-    {
-        char info1[32];
-        snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
-        char info2[64];
-        snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
-                 spell ? spell : "none");
-        sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
-    }
+    LogTauntGateRefusal(ai, bot, target, gate, spell);
     return true;
 }
 
@@ -11946,21 +11959,45 @@ void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision
 // The end word of a post that the step closed: the first closed input in the step's own order.
 const char* TankPostEndReason(const TankPostIn& in)
 {
-    if (!in.live)
-        return "band";
-    if (!in.tankCanAct)
-        return "tank";
-    if (in.windowExpired)
-        return "window";
-    if (!in.subjectFound)
-        return "gone";
-    if (!in.subjectAlive)
-        return "dead";
-    if (in.subjectEvading)
-        return "evade";
-    return "band";
+    return TankPostEndWord(in.live, in.slotMoved, in.tankCanAct, in.windowExpired, in.subjectFound,
+        in.subjectAlive, in.subjectEvading);
 }
 }  // namespace
+
+// AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
+// a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again.
+bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)
+        return false;
+    if (!ai || !bot || !target || !target->IsCreature() || !PlayerbotAI::IsTank(bot))
+        return false;
+    std::uint64_t const self = bot->GetObjectGuid().GetRawValue();
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    std::vector<std::uint64_t> others;
+    {
+        // Only the keys leave the lock: resolving a player does not happen under it.
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.map != bot->GetMapId() ||
+                entry.second.targetEntry != target->GetEntry() ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            others.push_back(entry.first);
+        }
+    }
+    bool canAct = false;
+    for (std::uint64_t const key : others)
+    {
+        Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(key));
+        if (!tank || tank->GetInstanceId() != bot->GetInstanceId() || !TankPostTankCanAct(tank))
+            continue;
+        canAct = true;
+        break;
+    }
+    return TankPostSubjectReserved(true, !others.empty(), canAct, false);
+}
 
 BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
 {
@@ -12061,6 +12098,22 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         }
     }
 
+    // A renumbering keeps the record's row in the fight for another tank index: a tank died, the raid tank order moved
+    // this bot to another slot, and its post ended by the renumbering, not because the band closed.
+    bool slotMoved = false;
+    if (haveRecord && !row)
+    {
+        for (const BossTacticRow* candidate : fight.rows)
+        {
+            if (candidate->kind == BossTacticKind::TankPost && candidate->bossEntry == record.bossEntry &&
+                candidate->targetEntry == record.targetEntry && candidate->priority != roles.botIndex)
+            {
+                slotMoved = true;
+                break;
+            }
+        }
+    }
+
     // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over.
     if (haveRecord && (!row || record.map != mapId || !TankPostSameRow(record, *row) ||
             record.bossGuid != boss->GetObjectGuid().GetRawValue()))
@@ -12080,7 +12133,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         closed.spotX = record.spotX;
         closed.spotY = record.spotY;
         closed.spotZ = record.spotZ;
-        LogTankPost(ai, closed, "end", row ? "slot" : "band");
+        LogTankPost(ai, closed, "end", (row || slotMoved) ? "slot" : "band");
         return out;
     }
     if (!row || !boss)
@@ -12118,6 +12171,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();
     in.seated = TankPostSeated(stand.valid, stand.stay);
     in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
+    in.slotMoved = slotMoved;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
         in.holdingOtherHostile = false;

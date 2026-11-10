@@ -26,6 +26,8 @@ TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 DOCS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 BOSS_DOCS = (ROOT / "docs/play/boss-tactics.md").read_text()
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text()
+WARRIOR = (ROOT / "ai/playerbot/strategy/warrior/WarriorActions.h").read_text()
+DRUID = (ROOT / "ai/playerbot/strategy/druid/DruidActions.h").read_text()
 
 
 def body(text, start, end="\n}\n"):
@@ -193,6 +195,71 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("`hold_spot`", BOSS_DOCS)
         self.assertIn("DungeonRunTankPostHoldSpot", BOSS_DOCS)
         self.assertIn("DungeonRunTankPostHoldSpot", CHANGELOG)
+
+    def test_a_live_post_reserves_its_subject(self):
+        # The rule is pure (TankPostSubjectReserved, TankPostEndWord) and tested in the policy test; the glue reads the
+        # shared record. A record read in the last 3 s, on this map and the target's entry, by a tank in the bot's
+        # instance that can act, keeps every other tank off the unit.
+        reserve = body(ACTIONS, "bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject", reserve)
+        self.assertIn("!target->IsCreature()", reserve)
+        self.assertIn("PlayerbotAI::IsTank(bot)", reserve)
+        self.assertIn("entry.second.map != bot->GetMapId()", reserve)
+        self.assertIn("entry.second.targetEntry != target->GetEntry()", reserve)
+        self.assertIn("nowMs - entry.second.lastReadMs >= kTankPostLiveMs", reserve)
+        self.assertIn("entry.first == self", reserve)
+        # Only the keys leave the lock; the player lookup and the instance compare happen after it.
+        lock = reserve.index("std::lock_guard<std::mutex> lock(g_tankPostMutex);")
+        self.assertLess(reserve.index("    }\n    bool canAct = false;"), reserve.index("sObjectMgr.GetPlayer("))
+        self.assertLess(lock, reserve.index("sObjectMgr.GetPlayer("))
+        self.assertIn("tank->GetInstanceId() != bot->GetInstanceId()", reserve)
+        self.assertIn("TankPostTankCanAct(tank)", reserve)
+        self.assertIn("TankPostSubjectReserved(true, !others.empty(), canAct, false)", reserve)
+        # The gate refuses before it reads its own key: the reservation does not need DungeonRunTauntGate.
+        gate = body(ACTIONS, "bool ai::TauntRefusedByGate(")
+        self.assertLess(gate.index("TankPostReservesSubject(ai, bot, target)"),
+                        gate.index("sPlayerbotAIConfig.dungeonRunTauntGate"))
+        self.assertIn("LogTauntGateRefusal(ai, bot, target, TauntGate::PostSubject, spell);", gate)
+        gate_log = body(ACTIONS, "static void LogTauntGateRefusal(")
+        self.assertIn('"reason=%s", TauntGateWord(gate)', gate_log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);', gate_log)
+
+    def test_area_taunts_read_the_gate(self):
+        # The two area taunts are no longer a documented limit: each reads the gate on its current target, so a live
+        # post's subject (and a refused single target) keeps it quiet.
+        for text, cls, spell in (
+                (WARRIOR, "class CastChallengingShoutAction", '"challenging shout"'),
+                (DRUID, "class CastChallengingRoarAction", '"challenging roar"')):
+            taunt = body(text, cls, "};")
+            self.assertIn("CastMeleeSpellAction(ai, " + spell + ")", taunt)
+            self.assertIn("virtual bool isUseful() override", taunt)
+            self.assertIn("CastMeleeSpellAction::isUseful()", taunt)
+            self.assertIn(f"!(GetTarget() && TauntRefusedByGate(ai, bot, GetTarget(), {spell}))", taunt)
+
+    def test_slot_end_word(self):
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        # A renumbering: no row for this bot's index, but its record's row stands at another slot.
+        self.assertIn("candidate->priority != roles.botIndex", find)
+        self.assertIn("candidate->bossEntry == record.bossEntry", find)
+        self.assertIn("candidate->targetEntry == record.targetEntry", find)
+        self.assertIn('(row || slotMoved) ? "slot" : "band"', find)
+        self.assertIn("in.slotMoved = slotMoved;", find)
+        end = body(ACTIONS, "const char* TankPostEndReason(")
+        self.assertIn("TankPostEndWord(in.live, in.slotMoved, in.tankCanAct, in.windowExpired, in.subjectFound,", end)
+
+    def test_owns_subject_key_is_read_templated_and_documented(self):
+        self.assertIn('dungeonRunTankPostOwnsSubject =\n        config.GetBoolDefault('
+                      '"AiPlayerbot.DungeonRunTankPostOwnsSubject", false);', CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostOwnsSubject = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostOwnsSubject = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostOwnsSubject", DOCS)
+        self.assertIn("recommended on",
+                      DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostOwnsSubject`"):][:400])
+        self.assertIn("DungeonRunTankPostOwnsSubject", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostOwnsSubject", CHANGELOG)
+        # The gate word ships with the key it comes from.
+        self.assertIn('case TauntGate::PostSubject: return "post_subject";', POLICY)
+        self.assertIn("constexpr std::size_t kTauntGateWords = 5;", POLICY)
 
 
 if __name__ == "__main__":

@@ -133,17 +133,22 @@ class JindoR1Wiring(unittest.TestCase):
         # The gate sits in the taunt actions, not in "attacker of non-tank target": that value also feeds the warrior
         # gap closer's Charge (WarriorGapCloser.cpp), which is no taunt.
         gate = member(ACTIONS, "bool ai::TauntRefusedByGate(", "\n}\n")
-        # The key is read first: with it off the gate does no lookup at all.
-        self.assertTrue(gate.split("{", 1)[1].lstrip().startswith(
-            "if (!sPlayerbotAIConfig.dungeonRunTauntGate)\n        return false;"))
+        # A live tank_post's subject is refused first, whatever the gate key says (DungeonRunTankPostOwnsSubject).
+        self.assertLess(gate.index("if (TankPostReservesSubject(ai, bot, target))"),
+                        gate.index("if (!sPlayerbotAIConfig.dungeonRunTauntGate)"))
+        self.assertIn("LogTauntGateRefusal(ai, bot, target, TauntGate::PostSubject, spell);", gate)
+        # The gate key is read next: with it off the gate does no lookup at all.
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunTauntGate)\n        return false;", gate)
         self.assertIn("TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate,", gate)
         self.assertIn("GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());", gate)
         # The gate is aura-aware like the value: a bot that carries the required aura may taunt the subject.
         self.assertIn("bool const botHasAura = requiredAura != 0 && bot->HasAura(requiredAura);", gate)
         self.assertIn("TargetTauntImmune(target), holdsBoss);", gate)
-        self.assertIn('snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));', gate)
-        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);', gate)
-        self.assertIn('snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s"', gate)
+        self.assertIn("LogTauntGateRefusal(ai, bot, target, gate, spell);", gate)
+        log = member(ACTIONS, "static void LogTauntGateRefusal(", "\n}\n")
+        self.assertIn('snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));', log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);', log)
+        self.assertIn('snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s"', log)
         self.assertIn("constexpr uint32 kTauntGateLogGapMs = 5000;", ACTIONS)
 
     def test_every_single_target_taunt_is_gated(self):
@@ -176,6 +181,15 @@ class JindoR1Wiring(unittest.TestCase):
         # but each re-walks the "loose adds near" count at cast time, uncached (a stale queued shout must not fire).
         self.assertIn('CastChallengingShoutAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "challenging shout")', WARRIOR)
         self.assertIn('AoeTauntStillNeeded(ai, bot)', member(WARRIOR, "class CastChallengingShoutAction", "};"))
+        # The area taunts read the same gate on their current target: a live tank_post's subject and a refused
+        # single target keep them quiet, their area is unchanged.
+        for text, cls, spell in (
+                (WARRIOR, "class CastChallengingShoutAction", '"challenging shout"'),
+                (DRUID, "class CastChallengingRoarAction", '"challenging roar"')):
+            body = member(text, cls, "};")
+            self.assertIn("virtual bool isUseful() override", body)
+            self.assertIn(f"TauntRefusedByGate(ai, bot, GetTarget(), {spell})", body)
+            self.assertNotIn("MELEE_ACTION(" + cls.split()[1], text)
 
     def test_the_attacker_value_skips_needs_aura_units_for_both_users(self):
         self.assertIn("std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), "
@@ -200,7 +214,7 @@ class JindoR1Wiring(unittest.TestCase):
                      "inline const char* CarrierScanReasonWord(CarrierScanRefusal refusal)",
                      "inline const char* CarrierScanWord(const CarrierScanTally& tally, bool shadeInFight, "
                      "bool pickable)",
-                     "enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss };",
+                     "enum class TauntGate : std::uint8_t { Allow, NeedsAura, TauntImmune, HoldingBoss, PostSubject };",
                      "inline TauntGate TauntGateFor(bool keyOn, std::uint32_t requiredAura, bool botHasAura, bool tauntImmune,\n                                  bool holdsBoss)",
                      "inline const char* TauntGateWord(TauntGate gate)"):
             self.assertIn(name, POLICY)

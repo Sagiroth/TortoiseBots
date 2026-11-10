@@ -74,7 +74,9 @@ class JindoR2Wiring(unittest.TestCase):
     def test_the_taunt_gate_reads_the_boss_victim(self):
         gate = member(ACTIONS, "bool ai::TauntRefusedByGate(", "\n}\n")
         self.assertIn("bool const holdsBoss = botHasAura && BotHoldsBoss(ai, bot, target);", gate)
-        self.assertIn("TauntGateLogDue(bot, gate)", gate)
+        self.assertIn("LogTauntGateRefusal(ai, bot, target, gate, spell);", gate)
+        log = member(ACTIONS, "static void LogTauntGateRefusal(", "\n}\n")
+        self.assertIn("TauntGateLogDue(bot, gate)", log)
         holds = member(ACTIONS, "static bool BotHoldsBoss(", "\n}\n")
         self.assertIn("attacker->GetVictim() != bot", holds)
         self.assertIn("GetBossTactics().Rows(", holds)

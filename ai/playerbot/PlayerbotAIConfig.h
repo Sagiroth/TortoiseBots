@@ -683,6 +683,10 @@ public:
     // current target, so it fights what comes to the spot instead of following a whelp): on, it runs with the mode;
     // off, the tank keeps the other hostile and the post waits as before (default off).
     bool dungeonRunTankPostLeash = false;
+    // A live tank_post owns its subject (no other tank taunts the subject the post is waiting for, the post's own slot
+    // takes it; Challenging Shout and Challenging Roar included): on, the taunt gate and the two area taunts refuse it;
+    // off, every tank may taunt the subject as before (default off).
+    bool dungeonRunTankPostOwnsSubject = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

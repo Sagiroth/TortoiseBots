@@ -193,6 +193,12 @@ namespace ai
     // The "loose adds near" trigger calls it too, so both agree on the count.
     bool AoeTauntStillNeeded(PlayerbotAI* ai, Player* bot);
 
+    // AiPlayerbot.DungeonRunTankPostOwnsSubject: whether another tank's live `tank_post` on `target` reserves it, so
+    // this tank does not taunt it (the post's own slot takes it). False unless the key is on, the bot is a tank and the
+    // target a creature; the other tank must be in the bot's instance and able to act, and its record read within
+    // kTankPostLiveMs. The two area taunts read it directly; every single-target taunt reads it through the gate above.
+    bool TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target);
+
     // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
     // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
     // A no-op without bot_events.csv.
