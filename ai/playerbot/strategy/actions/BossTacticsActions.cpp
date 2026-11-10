@@ -1128,6 +1128,11 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
+// Each instance's record sweep runs at most this often: every bot of a fight reads it every tick.
+const std::uint32_t kSeekRecordSweepGapMs = 1000;
+// The per-instance sweep clock. It also marks whether the instance still reads at all: an entry that idles out takes
+// its instance's records with it, so a fight abandoned without an evade read does not stay in the map for ever.
+std::unordered_map<std::uint32_t, std::uint32_t> g_seekRecordSweepMs;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
@@ -1241,27 +1246,60 @@ bool ClaimWalkoutKeptBossRow(std::uint32_t instanceId, std::uint32_t startMs)
     return true;
 }
 
-// Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
-// per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
-// itself runs at most once per idle window.
-void SweepSeekRecords(std::uint32_t nowMs)
+// Drops the records of this instance's fights that nobody evaluated for the idle window, and the per-bot log
+// throttles that old: one entry per bot guid that ever logged, so the map is bounded with the fights. Called with
+// g_seekMutex held, at most once a second per instance; the clock is read here, under the lock, because a fight
+// read's nowMs is taken before the lock and a record stamped after it would look older than it is. A record's age is
+// a signed difference for the same reason. Only this instance's records are swept: another instance's reader stamps
+// them, and the clock it read is the fresher one.
+void SweepSeekRecords(std::uint32_t instanceId)
 {
-    static std::uint32_t lastSweepMs = 0;
-    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordIdleMs)
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint32_t& lastSweepMs = g_seekRecordSweepMs[instanceId];
+    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordSweepGapMs)
         return;
-    lastSweepMs = nowMs;
+    lastSweepMs = nowMs != 0 ? nowMs : 1;
+    // An instance whose sweep clock idled out stopped reading (its fight ended, or the raid left): its records go too.
+    for (auto it = g_seekRecordSweepMs.begin(); it != g_seekRecordSweepMs.end();)
+    {
+        if (it->first == instanceId || nowMs - it->second <= kSeekRecordIdleMs)
+        {
+            ++it;
+            continue;
+        }
+        for (auto record = g_seekRecords.begin(); record != g_seekRecords.end();)
+            record = std::get<0>(record->first) == it->first ? g_seekRecords.erase(record) : std::next(record);
+        it = g_seekRecordSweepMs.erase(it);
+    }
     for (auto it = g_seekRecords.begin(); it != g_seekRecords.end();)
-        it = nowMs - it->second.lastSeenMs > kSeekRecordIdleMs ? g_seekRecords.erase(it) : std::next(it);
+    {
+        if (std::get<0>(it->first) != instanceId)
+        {
+            ++it;
+            continue;
+        }
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second.lastSeenMs);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekRecords.erase(it) : std::next(it);
+    }
     // Lock order: the record map, then the log. LogSeek takes the log alone, after the record lock is released.
     std::lock_guard<std::mutex> logLock(g_seekLogMutex);
     for (auto it = g_seekLog.begin(); it != g_seekLog.end();)
-        it = nowMs - it->second > kSeekRecordIdleMs ? g_seekLog.erase(it) : std::next(it);
+    {
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekLog.erase(it) : std::next(it);
+    }
     {
         std::lock_guard<std::mutex> pullLock(g_seekPullLogMutex);
         for (auto it = g_seekPullLog.begin(); it != g_seekPullLog.end();)
-            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekPullLog.erase(it) : std::next(it);
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekPullLog.erase(it) : std::next(it);
+        }
         for (auto it = g_seekMeetWaitLog.begin(); it != g_seekMeetWaitLog.end();)
-            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekMeetWaitLog.erase(it) : std::next(it);
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekMeetWaitLog.erase(it) : std::next(it);
+        }
     }
 }
 
@@ -3626,7 +3664,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
-        SweepSeekRecords(nowMs);
+        SweepSeekRecords(bot->GetInstanceId());
         auto it = g_seekRecords.find(key);
         if (it == g_seekRecords.end())
             it = g_seekRecords.emplace(key, SeekCycleRecord()).first;
