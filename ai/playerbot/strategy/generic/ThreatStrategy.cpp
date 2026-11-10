@@ -15,7 +15,6 @@
 #include "../../../../runtime/CommandedGroupQuery.h"
 #include "../../../../runtime/RemoteCommanderPolicy.h"
 
-#include <cmath>
 #include <cstdio>
 #include <iterator>
 #include <mutex>
@@ -130,81 +129,6 @@ bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
         LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
     return held;
 }
-// The threat one cast of `spellId` adds on `target` when it lands, as an average (AiPlayerbot.ThreatCapCountsCastThreat):
-// for every direct school-damage effect of that rank, the middle of the core's damage roll with level growth
-// (ThreatCapAverageEffectPoints, WorldObject::CalculateSpellDamage without the roll), the caster's all-effects spell
-// mods and the level-damage attribute, then spell power and damage modifiers (SpellDamageBonusDone); on the sum the
-// spell's threat mods and the caster's threat modifiers, as ThreatCalcHelper::CalcThreat applies them to the hit.
-// Left out, so the estimate stays an average and on the low side: crits, the target's damage-taken modifiers, damage
-// over time and the spell threat table. 0 for a spell without direct damage. The mod reads pass no Spell, so no spell
-// mod charge (Clearcasting, Presence of Mind) is used up by the estimate (Player::DropModCharge).
-float ExpectedCastThreat(Player* bot, Unit* target, uint32 spellId)
-{
-    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
-    if (!info || !target)
-        return 0.0f;
-    int32 level = int32(bot->GetLevel());
-    if (level > int32(info->maxLevel) && info->maxLevel > 0)
-        level = int32(info->maxLevel);
-    else if (level < int32(info->baseLevel))
-        level = int32(info->baseLevel);
-    level -= int32(info->spellLevel);
-    float damage = 0.0f;
-    for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
-    {
-        if (info->Effect[effect] != SPELL_EFFECT_SCHOOL_DAMAGE)
-            continue;
-        float points = ThreatCapAverageEffectPoints(info->EffectBasePoints[effect], int(info->EffectBaseDice[effect]),
-                                                    info->EffectDieSides[effect], info->EffectRealPointsPerLevel[effect],
-                                                    info->EffectDicePerLevel[effect], level);
-        bot->ApplySpellMod(info->Id, SPELLMOD_ALL_EFFECTS, points);
-        if ((info->Attributes & SPELL_ATTR_LEVEL_DAMAGE_CALCULATION) && info->spellLevel)
-            points *= 0.25f * std::exp(bot->GetLevel() * (70 - int32(info->spellLevel)) / 1000.0f);
-        if (points < 1.0f)
-            continue;
-        damage += float(bot->SpellDamageBonusDone(target, info, SpellEffectIndex(effect), uint32(points),
-                                                  SPELL_DIRECT_DAMAGE));
-    }
-    if (damage <= 0.0f)
-        return 0.0f;
-    bot->ApplySpellMod(info->Id, SPELLMOD_THREAT, damage);
-    return bot->ApplyTotalThreatModifier(damage, info->GetSpellSchoolMask());
-}
-
-// One row per bot and 2 s while a damage cast is held by AiPlayerbot.ThreatCapCountsCastThreat: the bot's threat, the
-// cast's expected threat and the tank's, so a live run shows why a Fireball waited (the engine's own
-// `MULT threat x0.000` line carries no numbers).
-constexpr uint32 kCastVetoLogGapMs = 2000;
-
-std::mutex g_castVetoLogMutex;
-std::unordered_map<uint64, uint32> g_castVetoLog;
-
-void LogCastVeto(PlayerbotAI* ai, Player* bot, CastSpellAction const* action, float botThreat, float castThreat,
-                 float tankThreat)
-{
-    uint32 const nowMs = WorldTimer::getMSTime();
-    {
-        std::lock_guard<std::mutex> lock(g_castVetoLogMutex);
-        uint32& last = g_castVetoLog[bot->GetObjectGuid().GetRawValue()];
-        if (last != 0 && nowMs - last < kCastVetoLogGapMs)
-            return;
-        last = nowMs;
-        if (g_castVetoLog.size() > 4096)
-        {
-            for (auto it = g_castVetoLog.begin(); it != g_castVetoLog.end();)
-                it = nowMs - it->second > kCastVetoLogGapMs * 600 ? g_castVetoLog.erase(it) : std::next(it);
-        }
-    }
-    char info[192];
-    snprintf(info, sizeof(info), "ThreatCap cast spell=%s pct=%.0f cast=%.0f bot=%.0f tank=%.0f",
-             action->GetSpellName().c_str(), (botThreat + castThreat) * 100.0f / tankThreat, castThreat, botThreat,
-             tankThreat);
-    ai::botdiag::BotActionLog::Write(ai, "THREAT", "%s", info);
-    if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
-        sPlayerbotAIConfig.logEvent(ai, "ThreatCapCast", info, "");
-}
-}
-
 float ThreatMultiplier::GetValue(Action* action)
 {
     // Per-fight suppression (mod-playerbots "neglect threat"): a boss
@@ -301,35 +225,6 @@ float ThreatMultiplier::GetValue(Action* action)
 
     if (!AI_VALUE(bool, "group"))
         return 1.0f;
-
-    // AiPlayerbot.ThreatCapCountsCastThreat: the high-threat veto below reads only the threat the bot has now, so a
-    // slow nuke started under its 80 % line (a Fireball at 79 %) landed as one big hit past the core's pull line. A
-    // single-target damage spell from a non-tank at a mob whose victim is a tank is also held while the bot's threat
-    // plus the cast's expected threat reaches the top tank's (ThreatCapPolicy.h ThreatCapCastOvershoots). Measured on
-    // the action's own target. The key is read first: off, nothing more is computed.
-    if (sPlayerbotAIConfig.threatCapCountsCastThreat &&
-        action->GetThreatType() == ActionThreatType::ACTION_THREAT_SINGLE && !PlayerbotAI::IsTank(bot))
-    {
-        if (CastSpellAction const* castAction = dynamic_cast<CastSpellAction*>(action))
-        {
-            Unit* const castTarget = action->GetTarget();
-            Unit* const castVictim = castTarget ? castTarget->GetVictim() : nullptr;
-            Player* const castVictimPlayer = castVictim ? castVictim->ToPlayer() : nullptr;
-            if (castTarget && !sServerFacade.IsFriendlyTo(castTarget, bot) && castVictimPlayer &&
-                castVictimPlayer != bot && PlayerbotAI::IsTank(castVictimPlayer))
-            {
-                float const castTankThreat = ThreatValue::GetTankThreat(ai, castTarget);
-                float const castBotThreat = ThreatValue::GetThreat(bot, castTarget);
-                float const castThreat = ExpectedCastThreat(bot, castTarget, castAction->GetSpellID());
-                if (ThreatCapCastOvershoots(sPlayerbotAIConfig.threatCapCountsCastThreat, castBotThreat, castThreat,
-                                            castTankThreat))
-                {
-                    LogCastVeto(ai, bot, castAction, castBotThreat, castThreat, castTankThreat);
-                    return 0.0f;
-                }
-            }
-        }
-    }
 
     if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_AOE)
     {
