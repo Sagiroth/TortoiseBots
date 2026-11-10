@@ -1565,9 +1565,8 @@ AiPlayerbot.SpellFacingPrecheck = 0
 # ranged pull line (Tortoise Trials, non-fire mages: 48 of 87 aggro onsets within 5 s of a Fireball hit). With 1 a
 # single-target damage spell aimed at a mob a tank holds is also held while the bot's threat plus the spell's expected
 # threat reaches 100 % of the tank's: its average direct damage with spell power (a channel counts every tick), times
-# the spell threat table's multiplier, plus its flat threat, with the caster's threat modifiers. A cast that could crit
-# is also held while a crit would reach the core's pull line (110 % in the mob's melee reach, else 130 %). Not counted:
-# the target's damage-taken debuffs, the ticks of a DoT that is not channeled. Interrupts and heals are not held.
+# the spell threat table's multiplier, plus its flat threat, with the caster's threat modifiers. Not counted: crits, the
+# target's damage-taken debuffs, the ticks of a DoT that is not channeled. Interrupts and heals are not held.
 # Recommended on. `.reload config` reads it again with the AiPlayerbot.DungeonRun* keys.
 # 0 - off: only the threat at cast start is checked, as before (Default)
 # 1 - on

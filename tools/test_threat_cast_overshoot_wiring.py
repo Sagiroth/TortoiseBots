@@ -55,12 +55,10 @@ class CastThreatCap(unittest.TestCase):
                       body(CONFIG_CPP, "void PlayerbotAIConfig::LoadDungeonRunKeys()"))
 
     def test_the_policy_line_is_the_tank_and_needs_the_key(self):
-        self.assertIn("inline bool ThreatCapCastOvershoots(bool key, float botThreat, float castThreat, float tankThreat, "
-                      "float critMult,\n                                        float pullLine, bool canCrit)",
+        self.assertIn("inline bool ThreatCapCastOvershoots(bool key, float botThreat, float castThreat, float tankThreat)",
                       THREAT_POLICY)
-        self.assertIn("if (!key || tankThreat <= 0.0f || castThreat <= 0.0f)\n            return false;", THREAT_POLICY)
-        self.assertIn("if (botThreat + castThreat >= tankThreat)\n            return true;", THREAT_POLICY)
-        self.assertIn("return canCrit && botThreat + castThreat * critMult >= pullLine * tankThreat;", THREAT_POLICY)
+        self.assertIn("return key && tankThreat > 0.0f && castThreat > 0.0f && botThreat + castThreat >= tankThreat;",
+                      THREAT_POLICY)
 
     def test_the_key_is_read_first(self):
         m = multiplier()
@@ -106,22 +104,7 @@ class CastThreatCap(unittest.TestCase):
                       "                    sServerFacade.GetThreatManager(castTarget).getThreat(castVictimPlayer), "
                       "castTankThreat);", block)
         self.assertIn("ThreatCapCastOvershoots(sPlayerbotAIConfig.threatCapCountsCastThreat, castBotThreat, castThreat,\n"
-                      "                                            castLine, castCritMult, castPullLine, castCanCrit))", block)
-
-    def test_a_crit_is_measured_against_the_core_pull_line(self):
-        block = body(multiplier(), CAST_CAP_IF)
-        # The mob's own melee-reach test picks 110 % or 130 %, as the core's ThreatManager does.
-        self.assertIn("ThreatCapCastPullLine(castTarget->CanReachWithMeleeAutoAttack(bot))", block)
-        self.assertIn("bool const castCanCrit = castInfo && CastCanCrit(bot, castTarget, castInfo);", block)
-        self.assertIn("castCanCrit ? CastCritMultiplier(bot, castTarget, castInfo) : 1.0f", block)
-        crit = body(STRATEGY, "bool CastCanCrit(Player* bot, Unit* target, SpellEntry const* info)")
-        self.assertIn("SPELL_ATTR_EX2_CANT_CRIT", crit)
-        self.assertIn("GetSpellCritPercent(GetFirstSchoolInMask(schoolMask)) > 0.0f", crit)
-        self.assertIn("GetUnitCriticalChance(info->GetWeaponAttackType(), target) > 0.0f", crit)
-        mult = body(STRATEGY, "float CastCritMultiplier(Player* bot, Unit* target, SpellEntry const* info)")
-        self.assertIn("bot->SpellCriticalDamageBonus(info, 1000, target)", mult)
-        self.assertIn("constexpr float kThreatCapCastMeleePullLine = 1.1f;", THREAT_POLICY)
-        self.assertIn("constexpr float kThreatCapCastRangedPullLine = 1.3f;", THREAT_POLICY)
+                      "                                            castLine))", block)
 
     def test_interrupts_are_skipped(self):
         block = body(multiplier(), CAST_CAP_IF)
@@ -178,7 +161,7 @@ class CastThreatCap(unittest.TestCase):
         entries = [line for line in CHANGELOG.splitlines() if "AiPlayerbot.ThreatCapCountsCastThreat" in line]
         self.assertEqual(len(entries), 1)
         self.assertTrue(entries[0].startswith("- New: "))
-        for limit in ("combo-point", "pull line", "damage-taken", "Interrupt", "Sunder Armor"):
+        for limit in ("combo-point", "crits", "damage-taken", "Interrupt"):
             self.assertIn(limit, section)
 
 
