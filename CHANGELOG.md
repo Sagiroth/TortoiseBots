@@ -30,6 +30,22 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.23.1 (2026-11-10)
+
+### Bots & Companions
+- Guild bots no longer send party invites just because they walk past you. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- Bots no longer invite real players by default. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+### Crafting & Guild Bank
+- Craft orders now check the guild bank for ready-made parts before sending bots out to farm. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- A Light Armor Kit order now uses stored Light Leather instead of farming Ruined Leather Scraps. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+- Bots now finish craft steps without switching back to other tasks between items. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+### Dashboard
+- The dashboard bot list can now be filtered, so you can find a specific bot faster. [#1582](https://github.com/Sagiroth/TortoiseBots/pull/1582)
+
+---
+
 ## v1.23.0 (2026-11-10)
 
 ### Companions & Parties
