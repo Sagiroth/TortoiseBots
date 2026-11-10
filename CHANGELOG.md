@@ -30,6 +30,15 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.23.2 (2026-11-10)
+
+### Groups & Combat
+- Ordering the party to rest no longer interrupts bots that are already eating or drinking mid-meal. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+- A rest order now fills bots all the way up, so they eat and drink before the next pull. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+- Bots that were almost full now join the rest instead of stopping at 90%. [#1583](https://github.com/Sagiroth/TortoiseBots/pull/1583)
+
+---
+
 ## v1.23.1 (2026-11-10)
 
 ### Bots & Companions
