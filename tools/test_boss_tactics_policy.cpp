@@ -971,6 +971,98 @@ static void TestTankPost_HoldSpotWindowKeepsArrivedPost()
     CHECK(TankPostStep(in) == TankPostDecision::End);
 }
 
+// The leash case: before the arrival the tank on a whelp follows it out of the post and waits at whelp range. With the
+// leash it walks back to the spot with the whelp as its target, so it fights what comes to the spot.
+static void TestTankPost_LeashWalksBackWhileHoldingWhelp()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;   // still on its way in
+    in.botToSpotYd = 22.0f;       // the tank followed a whelp that far
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Leash); // without the leash: Hold
+}
+
+// The leash bound is the drag's own 8 yd: inside it the tank fights where it stands, at the spot it holds.
+static void TestTankPost_LeashNotWithinDragYd()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 7.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk); // 7 yd is still past the 3 yd hold
+}
+
+// The mutation case: dropping `in.leash &&` from the step leashes a post with the key off, so this fails.
+static void TestTankPost_LeashOffKeepsHold()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = false;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 22.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// A seat still wins over the leash: the breath seat moves the tank and the leash resumes after it.
+static void TestTankPost_LeashYieldsToSeat()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.seated = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 22.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+}
+
+// The leash is a pre-arrival rule only: an arrived subject is dragged back when it is on the tank and engaged when it
+// is not, whatever the leash key says.
+static void TestTankPost_NoLeashAfterArrival()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;
+    in.botToSpotYd = 22.0f;
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    in.subjectOnTank = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// One step row per episode: a post that stays in the drag writes nothing more, a post that leaves it and comes back
+// writes again, and Walk, Hold, Engage and End are rows the post never writes.
+static void TestTankPost_StepEnteredOncePerEpisode()
+{
+    auto const last = [](TankPostDecision step) { return static_cast<std::uint8_t>(step); };
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Drag) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Leash), TankPostDecision::Leash) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Yield), TankPostDecision::Yield) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Engage), TankPostDecision::Drag) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Hold), TankPostDecision::Leash) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Walk), TankPostDecision::Yield) == true);
+    CHECK(TankPostStepEntered(0, TankPostDecision::Drag) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Engage) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Walk) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Hold) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::None) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::End) == false);
+}
+
 // hold_spot is tank_post's own mode word: parsed there, refused by every other kind, and both modes load.
 static void TestTankPost_HoldSpotModeLoadsOnlyOnTankPost()
 {
@@ -1043,6 +1135,12 @@ int main()
     TestTankPost_HoldSpotSubjectOutranksOtherHostile();
     TestTankPost_HoldSpotYieldsToSeat();
     TestTankPost_HoldSpotWindowKeepsArrivedPost();
+    TestTankPost_LeashWalksBackWhileHoldingWhelp();
+    TestTankPost_LeashNotWithinDragYd();
+    TestTankPost_LeashOffKeepsHold();
+    TestTankPost_LeashYieldsToSeat();
+    TestTankPost_NoLeashAfterArrival();
+    TestTankPost_StepEnteredOncePerEpisode();
     TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and

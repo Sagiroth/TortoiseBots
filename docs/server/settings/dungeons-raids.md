@@ -1387,6 +1387,21 @@ The mode is the row's `tactic_mode` column (`hold_spot`) and only a `tank_post` 
 
 </details>
 
+### `AiPlayerbot.DungeonRunTankPostLeash`
+Whether a `hold_spot` `tank_post` row leashes its tank before the awaited unit arrives: past 8 yd from the spot, the tank walks back to it keeping its current target instead of following a whelp away. It is recommended on for a fight whose second boss lands later.
+**Default:** `0` · **Values:** `0` off (the tank keeps the other hostile and the post waits, as before the leash), `1` on (needs `AiPlayerbot.DungeonRunTankPost` and `AiPlayerbot.DungeonRunTankPostHoldSpot`; a row without the mode word is unaffected) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The leash:** before the awaited unit's arrival, while the tank is more than 8 yd from the spot, it walks back to the spot with its current target and attack kept (no attack stop, no target change), so whatever it fights follows it in and it fights what comes to the spot. The 8 yd is the drag's own bound. A boss stand seat still wins: a seat yields the post, leash included.
+
+**The guard:** the raid guard's orders are unchanged; a guard order is undone by the next leash tick, because the `tank_post` action outranks it.
+
+**Step rows:** a post writes one `BossTacticsTankPost` row each time it enters the drag, the yield or the leash (`event=drag|yield|leash`, with `tank_yd`, `subject_yd` and `on_tank`), never while it stays in one. They are written whatever this key is set to, for every `hold_spot` post.
+
+</details>
+
 ### `AiPlayerbot.DungeonRunShadeHealerCover`
 Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)

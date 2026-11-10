@@ -3737,7 +3737,7 @@ namespace ai
     // it on arrival. The row's band arms the post, so the whole read is a fight scan. Every number comes from the row.
     // With the row's `hold_spot` mode and AiPlayerbot.DungeonRunTankPostHoldSpot, the post also starts while the tank
     // holds another hostile, latches its arrival, drags the subject back to the spot, outlives its window once arrived
-    // and yields to a boss stand seat.
+    // and yields to a boss stand seat. AiPlayerbot.DungeonRunTankPostLeash adds the pre-arrival walk back.
     constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
     constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
     constexpr float kTankPostDragYd = 8.0f;     // hold_spot: past this from the spot with the subject on the tank, walk back
@@ -3751,6 +3751,8 @@ namespace ai
         End = 4,    // the post ends now: window, death, evade, band or tank
         Drag = 5,   // hold_spot: the arrived subject is on the tank, walk it back to the spot keeping the target
         Yield = 6,  // hold_spot: the tank holds a boss stand seat, the post waits (its record is kept)
+        Leash = 7,  // hold_spot + leash: before the arrival the tank is past 8 yd from the spot: walk back keeping
+                    // its target
     };
 
     struct TankPostIn
@@ -3771,6 +3773,7 @@ namespace ai
         bool arrivedBefore = false;       // this post's latched arrival counts for the unit this read saw
         bool subjectOnTank = false;       // the subject's victim is this tank
         bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
+        bool leash = false;               // hold_spot and its leash key: walk back before the arrival
         std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
 
@@ -3866,8 +3869,18 @@ namespace ai
                 return TankPostDecision::Drag;
             return TankPostDecision::Engage;
         }
+        if (in.holdSpot && in.leash && in.botToSpotYd > kTankPostDragYd)
+            return TankPostDecision::Leash;
         if (in.holdingOtherHostile)
             return TankPostDecision::Hold;
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
+    }
+
+    // A step row is written when the post enters Drag, Yield or Leash (not while it stays in it).
+    inline bool TankPostStepEntered(std::uint8_t lastStep, TankPostDecision step)
+    {
+        return (step == TankPostDecision::Drag || step == TankPostDecision::Yield ||
+                   step == TankPostDecision::Leash) &&
+               lastStep != static_cast<std::uint8_t>(step);
     }
 }

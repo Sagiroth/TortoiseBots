@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunTankPostLeash (default 0, recommended on, needs AiPlayerbot.DungeonRunTankPost and AiPlayerbot.DungeonRunTankPostHoldSpot), a `hold_spot` `tank_post` before its unit arrives walks its tank back to the spot once it is more than 8 yd away, keeping its target, so it fights what comes to the spot instead of following a whelp away; the same post now logs one `BossTacticsTankPost` row each time it enters the drag, the yield or the leash (event, tank and subject distance, on_tank), never while it stays in one.
 - Changed: Onyxia's Lair walk 2b post: slot 1's tank post for Cindarion is now mode hold_spot, so it starts even off a whelp, drags him back to the NE spot after each breath seat and yields to a seat, behind AiPlayerbot.DungeonRunTankPostHoldSpot.
 - New: Onyxia's Lair walk 2b rows: 601 Deep Breath stand seats, one anchor per hover point opening on that point's breath while she hovers and holding 12 s, every seat more than 33 yd from its lane's ticks, so seated bots keep their seat instead of the generic breath dodge.
 - New: Onyxia's Lair walk 2a rows: slot 1 posts at the NE spot for Cindarion from 65-41 %, damage holds off Onyxia at 42 % while he fights, and the raid stays within 60 yd of the room centre so the respawned room-mouth Warder is never chased into.

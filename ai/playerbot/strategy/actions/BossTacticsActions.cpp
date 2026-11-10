@@ -10698,6 +10698,7 @@ struct TankPostRecord
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
     std::uint64_t arrivedSubjectGuid = 0;
+    std::uint8_t lastStep = 0;
 };
 
 std::mutex g_tankPostMutex;
@@ -10769,6 +10770,24 @@ void LogTankPost(PlayerbotAI* ai, const BossTacticRow& row, const char* event, c
         snprintf(info2, sizeof(info2), "event=%s,reason=%s", event, reason);
     else
         snprintf(info2, sizeof(info2), "event=%s", event);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// One BossTacticsTankPost row when a post enters a step (drag, yield or leash), never while it stays in it.
+void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision step, float tankYd,
+                     float subjectYd, bool onTank)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const char* name = step == TankPostDecision::Drag ? "drag"
+        : step == TankPostDecision::Yield            ? "yield"
+                                                     : "leash";
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=%s,tank_yd=%.1f,subject_yd=%.1f,on_tank=%d", name, tankYd, subjectYd,
+             onTank ? 1 : 0);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
@@ -10945,6 +10964,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
     in.subjectOnTank = subject && subject->GetVictim() == bot;
     in.seated = holdSpot && FindBossStand(ai, bot).valid;
+    in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
         in.holdingOtherHostile = false;
@@ -10992,11 +11012,14 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         return out;
 
     bool arrivedNow = false;
+    bool stepEntered = false;
     {
         std::lock_guard<std::mutex> lock(g_tankPostMutex);
         TankPostRecord& stored = g_tankPost[self];
         stored = record;
         stored.lastReadMs = nowMs;
+        stepEntered = TankPostStepEntered(stored.lastStep, step);
+        stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))
         {
             if (!stored.arrivedLogged)
@@ -11009,15 +11032,18 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         LogTankPost(ai, *row, "start", nullptr);
     if (arrivedNow)
         LogTankPost(ai, *row, "arrive", nullptr);
+    if (stepEntered)
+        LogTankPostStep(ai, *row, step, in.botToSpotYd, in.subjectToSpotYd, in.subjectOnTank);
     // A stand seat owns the tank: the post stands down (the record and its arrival stay) until the seat is released.
     if (step == TankPostDecision::Yield)
         return out;
 
     out.valid = true;
     // hold_spot: the arrived subject outranks another hostile (the step has already chosen Engage or Drag), so the
-    // trigger and the action must not stand down for that add.
-    const bool subjectOutranks =
-        holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag);
+    // trigger and the action must not stand down for that add. Before the arrival the leash outranks it the same way:
+    // the tank walks back to the spot with its target kept instead of standing down for it.
+    const bool subjectOutranks = holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag ||
+                                               step == TankPostDecision::Leash);
     out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;
     out.step = step;
     out.boss = boss;
@@ -11040,9 +11066,10 @@ bool BossTacticsTankPostAction::Execute(Event& event)
         hasLast = false;
         return false;
     }
-    // Drag: the arrived subject is on this tank and it drifted from the spot. Walk back keeping the target (no
-    // AttackStop, no target change), so the subject follows; the same spline guard as the walk.
-    if (task.step == TankPostDecision::Drag)
+    // Drag: the arrived subject is on this tank and it drifted from the spot. Leash: before the arrival the tank is
+    // past 8 yd from the spot on a whelp. Both walk back keeping the target (no AttackStop, no target change), so the
+    // subject follows on a drag and whatever the tank fights follows on a leash; the same spline guard as the walk.
+    if (task.step == TankPostDecision::Drag || task.step == TankPostDecision::Leash)
     {
         if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
             std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f)
