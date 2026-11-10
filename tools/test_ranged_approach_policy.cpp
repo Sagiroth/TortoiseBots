@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #define CHECK(x) do { \
@@ -185,6 +186,82 @@ int main()
         CHECK(std::fabs(Dist(choice.point, P(0, 0)) - 25.0f) < 0.05f);
         CHECK(choice.point.x > -1.0f && choice.point.x < 1.0f);
         std::cout << "  [PASS] near-tangent crossing: clamps, keeps the touch point\n";
+    }
+
+
+    // Onyxia in P2: the floor path ends under the hover point, the body 21 yd up.
+    // The trigger allows the centre distance plus both combat reaches (19 + 22 + 1.5),
+    // so the walk stops 42.5 yd centre to centre, about 36.9 yd 2D from the point.
+    {
+        std::vector<ApproachPoint> path = { P(-30, -212, -86), P(-10, -214, -86), P(10, -216, -86), P(22.9, -217.2, -86) };
+        ApproachPoint const target = P(22.9, -217.2, -65);
+        RangedApproachChoice const choice =
+            ai::SelectHoverApproachPoint(path, target, 19.0f, 22.0f, 1.5f, true, seesAll);
+        CHECK(choice.valid);
+        CHECK(std::fabs(Dist(choice.point, target) - 42.5f) <= 0.05f);
+        float const dx = choice.point.x - target.x;
+        float const dy = choice.point.y - target.y;
+        CHECK(std::fabs(std::sqrt(dx * dx + dy * dy) - 36.9f) <= 0.1f);
+        std::cout << "  [PASS] hover: stops at the trigger's own combat-reach distance\n";
+    }
+
+    // Today's shape with the plain distance: the walk runs to the floor point
+    // right under her, 21 yd below the body.
+    {
+        std::vector<ApproachPoint> path = { P(-30, -212, -86), P(-10, -214, -86), P(10, -216, -86), P(22.9, -217.2, -86) };
+        ApproachPoint const target = P(22.9, -217.2, -65);
+        RangedApproachChoice const choice = SelectRangedApproachPoint(path, target, 19.0f, seesAll);
+        CHECK(choice.valid);
+        float const dx = choice.point.x - target.x;
+        float const dy = choice.point.y - target.y;
+        CHECK(std::sqrt(dx * dx + dy * dy) < 1.0f);
+        std::cout << "  [PASS] plain distance: walks under the hover point\n";
+    }
+
+    // Only a hostile 8 yd or more above the floor it stands over, inside a dungeon,
+    // beyond melee reach, with a known floor, needs the hover approach.
+    {
+        CHECK(ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -86.0f));
+        CHECK(!ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -70.0f));  // 5 yd
+        CHECK(!ai::HoverReachApplies(false, true, true, 40.0f, 5.0f, true, -65.0f, -86.0f)); // key off
+        CHECK(!ai::HoverReachApplies(true, false, true, 40.0f, 5.0f, true, -65.0f, -86.0f)); // open world
+        CHECK(!ai::HoverReachApplies(true, true, false, 40.0f, 5.0f, true, -65.0f, -86.0f)); // friendly
+        CHECK(!ai::HoverReachApplies(true, true, true, 5.0f, 5.0f, true, -65.0f, -86.0f));   // melee reach
+        CHECK(!ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, false, -65.0f, -86.0f)); // no floor
+        std::cout << "  [PASS] hover gate: height, key, side, distance, floor\n";
+    }
+
+    // The threshold itself counts ("at least this high").
+    {
+        CHECK(ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -73.0f)); // exactly 8 yd
+        std::cout << "  [PASS] hover gate: exactly 8 yd counts\n";
+    }
+
+    // No line of sight from the ground side: the second pass keeps the geometry
+    // (standing still is no damage; the next tick's trigger re-judges).
+    {
+        std::vector<ApproachPoint> path = { P(-30, -212, -86), P(-10, -214, -86), P(10, -216, -86), P(22.9, -217.2, -86) };
+        ApproachPoint const target = P(22.9, -217.2, -65);
+        auto const seesNothing = [](ApproachPoint const&) { return false; };
+        CHECK(!ai::SelectHoverApproachPoint(path, target, 19.0f, 22.0f, 1.5f, true, seesNothing).valid);
+        RangedApproachChoice const choice =
+            ai::SelectHoverApproachPoint(path, target, 19.0f, 22.0f, 1.5f, false, seesNothing);
+        CHECK(choice.valid);
+        CHECK(std::fabs(Dist(choice.point, target) - 42.5f) <= 0.05f);
+        std::cout << "  [PASS] hover second pass ignores sight\n";
+    }
+
+    // The row's verdict words, one per step of the walk.
+    {
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::NotHover)) == "not_hover");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::NoGround)) == "no_ground");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::NoPath)) == "no_path");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::NoPoint)) == "no_point");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::Hazard)) == "hazard");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::MoveFailed)) == "move_failed");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::Moved)) == "moved");
+        CHECK(std::string(ai::HoverReachWord(ai::HoverReachResult::MovedNoLos)) == "moved_nolos");
+        std::cout << "  [PASS] hover words: all of them\n";
     }
 
 

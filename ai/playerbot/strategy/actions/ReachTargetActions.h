@@ -20,6 +20,7 @@
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/BossTacticsStand.h"
 #include "AI/CreatureAI.h"
+#include <cstdio>
 #include <ctime>
 
 namespace ai
@@ -49,6 +50,10 @@ namespace ai
         ObjectGuid stoodTarget;
         float stoodDist = 0.0f;
         uint32 lastExecuteMs = 0;
+
+        // One BossReachHover row per bot per 5 s (see MoveIntoRangeUnderHover).
+        uint32 lastHoverLogMs = 0;
+        static uint32 const kHoverLogMs = 5000;
 
         static uint32 const kNoHeadwayMs = 15000;
         static uint32 const kNoMoveMs = 10000;
@@ -405,10 +410,15 @@ namespace ai
         // How a reach action closes the distance to its target. The default is
         // the mature core chase, except for a ranged reach in sight inside a
         // dungeon, which walks the navmesh path instead (MoveIntoRangeAlongPath);
-        // an explicit ranged pull overrides it with a point move to
+        // a hovering hostile gets the combat-reach-aware walk first
+        // (MoveIntoRangeUnderHover, AiPlayerbot.RangedReachHoverTarget); an
+        // explicit ranged pull overrides it with a point move to
         // a firing position (see ReachPullAction and issue #389).
         virtual bool MoveIntoRange(Unit* target, float distance)
         {
+            if (sPlayerbotAIConfig.rangedReachHoverTarget && MoveIntoRangeUnderHover(target, distance))
+                return true;
+
             if (MoveIntoRangeAlongPath(target, distance))
                 return true;
 
@@ -528,6 +538,135 @@ namespace ai
             }
 
             return MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ());
+        }
+
+        // AiPlayerbot.RangedReachHoverTarget: a hostile that hovers (Onyxia in P2, 19-23 yd above
+        // the floor) is out of the trigger's spell range edge to edge while the path walk's centre
+        // distance to it never closes - no floor point is inside `distance` of a body 20 yd up, so
+        // the walk under the target gives up and the core chase stands still (HoverReachApplies,
+        // HoverReachDistance in RangedApproachPolicy.h). Walk the navmesh path to the floor under
+        // the target and stop where the centre distance reaches the trigger's own measure, combat
+        // reaches included. The BossReachHover row names the step that decided, so a walk can tell
+        // "no floor to aim at" from "no point on the path" from "a hazard".
+        bool MoveIntoRangeUnderHover(Unit* target, float distance)
+        {
+            Map* map = bot->GetMap();
+            if (!map || !target || bot->GetTransport())
+                return false;
+
+            float const targetX = target->GetPositionX();
+            float const targetY = target->GetPositionY();
+            float const targetZ = target->GetPositionZ();
+            float const groundZ = map->GetHeight(targetX, targetY, targetZ, true);
+            bool const groundValid = groundZ > INVALID_HEIGHT + 1.0f;
+            bool const hostile = !sServerFacade.IsFriendlyTo(bot, target);
+
+            if (!HoverReachApplies(true, map->IsDungeon(), hostile, distance, ATTACK_DISTANCE, groundValid, targetZ, groundZ))
+            {
+                // A hostile in the air in a dungeon with no floor under it cannot be walked
+                // under at all; every other refusal is "not hovering" and says nothing.
+                if (hostile && map->IsDungeon() && !groundValid)
+                    HoverReachRow(HoverReachResult::NoGround, target, distance, groundZ, 0);
+                return false;
+            }
+
+            if (!bot->IsStopped() && !bot->movespline->Finalized())
+                return true;
+
+            if (!ai->CanMove())
+                return false;
+
+            // The floor under the body, not the body: a path to (x, y, z) in the air has no
+            // navmesh end, and the point selection needs the walk the bot can really make.
+            WorldPosition const ground(bot->GetMapId(), targetX, targetY, groundZ);
+            std::vector<WorldPosition> const path = ground.getPathStepFrom(WorldPosition(bot), bot);
+            if (path.size() < 2)
+            {
+                HoverReachRow(HoverReachResult::NoPath, target, distance, groundZ, path.size());
+                return false;
+            }
+
+            std::vector<ApproachPoint> points;
+            points.reserve(path.size() + 1);
+            ApproachPoint front;
+            front.x = bot->GetPositionX();
+            front.y = bot->GetPositionY();
+            front.z = bot->GetPositionZ();
+            points.push_back(front);
+            for (WorldPosition const& step : path)
+            {
+                ApproachPoint point;
+                point.x = step.getX();
+                point.y = step.getY();
+                point.z = step.getZ();
+                points.push_back(point);
+            }
+
+            ApproachPoint goal;
+            goal.x = targetX;
+            goal.y = targetY;
+            goal.z = targetZ;
+
+            float const botHeight = bot->GetCollisionHeight();
+            float const targetHeight = target->GetCollisionHeight();
+            auto const seesTarget = [map, &goal, botHeight, targetHeight](ApproachPoint const& point)
+            {
+                return map->isInLineOfSight(point.x, point.y, point.z + botHeight,
+                    goal.x, goal.y, goal.z + targetHeight, true);
+            };
+
+            float const targetReach = target->GetCombatReach();
+            float const botReach = bot->GetCombatReach();
+
+            RangedApproachChoice choice = SelectHoverApproachPoint(points, goal, distance, targetReach, botReach, true, seesTarget);
+            bool noLos = false;
+            if (!choice.valid)
+            {
+                // Nothing on the walk sees the body (a ledge, the room's edge): move anyway.
+                // Standing still is no damage, and the next tick's trigger re-judges.
+                choice = SelectHoverApproachPoint(points, goal, distance, targetReach, botReach, false, seesTarget);
+                noLos = choice.valid;
+            }
+            if (!choice.valid)
+            {
+                HoverReachRow(HoverReachResult::NoPoint, target, distance, groundZ, path.size());
+                return false;
+            }
+
+            WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
+            if (IsHazardNearPosition(destination))
+            {
+                HoverReachRow(HoverReachResult::Hazard, target, distance, groundZ, path.size());
+                return false;
+            }
+
+            bool const moved = MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ());
+            HoverReachRow(moved ? (noLos ? HoverReachResult::MovedNoLos : HoverReachResult::Moved)
+                                : HoverReachResult::MoveFailed,
+                target, distance, groundZ, path.size());
+            return moved;
+        }
+
+        // One row per bot per kHoverLogMs; only with the key on and a bot_events.csv log.
+        void HoverReachRow(HoverReachResult result, Unit* target, float distance, float groundZ, std::size_t pathPoints)
+        {
+            if (!sPlayerbotAIConfig.rangedReachHoverTarget || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                return;
+
+            uint32 const nowMs = WorldTimer::getMSTime();
+            if (lastHoverLogMs != 0 && nowMs - lastHoverLogMs < kHoverLogMs)
+                return;
+            lastHoverLogMs = nowMs;
+
+            char info1[64];
+            snprintf(info1, sizeof(info1), "target=%u,result=%s", target->GetEntry(), HoverReachWord(result));
+            char info2[96];
+            snprintf(info2, sizeof(info2), "yd2d=%.1f,height=%.1f,dist=%.1f,path=%u",
+                sServerFacade.getDistance2d(bot, target->GetPositionX(), target->GetPositionY()),
+                target->GetPositionZ() - groundZ,
+                HoverReachDistance(distance, target->GetCombatReach(), bot->GetCombatReach()),
+                static_cast<uint32>(pathPoints));
+            sPlayerbotAIConfig.logEvent(ai, "BossReachHover", info1, info2);
         }
 
         // True for reach actions whose target is always meant to be attacked

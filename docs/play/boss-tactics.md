@@ -229,6 +229,8 @@ Boss name first, then the rows that fire for it. No row means the boss has no ta
 | Onyxian Hatcher | `kill_first` self (1, first in P3); `taunt_after_cast` mode `until_tank`, tank 2, 4 s (opens on a random raid member; the second off-tank takes it off a non-tank); `behind` Flaming Cleave 33441, 12 yd. Needs `AiPlayerbot.DungeonRunAuraTactics = 1` |
 | Onyxian Warder | healer stand set (9 seats, 34 yd) and ranged stand set (5 seats, 26 yd) at the corridor junction where the room-mouth pack is fought |
 
+While she hovers (P2, 19-23 yd above her floor point, 22 yd combat reach), a ranged bot's reach walking the path under her would stop out of range and stand still; with `AiPlayerbot.RangedReachHoverTarget = 1` (default `0`, recommended on) it walks to the floor under her instead and stops about 37 yd 2D from the hover point (the trigger's own measure, 42.5 yd centre to centre with the 26 yd spell), and each step writes a `BossReachHover` row with the reason (`moved`, `moved_nolos`, `no_path` and so on), so a walk can tell a bot that could not reach her from one that had nowhere to walk to. Melee damage and tanks still take Cindarion and the whelps; healers are unchanged.
+
 ### Zul'Gurub (309)
 
 | Boss | Rows |

@@ -1498,6 +1498,16 @@ AiPlayerbot.DungeonRunBurnMana = 0
 # 1 - on
 AiPlayerbot.DungeonRunRangedOnly = 0
 
+# A ranged reach at a hostile that hovers at least 8 yd above the floor under it inside a dungeon (Onyxia's P2 hover
+# points stand 19-23 yd up): the bot walks the navmesh path to the floor under the target and stops where the
+# `enemy out of spell range` trigger's own measure (the centre distance plus both combat reaches) is met, instead of
+# walking under the body, where no floor point is in range and the core chase stands still. With the key off the reach
+# behaves exactly as before. Every step writes a BossReachHover row (bot_events.csv) naming the reason it stopped or
+# moved. Recommended on. `.reload config` reads it again.
+# 0 - off: the plain ranged path walk and chase (Default)
+# 1 - on
+AiPlayerbot.RangedReachHoverTarget = 0
+
 # The gate_hold boss tactic of the boss tactics rows (recommended on; ai_boss_tactic, docs/play/boss-tactics.md):
 # damage dealers leave the row's boss alone once its health is at or below the row's gate percent (param, 1-99) while
 # more than `priority` units of the row's blocker (target_entry) within the row's radius (window_s, 0 = 200 yd, else

@@ -834,6 +834,10 @@ public:
     // The ranged_only boss-tactic kind (melee bots leave a subject that stands the row's gap above them: Ayamiss in the
     // air, so the melee take the adds): off, the rows and the held target are ignored (default off).
     bool dungeonRunRangedOnly = false;
+    // A ranged reach at a hostile that hovers 8 yd or more above the floor under it inside a dungeon (Onyxia in P2)
+    // walks to the floor under it and stops at the trigger's own combat-reach distance instead of giving up under the
+    // body (default off, recommended on).
+    bool rangedReachHoverTarget = false;
     // The gate_hold boss-tactic kind (damage dealers stop on a boss at or below the row's health gate while its blocker
     // still fights): off, the rows are ignored and nothing reads the gate (default off, recommended on).
     bool dungeonRunGateHold = false;

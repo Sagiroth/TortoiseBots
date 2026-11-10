@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // Pure policy for a ranged reach inside a dungeon.
@@ -148,5 +149,53 @@ namespace ai
             result.point = edge;
 
         return result;
+    }
+
+    // AiPlayerbot.RangedReachHoverTarget: a hostile at least this high above the floor under it is "hovering"
+    // (Onyxia's P2 hover points stand 19-23 yd above the floor; a jumping or stair-stepping mob is never 8 yd up).
+    constexpr float kHoverTargetMinHeightYd = 8.0f;
+
+    inline bool HoverReachApplies(bool keyOn, bool inDungeon, bool hostile, float distance, float meleeReach,
+                                  bool groundValid, float targetZ, float groundZ)
+    {
+        return keyOn && inDungeon && hostile && distance > meleeReach && groundValid &&
+               targetZ - groundZ >= kHoverTargetMinHeightYd;
+    }
+
+    // The trigger ("enemy out of spell range") measures edge to edge with both combat reaches; the path walk measures
+    // centre to centre. A hovering boss's reach (Onyxia 22 yd in the air) makes the centre distance the trigger allows
+    // that much longer.
+    inline float HoverReachDistance(float chaseDist, float targetReach, float botReach)
+    {
+        return chaseDist + targetReach + botReach;
+    }
+
+    // The point on the path to the floor under the target where the centre distance reaches HoverReachDistance, in
+    // sight. `sightRequired` false is the second pass: geometry only (see the glue).
+    template <typename LosFn>
+    inline RangedApproachChoice SelectHoverApproachPoint(std::vector<ApproachPoint> const& pathToGround,
+        ApproachPoint const& target, float chaseDist, float targetReach, float botReach, bool sightRequired, LosFn hasLos)
+    {
+        float const distance = HoverReachDistance(chaseDist, targetReach, botReach);
+        if (sightRequired)
+            return SelectRangedApproachPoint(pathToGround, target, distance, hasLos);
+        return SelectRangedApproachPoint(pathToGround, target, distance, [](ApproachPoint const&) { return true; });
+    }
+
+    enum class HoverReachResult : std::uint8_t { NotHover, NoGround, NoPath, NoPoint, Hazard, MoveFailed, Moved, MovedNoLos };
+    inline const char* HoverReachWord(HoverReachResult r)
+    {
+        switch (r)
+        {
+            case HoverReachResult::NotHover:   return "not_hover";
+            case HoverReachResult::NoGround:   return "no_ground";
+            case HoverReachResult::NoPath:     return "no_path";
+            case HoverReachResult::NoPoint:    return "no_point";
+            case HoverReachResult::Hazard:     return "hazard";
+            case HoverReachResult::MoveFailed: return "move_failed";
+            case HoverReachResult::Moved:      return "moved";
+            case HoverReachResult::MovedNoLos: return "moved_nolos";
+        }
+        return "not_hover";
     }
 }
