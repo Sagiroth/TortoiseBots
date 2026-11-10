@@ -334,7 +334,15 @@ class BossStandWiring(unittest.TestCase):
             declared = body(DUNGEON_ACTIONS_H, "class %s" % cls, end="\n    };\n")
             self.assertIn("bool isUseful() override;", declared)
             fn = body(DUNGEON_ACTIONS, "bool %s::isUseful()" % cls)
-            self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
+            # The base movement gate still runs first; RaidSpreadAction may
+            # only step past its refusal through the key-gated stay exemption
+            # (AiPlayerbot.RaidReactions with a live spread row), never
+            # unconditionally.
+            self.assertIn("if (!MovementAction::isUseful()", fn)
+            if cls == "RaidSpreadAction":
+                self.assertIn("!IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions,", fn)
+            else:
+                self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
             self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
 
     def test_generic_code_names_no_boss(self):
