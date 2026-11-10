@@ -961,8 +961,10 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
     }
     // The live walk-out puller keeps its boss in the scan (DungeonRunSeekPullerKeepsFight, walk 65): more than
     // AiPlayerbot.SightDistance from the raid its attackers list is empty, so the seek row's trigger closed while the
-    // focus held every other action. The record read is one lock, and only while a task runs.
-    bool const keepsBossOn = sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight;
+    // focus held every other action. The focus is what leaves the puller nothing else to run, so without it the kept
+    // boss saves nothing. The record read is one lock, and only while a task runs.
+    bool const keepsBossOn = WalkoutPullerKeepsFightOn(sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight,
+                                                       sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus);
     if (keepsBossOn)
     {
         std::uint64_t sonGuid = 0;

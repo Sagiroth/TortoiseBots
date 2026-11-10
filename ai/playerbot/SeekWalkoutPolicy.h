@@ -241,6 +241,14 @@ namespace ai
         return holdCombatFlag && focusFlag;
     }
 
+    // The kept boss's flag (review L2): the same focus dependency as HoldCombat. The focus is what leaves the puller
+    // without another action to run, so without it the scan's extra boss saves nothing; with only the focus on the scan
+    // stays exactly as before.
+    inline bool WalkoutPullerKeepsFightOn(bool keepsFlag, bool focusFlag)
+    {
+        return keepsFlag && focusFlag;
+    }
+
     // The walk-out's boss still fights: found, alive, in combat and not evading (the record's sweep drops a boss that is
     // dead or out of combat; an evading one is added here).
     inline bool WalkoutBossFighting(bool found, bool alive, bool inCombat, bool evading)
@@ -250,9 +258,9 @@ namespace ai
 
     // Whether the fight scan adds the live walk-out puller's boss to the fight (DungeonRunSeekPullerKeepsFight, walk 65):
     // a puller more than AiPlayerbot.SightDistance from the raid loses the boss from its attackers, so the seek row's
-    // trigger closes while the walk-out focus holds every other action. The flag on, this bot the recorded puller and the
-    // boss outside its attackers list: the scan adds it exactly as an attacker. Another bot's scan, or a boss already
-    // among the attackers, is unchanged.
+    // trigger closes while the walk-out focus holds every other action. The flag on with the focus on
+    // (WalkoutPullerKeepsFightOn), this bot the recorded puller and the boss outside its attackers list: the scan adds it
+    // exactly as an attacker. Without the focus, another bot's scan, or a boss already among the attackers, unchanged.
     inline bool WalkoutPullerKeepsBoss(bool flagOn, bool livePuller, bool bossInAttackers)
     {
         return flagOn && livePuller && !bossInAttackers;

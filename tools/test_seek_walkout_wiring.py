@@ -623,14 +623,19 @@ class PullerKeepsFightWiring(unittest.TestCase):
 
     def test_the_scan_adds_the_boss_after_the_attackers_loop(self):
         scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
-        self.assertIn("bool const keepsBossOn = sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight;", scan)
+        # Review L2: the kept boss needs the walk-out focus, like HoldCombat.
+        self.assertIn("bool const keepsBossOn = WalkoutPullerKeepsFightOn(sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight,\n"
+                      "                                                       sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus);",
+                      scan)
         # One read of the record, through the helper only.
         self.assertEqual(scan.count("LiveWalkoutPullerBoss("), 1)
         self.assertIn("Creature* const liveBoss = LiveWalkoutPullerBoss(bot, &sonGuid, &startMs);", scan)
         self.assertIn("WalkoutPullerKeepsBoss(keepsBossOn, liveBoss != nullptr, bossInAttackers)", scan)
-        # Exactly as an attacker is added, and after the attackers loop, before the rows loop.
+        # Exactly as an attacker is added, and after the attackers loop, before the rows loop: the kept entry goes into
+        # both lists (the attackers loop's push and the kept boss's), or the rows never load for it.
         self.assertIn("fight.units.push_back(liveBoss);", scan)
-        self.assertIn("seen.push_back(entry);", scan)
+        self.assertEqual(scan.count("seen.push_back(entry);"), 2)
+        self.assertIn("entryUnits.push_back(std::vector<Unit*>(1, liveBoss));", scan)
         self.assertIn("entryUnits[known - seen.begin()].push_back(liveBoss);", scan)
         self.assertLess(scan.index("for (const ObjectGuid& guid : attackers)"), scan.index("LiveWalkoutPullerBoss(bot"))
         self.assertLess(scan.index("LiveWalkoutPullerBoss(bot"),

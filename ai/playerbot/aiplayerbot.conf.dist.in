@@ -1127,7 +1127,8 @@ AiPlayerbot.DungeonRunSeekWalkoutHoldCombat = 0
 # walk-out focus holds its other actions and it stands frozen at its stand. With this on, the fight scan adds the boss of
 # that bot's running, unshot walk-out task to the fight while the boss still fights (alive, in combat, not evading), for
 # that bot only, and logs one "seek pull: walk-out kept boss" row a walk-out. It works for any seek_aura boss and needs no
-# boss constants. Off keeps today's scan.
+# boss constants. Needs AiPlayerbot.DungeonRunSeekWalkoutFocus = 1 (the focus is what holds the puller's other actions;
+# without it the kept boss saves nothing). Off keeps today's scan.
 AiPlayerbot.DungeonRunSeekPullerKeepsFight = 0
 
 # The walk-out's face-and-cast (Hakkar's seek pull, recommended on): at its stand the puller stops, turns to the Son

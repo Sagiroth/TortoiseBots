@@ -1871,6 +1871,19 @@ static void TestWalkoutHoldNeedsFocusAndAFight()
     CHECK(WalkoutHoldsCombat(true, true, true, false, 1000, false, WalkoutBossFighting(true, true, true, false)));
 }
 
+static void TestPullerKeepsFightNeedsFocus()
+{
+    // Review L2: the kept boss is added only with the walk-out focus on, the same dependency HoldCombat declares.
+    CHECK(WalkoutPullerKeepsFightOn(true, true));
+    CHECK(!WalkoutPullerKeepsFightOn(true, false)); // Focus off, the flag on: no effect
+    CHECK(!WalkoutPullerKeepsFightOn(false, true));
+    CHECK(!WalkoutPullerKeepsFightOn(false, false));
+    // The scan's whole decision: focus off, the live puller's boss is not added.
+    CHECK(!WalkoutPullerKeepsBoss(WalkoutPullerKeepsFightOn(true, false), true, false));
+    CHECK(WalkoutPullerKeepsBoss(WalkoutPullerKeepsFightOn(true, true), true, false));
+    CHECK(!WalkoutPullerKeepsBoss(WalkoutPullerKeepsFightOn(true, true), true, true));
+}
+
 static void TestPullerKeepsBossWithoutAttackers()
 {
     // The named failing case (walk 65): a walk-out puller more than AiPlayerbot.SightDistance from the raid has no
@@ -2929,6 +2942,7 @@ int main()
     TestWalkoutFlagsOffKeepToday();
     TestWalkoutStallFullGapsAndBackstop();
     TestWalkoutHoldNeedsFocusAndAFight();
+    TestPullerKeepsFightNeedsFocus();
     TestPullerKeepsBossWithoutAttackers();
     TestWalkoutPullerRecordPerInstance();
     TestWalkoutFaceCastWithoutRules();
