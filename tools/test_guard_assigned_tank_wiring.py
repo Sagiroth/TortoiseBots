@@ -33,16 +33,20 @@ class GuardAssignedTankWiring(unittest.TestCase):
     def test_the_table_answers_the_units_tank_slot(self):
         # The table fills the map as rows are added, with the assigning kinds, and answers slot 0 before the seal.
         self.assertIn(
-            "struct AssignedTankSlot\n    {\n        std::uint32_t slot = 0;\n        bool untilTank = false;\n"
-            "        bool tankPost = false;\n    };", POLICY)
+            "struct AssignedTankSlot\n    {\n        std::uint32_t untilTankSlot = 0;\n"
+            "        std::uint32_t tankPostSlot = 0;", POLICY)
         add = body(POLICY, "        bool Add(const BossTacticRow& row)")
-        self.assertIn("if (row.kind == BossTacticKind::TankPost)\n                slot = row.priority;", add)
-        self.assertIn("row.kind == BossTacticKind::TauntAfterCast && row.mode == TacticMode::UntilTank", add)
-        self.assertIn("AssignedTankSlot& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)];", add)
-        self.assertIn("if (have.slot == 0 || slot < have.slot)", add)
         self.assertIn(
-            "if (row.kind == BossTacticKind::TankPost)\n                    have.tankPost = true;\n"
-            "                else\n                    have.untilTank = true;", add)
+            "std::uint32_t& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)].tankPostSlot;\n"
+            "                if (have == 0 || row.priority < have)\n                    have = row.priority;", add)
+        self.assertIn(
+            "std::uint32_t& have = assignedTankSlots_[row.map][TacticSubjectEntry(row)].untilTankSlot;\n"
+            "                if (have == 0 || row.priority < have)\n                    have = row.priority;", add)
+        self.assertIn("row.kind == BossTacticKind::TauntAfterCast &&\n                row.mode == TacticMode::UntilTank",
+            add)
+        slot_for = body(POLICY, "        std::uint32_t SlotFor(bool auraTactics, bool tankPost) const")
+        self.assertIn("if (auraTactics && untilTankSlot > 0)", slot_for)
+        self.assertIn("if (tankPost && tankPostSlot > 0 && (slot == 0 || tankPostSlot < slot))", slot_for)
         accessor = body(POLICY, "        AssignedTankSlot AssignedTankSlotOf(std::uint32_t map, std::uint32_t entry) const")
         self.assertIn("if (!sealed_.load(std::memory_order_acquire))", accessor)
         self.assertIn("assignedTankSlots_.find(map)", accessor)
@@ -59,9 +63,36 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertIn(
             "struct RaidTankFact\n{\n    bool alive = false;\n    bool charmed = false;\n"
             "    std::uint64_t targetGuid = 0;\n};", RUN)
-        self.assertIn("std::unordered_map<std::uint64_t, std::uint32_t> guardAssignedLooseMs;", RUN)
+        self.assertIn("std::unordered_map<std::uint64_t, std::uint64_t> guardAssignedLooseSinceMs;", RUN)
+        self.assertIn("std::uint64_t guardAssignedClockMs = 0;", RUN)
         self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
         tick = body(RUN, "inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
+        # The loose clock runs for every party attacker before every filter and before the no-off-tank return.
+        self.assertIn(
+            "    r.guardAssignedClockMs += dt;\n"
+            "    for (auto it = r.guardAssignedLooseSinceMs.begin(); it != r.guardAssignedLooseSinceMs.end();)\n"
+            "    {\n"
+            "        bool const loose = std::any_of(f.partyAttackers.begin(), f.partyAttackers.end(),\n"
+            "            [&it](const UnitFact& u) { return u.guid == it->first && !u.victimTank; });\n"
+            "        it = loose ? std::next(it) : r.guardAssignedLooseSinceMs.erase(it);\n"
+            "    }\n"
+            "    for (const UnitFact& u : f.partyAttackers)\n"
+            "        if (!u.victimTank)\n"
+            "            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);\n"
+            "    if (f.raid.bossOffTanksAlive.empty())\n"
+            "        return false;\n", tick)
+        # The empty roster still runs the clock: the caller calls the tick with no off-tank as well, and orders
+        # nobody there.
+        self.assertIn(
+            "            if (!f.raid.bossOffTanksAlive.empty())\n"
+            "            {\n"
+            "                if (RaidBossLeadJoin(r, f, dt, order))\n"
+            "                    return true;\n"
+            "                return RaidGuardTick(r, f, dt, order);\n"
+            "            }\n", RUN)
+        self.assertIn(
+            "            RaidGuardTick(r, f, dt, order);\n"
+            "            if (LeadHoldsPlanBoss(r, f))\n", RUN)
         # The skip sits right after the boss/held/linked_death pass, inside the add pick (the boss branch above is
         # untouched: it names PlanBossEntry positively, not negatively).
         self.assertIn(
@@ -71,25 +102,20 @@ class GuardAssignedTankWiring(unittest.TestCase):
             "            if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan)\n"
             "            {\n"
             "                ai::AssignedTankSlot const assigned = r.liveTactics->AssignedTankSlotOf(r.plan->map, u.entry);\n"
-            "                if (assigned.slot >= 1 &&\n"
-            "                    ((assigned.untilTank && f.raid.auraTactics) || (assigned.tankPost && f.raid.tankPost)))\n"
+            "                std::uint32_t const slot = assigned.SlotFor(f.raid.auraTactics, f.raid.tankPost);\n"
+            "                if (slot >= 1)\n"
             "                {\n"
-            "                    bool const tankHolds = assigned.slot < f.raid.tanks.size() &&\n"
-            "                        f.raid.tanks[assigned.slot].alive && !f.raid.tanks[assigned.slot].charmed;\n"
-            "                    bool const tankOnIt = tankHolds && f.raid.tanks[assigned.slot].targetGuid == u.guid;\n"
-            "                    auto const had = r.guardAssignedLooseMs.find(u.guid);\n"
-            "                    std::uint32_t const looseMs = had == r.guardAssignedLooseMs.end() ? 0 : had->second;\n"
-            "                    if (tankHolds && (tankOnIt || looseMs < kGuardAssignedGraceMs))\n"
-            "                    {\n", tick)
-        self.assertIn(
-            "                        if (tankOnIt)\n"
-            "                            r.guardAssignedLooseMs.erase(u.guid);\n"
-            "                        else\n"
-            "                            r.guardAssignedLooseMs[u.guid] = looseMs + dt;\n"
+            "                    bool const tankHolds = slot < f.raid.tanks.size() &&\n"
+            "                        f.raid.tanks[slot].alive && !f.raid.tanks[slot].charmed;\n"
+            "                    bool const tankOnIt = tankHolds && f.raid.tanks[slot].targetGuid == u.guid;\n"
+            "                    auto const had = r.guardAssignedLooseSinceMs.find(u.guid);\n"
+            "                    std::uint64_t const looseSince = had == r.guardAssignedLooseSinceMs.end() ? 0 : had->second;\n"
+            "                    if (tankHolds && (tankOnIt || r.guardAssignedClockMs - looseSince < kGuardAssignedGraceMs))\n"
             "                        continue;\n", tick)
         # Only that one read: the boss pick, the healer guard and the party guard keep their rules.
         self.assertEqual(tick.count("AssignedTankSlotOf"), 1)
         self.assertEqual(tick.count("guardLeavesAssigned"), 1)
+        self.assertEqual(tick.count("guardAssignedLooseSinceMs.emplace"), 1)  # the timestamp is set once
         # The skip needs a live, uncharmed tank on the unit or inside the grace, never the slot alone.
         self.assertNotIn("if (tankHolds)\n                    {", tick)
         self.assertNotIn("kGuardAssignedGraceMs =", tick)  # the constant is the policy header's, not a local

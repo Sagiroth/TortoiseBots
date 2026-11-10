@@ -26187,12 +26187,13 @@ static void AssignCindarionToTankSlotOne(DungeonPlan& plan, ai::BossTacticTable&
     table.Seal();
 }
 
-// The assigned slot's tank (slot 1) is alive and targets `targetGuid` (0: something else).
-static void AssignSlotOneTank(Facts& f, std::uint64_t targetGuid)
+// The assigned slot's tank is alive and targets `targetGuid` (0: something else).
+static void AssignTankSlot(Facts& f, std::size_t slot, std::uint64_t targetGuid)
 {
-    f.raid.tanks.resize(2);
-    f.raid.tanks[1].alive = true;
-    f.raid.tanks[1].targetGuid = targetGuid;
+    if (f.raid.tanks.size() <= slot)
+        f.raid.tanks.resize(slot + 1);
+    f.raid.tanks[slot].alive = true;
+    f.raid.tanks[slot].targetGuid = targetGuid;
 }
 
 static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
@@ -26205,7 +26206,7 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true; // the row's own key: an until_tank row is read only with it
-    AssignSlotOneTank(f, 45001); // its tank is on it
+    AssignTankSlot(f, 1, 45001); // its tank is on it
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     CHECK(!RaidGuardTick(r, f, kTickMs, order));
@@ -26266,8 +26267,9 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankPostOff()
     CHECK(order == "attack 45001 Offy");
 }
 
-// Both kinds name the unit and only one key is on: the enabled source still assigns it, so the guard leaves it. The
-// until_tank row is slot 1 and the post slot 2; the lower slot stays, but either kind may keep the unit.
+// Both kinds name the unit and only one key is on: the enabled kind's own slot assigns it, so the guard leaves it. The
+// until_tank row is slot 1 and the post slot 2: only the enabled kind's tank holds the unit (the other slot's tank is
+// alive but on something else), so a shared slot would read the wrong tank.
 static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
 {
     for (bool const untilTankOn : {true, false})
@@ -26303,7 +26305,8 @@ static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
         f.raid.guardLeavesAssigned = true;
         f.raid.auraTactics = untilTankOn;
         f.raid.tankPost = !untilTankOn;
-        AssignSlotOneTank(f, 45001); // its tank is on it
+        AssignTankSlot(f, untilTankOn ? 1 : 2, 45001); // the enabled kind's tank is on it
+        AssignTankSlot(f, untilTankOn ? 2 : 1, 0);      // the other kind's tank is alive, on something else
         f.partyAttackers = {Hitter(45001, 50143, 20, true)};
         std::string order;
         CHECK(!RaidGuardTick(r, f, kTickMs, order));
@@ -26325,7 +26328,7 @@ static void TestRaidGuard_TakesAssignedUnitAfterGrace()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignSlotOneTank(f, 0); // alive, on something else
+    AssignTankSlot(f, 1, 0); // alive, on something else
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
@@ -26356,8 +26359,8 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankDead()
     CHECK(order == "attack 45001 Offy");
 }
 
-// The assigned tank is on the unit: the guard leaves it however long it stays on the healer (20 s here), the grace
-// clock resetting rather than expiring.
+// The assigned tank is on the unit: the guard leaves it however long it stays on the healer (20 s here), the tank's
+// target, not the clock, keeping it there.
 static void TestRaidGuard_LeavesAssignedUnitWhileTankOnIt()
 {
     DungeonPlan plan;
@@ -26368,7 +26371,7 @@ static void TestRaidGuard_LeavesAssignedUnitWhileTankOnIt()
     Facts f = RaidBossGuardFacts();
     f.raid.guardLeavesAssigned = true;
     f.raid.auraTactics = true;
-    AssignSlotOneTank(f, 45001);
+    AssignTankSlot(f, 1, 45001);
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
     for (int k = 0; k < 20; ++k)
@@ -26377,6 +26380,64 @@ static void TestRaidGuard_LeavesAssignedUnitWhileTankOnIt()
         CHECK(order.empty());
     }
     CHECK(r.offTankTurn == 0); // no turn spent on it
+}
+
+// The loose clock runs while the unit cannot be picked: loose at t = 0, out of the guard's reach (polymorphed) from
+// t = 1000 to 7000, eligible again at t = 8000. The grace ended with the loose time, so the guard takes it at once (the
+// failure with the clock advanced only for eligible units: a fresh 8 s at t = 8000).
+static void TestRaidGuard_GraceRunsWhileUnitIneligible()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1, 0); // alive, on something else
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(!RaidGuardTick(r, f, kTickMs, order)); // t = 0: loose, its grace starts
+    CHECK(order.empty());
+    for (std::uint32_t t = 1000; t < kGuardAssignedGraceMs; t += kTickMs)
+    {
+        Facts g = f;
+        g.partyAttackers[0].polymorphed = true;
+        CHECK(!RaidGuardTick(r, g, kTickMs, order)); // t = 1000 .. 7000: ineligible, still loose
+        CHECK(order.empty());
+    }
+    CHECK(RaidGuardTick(r, f, kTickMs, order)); // t = 8000: the grace is spent, taken at once
+    CHECK(order == "attack 45001 Offy");
+}
+
+// No off-tank is alive from t = 0 to t = 8000: the loose clock runs through the guard's early return. One is alive at
+// t = 9000 and the unit is taken on that tick, not after a fresh grace (the failure before: the clock started afresh
+// when an off-tank appeared).
+static void TestRaidGuard_GraceRunsWithNoFreeOffTank()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1, 0); // alive, on something else
+    f.raid.offTanksAlive.clear();
+    f.raid.bossOffTanksAlive.clear();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    for (std::uint32_t t = 0; t < 9000; t += kTickMs)
+    {
+        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(order.empty());
+    }
+    f.raid.offTanksAlive = {"Offy"};
+    f.raid.bossOffTanksAlive = f.raid.offTanksAlive;
+    CHECK(RaidGuardTick(r, f, kTickMs, order)); // t = 9000: no fresh grace
+    CHECK(order == "attack 45001 Offy");
 }
 
 // The same unit with the key off: today's order, the off-tank takes it.
@@ -37691,6 +37752,8 @@ int main()
     TestRaidGuard_TakesAssignedUnitAfterGrace();
     TestRaidGuard_TakesAssignedUnitWhenTankDead();
     TestRaidGuard_LeavesAssignedUnitWhileTankOnIt();
+    TestRaidGuard_GraceRunsWhileUnitIneligible();
+    TestRaidGuard_GraceRunsWithNoFreeOffTank();
     TestRaidGuardAssignedUnitTakenWithFlagOff();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();

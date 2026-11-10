@@ -1077,9 +1077,11 @@ AiPlayerbot.DungeonRunTankPost = 0
 # tank when the assigned one is dead or cannot taunt, and the post takes it on arrival. An assignment counts only
 # while the assigning kind's own key reads it: `until_tank` needs AiPlayerbot.DungeonRunAuraTactics, `tank_post` needs
 # AiPlayerbot.DungeonRunTankPost (with a key off its rows assign nothing, so the off-tanks take the unit as before).
-# The row's tank must hold the unit too: it keeps it while its current target is that unit, and a tank not on it yet
-# gets 8 s to pick it up. A dead or charmed tank holds nothing, and past the grace the off-tanks take the unit as
-# today, so an inactive row or a tank that lost it never leaves a healer unprotected. Everything else is unchanged
+# Each kind keeps its own slot: when both name the unit, the enabled kind's slot counts, the lower one when both are on.
+# The slot's tank must hold the unit too: it keeps it while its current target is that unit, and a tank not on it yet
+# has 8 s from the tick the unit first went loose, without pausing while the guard cannot take it (out of reach,
+# polymorphed, no off-tank free). A dead or charmed tank holds nothing, and past the grace the off-tanks take the unit
+# as today, so an inactive row or a tank that lost it never leaves a healer unprotected. Everything else is unchanged
 # (the boss pick-up, the healer guard's ranged dps, and the party guard with no off-tank alive). Off, the off-tanks
 # take such a unit as before.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.

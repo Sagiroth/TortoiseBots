@@ -891,7 +891,8 @@ struct Run
   offTankTurn: std::size_t
   raidBossFight: bool
   raidGuardUnits: std::unordered_map<std::uint64_t, Run::RaidGuardMark>
-  guardAssignedLooseMs: std::unordered_map<std::uint64_t, std::uint32_t>
+  guardAssignedLooseSinceMs: std::unordered_map<std::uint64_t, std::uint64_t>
+  guardAssignedClockMs: std::uint64_t
   healerGuardDps: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
   healerGuardTried: std::unordered_map<std::uint64_t, std::vector<Run::HealerGuardMark>>
   healerGuardClockMs: std::uint64_t
