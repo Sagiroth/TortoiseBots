@@ -9370,6 +9370,34 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
     return WidestSpreadYd(params, fallback);
 }
 
+ProtectionPotion ai::BossRowProtectionPotion(PlayerbotAI* ai, Player* bot)
+{
+    // The key's own read: with it off there is nothing to ask, and no fight scan runs that today's callers did not.
+    if (!sPlayerbotAIConfig.dungeonRunBossProtectionPotion)
+        return kNoProtectionPotion;
+    if (!ai || !bot || !bot->IsInWorld() ||
+        !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasSpreadMap(bot->GetMapId()))
+        return kNoProtectionPotion;
+    // The row's own key (DungeonRunBossProtectionPotion) is handed to the pure rule, which answers nothing with it
+    // off, so no row read here needs DungeonRunBossSpread: that key owns the spacing, not the potion. The roles come
+    // from the same three tests the rest of the tactics use.
+    const std::uint8_t roleBit = PotionRoleBit(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    for (const BossTacticRow* row : ScanBossTactics(ai, bot).rows)
+    {
+        if (row->kind != BossTacticKind::Spread || row->spellId == 0)
+            continue;
+        // The splash spell's school is the damage the potion answers (spell_template's `school`: 2 fire, 3 nature,
+        // 5 shadow). A spell the core cannot resolve names no school, so it gives no potion.
+        const SpellEntry* const spell = sServerFacade.LookupSpellInfo(row->spellId);
+        const ProtectionPotion potion = SpreadRowPotion(sPlayerbotAIConfig.dungeonRunBossProtectionPotion,
+            spell ? spell->School : 0, row->priority, roleBit);
+        if (potion.itemId)
+            return potion;
+    }
+    return kNoProtectionPotion;
+}
+
 namespace
 {
 // D5: one slot point, clamped into the live anchor and standing on the centre's floor. False when the anchor refuses

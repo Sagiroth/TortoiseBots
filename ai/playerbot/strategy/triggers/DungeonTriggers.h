@@ -323,4 +323,16 @@ namespace ai
 
         bool IsActive() override;
     };
+
+    // A live `spread` row names this bot's protection potion (DungeonRunBossProtectionPotion): the row's spell is the
+    // school, its `priority` the roles that drink it. On when the key is on, the bot is alive, level 48 or more, its
+    // role is listed, its health is not below the low line and the potion is off cooldown (or the cheat is on).
+    class BossRowProtectionPotionReadyTrigger : public ItemReadyTrigger
+    {
+    public:
+        BossRowProtectionPotionReadyTrigger(PlayerbotAI* ai)
+        : ItemReadyTrigger(ai, "boss row protection potion ready", 0) {}
+
+        bool IsActive() override;
+    };
 }

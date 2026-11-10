@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunBossProtectionPotion (default 0, needs the boss tactics), a `spread` row's `spell_id` names the school of the Greater Protection Potion its boss calls for and its `priority` a role mask (1 tanks, 2 melee, 4 ranged, 8 healers) of who drinks it at the pull and again once the aura has fallen; Hakkar's row is priority 7, so tanks and damage dealers take a Greater Shadow Protection Potion and healers keep the potion cooldown for mana potions.
 - Changed: Hakkar's opening damage hold is 12 s (was 5 s) so the off-tanks are ahead of the damage dealers when the first Cause Insanity lands at 17 s (data: data/sql/world/20261111120000_world.sql, rollback tools/sql/rollback/20261111120000_world.rollback.sql).
 - Fixed: the "lose aggro" trigger stays quiet while a fresh mob has no victim yet (no flag).
 - Fixed: the AoE taunts re-walk the loose-add count at cast time instead of the cached trigger value, so a shout or roar queued for loose adds stands down once the pack settles onto tanks (no flag).

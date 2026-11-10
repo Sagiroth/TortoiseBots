@@ -1441,6 +1441,12 @@ AiPlayerbot.DungeonRunBossSpread = 0
 # written either way.
 AiPlayerbot.DungeonRunBossSpreadSlots = 0
 
+# Protection potions from a boss's spread row: the row's spell names the school (fire, nature or shadow) and its
+# priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). A bot of a listed role drinks
+# the Greater Protection Potion of that school when it has none up and its health is not low. Off: only the bosses
+# of the built-in list use one.
+AiPlayerbot.DungeonRunBossProtectionPotion = 0
+
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
 # tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).
 # With the key off the row behaves like a default row (a tank the caster is on still holds it). This is its own

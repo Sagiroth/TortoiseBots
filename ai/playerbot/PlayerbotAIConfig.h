@@ -809,6 +809,10 @@ public:
     // list (a melee bot that cannot reach an airborne boss gives up on it): within 150 yd and while the bot itself is
     // in combat, so its boss-tactic rows and stand seats stay active (default off).
     bool bossTacticsKeepsEngagedBoss = false;
+    // Protection potions from a boss's spread row: the row's spell names the school (fire, nature or shadow) and its
+    // priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). Off, only the bosses of the
+    // built-in entry table use one (default off).
+    bool dungeonRunBossProtectionPotion = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).

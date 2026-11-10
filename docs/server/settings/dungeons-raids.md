@@ -43,6 +43,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BossStandEvents`](#aiplayerbotbossstandevents) | `0` | `1`: one `BossStand` row per bot and window (assigned, arrived, unseated, released) into `bot_events.csv`. |
 | [`AiPlayerbot.BossStandWholeRaid`](#aiplayerbotbossstandwholeraid) | `0` | `1`: every bot in combat with the boss counts toward its stand seats (a threat wipe keeps its seat), a bot already clear of the lane stays put, and a seated bot does not flee (recommended on). |
 | [`AiPlayerbot.BossTacticsKeepsEngagedBoss`](#aiplayerbotbosstacticskeepsengagedboss) | `0` | `1`: a boss the raid fights stays in a bot's fight for 10 s after the last bot saw it, within 150 yd and while the bot is in combat (recommended on for Onyxia's Lair; not yet tested in other raids). |
+| [`AiPlayerbot.DungeonRunBossProtectionPotion`](#aiplayerbotdungeonrunbossprotectionpotion) | `0` | `1`: a `spread` row also names the protection potion its boss calls for (`spell_id`'s school) and who drinks it (`priority`'s role mask); off keeps only the built-in boss list (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -821,6 +822,17 @@ Whether a boss the raid is fighting stays in every raid bot's fight after that b
 <summary>How it works in detail</summary>
 
 **Kept boss:** a melee bot that cannot reach an airborne boss gives up on it, and she vanishes from that bot's attacker list: its boss-tactic rows and its stand seat went dark for that bot, and a tank post ended with `band` mid-band because the post could not find her. With the key on, a bot whose attacker list shows a boss in combat with stand rows, or with a `tank_post` row, notes it in one registry per map instance and entry (at most one write per boss per half second); a bot that lost it reads it back after its own attacker list, and an entry of an instance that no longer exists is swept at most once a minute. The entry is used while it is less than 10 s old, the boss is alive, in combat and not evading, the bot itself is in combat, and the boss is within 150 yd (3D); an entry no bot refreshed for 30 s is dropped. The kept unit is appended to the fight like the walked-out puller's kept boss, so its rows and seats are read with the same health gate, and the boss stand lookup reads it too.
+
+</details>
+
+### `AiPlayerbot.DungeonRunBossProtectionPotion`
+Whether a `spread` row also gives its boss's roles a Greater Protection Potion.
+**Default:** `0` · **Values:** `0` off (only the built-in boss list of `ProtectionPotionPolicy.h` uses one), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Protection potion from a row:** the AI boss tactics table's `spread` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) already names the spell the raid spreads for. With this key on, that spell's `school` picks the potion (2 fire 13457/17543, 3 nature 13458/17546, 5 shadow 13459/17548, anything else none) and the row's `priority` is a role mask of who drinks it (1 tanks, 2 melee damage, 4 ranged damage, 8 healers; `0`, every row before this key, is nobody). A bot of a listed role drinks at the pull and again once the aura has fallen, when it is alive, level 48 or more, its health is at or above `AiPlayerbot.LowHealth` (a healing potion goes first below it) and the potion is off cooldown (or the item cheat is on). Hakkar's row is `priority` 7, so healers keep the potion cooldown for mana potions. The built-in entry table still answers first for its listed bosses, and no other consumable changes.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

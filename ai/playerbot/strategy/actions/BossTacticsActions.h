@@ -3,6 +3,7 @@
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
 #include "playerbot/CombatSpreadPolicy.h"
+#include "playerbot/ProtectionPotionPolicy.h"
 #include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
@@ -700,6 +701,11 @@ namespace ai
     // `fallback`. BossSpreadLive says whether any live spread row widened it (the stay exemption drops then).
     float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
     bool BossSpreadLive(PlayerbotAI* ai, Player* bot);
+    // The Greater Protection Potion a live `spread` row names for this bot (DungeonRunBossProtectionPotion): the row's
+    // spell is the damage the raid spreads for, so its school picks the potion, and its `priority` is the mask of the
+    // roles that drink it. Nothing unless the bot is in the world, runs the `boss tactics` combat strategy and the map
+    // has a spread row; the row read does not need DungeonRunBossSpread.
+    ProtectionPotion BossRowProtectionPotion(PlayerbotAI* ai, Player* bot);
 
     // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
     // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false

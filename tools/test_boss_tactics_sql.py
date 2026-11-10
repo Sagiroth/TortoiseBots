@@ -716,7 +716,12 @@ class BossTacticsSql(unittest.TestCase):
                          "the Hakkar pull_gate row drifted")
         spread = live.get((309, 14834, "spread", 0, 24328))
         self.assertIsNotNone(spread, "the Hakkar spread row is missing")
-        self.assertEqual(12.0, spread["param"], "the Hakkar spread row drifted")
+        # r11-4: `priority` is the role mask of who drinks the row's protection potion (1 tank, 2 melee, 4 ranged,
+        # 8 healer): 7 = tanks and both damage roles, no healer. `param` stays the 12 yd spacing.
+        self.assertEqual((7, 12.0), (spread["priority"], spread["param"]),
+                         "the Hakkar spread row drifted")
+        self.assertEqual("20261111120000_world.sql", spread["file"],
+                         "the r11-4 migration owns the Hakkar spread row")
         self.assertNotIn((309, 14834, "taunt_after_cast", 0, 0), live,
                          "the Hakkar taunt_after_cast row is back: Hakkar is taunt-immune")
         # The opening hold: 12 s from the first engagement (was 5 s), no spell, mode engage. A spell-less row fires

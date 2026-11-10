@@ -22,6 +22,7 @@
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/ProtectionPotionPolicy.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/TravelMgr.h"
 
 // The "opening object/lock" spell target flag in this core; the shim's old 0x100 was TARGET_FLAG_UNIT_UNK.
@@ -1310,6 +1311,16 @@ uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
                 *buffSpellId = potion.buffSpellId;
             return potion.itemId;
         }
+    }
+
+    // No listed boss among the attackers: a live spread row can name the school for its own boss and the roles that
+    // drink it (DungeonRunBossProtectionPotion). The table answers first, so a listed boss never changes.
+    const ProtectionPotion row = BossRowProtectionPotion(ai, ai->GetBot());
+    if (row.itemId)
+    {
+        if (buffSpellId)
+            *buffSpellId = row.buffSpellId;
+        return row.itemId;
     }
 
     return 0;

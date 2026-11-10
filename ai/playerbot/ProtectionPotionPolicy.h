@@ -10,6 +10,11 @@
 // `school` in sql/base/tw_world_spell_template.sql (2 fire, 3 nature,
 // 5 shadow). Bosses whose damage is mixed or not school-based (Garr, Hakkar,
 // Chromaggus, the BWL drakes) are left out on purpose.
+//
+// The entry table stays the whole rule for the listed bosses. A `spread` row
+// can name the school for any other boss instead (Hakkar): the row's spell is
+// the damage the raid spreads for, its `priority` a role mask of who drinks.
+// Same three potions; no other kit is touched.
 // No core includes: tools/test_protection_potion_policy.cpp covers it.
 
 namespace ai
@@ -24,6 +29,62 @@ namespace ai
     constexpr ProtectionPotion kFireProtectionPotion = { 13457, 17543 };   // Greater Fire Protection Potion
     constexpr ProtectionPotion kShadowProtectionPotion = { 13459, 17548 }; // Greater Shadow Protection Potion
     constexpr ProtectionPotion kNatureProtectionPotion = { 13458, 17546 }; // Greater Nature Protection Potion
+
+    // A `spread` row's `priority` is a role mask: the roles that drink the row's potion. 0 (every row before
+    // DungeonRunBossProtectionPotion) is nobody, so key-off and an old row behave alike.
+    constexpr std::uint8_t kPotionRoleTank = 1;
+    constexpr std::uint8_t kPotionRoleMelee = 2;
+    constexpr std::uint8_t kPotionRoleRanged = 4;
+    constexpr std::uint8_t kPotionRoleHealer = 8;
+
+    // The one role bit a bot stands for: a tank first, then a healer (both keep their own answer when they also
+    // count as ranged), then the ranged and the melee damage dealers.
+    inline std::uint8_t PotionRoleBit(bool tank, bool healer, bool ranged)
+    {
+        if (tank)
+            return kPotionRoleTank;
+        if (healer)
+            return kPotionRoleHealer;
+        return ranged ? kPotionRoleRanged : kPotionRoleMelee;
+    }
+
+    // The spell's `School` column as spell_template stores it: 2 fire, 3 nature, 5 shadow. Anything else (a physical
+    // or multi-school spell, an unholy one) has no Greater Protection Potion here.
+    inline ProtectionPotion ProtectionPotionForSchool(std::uint32_t school)
+    {
+        switch (school)
+        {
+            case 2:
+                return kFireProtectionPotion;
+            case 3:
+                return kNatureProtectionPotion;
+            case 5:
+                return kShadowProtectionPotion;
+            default:
+                return kNoProtectionPotion;
+        }
+    }
+
+    // The row's answer for one bot: nothing with the key off, nothing for a role the mask does not list, else the
+    // row's school's potion. `botRoleBit` is PotionRoleBit.
+    inline ProtectionPotion SpreadRowPotion(bool flagOn, std::uint32_t school, std::uint8_t roleMask,
+        std::uint8_t botRoleBit)
+    {
+        if (!flagOn || (roleMask & botRoleBit) == 0)
+            return kNoProtectionPotion;
+        return ProtectionPotionForSchool(school);
+    }
+
+    // Whether the row's potion is worth drinking now: a potion exists, its aura is not up, the bot is at least level
+    // 48 (the Greater potions' own requirement) and its health is not below the low line, where a healing potion
+    // comes first.
+    inline bool RowPotionDue(bool hasPotion, bool hasAura, std::uint8_t healthPct, std::uint8_t lowHealthPct,
+        std::uint32_t level)
+    {
+        if (!hasPotion || hasAura || level < 48)
+            return false;
+        return healthPct >= lowHealthPct;
+    }
 
     inline ProtectionPotion BossProtectionPotion(std::uint32_t entry)
     {
