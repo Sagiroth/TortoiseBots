@@ -4774,8 +4774,9 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
 }
 }  // namespace
 
-// One `BossTacticsSpread` row per bot and 5 s, with the key on or off: the key, the verdict word, the owned slot and
-// its distance, the spare point the walk goes to, and the numbers the walk reads. The throttle is checked before any
+// One `BossTacticsSpread` row per bot and 5 s: the slot read writes it with the key on, the old step-away with it off,
+// and that one writer per state is SpreadLogOwned. The row carries the key, the verdict word, the owned slot and its
+// distance, the spare point the walk goes to, and the numbers the walk reads. The throttle is checked before any
 // distance is computed. A no-op unless bot_events.csv is an allowed log.
 void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
                        bool replaceSameTick)
@@ -8968,8 +8969,8 @@ bool SpreadSlotPointUsable(PlayerbotAI* ai, Player* bot, float centreZ, const Sp
 }
 }  // namespace
 
-// The fixed slot read (DungeonRunBossSpreadSlots). It never reads the key, so the caller decides whether the slot
-// moves the bot; the spread row is written with the key on and off.
+// The fixed slot read (DungeonRunBossSpreadSlots). It never reads the key for its decision, so the caller decides
+// whether the slot moves the bot; only the row it writes is keyed, and with the key off the old step-away owns the row.
 BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
 {
     BossSpreadSlotTask task;
@@ -9103,9 +9104,11 @@ BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
         task.y = y;
         task.z = z;
     }
-    // Every slot bot's verdict is written here, on the path every tick takes, with the key on or off; the action only
-    // adds move_failed for a move it could not send.
-    LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);
+    // The row has one writer per key state: with the key on this read writes every slot verdict; with it off the old
+    // step-away writes its gate words and this read writes nothing. The action only adds move_failed for a move it
+    // could not send.
+    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))
+        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);
     return task;
 }
 

@@ -19,6 +19,8 @@ using ai::IsSpreadOnCooldown;
 using ai::kSpreadStepCooldownMs;
 using ai::ShouldCombatSpread;
 using ai::ShouldRaidSurvivalSpread;
+using ai::SpreadLogCaller;
+using ai::SpreadLogOwned;
 using ai::SpreadSlotCastCutDue;
 using ai::SpreadSlotFallback;
 using ai::SpreadSlotIndexOf;
@@ -280,6 +282,14 @@ int main()
     CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::NoCentre)) == "no_centre");
     CHECK(std::string(SpreadSlotVerdictWord(SpreadSlotVerdict::MoveFailed)) == "move_failed");
     std::cout << "  [PASS] slot verdict precedence and words\n";
+
+    // SpreadVerdict_OwnerByKeyState: the row has one writer per key state,
+    // so the slot read and the old step-away never share its 5 s window.
+    CHECK(SpreadLogOwned(true, SpreadLogCaller::Read));
+    CHECK(!SpreadLogOwned(true, SpreadLogCaller::Legacy));
+    CHECK(!SpreadLogOwned(false, SpreadLogCaller::Read));
+    CHECK(SpreadLogOwned(false, SpreadLogCaller::Legacy));
+    std::cout << "  [PASS] one spread-row owner per key state\n";
 
     // A heal is never cut; a damage dealer cuts after 6 s of blocked reads.
     CHECK(!SpreadSlotCastCutDue(true, 1000u, 100000u));

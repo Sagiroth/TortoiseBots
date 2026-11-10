@@ -689,8 +689,8 @@ namespace ai
 
     // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
     // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false
-    // for every bot the row does not apply to. The read does not look at the key (the caller does), so the spread row
-    // can be written with the key off too.
+    // for every bot the row does not apply to. The read never reads the key for its decision (the caller does); the key
+    // only owns the row it writes, through SpreadLogOwned.
     struct BossSpreadSlotTask
     {
         bool slotBot = false;

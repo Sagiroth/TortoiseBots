@@ -504,10 +504,13 @@ bool BossTacticsSpreadSlotTrigger::IsActive()
 {
     if (!Ready(ai, bot))
         return false;
-    // The read writes the spread row for every verdict, with the key on or off, on the tick path the old action
-    // logging never had; only the verdicts that need a walk or a hold fire the action.
+    // The key gate comes first: with it off the slot read writes nothing and the old step-away owns the row, so the
+    // read is not even taken. With it on, the read writes the row on the tick path and only the verdicts that need a
+    // walk or a hold fire the action.
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        return false;
     const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
-    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots || !task.slotBot)
+    if (!task.slotBot)
         return false;
     return task.verdict == SpreadSlotVerdict::SlotMove || task.verdict == SpreadSlotVerdict::SlotHold ||
            task.verdict == SpreadSlotVerdict::Cast;

@@ -493,11 +493,15 @@ bool RaidSpreadNeededTrigger::IsActive()
     // row's splash (Hakkar's Corrupted Blood) still has to be answered there. Read before the seek gate so the spread
     // row can name that gate.
     bool const spreadLive = BossSpreadLive(ai, bot);
-    const bool logSpread = spreadLive && ai->IsRanged(bot);
+    // The old step-away owns the row with the slots key off; with it on the slot read writes it and these gate words
+    // would only fight it for the bot's 5 s window.
+    const bool logSpread =
+        spreadLive && ai->IsRanged(bot) &&
+        SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy);
     // A seek_aura row is walking the bot into a cloud or to the gather: the step-out would undo the walk.
     if (BossSeeking(ai, bot))
     {
-        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        if (logSpread)
             LogBossSpread(ai, bot, "seek", -1, -1.0f, -1);
         return false;
     }
@@ -506,7 +510,7 @@ bool RaidSpreadNeededTrigger::IsActive()
     Unit* target = GetTarget();
     if (!target)
     {
-        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        if (logSpread)
             LogBossSpread(ai, bot, "no_target", -1, -1.0f, -1);
         return false;
     }
@@ -523,7 +527,7 @@ bool RaidSpreadNeededTrigger::IsActive()
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
     {
-        if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        if (logSpread)
             LogBossSpread(ai, bot, "order", -1, -1.0f, -1);
         return false;
     }
@@ -552,7 +556,7 @@ bool RaidSpreadNeededTrigger::IsActive()
         if (sServerFacade.getDistance2d(bot, member) < spreadYd)
             return true;
     }
-    if (logSpread && !sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+    if (logSpread)
         LogBossSpread(ai, bot, "clear", -1, -1.0f, -1);
     return false;
 }

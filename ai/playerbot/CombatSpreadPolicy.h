@@ -241,6 +241,21 @@ namespace ai
         return SpreadSlotVerdict::SlotMove;
     }
 
+    // Who writes the BossTacticsSpread row. The slot read owns it with the
+    // key on; the key off belongs to the old step-away, whose gate words are
+    // the row's only content then. One writer per key state keeps the two
+    // paths off each other's 5 s window.
+    enum class SpreadLogCaller
+    {
+        Read,
+        Legacy,
+    };
+
+    inline bool SpreadLogOwned(bool slotsKey, SpreadLogCaller caller)
+    {
+        return slotsKey ? caller == SpreadLogCaller::Read : caller == SpreadLogCaller::Legacy;
+    }
+
     // A heal never waits for the cast; a damage dealer cuts its own cast after
     // the wait, once per unbroken run of blocked reads.
     inline bool SpreadSlotCastCutDue(bool isHealer, std::uint32_t castSinceMs, std::uint32_t nowMs)

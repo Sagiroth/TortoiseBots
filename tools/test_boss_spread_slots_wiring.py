@@ -31,25 +31,52 @@ class SpreadSlotsWiring(unittest.TestCase):
         fn = body(ACTIONS, "bool BossTacticsSpreadSlotAction::Execute(Event& event)")
         self.assertLess(fn.index("dungeonRunBossSpreadSlots"), fn.index("FindBossSpreadSlot("))
 
-    def test_the_slot_read_never_reads_the_key(self):
+    def test_the_slot_read_decides_without_the_key(self):
         fn = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
-        self.assertNotIn("dungeonRunBossSpreadSlots", fn)
+        # The decision never branches on the key: the only mention is the row's ownership guard at the end.
+        self.assertEqual(fn.count("dungeonRunBossSpreadSlots"), 1)
         self.assertIn("BossSpreadLive(", fn)
+        self.assertIn(
+            "    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))\n"
+            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);",
+            fn)
+
+    def test_the_read_row_is_guarded_by_the_key(self):
+        read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
+        # With the key off the read writes nothing: the old step-away owns the row and its gate words.
+        self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("SpreadLogOwned("))
+        self.assertNotIn("LogBossSpread(ai, bot, SpreadSlotVerdictWord", read[:read.index("SpreadLogOwned(")])
+
+    def test_the_legacy_row_is_guarded_by_not_the_key(self):
+        trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
+        self.assertIn(
+            "SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy)", trigger)
+        self.assertEqual(trigger.count("LogBossSpread("), 4)
+        # Each of the trigger's gate rows sits behind the key-off owner, never the raw key.
+        self.assertEqual(trigger.count("if (logSpread)"), 4)
+        self.assertNotIn("!sPlayerbotAIConfig.dungeonRunBossSpreadSlots", trigger)
+        action = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")
+        self.assertIn(
+            "spreadLive && SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy)",
+            action)
+        useful = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
+        self.assertIn("SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy)", useful)
 
     def test_the_new_trigger_fires_on_the_three_moving_verdicts(self):
         fn = body(TRIGGERS, "bool BossTacticsSpreadSlotTrigger::IsActive()")
         self.assertIn("dungeonRunBossSpreadSlots", fn)
         for verdict in ("SpreadSlotVerdict::SlotMove", "SpreadSlotVerdict::SlotHold", "SpreadSlotVerdict::Cast"):
             self.assertIn(verdict, fn)
-        # The read (and its row) runs before the key gates the action, so the key off still names every verdict.
-        self.assertLess(fn.index("FindBossSpreadSlot("), fn.index("dungeonRunBossSpreadSlots"))
+        # The key gate runs before the read: with the key off the read writes nothing and is not even taken.
+        self.assertLess(fn.index("dungeonRunBossSpreadSlots"), fn.index("FindBossSpreadSlot("))
 
     def test_SpreadVerdict_EveryVerdictIsLogged(self):
-        # Every verdict word the enum can produce reaches the one log call: it is an unconditional statement in the
-        # slot read, after the verdict is assigned, and it takes SpreadSlotVerdictWord(task.verdict).
+        # Every verdict word the enum can produce reaches the one log call: it is the read's statement after the
+        # verdict is assigned, behind the key-on ownership guard, and it takes SpreadSlotVerdictWord(task.verdict).
         read = body(ACTIONS, "BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)")
         self.assertIn(
-            "    LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);\n"
+            "    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))\n"
+            "        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback);\n"
             "    return task;",
             read)
         self.assertLess(read.index("task.verdict = SpreadSlotWanted("), read.index("LogBossSpread("))

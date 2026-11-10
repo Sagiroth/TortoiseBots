@@ -533,7 +533,8 @@ bool RaidSpreadAction::isUseful()
         return false;
     if (FindBossStand(ai, bot).valid)
     {
-        if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots && BossSpreadLive(ai, bot))
+        if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy) &&
+            BossSpreadLive(ai, bot))
             LogBossSpread(ai, bot, "stand", -1, -1.0f, -1);
         return false;
     }
@@ -550,8 +551,10 @@ bool RaidSpreadAction::Execute(Event& event)
     bool const optIn = ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT);
     // A live spread row widens the legacy spacing and outranks a stay (the run holds the ranged bots on their spots).
     bool const spreadLive = BossSpreadLive(ai, bot);
-    // With the slots key off, the row still names the gate that stopped today's step-away.
-    bool const logSpread = !sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive;
+    // With the slots key off the old step-away owns the row and names the gate that stopped today's step-away; with
+    // it on the slot read writes it.
+    bool const logSpread =
+        spreadLive && SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy);
     float radius = BossSpreadYd(ai, bot, kSpreadSettledDistance);
     if (optIn)
     {
