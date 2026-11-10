@@ -639,7 +639,7 @@ class BossTacticsSql(unittest.TestCase):
         self.assertNotIn((309, 14834, "interrupt", 0, 24324), live)
         # The spell-less until_tank hold of Mandokir 11382 is gone: a spell-less hold fires only its engage edge, once
         # per fight, so "until_tank" never recurred. Hakkar's opening hold is back in mode `engage`, where that single
-        # edge is the whole rule (the 5 s opening threat hold of 20261107120000); Mandokir's would still need a trigger
+        # edge is the whole rule (the 12 s opening threat hold of 20261111120000); Mandokir's would still need a trigger
         # that recurs. Their triggers are auras on players (or an instant cast, Cause Insanity 24327,
         # castingTimeIndex 1), which the hold's cast/aura edge cannot see on the boss.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
@@ -700,7 +700,7 @@ class BossTacticsSql(unittest.TestCase):
         # 20261107200000_world.sql deleted Hakkar's taunt_after_cast row: like Jin'do he is taunt-immune
         # (creature_template 14834 immunity_flags 6), so Cause Insanity's threat reset is answered by the
         # threat_successor cap instead. The four rows of 20261104020000_world.sql minus that row, plus the
-        # opening hold of 20261107120000_world.sql. The core ids are pinned in BossTacticsCoreData below;
+        # opening hold of 20261111120000_world.sql (12 s, was 5 s). The core ids are pinned in BossTacticsCoreData below;
         # here the live table shape is, so a wrong number or a delete that reaches too far fails.
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         seek = live.get((309, 14834, "seek_aura", 11357, 24321))
@@ -719,22 +719,21 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(12.0, spread["param"], "the Hakkar spread row drifted")
         self.assertNotIn((309, 14834, "taunt_after_cast", 0, 0), live,
                          "the Hakkar taunt_after_cast row is back: Hakkar is taunt-immune")
-        # The opening hold: 5 s from the first engagement, no spell, mode engage. A spell-less row fires only that
-        # edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
+        # The opening hold: 12 s from the first engagement (was 5 s), no spell, mode engage. A spell-less row fires
+        # only that edge, which is exactly a pull hold (it never recurs). Hakkar is taunt-immune and the batch's
         # threat_successor cap keeps damage dealers under the off-tank, so this hold answers the pull only.
         hold = live.get((309, 14834, "dps_hold_after", 0, 0))
         self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
-        self.assertEqual((0, 5.0, 0, "engage"),
+        self.assertEqual((0, 12.0, 0, "engage"),
                          (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
                          "the Hakkar opening dps_hold_after row drifted")
-        self.assertEqual("20261107120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
+        self.assertEqual("20261111120000_world.sql", live[(309, 14834, "dps_hold_after", 0, 0)]["file"],
                          "the Hakkar D1 migration owns the opening hold")
         for row in (seek, gate, spread, hold):
             self.assertIsNone(new_kind_problem(row))
         # The three dispel_priority rows of 20261103020000 stay, and nothing else of the boss was deleted.
         for spell in (24321, 24687, 24688):
             self.assertIn((309, 14834, "dispel_priority", 0, spell), live)
-
     def test_hakkar_seek_pull_row(self):
         # 20261107230000_world.sql: the seek walk-out gets one Son per cycle's rules (walk 51). target_entry the
         # source, priority 3 walk-outs a cycle, window_s the 60 s last start; 20261108100000_world.sql replaces the
@@ -846,6 +845,40 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
         self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 5, 'engage', 0, 0, 0, 0, 0, 0, ", text)
+
+    def test_hakkar_opening_hold_is_12s(self):
+        # 20261111120000_world.sql: Hakkar's opening damage hold 5 s to 12 s (r11-2 D1). The first Cause Insanity
+        # 24327 comes at 17 s, so 12 s leaves the damage dealers about 5-7 s and ends before the first
+        # Corrupted Blood (15 s). The rollback file tools/sql/rollback/20261111120000_world.rollback.sql puts 5 s
+        # back by hand.
+        name = "20261111120000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the 12 s opening hold migration is missing")
+        self.assertGreater(name, "20261110120300_world.sql")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        hold = live.get((309, 14834, "dps_hold_after", 0, 0))
+        self.assertIsNotNone(hold, "the Hakkar opening dps_hold_after row is missing")
+        self.assertEqual((0, 12.0, 0, "engage"),
+                         (hold["priority"], hold["param"], hold["bot_aura"], hold["tactic_mode"]),
+                         "the Hakkar opening dps_hold_after row drifted")
+        self.assertEqual(name, hold["file"], "the 12 s migration owns the opening hold")
+        self.assertLess(hold["param"], 15.0, "the hold reaches into the first Corrupted Blood (15 s)")
+        self.assertLessEqual(hold["param"], 30.0, "the loader refuses a hold over 30 s")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+        self.assertIn("(309, 14834, 'dps_hold_after', 0, 0, 0, 12, 'engage', 0, 0, 0, 0, 0, 0, ", text)
+        rollback = os.path.join(ROOT, "tools/sql/rollback/20261111120000_world.rollback.sql")
+        self.assertTrue(os.path.isfile(rollback), "the r11-2 rollback file is missing")
+        with open(rollback, encoding="utf-8") as handle:
+            rollback_text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'dps_hold_after' AND `target_entry` = 0 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", rollback_text)
+        self.assertIn("'dps_hold_after', 0, 0, 0, 5, 'engage'", rollback_text)
 
     def test_onyxia_walk2a_rows_are_live(self):
         # 20261110120000_world.sql: damage holds off Onyxia 10184 at 42 % while Cindarion 50143

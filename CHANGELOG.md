@@ -1,5 +1,6 @@
 # Changelog
 
+- Changed: Hakkar's opening damage hold is 12 s (was 5 s) so the off-tanks are ahead of the damage dealers when the first Cause Insanity lands at 17 s (data: data/sql/world/20261111120000_world.sql, rollback tools/sql/rollback/20261111120000_world.rollback.sql).
 - Fixed: the "lose aggro" trigger stays quiet while a fresh mob has no victim yet (no flag).
 - Fixed: the AoE taunts re-walk the loose-add count at cast time instead of the cached trigger value, so a shout or roar queued for loose adds stands down once the pack settles onto tanks (no flag).
 - Fixed: the AoE taunts also stand down at cast time. Challenging Shout and Challenging Roar re-check the "loose adds near" count before they fire, so a shout queued for loose adds no longer fires after the pack settles (no flag, no per-mob tank check).
