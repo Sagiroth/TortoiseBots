@@ -10697,6 +10697,7 @@ struct TankPostRecord
     std::uint32_t startMs = 0;
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
+    std::uint64_t arrivedSubjectGuid = 0;
 };
 
 std::mutex g_tankPostMutex;
@@ -10913,6 +10914,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     }
     if (!row || !boss)
         return out;
+    const bool holdSpot = sPlayerbotAIConfig.dungeonRunTankPostHoldSpot && row->mode == TacticMode::HoldSpot;
 
     std::vector<TankPostUnit> const candidates =
         AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(row->targetEntry));
@@ -10935,16 +10937,27 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
             row->spotX, row->spotY, row->spotZ);
     in.botToSpotYd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
         row->spotX, row->spotY, row->spotZ);
-    in.holdingOtherHostile = TankPostHoldsOtherHostile(bot, AI_VALUE(Unit*, "current target"), row->bossEntry);
+    Unit* const currentTarget = AI_VALUE(Unit*, "current target");
+    in.holdingOtherHostile = TankPostHoldsOtherHostile(bot, currentTarget, row->bossEntry);
+    in.holdSpot = holdSpot;
+    in.subjectGuid = subjectUnit ? subjectUnit->guid : 0;
+    in.arrivedBefore = haveRecord &&
+        TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
+    in.subjectOnTank = subject && subject->GetVictim() == bot;
+    in.seated = holdSpot && FindBossStand(ai, bot).valid;
+    // The arrived subject is not "another hostile": it outranks everything else the tank holds.
+    if (holdSpot && currentTarget == subject)
+        in.holdingOtherHostile = false;
     const std::uint32_t windowMs = static_cast<std::uint32_t>(row->windowSec * 1000.0f + 0.5f);
     in.windowExpired = haveRecord && windowMs > 0 && nowMs - record.startMs >= windowMs;
 
-    // A post starts once there is a living subject to wait for and the tank is free to go: no record before that, so an
-    // idle row costs nothing, and an add the tank holds does not spend the post's window.
+    // A post starts once there is a living subject to wait for: no record before that, so an idle row costs nothing,
+    // and an add the tank holds does not spend the post's window. A hold_spot post also starts while the tank holds
+    // another hostile (the post waits on it until the subject arrives).
     bool startedNow = false;
     if (!haveRecord)
     {
-        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || in.holdingOtherHostile)
+        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || (!holdSpot && in.holdingOtherHostile))
             return out;
         record.map = row->map;
         record.bossEntry = row->bossEntry;
@@ -10959,6 +10972,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         record.startMs = nowMs;
         record.lastReadMs = nowMs;
         record.arrivedLogged = false;
+        record.arrivedSubjectGuid = 0;
         haveRecord = true;
         startedNow = true;
         in.started = true;
@@ -10983,19 +10997,28 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostRecord& stored = g_tankPost[self];
         stored = record;
         stored.lastReadMs = nowMs;
-        if (step == TankPostDecision::Engage && !stored.arrivedLogged)
+        if (TankPostLatchesArrival(in, step))
         {
+            if (!stored.arrivedLogged)
+                arrivedNow = true;
             stored.arrivedLogged = true;
-            arrivedNow = true;
+            stored.arrivedSubjectGuid = in.subjectGuid;
         }
     }
     if (startedNow)
         LogTankPost(ai, *row, "start", nullptr);
     if (arrivedNow)
         LogTankPost(ai, *row, "arrive", nullptr);
+    // A stand seat owns the tank: the post stands down (the record and its arrival stay) until the seat is released.
+    if (step == TankPostDecision::Yield)
+        return out;
 
     out.valid = true;
-    out.holdingOtherHostile = in.holdingOtherHostile;
+    // hold_spot: the arrived subject outranks another hostile (the step has already chosen Engage or Drag), so the
+    // trigger and the action must not stand down for that add.
+    const bool subjectOutranks =
+        holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag);
+    out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;
     out.step = step;
     out.boss = boss;
     out.subject = subject;
@@ -11016,6 +11039,22 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     {
         hasLast = false;
         return false;
+    }
+    // Drag: the arrived subject is on this tank and it drifted from the spot. Walk back keeping the target (no
+    // AttackStop, no target change), so the subject follows; the same spline guard as the walk.
+    if (task.step == TankPostDecision::Drag)
+    {
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+            std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f)
+            return true;
+        float z = task.z;
+        bot->UpdateGroundPositionZ(task.x, task.y, z);
+        if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+            return false;
+        lastX = task.x;
+        lastY = task.y;
+        hasLast = true;
+        return true;
     }
     // Another hostile on a group member is the tank's job: the post waits and the ordinary rotation keeps it.
     if (task.holdingOtherHostile)

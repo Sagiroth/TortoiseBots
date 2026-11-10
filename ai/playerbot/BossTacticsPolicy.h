@@ -89,6 +89,7 @@ namespace ai
         Assigned = 11, // interrupt: a directed row the run leader may order (F3), inert until its key reads it
         All = 12,      // avoid_cast: every bot leaves the blast while the spell is cast, tanks too (F4-A)
         Strict = 13,   // threat_successor: the row opts the boss into AiPlayerbot.DungeonRunThreatSuccessorStrict
+        HoldSpot = 14, // tank_post: the post starts during another fight, latches its arrival and drags back
     };
 
     inline bool IsAuraTacticKind(BossTacticKind kind)
@@ -138,6 +139,10 @@ namespace ai
             case BossTacticKind::ThreatSuccessor:
                 if (text == "strict")
                     return TacticMode::Strict;
+                break;
+            case BossTacticKind::TankPost:
+                if (text == "hold_spot")
+                    return TacticMode::HoldSpot;
                 break;
             default:
                 break;
@@ -608,11 +613,12 @@ namespace ai
                     row.mode != TacticMode::Default))
                 return false;
             // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
-            // radius and the longest hold. A fight-scan kind, so its health band arms the post. No spell, no mode.
+            // radius and the longest hold. A fight-scan kind, so its health band arms the post. No spell, no cycle
+            // columns; the only mode word is `hold_spot`.
             if (row.kind == BossTacticKind::TankPost &&
                 (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
                     row.param < 5.0f || row.param > 40.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
-                    row.spellId != 0 || row.mode != TacticMode::Default))
+                    row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
             // the spot columns the seek_aura, anchor and tank_post kinds'.
@@ -3729,8 +3735,12 @@ namespace ai
     // --- tank_post --------------------------------------------------------------------------------------------------
     // A named tank waits at a spot for a unit that is not in the fight yet (an unselectable second boss), then attacks
     // it on arrival. The row's band arms the post, so the whole read is a fight scan. Every number comes from the row.
+    // With the row's `hold_spot` mode and AiPlayerbot.DungeonRunTankPostHoldSpot, the post also starts while the tank
+    // holds another hostile, latches its arrival, drags the subject back to the spot, outlives its window once arrived
+    // and yields to a boss stand seat.
     constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
     constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
+    constexpr float kTankPostDragYd = 8.0f;     // hold_spot: past this from the spot with the subject on the tank, walk back
 
     enum class TankPostDecision : std::uint8_t
     {
@@ -3739,6 +3749,8 @@ namespace ai
         Hold = 2,   // the tank is at the spot and waits
         Engage = 3, // the unit arrived: attack it
         End = 4,    // the post ends now: window, death, evade, band or tank
+        Drag = 5,   // hold_spot: the arrived subject is on the tank, walk it back to the spot keeping the target
+        Yield = 6,  // hold_spot: the tank holds a boss stand seat, the post waits (its record is kept)
     };
 
     struct TankPostIn
@@ -3755,6 +3767,11 @@ namespace ai
         float botToSpotYd = 0.0f;
         bool holdingOtherHostile = false; // the tank holds another hostile that attacks a group member
         bool windowExpired = false;       // the row's window_s has passed since the post started
+        bool holdSpot = false;            // the row's `hold_spot` mode and its key are on
+        bool arrivedBefore = false;       // this post's latched arrival counts for the unit this read saw
+        bool subjectOnTank = false;       // the subject's victim is this tank
+        bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
+        std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
 
     // The awaited unit has arrived when it stands within the row's radius of the spot, alive and selectable. Combat
@@ -3764,6 +3781,29 @@ namespace ai
                                 float arrivalRadiusYd)
     {
         return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
+    }
+
+    // Whether the post's latched arrival counts for the unit this read saw: only the same unit stays arrived, so a
+    // second unit of the same target_entry starts unarrived.
+    inline bool TankPostLatchCounts(bool arrivedLogged, std::uint64_t arrivedSubjectGuid,
+                                    std::uint64_t subjectGuid)
+    {
+        return arrivedLogged && arrivedSubjectGuid == subjectGuid;
+    }
+
+    // Whether this tick latches (and logs) the post's arrival. A plain post keeps its old rule and latches only when
+    // it engages. With the row's `hold_spot` mode, the unit physically stands arrived, whatever the step chose: a
+    // first arrival can come out as Drag (the tank already more than 8 yd from the spot with the unit on it) or Yield
+    // (a stand seat is due); it must still latch, or the post would later treat it as never arrived and end on its
+    // window.
+    inline bool TankPostLatchesArrival(const TankPostIn& in, TankPostDecision step)
+    {
+        if (!in.holdSpot)
+            return step == TankPostDecision::Engage;
+        if (in.arrivedBefore || step == TankPostDecision::None || step == TankPostDecision::End)
+            return false;
+        return TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable, in.subjectToSpotYd,
+            in.arrivalRadiusYd);
     }
 
     // One creature of the awaited entry as the grid search saw it ("tank post units" value).
@@ -3802,16 +3842,30 @@ namespace ai
 
     // What the post's tank does this tick. A post that was held and can no longer be held ends; a row that is not
     // open (or has nothing to wait for) and holds no post does nothing. Another hostile on a group member keeps the
-    // tank on it and the post waits.
+    // tank on it and the post waits, except in hold_spot once the subject arrives, where the subject outranks it.
+    // In hold_spot the window closes only before the arrival, the arrival stays latched while the subject is alive and
+    // selectable, and a stand seat yields the post (the record is kept).
     inline TankPostDecision TankPostStep(const TankPostIn& in)
     {
-        if (!in.live || !in.tankCanAct || in.windowExpired)
+        if (!in.live || !in.tankCanAct)
+            return in.started ? TankPostDecision::End : TankPostDecision::None;
+        if (in.windowExpired && !(in.holdSpot && in.arrivedBefore))
             return in.started ? TankPostDecision::End : TankPostDecision::None;
         if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
             return in.started ? TankPostDecision::End : TankPostDecision::None;
-        if (TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
-                in.subjectToSpotYd, in.arrivalRadiusYd))
-            return in.holdingOtherHostile ? TankPostDecision::Hold : TankPostDecision::Engage;
+        if (in.holdSpot && in.seated)
+            return TankPostDecision::Yield;
+        bool const arrived = TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,
+                                 in.subjectToSpotYd, in.arrivalRadiusYd) ||
+            (in.holdSpot && in.arrivedBefore && in.subjectSelectable);
+        if (arrived)
+        {
+            if (!in.holdSpot)
+                return in.holdingOtherHostile ? TankPostDecision::Hold : TankPostDecision::Engage;
+            if (in.subjectOnTank && in.botToSpotYd > kTankPostDragYd)
+                return TankPostDecision::Drag;
+            return TankPostDecision::Engage;
+        }
         if (in.holdingOtherHostile)
             return TankPostDecision::Hold;
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;

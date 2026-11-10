@@ -1071,9 +1071,10 @@ AiPlayerbot.DungeonRunTankSwap = 0
 
 # The tank_post boss tactic of the boss tactics rows (ai_boss_tactic, docs/play/boss-tactics.md): a tank named by the
 # row's priority waits at the row's spot (spot_x/y/z) for a unit of target_entry that is not in the fight yet, then
-# attacks it when it arrives (within the row's param, alive, selectable and in combat). The row's boss_entry health band
-# arms the post, and it ends on the unit's death or evade, the row's window_s, the tank's death or charm, or the band
-# closing. The awaiting tank drops only the row's boss (or nothing) and keeps another hostile that attacks the group.
+# attacks it when it arrives (within the row's param, alive and selectable; combat is not asked). The row's boss_entry
+# health band arms the post, and it ends on the unit's death or evade, the row's window_s, the tank's death or charm,
+# or the band closing. The awaiting tank drops only the row's boss (or nothing) and keeps another hostile that attacks
+# the group.
 # With this key off the rows are ignored, so the table behaves exactly as before the kind. This is its own key on top of
 # AiPlayerbot.DungeonTactics (or a commander-bound group) because the kind changes what a tank does mid-fight.
 # `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
@@ -1101,6 +1102,16 @@ AiPlayerbot.DungeonRunTankPost = 0
 # 0 - off: the off-tanks take an assigned unit as before (Default)
 # 1 - on (recommended on where a tank row assigns a second boss to a tank slot)
 AiPlayerbot.DungeonRunGuardLeavesAssignedTank = 0
+
+# The `hold_spot` mode of a tank_post row (needs DungeonRunTankPost): on, the post starts while the tank still holds
+# another hostile, its arrival latches (it stays arrived while the unit is alive and selectable, wherever it walks),
+# the arrived unit outranks any other hostile, the tank drags it back to the spot once it is more than 8 yd away with
+# the unit on the tank (walking back with the target kept, so the unit follows), the window no longer ends an arrived
+# post, and a boss stand seat yields the post (the breath seat moves the tank and the unit follows). Off, every
+# tank_post row is a plain post exactly as before the mode.
+# 0 - off: plain tank_post rows (Default, recommended on for a fight whose second boss lands later)
+# 1 - on: `hold_spot` rows run the mode
+AiPlayerbot.DungeonRunTankPostHoldSpot = 0
 
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0

@@ -801,7 +801,8 @@ namespace ai
     // One read of the tank_post rows of the fight: the post the bot's raid tank slot holds, the awaited unit it waits
     // for, and what the post does this tick. `valid` is true only for the row's own tank, only while the post runs and
     // only when the tank may act; `holdingOtherHostile` means the tank keeps another hostile that attacks a group
-    // member, so the post waits and the action stands down. The post's state (start, arrival, window) is kept per bot
+    // member, so the post waits and the action stands down (a hold_spot post clears it once the subject has arrived:
+    // the subject then outranks that hostile). The post's state (start, arrival, window) is kept per bot
     // in one record, written and read here alone, so each post logs one start, one arrival and one end.
     struct BossTankPost
     {

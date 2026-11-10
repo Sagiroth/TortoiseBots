@@ -1346,9 +1346,9 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 <details>
 <summary>How it works in detail</summary>
 
-**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-40 yd) and `window_s` the longest hold (10-120 s). No spell and no mode word. The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
+**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-40 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
 
-**The wait:** while the row is live and a unit of `target_entry` within 200 yd (a grid search, like the hold-kill blocker count) is alive and has not arrived, the named tank walks to the spot and stays within 3 yd of it. It drops its current target only when that target is the row's `boss_entry` (an airborne boss it cannot reach) or nothing; another hostile that attacks a group member is kept and the post waits. A unit has arrived when it stands within `param` of the spot alive, selectable (no `UNIT_FLAG_NOT_SELECTABLE`) and in combat; an unselectable unit circling overhead is not arrived however close it is. On arrival the tank attacks it, and a `taunt_after_cast` row then works as it does today.
+**The wait:** while the row is live and a unit of `target_entry` within 200 yd (a grid search, like the hold-kill blocker count) is alive and has not arrived, the named tank walks to the spot and stays within 3 yd of it. It drops its current target only when that target is the row's `boss_entry` (an airborne boss it cannot reach) or nothing; another hostile that attacks a group member is kept and the post waits. A unit has arrived when it stands within `param` of the spot alive and selectable (no `UNIT_FLAG_NOT_SELECTABLE`); combat is not asked. An unselectable unit circling overhead is not arrived however close it is. On arrival the tank attacks it, and a `taunt_after_cast` row then works as it does today.
 
 **The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
 
@@ -1360,6 +1360,10 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 Whether the raid guard leaves a unit to the tank a boss-tactic row assigns it to. It is recommended on where a tank row assigns a second boss to a tank slot.
 **Default:** `0` · **Values:** `0` off (the off-tanks take such a unit as before), `1` on (needs `AiPlayerbot.DungeonRunRaid` and `AiPlayerbot.DungeonRunRaidBossRules`; an `until_tank` assignment counts only with `AiPlayerbot.DungeonRunAuraTactics` on, a `tank_post` assignment only with `AiPlayerbot.DungeonRunTankPost` on) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
+### `AiPlayerbot.DungeonRunTankPostHoldSpot`
+Whether a `tank_post` row in mode `hold_spot` runs the hold-the-spot rules: the post starts while the tank still holds another hostile, its arrival latches, the arrived unit outranks every other hostile, the tank drags it back to the spot, the window no longer ends an arrived post, and a boss stand seat yields the post. It is recommended on for a fight whose second boss lands later.
+**Default:** `0` · **Values:** `0` off (every `tank_post` row is a plain post as before the mode), `1` on (needs `AiPlayerbot.DungeonRunTankPost`; rows without the mode word keep the plain rules) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
 <details>
 <summary>How it works in detail</summary>
 
@@ -1368,6 +1372,18 @@ Whether the raid guard leaves a unit to the tank a boss-tactic row assigns it to
 **The guard:** in a raid's boss fight (`RaidBossRulesFight`), the off-tank pick-ups (`RaidGuardTick`) never send a tank at a unit so assigned while the unit has been loose for less than 8 s from the tick it first went loose (the `until_tank` window's taunt and walk, the post waiting for the unit to land). The slot tank's selected target is no hold: a unit hitting a non-tank stays with that tank only inside the grace, so a tank that cannot take it (taunt-immune, parked on a breath seat, stuck) cannot keep it on a healer; a unit already on its tank is skipped as any add a tank holds. That clock runs once every fight tick for every attacker off a tank, before the guard's own reach and eligibility filters, with no off-tank alive and on the ticks the healer guard's order or the main tank's join takes, so a unit that is out of range or polymorphed, waits for a free off-tank, or waits out another order, is not handed a fresh 8 s when it can be taken; only the unit's victim becoming a tank, or the unit leaving the fight, clears it. A charmed tank holds nothing, and after 8 s of the unit loose the guard takes it as it does today: an inactive row, or a tank that lost it, must not leave a healer unprotected. The raid tank order drops a dead tank, so the next tank inherits its slot and the unit's loose clock runs on from the same tick. Nothing else changes: the boss pick-up, the healer guard's ranged dps, the toppled-main-tank boss take and the party guard with no off-tank alive all read as before.
 
 **Why:** walk 1 of Onyxia lost Cindarion, the second boss that lands mid-fight, in four of five pulls. The plan's `tank_post` row gave him to slot 1, but the raid guard's round robin (free off-tanks first) sent a different tank, and the `until_tank` window then preferred whichever tank was in melee and targeting him, so the assigned tank never held him.
+
+The mode is the row's `tactic_mode` column (`hold_spot`) and only a `tank_post` row takes it: any other kind refuses the word and the row is skipped. With the key off the word still parses, but every row runs the plain rules of `AiPlayerbot.DungeonRunTankPost`.
+
+**Start:** unlike a plain post, a `hold_spot` post starts while the tank holds another hostile that attacks a group member (the post record and its start row are written then); the tank keeps that hostile until the awaited unit arrives.
+
+**Arrival:** the arrival latches for that unit from the first arrived tick, whatever the tank does on it (a drag back, or a stand seat yielding the post), and once logged the post stays arrived for that one unit while it is alive and selectable, wherever it walks, so a landed boss that runs to its top-threat victim is still the post's. A second unit of the same entry starts unarrived. An arrived unit outranks any other hostile (the post engages it, not holds), and a hostile counts as "other" only when it is not that unit.
+
+**Drag:** while the arrived unit's victim is this tank, the tank more than 8 yd from the spot and the tank not seated, the tank walks back to the spot with the target kept (no attack stop, no target change), so the unit follows it there.
+
+**Seat:** while the tank holds a boss stand seat (`FindBossStand`), the post yields: the trigger is inactive, the record is kept, and the breath seat moves the tank with the unit following it. The post resumes when the seat is released.
+
+**The end:** the window ends a post only before its arrival; with `hold_spot` an arrived post outlives `window_s`. Death, evade, the tank's death or charm and the band closing end it as for a plain post.
 
 </details>
 
