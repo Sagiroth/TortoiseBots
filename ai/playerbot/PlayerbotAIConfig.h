@@ -655,6 +655,10 @@ public:
     // attacks it on arrival): on, the rows are read (its own key on top of the tactics gate). Off, the rows are ignored,
     // so the table behaves exactly as before the kind (default off).
     bool dungeonRunTankPost = false;
+    // The raid guard leaves a unit to the tank a boss-tactic row assigns it to (an until_tank row with a tank slot, or
+    // a tank_post row): on, the off-tank pick-ups never send another tank at it; off, the raid's off-tanks take it as
+    // before (its own key on top of the raid and boss rules; default off).
+    bool dungeonRunGuardLeavesAssignedTank = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

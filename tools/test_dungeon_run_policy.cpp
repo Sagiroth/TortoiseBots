@@ -26168,6 +26168,61 @@ static void TestRaidBossWhelpOnlyTwiceAtTheSameMob()
     CHECK(orders == static_cast<int>(kGuardOrdersPerUnit));
 }
 
+// Onyxia walk 2 (AiPlayerbot.DungeonRunGuardLeavesAssignedTank): a unit a tank row assigns to a tank slot stays with
+// that tank, so the off-tank round robin never takes it. The plan's until_tank row gives Cindarion (50143) to tank
+// slot 1; with the key on, the whelp-ish add on the healer is passed over and the guard orders nobody (the failure
+// without the skip: the round robin's first turn sends Offy).
+static void AssignCindarionToTankSlotOne(DungeonPlan& plan, ai::BossTacticTable& table)
+{
+    plan.map = 249;
+    ai::BossTacticRow row;
+    row.map = 249;
+    row.bossEntry = 10184;
+    row.kind = ai::BossTacticKind::TauntAfterCast;
+    row.targetEntry = 50143;
+    row.priority = 1;
+    row.param = 10.0f;
+    row.mode = ai::TacticMode::UntilTank;
+    CHECK(table.Add(row));
+    table.Seal();
+}
+
+static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(!RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order.empty());
+    CHECK(r.offTankTurn == 0); // no turn spent on it
+    // Every other add is still the round robin's: only the assigned unit is left alone.
+    f.partyAttackers = {Hitter(45002, 11262, 20, true)};
+    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45002 Offy");
+}
+
+// The same unit with the key off: today's order, the off-tank takes it.
+static void TestRaidGuardAssignedUnitTakenWithFlagOff()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.partyAttackers = {Hitter(45001, 50143, 20, true)};
+    std::string order;
+    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(order == "attack 45001 Offy");
+    CHECK(r.note == "fighting: the off-tank Offy takes 50143 off the healer (20.0 yd)");
+}
+
 // The main tank on stay is still engaged on the mob on itself (the boss), first and at once; the whelp on the healer
 // goes to an off-tank after the order spacing, never to the main tank.
 static void TestRaidBossMainTankOnStayEngagesItsOwnMob()
@@ -37457,6 +37512,8 @@ int main()
     TestRaidBossWhelpsGoToAnOffTank();
     TestRaidBossWhelpsGoPastTheFightOrderCap();
     TestRaidBossWhelpOnlyTwiceAtTheSameMob();
+    TestRaidGuardLeavesAssignedTankUnitToItsRows();
+    TestRaidGuardAssignedUnitTakenWithFlagOff();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();
     TestRaidBossGuardReadModes();

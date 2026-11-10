@@ -60,6 +60,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunRaid`](#aiplayerbotdungeonrunraid) | `0` | Lets the run leader bind the commander's raid of 6 to 40 bots and runs it with the raid rules (needs `AiPlayerbot.DungeonSelfClear` and `AiPlayerbot.RemoteCommander`). |
 | [`AiPlayerbot.DungeonRunRaidBossRules`](#aiplayerbotdungeonrunraidbossrules) | `0` | `1`: a raid's boss fight runs up to 1200 s, survives its deaths while the boss still loses hp, and sends its adds to the off-tanks instead of the main tank. |
 | [`AiPlayerbot.DungeonRunRaidHealerGuard`](#aiplayerbotdungeonrunraidhealerguard) | `0` | `1`: in a raid boss fight with the main tank on the boss, and in a raid trash fight once the main tank held its current target (kept on for the fight), an add on a healer goes to the nearest ranged dps within 35 yd of it (up to two per add), and the off-tanks take only such an add when no ranged dps is free. |
+| [`AiPlayerbot.DungeonRunGuardLeavesAssignedTank`](#aiplayerbotdungeonrunguardleavesassignedtank) | `0` (recommended `1`) | `1`: the raid guard never sends an off-tank at a unit a boss-tactic row assigns to a tank slot (`taunt_after_cast` mode `until_tank` with a tank slot, or `tank_post`); the unit stays with that tank. |
 | [`AiPlayerbot.FankrissSwapStacks`](#aiplayerbotfankrissswapstacks) | `5` | Mortal Wound stacks at which an opt-in `fankriss tank` taunts Fankriss off the current tank (1-9). |
 | [`AiPlayerbot.PatchwerkOpeningDelay`](#aiplayerbotpatchwerkopeningdelay) | `4` | Seconds the DPS hold Patchwerk after an opt-in `patchwerk main` engages him (`0` = off, else 3-5). |
 | [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
@@ -1255,6 +1256,21 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 **The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
 
 **Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row.
+
+</details>
+
+### `AiPlayerbot.DungeonRunGuardLeavesAssignedTank`
+Whether the raid guard leaves a unit to the tank a boss-tactic row assigns it to. It is recommended on where a tank row assigns a second boss to a tank slot.
+**Default:** `0` · **Values:** `0` off (the off-tanks take such a unit as before), `1` on (needs `AiPlayerbot.DungeonRunRaid` and `AiPlayerbot.DungeonRunRaidBossRules`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The assignment:** a unit is assigned to a tank slot by a `taunt_after_cast` row in mode `until_tank` with a tank slot (its `priority`, 1-7) for the unit the row names (`target_entry`, or the row's boss when it names none), or by a `tank_post` row for the unit it waits for. When several rows name one unit, the lowest slot is the assignment.
+
+**The guard:** in a raid's boss fight (`RaidBossRulesFight`), the off-tank pick-ups (`RaidGuardTick`) never send a tank at a unit so assigned: the unit stays with its own tank, through the `until_tank` window, which already hands it to the next usable tank when the assigned one is dead or cannot taunt, and through the post. Nothing else changes: the boss pick-up, the healer guard's ranged dps, the toppled-main-tank boss take and the party guard with no off-tank alive all read as before.
+
+**Why:** walk 1 of Onyxia lost Cindarion, the second boss that lands mid-fight, in four of five pulls. The plan's `tank_post` row gave him to slot 1, but the raid guard's round robin (free off-tanks first) sent a different tank, and the `until_tank` window then preferred whichever tank was in melee and targeting him, so the assigned tank never held him.
 
 </details>
 

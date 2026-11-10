@@ -609,6 +609,62 @@ static void TestTankPost_UnselectableSubjectNotArrived()
     CHECK(TankPostStep(in) == TankPostDecision::End);
 }
 
+// Onyxia walk 2: the raid guard needs to know which units a tank row assigns to a tank slot (AiPlayerbot.
+// DungeonRunGuardLeavesAssignedTank). An until_tank row with a slot names the unit it taunts; a tank_post row names the
+// unit it waits for; the lowest slot wins when several rows name one unit; a row without a slot, or one of another
+// mode, assigns nothing; the table answers nothing before the seal.
+static void TestAssignedTankSlot_UntilTankAndTankPostRows()
+{
+    BossTacticRow untilTank = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 1, 10.0f);
+    untilTank.mode = TacticMode::UntilTank;
+    BossTacticRow post = Row(249, 10184, BossTacticKind::TankPost, 50143, 0, 2, 25.0f);
+    post.spotX = 8.0f;
+    post.spotY = -200.0f;
+    post.spotZ = -85.8f;
+    post.windowSec = 120.0f;
+    {
+        BossTacticTable table;
+        CHECK(table.AssignedTankSlot(249, 50143) == -1); // not sealed
+        CHECK(table.Add(untilTank));
+        CHECK(table.AssignedTankSlot(249, 50143) == -1); // still not sealed
+        table.Seal();
+        CHECK(table.AssignedTankSlot(249, 50143) == 1);
+        CHECK(table.AssignedTankSlot(249, 50144) == -1);
+        CHECK(table.AssignedTankSlot(1, 50143) == -1);
+        // Only one map's own rows count.
+        CHECK(table.AssignedTankSlot(250, 50143) == -1);
+    }
+    {
+        // An until_tank row and a tank_post row on the same unit: the lower slot stays.
+        BossTacticTable table;
+        CHECK(table.Add(untilTank));
+        CHECK(table.Add(post));
+        table.Seal();
+        CHECK(table.AssignedTankSlot(249, 50143) == 1);
+    }
+    {
+        // The post alone: the unit it waits for is assigned to its slot.
+        BossTacticTable table;
+        CHECK(table.Add(post));
+        table.Seal();
+        CHECK(table.AssignedTankSlot(249, 50143) == 2);
+        CHECK(table.AssignedTankSlot(249, 10184) == -1);
+    }
+    {
+        // A slot-less until_tank row assigns nothing, nor does a blink row.
+        BossTacticRow slotless = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 0, 10.0f);
+        slotless.mode = TacticMode::UntilTank;
+        BossTacticRow blink = Row(249, 10184, BossTacticKind::TauntAfterCast, 50144, 0, 1, 10.0f);
+        blink.mode = TacticMode::Blink;
+        BossTacticTable table;
+        CHECK(table.Add(slotless));
+        CHECK(table.Add(blink));
+        table.Seal();
+        CHECK(table.AssignedTankSlot(249, 50143) == -1);
+        CHECK(table.AssignedTankSlot(249, 50144) == -1);
+    }
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -641,6 +697,7 @@ int main()
     TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable();
     TestTankPost_UnselectableSubjectNotArrived();
     TestTankPost_EngagesSelectableOutOfCombatSubject();
+    TestAssignedTankSlot_UntilTankAndTankPostRows();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

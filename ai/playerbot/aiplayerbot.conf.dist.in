@@ -1070,6 +1070,18 @@ AiPlayerbot.DungeonRunTankSwap = 0
 # 1 - on
 AiPlayerbot.DungeonRunTankPost = 0
 
+# The raid guard leaves a unit to the tank its boss tactic row assigns it to (only read with
+# AiPlayerbot.DungeonRunRaid = 1 and AiPlayerbot.DungeonRunRaidBossRules = 1): in a raid's boss fight the off-tanks
+# never take a unit a `taunt_after_cast` row in mode `until_tank` names with a tank slot (priority 1-7), nor one a
+# `tank_post` row waits for. The unit stays with its tank: the until_tank window already hands it to the next usable
+# tank when the assigned one is dead or cannot taunt, and the post takes it on arrival. Everything else is unchanged
+# (the boss pick-up, the healer guard's ranged dps, and the party guard with no off-tank alive). Off, the off-tanks
+# take such a unit as before.
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: the off-tanks take an assigned unit as before (Default)
+# 1 - on (recommended on where a tank row assigns a second boss to a tank slot)
+AiPlayerbot.DungeonRunGuardLeavesAssignedTank = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 

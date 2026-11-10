@@ -11808,6 +11808,8 @@ void ReadRunFacts(DungeonRunSlot const& slot, Player* lead, std::vector<Player*>
         f.raid.bossRules = sPlayerbotAIConfig.dungeonRunRaidBossRules;
         // AiPlayerbot.DungeonRunRaidHealerGuard: an add on a healer goes to the ranged dps first (RaidHealerGuard).
         f.raid.healerGuard = sPlayerbotAIConfig.dungeonRunRaidHealerGuard;
+        // AiPlayerbot.DungeonRunGuardLeavesAssignedTank: a unit a tank row assigns to a slot stays with that tank.
+        f.raid.guardLeavesAssigned = sPlayerbotAIConfig.dungeonRunGuardLeavesAssignedTank;
     }
     // The near-wipe stop: config reads only, no world read (DungeonRun::NearWipeStopCount keeps it to raids unless
     // AiPlayerbot.DungeonRunNearWipeStopParty is on).

@@ -1463,6 +1463,10 @@ struct RaidFacts
     // on a healer goes to the nearest ranged dps first, and the off-tanks take such an add only when none is free
     // (RaidHealerGuard, RaidGuardTick).
     bool healerGuard = false;
+    // AiPlayerbot.DungeonRunGuardLeavesAssignedTank (default off, boss rules only): RaidGuardTick never sends an
+    // off-tank at a unit a tank row assigns to a tank slot (an until_tank row with priority >= 1, or a tank_post
+    // row): the unit stays with that tank, through its until_tank window or its post.
+    bool guardLeavesAssigned = false;
     // Living tanks other than the lead bot, on its map within kGuardYd of it and out of a commander task, in the
     // layout's order: the raid trash fights send a loose mob to them (RaidTrashFight, CheckGuard).
     std::vector<std::string> offTanksAlive;
@@ -18168,7 +18172,8 @@ inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepte
 // lead bot dead or no tank, the boss itself on a raid member that is no tank is taken off him at once (one an off-tank
 // holds is left there). No off-tank: the party guard's rules (false, CheckGuard goes on). With
 // AiPlayerbot.DungeonRunRaidHealerGuard (CheckGuard, which runs RaidHealerGuard first) the off-tanks take no other
-// add. True when `order` holds it.
+// add; with AiPlayerbot.DungeonRunGuardLeavesAssignedTank they never take a unit a tank row assigns to a tank slot
+// either (RaidFacts::guardLeavesAssigned). True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
     if (f.raid.bossOffTanksAlive.empty())
@@ -18223,6 +18228,11 @@ inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string&
                 continue;
             if (PlanBossEntry(r, u.entry) || u.victimTank || LinkedDeathMemberEntry(r, f, u.entry))
                 continue; // the boss is the main tank's, never a pick-up; a mob an off-tank holds is not loose
+            // A unit a tank row assigns to a tank slot (until_tank, tank_post) stays with that tank: its window
+            // hands it to the next usable tank itself, and its post takes it.
+            if (f.raid.guardLeavesAssigned && r.liveTactics && r.plan &&
+                r.liveTactics->AssignedTankSlot(r.plan->map, u.entry) >= 1)
+                continue;
             // The healer guard's off-tank takes only an add on a healer, and not one a ranged dps is free for
             // (RaidHealerGuard): every other add is left where it hits, so the off-tank stays on its own mob.
             if (healerGuardOn && (!u.victimHealer || r.healerGuardDps.count(u.guid) ||
