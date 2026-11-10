@@ -3816,6 +3816,10 @@ namespace ai
         bool evading = false;
     };
 
+    // Whether the boss stand seat the tank holds yields the post. A stay (S2: the bot already stood clear) is not a
+    // seat the plan gave it, so the post keeps going and the leash keeps slot 1 at the spot while the tank is clear.
+    inline bool TankPostSeated(bool standValid, bool stay) { return standValid && !stay; }
+
     // The unit the post waits for: the nearest living one to the spot (the nearest dead one when none lives, so its
     // death still ends the post). -1 for an empty list.
     inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ)

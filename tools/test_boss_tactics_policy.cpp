@@ -953,6 +953,27 @@ static void TestTankPost_HoldSpotYieldsToSeat()
     CHECK(TankPostStep(in) == TankPostDecision::Engage);
 }
 
+// TankPost_StaySeatDoesNotYield: the post's seated read is a planned stand seat, not S2's stay. A stay (the bot
+// already stood clear of the lane) leaves the post going, so the leash keeps slot 1 at the spot while the tank is
+// clear; a real seat still yields it.
+static void TestTankPost_StaySeatDoesNotYield()
+{
+    CHECK(TankPostSeated(true, false));
+    CHECK(!TankPostSeated(true, true));
+    CHECK(!TankPostSeated(false, false));
+    CHECK(!TankPostSeated(false, true));
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.seated = TankPostSeated(true, true);   // a stay
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostStep(in) != TankPostDecision::Yield);
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.seated = TankPostSeated(true, false);  // a planned seat
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+}
+
 // hold_spot: the window ends a post only before its arrival; a plain post still ends on it either way.
 static void TestTankPost_HoldSpotWindowKeepsArrivedPost()
 {
@@ -1042,6 +1063,7 @@ int main()
     TestTankPost_HoldSpotNoDragWhileSubjectOffTank();
     TestTankPost_HoldSpotSubjectOutranksOtherHostile();
     TestTankPost_HoldSpotYieldsToSeat();
+    TestTankPost_StaySeatDoesNotYield();
     TestTankPost_HoldSpotWindowKeepsArrivedPost();
     TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
 

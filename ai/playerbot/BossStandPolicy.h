@@ -582,18 +582,49 @@ namespace ai
         return (lane.dx * (y - anchorY) - lane.dy * (x - anchorX)) / length;
     }
 
-    // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
-    // that seat is already clear: it stays where it stands instead of walking toward the lane.
-    inline bool StandAlreadyClear(const StandLane& lane, float anchorX, float anchorY, float botX, float botY,
-                                  float seatX, float seatY)
+    // AiPlayerbot.BossStandWholeRaid, the stay: a bot on its seat's side of the lane and at least as far from the lane
+    // line as the seats of that side standing next to it along the lane is already clear. The comparison is the
+    // window's own seats (every role) whose along-lane coordinate is within kBossStandStayAlongYd of the bot's, never
+    // the far seat it was assigned: a mid-lane bot at that seat's lateral would still take the ticks, and where no seat
+    // of its side stands next to it along the lane (the seats sit past the tick chain, at the lane's ends) it walks.
+    constexpr float kBossStandStayAlongYd = 3.0f;  // the seat lattice is 2.83 yd
+
+    inline bool StandAlreadyClear(const StandLane& lane, const BossStandRow& window,
+                                  const std::vector<BossStandRow>& rows, float botX, float botY, float seatX,
+                                  float seatY)
     {
         if (!lane.valid)
             return false;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        if (!(length > 0.0001f))
+            return false;
+        const float anchorX = window.anchorX;
+        const float anchorY = window.anchorY;
         const float bot = StandLateral(lane, anchorX, anchorY, botX, botY);
         const float seat = StandLateral(lane, anchorX, anchorY, seatX, seatY);
-        if (std::fabs(seat) < 0.5f)
+        if (std::fabs(seat) < 0.5f || (bot >= 0.0f) != (seat >= 0.0f))
             return false;
-        return (bot >= 0.0f) == (seat >= 0.0f) && std::fabs(bot) >= std::fabs(seat);
+        const bool seatSide = seat >= 0.0f;
+        const float along = (lane.dx * (botX - anchorX) + lane.dy * (botY - anchorY)) / length;
+        bool any = false;
+        float need = 0.0f;
+        for (const BossStandRow& row : rows)
+        {
+            if (row.anchor != window.anchor || row.windowSpell != window.windowSpell || (row.side == 0) != seatSide)
+                continue;
+            const float rowAlong = (lane.dx * (row.x - anchorX) + lane.dy * (row.y - anchorY)) / length;
+            if (std::fabs(rowAlong - along) > kBossStandStayAlongYd)
+                continue;
+            const float lateral = std::fabs(StandLateral(lane, anchorX, anchorY, row.x, row.y));
+            if (lateral < 0.5f)
+                continue;
+            if (!any || lateral > need)
+            {
+                any = true;
+                need = lateral;
+            }
+        }
+        return any && std::fabs(bot) >= need;
     }
 
     // AiPlayerbot.BossStandWholeRaid: a seated bot does not flee (the seat is the escape).

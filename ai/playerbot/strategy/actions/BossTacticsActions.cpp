@@ -8561,15 +8561,16 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
             return finishStandRead(target, false, "given_up");
     }
-    // AiPlayerbot.BossStandWholeRaid: a bot already on its seat's side of the lane and at least as far from it as the
-    // seat is stays where it stands; the seat is its own position, so the reach, the dodge, the flee and the tank
-    // post's seated read all see it seated and the stand action sees it arrived.
-    if (sPlayerbotAIConfig.bossStandWholeRaid &&
-        StandAlreadyClear(lane, points[0]->anchorX, points[0]->anchorY, bot->GetPositionX(), bot->GetPositionY(),
-                          seat.x, seat.y))
+    // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
+    // the seats next to it along the lane stays where it stands; the seat is its own position, so the reach, the dodge
+    // and the flee see it seated and the stand action sees it arrived. A stay is not a planned seat, so the tank post
+    // does not yield to it (TankPostSeated).
+    if (sPlayerbotAIConfig.bossStandWholeRaid && bossRows &&
+        StandAlreadyClear(lane, *points[0], *bossRows, bot->GetPositionX(), bot->GetPositionY(), seat.x, seat.y))
     {
         stayApplied = true;
         target.valid = true;
+        target.stay = true;
         target.x = bot->GetPositionX();
         target.y = bot->GetPositionY();
         target.z = bot->GetPositionZ();
@@ -11271,7 +11272,8 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     in.arrivedBefore = haveRecord &&
         TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
     in.subjectOnTank = subject && subject->GetVictim() == bot;
-    in.seated = holdSpot && FindBossStand(ai, bot).valid;
+    const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();
+    in.seated = TankPostSeated(stand.valid, stand.stay);
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
         in.holdingOtherHostile = false;
