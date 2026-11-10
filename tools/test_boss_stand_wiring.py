@@ -36,6 +36,8 @@ STRATEGY_CPP = (STRATEGY / "generic/BossTacticsStrategy.cpp").read_text()
 ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
 REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
+MOVEMENT_ACTIONS = (STRATEGY / "actions/MovementActions.cpp").read_text()
+MOVEMENT_ACTIONS_H = (STRATEGY / "actions/MovementActions.h").read_text()
 DUNGEON_ACTIONS = (STRATEGY / "actions/DungeonActions.cpp").read_text()
 DUNGEON_ACTIONS_H = (STRATEGY / "actions/DungeonActions.h").read_text()
 MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
@@ -183,7 +185,7 @@ class BossStandWiring(unittest.TestCase):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         # One rule for every bot that evaluates the plan: engaged with THIS boss (its threat list or its victim) in
         # range of the anchor, or holding a stand for the same boss and anchor.
-        self.assertIn("boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member", fn)
+        self.assertIn("StandMemberEngaged(boss->GetThreatManager().getThreat(member) > 0.0f,", fn)
         self.assertIn("memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor", fn)
         self.assertIn("bots = SelectStandBots(candidates, anchorX, anchorY);", fn)
         # The anchor is the one the open window picked, and the boss the one that owns it.
@@ -359,6 +361,33 @@ class BossStandWiring(unittest.TestCase):
                 self.assertIn('ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");', text)
                 self.assertEqual(text.count('ReleaseStandEpisode(ai, selfKey, "gone");'), 2)
         self.assertIn("g_standEpisodes.erase(key);", body(ACTIONS, "void ForgetStand(uint64 key)"))
+
+    def test_the_whole_raid_key_seats_the_wiped_and_keeps_the_clear(self):
+        # AiPlayerbot.BossStandWholeRaid, S2: both keys are read; the engagement rule is the policy's; the stay sits
+        # after the given-up check and before the target is handed out; the flee action asks before it flees.
+        for key, member in (("AiPlayerbot.BossStandEvents", "bossStandEvents"),
+                            ("AiPlayerbot.BossStandWholeRaid", "bossStandWholeRaid")):
+            self.assertIn('%s = config.GetBoolDefault("%s", false);' % (member, key), CONFIG)
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("candidate.engaged = StandMemberEngaged(", fn)
+        self.assertIn("member->IsInCombat(), boss->IsInCombat());", fn)
+        given_up = fn.index('return finishStandRead(target, false, "given_up");')
+        stay = fn.index("StandAlreadyClear(lane, points[0]->anchorX, points[0]->anchorY, bot->GetPositionX(),")
+        valid = fn.index("target.valid = true;\n    target.x = seat.x;")
+        self.assertLess(given_up, stay)
+        self.assertLess(stay, valid)
+        self.assertIn("stayApplied = true;", fn)
+        self.assertIn("return finishStandRead(target, true, nullptr);", fn)
+        flee = body(MOVEMENT_ACTIONS, "bool FleeAction::isUseful()")
+        gate = flee.index("sPlayerbotAIConfig.bossStandWholeRaid")
+        self.assertLess(gate, flee.index("FindBossStand(ai, bot).valid"))
+        self.assertIn("FleeYieldsToStand(true, FindBossStand(ai, bot).valid)", flee)
+        self.assertIn('#include "playerbot/BossTacticsStand.h"', MOVEMENT_ACTIONS)
+        # The step-out from a ground cloud keeps its own rule.
+        area = body(MOVEMENT_ACTIONS, "bool FleeFromAreaAction::isUseful()")
+        self.assertNotIn("FindBossStand", area)
+        declared = body(MOVEMENT_ACTIONS_H, "class FleeAction", end="\n    };\n")
+        self.assertIn("virtual bool isUseful() override;", declared)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

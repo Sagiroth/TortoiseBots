@@ -1479,6 +1479,13 @@ AiPlayerbot.BossStandOutranksBreathDodge = 0
 # 0 - off (Default)
 # 1 - on
 AiPlayerbot.BossStandEvents = 0
+# The boss stand seats of the whole raid: on, a bot in combat with the boss counts toward its stand seats even while
+# it has no threat on the boss and is not its victim (Onyxia's Fireball wipes the target's threat), a bot that already
+# stands on its seat's side of the lane and at least as far from it as the seat stays where it stands, and a seated bot
+# does not flee. Recommended on. Needs the boss stand rows and the boss tactics.
+# 0 - off: a stand seats only bots on the boss's threat list or its victim, every seat is walked to (Default)
+# 1 - on
+AiPlayerbot.BossStandWholeRaid = 0
 
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables

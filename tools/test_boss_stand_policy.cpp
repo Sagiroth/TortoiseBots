@@ -1282,6 +1282,89 @@ int main()
         CHECK(!out.assigned && !out.arrived);
     }
 
+    // AiPlayerbot.BossStandWholeRaid: a member counts while it is in combat with the boss, so Onyxia's Fireball
+    // (-100 % threat on its target) no longer costs the wiped bot its seat; with the key off only threat and the
+    // victim count, as before.
+    {
+        CHECK(StandMemberEngaged(false, false, true, true, true));    // threat-wiped, both in combat, key on
+        CHECK(!StandMemberEngaged(false, false, false, true, true));  // the same with the key off
+        CHECK(StandMemberEngaged(true, false, false, false, false));  // threat alone counts with the key off
+        CHECK(StandMemberEngaged(false, true, false, false, false));  // the victim alone too
+        CHECK(!StandMemberEngaged(false, false, true, false, true));  // out of combat: never counts
+        CHECK(!StandMemberEngaged(false, false, true, true, false));  // boss out of combat
+    }
+
+    // AiPlayerbot.BossStandWholeRaid, the stay: a bot at least as far from the lane line as its seat, on the seat's
+    // side, stays where it stands. The lane is the walk 2b one, anchor (22.9, -217.2) to (-65.8, -213.8).
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -65.8f - 22.9f;
+        lane.dy = -213.8f + 217.2f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const auto lateralPoint = [&](float lateral, float& x, float& y)
+        {
+            const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+            x = ax + (-lane.dy / length) * lateral;
+            y = ay + (lane.dx / length) * lateral;
+        };
+        float seatX = 0.0f, seatY = 0.0f;
+        float botX = 0.0f, botY = 0.0f;
+        lateralPoint(35.0f, seatX, seatY);
+        lateralPoint(40.0f, botX, botY);
+        CHECK(StandAlreadyClear(lane, ax, ay, botX, botY, seatX, seatY));   // farther out on the seat's side: stays
+        lateralPoint(20.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, ax, ay, botX, botY, seatX, seatY));  // nearer the lane: walks
+        lateralPoint(-40.0f, botX, botY);
+        CHECK(!StandAlreadyClear(lane, ax, ay, botX, botY, seatX, seatY));  // other side: walks (never crosses)
+        StandLane invalid;
+        CHECK(!StandAlreadyClear(invalid, ax, ay, botX, botY, seatX, seatY));
+    }
+
+    // Equal distance from the lane line stays (the seat is no farther out than the bot).
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -88.7f;
+        lane.dy = 3.4f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const auto lateralPoint = [&](float lateral, float& x, float& y)
+        {
+            x = ax + (-lane.dy / length) * lateral;
+            y = ay + (lane.dx / length) * lateral;
+        };
+        float seatX = 0.0f, seatY = 0.0f;
+        float botX = 0.0f, botY = 0.0f;
+        lateralPoint(35.0f, seatX, seatY);
+        lateralPoint(35.0f, botX, botY);
+        CHECK(StandAlreadyClear(lane, ax, ay, botX, botY, seatX, seatY));
+    }
+
+    // A seat on the lane line is never "already clear": the lane side of the seat is what the stay is measured by.
+    {
+        StandLane lane;
+        lane.valid = true;
+        lane.dx = -88.7f;
+        lane.dy = 3.4f;
+        const float ax = 22.9f;
+        const float ay = -217.2f;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        const float botX = ax + (-lane.dy / length) * 40.0f;
+        const float botY = ay + (lane.dx / length) * 40.0f;
+        CHECK(!StandAlreadyClear(lane, ax, ay, botX, botY, ax, ay));
+    }
+
+    // A seated bot does not flee, and only with the key.
+    {
+        CHECK(FleeYieldsToStand(true, true));
+        CHECK(!FleeYieldsToStand(false, true));
+        CHECK(!FleeYieldsToStand(true, false));
+        CHECK(!FleeYieldsToStand(false, false));
+    }
+
     std::cout << "All boss stand policy tests passed.\n";
     return 0;
 }

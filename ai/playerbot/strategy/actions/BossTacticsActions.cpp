@@ -8233,8 +8233,11 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             candidate.id = member->GetObjectGuid().GetRawValue();
             candidate.x = member->GetPositionX();
             candidate.y = member->GetPositionY();
-            // On the boss's threat list (as AttackersValue.cpp:367 reads it), or the boss's victim.
-            candidate.engaged = boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member;
+            // On the boss's threat list (as AttackersValue.cpp:367 reads it), its victim, or (with
+            // AiPlayerbot.BossStandWholeRaid) both in combat: a threat wipe must not cost the wiped bot its seat.
+            candidate.engaged = StandMemberEngaged(boss->GetThreatManager().getThreat(member) > 0.0f,
+                                                   boss->GetVictim() == member, sPlayerbotAIConfig.bossStandWholeRaid,
+                                                   member->IsInCombat(), boss->IsInCombat());
             candidate.holdsSameAnchor = memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor;
             return candidate;
         };
@@ -8455,6 +8458,20 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         auto failure = g_standFailures.find(selfKey);
         if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
             return finishStandRead(target, false, "given_up");
+    }
+    // AiPlayerbot.BossStandWholeRaid: a bot already on its seat's side of the lane and at least as far from it as the
+    // seat is stays where it stands; the seat is its own position, so the reach, the dodge, the flee and the tank
+    // post's seated read all see it seated and the stand action sees it arrived.
+    if (sPlayerbotAIConfig.bossStandWholeRaid &&
+        StandAlreadyClear(lane, points[0]->anchorX, points[0]->anchorY, bot->GetPositionX(), bot->GetPositionY(),
+                          seat.x, seat.y))
+    {
+        stayApplied = true;
+        target.valid = true;
+        target.x = bot->GetPositionX();
+        target.y = bot->GetPositionY();
+        target.z = bot->GetPositionZ();
+        return finishStandRead(target, true, nullptr);
     }
     target.valid = true;
     target.x = seat.x;

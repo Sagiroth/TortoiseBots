@@ -40,6 +40,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
 | [`AiPlayerbot.BossStandEvents`](#aiplayerbotbossstandevents) | `0` | `1`: one `BossStand` row per bot and window (assigned, arrived, unseated, released) into `bot_events.csv`. |
+| [`AiPlayerbot.BossStandWholeRaid`](#aiplayerbotbossstandwholeraid) | `0` | `1`: every bot in combat with the boss counts toward its stand seats (a threat wipe keeps its seat), a bot already clear of the lane stays put, and a seated bot does not flee (recommended on). |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -759,6 +760,16 @@ Whether the stand seats write one `BossStand` row per bot and window: assigned, 
 <summary>How it works in detail</summary>
 
 **Stand rows:** one episode per bot and window (the boss guid and the anchor), so a walk can tell a bot that never got a seat from one that got it too late or left it. info1 is `boss=<entry>,anchor=<id>,role=<healer|ranged|melee>,spell=<window spell>`. info2 is `event=assigned,yd=<yards to the seat>,stay=<1 when the bot stayed where it stood>,src=<open|hold>` (`open`: the window is on this read, `hold`: the seat outlives a closed window), `event=arrived,ms=<since the seat was assigned>`, `event=unseated,reason=<not_counted|given_up|side_full>` (once per episode) and `event=released,reason=<other_window|no_boss|release_anchor|hold_time|dead|gone>,seated=<1 when it reached the seat>`. The rows cost nothing when the key is off; `bot_events.csv` must be on for any row to be written.
+
+</details>
+### `AiPlayerbot.BossStandWholeRaid`
+Whether every bot in the fight with the boss takes a stand seat, and whether a bot already clear of its lane stays put and a seated bot does not flee.
+**Default:** `0` (recommended on) · **Values:** `0` off (a seat needs threat on the boss or the boss's victim, every seat is walked to, flee runs as before), `1` on (needs the boss tactics and the boss stand rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Whole raid:** without the key a bot takes part in an anchor's seats only with threat on the boss or while it is the boss's victim, so a boss that wipes threat (Onyxia's Fireball, -100 %) drops its target out of the seat plan until it gains threat again. With the key on, a member that is in combat while the boss is in combat counts too; nothing else about the plan changes. **Stay:** a bot already on its seat's side of the lane and at least as far from the lane line as its seat stays where it stands: the seat becomes the bot's own position, so the reach, the reactive dodge, the flee gate and the tank post's seated read all treat it as seated and the stand action sees it arrived. **Flee:** a seated bot's `flee` is not useful (the seat is the escape); the step-out from a ground cloud keeps its own rule and still runs. The `BossStand` row of a stay says `stay=1`.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

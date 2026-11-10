@@ -430,6 +430,14 @@ namespace ai
         return member.engaged && dx * dx + dy * dy <= kBossStandMemberRange * kBossStandMemberRange;
     }
 
+    // AiPlayerbot.BossStandWholeRaid: in the fight with the boss = threat on it, its victim, or (with the key) both in
+    // combat: a boss threat wipe (a -100 % threat cast) must not cost its target the seat.
+    inline bool StandMemberEngaged(bool threatPositive, bool isVictim, bool wholeRaid, bool memberInCombat,
+                                   bool bossInCombat)
+    {
+        return threatPositive || isVictim || (wholeRaid && memberInCombat && bossInCombat);
+    }
+
     // A bot of the stand set, as the assignment sees it.
     struct StandBot
     {
@@ -564,6 +572,32 @@ namespace ai
         }
         return lane;
     }
+
+    // The signed distance of (x, y) from the lane line through the anchor; positive is side 0 (StandSideOf's sign).
+    inline float StandLateral(const StandLane& lane, float anchorX, float anchorY, float x, float y)
+    {
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        if (!(length > 0.0001f))
+            return 0.0f;
+        return (lane.dx * (y - anchorY) - lane.dy * (x - anchorX)) / length;
+    }
+
+    // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
+    // that seat is already clear: it stays where it stands instead of walking toward the lane.
+    inline bool StandAlreadyClear(const StandLane& lane, float anchorX, float anchorY, float botX, float botY,
+                                  float seatX, float seatY)
+    {
+        if (!lane.valid)
+            return false;
+        const float bot = StandLateral(lane, anchorX, anchorY, botX, botY);
+        const float seat = StandLateral(lane, anchorX, anchorY, seatX, seatY);
+        if (std::fabs(seat) < 0.5f)
+            return false;
+        return (bot >= 0.0f) == (seat >= 0.0f) && std::fabs(bot) >= std::fabs(seat);
+    }
+
+    // AiPlayerbot.BossStandWholeRaid: a seated bot does not flee (the seat is the escape).
+    inline bool FleeYieldsToStand(bool wholeRaid, bool seated) { return wholeRaid && seated; }
 
     // Yards a bot covers in a 5 s breath cast at run speed (7 yd/s): a seat further than this is still taken, but the
     // plan seats as many bots as it can within it.

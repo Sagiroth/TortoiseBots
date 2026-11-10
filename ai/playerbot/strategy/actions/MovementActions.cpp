@@ -5,6 +5,7 @@
 #include "playerbot/PerformanceMonitor.h"
 #include "MovementActions.h"
 #include "BossTacticsActions.h"
+#include "playerbot/BossTacticsStand.h"
 #include "Movement/MotionMaster.h"
 #include "Movement/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
@@ -3798,6 +3799,16 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
 bool FleeAction::Execute(Event& event)
 {
     return Flee(AI_VALUE(Unit*, "current target"));
+}
+
+bool FleeAction::isUseful()
+{
+    if (!MovementAction::isUseful())
+        return false;
+    // AiPlayerbot.BossStandWholeRaid: a bot on its seat does not flee, the seat is the escape (the stand action keeps
+    // it there, and the reach, the dodge and the tank post's seated read already treat it as seated). The lookup runs
+    // only with the key on.
+    return !(sPlayerbotAIConfig.bossStandWholeRaid && FleeYieldsToStand(true, FindBossStand(ai, bot).valid));
 }
 
 bool FleeFromAreaAction::isUseful()
