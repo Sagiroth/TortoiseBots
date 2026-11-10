@@ -2,7 +2,8 @@
 
 namespace ai
 {
-    // TO DO: Delete this when no more dependencies
+    // The reaction engine's universal raid rows (ReactionRowsPolicy.h), gated by AiPlayerbot.RaidReactions. The four
+    // state rows (combat start/end, death, resurrect) are not here: ClassStrategy::InitReactionTriggers keeps them.
     class ReactionStrategy : public Strategy
     {
     public:

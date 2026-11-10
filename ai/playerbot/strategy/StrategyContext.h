@@ -56,6 +56,7 @@
 #include "generic/MimicConsumableStrategy.h"
 // #include "generic/WorldBuffTravelStrategy.h" // E2E green: excluded to avoid GetSource mismatches
 #include "generic/DungeonStrategy.h"
+#include "generic/ReactionStrategy.h"
 #include "generic/OnyxiasLairDungeonStrategies.h"
 #include "generic/BossTacticsStrategy.h"
 #include "generic/MoltenCoreDungeonStrategies.h"
@@ -93,6 +94,7 @@ namespace ai
             creators["conserve mana"] = [](PlayerbotAI* ai) { return new ConserveManaStrategy(ai); };
             creators["food"] = [](PlayerbotAI* ai) { return new UseFoodStrategy(ai); };
             creators["consumables"] = [](PlayerbotAI* ai) { return new ConsumableStrategy(ai); };
+            creators["react"] = [](PlayerbotAI* ai) { return new ReactionStrategy(ai); };
             creators["chat"] = [](PlayerbotAI* ai) { return new ChatCommandHandlerStrategy(ai); };
             creators["default"] = [](PlayerbotAI* ai) { return new WorldPacketHandlerStrategy(ai); };
             creators["ready check"] = [](PlayerbotAI* ai) { return new ReadyCheckStrategy(ai); };

@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).
 - New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off while they would not pull the caster off the tank, so a damage dealer at the high-threat line still interrupts a cast (found by Tortoise Trials, #1556).
 - Fixed: a priest no longer shields a rage tank above critical health, in or out of combat; a warrior in Defensive Stance or a druid in Bear Form counts as a tank even without Protection or Feral talents, and an assigned non-tank role wins over the stance (#1553).
