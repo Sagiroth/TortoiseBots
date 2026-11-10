@@ -30,6 +30,47 @@
 - Fixed: the totem focus no longer cuts a cast already aimed at the totem it focuses.
 - taunt_after_cast now runs on AuraTactics alone (AiPlayerbot.DungeonRunCharmYield is no longer needed).
 
+## v1.23.0 (2026-11-10)
+
+### Companions & Parties
+- Party bots now walk to the flight master, take the same flight as you and land beside you. [#1571](https://github.com/Sagiroth/TortoiseBots/pull/1571)
+- A bot left behind at the flight master is summoned to you once you land. [#1571](https://github.com/Sagiroth/TortoiseBots/pull/1571)
+- Bots now take off blacklisted gear they were already wearing and fill the slot with something fitting. [#1572](https://github.com/Sagiroth/TortoiseBots/pull/1572)
+- A pool bot that leaves a party now goes back to acting on its own. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Classes & Combat
+- In a party, hunters now wait instead of running past monsters nobody has pulled yet. [#1570](https://github.com/Sagiroth/TortoiseBots/pull/1570)
+- A hunter stepping out of melee now picks a clear spot instead of backing into other monsters. [#1570](https://github.com/Sagiroth/TortoiseBots/pull/1570)
+- Bots now interrupt enemy spells far more reliably, even when they already hold high threat. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+- Bots also stop wasting interrupts on spells the target's facing blocks anyway. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+- The two new interrupt options are off by default; turn them on in the bot settings to get the improvement. [#1576](https://github.com/Sagiroth/TortoiseBots/pull/1576)
+
+### Movement & the World
+- Bots now walk only where a player can: no more climbing steep slopes or cutting through walls. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Short walks to vendors, portals, quest boards and flight masters now follow the ground instead of a straight line. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Long trips no longer replay stored route points that don't match the world, so bots stop drifting off course. [#1580](https://github.com/Sagiroth/TortoiseBots/pull/1580)
+- Bots no longer pile up on the unreachable ice floe at Iceflow Lake or the upper terrace at Algaz Station. [#1573](https://github.com/Sagiroth/TortoiseBots/pull/1573)
+- Bots that do get stuck are freed and now pick a different spot instead of heading straight back. [#1573](https://github.com/Sagiroth/TortoiseBots/pull/1573)
+- Bots on long walks keep going instead of pausing between each leg of the journey. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Starting Zones
+- New goblins and high elves now start in the emptiest start zone of their faction instead of always the same one. [#1568](https://github.com/Sagiroth/TortoiseBots/pull/1568)
+- Server owners who set their own start zone weights, or switch the even spread off, keep the old placement. [#1568](https://github.com/Sagiroth/TortoiseBots/pull/1568)
+
+### Guild Orders
+- Guild order bots no longer get stuck at the bank when their guild has no bank. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Order bots now try to craft or gather an item themselves before spending gold on it at the auction house. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Searching orders with many similar names no longer hides items a bot could actually make. [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+
+### Performance
+- Bots near a player no longer take their turns first by default, so distant bots stop stuttering and reacting late. [#1578](https://github.com/Sagiroth/TortoiseBots/pull/1578) [#1574](https://github.com/Sagiroth/TortoiseBots/pull/1574)
+- Server owners with a very large bot pool on a slow machine can switch the nearby-bots-first preference back on with the nearby range setting. [#1578](https://github.com/Sagiroth/TortoiseBots/pull/1578)
+
+### Behind the scenes
+- The install guide now warns server owners that the automatic database updater can re-apply old updates, so keep a backup or update by hand. [#1581](https://github.com/Sagiroth/TortoiseBots/pull/1581)
+
+---
+
 ## v1.22.1 (2026-11-08)
 
 ### Classes & Combat
