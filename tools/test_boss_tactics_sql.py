@@ -944,24 +944,50 @@ class BossTacticsSql(unittest.TestCase):
                     self.assertEqual(quota, counts.get((anchor, side, role), 0),
                                      "anchor %d side %d role %s" % (anchor, side, role))
 
-    def test_onyxia_walk2b_post_is_hold_spot(self):
-        # 20261110120200_world.sql: the walk 2a tank_post row becomes hold_spot (needs
-        # AiPlayerbot.DungeonRunTankPostHoldSpot = 1): same slot, spot, band and window,
-        # so the post starts off a whelp, drags Cindarion back to T and yields to a seat.
-        # The mode pin is the gate: without the migration the row is still a plain post.
-        name = "20261110120200_world.sql"
+    def test_onyxia_walk2c_rows(self):
+        # 20261110130000_world.sql: the arrival radius goes 25 -> 40 (the latch only decides
+        # the first arrival; walk 2b Cindarion landed 21-26 yd from T, so 25 latched 44-104 s
+        # late), and a ranged_only row (gap 10 yd, needs AiPlayerbot.DungeonRunRangedOnly = 1)
+        # sends melee and tanks to Cindarion and the whelps while she hovers. The DELETE pin is
+        # the gate: without the migration the tank_post row still carries param 25 and no
+        # (249, 10184) ranged_only row is live.
+        name = "20261110130000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
-        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b post migration is missing")
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2c migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post';", text)
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'ranged_only';", text)
+        self.assertEqual(2, len(re.findall(r"(?m)^\(249, 10184, '", text)))
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
         post = live.get((249, 10184, "tank_post", 50143, 0))
         self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
-        self.assertEqual(name, post["file"], "the walk 2b migration owns the tank_post row")
+        self.assertEqual(name, post["file"], "the walk 2c migration owns the tank_post row")
         self.assertEqual("hold_spot", post["tactic_mode"], "the Onyxia tank_post row is not hold_spot")
-        self.assertEqual((1, 25.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
+        self.assertEqual((1, 40.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
                          (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
                           post["spot_x"], post["spot_y"], post["spot_z"]),
                          "the Onyxia tank_post row drifted")
         self.assertIsNone(new_kind_problem(post))
+        hold = live.get((249, 10184, "ranged_only", 0, 0))
+        self.assertIsNotNone(hold, "the Onyxia ranged_only row is missing")
+        self.assertEqual(name, hold["file"], "the walk 2c migration owns the ranged_only row")
+        self.assertEqual((0, 10.0, "", 0, 100),
+                         (hold["priority"], hold["param"], hold["tactic_mode"], hold["hp_min"], hold["hp_max"]),
+                         "the Onyxia ranged_only row drifted")
+        self.assertIsNone(new_kind_problem(hold))
+
+    def test_onyxia_walk2b_post_is_hold_spot(self):
+        # 20261110120200_world.sql: the walk 2a tank_post row becomes hold_spot (needs
+        # AiPlayerbot.DungeonRunTankPostHoldSpot = 1): same slot, spot, band and window,
+        # so the post starts off a whelp, drags Cindarion back to T and yields to a seat.
+        # The live row moved to 20261110130000_world.sql (radius 40, pinned in
+        # test_onyxia_walk2c_rows); only this file's content pins stay here.
+        name = "20261110120200_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b post migration is missing")
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
