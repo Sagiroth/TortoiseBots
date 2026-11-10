@@ -414,6 +414,7 @@ namespace ai
             creators["can fight boss"] = [](PlayerbotAI* ai) { return new CanFightBossValue(ai); };
             creators["should drink"] = [](PlayerbotAI* ai) { return new ShouldDrinkValue(ai); };
             creators["drink unfinished"] = [](PlayerbotAI* ai) { return new DrinkUnfinishedValue(ai); };
+            creators["rest to full"] = [](PlayerbotAI* ai) { return new RestToFullValue(ai); };
             creators["should eat"] = [](PlayerbotAI* ai) { return new ShouldEatValue(ai); };
             creators["drink duration"] = [](PlayerbotAI* ai) { return new DrinkDurationValue(ai); };
             creators["eat duration"] = [](PlayerbotAI* ai) { return new EatDurationValue(ai); };

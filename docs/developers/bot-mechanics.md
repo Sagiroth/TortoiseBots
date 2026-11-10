@@ -91,7 +91,7 @@ Bot movement bridges native C++ AI directly to the core server's `MotionMaster`:
 
 | Mechanic | How It Works |
 | :--- | :--- |
-| **Simultaneous Eat & Drink** | Out of combat, bots eat and drink in a single rest phase. Cheat bots recover to 90% health and mana; non-cheat bots to 50% health and 85% mana. Pre-pull meal checks outrank `attack anything` until above medium health/mana (70/40 default). |
+| **Simultaneous Eat & Drink** | Out of combat, bots eat and drink in a single rest phase. Cheat bots recover to 90% health and mana; non-cheat bots to 50% health and 85% mana. A rest order (`OrderRest`) skips those stop lines and runs the drink and food actions directly, up to 100%. A bot already seated with the same meal keeps it, and a cheat bot gets the missing meal added as an aura, because a fresh cast stands it up and ends the meal. The order sets the `rest to full` value. While it is set, every meal lasts the whole 30 s, the eat and drink stop lines are 100%, and the `resume drink` / `resume eat` triggers start another meal if one was not enough. Any seated bot stands as soon as every meal it has is done (full mana for a drink, full health for food). The value clears once both bars are full or a fight begins. Pre-pull meal checks outrank `attack anything` until above medium health/mana (70/40 default). |
 | **No Meal While Group Fights** | Bots do not sit down to rest while group members within 60 yd are in combat. Eating or drinking bots immediately stand up when combat begins. |
 | **Level-Tier Rations** | Pool bots are seeded with level-appropriate food and water that upgrade upon leveling and restock automatically. |
 | **Conjured Item Sharing** | Mages out of combat conjure food and water and trade stacks to mana-using allies in need. |

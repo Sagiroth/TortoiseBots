@@ -292,6 +292,14 @@ namespace ai
         DrinkUnfinishedValue(PlayerbotAI* ai) : ManualSetValue<bool>(ai, false, "drink unfinished") {}
     };
 
+    // Set by a rest order: eating and drinking stop at full, not at the
+    // downtime stop lines. Cleared once both bars are full or a fight begins.
+    class RestToFullValue : public ManualSetValue<bool>
+    {
+    public:
+        RestToFullValue(PlayerbotAI* ai) : ManualSetValue<bool>(ai, false, "rest to full") {}
+    };
+
     class ShouldDrinkValue : public BoolCalculatedValue
     {
     public:
@@ -304,7 +312,7 @@ namespace ai
             // cheat-bot caster that stops at 85 re-pulls half-oom and
             // chain-pulls OOM the same way a wounded bot chain-pulls dead.
             uint8 const manaPct = AI_VALUE2(uint8, "mana", "self target");
-            uint32 const stopManaPct = DrinkStopManaPct(
+            uint32 const stopManaPct = AI_VALUE(bool, "rest to full") ? 100 : DrinkStopManaPct(
                 ai->HasCheat(BotCheatMask::item), sPlayerbotAIConfig.almostFullHealth);
             if (!ShouldDrinkAtManaPct(bot->GetPowerType() == POWER_MANA, manaPct, stopManaPct))
                 return false;
@@ -361,7 +369,7 @@ namespace ai
             // [MediumHealth, AlmostFullHealth) band the strategy just made it
             // responsible for. Start threshold unchanged: the band still opens
             // at critical/low/medium, only the stop rises.
-            uint32 eatBelow = RestStopHealthPct(ai->HasCheat(BotCheatMask::item),
+            uint32 eatBelow = AI_VALUE(bool, "rest to full") ? 100 : RestStopHealthPct(ai->HasCheat(BotCheatMask::item),
                 sPlayerbotAIConfig.mediumHealth, sPlayerbotAIConfig.lowHealth,
                 sPlayerbotAIConfig.almostFullHealth);
             if (AI_VALUE2(uint8, "health", "self target") >= eatBelow)

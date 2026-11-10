@@ -1030,6 +1030,8 @@ public:
     // command's next step. The pull commands need it - they force one tick
     // inline, but the pull itself continues on the bot's own ticks.
     void ClearActionClock() { ResetAIInternalUpdateDelay(); }
+    // Seated on a drink (true) or a food (false) aura.
+    bool HasSeatedMeal(bool drink) const;
 
     const Action* GetLastExecutedAction(BotState state) const;
     // Trigger source of that engine's last successful action; pairs with GetLastExecutedAction (dashboard).

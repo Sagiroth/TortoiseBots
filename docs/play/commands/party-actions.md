@@ -365,11 +365,15 @@ Sits scoped bots down to eat and drink until health and mana are full.
 ```
 
 - Also: `.bot action drink`, `.bot action eat`.
+- Every bot that is not full sits down, even one above the 90% line where bots stop resting on their own. Use it before a big pull.
+- A bot that is already eating or drinking keeps going. It does not stand up and start over.
+- A bot that only drinks when the order comes also starts eating if it is hurt, and the other way round.
+- Bots that are already full count as done.
 - Mage bots share conjured food and water with the party.
 - In a dungeon run, no rest while any bound bot or its pet is fighting.
 - That hold reports as `party still fighting`.
 - If bots cannot rest, the reply groups reasons (`No bot rested: <reason>: <bots>...`).
-- Reasons: `dead`, `in combat`, `party still fighting`, `no food or drink` (or `no drink`, `no food`), `leader is moving`, `nothing to rest (mana X% >= Y%, health A% >= B%)`, `other: not useful now`.
+- Reasons: `dead`, `in combat`, `party still fighting`, `no food or drink` (or `no drink`, `no food`), `other: not useful now`.
 
 ### `.bot action release`
 

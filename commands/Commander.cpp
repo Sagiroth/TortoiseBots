@@ -4017,16 +4017,8 @@ static bool CommanderStayFollowRest(ChatHandler* handler, CommanderOrder const& 
                 ai->DropQueuedMovementOrders();
                 accepted = ExecuteQuietAction(ai, "stay chat shortcut", ai::Event("stay", "", order.commander));
             }
-            else // rest: same as `.bot action rest`
-            {
-                bool rested = false;
-                if (bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA))
-                    rested = ExecuteQuietAction(ai, "drink", ai::Event("rest", "drink", order.commander)) || rested;
-                if (bot->GetHealth() < bot->GetMaxHealth())
-                    rested = ExecuteQuietAction(ai, "food", ai::Event("rest", "food", order.commander)) || rested;
-                accepted = rested || (bot->GetHealth() >= bot->GetMaxHealth() &&
-                    (bot->GetPowerType() != POWER_MANA || bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA)));
-            }
+            else
+                accepted = OrderRest(ai, ai::Event("rest", "", order.commander));
             if (accepted)
                 ++succeeded;
         }

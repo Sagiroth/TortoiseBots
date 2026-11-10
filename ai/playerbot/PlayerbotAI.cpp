@@ -344,6 +344,27 @@ static bool HasSeatedAura(Player* bot)
     return false;
 }
 
+// Drink restores mana, food health; read from the spell's own effects, since
+// the by-name aura lookup misses some meal auras.
+bool PlayerbotAI::HasSeatedMeal(bool drink) const
+{
+    for (auto const& entry : bot->GetSpellAuraHolderMap())
+    {
+        SpellEntry const* spell = entry.second ? entry.second->GetSpellProto() : nullptr;
+        if (!spell || !(spell->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_SEATED))
+            continue;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            uint32 const aura = spell->EffectApplyAuraName[i];
+            if (drink ? (aura == SPELL_AURA_OBS_MOD_MANA || aura == SPELL_AURA_MOD_POWER_REGEN) :
+                (aura == SPELL_AURA_OBS_MOD_HEALTH || aura == SPELL_AURA_MOD_REGEN))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
     // The fight scan's one-slot cache lives for this update only: an explicit command runs outside it, on the same
@@ -591,6 +612,22 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         {
             bot->SetStandState(UNIT_STAND_STATE_STAND);
             ResetAIInternalUpdateDelay();
+        }
+
+        // A meal's sleep is only a guess at the time to full: stand once
+        // every meal the bot has is done instead of sitting on full bars.
+        if (aiInternalUpdateDelay > 0 && !isWaiting && bot->IsSittingDown() && HasSeatedAura(bot))
+        {
+            bool const drinking = HasSeatedMeal(true);
+            bool const eating = HasSeatedMeal(false);
+            bool const manaFull = bot->GetPowerType() != POWER_MANA ||
+                bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA);
+            if ((drinking || eating) && (!drinking || manaFull) &&
+                (!eating || bot->GetHealth() >= bot->GetMaxHealth()))
+            {
+                bot->SetStandState(UNIT_STAND_STATE_STAND);
+                ResetAIInternalUpdateDelay();
+            }
         }
     }
 
@@ -1449,6 +1486,7 @@ void PlayerbotAI::OnCombatStarted()
 
         ChangeEngine(BotState::BOT_STATE_COMBAT);
         aiObjectContext->GetValue<bool>("drink unfinished")->Set(false);
+        aiObjectContext->GetValue<bool>("rest to full")->Set(false);
         if (bot->GetStandState() == UNIT_STAND_STATE_SIT)
         {
             ResetAIInternalUpdateDelay();
