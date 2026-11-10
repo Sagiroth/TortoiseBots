@@ -40,8 +40,10 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         return true;
     }
 
-    MotionMaster &mm = *bot->GetMotionMaster();
-	mm.MovePoint(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
+    // The portal's own walk, checked: with no real navmesh path to it the
+    // bot holds instead of cutting through walls (WalkChecked refuses).
+    if (!WalkChecked(WorldPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z)))
+        return false;
     const float distance = bot->GetDistance(atEntry->x, atEntry->y, atEntry->z, SizeFactor::None);
     const float duration = 1000.0f * distance / bot->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
     ai->TellError(requester, "Wait for me");

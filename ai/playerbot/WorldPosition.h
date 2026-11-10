@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include "playerbot/SteepSlopePolicy.h"
 #include "WeightedShufflePolicy.h"
 
 namespace G3D
@@ -353,6 +354,13 @@ namespace ai
         // Why IsSwimLine refuses `path` for `bot` ("ok", or the first failing check of the first leg that
         // fails): the swim hand-off's log line (MovementActions.cpp).
         static std::string SwimLineWhy(const std::vector<WorldPosition>& path, const Unit* bot);
+        // Every bot route below walks where a player could: steep polygons are
+        // out through ExcludeSteepSlopes, with one permissive retry when strict
+        // does not reach, kept only when a player could climb it (SteepSlopePolicy.h).
+        static void ExcludeSteepSlopes(PathFinder& pathfinder);
+        static bool FellBackToPermissive(PathType strictType);
+        static bool PermissivePathWalkable(PointsArray const& path);
+        static bool PermissivePathWalkable(std::vector<WorldPosition> const& path);
         std::vector<WorldPosition> getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>& pathfinder, const Unit* bot, bool forceNormalPath = false) const;
         std::vector<WorldPosition> getPathStepFrom(const WorldPosition& startPos, const Unit* bot, bool forceNormalPath = false) const;
         std::vector<WorldPosition> GetPathStepFrom(const WorldPosition& startPos, const Unit* bot, bool forceNormalPath = false) const { return getPathStepFrom(startPos, bot, forceNormalPath); }

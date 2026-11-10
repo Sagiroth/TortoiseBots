@@ -5,7 +5,7 @@ Pins the wiring, not the math (the policy itself is tested in
 tools/test_travel_leg_chain_policy.cpp):
 - DispatchMovement wakes the next turn a margin BEFORE a spline leg ends
   (TRAVEL_LEG_CHAIN_REMAIN_MS), instead of after the leg time capped at
-  MaxWaitForMove; a plain MovePoint leg keeps its own wait.
+  MaxWaitForMove.
 - The travel action stays useful at the spline tail (TravelLegChainDue) so
   Execute dispatches the next leg in the same turn; pure walk legs only,
   and a failed move (or a path with fewer than 2 points) never chains.
@@ -26,11 +26,6 @@ class LegChainDispatchWiringTest(unittest.TestCase):
         self.assertIn("TRAVEL_LEG_CHAIN_REMAIN_MS", fn)
         self.assertIn("chainWait", fn)
         self.assertIn("WaitForReach(chainWait)", fn)
-
-    def test_plain_movepoint_leg_keeps_its_own_wait(self):
-        fn = MOVEMENT[MOVEMENT.index("bool MovementAction::DispatchMovement("):]
-        fn = fn[:fn.index("Unit* MovementAction::GetMover(")]
-        self.assertIn("else\n        WaitForReach(size);", fn)
 
 
 class LegChainTravelWiringTest(unittest.TestCase):

@@ -928,11 +928,15 @@ void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
         return;
     }
 
+    // The route is walked as one spline from the bot's position, so a join
+    // point with no real path to it would be reached in a straight line.
+    // Drop the route instead; the caller plans a new one.
     std::vector<WorldPosition> toPath = startPos.GetPathTo(beginPos, bot);
-
-    //We can not reach the new begin position. Follow the complete path.
-    if (!beginPos.isPathTo(toPath))
+    if (!beginPos.isPathTo(toPath, 3.0f, 5.0f))
+    {
+        clear();
         return;
+    }
 
     //Move to the new path and continue.
     fullPath.clear();
@@ -3817,8 +3821,9 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
         return result;
     }
 
+    std::unique_ptr<PathFinder> strictFinder = std::make_unique<PathFinder>(bot);
+    WorldPosition::ExcludeSteepSlopes(*strictFinder);
     std::unique_ptr<PathFinder> pathfinder = std::make_unique<PathFinder>(bot);
-
     PointsArray points;
     PathType pathType;
     WorldPosition currentPos = startPos;
@@ -3826,10 +3831,21 @@ TravelNodeMap::PathFindResult TravelNodeMap::testPathToLoop(const WorldPosition&
 
     for (uint8 i = 0; i < 40; i++)
     {
-        pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
-
-        pathType = pathfinder->getPathType();
-        points = pathfinder->getPath();
+        strictFinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
+        pathType = strictFinder->getPathType();
+        points = strictFinder->getPath();
+        // The flag over-marks stairs a player walks: when strict does not
+        // reach, the permissive answer is graded and a climb a player could
+        // take replaces the strict leg.
+        if (WorldPosition::FellBackToPermissive(pathType))
+        {
+            pathfinder->calculate(currentPos.GetVector3(), endPos.GetVector3(), false);
+            if (WorldPosition::PermissivePathWalkable(pathfinder->getPath()))
+            {
+                pathType = pathfinder->getPathType();
+                points = pathfinder->getPath();
+            }
+        }
 
         std::vector<WorldPosition> subPath = currentPos.fromPointsArray(points);
 
