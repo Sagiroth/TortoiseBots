@@ -1285,18 +1285,12 @@ bool HandleAction(ChatHandler* handler, char const* args)
         }
         else if (intent == "rest" || intent == "drink" || intent == "eat")
         {
-            bool rested = false;
-            if (bot->GetPowerType() == POWER_MANA && bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA))
-                rested = ExecuteQuietAction(ai, "drink", ai::Event(intent, "drink", requester)) || rested;
-            if (bot->GetHealth() < bot->GetMaxHealth())
-                rested = ExecuteQuietAction(ai, "food", ai::Event(intent, "food", requester)) || rested;
-            accepted = rested || (bot->GetHealth() >= bot->GetMaxHealth() &&
-                (bot->GetPowerType() != POWER_MANA || bot->GetPower(POWER_MANA) >= bot->GetMaxPower(POWER_MANA)));
+            accepted = OrderRest(ai, ai::Event(intent, "", requester));
             if (!accepted)
             {
                 // Name the gate that held so the caller can wait instead of
-                // guessing (#916). The stop lines and the should-values are
-                // the ones the drink/food actions read.
+                // guessing. The order rests to full, so its stop lines are
+                // 100% and the should-values do not gate it.
                 bool const cheat = ai->HasCheat(BotCheatMask::item);
                 ai::AiObjectContext* aiContext = ai->GetAiObjectContext();
                 ai::RestRefusalInput in;
@@ -1306,16 +1300,13 @@ bool HandleAction(ChatHandler* handler, char const* args)
                 in.usesMana = bot->GetPowerType() == POWER_MANA;
                 in.manaPct = in.usesMana && bot->GetMaxPower(POWER_MANA)
                     ? bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA) : 100;
-                in.drinkStopPct = ai::DrinkStopManaPct(cheat, sPlayerbotAIConfig.almostFullHealth);
+                in.drinkStopPct = 100;
                 in.healthPct = bot->GetMaxHealth() ? bot->GetHealth() * 100 / bot->GetMaxHealth() : 100;
-                in.eatStopPct = ai::RestStopHealthPct(cheat, sPlayerbotAIConfig.mediumHealth,
-                    sPlayerbotAIConfig.lowHealth, sPlayerbotAIConfig.almostFullHealth);
+                in.eatStopPct = 100;
                 in.hasDrink = cheat ||
                     !aiContext->GetValue<std::list<Item*>>("inventory items", "drink")->Get().empty();
                 in.hasFood = cheat ||
                     !aiContext->GetValue<std::list<Item*>>("inventory items", "food")->Get().empty();
-                in.shouldDrink = aiContext->GetValue<bool>("should drink")->Get();
-                in.shouldEat = aiContext->GetValue<bool>("should eat")->Get();
                 restRefusals.emplace_back(bot->GetName(), ai::RestRefusalReason(in));
             }
         }
