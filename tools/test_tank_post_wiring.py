@@ -74,7 +74,9 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("TankPostHoldsOtherHostile(bot, currentTarget, row->bossEntry)", find)
         self.assertIn("holdSpot = sPlayerbotAIConfig.dungeonRunTankPostHoldSpot && row->mode == TacticMode::HoldSpot",
                       find)
-        self.assertIn("in.arrivedBefore = haveRecord && record.arrivedLogged", find)
+        self.assertIn("in.subjectGuid = subjectUnit ? subjectUnit->guid : 0", find)
+        self.assertIn("TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid)", find)
+        self.assertIn("stored.arrivedSubjectGuid = in.subjectGuid;", find)
         self.assertIn("in.subjectOnTank = subject && subject->GetVictim() == bot", find)
         self.assertIn("in.seated = holdSpot && FindBossStand(ai, bot).valid", find)
         self.assertIn("if (holdSpot && currentTarget == subject)\n        in.holdingOtherHostile = false;", find)

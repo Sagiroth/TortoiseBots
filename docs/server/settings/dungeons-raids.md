@@ -1269,7 +1269,7 @@ The mode is the row's `tactic_mode` column (`hold_spot`) and only a `tank_post` 
 
 **Start:** unlike a plain post, a `hold_spot` post starts while the tank holds another hostile that attacks a group member (the post record and its start row are written then); the tank keeps that hostile until the awaited unit arrives.
 
-**Arrival:** the arrival latches from the first arrived tick, whatever the tank does on it (a drag back, or a stand seat yielding the post), and once logged the post stays arrived while the unit is alive and selectable, wherever it walks, so a landed boss that runs to its top-threat victim is still the post's. An arrived unit outranks any other hostile (the post engages it, not holds), and a hostile counts as "other" only when it is not that unit.
+**Arrival:** the arrival latches for that unit from the first arrived tick, whatever the tank does on it (a drag back, or a stand seat yielding the post), and once logged the post stays arrived for that one unit while it is alive and selectable, wherever it walks, so a landed boss that runs to its top-threat victim is still the post's. A second unit of the same entry starts unarrived. An arrived unit outranks any other hostile (the post engages it, not holds), and a hostile counts as "other" only when it is not that unit.
 
 **Drag:** while the arrived unit's victim is this tank, the tank more than 8 yd from the spot and the tank not seated, the tank walks back to the spot with the target kept (no attack stop, no target change), so the unit follows it there.
 

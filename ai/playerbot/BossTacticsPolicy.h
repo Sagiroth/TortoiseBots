@@ -3604,9 +3604,10 @@ namespace ai
         bool holdingOtherHostile = false; // the tank holds another hostile that attacks a group member
         bool windowExpired = false;       // the row's window_s has passed since the post started
         bool holdSpot = false;            // the row's `hold_spot` mode and its key are on
-        bool arrivedBefore = false;       // this post has already logged its arrival
+        bool arrivedBefore = false;       // this post's latched arrival counts for the unit this read saw
         bool subjectOnTank = false;       // the subject's victim is this tank
         bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
+        std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
 
     // The awaited unit has arrived when it stands within the row's radius of the spot, alive and selectable. Combat
@@ -3618,12 +3619,23 @@ namespace ai
         return found && alive && selectable && subjectToSpotYd <= arrivalRadiusYd;
     }
 
-    // Whether this tick latches (and logs) the post's arrival: the unit physically stands arrived, whatever the step
-    // chose. A first arrival can come out as Drag (the tank already more than 8 yd from the spot with the unit on it)
-    // or Yield (a stand seat is due); it must still latch, or the post would later treat it as never arrived and end
-    // on its window.
+    // Whether the post's latched arrival counts for the unit this read saw: only the same unit stays arrived, so a
+    // second unit of the same target_entry starts unarrived.
+    inline bool TankPostLatchCounts(bool arrivedLogged, std::uint64_t arrivedSubjectGuid,
+                                    std::uint64_t subjectGuid)
+    {
+        return arrivedLogged && arrivedSubjectGuid == subjectGuid;
+    }
+
+    // Whether this tick latches (and logs) the post's arrival. A plain post keeps its old rule and latches only when
+    // it engages. With the row's `hold_spot` mode, the unit physically stands arrived, whatever the step chose: a
+    // first arrival can come out as Drag (the tank already more than 8 yd from the spot with the unit on it) or Yield
+    // (a stand seat is due); it must still latch, or the post would later treat it as never arrived and end on its
+    // window.
     inline bool TankPostLatchesArrival(const TankPostIn& in, TankPostDecision step)
     {
+        if (!in.holdSpot)
+            return step == TankPostDecision::Engage;
         if (in.arrivedBefore || step == TankPostDecision::None || step == TankPostDecision::End)
             return false;
         return TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable, in.subjectToSpotYd,

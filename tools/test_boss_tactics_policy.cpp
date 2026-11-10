@@ -655,6 +655,43 @@ static void TestTankPost_HoldSpotFirstArrivalAsDragLatches()
     CHECK(TankPostStep(in) == TankPostDecision::End);
 }
 
+// The mutation case: removing the plain-post guard latches (and logs) an arrival while the tank still holds another
+// hostile; a plain post latches only when it engages.
+static void TestTankPost_PlainPostLatchesOnlyOnEngage()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;  // arrived
+    in.botToSpotYd = 1.0f;
+    in.holdingOtherHostile = true;
+    in.holdSpot = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    CHECK(!TankPostLatchesArrival(in, TankPostDecision::Hold));
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    CHECK(TankPostLatchesArrival(in, TankPostDecision::Engage));
+}
+
+// The mutation case: a latch that does not name its unit counts for any later unit of the entry, so a new unit would
+// inherit an arrival it never made and the post would outlive its window with that unit unarrived.
+static void TestTankPost_LatchIsPerSubject()
+{
+    bool const latchedOld = TankPostLatchCounts(true, 42, 42);
+    bool const latchedNew = TankPostLatchCounts(true, 42, 43);
+    CHECK(latchedOld);
+    CHECK(!latchedNew);
+    CHECK(!TankPostLatchCounts(false, 42, 42));
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.windowExpired = true;
+    // The same unit's latched arrival keeps the post past its window; a second unit of the entry starts unarrived.
+    in.arrivedBefore = latchedOld;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.arrivedBefore = latchedNew;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
 // The mutation case: dropping `in.subjectOnTank` from the drag test makes this fail (a unit that is not on the tank
 // would be dragged too).
 static void TestTankPost_HoldSpotNoDragWhileSubjectOffTank()
@@ -781,6 +818,8 @@ int main()
     TestTankPost_EngagesSelectableOutOfCombatSubject();
     TestTankPost_HoldSpotDragsSubjectBackToSpot();
     TestTankPost_HoldSpotFirstArrivalAsDragLatches();
+    TestTankPost_PlainPostLatchesOnlyOnEngage();
+    TestTankPost_LatchIsPerSubject();
     TestTankPost_HoldSpotNoDragWhileSubjectOffTank();
     TestTankPost_HoldSpotSubjectOutranksOtherHostile();
     TestTankPost_HoldSpotYieldsToSeat();

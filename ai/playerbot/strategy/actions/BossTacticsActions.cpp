@@ -10462,6 +10462,7 @@ struct TankPostRecord
     std::uint32_t startMs = 0;
     std::uint32_t lastReadMs = 0;
     bool arrivedLogged = false;
+    std::uint64_t arrivedSubjectGuid = 0;
 };
 
 std::mutex g_tankPostMutex;
@@ -10704,7 +10705,9 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     Unit* const currentTarget = AI_VALUE(Unit*, "current target");
     in.holdingOtherHostile = TankPostHoldsOtherHostile(bot, currentTarget, row->bossEntry);
     in.holdSpot = holdSpot;
-    in.arrivedBefore = haveRecord && record.arrivedLogged;
+    in.subjectGuid = subjectUnit ? subjectUnit->guid : 0;
+    in.arrivedBefore = haveRecord &&
+        TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
     in.subjectOnTank = subject && subject->GetVictim() == bot;
     in.seated = holdSpot && FindBossStand(ai, bot).valid;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
@@ -10734,6 +10737,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         record.startMs = nowMs;
         record.lastReadMs = nowMs;
         record.arrivedLogged = false;
+        record.arrivedSubjectGuid = 0;
         haveRecord = true;
         startedNow = true;
         in.started = true;
@@ -10758,10 +10762,12 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostRecord& stored = g_tankPost[self];
         stored = record;
         stored.lastReadMs = nowMs;
-        if (TankPostLatchesArrival(in, step) && !stored.arrivedLogged)
+        if (TankPostLatchesArrival(in, step))
         {
+            if (!stored.arrivedLogged)
+                arrivedNow = true;
             stored.arrivedLogged = true;
-            arrivedNow = true;
+            stored.arrivedSubjectGuid = in.subjectGuid;
         }
     }
     if (startedNow)
