@@ -172,8 +172,10 @@ class JindoR1Wiring(unittest.TestCase):
         self.assertIn("const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);", ACTIONS)
         self.assertIn("if (!canTaunt || gateRefused)", ACTIONS)
         self.assertIn("if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))", ACTIONS)
-        # Challenging Shout and Challenging Roar are area taunts with no single target: a documented limit, not gated.
-        self.assertIn('MELEE_ACTION(CastChallengingShoutAction, "challenging shout");', WARRIOR)
+        # Challenging Shout and Challenging Roar are area taunts with no single target: the taunt gate never applies,
+        # but each re-checks the "loose adds near" count at cast time (a stale queued shout must not fire).
+        self.assertIn('CastChallengingShoutAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "challenging shout")', WARRIOR)
+        self.assertIn('AI_VALUE2(bool, "trigger active", "loose adds near")', member(WARRIOR, "class CastChallengingShoutAction", "};"))
 
     def test_the_attacker_value_skips_needs_aura_units_for_both_users(self):
         self.assertIn("std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), "

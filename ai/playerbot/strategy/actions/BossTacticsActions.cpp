@@ -6836,8 +6836,11 @@ bool ai::TauntTargetHeldByOtherTank(Player* bot, Unit* target)
         return false;
     Unit* victim = target->GetVictim();
     Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
-    return TauntStandsDownForTank(victimPlayer != nullptr, victimPlayer == bot,
-        victimPlayer && PlayerbotAI::IsTank(victimPlayer));
+    TauntHeldInputs in;
+    in.victimIsPlayer = victimPlayer != nullptr;
+    in.victimIsSelf = victimPlayer == bot;
+    in.victimIsTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+    return TauntStandsDownForTank(in);
 }
 
 // The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,

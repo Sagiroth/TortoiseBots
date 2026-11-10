@@ -13,6 +13,8 @@ DRUID = ROOT / "ai/playerbot/strategy/druid"
 SHAMAN = ROOT / "ai/playerbot/strategy/shaman"
 ACTIONS = ROOT / "ai/playerbot/strategy/actions"
 IS_USEFUL_CALL = "TauntTargetHeldByOtherTank(bot, GetTarget())"
+IS_USEFUL_CALL_RE = re.compile(r"&&\s*!TauntTargetHeldByOtherTank\s*\(\s*bot\s*,\s*GetTarget\s*\(\s*\)\s*\)")
+LOOSE_ADDS_CHECK_RE = re.compile(r'AI_VALUE2\s*\(\s*bool\s*,\s*"trigger active"\s*,\s*"loose adds near"\s*\)')
 
 
 def class_body(text, name):
@@ -38,7 +40,7 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
             with self.subTest(action=name):
                 body = class_body(path.read_text(), name)
                 self.assertIn("isUseful()", body)
-                self.assertIn(IS_USEFUL_CALL, body)
+                self.assertRegex(body, IS_USEFUL_CALL_RE)
 
     def test_on_attacker_actions_inherit_the_check(self):
         for path, child, parent in [
@@ -52,6 +54,17 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
                 body = class_body(path.read_text(), child)
                 self.assertIn("public " + parent, body)
                 self.assertNotIn("isUseful", body)
+
+    def test_aoe_taunts_rerun_the_loose_adds_count(self):
+        for path, name in [
+            (WARRIOR / "WarriorActions.h", "CastChallengingShoutAction"),
+            (DRUID / "DruidActions.h", "CastChallengingRoarAction"),
+        ]:
+            with self.subTest(action=name):
+                body = class_body(path.read_text(), name)
+                self.assertIn("isUseful()", body)
+                self.assertRegex(body, LOOSE_ADDS_CHECK_RE)
+
 
     def test_taunt_gate_does_not_stand_down(self):
         text = (ACTIONS / "BossTacticsActions.cpp").read_text()
@@ -73,6 +86,16 @@ class TauntHeldByTankWiringTest(unittest.TestCase):
         body = text[start:end]
         self.assertIn("TauntStandsDownForTank(", body)
         self.assertIn("PlayerbotAI::IsTank(", body)
+
+    def test_helper_passes_victim_facts_in_order(self):
+        text = (ACTIONS / "BossTacticsActions.cpp").read_text()
+        start = text.index("bool ai::TauntTargetHeldByOtherTank(")
+        end = text.index("\n}\n", start)
+        body = text[start:end]
+        call = body[body.index("TauntHeldInputs in;"):]
+        self.assertLess(call.index("in.victimIsPlayer"), call.index("in.victimIsSelf"))
+        self.assertLess(call.index("in.victimIsSelf"), call.index("in.victimIsTank"))
+        self.assertIn("return TauntStandsDownForTank(in);", body)
 
 
 if __name__ == "__main__":

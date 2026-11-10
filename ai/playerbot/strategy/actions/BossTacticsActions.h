@@ -178,7 +178,8 @@ namespace ai
     bool TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell);
 
     // A generic taunt's cast-time check (TauntHeldTargetPolicy.h): true when `target`'s current victim is a player other
-    // than `bot` that PlayerbotAI::IsTank reads as a tank. Only the class taunt actions call it; TauntRefusedByGate and
+    // than `bot` that PlayerbotAI::IsTank reads as a tank. Builds the victim facts in call order (TauntHeldInputs) and
+    // answers through TauntStandsDownForTank. Only the class taunt actions call it; TauntRefusedByGate and
     // the boss-tactics taunts never do, so a planned tank swap still taunts off another tank.
     bool TauntTargetHeldByOtherTank(Player* bot, Unit* target);
 

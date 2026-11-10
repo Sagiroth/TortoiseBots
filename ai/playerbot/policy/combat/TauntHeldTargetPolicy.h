@@ -10,11 +10,27 @@
 
 namespace ai
 {
+    // The victim facts the cast-time check reads, in call order: whether the
+    // mob's current victim is a player (bot or real), whether that victim is
+    // the casting bot itself, and what PlayerbotAI::IsTank says of it
+    // (forced role first). Bundled so the helper cannot shuffle its inputs.
+    struct TauntHeldInputs
+    {
+        bool victimIsPlayer = false;
+        bool victimIsSelf = false;
+        bool victimIsTank = false;
+    };
+
     // victimIsPlayer: the mob's current victim is a player (bot or real).
     // victimIsSelf:   that victim is the casting bot itself.
     // victimIsTank:   PlayerbotAI::IsTank(victim) (forced role first).
     inline bool TauntStandsDownForTank(bool victimIsPlayer, bool victimIsSelf, bool victimIsTank)
     {
         return victimIsPlayer && !victimIsSelf && victimIsTank;
+    }
+
+    inline bool TauntStandsDownForTank(TauntHeldInputs const& in)
+    {
+        return TauntStandsDownForTank(in.victimIsPlayer, in.victimIsSelf, in.victimIsTank);
     }
 }

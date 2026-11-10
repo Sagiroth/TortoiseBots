@@ -25,22 +25,31 @@ static int checks = 0;
     } \
 } while (0)
 
+static TauntHeldInputs Inputs(bool player, bool self, bool tank)
+{
+    TauntHeldInputs in;
+    in.victimIsPlayer = player;
+    in.victimIsSelf = self;
+    in.victimIsTank = tank;
+    return in;
+}
+
 int main()
 {
-    // Tank player holds the mob (the trial's failing case): stand down.
-    CHECK(TauntStandsDownForTank(true, false, true));
-    // Bot tank holds it (two bot tanks): stand down.
-    CHECK(TauntStandsDownForTank(true, false, true));
+    // Another tank holds the mob (the trial's failing case): stand down.
+    CHECK(TauntStandsDownForTank(Inputs(true, false, true)));
     // Healer holds it (taunt-off-healer must still taunt): go.
-    CHECK(!TauntStandsDownForTank(true, false, false));
+    CHECK(!TauntStandsDownForTank(Inputs(true, false, false)));
     // DPS player holds it: go.
-    CHECK(!TauntStandsDownForTank(true, false, false));
+    CHECK(!TauntStandsDownForTank(Inputs(true, false, false)));
     // The bot itself holds it: go.
-    CHECK(!TauntStandsDownForTank(true, true, true));
+    CHECK(!TauntStandsDownForTank(Inputs(true, true, true)));
     // On a pet / NPC (not a player): go.
-    CHECK(!TauntStandsDownForTank(false, false, false));
+    CHECK(!TauntStandsDownForTank(Inputs(false, false, false)));
+    // A non-player reported as a tank is not a tank victim: go.
+    CHECK(!TauntStandsDownForTank(Inputs(false, false, true)));
     // No victim yet (fresh mob): go.
-    CHECK(!TauntStandsDownForTank(false, false, false));
+    CHECK(!TauntStandsDownForTank(Inputs(false, false, false)));
 
     std::printf("OK test_taunt_held_target_policy (%d checks)\n", checks);
     return 0;
