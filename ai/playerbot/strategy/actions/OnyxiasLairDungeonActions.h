@@ -37,6 +37,7 @@ namespace ai
     {
     public:
         OnyxiaBreathSafeZoneAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia breath safe zone") {}
+        bool isUseful() override;
         bool Execute(Event& event) override;
     };
 

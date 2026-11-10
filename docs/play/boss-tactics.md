@@ -262,7 +262,7 @@ Own table `ai_boss_stand`, startup-only (restart needed). The strategy arms on a
 
 Primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. Unusable rows are skipped with a log; a bad `release_anchor` for a boss drops that boss's set.
 
-Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat. After 3 refusals the seat is given up and reach or dodge takes over; seated bots suppress reach-spell, heal walk, dragon flank, and raid spread.
+Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat. After 3 refusals the seat is given up and reach or dodge takes over; seated bots suppress reach-spell, heal walk, dragon flank, and raid spread, and, with `AiPlayerbot.BossStandOutranksBreathDodge = 1` (default `0`, recommended on), the Onyxia breath dodge: a stand seat already stands clear of its breath lane, so a seated bot keeps it.
 
 ## Adding a boss
 

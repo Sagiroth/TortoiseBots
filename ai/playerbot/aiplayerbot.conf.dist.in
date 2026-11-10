@@ -1104,6 +1104,14 @@ AiPlayerbot.DungeonRunBurnMana = 0
 # 1 - on
 AiPlayerbot.DungeonRunRangedOnly = 0
 
+# A bot holding a boss stand seat (ai_boss_stand, docs/play/boss-tactics.md) keeps the seat through Onyxia's Deep
+# Breath instead of walking to the generic breath safe spots. The seats stand clear of their lane, so the dodge
+# only walks a seated bot back into it. Recommended on. `.reload config` reads it again with the other
+# AiPlayerbot.DungeonRun* keys.
+# 0 - off: the breath dodge runs as before, even for a seated bot (Default)
+# 1 - on
+AiPlayerbot.BossStandOutranksBreathDodge = 0
+
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
 # ai_dungeon_plan/leg/step) by itself: it walks the route, pulls the packs, kills
