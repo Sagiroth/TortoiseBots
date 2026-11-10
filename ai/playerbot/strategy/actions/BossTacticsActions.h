@@ -712,6 +712,7 @@ namespace ai
         int walkoutDueInMs = std::numeric_limits<int>::max();
         bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
         const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
+        Unit* boss = nullptr;     // the fight's boss (the relief row's cap read)
         bool prePlaceHold = false; // the pre-placed tank stands at its point (x, y): stop a walk, leave the rotation free
         bool walkToSpot = false;
         bool holdSwing = false;

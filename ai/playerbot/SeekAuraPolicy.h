@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -789,12 +790,32 @@ namespace ai
             nowMs - latch.lastTakeMs <= kSeekVictimReliefKeepMs;
     }
 
-    // The start itself: names this tank as the taker, stamps the take, counts it.
+    // The start itself: names this tank as the taker, stamps the take, counts it. Pick time asks only whether a start
+    // is due; the caller stamps it once the take really starts (the attack order or the taunt cast went out), so a
+    // refused or blocked start counts nothing.
     inline void SeekVictimReliefStart(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
     {
         latch.lastTakeMs = nowMs;
         latch.lastTaker = self;
         ++latch.takes;
+    }
+    // The execution stamp: the started latch only when the take really started (a taunt cast, or the attack order
+    // issued). A start that is refused or blocked leaves the latch untouched: no stamp, no count.
+    inline bool SeekVictimReliefNoteExec(SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs, bool started)
+    {
+        if (!started)
+            return false;
+        SeekVictimReliefStart(latch, self, nowMs);
+        return true;
+    }
+
+    // Whether the relief take casts its tank's known taunt: any take from the relief path does, whatever the nearest
+    // flag says. The taunt that qualified the tank is the taunt it casts.
+    inline bool SeekTakeUsesKnownTaunt(bool nearestTakeOn, const char* takeSrc)
+    {
+        if (takeSrc && std::strcmp(takeSrc, "victim_relief") == 0)
+            return true;
+        return nearestTakeOn;
     }
 
 

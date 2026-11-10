@@ -9334,8 +9334,6 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
     const bool offTank = roles.tanks.size() >= 3 && (roles.tanks[1] == bot || roles.tanks[2] == bot);
     Unit* kept = nullptr;
     Unit* due = nullptr;
-    unsigned dwellMs = 0;
-    unsigned n = 0;
     {
         std::lock_guard<std::mutex> lock(g_seekReliefMutex);
         for (auto it = g_seekReliefLatches.begin(); it != g_seekReliefLatches.end();)
@@ -9377,10 +9375,7 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
                     SeekVictimRelieverOk(offTank, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
                                          bot->GetDistance(son)))
                 {
-                    SeekVictimReliefStart(latch, self, nowMs);
                     due = son;
-                    dwellMs = static_cast<unsigned>(nowMs - latch.sinceMs);
-                    n = latch.takes;
                     break;
                 }
             }
@@ -9388,16 +9383,34 @@ Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& ro
     }
     if (kept)
         return kept;
-    if (due && sPlayerbotAIConfig.hasLog("bot_events.csv"))
-    {
-        Unit* const victim = due->GetVictim();
-        char info1[192];
-        snprintf(info1, sizeof(info1), "seek relief son=%u from=%s by=%s dwell_ms=%u n=%u cap=%d reach_yd=%.1f",
-                 due->GetGUIDLow(), victim ? victim->GetName() : "none", bot->GetName(), dwellMs, n,
-                 SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, nullptr) ? 1 : 0, bot->GetDistance(due));
-        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
-    }
     return due;
+}
+
+// The relief take's execution result (DungeonRunSeekVictimRelief): the latch of `son` is stamped and counted only once
+// the take really started (the attack order or the taunt cast went out, the tank was already after it); a refused or
+// failed one counts nothing. The `seek relief` row goes out with the stamp, so the row and the count agree.
+void SeekVictimReliefNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
+                              bool started, std::uint32_t nowMs)
+{
+    if (!son)
+        return;
+    std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+    const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+    auto found = g_seekReliefLatches.find(guid);
+    if (found == g_seekReliefLatches.end())
+        return;
+    SeekReliefLatch& latch = found->second;
+    if (!SeekVictimReliefNoteExec(latch, bot->GetObjectGuid().GetRawValue(), nowMs, started))
+        return;
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    Unit* const victim = son->GetVictim();
+    char info1[192];
+    snprintf(info1, sizeof(info1), "seek relief son=%u from=%s by=%s dwell_ms=%u n=%u cap=%d reach_yd=%.1f",
+             son->GetGUIDLow(), victim ? victim->GetName() : "none", bot->GetName(),
+             static_cast<unsigned>(nowMs - latch.sinceMs), static_cast<unsigned>(latch.takes),
+             SeekTankLeaveCollapsesCap(ai, roles, boss, bot, nullptr) ? 1 : 0, bot->GetDistance(son));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
 }
 
 // The pre-placed receiver's walk (DungeonRunSeekMeetPrePlace, walk 56 F2): true while a live pre-place names this bot.
@@ -9674,6 +9687,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.source = reliefSon;
             task.take = true;
             task.takeSrc = "victim_relief";
+            task.boss = state.boss;
             return task;
         }
     }
@@ -10095,10 +10109,11 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // Class-correct taunt (the Gluth swap's list: 1.12 has no paladin taunt). Attack() sticks even when the taunt
         // itself cannot fire yet (cooldown, range).
         const char* taunt = nullptr;
-        if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
+        if (SeekTakeUsesKnownTaunt(sPlayerbotAIConfig.dungeonRunSeekNearestTake, task.takeSrc))
         {
             // With the nearest take on, the take casts the taunt the readiness read counts (KnownTaunt), so a paladin's
-            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do.
+            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do. The relief take always
+            // casts it: the taunt that qualified the tank is the taunt it casts.
             taunt = KnownTaunt(ai);
         }
         else
@@ -10158,6 +10173,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
         const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
             (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
+        const bool reliefTake = sPlayerbotAIConfig.dungeonRunSeekVictimRelief && task.takeSrc &&
+            std::strcmp(task.takeSrc, "victim_relief") == 0;
         bool started = false;
         // The meet take re-checks its tuple (this receiver, the current meet Son, the bounded exemption) right before
         // its Attack (DungeonRunSeekMeetTakeReach): a meet that closed or left the allowance since the pick sends none.
@@ -10172,6 +10189,9 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
                 if (capGuarded)
                     SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                         task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
+                if (reliefTake)
+                    SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, true,
+                                             WorldTimer::getMSTime());
                 return true;
             }
         }
@@ -10182,12 +10202,18 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (capGuarded)
                 SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                     task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
+            if (reliefTake)
+                SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started,
+                                         WorldTimer::getMSTime());
             return false;
         }
         const bool cast = ai->CastSpell(taunt, task.source);
         if (capGuarded)
             SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
                                 task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
+        if (reliefTake)
+            SeekVictimReliefNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, started || cast,
+                                     WorldTimer::getMSTime());
         return cast;
     }
     if (task.pull)

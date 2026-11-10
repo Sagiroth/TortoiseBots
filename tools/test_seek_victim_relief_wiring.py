@@ -12,7 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
-
+POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 
 def body(text, signature):
     start = text.index(signature)
@@ -47,9 +47,29 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertIn("sPlayerbotAIConfig.dungeonRunSeekVictimRelief", fn)
         self.assertIn("SeekTankTauntReady(", fn)
         self.assertIn("PlayerHoldsFightSon(", fn)
-        self.assertIn("SeekVictimReliefStart(", fn)
-        self.assertIn('"seek relief son=', fn)
+        self.assertNotIn("SeekVictimReliefStart(", fn)
+        self.assertNotIn('"seek relief son=', fn)
 
+    def test_VictimRelief_TauntPickIgnoresNearestTake(self):
+        take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
+        self.assertIn("SeekTakeUsesKnownTaunt(sPlayerbotAIConfig.dungeonRunSeekNearestTake, task.takeSrc)", take)
+        self.assertIn("taunt = KnownTaunt(ai);", take)
+        self.assertIn("SeekTakeUsesKnownTaunt(bool nearestTakeOn, const char* takeSrc)", POLICY)
+        self.assertIn('std::strcmp(takeSrc, "victim_relief") == 0', POLICY)
+
+    def test_VictimRelief_CountsOnlyStartedTakes(self):
+        take = body(ACTIONS, "bool BossTacticsSeekTankAction::Execute(Event& event)")
+        take = take[take.index("if (task.take)"):take.index("if (task.pull)")]
+        # Three exits, three notes: the attack-only return stamps true, the
+        # refusal stamps this tick's `started`, the cast stamps `started || cast`.
+        self.assertEqual(3, take.count("SeekVictimReliefNoteExec(ai, bot,"))
+        self.assertIn("task.source, true,\n", take)
+        self.assertIn("task.source, started,\n", take)
+        self.assertIn("task.source, started || cast,\n", take)
+        note = body(ACTIONS, "void SeekVictimReliefNoteExec(PlayerbotAI* ai, Player* bot,")
+        self.assertIn("SeekVictimReliefNoteExec(latch,", note)
+        self.assertIn('"seek relief son=', note)
 
 if __name__ == "__main__":
     unittest.main()

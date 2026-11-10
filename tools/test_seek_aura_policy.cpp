@@ -1077,6 +1077,27 @@ int main()
         SeekReliefClockTick(wrapped, true, 0xFFFFFE00u);
         CHECK(SeekVictimReliefDue(true, wrapped, 0x00000300u));
     }
+    // VictimRelief_TauntPickIgnoresNearestTake: the relief take casts the tank's known taunt whatever the nearest
+    // flag says; any other take follows the flag.
+    {
+        CHECK(SeekTakeUsesKnownTaunt(false, "victim_relief"));
+        CHECK(SeekTakeUsesKnownTaunt(true, "victim_relief"));
+        CHECK(!SeekTakeUsesKnownTaunt(false, "nearest"));
+        CHECK(SeekTakeUsesKnownTaunt(true, "nearest"));
+        CHECK(!SeekTakeUsesKnownTaunt(false, nullptr));
+    }
+    // VictimRelief_CountsOnlyStartedTakes: a refused start leaves the count and the stamp at 0; a real start stamps
+    // and counts once.
+    {
+        SeekReliefLatch latch;
+        CHECK(!SeekVictimReliefNoteExec(latch, 7, 6000, false));
+        CHECK(latch.takes == 0);
+        CHECK(latch.lastTakeMs == 0);
+        CHECK(SeekVictimReliefNoteExec(latch, 7, 6000, true));
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastTakeMs == 6000);
+        CHECK(latch.lastTaker == 7);
+    }
 
     std::cout << "All seek-aura policy tests passed.\n";
     return 0;
