@@ -72,6 +72,8 @@ static_assert(ai::kLiquidStatusInWater == static_cast<uint32>(LIQUID_MAP_IN_WATE
 // One "replay kept the stored leg" line per bot per this many seconds: the
 // lead measures how often the raw fallback below still runs.
 static constexpr time_t kRouteReplayLogSeconds = 60;
+static constexpr float kRouteReplayReachYd = 3.0f;
+static constexpr float kRouteReplayReachZYd = 5.0f;
 
 // The leg replay (RouteReplayPolicy.h): the navmesh replays the stored
 // stretch instead of the spline walking the stored points. `stored` are the
@@ -98,7 +100,6 @@ static bool ReplayStoredLeg(Player* bot, const WorldPosition& botPos, const std:
             continue;
         if (meshPath.size() < 2)
             continue;
-        float const gap = meshPath.back().distance(goalPos);
         float storedLen = 0.0f;
         WorldPosition prev = botPos;
         for (std::size_t i = 0; i <= goal; ++i)
@@ -110,7 +111,9 @@ static bool ReplayStoredLeg(Player* bot, const WorldPosition& botPos, const std:
         for (std::size_t i = 1; i < meshPath.size(); ++i)
             meshLen += meshPath[i - 1].distance(meshPath[i]);
         ai::RouteReplayProbe probe;
-        probe.reachable = gap <= sPlayerbotAIConfig.targetPosRecalcDistance;
+        // The mesh path ends on the mesh; a stored point sits a little beside or
+        // above it, so "reached" needs room.
+        probe.reachable = !(type & ai::kPathTypeIncomplete) && goalPos.isPathTo(meshPath, kRouteReplayReachYd, kRouteReplayReachZYd);
         probe.meshLengthYd = meshLen;
         probe.storedLengthYd = storedLen;
         probe.lastPoint = goal + 1 == stored.size();

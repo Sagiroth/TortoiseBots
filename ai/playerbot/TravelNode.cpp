@@ -932,7 +932,7 @@ void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
     // point with no real path to it would be reached in a straight line.
     // Drop the route instead; the caller plans a new one.
     std::vector<WorldPosition> toPath = startPos.GetPathTo(beginPos, bot);
-    if (!beginPos.isPathTo(toPath))
+    if (!beginPos.isPathTo(toPath, 3.0f, 5.0f))
     {
         clear();
         return;
