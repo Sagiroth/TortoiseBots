@@ -385,6 +385,8 @@ Primary key is `(map, boss_entry, anchor, role, window_spell, side, seq)`. Unusa
 
 Seats go to same-role bots in id order. Taking part means being on the threat list or victim within 80 yd of the anchor, or holding a stand. Sides come from the lane cross product. While seated, the stand action walks the bot to its seat. After 3 refusals the seat is given up and reach or dodge takes over; seated bots suppress reach-spell, heal walk, dragon flank, and raid spread, and, with `AiPlayerbot.BossStandOutranksBreathDodge = 1` (default `0`, recommended on), the Onyxia breath dodge: a stand seat already stands clear of its breath lane, so a seated bot keeps it.
 
+With `AiPlayerbot.BossStandEvents = 1` (default `0`), every bot logs one `BossStand` episode per window: `assigned` (yards to its seat, whether it stayed where it stood, and whether the window is open or held), `arrived` (ms since the assignment), `unseated` once with the reason (`not_counted`, `given_up`, `side_full`) and `released` with the reason (`other_window`, `no_boss`, `release_anchor`, `hold_time`, `dead`, `gone`). A walk can then tell a bot that never got a seat from one that got it late or walked off it. Needs `bot_events.csv`; with the key off nothing is written.
+
 ## Adding a boss
 
 - Read the boss from the core: creature template, spells, events, scripts, spell template. Use Turtle ids only.

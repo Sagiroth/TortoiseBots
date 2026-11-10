@@ -1111,4 +1111,43 @@ namespace ai
     {
         return stand_detail::Dist2(botX, botY, slotX, slotY) > kBossStandKeepCastRange * kBossStandKeepCastRange;
     }
+
+    // AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid + anchor). What this read logs.
+    struct StandEpisodeIn
+    {
+        bool have = false;            // an episode is recorded for this bot
+        bool sameWindow = false;      // ... and it is this boss guid and anchor
+        bool windowOn = false;        // StandPointsNow gave this bot points (open window or held seats)
+        bool seatValid = false;       // the read ends with a seat (or a stay)
+        bool arrived = false;         // StandArrived(bot, seat)
+        bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
+    };
+
+    struct StandEpisodeOut
+    {
+        bool release = false;   // log `released` for the recorded episode and drop it
+        bool start = false;     // record a new episode (all logged flags false)
+        bool assigned = false, arrived = false, unseated = false;
+    };
+
+    inline StandEpisodeOut StandEpisodeStep(const StandEpisodeIn& in)
+    {
+        StandEpisodeOut out;
+        out.release = in.have && (!in.windowOn || !in.sameWindow);
+        if (!in.windowOn)
+            return out;
+        const bool fresh = !in.have || out.release;
+        out.start = fresh;
+        const bool assignedLogged = !fresh && in.assignedLogged;
+        const bool arrivedLogged = !fresh && in.arrivedLogged;
+        const bool unseatedLogged = !fresh && in.unseatedLogged;
+        if (in.seatValid)
+        {
+            out.assigned = !assignedLogged;
+            out.arrived = in.arrived && !arrivedLogged;
+        }
+        else
+            out.unseated = !unseatedLogged && !assignedLogged;
+        return out;
+    }
 }

@@ -790,6 +790,10 @@ public:
     // A seated bot keeps its boss stand seat through Onyxia's Deep Breath instead of walking to the generic safe
     // spots: off, the breath dodge runs as before even for a seated bot (default off).
     bool bossStandOutranksBreathDodge = false;
+    // One BossStand row per bot's stand episode (assigned, arrived, unseated, released) into bot_events.csv: off, the
+    // stand code writes nothing and reads no episode state (needs the boss stand rows and the bot_events.csv log;
+    // default off).
+    bool bossStandEvents = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).

@@ -39,6 +39,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunAvoidCastAll`](#aiplayerbotdungeonrunavoidcastall) | `0` | `1`: the boss tactics keep their `all` rows — no bot holds a listed caster while its spell is cast, so every tank walks out of that blast too (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunBossSpread`](#aiplayerbotdungeonrunbossspread) | `0` | `1`: the boss tactics keep their `spread` rows — the ranged raid keeps the row's yards apart while the boss fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
+| [`AiPlayerbot.BossStandEvents`](#aiplayerbotbossstandevents) | `0` | `1`: one `BossStand` row per bot and window (assigned, arrived, unseated, released) into `bot_events.csv`. |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -748,6 +749,16 @@ Whether a bot holding a boss stand seat keeps it through Onyxia's Deep Breath in
 
 **Gate hold:** a boss tactic row of the `gate_hold` kind (see [Boss Tactics](../../play/boss-tactics.md#kinds)) names the spared unit (`boss_entry`), the blocker that must not be left alive (`target_entry`, a different unit from the spared one; the loader skips a row that names the spared boss itself), the health gate in percent (`param`, 1 to 99), how many blockers may still fight (`priority`, 0 = not one more) and the blocker search radius in yards (`window_s`, 0 = 200, else 50 to 250). While the spared unit is at or below the gate and more than `priority` units of the blocker within the radius are alive, in combat and not evading, a free damage dealer leaves it alone: the damage-dealer and area picks, the group tank's victim and the raid mark drop it, and an area cast or a DoT within 10 yd of it is stood down (DoTs already ticking keep ticking). Tanks and healers keep their own pick, and an explicit attack order wins. An evaded, out-of-combat or dead blocker never counts, so a second boss that leaves the encounter cannot stall the spared one's kill. The rows are read by the fight scan; the band columns are refused because the kind's own gate is `param`. The `BossTacticsHoldKill` row records the drop like a `hold_kill` one.
 **Stand over dodge:** the stand seats already stand clear of their breath lane, so the generic dodge only walks a seated bot back into it. With the key on, the Onyxia breath dodge action is not useful while the bot holds a stand seat, the same rule DragonFlank and RaidSpread already follow; the stand action walks the bot to its seat instead.
+
+</details>
+### `AiPlayerbot.BossStandEvents`
+Whether the stand seats write one `BossStand` row per bot and window: assigned, arrived, unseated, released.
+**Default:** `0` · **Values:** `0` off (no row, and the stand code keeps no episode state), `1` on (needs the boss stand rows and a `bot_events.csv` log) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Stand rows:** one episode per bot and window (the boss guid and the anchor), so a walk can tell a bot that never got a seat from one that got it too late or left it. info1 is `boss=<entry>,anchor=<id>,role=<healer|ranged|melee>,spell=<window spell>`. info2 is `event=assigned,yd=<yards to the seat>,stay=<1 when the bot stayed where it stood>,src=<open|hold>` (`open`: the window is on this read, `hold`: the seat outlives a closed window), `event=arrived,ms=<since the seat was assigned>`, `event=unseated,reason=<not_counted|given_up|side_full>` (once per episode) and `event=released,reason=<other_window|no_boss|release_anchor|hold_time|dead|gone>,seated=<1 when it reached the seat>`. The rows cost nothing when the key is off; `bot_events.csv` must be on for any row to be written.
 
 </details>
 ### `AiPlayerbot.DungeonRunCharmYield`

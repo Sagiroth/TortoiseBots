@@ -8035,6 +8035,69 @@ struct StandPlan
 };
 std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;
 
+// AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid and anchor), and the rows of a read. The
+// seat and the arrival are logged once per episode, a read that ends without a seat logs `unseated` once, and the
+// episode is released when its window is over or another window takes over. Guarded by g_standHoldMutex and counted
+// into g_standStateCount; with the key off nothing is read, written or logged.
+struct StandEpisode
+{
+    std::uint64_t boss = 0;
+    std::uint32_t anchor = 0;
+    std::uint32_t windowSpell = 0;
+    std::uint8_t role = 0;
+    std::uint32_t assignedMs = 0;
+    bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
+};
+std::unordered_map<uint64, StandEpisode> g_standEpisodes;
+
+const char* StandRoleName(std::uint8_t role)
+{
+    switch (static_cast<StandRole>(role))
+    {
+        case StandRole::Healer:
+            return "healer";
+        case StandRole::Ranged:
+            return "ranged";
+        case StandRole::Melee:
+            return "melee";
+        default:
+            return "none";
+    }
+}
+
+// One BossStand row per episode event: assigned, arrived, unseated, released.
+void LogBossStand(PlayerbotAI* ai, const StandEpisode& episode, const char* info2)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,anchor=%u,role=%s,spell=%u",
+             ObjectGuid(episode.boss).GetCounter(), episode.anchor, StandRoleName(episode.role), episode.windowSpell);
+    sPlayerbotAIConfig.logEvent(ai, "BossStand", info1, info2);
+}
+
+// Logs `released` for the bot's recorded episode and drops it (a dead, gone or teleporting bot keeps nothing of its
+// last window).
+void ReleaseStandEpisode(PlayerbotAI* ai, uint64 key, const char* reason)
+{
+    if (!sPlayerbotAIConfig.bossStandEvents)
+        return;
+    StandEpisode episode;
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        auto it = g_standEpisodes.find(key);
+        if (it == g_standEpisodes.end())
+            return;
+        episode = it->second;
+        g_standEpisodes.erase(it);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=released,reason=%s,seated=%d", reason, episode.arrivedLogged ? 1 : 0);
+    LogBossStand(ai, episode, info2);
+}
+
 // Drops what is remembered of a bot (it died, left, or is on a map without stand rows).
 void ForgetStand(uint64 key)
 {
@@ -8043,7 +8106,9 @@ void ForgetStand(uint64 key)
     std::lock_guard<std::mutex> lock(g_standHoldMutex);
     g_standHolds.erase(key);
     g_standFailures.erase(key);
-    g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+    g_standEpisodes.erase(key);
+    g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                            std::memory_order_relaxed);
 }
 }
 
@@ -8056,6 +8121,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // A bot that is dead, gone or teleporting keeps nothing of its last window.
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
     {
+        ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");
         ForgetStand(selfKey);
         return target;
     }
@@ -8064,12 +8130,14 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     const uint32 mapId = bot->GetMapId();
     if (!table.HasMap(mapId))
     {
+        ReleaseStandEpisode(ai, selfKey, "gone");
         ForgetStand(selfKey);
         return target;
     }
     // The rows only act for a bot whose tactics are armed (the same gate as BossTacticsTriggers.cpp Ready).
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
     {
+        ReleaseStandEpisode(ai, selfKey, "gone");
         ForgetStand(selfKey);
         return target;
     }
@@ -8079,30 +8147,40 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     const uint32 nowMs = WorldTimer::getMSTime();
+    const bool events = sPlayerbotAIConfig.bossStandEvents;
     StandHold hold;
+    StandEpisode episode;
+    bool haveEpisode = false;
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         auto it = g_standHolds.find(selfKey);
         if (it != g_standHolds.end())
             hold = it->second;
+        auto recorded = g_standEpisodes.find(selfKey);
+        if (events && recorded != g_standEpisodes.end())
+        {
+            episode = recorded->second;
+            haveEpisode = true;
+        }
     }
     // What the other bots can see of this one: its hold as of the last tick, before this tick arms it again.
     const StandHold heldBefore = hold;
     bool sawBoss = false;
     Unit* boss = nullptr;
+    Unit* episodeBoss = nullptr;  // the unit of the recorded episode's boss, for its release reason
     const std::vector<BossStandRow>* bossRows = nullptr;
     std::vector<const BossStandRow*> points;
-    for (const ObjectGuid& guid : attackers)
+    // One unit of the attacker list: whether it opened the window. The registry read below reuses it unchanged.
+    const auto readStandUnit = [&](Unit* unit)
     {
-        Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit))
-            continue;
+            return false;
         // While a hold is active only its own boss is read: another boss with rows must not clear it.
         if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)
-            continue;
+            return false;
         const std::vector<BossStandRow>* rows = table.Rows(mapId, unit->GetEntry());
         if (!rows)
-            continue;
+            return false;
         // The spell the boss is casting now (a cast with a cast time, as FindBossInterrupt reads it).
         uint32 casting = 0;
         if (Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL))
@@ -8117,14 +8195,22 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         // The open window's points; after the cast the same seats for up to the row's hold time, until the boss
         // is at the release anchor (StandPointsNow arms, keeps and clears the hold).
         sawBoss = true;
+        if (haveEpisode && unit->GetEntry() == ObjectGuid(episode.boss).GetCounter())
+            episodeBoss = unit;
         points = StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
                                 [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs, stoppedNoTarget);
         if (!points.empty())
         {
             boss = unit;
             bossRows = rows;
-            break;
+            return true;
         }
+        return false;
+    };
+    for (const ObjectGuid& guid : attackers)
+    {
+        if (readStandUnit(ai->GetUnit(guid)))
+            break;
     }
 
     // The bots that share the seats: this group's bots of the same role that take part, by one rule for every bot that
@@ -8200,10 +8286,130 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             g_standHolds.erase(selfKey);
             g_standFailures.erase(selfKey);  // the window is over: the next one starts afresh
         }
-        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
     }
+
+    // AiPlayerbot.BossStandEvents: every return path below ends here, so the read's one episode row set is decided in
+    // one place. `read` is the seat the read ends with (or an invalid target), `seatValid` says whether it has one;
+    // `stayApplied` is the seat that is the bot's own position (S2).
+    bool stayApplied = false;
+    const auto finishStandRead =
+        [&](BossStandTarget read, bool seatValid, const char* unseatedReason) -> BossStandTarget
+    {
+        if (!events)
+            return read;
+        const bool windowOn = !points.empty();
+        const bool sameWindow = haveEpisode && windowOn &&
+            episode.boss == boss->GetObjectGuid().GetRawValue() && episode.anchor == points[0]->anchor;
+        StandEpisodeIn in;
+        in.have = haveEpisode;
+        in.sameWindow = sameWindow;
+        in.windowOn = windowOn;
+        in.seatValid = seatValid;
+        in.arrived = seatValid && StandArrived(bot->GetPositionX(), bot->GetPositionY(), read.x, read.y);
+        in.assignedLogged = haveEpisode && episode.assignedLogged;
+        in.arrivedLogged = haveEpisode && episode.arrivedLogged;
+        in.unseatedLogged = haveEpisode && episode.unseatedLogged;
+        const StandEpisodeOut step = StandEpisodeStep(in);
+        // Why the recorded episode ends: the window went to another anchor, the bot has no boss with rows in view, the
+        // boss reached the lane's far end (its last hold's release anchor, at the boss's last seen position), or the
+        // hold time ran out.
+        const char* releaseReason = "hold_time";
+        if (step.release)
+        {
+            if (windowOn && !sameWindow)
+                releaseReason = "other_window";
+            else if (!sawBoss)
+                releaseReason = "no_boss";
+            else if (episodeBoss)
+            {
+                const std::vector<BossStandRow>* rows = table.Rows(mapId, ObjectGuid(episode.boss).GetCounter());
+                if (rows && StandReleaseAnchorReached(*rows, heldBefore.releaseAnchor, episodeBoss->GetPositionX(),
+                                                      episodeBoss->GetPositionY()))
+                    releaseReason = "release_anchor";
+            }
+        }
+        StandEpisode released;
+        StandEpisode logged;
+        bool logRelease = false, logAssigned = false, logArrived = false, logUnseated = false;
+        uint32 assignedMs = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_standHoldMutex);
+            if (step.release)
+            {
+                auto it = g_standEpisodes.find(selfKey);
+                if (it != g_standEpisodes.end())
+                {
+                    released = it->second;
+                    logRelease = true;
+                    g_standEpisodes.erase(it);
+                }
+            }
+            if (windowOn)
+            {
+                if (step.start)
+                {
+                    logged.boss = boss->GetObjectGuid().GetRawValue();
+                    logged.anchor = points[0]->anchor;
+                    logged.windowSpell = points[0]->windowSpell;
+                    logged.role = static_cast<uint8>(role);
+                    logged.assignedMs = nowMs;
+                    g_standEpisodes[selfKey] = logged;
+                }
+                else
+                {
+                    auto it = g_standEpisodes.find(selfKey);
+                    if (it != g_standEpisodes.end())
+                    {
+                        logged = it->second;
+                        if (step.assigned)
+                            it->second.assignedLogged = true;
+                        if (step.arrived)
+                            it->second.arrivedLogged = true;
+                        if (step.unseated)
+                            it->second.unseatedLogged = true;
+                    }
+                }
+                assignedMs = logged.assignedMs;
+                logAssigned = step.assigned;
+                logArrived = step.arrived;
+                logUnseated = step.unseated;
+            }
+            g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                    std::memory_order_relaxed);
+        }
+        if (logRelease)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=released,reason=%s,seated=%d", releaseReason,
+                     released.arrivedLogged ? 1 : 0);
+            LogBossStand(ai, released, info2);
+        }
+        if (logAssigned)
+        {
+            const float yd = std::sqrt(stand_detail::Dist2(bot->GetPositionX(), bot->GetPositionY(), read.x, read.y));
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=assigned,yd=%.1f,stay=%d,src=%s", yd, stayApplied ? 1 : 0,
+                     hold.lastOpenMs == nowMs ? "open" : "hold");
+            LogBossStand(ai, logged, info2);
+        }
+        if (logArrived)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=arrived,ms=%u", static_cast<uint32>(nowMs - assignedMs));
+            LogBossStand(ai, logged, info2);
+        }
+        if (logUnseated)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=unseated,reason=%s", unseatedReason ? unseatedReason : "side_full");
+            LogBossStand(ai, logged, info2);
+        }
+        return read;
+    };
     if (points.empty())
-        return target;
+        return finishStandRead(target, false, nullptr);
 
     // The side is the side of the lane (anchor -> release anchor) the bot stands on. The seats come from the window's
     // one plan (PlanStandSeats), built when the window opens, grown by the bots that join the fight later and by the
@@ -8242,19 +8448,19 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // A bot the plan did not seat (its side was full, or it was not in the fight when the window opened) keeps the
     // reactive dodge.
     if (!seat.valid)
-        return target;
+        return finishStandRead(target, false, selfCounts ? "side_full" : "not_counted");
     // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(selfKey);
         if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
-            return target;
+            return finishStandRead(target, false, "given_up");
     }
     target.valid = true;
     target.x = seat.x;
     target.y = seat.y;
     target.z = seat.z;
-    return target;
+    return finishStandRead(target, true, nullptr);
 }
 
 bool BossTacticsStandAction::isPossible()
@@ -8304,7 +8510,8 @@ bool BossTacticsStandAction::Execute(Event& event)
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);
-        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
         return false;
     }
     {
@@ -8313,7 +8520,8 @@ bool BossTacticsStandAction::Execute(Event& event)
         if (failure != g_standFailures.end())
         {
             g_standFailures.erase(failure);
-            g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+            g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
         }
     }
     lastX = seatX;

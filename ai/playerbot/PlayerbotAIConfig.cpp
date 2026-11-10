@@ -179,6 +179,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
     dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);
     bossStandOutranksBreathDodge = config.GetBoolDefault("AiPlayerbot.BossStandOutranksBreathDodge", false);
+    bossStandEvents = config.GetBoolDefault("AiPlayerbot.BossStandEvents", false);
     dungeonRunRangedOnly = config.GetBoolDefault("AiPlayerbot.DungeonRunRangedOnly", false);
     dungeonRunGateHold = config.GetBoolDefault("AiPlayerbot.DungeonRunGateHold", false);
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);

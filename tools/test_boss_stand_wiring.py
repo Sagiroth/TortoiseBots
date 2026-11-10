@@ -103,7 +103,7 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
         self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 5)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 6)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
@@ -154,7 +154,7 @@ class BossStandWiring(unittest.TestCase):
 
     def test_a_hold_reads_only_its_own_boss(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
-        self.assertIn("if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)\n            continue;", fn)
+        self.assertIn("if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)\n            return false;", fn)
         self.assertLess(fn.index("unit->GetEntry() != hold.bossEntry"), fn.index("table.Rows(mapId, unit->GetEntry())"))
 
     def test_a_stand_set_alone_arms_the_strategy(self):
@@ -336,6 +336,29 @@ class BossStandWiring(unittest.TestCase):
             fn = body(DUNGEON_ACTIONS, "bool %s::isUseful()" % cls)
             self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
             self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
+
+    def test_stand_episode_rows_are_gated_by_their_key(self):
+        # AiPlayerbot.BossStandEvents: one BossStand row per bot's episode, nothing read, written or logged without it.
+        self.assertIn('bossStandEvents = config.GetBoolDefault("AiPlayerbot.BossStandEvents", false);', CONFIG)
+        log = body(ACTIONS, "void LogBossStand(")
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossStand", info1, info2);', log)
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        # The recorded episode is read only with the key on, and the read is decided in one place.
+        self.assertIn("if (events && recorded != g_standEpisodes.end())", fn)
+        self.assertIn("const StandEpisodeOut step = StandEpisodeStep(in);", fn)
+        self.assertIn("return finishStandRead(target, false, nullptr);", fn)
+        self.assertIn("return finishStandRead(target, false, selfCounts ? \"side_full\" : \"not_counted\");", fn)
+        self.assertIn('return finishStandRead(target, false, "given_up");', fn)
+        self.assertIn("return finishStandRead(target, true, nullptr);", fn)
+        for function, reason in (("void ReleaseStandEpisode(", "dead"), ("BossStandTarget ai::FindBossStand(", "gone")):
+            text = body(ACTIONS, function)
+            if reason == "dead":
+                self.assertLess(text.index("if (!sPlayerbotAIConfig.bossStandEvents)"), text.index("std::lock_guard"))
+            else:
+                self.assertIn('ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");', text)
+                self.assertEqual(text.count('ReleaseStandEpisode(ai, selfKey, "gone");'), 2)
+        self.assertIn("g_standEpisodes.erase(key);", body(ACTIONS, "void ForgetStand(uint64 key)"))
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

@@ -1203,6 +1203,85 @@ int main()
         CHECK(plans.size() == 3 && plans[groupA] == 1 && plans[groupB] == 2 && plans[noGroup] == 3);
     }
 
+    // AiPlayerbot.BossStandEvents: one episode per bot and window. The first read of an open window records it and logs
+    // the assignment; the arrival is logged once it is on the seat; a closed window releases the episode.
+    {
+        StandEpisodeIn in;
+        in.windowOn = true;
+        in.seatValid = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(!out.release);
+        CHECK(out.start);
+        CHECK(out.assigned);
+        CHECK(!out.arrived);
+        CHECK(!out.unseated);
+
+        in.have = true;
+        in.sameWindow = true;
+        in.assignedLogged = true;
+        in.arrived = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.release && !out.start && !out.assigned);
+        CHECK(out.arrived);
+        CHECK(!out.unseated);
+
+        in.arrivedLogged = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.arrived);
+
+        in.windowOn = false;
+        out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(!out.start && !out.assigned && !out.arrived && !out.unseated);
+    }
+
+    // An unseated read logs once per episode, and only while no seat was ever assigned in it (a bot that left its seat
+    // after arriving is released, not unseated).
+    {
+        StandEpisodeIn in;
+        in.windowOn = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(out.start && out.unseated && !out.assigned);
+
+        in.have = true;
+        in.sameWindow = true;
+        in.unseatedLogged = true;
+        out = StandEpisodeStep(in);
+        CHECK(!out.unseated && !out.start);
+
+        StandEpisodeIn arrivedIn;
+        arrivedIn.have = true;
+        arrivedIn.sameWindow = true;
+        arrivedIn.windowOn = true;
+        arrivedIn.assignedLogged = true;
+        out = StandEpisodeStep(arrivedIn);
+        CHECK(!out.unseated && !out.assigned && !out.start);
+    }
+
+    // Another window takes over: the recorded episode is released and a new one starts, whether or not the read seats
+    // the bot (a bot that then goes unseated logs that for the new episode).
+    {
+        StandEpisodeIn in;
+        in.have = true;
+        in.sameWindow = false;
+        in.windowOn = true;
+        in.seatValid = true;
+        in.assignedLogged = true;
+        in.arrivedLogged = true;
+        StandEpisodeOut out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(out.start);
+        CHECK(out.assigned);
+        CHECK(!out.arrived);   // the arrival of the old episode does not carry over
+
+        in.seatValid = false;
+        out = StandEpisodeStep(in);
+        CHECK(out.release);
+        CHECK(out.start);
+        CHECK(out.unseated);
+        CHECK(!out.assigned && !out.arrived);
+    }
+
     std::cout << "All boss stand policy tests passed.\n";
     return 0;
 }

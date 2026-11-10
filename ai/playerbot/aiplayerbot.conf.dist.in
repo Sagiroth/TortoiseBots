@@ -1472,6 +1472,13 @@ AiPlayerbot.DungeonRunGateHold = 0
 # 0 - off: the breath dodge runs as before, even for a seated bot (Default)
 # 1 - on
 AiPlayerbot.BossStandOutranksBreathDodge = 0
+# One BossStand row per bot's stand episode: assigned (with the yards to the seat, a stay and whether the window is
+# open or held), arrived (with the ms since the assignment), unseated (with the reason: not_counted, given_up,
+# side_full) and released (with the reason: other_window, no_boss, release_anchor, hold_time, dead, gone). Needs the
+# boss stand rows and a bot_events.csv log. Key off, the stand code writes no row and keeps no episode state.
+# 0 - off (Default)
+# 1 - on
+AiPlayerbot.BossStandEvents = 0
 
 # Dungeon self-clear (the run leader).
 # `.bot run start [plan]` lets a bound party clear a dungeon plan (world tables
