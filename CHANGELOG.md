@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunSeekPullerKeepsFight (default 0, recommended on, needs AiPlayerbot.DungeonRunSeekWalkoutFocus), a Hakkar walk-out puller more than its sight distance from the raid keeps the boss in its own fight scan, so its walk-out keeps running instead of standing frozen until the 15 s no-sight cut, with one `seek pull: walk-out kept boss` row a walk-out.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank keeps the Shade it pulled even with a nearer Shade beside it, and only leaves Jin'do while it holds at least half the top tank's threat.
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank stays on a Shade it pulled off a healer, its own low health still keeps it home, and it is never sent at a Shade in the troll pit; the BossTacticsShadeCover row gains the guard word and writes dead once.
 - New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it and on its floor ahead of other Shades.

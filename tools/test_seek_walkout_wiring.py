@@ -608,5 +608,55 @@ class WalkoutStandSightWiring(unittest.TestCase):
                       "                                bot->GetDistance2d(x, y), task.walkoutGen);", walk)
 
 
+class PullerKeepsFightWiring(unittest.TestCase):
+    """DungeonRunSeekPullerKeepsFight (walk 65): the live puller keeps its boss in its own fight scan."""
+
+    def test_the_flag_defaults_off(self):
+        config = (ROOT / "ai/playerbot/PlayerbotAIConfig.cpp").read_text()
+        config_h = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
+        template = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
+        settings = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
+        self.assertIn('GetBoolDefault("AiPlayerbot.DungeonRunSeekPullerKeepsFight", false)', config)
+        self.assertIn("bool dungeonRunSeekPullerKeepsFight = false;", config_h)
+        self.assertIn("AiPlayerbot.DungeonRunSeekPullerKeepsFight = 0", template)
+        self.assertIn("### `AiPlayerbot.DungeonRunSeekPullerKeepsFight`", settings)
+
+    def test_the_scan_adds_the_boss_after_the_attackers_loop(self):
+        scan = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
+        # Review L2: the kept boss needs the walk-out focus, like HoldCombat.
+        self.assertIn("bool const keepsBossOn = WalkoutPullerKeepsFightOn(sPlayerbotAIConfig.dungeonRunSeekPullerKeepsFight,\n"
+                      "                                                       sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus);",
+                      scan)
+        # One read of the record, through the helper only.
+        self.assertEqual(scan.count("LiveWalkoutPullerBoss("), 1)
+        self.assertIn("Creature* const liveBoss = LiveWalkoutPullerBoss(bot, &sonGuid, &startMs);", scan)
+        self.assertIn("WalkoutPullerKeepsBoss(keepsBossOn, liveBoss != nullptr, bossInAttackers)", scan)
+        # Exactly as an attacker is added, and after the attackers loop, before the rows loop: the kept entry goes into
+        # both lists (the attackers loop's push and the kept boss's), or the rows never load for it.
+        self.assertIn("fight.units.push_back(liveBoss);", scan)
+        self.assertEqual(scan.count("seen.push_back(entry);"), 2)
+        self.assertIn("entryUnits.push_back(std::vector<Unit*>(1, liveBoss));", scan)
+        self.assertIn("entryUnits[known - seen.begin()].push_back(liveBoss);", scan)
+        self.assertLess(scan.index("for (const ObjectGuid& guid : attackers)"), scan.index("LiveWalkoutPullerBoss(bot"))
+        self.assertLess(scan.index("LiveWalkoutPullerBoss(bot"),
+                        scan.index("bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;"))
+        # One row per task, through the record's own throttle.
+        self.assertIn('"seek pull: walk-out kept boss son=%u boss=%u dist=%.0f"', scan)
+        self.assertIn("ClaimWalkoutKeptBossRow(bot->GetInstanceId(), startMs)", scan)
+
+    def test_the_helper_reads_the_record_once(self):
+        fn = body(ACTIONS, "Creature* LiveWalkoutPullerBoss(Player* bot, std::uint64_t* son, std::uint32_t* startMs)")
+        self.assertIn("g_walkoutsRunning.load(std::memory_order_relaxed) == 0", fn)
+        self.assertIn("HasSeekAuraMap(bot->GetMapId())", fn)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_walkoutMutex);"), 1)
+        self.assertIn("WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId()", fn)
+        self.assertIn("WalkoutBossFighting(", fn)
+        self.assertIn("WalkoutHoldsCombat(true, true,", fn)
+        self.assertIn("return boss;", fn)
+        # The focus, facing and victim duty read the same record through the helper.
+        puller = body(ACTIONS, "bool ai::IsLiveWalkoutPuller(Player* bot)")
+        self.assertIn("return LiveWalkoutPullerBoss(bot) != nullptr;", puller)
+
+
 if __name__ == "__main__":
     unittest.main()
