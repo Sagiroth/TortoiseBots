@@ -3622,16 +3622,56 @@ namespace ai
         return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
     }
 
-    // The post's reservation also needs its tank able to take the unit back: the tank within this of the subject (3D),
-    // and the subject still on it or loose (not its victim) for less than the guard's own grace. A tank stranded
-    // across the room, or one that lost the unit past kGuardAssignedGraceMs, reserves nothing, so the other tanks may
-    // taunt it.
-    constexpr float kTankPostReserveRangeYd = 30.0f;
+    // The post's reservation also needs its tank able to take the unit back: the tank within kTankPostReserveRangeYd
+    // of the subject (3D), and the subject still on it or loose (not its victim) for less than
+    // kTankPostReserveGraceMs. A tank stranded across the room, or one that lost the unit past the grace, reserves
+    // nothing, so the other tanks may taunt it.
+    //
+    // Walk 2c: the awaited unit landed 48-55 yd away from its post tank and the tank reached melee at about +13 s, so
+    // the reservation keeps the unit at 60 yd and through a 15 s loose spell. Both limits are the post's own; the
+    // guard's assignment clock keeps its kGuardAssignedGraceMs.
+    constexpr float kTankPostReserveRangeYd = 60.0f;
+    constexpr std::uint32_t kTankPostReserveGraceMs = 15000;
     inline bool TankPostReserves(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost,
                                  bool ownerWithinRange, bool subjectOnOwner, std::uint32_t looseMs)
     {
         return TankPostSubjectReserved(keyOn, otherPostLive, otherTankCanAct, botOwnsPost) && ownerWithinRange &&
-            (subjectOnOwner || looseMs < kGuardAssignedGraceMs);
+            (subjectOnOwner || looseMs < kTankPostReserveGraceMs);
+    }
+
+    // Which limit lapsed a post's reservation this read: the range first, then the loose grace (the order the
+    // reservation reads them). `none` while the reservation holds, and with the key off (nothing is written then).
+    enum class TankPostLapse : std::uint8_t
+    {
+        None = 0,
+        Range = 1,
+        Grace = 2,
+    };
+    inline TankPostLapse TankPostLapseOf(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs)
+    {
+        if (!keyOn)
+            return TankPostLapse::None;
+        if (!ownerWithinRange)
+            return TankPostLapse::Range;
+        if (!subjectOnOwner && looseMs >= kTankPostReserveGraceMs)
+            return TankPostLapse::Grace;
+        return TankPostLapse::None;
+    }
+
+    // One lapse row per lapse event: `lapseLogged` is the record's flag. A read that still sees the lapse writes
+    // nothing; a read where the reservation holds again re-arms it for the next lapse.
+    inline bool TankPostLapseDue(TankPostLapse lapse, bool& lapseLogged)
+    {
+        if (lapse == TankPostLapse::None)
+        {
+            lapseLogged = false;
+            return false;
+        }
+        if (lapseLogged)
+            return false;
+        lapseLogged = true;
+        return true;
     }
 
     // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on its
@@ -3659,7 +3699,7 @@ namespace ai
             return out;
         }
         out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;
-        out.looseSinceMs = nowMs - out.unhittableSinceMs >= kGuardAssignedGraceMs ? 0 : prior;
+        out.looseSinceMs = nowMs - out.unhittableSinceMs >= kTankPostReserveGraceMs ? 0 : prior;
         return out;
     }
 
@@ -3987,6 +4027,14 @@ namespace ai
         if (subjectEvading)
             return "evade";
         return "band";
+    }
+
+    // The `slot` end word of a post whose row left this bot's slot: the row is still held (another row of the same
+    // slot) or the renumbering moved it while the owns-subject key is on. With the key off a renumbered end says
+    // `band`, the pre-feature word.
+    inline bool TankPostEndsAsSlot(bool rowStillHeld, bool slotMoved, bool ownsSubjectKeyOn)
+    {
+        return rowStillHeld || (slotMoved && ownsSubjectKeyOn);
     }
 
     // A step row is written when the post enters Drag, Yield or Leash (not while it stays in it).

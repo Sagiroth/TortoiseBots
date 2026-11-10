@@ -197,12 +197,16 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("DungeonRunTankPostHoldSpot", CHANGELOG)
 
     def test_a_live_post_reserves_its_subject(self):
-        # The rule is pure (TankPostSubjectReserved, TankPostReserves, TankPostEndWord) and tested in the policy test;
-        # the glue reads the shared record. A record read in the last 3 s, on this map and the target's entry, by a tank
-        # in the bot's instance that can act, within 30 yd of the subject, keeps every other tank off the unit until the
-        # subject has been loose off that tank past the guard's grace.
+        # The rule is pure (TankPostSubjectReserved, TankPostReserves, TankPostLooseClock, TankPostLapseOf,
+        # TankPostEndWord) and tested in the policy test; the glue reads the shared record. A record read in the last
+        # 3 s, on this map and the target's entry, by a tank in the bot's instance that can act, within 60 yd of the
+        # subject, keeps every other tank off the unit until the subject has been loose off that tank past the 15 s
+        # post grace.
         reserve = body(ACTIONS, "bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)")
         self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject", reserve)
+        # With the key off the read returns before any record lookup, so it writes neither a lapse row nor a slot word.
+        self.assertLess(reserve.index("if (!sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)"),
+                        reserve.index("g_tankPost"))
         self.assertIn("!target->IsCreature()", reserve)
         self.assertIn("PlayerbotAI::IsTank(bot)", reserve)
         self.assertIn("entry.second.map != bot->GetMapId()", reserve)
@@ -218,16 +222,24 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("ownerYd = TankPostDistanceYd(tank->GetPositionX()", reserve)
         self.assertIn("target->GetPositionZ())", reserve)
         self.assertIn("target->GetVictim() == tank", reserve)
-        self.assertIn("ownerYd <= kTankPostReserveRangeYd, onOwner, looseMs)", reserve)
+        self.assertIn("bool const rangeOk = ownerYd <= kTankPostReserveRangeYd;", reserve)
+        self.assertIn("TankPostReserves(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, true, true, false, rangeOk, "
+                      "onOwner,", reserve)
         # The clock starts on the first selectable, attackable tick the subject is off the post tank, so a subject still
         # in the air does not spend its grace; a running clock keeps its start through short unhittable blips and only
         # a lift-off of the grace length clears it (the unhittable spell is tracked in the record).
+        self.assertIn("constexpr float kTankPostReserveRangeYd = 60.0f;", POLICY)
+        self.assertIn("constexpr std::uint32_t kTankPostReserveGraceMs = 15000;", POLICY)
+        self.assertIn("enum class TankPostLapse : std::uint8_t", POLICY)
+        self.assertIn("inline TankPostLapse TankPostLapseOf(bool keyOn, bool ownerWithinRange, "
+                      "bool subjectOnOwner,", POLICY)
+        self.assertIn("inline bool TankPostLapseDue(TankPostLapse lapse, bool& lapseLogged)", POLICY)
         self.assertIn("struct TankPostLooseClockState", POLICY)
         self.assertIn("inline TankPostLooseClockState TankPostLooseClock(std::uint32_t prior, "
                       "std::uint32_t unhittableSince,", POLICY)
         self.assertIn("out.looseSinceMs = prior != 0 ? prior : nowMs;", POLICY)
         self.assertIn("out.unhittableSinceMs = unhittableSince != 0 ? unhittableSince : nowMs;", POLICY)
-        self.assertIn("out.looseSinceMs = nowMs - out.unhittableSinceMs >= kGuardAssignedGraceMs ? 0 : prior;",
+        self.assertIn("out.looseSinceMs = nowMs - out.unhittableSinceMs >= kTankPostReserveGraceMs ? 0 : prior;",
                       POLICY)
         self.assertIn("TankPostLooseClockState const loose = TankPostLooseClock(it->second.looseSinceMs,", reserve)
         self.assertIn("it->second.unhittableSinceMs, onOwner,", reserve)
@@ -236,6 +248,17 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("it->second.looseSinceMs = loose.looseSinceMs;", reserve)
         self.assertIn("it->second.unhittableSinceMs = loose.unhittableSinceMs;", reserve)
         self.assertIn("looseMs = loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs;", reserve)
+        # The clock is advanced on every read, owner or not: a subject back on its tank clears the persisted start
+        # before the post's own update runs, so a later loss starts a fresh grace (the round-4 ordering case).
+        self.assertNotIn("if (!onOwner)", reserve)
+        self.assertLess(reserve.index("TankPostLooseClock(it->second.looseSinceMs,"),
+                        reserve.index("tank->IsValidAttackTarget(target),"))
+        # A lapsed reservation writes one row per lapse event, throttled in the record and re-armed when it holds.
+        self.assertIn("lapse = TankPostLapseOf(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, rangeOk, onOwner, "
+                      "looseMs);", reserve)
+        self.assertIn("logLapse = TankPostLapseDue(lapse, it->second.lapseLogged);", reserve)
+        self.assertIn("if (logLapse)\n            LogTankPostLapse(ai, bossEntry, targetEntry, priority, ownerYd, "
+                      "looseMs, lapse);", reserve)
         # The action's store keeps the clock current through the same rule: on its tank clears both fields, and a
         # subject in the air neither starts the clock nor loses the start it had.
         self.assertIn("TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, "
@@ -245,6 +268,16 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("stored.unhittableSinceMs = loose.unhittableSinceMs;", ACTIONS)
         self.assertIn("std::uint32_t looseSinceMs = 0;", ACTIONS)
         self.assertIn("std::uint32_t unhittableSinceMs = 0;", ACTIONS)
+        self.assertIn("bool lapseLogged = false;", ACTIONS)
+        self.assertIn("std::uint8_t priority = 0;", ACTIONS)
+        # The post's own store keeps the lapse throttle the gate may have just set: the copy must not re-arm it.
+        self.assertIn("bool const priorLapseLogged = stored.lapseLogged;", ACTIONS)
+        self.assertIn("stored.lapseLogged = priorLapseLogged;", ACTIONS)
+        # The lapse row names the post and its limits.
+        lapse_log = body(ACTIONS, "void LogTankPostLapse(")
+        self.assertIn('"event=lapse,reason=post_lapsed,owner_yd=%.1f,loose_ms=%u,limit=%s"', lapse_log)
+        self.assertIn('lapse == TankPostLapse::Range ? "range" : "grace"', lapse_log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', lapse_log)
         # The gate refuses before it reads its own key: the reservation does not need DungeonRunTauntGate.
         gate = body(ACTIONS, "bool ai::TauntRefusedByGate(")
         self.assertLess(gate.index("TankPostReservesSubject(ai, bot, target)"),
@@ -279,7 +312,14 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("candidate->priority != roles.botIndex", find)
         self.assertIn("candidate->bossEntry == record.bossEntry", find)
         self.assertIn("candidate->targetEntry == record.targetEntry", find)
-        self.assertIn('(row || slotMoved) ? "slot" : "band"', find)
+        self.assertIn("TankPostEndsAsSlot(row != nullptr, slotMoved, "
+                      "sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject)", find)
+        self.assertIn("inline bool TankPostEndsAsSlot(bool rowStillHeld, bool slotMoved, bool ownsSubjectKeyOn)",
+                      POLICY)
+        # The record carries the post's slot for its rows, kept out of the row compare (a renumbering ends the post).
+        self.assertIn("record.priority = row->priority;", ACTIONS)
+        self.assertIn("closed.priority = record.priority;", ACTIONS)
+        self.assertIn("endedRow.priority = dead.second.priority;", ACTIONS)
         self.assertIn("in.slotMoved = slotMoved;", find)
         end = body(ACTIONS, "const char* TankPostEndReason(")
         self.assertIn("TankPostEndWord(in.live, in.slotMoved, in.tankCanAct, in.windowExpired, in.subjectFound,", end)

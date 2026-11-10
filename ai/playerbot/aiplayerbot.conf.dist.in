@@ -1124,12 +1124,13 @@ AiPlayerbot.DungeonRunTankPostLeash = 0
 # A live tank_post owns the unit it waits for (needs DungeonRunTankPost): while another tank's post is live on it, a
 # tank does not taunt it, and the post's own slot takes it. The taunt gate and both area taunts (Challenging Shout,
 # Challenging Roar, whose whole 10 yd radius is checked) refuse the subject of a post whose tank is alive, whose record
-# was read in the last 3 s and that stands within 30 yd of the unit; the unit stays reserved only while it is on that
-# tank or loose off it for less than 8 s from the first selectable tick it was off that tank (a boss still in the air
-# cannot be hit and does not start the clock; a lift-off of 8 s or more starts a new grace at the next landing, shorter
-# blips keep the original start). A tank stranded across the room, or one that lost the unit past 8 s, reserves
-# nothing, so another tank may taunt it again. The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off, every
-# tank may taunt the subject as before.
+# was read in the last 3 s and that stands within 60 yd of the unit; the unit stays reserved only while it is on that
+# tank or loose off it for less than 15 s from the first selectable tick it was off that tank (a boss still in the air
+# cannot be hit and does not start the clock; a lift-off of 15 s or more starts a new grace at the next landing, shorter
+# blips keep the original start). A tank farther than 60 yd, or one that lost the unit past 15 s, reserves nothing, so
+# another tank may taunt it again, and the read that sees the lapse writes one row (reason post_lapsed, with the tank's
+# distance, the loose time and the limit that lapsed). The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off,
+# every tank may taunt the subject as before.
 # 0 - off: every tank may taunt the post's subject (Default)
 # 1 - on (recommended on for a fight whose second boss lands later)
 AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
