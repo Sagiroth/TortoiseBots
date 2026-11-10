@@ -1080,7 +1080,8 @@ AiPlayerbot.DungeonRunTankPost = 0
 # Each kind keeps its own slot: when both name the unit, the enabled kind's slot counts, the lower one when both are on.
 # The slot's tank must hold the unit too: it keeps it while its current target is that unit, and a tank not on it yet
 # has 8 s from the tick the unit first went loose, without pausing while the guard cannot take it (out of reach,
-# polymorphed, no off-tank free). A dead or charmed tank holds nothing, and past the grace the off-tanks take the unit
+# polymorphed, no off-tank free, or the tick goes to the healer guard or the main tank's join). A dead or charmed
+# tank holds nothing, and past the grace the off-tanks take the unit
 # as today, so an inactive row or a tank that lost it never leaves a healer unprotected. Everything else is unchanged
 # (the boss pick-up, the healer guard's ranged dps, and the party guard with no off-tank alive). Off, the off-tanks
 # take such a unit as before.

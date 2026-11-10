@@ -26196,6 +26196,13 @@ static void AssignTankSlot(Facts& f, std::size_t slot, std::uint64_t targetGuid)
     f.raid.tanks[slot].targetGuid = targetGuid;
 }
 
+// One guard tick as CheckGuard runs it: the assignment clocks first, then the off-tank picks.
+static bool AssignedGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
+{
+    UpdateGuardAssignedLoose(r, f, dt);
+    return RaidGuardTick(r, f, dt, order);
+}
+
 static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
 {
     DungeonPlan plan;
@@ -26209,12 +26216,12 @@ static void TestRaidGuardLeavesAssignedTankUnitToItsRows()
     AssignTankSlot(f, 1, 45001); // its tank is on it
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(!RaidGuardTick(r, f, kTickMs, order));
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order));
     CHECK(order.empty());
     CHECK(r.offTankTurn == 0); // no turn spent on it
     // Every other add is still the round robin's: only the assigned unit is left alone.
     f.partyAttackers = {Hitter(45002, 11262, 20, true)};
-    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
     CHECK(order == "attack 45002 Offy");
 }
 
@@ -26232,7 +26239,7 @@ static void TestRaidGuard_TakesAssignedUnitWhenAuraTacticsOff()
     f.raid.guardLeavesAssigned = true;
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
     CHECK(order == "attack 45001 Offy");
 }
 
@@ -26263,7 +26270,7 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankPostOff()
     f.raid.auraTactics = true;
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
     CHECK(order == "attack 45001 Offy");
 }
 
@@ -26309,7 +26316,7 @@ static void TestRaidGuard_LeavesUnitWhenAnySourceOn()
         AssignTankSlot(f, untilTankOn ? 2 : 1, 0);      // the other kind's tank is alive, on something else
         f.partyAttackers = {Hitter(45001, 50143, 20, true)};
         std::string order;
-        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
         CHECK(order.empty());
         CHECK(r.offTankTurn == 0); // no turn spent on it
     }
@@ -26333,10 +26340,10 @@ static void TestRaidGuard_TakesAssignedUnitAfterGrace()
     std::string order;
     for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += kTickMs)
     {
-        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
         CHECK(order.empty());
     }
-    CHECK(RaidGuardTick(r, f, kTickMs, order)); // t = 8000
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000
     CHECK(order == "attack 45001 Offy");
 }
 
@@ -26355,7 +26362,7 @@ static void TestRaidGuard_TakesAssignedUnitWhenTankDead()
     f.raid.tanks[1].alive = false;
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(RaidGuardTick(r, f, kTickMs, order));
+    CHECK(AssignedGuardTick(r, f, kTickMs, order));
     CHECK(order == "attack 45001 Offy");
 }
 
@@ -26376,7 +26383,7 @@ static void TestRaidGuard_LeavesAssignedUnitWhileTankOnIt()
     std::string order;
     for (int k = 0; k < 20; ++k)
     {
-        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
         CHECK(order.empty());
     }
     CHECK(r.offTankTurn == 0); // no turn spent on it
@@ -26398,16 +26405,16 @@ static void TestRaidGuard_GraceRunsWhileUnitIneligible()
     AssignTankSlot(f, 1, 0); // alive, on something else
     f.partyAttackers = {Hitter(45001, 50143, 20, true)};
     std::string order;
-    CHECK(!RaidGuardTick(r, f, kTickMs, order)); // t = 0: loose, its grace starts
+    CHECK(!AssignedGuardTick(r, f, kTickMs, order)); // t = 0: loose, its grace starts
     CHECK(order.empty());
     for (std::uint32_t t = 1000; t < kGuardAssignedGraceMs; t += kTickMs)
     {
         Facts g = f;
         g.partyAttackers[0].polymorphed = true;
-        CHECK(!RaidGuardTick(r, g, kTickMs, order)); // t = 1000 .. 7000: ineligible, still loose
+        CHECK(!AssignedGuardTick(r, g, kTickMs, order)); // t = 1000 .. 7000: ineligible, still loose
         CHECK(order.empty());
     }
-    CHECK(RaidGuardTick(r, f, kTickMs, order)); // t = 8000: the grace is spent, taken at once
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 8000: the grace is spent, taken at once
     CHECK(order == "attack 45001 Offy");
 }
 
@@ -26431,13 +26438,82 @@ static void TestRaidGuard_GraceRunsWithNoFreeOffTank()
     std::string order;
     for (std::uint32_t t = 0; t < 9000; t += kTickMs)
     {
-        CHECK(!RaidGuardTick(r, f, kTickMs, order));
+        CHECK(!AssignedGuardTick(r, f, kTickMs, order));
         CHECK(order.empty());
     }
     f.raid.offTanksAlive = {"Offy"};
     f.raid.bossOffTanksAlive = f.raid.offTanksAlive;
-    CHECK(RaidGuardTick(r, f, kTickMs, order)); // t = 9000: no fresh grace
+    CHECK(AssignedGuardTick(r, f, kTickMs, order)); // t = 9000: no fresh grace
     CHECK(order == "attack 45001 Offy");
+}
+
+// The loose clock runs through the ticks the healer guard orders on: with dt = 2000 it orders every tick (the order
+// spacing is kGuardRepeatMs), so the off-tank pick never runs until t = 8000, when no healer add is left and the
+// assigned unit is taken at once. With the clock advanced only inside RaidGuardTick the unit gets a fresh 8 s there.
+static void TestRaidGuard_GraceRunsThroughHealerGuardOrders()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.healerGuard = true;
+    f.leadHeldEntries = {10184}; // the main tank holds the boss: the healer guard's gate
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    AssignTankSlot(f, 1, 0); // alive, on something else
+    MemberFact dps = Mem("NearDps", 21);
+    dps.ranged = true;
+    dps.rangedDps = true;
+    f.members = {Mem("Tanky", 0), dps};
+    UnitFact assigned = Hitter(45001, 50143, 30, true);
+    assigned.x = 31.0f; // 10 yd from the dps: the fresh add at 0 yd is the healer guard's pick
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += 2000)
+    {
+        Facts g = f;
+        UnitFact add = Hitter(46000 + t, 11368, 20, true);
+        add.x = 21.0f;
+        g.partyAttackers = {assigned, add};
+        CHECK(Tick(r, g, 2000) == "attack " + std::to_string(46000 + t) + " NearDps"); // t = 0 .. 6000
+    }
+    f.partyAttackers = {assigned};
+    f.raid.healerGuard = false; // no healer add left: the off-tank guard's turn
+    CHECK(Tick(r, f, 2000) == "attack 45001 Offy"); // t = 8000: 8 s loose, no fresh grace
+}
+
+// The loose clock runs through the tick the main tank's join takes: RaidBossLeadJoin sends the lead bot at the plan boss
+// an off-tank holds at t = 6000, the one tick the off-tank pick never runs (its wait is kRaidAssistWaitMs). At t = 8000
+// the join is spent (kRaidGuardRearmMs) and the assigned unit is taken at once: no fresh grace from the paused tick.
+static void TestRaidGuard_GraceRunsThroughLeadJoin()
+{
+    DungeonPlan plan;
+    ai::BossTacticTable table;
+    AssignCindarionToTankSlotOne(plan, table);
+    Run r = RaidBossRun(plan);
+    r.liveTactics = &table;
+    Facts f = RaidBossGuardFacts();
+    f.raid.guardLeavesAssigned = true;
+    f.raid.auraTactics = true;
+    f.carrier = "Lead";
+    AssignTankSlot(f, 1, 0); // alive, on something else
+    UnitFact boss = Hitter(0xF1300027C8000001ull, 10184, 20);
+    boss.victimTank = true;
+    boss.victimName = "Offy"; // held by an off-tank, the join's case
+    UnitFact assigned = Hitter(45001, 50143, 30, true);
+    std::string const join = "attack " + std::to_string(std::uint64_t(0xF1300027C8000001ull)) + " Lead";
+    for (std::uint32_t t = 0; t < kGuardAssignedGraceMs; t += 2000)
+    {
+        f.partyAttackers = {boss, assigned};
+        std::string const order = Tick(r, f, 2000);
+        if (t < 6000)
+            CHECK(order.empty()); // the grace (and the join still waiting)
+        else
+            CHECK(order == join); // t = 6000: the join, the guard's pick paused
+    }
+    f.partyAttackers = {boss, assigned};
+    // Offy still holds the joined boss, so Offz is the free off-tank; the unit is taken all the same.
+    CHECK(Tick(r, f, 2000) == "attack 45001 Offz"); // t = 8000: 8 s loose, no fresh grace
 }
 
 // The same unit with the key off: today's order, the off-tank takes it.
@@ -37754,6 +37830,8 @@ int main()
     TestRaidGuard_LeavesAssignedUnitWhileTankOnIt();
     TestRaidGuard_GraceRunsWhileUnitIneligible();
     TestRaidGuard_GraceRunsWithNoFreeOffTank();
+    TestRaidGuard_GraceRunsThroughHealerGuardOrders();
+    TestRaidGuard_GraceRunsThroughLeadJoin();
     TestRaidGuardAssignedUnitTakenWithFlagOff();
     TestRaidBossMainTankOnStayEngagesItsOwnMob();
     TestRaidBossBossOffANonTankWithTheLeadDead();

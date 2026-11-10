@@ -18191,6 +18191,24 @@ inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepte
     return true;
 }
 
+// The assignment grace's clocks (AiPlayerbot.DungeonRunGuardLeavesAssignedTank), one tick of them: every party attacker
+// off a tank keeps the time it first went loose, ahead of every filter the guard applies and whichever order path the
+// tick takes (a healer-guard order or a lead join must not pause it). Only a unit back on a tank, or one that left the
+// fight, is not loose any more. CheckGuard runs it once a fight tick.
+inline void UpdateGuardAssignedLoose(Run& r, const Facts& f, std::uint32_t dt)
+{
+    r.guardAssignedClockMs += dt;
+    for (auto it = r.guardAssignedLooseSinceMs.begin(); it != r.guardAssignedLooseSinceMs.end();)
+    {
+        bool const loose = std::any_of(f.partyAttackers.begin(), f.partyAttackers.end(),
+            [&it](const UnitFact& u) { return u.guid == it->first && !u.victimTank; });
+        it = loose ? std::next(it) : r.guardAssignedLooseSinceMs.erase(it);
+    }
+    for (const UnitFact& u : f.partyAttackers)
+        if (!u.victimTank)
+            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);
+}
+
 // One fight tick of the guard in a raid's boss fight (RaidBossRulesFight, CheckGuard): the main tank (the lead bot)
 // stays on the boss, and the whelps and adds that hit the raid within kRaidBossGuardYd go to an off-tank
 // (`attack <guid> <offTank>`, RaidFacts::bossOffTanksAlive, Run::offTankTurn) after the party guard's wait
@@ -18207,20 +18225,6 @@ inline bool HealerGuardOrderTaken(Run& r, const std::string& order, bool accepte
 // AiPlayerbot.DungeonRunTankPost for tank_post; RaidFacts::guardLeavesAssigned). True when `order` holds it.
 inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)
 {
-    // The assignment grace's clock runs for every party attacker on every tick, ahead of every filter (attackable,
-    // evading, polymorph, range, no free off-tank): the 8 s a unit is loose start when it is first seen off a tank,
-    // and do not stop while the guard cannot pick it. Only a unit back on a tank, or one that left the fight, is not
-    // loose any more.
-    r.guardAssignedClockMs += dt;
-    for (auto it = r.guardAssignedLooseSinceMs.begin(); it != r.guardAssignedLooseSinceMs.end();)
-    {
-        bool const loose = std::any_of(f.partyAttackers.begin(), f.partyAttackers.end(),
-            [&it](const UnitFact& u) { return u.guid == it->first && !u.victimTank; });
-        it = loose ? std::next(it) : r.guardAssignedLooseSinceMs.erase(it);
-    }
-    for (const UnitFact& u : f.partyAttackers)
-        if (!u.victimTank)
-            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);
     if (f.raid.bossOffTanksAlive.empty())
         return false;
     // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss the off-tanks below take only an add
@@ -19052,6 +19056,9 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
         // but never while the main tank holds a plan boss (LeadHoldsPlanBoss).
         if (RaidBossRulesFight(r, f))
         {
+            // The assignment grace's clocks run once on every fight tick, before any order path can return: a healer
+            // guard's order or a lead join must not pause them.
+            UpdateGuardAssignedLoose(r, f, dt);
             // AiPlayerbot.DungeonRunRaidHealerGuard: with the main tank holding the boss an add on a healer goes to
             // the ranged dps first, with no off-tank in range too (RaidHealerGuard); the off-tanks take such an add
             // only when none of the ranged dps is free for it (RaidGuardTick).
@@ -19063,9 +19070,6 @@ inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& or
                     return true;
                 return RaidGuardTick(r, f, dt, order);
             }
-            // The assignment grace's clock must span the whole fight: with no off-tank alive the guard's tick still
-            // runs for it (it orders nobody), so a unit waiting for a free one gets no fresh grace when it appears.
-            RaidGuardTick(r, f, dt, order);
             if (LeadHoldsPlanBoss(r, f))
             {
                 r.guardMs = 0;

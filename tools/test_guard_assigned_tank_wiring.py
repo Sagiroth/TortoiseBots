@@ -67,7 +67,9 @@ class GuardAssignedTankWiring(unittest.TestCase):
         self.assertIn("std::uint64_t guardAssignedClockMs = 0;", RUN)
         self.assertIn("constexpr std::uint32_t kGuardAssignedGraceMs = 8000;", RUN)
         tick = body(RUN, "inline bool RaidGuardTick(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
-        # The loose clock runs for every party attacker before every filter and before the no-off-tank return.
+        # The clocks are CheckGuard's, once a fight tick and before any order path can return: the healer guard's and
+        # the lead join's orders must not pause them, and the tick itself never runs them.
+        helper = body(RUN, "inline void UpdateGuardAssignedLoose(Run& r, const Facts& f, std::uint32_t dt)")
         self.assertIn(
             "    r.guardAssignedClockMs += dt;\n"
             "    for (auto it = r.guardAssignedLooseSinceMs.begin(); it != r.guardAssignedLooseSinceMs.end();)\n"
@@ -78,21 +80,23 @@ class GuardAssignedTankWiring(unittest.TestCase):
             "    }\n"
             "    for (const UnitFact& u : f.partyAttackers)\n"
             "        if (!u.victimTank)\n"
-            "            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);\n"
-            "    if (f.raid.bossOffTanksAlive.empty())\n"
-            "        return false;\n", tick)
-        # The empty roster still runs the clock: the caller calls the tick with no off-tank as well, and orders
-        # nobody there.
+            "            r.guardAssignedLooseSinceMs.emplace(u.guid, r.guardAssignedClockMs);", helper)
+        self.assertNotIn("r.guardAssignedClockMs += dt;", tick)  # the clock advances in CheckGuard only
+        self.assertNotIn("guardAssignedLooseSinceMs.emplace", tick)
+        check = body(RUN, "inline bool CheckGuard(Run& r, const Facts& f, std::uint32_t dt, std::string& order)")
+        call = "            UpdateGuardAssignedLoose(r, f, dt);\n"
+        self.assertEqual(check.count(call), 1)
+        self.assertLess(check.index(call), check.index("RaidHealerGuard(r, f, dt, order)"))
+        self.assertLess(check.index(call), check.index("RaidBossLeadJoin(r, f, dt, order)"))
+        # With no off-tank alive the branch falls through to the party guard as before: the clock ran above it.
         self.assertIn(
             "            if (!f.raid.bossOffTanksAlive.empty())\n"
             "            {\n"
             "                if (RaidBossLeadJoin(r, f, dt, order))\n"
             "                    return true;\n"
             "                return RaidGuardTick(r, f, dt, order);\n"
-            "            }\n", RUN)
-        self.assertIn(
-            "            RaidGuardTick(r, f, dt, order);\n"
-            "            if (LeadHoldsPlanBoss(r, f))\n", RUN)
+            "            }\n"
+            "            if (LeadHoldsPlanBoss(r, f))\n", check)
         # The skip sits right after the boss/held/linked_death pass, inside the add pick (the boss branch above is
         # untouched: it names PlanBossEntry positively, not negatively).
         self.assertIn(
@@ -115,7 +119,6 @@ class GuardAssignedTankWiring(unittest.TestCase):
         # Only that one read: the boss pick, the healer guard and the party guard keep their rules.
         self.assertEqual(tick.count("AssignedTankSlotOf"), 1)
         self.assertEqual(tick.count("guardLeavesAssigned"), 1)
-        self.assertEqual(tick.count("guardAssignedLooseSinceMs.emplace"), 1)  # the timestamp is set once
         # The skip needs a live, uncharmed tank on the unit or inside the grace, never the slot alone.
         self.assertNotIn("if (tankHolds)\n                    {", tick)
         self.assertNotIn("kGuardAssignedGraceMs =", tick)  # the constant is the policy header's, not a local
