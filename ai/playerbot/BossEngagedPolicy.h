@@ -46,6 +46,14 @@ namespace ai
                v.inCombat && !v.evading && v.botInCombat && v.botToBossYd <= kEngagedBossReachYd;
     }
 
+    // Which entries the registry keeps: a boss the stand system reads (stand rows) or one a tank post waits at (a
+    // tank_post row). Every other tactic row makes no use of a kept boss, so noting its unit would only add rows and
+    // a lock on every scan that sees it.
+    inline bool EngagedBossEligible(bool hasStandRows, bool hasTankPostRow)
+    {
+        return hasStandRows || hasTankPostRow;
+    }
+
     // What the bots remember of one boss: the unit last seen and when.
     struct EngagedBossNote
     {

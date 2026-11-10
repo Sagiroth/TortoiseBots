@@ -34,7 +34,7 @@ class EngagedBossWiring(unittest.TestCase):
     def test_fight_scan_adds_registered_boss(self):
         fn = body(ACTIONS, "BossTacticsFight ai::ScanBossTactics(")
         # Every living attacker is noted, and the registry read appends its units to the fight.
-        self.assertLess(fn.index("NoteEngagedBoss(unit, mapId);"), fn.index("fight.units.push_back(unit);"))
+        self.assertLess(fn.index("NoteEngagedBoss(bot, unit, mapId);"), fn.index("fight.units.push_back(unit);"))
         registry = fn.index("RegisteredEngagedBosses(bot, seen)")
         self.assertIn("for (Creature* const registered : RegisteredEngagedBosses(bot, seen))", fn)
         self.assertLess(fn.index("fight.units.push_back(unit);"), registry)
@@ -47,7 +47,7 @@ class EngagedBossWiring(unittest.TestCase):
 
     def test_find_boss_stand_reads_registry(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
-        self.assertIn("NoteEngagedBoss(unit, mapId);", fn)
+        self.assertIn("NoteEngagedBoss(bot, unit, mapId);", fn)
         self.assertIn("readEntries.push_back(unit->GetEntry());", fn)
         self.assertIn("RegisteredEngagedBosses(bot, readEntries)", fn)
         # The registry read only runs when the attacker list opened no window, and it feeds the same read.
@@ -56,17 +56,24 @@ class EngagedBossWiring(unittest.TestCase):
         self.assertIn("const auto readStandUnit = [&](Unit* unit)", fn)
 
     def test_note_only_for_units_with_rows(self):
-        fn = body(ACTIONS, "void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)")
-        self.assertIn("if (!unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())", fn)
-        self.assertIn("if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))", fn)
+        fn = body(ACTIONS, "void NoteEngagedBoss(Player* bot, Unit* unit, std::uint32_t mapId)")
+        self.assertIn("if (!bot || !unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())", fn)
+        self.assertIn("EngagedBossEligible(GetBossStands().Rows(mapId, entry) != nullptr,", fn)
+        self.assertIn("GetBossTactics().HasKindFor(mapId, entry, BossTacticKind::TankPost)))", fn)
         # The note and its expiry rules live in the policy's instance bucket; the clock is read under the registry lock.
+        # A repeat note of the same (bot, entry) inside the note window skips the lock: one thread-local mark, no state.
+        self.assertIn("mark.bot == botGuid && mark.entry == entry && markMs - mark.ms < kEngagedBossNoteMs", fn)
+        self.assertLess(fn.index("markMs - mark.ms < kEngagedBossNoteMs"), fn.index("std::lock_guard"))
+        self.assertIn("thread_local EngagedNoteMark t_engagedNoteMarks[kEngagedNoteMarks];", ACTIONS)
         self.assertIn("g_engagedBosses.Note(mapId, instanceId, entry, guid, nowMs);", fn)
-        self.assertLess(fn.index("std::lock_guard"), fn.index("WorldTimer::getMSTime()"))
+        self.assertLess(fn.index("std::lock_guard"), fn.index("const std::uint32_t nowMs = WorldTimer::getMSTime();"))
         self.assertIn("EngagedBossNoteDue(have, nowMs, have ? note->second.lastSeenMs : 0)", POLICY)
         self.assertIn("static_cast<std::uint32_t>(nowMs - old->second.lastSeenMs) > kExpireMs", POLICY)
         self.assertIn("kExpireMs = 3 * kEngagedBossFreshMs", POLICY)
         registered = body(ACTIONS, "std::vector<Creature*> RegisteredEngagedBosses(")
         self.assertIn("g_engagedBossCount.load(std::memory_order_relaxed) == 0", registered)
+        # Nothing registered: the read returns before the lock.
+        self.assertLess(registered.index("g_engagedBossCount.load"), registered.index("std::lock_guard"))
         # The read collects the caller's bucket (and prunes it) under one lock, its clock read there too.
         self.assertIn("g_engagedBosses.Read(mapId, instanceId, WorldTimer::getMSTime(), seenEntries)", registered)
         self.assertLess(registered.index("std::lock_guard"), registered.index("WorldTimer::getMSTime()"))
@@ -80,12 +87,12 @@ class EngagedBossWiring(unittest.TestCase):
     def test_abandoned_buckets_are_swept_from_the_note_path(self):
         # A bucket no bot of its instance touches any more is only found by the registry's one full walk: it runs from
         # the note path, under the same lock, at most once a minute, gated on the map instance still existing.
-        fn = body(ACTIONS, "void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)")
+        fn = body(ACTIONS, "void NoteEngagedBoss(Player* bot, Unit* unit, std::uint32_t mapId)")
         self.assertIn("g_engagedBosses.SweepAbandoned(nowMs,", fn)
         self.assertIn("return sMapMgr.FindMap(sweepMapId, sweepInstanceId) != nullptr;", fn)
         self.assertIn("kEngagedBossSweepMs = 60000", ACTIONS)
         self.assertIn("nowMs - g_engagedBossSweepMs >= kEngagedBossSweepMs", fn)
-        self.assertLess(fn.index("std::lock_guard"), fn.index("WorldTimer::getMSTime()"))
+        self.assertLess(fn.index("std::lock_guard"), fn.index("const std::uint32_t nowMs = WorldTimer::getMSTime();"))
         self.assertLess(fn.index("std::lock_guard"), fn.index("SweepAbandoned"))
         self.assertIn("g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);", fn.split("SweepAbandoned")[1])
         self.assertIn("void SweepAbandoned(std::uint32_t nowMs, InstanceAlive instanceAlive)", POLICY)
@@ -96,6 +103,10 @@ class EngagedBossWiring(unittest.TestCase):
         self.assertIn("AiPlayerbot.BossTacticsKeepsEngagedBoss = 0", TEMPLATE)
         self.assertIn("### `AiPlayerbot.BossTacticsKeepsEngagedBoss`", SETTINGS)
         self.assertIn("### `AiPlayerbot.BossTacticsKeepsEngagedBoss`", SETTINGS)
+        # Which fights it is for: Onyxia's Lair first, the other raids untested, and only the rows it serves.
+        self.assertIn("Recommended on for Onyxia's Lair; not yet tested in other raids.", TEMPLATE)
+        self.assertIn("recommended on for Onyxia's Lair; not yet tested in other raids", SETTINGS)
+        self.assertIn("a boss with a\n# tank_post row", TEMPLATE)
         # The policy holds the three constants the glue reads, and no boss name.
         for constant in ("kEngagedBossFreshMs", "kEngagedBossNoteMs", "kEngagedBossReachYd"):
             self.assertIn(constant, POLICY)

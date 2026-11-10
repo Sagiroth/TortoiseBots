@@ -364,6 +364,23 @@ class BossStandWiring(unittest.TestCase):
                 self.assertIn('ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");', text)
                 self.assertEqual(text.count('ReleaseStandEpisode(ai, selfKey, "gone");'), 2)
         self.assertIn("g_standEpisodes.erase(key);", body(ACTIONS, "void ForgetStand(uint64 key)"))
+        # A bot that never held anything leaves the lock alone: the release fast path comes before it.
+        release = body(ACTIONS, "void ReleaseStandEpisode(")
+        count_gate = release.index("g_standStateCount.load(std::memory_order_relaxed) == 0")
+        self.assertLess(release.index("if (!sPlayerbotAIConfig.bossStandEvents)"), count_gate)
+        self.assertLess(count_gate, release.index("std::lock_guard"))
+        # A read with no row to log and no episode to start or release never takes the episode lock.
+        finish = body(ACTIONS, "const auto finishStandRead =", end="\n    };\n")
+        quiet = finish.index(
+            "if (!step.release && !step.start && !step.assigned && !step.arrived && !step.unseated)")
+        self.assertLess(finish.index("const StandEpisodeOut step = StandEpisodeStep(in);"), quiet)
+        self.assertLess(quiet, finish.index("std::lock_guard"))
+        # The fresh record is stored through the keep and never re-zeroed after it (a re-zero drops the flags the
+        # read just logged and the rows go out again).
+        keep = fn.index("StandEpisodeKeep(fresh, step, nowMs);")
+        self.assertLess(keep, fn.index("fresh.boss ="))
+        self.assertNotIn("fresh = StandEpisode()", fn)
+        self.assertEqual(fn.count("g_standEpisodes[selfKey]"), 1)
 
     def test_the_whole_raid_key_seats_the_wiped_and_keeps_the_clear(self):
         # AiPlayerbot.BossStandWholeRaid, S2: both keys are read; the engagement rule is the policy's; the stay sits

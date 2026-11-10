@@ -941,14 +941,32 @@ std::atomic<std::uint32_t> g_engagedBossCount{0};
 constexpr std::uint32_t kEngagedBossSweepMs = 60000;
 std::uint32_t g_engagedBossSweepMs = 0;  // guarded by g_engagedBossMutex
 
-// A boss a bot sees in its attacker list: recorded, at most once per half second per boss. Nothing is read or written
-// with the key off, and only a unit in combat whose entry has rows is a boss of the raid's fights.
-void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)
+// The last note each bot made of a boss entry on this thread: a repeat within the note window skips the registry
+// lock without asking it. A small ring overwritten in turn, so it never grows with the fights the thread has seen.
+struct EngagedNoteMark
 {
-    if (!unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())
+    std::uint64_t bot = 0;
+    std::uint32_t entry = 0;
+    std::uint32_t ms = 0;
+};
+constexpr int kEngagedNoteMarks = 16;
+thread_local EngagedNoteMark t_engagedNoteMarks[kEngagedNoteMarks];
+thread_local int t_engagedNoteNext = 0;
+
+// A boss a bot sees in its attacker list: recorded, at most once per half second per boss. Only an entry the stand
+// or tank-post systems read is registered, and nothing is read or written with the key off.
+void NoteEngagedBoss(Player* bot, Unit* unit, std::uint32_t mapId)
+{
+    if (!bot || !unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())
         return;
     const std::uint32_t entry = unit->GetEntry();
-    if (!GetBossTactics().Rows(mapId, entry) && !GetBossStands().Rows(mapId, entry))
+    const std::uint64_t botGuid = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t markMs = WorldTimer::getMSTime();
+    for (const EngagedNoteMark& mark : t_engagedNoteMarks)
+        if (mark.bot == botGuid && mark.entry == entry && markMs - mark.ms < kEngagedBossNoteMs)
+            return;
+    if (!EngagedBossEligible(GetBossStands().Rows(mapId, entry) != nullptr,
+                             GetBossTactics().HasKindFor(mapId, entry, BossTacticKind::TankPost)))
         return;
     const std::uint32_t instanceId = unit->GetInstanceId();
     const std::uint64_t guid = unit->GetObjectGuid().GetRawValue();
@@ -966,6 +984,10 @@ void NoteEngagedBoss(Unit* unit, std::uint32_t mapId)
         g_engagedBossSweepMs = nowMs;
     }
     g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
+    EngagedNoteMark& slot = t_engagedNoteMarks[t_engagedNoteNext++ % kEngagedNoteMarks];
+    slot.bot = botGuid;
+    slot.entry = entry;
+    slot.ms = nowMs;
 }
 
 // The registered bosses of the bot's map instance whose entry the bot has not read yet, still usable: alive, in
@@ -1030,7 +1052,7 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit))
             continue;
-        NoteEngagedBoss(unit, mapId);
+        NoteEngagedBoss(bot, unit, mapId);
         fight.units.push_back(unit);
         const uint32 entry = unit->GetEntry();
         const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
@@ -8172,6 +8194,10 @@ void ReleaseStandEpisode(PlayerbotAI* ai, uint64 key, const char* reason)
 {
     if (!sPlayerbotAIConfig.bossStandEvents)
         return;
+    // A bot that never held anything (the usual case) costs one atomic read, not the lock; the check only answers
+    // "is there anything at all", and the lock still decides whether this bot has an episode.
+    if (g_standStateCount.load(std::memory_order_relaxed) == 0)
+        return;
     StandEpisode episode;
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
@@ -8302,7 +8328,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     for (const ObjectGuid& guid : attackers)
     {
         Unit* unit = ai->GetUnit(guid);
-        NoteEngagedBoss(unit, mapId);
+        NoteEngagedBoss(bot, unit, mapId);
         if (unit)
             readEntries.push_back(unit->GetEntry());
         if (readStandUnit(unit))
@@ -8424,6 +8450,10 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         in.arrivedLogged = haveEpisode && episode.arrivedLogged;
         in.unseatedLogged = haveEpisode && episode.unseatedLogged;
         const StandEpisodeOut step = StandEpisodeStep(in);
+        // No row to log and no episode to start or release: the read changes nothing, so it skips the lock. Most of a
+        // bot's reads in a window land here (the seat is known and the rows went out once).
+        if (!step.release && !step.start && !step.assigned && !step.arrived && !step.unseated)
+            return read;
         // Why the recorded episode ends: the window went to another anchor, the bot has no boss with rows in view, the
         // boss reached the lane's far end (its last hold's release anchor, at the boss's last seen position), or the
         // hold time ran out.

@@ -1481,8 +1481,9 @@ AiPlayerbot.BossStandOutranksBreathDodge = 0
 AiPlayerbot.BossStandEvents = 0
 # The boss stand seats of the whole raid: on, a bot in combat with the boss counts toward its stand seats even while
 # it has no threat on the boss and is not its victim (Onyxia's Fireball wipes the target's threat), a bot that already
-# stands on its seat's side of the lane and at least as far from it as the seat stays where it stands, and a seated bot
-# does not flee. Recommended on. Needs the boss stand rows and the boss tactics.
+# stands on its seat's side of the lane and at least as far from it as the seats next to it along the lane stays where
+# it stands (with none next to it along the lane it walks), and a seated bot does not flee. Recommended on. Needs the
+# boss stand rows and the boss tactics.
 # 0 - off: a stand seats only bots on the boss's threat list or its victim, every seat is walked to (Default)
 # 1 - on
 AiPlayerbot.BossStandWholeRaid = 0
@@ -1490,7 +1491,8 @@ AiPlayerbot.BossStandWholeRaid = 0
 # (a melee bot that cannot reach an airborne Onyxia gives up on her, so she vanishes from that bot's attacker list and
 # every row and seat for her goes dark for it). The bots that see the boss note it in one registry; a bot that lost it
 # reads it back while it is alive, in combat, not evading, within 150 yd, and while the bot itself is in combat.
-# Recommended on. Needs the boss tactics or the boss stand rows.
+# Recommended on for Onyxia's Lair; not yet tested in other raids. Needs a boss with stand rows, or a boss with a
+# tank_post row.
 # 0 - off: a boss is read only from the bot's own attacker list (Default)
 # 1 - on
 AiPlayerbot.BossTacticsKeepsEngagedBoss = 0

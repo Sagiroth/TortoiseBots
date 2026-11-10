@@ -78,6 +78,15 @@ int main()
         CHECK(EngagedBossNoteDue(true, 0x00000200u, 0xFFFFFF00u));   // wrapped: 768 ms, due
     }
 
+    // AiPlayerbot.BossTacticsKeepsEngagedBoss: only the entries the stand or tank-post systems read are registered;
+    // any other tactic row (a taunt, a kill_first) makes no use of a kept boss.
+    {
+        CHECK(EngagedBossEligible(true, false));
+        CHECK(EngagedBossEligible(false, true));
+        CHECK(EngagedBossEligible(true, true));
+        CHECK(!EngagedBossEligible(false, false));
+    }
+
     // EngagedBossRegistry_InstanceBucketsIsolated: a note, a read and the expiry sweep of one map instance never visit,
     // return or expire another instance's entries, and a bucket whose last entry expires goes with it. A read is
     // passed the reading bot's clock, so a stale row of another instance is only ever judged by that instance's bots.
