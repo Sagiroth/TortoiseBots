@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ai
@@ -736,6 +738,11 @@ namespace ai
     constexpr std::uint8_t kSeekVictimReliefMaxPerSon = 2;
     constexpr float kSeekVictimReliefReachYd = 20.0f;
     constexpr std::uint32_t kSeekVictimReliefClaimMs = 1000;
+    // A read gap this long breaks the run: the dwell is measured from a read, and a Son seen on the boss's tank again
+    // after the fight was not read for a while starts over instead of counting the gap.
+    constexpr std::uint32_t kSeekVictimReliefGapMs = 2000;
+    // A latch nobody touched for this long belongs to an ended fight and drops with the sweep.
+    constexpr std::uint32_t kSeekVictimReliefStaleMs = 120000;
 
     struct SeekReliefLatch
     {
@@ -751,16 +758,15 @@ namespace ai
     };
 
     // The per-Son clock: starts on the first read that sees the Son on the boss's tank, clears on the first that does
-    // not.
+    // not, and starts over when the gap since the last read is longer than kSeekVictimReliefGapMs: the Son may have
+    // left the tank and come back unseen inside the gap.
     inline void SeekReliefClockTick(SeekReliefLatch& latch, bool sonOnBossTank, std::uint32_t nowMs)
     {
-        if (sonOnBossTank)
-        {
-            if (latch.sinceMs == 0)
-                latch.sinceMs = nowMs != 0 ? nowMs : 1;
-        }
-        else
+        const bool gap = latch.seenMs != 0 && nowMs - latch.seenMs > kSeekVictimReliefGapMs;
+        if (!sonOnBossTank)
             latch.sinceMs = 0;
+        else if (latch.sinceMs == 0 || gap)
+            latch.sinceMs = nowMs != 0 ? nowMs : 1;
         latch.seenMs = nowMs;
     }
 
@@ -802,15 +808,17 @@ namespace ai
 
     // Selection's claim: the pick and the attack or taunt run with the lock released between them, so two off-tanks
     // could otherwise pick the same due Son and both stamp it. The first pick claims the Son for 1000 ms; a live
-    // claim by another taker, or a live attempt, leaves this bot with nothing. The caller checks the tank's
-    // eligibility first, so a bot that cannot take never holds the claim.
+    // claim blocks every taker, its own included: a tank whose ticks keep going to a higher action would otherwise
+    // hold the Son against the other off-tank for as long as it keeps reading. The claim expires 1000 ms after the
+    // first pick, and then the same tank may claim again. The caller checks the tank's eligibility first, so a bot
+    // that cannot take never holds the claim.
     inline bool SeekVictimReliefClaimFor(bool flagOn, SeekReliefLatch& latch, std::uint64_t self, std::uint32_t nowMs)
     {
         if (!SeekVictimReliefDue(flagOn, latch, nowMs))
             return false;
         if (SeekVictimReliefAttemptLive(latch, nowMs))
             return false;
-        if (SeekVictimReliefClaimLive(latch, nowMs) && latch.claimTaker != self)
+        if (SeekVictimReliefClaimLive(latch, nowMs))
             return false;
         latch.claimTaker = self;
         latch.claimMs = nowMs;
@@ -878,6 +886,33 @@ namespace ai
         {
             latch.activeTaker = 0;
             latch.activeSinceMs = 0;
+        }
+    }
+
+    // The relief latch's key: the map instance and the Son's raw guid. Instance copies of one DB spawn can share the
+    // guid, so a guid alone would let one raid's claim, cap or spacing block another raid's relief.
+    inline std::pair<std::uint32_t, std::uint64_t> SeekReliefKey(std::uint32_t instanceId, std::uint64_t sonGuid)
+    {
+        return std::make_pair(instanceId, sonGuid);
+    }
+
+    using SeekReliefLatches = std::map<std::pair<std::uint32_t, std::uint64_t>, SeekReliefLatch>;
+
+    // Drops the caller's own instance's latches that no read touched for kSeekVictimReliefStaleMs (a dead Son, a wiped
+    // fight). Another instance's latches are left alone: their reader sweeps them, and this call's clock may be older
+    // than a stamp another thread has just taken there. The age is a signed difference, so a stamp the caller has not
+    // seen yet (a clock read before the lock) is never mistaken for a very old one by the unsigned wrap.
+    inline void SweepSeekReliefLatches(SeekReliefLatches& latches, std::uint32_t instanceId, std::uint32_t nowMs)
+    {
+        for (SeekReliefLatches::iterator it = latches.begin(); it != latches.end();)
+        {
+            if (it->first.first != instanceId)
+            {
+                ++it;
+                continue;
+            }
+            const std::int32_t ageMs = static_cast<std::int32_t>(nowMs - it->second.seenMs);
+            it = ageMs > static_cast<std::int32_t>(kSeekVictimReliefStaleMs) ? latches.erase(it) : std::next(it);
         }
     }
 

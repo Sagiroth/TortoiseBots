@@ -54,12 +54,25 @@ class SeekVictimReliefWiring(unittest.TestCase):
         self.assertNotIn('"seek relief son=', fn)
 
     def test_VictimRelief_LatchKeyedByInstanceAndSon(self):
-        self.assertIn("using SeekReliefKey = std::pair<std::uint32_t, std::uint64_t>;", ACTIONS)
-        self.assertIn("std::map<SeekReliefKey, SeekReliefLatch> g_seekReliefLatches;", ACTIONS)
+        self.assertIn(
+            "inline std::pair<std::uint32_t, std::uint64_t> SeekReliefKey(std::uint32_t instanceId, "
+            "std::uint64_t sonGuid)", POLICY)
+        self.assertIn("SeekReliefLatches g_seekReliefLatches;", ACTIONS)
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
-        self.assertEqual(2, fn.count("SeekReliefKey key(bot->GetInstanceId(),"))
+        self.assertEqual(2, fn.count("SeekReliefKey(bot->GetInstanceId(),"))
         note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
-        self.assertIn("SeekReliefKey key(bot->GetInstanceId(),", note)
+        self.assertIn("SeekReliefKey(bot->GetInstanceId(),", note)
+        # The sweep is the production helper, its clock is read under the latch mutex, and it names its own instance.
+        lock = fn.index("std::lock_guard<std::mutex> lock(g_seekReliefMutex);")
+        clock = fn.index("WorldTimer::getMSTime()", lock)
+        sweep = fn.index("SweepSeekReliefLatches(g_seekReliefLatches, bot->GetInstanceId(), sweepNowMs);")
+        self.assertLess(lock, clock)
+        self.assertLess(clock, sweep)
+
+    def test_VictimRelief_OnlyItsOwnInstanceIsSwept(self):
+        sweep = body(POLICY, "inline void SweepSeekReliefLatches(SeekReliefLatches& latches,")
+        self.assertIn("if (it->first.first != instanceId)", sweep)
+        self.assertIn("kSeekVictimReliefStaleMs", sweep)
 
     def test_VictimRelief_SelectionClaimsOnlyWhenEligible(self):
         fn = body(ACTIONS, "Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot,")
@@ -81,12 +94,19 @@ class SeekVictimReliefWiring(unittest.TestCase):
         # Three exits, three notes: the attack-only return stamps true, the
         # refusal stamps this tick's `started`, the cast stamps `started || cast`.
         self.assertEqual(3, take.count("SeekReliefTakeNoteExec(ai, bot,"))
-        self.assertIn("task.source, true,\n", take)
-        self.assertIn("task.source, started,\n", take)
-        self.assertIn("task.source, started || cast,\n", take)
+        self.assertIn("task.source->GetVictim(), true, WorldTimer::getMSTime());", take)
+        self.assertIn("task.source, task.source->GetVictim(),\n", take)
+        self.assertIn("task.source, reliefFrom, started || cast,", take)
+        # `from=` is the Son's victim read before the cast, not after the taunt may have handed it over.
+        self.assertLess(take.index("Unit* const reliefFrom = task.source->GetVictim();"),
+                        take.index("ai->CastSpell(taunt, task.source)"))
         note = body(ACTIONS, "void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot,")
         self.assertIn("SeekVictimReliefNoteExec(latch,", note)
         self.assertIn('"seek relief son=', note)
+        self.assertIn("dwellMs = nowMs - latch.sinceMs;", note)
+        # The row is built and written after the lock: its cap read and logEvent never run under it.
+        self.assertEqual(1, note.count("g_seekReliefMutex"))
+        self.assertLess(note.index("snprintf(info1"), note.index("SeekTankLeaveCollapsesCap("))
 
 if __name__ == "__main__":
     unittest.main()

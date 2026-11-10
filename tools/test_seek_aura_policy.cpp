@@ -1024,8 +1024,8 @@ int main()
     }
 
     // The victim relief (DungeonRunSeekVictimRelief): a Son on the boss's victim tank is taken off it by the other
-    // off-tank, at most twice per Son and 8 s apart. Named failing case: the dwell (a fresh latch ticks true at 5000,
-    // due at 6000, not at 5999).
+    // off-tank, at most twice per Son and 8 s apart. Named failing case VictimRelief_DueAfterDwell: a fresh latch
+    // ticks true at 5000, due at 6000, not at 5999.
     {
         SeekReliefLatch latch;
         CHECK(!SeekVictimReliefDue(true, latch, 5000));
@@ -1035,6 +1035,19 @@ int main()
         SeekReliefClockTick(latch, false, 6100);
         CHECK(!SeekVictimReliefDue(true, latch, 9000));
         CHECK(!SeekVictimReliefDue(false, latch, 9000));
+    }
+    // VictimRelief_DwellRestartsAfterGap: a read gap over 2 s starts the dwell over (the Son may have left the tank
+    // and come back unseen); a gap of exactly 2 s keeps the run.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        SeekReliefClockTick(latch, true, 7000);
+        CHECK(latch.sinceMs == 5000);
+        CHECK(SeekVictimReliefDue(true, latch, 7000));
+        SeekReliefClockTick(latch, true, 10000);
+        CHECK(latch.sinceMs == 10000);
+        CHECK(!SeekVictimReliefDue(true, latch, 10500));
+        CHECK(SeekVictimReliefDue(true, latch, 11000));
     }
     // The retake latch: after a start the same Son waits 8 s, and a second start is the last one.
     {
@@ -1144,6 +1157,20 @@ int main()
         CHECK(SeekVictimReliefNoteExec(latch, 7, 500, true));
         CHECK(latch.takes == 1);
     }
+    // VictimRelief_OwnClaimNotRefreshed: a live claim is never moved by its own taker's later reads, so a tank whose
+    // ticks keep picking higher actions cannot hold the Son; 1 s after the first pick the other off-tank may claim.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 7, 500));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 7, 900));
+        CHECK(latch.claimMs == 0);
+        CHECK(latch.claimTaker == 7);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 999));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 1000));
+        CHECK(latch.claimTaker == 8);
+    }
     // VictimRelief_ClaimExpires: an unconfirmed claim stops blocking after 1000 ms.
     {
         SeekReliefLatch latch;
@@ -1183,13 +1210,12 @@ int main()
         CHECK(latch.takes == 0);
         CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
     }
-    // VictimRelief_LatchesIsolatedByInstance: the same Son guid in two map instances is two latches. A claim, a
-    // start and the count in one leave the other's latch untouched, and back.
+    // VictimRelief_LatchesIsolatedByInstance: the same Son guid in two map instances is two latches (the production
+    // key helper). A claim, a start and the count in one leave the other's latch untouched, and back.
     {
-        using ReliefKey = std::pair<std::uint32_t, std::uint64_t>;
-        std::map<ReliefKey, SeekReliefLatch> latches;
-        const ReliefKey first(1, 99);
-        const ReliefKey second(2, 99);
+        SeekReliefLatches latches;
+        const auto first = SeekReliefKey(1, 99);
+        const auto second = SeekReliefKey(2, 99);
         SeekReliefClockTick(latches[first], true, 5000);
         SeekReliefClockTick(latches[second], true, 5000);
         CHECK(SeekVictimReliefClaimFor(true, latches[first], 7, 6000));
@@ -1205,6 +1231,28 @@ int main()
         CHECK(latches[first].claimTaker == 0);
         CHECK(latches[first].lastTaker == 7);
         CHECK(latches[second].lastTaker == 8);
+    }
+    // VictimRelief_SweepOnlyOwnInstance: a stale latch of another instance survives the caller's sweep; the caller's
+    // stale one drops and a fresh one stays.
+    {
+        SeekReliefLatches latches;
+        latches[SeekReliefKey(1, 10)].seenMs = 1000;
+        latches[SeekReliefKey(1, 11)].seenMs = 129999;
+        latches[SeekReliefKey(2, 10)].seenMs = 1000;
+        SweepSeekReliefLatches(latches, 1, 130000);
+        CHECK(latches.count(SeekReliefKey(1, 10)) == 0);
+        CHECK(latches.count(SeekReliefKey(1, 11)) == 1);
+        CHECK(latches.count(SeekReliefKey(2, 10)) == 1);
+    }
+    // VictimRelief_SweepUsesFreshClock: a latch whose stamp is newer than the clock the caller passed (a stamp landed
+    // after a pre-lock read) is not erased by the unsigned wrap; one that is really stale still drops.
+    {
+        SeekReliefLatches latches;
+        latches[SeekReliefKey(1, 10)].seenMs = 5000;
+        latches[SeekReliefKey(1, 11)].seenMs = 135000;
+        SweepSeekReliefLatches(latches, 1, 130000);
+        CHECK(latches.count(SeekReliefKey(1, 10)) == 0);
+        CHECK(latches.count(SeekReliefKey(1, 11)) == 1);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

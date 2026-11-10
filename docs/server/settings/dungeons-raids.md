@@ -1156,7 +1156,7 @@ Whether the other off-tank takes a Son of Hakkar off the boss's victim tank. Rec
 
 Diagnostics (always on with the key): one `BossTacticsSeekPull` row `seek relief son=<guid> from=<tank> by=<tank> dwell_ms=<ms> n=<1|2> cap=<0|1> reach_yd=<yd>` per relief start (`from` the relieved tank, `by` the taking one, `n` this Son's relief count, `cap` the cap guard's read).
 
-Cost: one latch per Son of the fight, swept on each locked use (entries untouched for more than 120 s drop).
+Cost: one latch per Son of the fight; each instance sweeps its own latches at most once a second (entries untouched for more than 120 s drop).
 
 </details>
 
