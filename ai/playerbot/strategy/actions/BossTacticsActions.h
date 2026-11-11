@@ -181,6 +181,7 @@ namespace ai
     // than `bot` that PlayerbotAI::IsTank reads as a tank. Builds the victim facts in call order (TauntHeldInputs) and
     // answers through TauntStandsDownForTank. Only the class taunt actions call it; TauntRefusedByGate and
     // the boss-tactics taunts never do, so a planned tank swap still taunts off another tank.
+    bool TauntTargetHeldByOtherTank(Player* bot, Unit* target);
 
     // An area taunt's cast-time check (AoeTauntPolicy.h): true while 3+ mobs
     // inside the shout radius are still hitting non-tank group members. Walks

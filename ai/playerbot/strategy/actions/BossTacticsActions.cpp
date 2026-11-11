@@ -31,6 +31,7 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/policy/combat/AoeOffPolicy.h"
 #include "playerbot/policy/combat/AoeTauntPolicy.h"
+#include "playerbot/policy/combat/TauntHeldTargetPolicy.h"
 #include "playerbot/policy/raid/UseObjectPolicy.h"
 #include "playerbot/policy/raid/TankSwapPolicy.h"
 #include "playerbot/policy/raid/BurnManaPolicy.h"
