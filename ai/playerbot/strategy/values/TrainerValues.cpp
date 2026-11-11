@@ -5,7 +5,7 @@
 #include "playerbot/PlayerbotHelpMgr.h"
 #include "../../../../runtime/policy/provision/TradeTrainerPolicy.h"
 #include "../../../../runtime/ProfessionGrantPolicy.h"
-#include "playerbot/SpellRankPolicy.h"
+#include "playerbot/policy/gear/SpellRankPolicy.h"
 #include "BudgetValues.h"
 
 using namespace ai;
