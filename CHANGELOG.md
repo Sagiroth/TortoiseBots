@@ -1,5 +1,6 @@
 # Changelog
 
+
 - New: behind AiPlayerbot.AirborneWandYieldsToNukes (default 0), the Onyxia P2 `onyxia airborne` row's `airborne shoot` yields to the class nuke rows for mage, warlock and non-healer priest, so casters nuke her instead of wanding while each wand shot would renew the GCD; hunters, melee, tanks and healers keep the wand.
 - New: behind AiPlayerbot.HoverCastHoldsSpread (default 0), a ranged damage dealer in spell range of a hovering target takes no `raid spread` spacing step (a live boss `spread` row still steps), so its cast-time nukes are not refused for moving.
 - New: behind AiPlayerbot.DungeonRunAddCrew (default 0), the boss-tactic kind `add_crew`: once the row's switch unit is dead, the boss's add duty goes to the melee, the tanks and the first `priority` AoE ranged bots of the raid, and the other ranged damage dealers stay on the boss; Onyxia's Lair ships the row on Cindarion with crew 2, so the whelps stay with the crew after he dies and every ranged bot past it returns to her while she hovers.
@@ -39,6 +40,8 @@
 - Fixed: with AiPlayerbot.DungeonRunShadeHealerCover on, the off-tank stays on a Shade it pulled off a healer, its own low health still keeps it home, and it is never sent at a Shade in the troll pit; the BossTacticsShadeCover row gains the guard word and writes dead once.
 - New: behind AiPlayerbot.DungeonRunShadeHealerCover (default 0), a cursed off-tank that does not hold Jin'do takes a Shade attacking a healer, and a cursed DPS carrier ranks a Shade on a healer within 30 yd of it and on its floor ahead of other Shades.
 - New: Jin'do log row BossTacticsShadeCover names each cursed damage dealer or free off-tank that leaves a Shade on a healer alone, and why (dead, charmed, other_shade, out_of_range, threat_gate, on_boss, other_target, no_target).
+- New: behind AiPlayerbot.AirborneWandYieldsToNukes (default 0), the Onyxia P2 `onyxia airborne` row's `airborne shoot` yields to the class nuke rows for mage, warlock and non-healer priest, so casters nuke her instead of wanding while each wand shot would renew the GCD; hunters, melee, tanks and healers keep the wand.
+- New: behind AiPlayerbot.HoverCastHoldsSpread (default 0), a ranged damage dealer in spell range of a hovering target takes no `raid spread` spacing step (a live boss `spread` row still steps), so its cast-time nukes are not refused for moving.
 
 - Fixed: behind AiPlayerbot.DungeonRunGuardLeavesAssignedTank, the assigning tank's selected target no longer holds a unit past its 8 s grace, so a tank that cannot take it (taunt-immune, parked on a breath seat, stuck) no longer leaves an add on a healer; the docs note that a dead tank leaves the raid tank order and the next tank inherits its slot.
 - Fixed: AiPlayerbot.DungeonRunGuardLeavesAssignedTank's assignment clocks run only while the key is on, so a raid boss fight with it off does no per-tick assignment bookkeeping and a key turned on mid-run starts its grace clean.
