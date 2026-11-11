@@ -552,21 +552,25 @@ bool RaidSpreadAction::isUseful()
             LogBossSpread(ai, bot, "stand", -1, -1.0f, -1);
         return false;
     }
-    if (sPlayerbotAIConfig.hoverCastHoldsSpread && HoverCastHolds())
+    if (sPlayerbotAIConfig.hoverCastHoldsSpread)
     {
-        if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy) &&
-            BossSpreadLive(ai, bot))
-            LogBossSpread(ai, bot, "hover_cast", -1, -1.0f, -1);
-        return false;
+        HoverCastHold const hold = HoverCastVerdict();
+        // Both hover rows describe the hold, not a boss spread row, so they are written even where the boss's data
+        // has no `spread` row (Onyxia has none); the slot read owns the row while its key is on, as for the rest.
+        if (hold != HoverCastHold::None &&
+            SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy))
+            LogBossSpread(ai, bot, hold == HoverCastHold::Held ? "hover_cast" : "hover_cast_spread", -1, -1.0f, -1);
+        if (hold == HoverCastHold::Held)
+            return false;
     }
     return true;
 }
 
-bool RaidSpreadAction::HoverCastHolds()
+RaidSpreadAction::HoverCastHold RaidSpreadAction::HoverCastVerdict()
 {
     Unit* target = AI_VALUE(Unit*, "current target");
     if (!target || !bot->GetMap())
-        return false;
+        return HoverCastHold::None;
     bool const rangedDps = HoverReachTakerIsRangedDps(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
     float const tx = target->GetPositionX();
     float const ty = target->GetPositionY();
@@ -578,7 +582,45 @@ bool RaidSpreadAction::HoverCastHolds()
     bool const inRange = bot->GetDistance(target, SizeFactor::CombatReach) <= ai->GetRange("spell") - sPlayerbotAIConfig.contactDistance &&
         bot->IsWithinLOSInMap(target, true);
     bool const spreadRowLive = BossSpreadLive(ai, bot);
-    return HoverCastHoldsSpread(true, rangedDps, hovering, inRange, spreadRowLive);
+    float const radius = SpreadRadiusYd();
+    // No ally is the far end of the distance scale: the first read asks whether the hold would apply if the bot stood
+    // alone, and only then is the group scanned for a stack.
+    if (!HoverCastHoldsSpread(true, rangedDps, hovering, inRange, spreadRowLive, FLT_MAX, radius))
+        return HoverCastHold::None;
+    float nearestYd = FLT_MAX;
+    NearestStackedAlly(nearestYd);
+    return HoverCastHoldsSpread(true, rangedDps, hovering, inRange, spreadRowLive, nearestYd, radius)
+        ? HoverCastHold::Held : HoverCastHold::Spread;
+}
+
+float RaidSpreadAction::SpreadRadiusYd()
+{
+    if (ai->HasStrategy("spread", BotState::BOT_STATE_COMBAT))
+        return SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
+    return BossSpreadYd(ai, bot, kSpreadSettledDistance);
+}
+
+Player* RaidSpreadAction::NearestStackedAlly(float& distance)
+{
+    distance = FLT_MAX;
+    Group* group = bot->GetGroup();
+    if (!group)
+        return nullptr;
+    Player* nearest = nullptr;
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || member == bot || !sServerFacade.IsAlive(member))
+            continue;
+        if (member->GetMapId() != bot->GetMapId())
+            continue;
+        float const dist = sServerFacade.getDistance2d(bot, member);
+        if (dist < distance)
+        {
+            distance = dist;
+            nearest = member;
+        }
+    }
+    return nearest;
 }
 
 bool RaidSpreadAction::Execute(Event& event)
@@ -595,7 +637,7 @@ bool RaidSpreadAction::Execute(Event& event)
     // it on the slot read writes it.
     bool const logSpread =
         spreadLive && SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy);
-    float radius = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+    float const radius = SpreadRadiusYd();
     if (optIn)
     {
         // Tanks never spread: stepping out drags the boss/cleave through the
@@ -609,7 +651,6 @@ bool RaidSpreadAction::Execute(Event& event)
             ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))
             return false;
-        radius = SpreadRadius(AI_VALUE(float, "spread distance"), ai->IsRanged(bot));
     }
     else
     {
@@ -647,24 +688,8 @@ bool RaidSpreadAction::Execute(Event& event)
         return false;
     }
     // Step out directly away from the nearest stacked friendly.
-    Group* group = bot->GetGroup();
-    if (!group)
-        return false;
-    Player* nearest = nullptr;
     float nearestDist = FLT_MAX;
-    for (Player* member : LiveGroupMembers(group))
-    {
-        if (!member || member == bot || !sServerFacade.IsAlive(member))
-            continue;
-        if (member->GetMapId() != bot->GetMapId())
-            continue;
-        float dist = sServerFacade.getDistance2d(bot, member);
-        if (dist < nearestDist)
-        {
-            nearestDist = dist;
-            nearest = member;
-        }
-    }
+    Player* nearest = NearestStackedAlly(nearestDist);
     if (!nearest || nearestDist >= radius)
         return false;
     const WorldPosition botPos(bot);

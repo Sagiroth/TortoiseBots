@@ -1,4 +1,5 @@
 #include "../ai/playerbot/policy/combat/RangedApproachPolicy.h"
+#include "../ai/playerbot/CombatSpreadPolicy.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -298,13 +299,25 @@ int main()
     // HoverCastHoldsSpread_InRange (the failing case): all true holds the spacing step. Each of these alone
     // flips it back to stepping: out of range, a live spread row, key off, not ranged dps, not hovering.
     {
-        CHECK(ai::HoverCastHoldsSpread(true, true, true, true, false));
-        CHECK(!ai::HoverCastHoldsSpread(true, true, true, false, false));
-        CHECK(!ai::HoverCastHoldsSpread(true, true, true, true, true));
-        CHECK(!ai::HoverCastHoldsSpread(false, true, true, true, false));
-        CHECK(!ai::HoverCastHoldsSpread(true, false, true, true, false));
-        CHECK(!ai::HoverCastHoldsSpread(true, true, false, true, false));
+        float const clear = 40.0f;
+        CHECK(ai::HoverCastHoldsSpread(true, true, true, true, false, clear, ai::kSpreadSettledDistance));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, true, false, false, clear, ai::kSpreadSettledDistance));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, true, true, true, clear, ai::kSpreadSettledDistance));
+        CHECK(!ai::HoverCastHoldsSpread(false, true, true, true, false, clear, ai::kSpreadSettledDistance));
+        CHECK(!ai::HoverCastHoldsSpread(true, false, true, true, false, clear, ai::kSpreadSettledDistance));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, false, true, false, clear, ai::kSpreadSettledDistance));
         std::cout << "  [PASS] hover cast: holds the spread step in range\n";
+    }
+
+    // HoverCastHoldsSpread_StackedAlly (the failing case): the hold yields to spreading out of a stack. A living
+    // group member inside the spread radius (2 yd of the 10 yd settled distance) means the caster steps out of
+    // the splash first; a caster clear of the nearest ally (20 yd) holds and casts; no hover never holds.
+    {
+        float const radius = ai::kSpreadSettledDistance;
+        CHECK(!ai::HoverCastHoldsSpread(true, true, true, true, false, 2.0f, radius));
+        CHECK(ai::HoverCastHoldsSpread(true, true, true, true, false, 20.0f, radius));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, false, true, false, 20.0f, radius));
+        std::cout << "  [PASS] hover cast: a stacked ally outranks the hold\n";
     }
 
 

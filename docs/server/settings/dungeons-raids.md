@@ -829,7 +829,7 @@ Whether a ranged damage dealer in spell range of a hovering target skips its `ra
 <details>
 <summary>How it works in detail</summary>
 
-**Hover cast hold:** a cast-time nuke is refused while the bot moves, and walk 2d's casters on airborne Onyxia moved more than 2 yd in 2 s in 48 % of their refused frames. With the key on, a ranged damage dealer whose hovering target stands in spell range by the `enemy out of spell range` trigger's own measure takes no spacing step (the `RaidSpreadAction` row reports `hover_cast` the same throttled way the stand row does); a live boss `spread` row (the boss's data asks for spacing) still steps. On Onyxia there is no spread row, so the row stays quiet.
+**Hover cast hold:** a cast-time nuke is refused while the bot moves, and walk 2d's casters on airborne Onyxia moved more than 2 yd in 2 s in 48 % of their refused frames. With the key on, a ranged damage dealer whose hovering target stands in spell range by the `enemy out of spell range` trigger's own measure takes no spacing step (`RaidSpreadAction` reports `hover_cast` the same throttled way the stand row does), unless another living group member stands inside the spread distance the step itself uses: the caster then steps out of the stack and reports `hover_cast_spread` instead. A live boss `spread` row (the boss's data asks for spacing) still steps. Both hover rows are written even on a fight without a spread row (Onyxia has none).
 
 </details>
 ### `AiPlayerbot.DungeonRunGateHold`

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include "playerbot/PlayerbotAI.h"
 #include "MovementActions.h"
 #include "playerbot/policy/class/ResistAuraPolicy.h"
@@ -175,7 +176,12 @@ namespace ai
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
     private:
-        bool HoverCastHolds();
+        // Why the hover hold did or did not stop the spacing step: None the hold does not apply, Held it applies,
+        // Spread it would apply but a group member stands inside the spread radius, so the step goes ahead.
+        enum class HoverCastHold : std::uint8_t { None, Held, Spread };
+        HoverCastHold HoverCastVerdict();
+        float SpreadRadiusYd();
+        Player* NearestStackedAlly(float& distance);
     };
 
     // Explicit tank command: face the current dragon boss away from the

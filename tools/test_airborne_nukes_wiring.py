@@ -6,8 +6,11 @@ the call sites in ai/:
 - the "onyxia airborne" row names "airborne shoot" and no "shoot";
 - creators["airborne shoot"] exists next to "shoot";
 - CastAirborneShootAction::isUseful calls AirborneWandYields under the key;
-- RaidSpreadAction::isUseful calls HoverCastHolds under hoverCastHoldsSpread,
-  after the FindBossStand block, and logs "hover_cast";
+- RaidSpreadAction::isUseful asks HoverCastHolds' verdict under hoverCastHoldsSpread,
+  after the FindBossStand block, logs "hover_cast" when the hold applies and
+  "hover_cast_spread" when it yields to an ally in the spread radius;
+- the verdict keeps the hold only with no ally inside RaidSpreadAction's own
+  spread radius;
 - CastSpellAction::isPossible notes all three refusals (no target, out of
   reach, CanCastSpell result);
 - both keys are read in PlayerbotAIConfig.cpp with a false default.
@@ -47,20 +50,30 @@ class AirborneNukesWiringTest(unittest.TestCase):
 
     def test_spread_useful_holds_after_stand(self):
         fn = body(DUNGEON_CPP, "bool RaidSpreadAction::isUseful()", "\n}\n")
-        self.assertIn("if (sPlayerbotAIConfig.hoverCastHoldsSpread && HoverCastHolds())", fn)
+        self.assertIn("if (sPlayerbotAIConfig.hoverCastHoldsSpread)", fn)
+        self.assertIn("HoverCastHold const hold = HoverCastVerdict();", fn)
         self.assertLess(fn.index("if (FindBossStand(ai, bot).valid)"),
-                        fn.index("if (sPlayerbotAIConfig.hoverCastHoldsSpread && HoverCastHolds())"))
+                        fn.index("HoverCastVerdict()"))
         self.assertIn('"hover_cast"', fn)
-        self.assertIn("bool HoverCastHolds();", DUNGEON_H)
+        self.assertIn('"hover_cast_spread"', fn)
+        # The rows describe the hold, so they no longer wait for a live boss spread row (Onyxia has none).
+        hover = fn[fn.index("if (sPlayerbotAIConfig.hoverCastHoldsSpread)"):]
+        self.assertNotIn("BossSpreadLive", hover)
+        self.assertIn("if (hold == HoverCastHold::Held)\n            return false;", fn)
+        self.assertIn("HoverCastHold HoverCastVerdict();", DUNGEON_H)
 
     def test_spread_hold_asks_hover_range_and_live_row(self):
-        fn = body(DUNGEON_CPP, "bool RaidSpreadAction::HoverCastHolds()", "\n}\n")
+        fn = body(DUNGEON_CPP, "RaidSpreadAction::HoverCastHold RaidSpreadAction::HoverCastVerdict()", "\n}\n")
         self.assertIn("HoverReachTakerIsRangedDps(", fn)
         self.assertIn("HoverReachApplies(true, bot->GetMap()->IsDungeon()", fn)
         self.assertIn('ai->GetRange("spell")', fn)
         self.assertIn("IsWithinLOSInMap(target, true)", fn)
         self.assertIn("BossSpreadLive(ai, bot)", fn)
+        self.assertIn("NearestStackedAlly(nearestYd)", fn)
+        self.assertIn("SpreadRadiusYd()", fn)
         self.assertIn("HoverCastHoldsSpread(true,", fn)
+        self.assertIn("Player* NearestStackedAlly(float& distance);", DUNGEON_H)
+        self.assertIn("float SpreadRadiusYd();", DUNGEON_H)
 
     def test_cast_fail_reasons_noted(self):
         fn = body(SHOOT_CPP, "bool CastSpellAction::isPossible()", "\n    return true;\n}")
