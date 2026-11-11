@@ -399,7 +399,7 @@ def new_kind_problem(row):
             return "cycle columns on another kind"
         return None
     if kind == "tank_post":
-        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-40 yd)
+        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-100 yd)
         # and the longest hold (window_s 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
@@ -409,8 +409,8 @@ def new_kind_problem(row):
             return "tank_post tank slot outside 1-7"
         if not has_spot:
             return "tank_post without its spot"
-        if not 5.0 <= row["param"] <= 40.0:
-            return "tank_post arrival radius outside [5, 40]"
+        if not 5.0 <= row["param"] <= 100.0:
+            return "tank_post arrival radius outside [5, 100]"
         if not 10.0 <= row["window_s"] <= 120.0:
             return "tank_post window outside [10, 120]"
         if row["cycle_spell"] or row["cycle_s"]:
@@ -1050,12 +1050,12 @@ class BossTacticsSql(unittest.TestCase):
                                      "anchor %d side %d role %s" % (anchor, side, role))
 
     def test_onyxia_walk2c_rows(self):
-        # 20261110130000_world.sql: the arrival radius goes 25 -> 40 (the latch only decides
-        # the first arrival; walk 2b Cindarion landed 21-26 yd from T, so 25 latched 44-104 s
-        # late), and a ranged_only row (gap 10 yd, needs AiPlayerbot.DungeonRunRangedOnly = 1)
-        # sends melee and tanks to Cindarion and the whelps while she hovers. The DELETE pin is
-        # the gate: without the migration the tank_post row still carries param 25 and no
-        # (249, 10184) ranged_only row is live.
+        # 20261110130000_world.sql: the arrival radius goes 25 -> 40 (walk 2b Cindarion landed
+        # 21-26 yd from T, so 25 latched 44-104 s late), and a ranged_only row (gap 10 yd, needs
+        # AiPlayerbot.DungeonRunRangedOnly = 1) sends melee and tanks to Cindarion and the whelps
+        # while she hovers. The DELETE pin is the gate for both rows. The live tank_post row moved
+        # to 20261111160100_world.sql (radius 90, pinned in test_onyxia_walk2e_post_radius); only
+        # this file's content pins stay here.
         name = "20261110130000_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2c migration is missing")
@@ -1067,15 +1067,6 @@ class BossTacticsSql(unittest.TestCase):
                       "AND `kind` = 'ranged_only';", text)
         self.assertEqual(2, len(re.findall(r"(?m)^\(249, 10184, '", text)))
         live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
-        post = live.get((249, 10184, "tank_post", 50143, 0))
-        self.assertIsNotNone(post, "the Onyxia tank_post row is missing")
-        self.assertEqual(name, post["file"], "the walk 2c migration owns the tank_post row")
-        self.assertEqual("hold_spot", post["tactic_mode"], "the Onyxia tank_post row is not hold_spot")
-        self.assertEqual((1, 40.0, 41, 65, 120.0, 8.0, -200.0, -85.8),
-                         (post["priority"], post["param"], post["hp_min"], post["hp_max"], post["window_s"],
-                          post["spot_x"], post["spot_y"], post["spot_z"]),
-                         "the Onyxia tank_post row drifted")
-        self.assertIsNone(new_kind_problem(post))
         hold = live.get((249, 10184, "ranged_only", 0, 0))
         self.assertIsNotNone(hold, "the Onyxia ranged_only row is missing")
         self.assertEqual(name, hold["file"], "the walk 2c migration owns the ranged_only row")
@@ -1084,12 +1075,37 @@ class BossTacticsSql(unittest.TestCase):
                          "the Onyxia ranged_only row drifted")
         self.assertIsNone(new_kind_problem(hold))
 
+    def test_onyxia_walk2e_post_radius(self):
+        # 20261111160100_world.sql: the post's arrival radius goes 40 -> 90, the whole floor the
+        # `anchor` row allows (walk 2d a-2: Cindarion stood 41-60 yd from T, 8 leash walks, the
+        # latch came at +107 s). One (249, 10184) tank_post row, mode hold_spot, the walk 2c band,
+        # window and spot; the loader's cap (5-100 yd) accepts 90.
+        name = "20261111160100_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2e post radius migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post';", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(249, 10184, '", text)))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        posts = [key for key in live if key[:3] == (249, 10184, "tank_post")]
+        self.assertEqual(1, len(posts), "the Onyxia tank_post rows are not exactly one")
+        post = live[posts[0]]
+        self.assertEqual(name, post["file"], "the walk 2e migration owns the tank_post row")
+        self.assertEqual((50143, 0, 1, 90.0, 41, 65, 120.0, 8.0, -200.0, -85.8, "hold_spot"),
+                         (post["target_entry"], post["spell_id"], post["priority"], post["param"],
+                          post["hp_min"], post["hp_max"], post["window_s"],
+                          post["spot_x"], post["spot_y"], post["spot_z"], post["tactic_mode"]),
+                         "the Onyxia tank_post row drifted")
+        self.assertIsNone(new_kind_problem(post), "the loader rules refuse the Onyxia tank_post row")
+
     def test_onyxia_walk2b_post_is_hold_spot(self):
         # 20261110120200_world.sql: the walk 2a tank_post row becomes hold_spot (needs
         # AiPlayerbot.DungeonRunTankPostHoldSpot = 1): same slot, spot, band and window,
         # so the post starts off a whelp, drags Cindarion back to T and yields to a seat.
-        # The live row moved to 20261110130000_world.sql (radius 40, pinned in
-        # test_onyxia_walk2c_rows); only this file's content pins stay here.
+        # The live row moved on to 20261111160100_world.sql (radius 90, pinned in
+        # test_onyxia_walk2e_post_radius); only this file's content pins stay here.
         name = "20261110120200_world.sql"
         path = os.path.join(ROOT, "data/sql/world", name)
         self.assertTrue(os.path.isfile(path), "the Onyxia walk 2b post migration is missing")

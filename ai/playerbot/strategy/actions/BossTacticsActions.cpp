@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
@@ -11868,12 +11869,16 @@ struct TankPostRecord
     bool lapseLogged = false;
     std::uint8_t priority = 0;
     std::uint8_t lastStep = 0;
+    // The taunt rows' throttle per word (TankPostTaunt, indexed by its value; 0 = never written), read under the lock.
+    std::array<std::uint32_t, 6> tauntLogMs{};
 };
 
 std::mutex g_tankPostMutex;
 std::map<std::uint64_t, TankPostRecord> g_tankPost;
 // A record nobody read for this long belongs to a fight that is over (the window is at most 120 s).
 constexpr std::uint32_t kTankPostIdleMs = 150000;
+// The taunt rows' throttle: a word that did not cast is written at most once per bot per five seconds.
+constexpr std::uint32_t kTankPostTauntLogGapMs = 5000;
 // The dead-tank sweep runs at most this often, whatever asks.
 constexpr std::uint32_t kTankPostSweepMs = 1000;
 std::atomic<std::uint32_t> g_tankPostSweepMs{0};
@@ -11957,6 +11962,36 @@ void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision
     char info2[96];
     snprintf(info2, sizeof(info2), "event=%s,tank_yd=%.1f,subject_yd=%.1f,on_tank=%d", name, tankYd, subjectYd,
              onTank ? 1 : 0);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// One BossTacticsTankPost row for the Engage step's taunt (AiPlayerbot.DungeonRunTankPostTaunts). A cast is always
+// written; any other word that was not `none` at most once per bot and word in kTankPostTauntLogGapMs, so a taunt held
+// off by its stance or its radius does not fill the log at the action's tick rate.
+void LogTankPostTaunt(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, TankPostTaunt step, const char* spell,
+                      const char* victim, bool cast)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || step == TankPostTaunt::None)
+        return;
+    if (!cast)
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+        if (it != g_tankPost.end())
+        {
+            std::uint32_t& last = it->second.tauntLogMs[static_cast<std::size_t>(step)];
+            const std::uint32_t nowMs = WorldTimer::getMSTime();
+            if (last != 0 && nowMs - last < kTankPostTauntLogGapMs)
+                return;
+            last = nowMs;
+        }
+    }
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=taunt,step=%s,spell=%s,victim=%s,cast=%d", TankPostTauntWord(step),
+             spell ? spell : "none", victim, cast ? 1 : 0);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
@@ -12323,8 +12358,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostRecord& stored = g_tankPost[self];
         std::uint32_t const priorLoose = stored.looseSinceMs;
         std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
+        std::array<std::uint32_t, 6> const priorTauntLog = stored.tauntLogMs;
         bool lapseLogged = stored.lapseLogged;
         stored = record;
+        stored.tauntLogMs = priorTauntLog;
         stored.lastReadMs = nowMs;
         TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
             in.subjectSelectable, subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
@@ -12374,6 +12411,86 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     return out;
 }
 
+namespace
+{
+// The subject's current victim as the taunt row's word: tank, healer, any other damage dealer or none.
+const char* TankPostVictimWord(Unit* victim)
+{
+    if (!victim)
+        return "none";
+    if (victim->GetTypeId() == TYPEID_PLAYER)
+    {
+        Player* const player = static_cast<Player*>(victim);
+        if (PlayerbotAI::IsHeal(player))
+            return "healer";
+        if (PlayerbotAI::IsTank(player))
+            return "tank";
+    }
+    return "dps";
+}
+}  // namespace
+
+// AiPlayerbot.DungeonRunTankPostTaunts. Walk 2d: three of three reservations lapsed on grace while slot 1 hit Cindarion
+// without a taunt, and slot 1's own first taunt came at +108..+121 s. The Engage step therefore takes the subject back
+// whenever it is not on the post's tank, off a healer, a damage dealer or another tank. The taunt gate still decides
+// (needs_aura, taunt_immune); a warrior away from Defensive Stance takes the stance first; the area taunt only when
+// the single taunt cannot go out, the subject is within kAreaTauntRadiusYd, it is on a non-tank and neither gate
+// refuses it.
+bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* current)
+{
+    Unit* const subject = task.subject;
+    Unit* const victim = subject->GetVictim();
+    const char* const taunt = KnownTaunt(ai);
+    const char* area = nullptr;
+    if (bot->GetClass() == CLASS_WARRIOR && ai->HasSpell("challenging shout"))
+        area = "challenging shout";
+    else if (bot->GetClass() == CLASS_DRUID && ai->HasSpell("challenging roar"))
+        area = "challenging roar";
+    TankPostTauntIn in;
+    in.keyOn = sPlayerbotAIConfig.dungeonRunTankPostTaunts;
+    in.engage = true;
+    in.subjectOnTank = victim == bot;
+    in.subjectSelectable = !subject->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+    in.gateRefuses = taunt && TauntRefusedByGate(ai, bot, subject, taunt);
+    in.tauntCastable = taunt && ai->CanCastSpell(taunt, subject);
+    in.needsStance = taunt && std::strcmp(taunt, "taunt") == 0 && !ai->HasAura("defensive stance", bot);
+    in.stanceCastable = in.needsStance && ai->CanCastSpell("defensive stance", bot);
+    in.areaCastable = area && ai->CanCastSpell(area, bot);
+    in.areaInRange = bot->GetDistance(subject) <= kAreaTauntRadiusYd;
+    in.areaGateRefuses = area && (AreaTauntRefusedByPost(ai, bot, area) ||
+                                     TauntRefusedByGate(ai, bot, subject, area));
+    in.victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
+        PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    TankPostTaunt const step = TankPostTauntStep(in);
+    const char* spell = nullptr;
+    bool cast = false;
+    switch (step)
+    {
+        case TankPostTaunt::Taunt:
+            // The taunt only sets the selection: without the attack first the rotation keeps hitting the other target
+            // and the subject snaps back to whoever it was on (the taunt-after pattern).
+            if (current != subject)
+                Attack(bot, subject);
+            spell = taunt;
+            cast = ai->CastSpell(taunt, subject);
+            break;
+        case TankPostTaunt::Stance:
+            spell = "defensive stance";
+            cast = ai->CastSpell("defensive stance", bot);
+            break;
+        case TankPostTaunt::AreaTaunt:
+            spell = area;
+            cast = ai->CastSpell(area, bot);
+            break;
+        case TankPostTaunt::None:
+        case TankPostTaunt::Gate:
+        case TankPostTaunt::NotReady:
+            break;
+    }
+    LogTankPostTaunt(ai, bot, *task.row, step, spell, TankPostVictimWord(victim), cast);
+    return cast;
+}
+
 bool BossTacticsTankPostAction::Execute(Event& event)
 {
     (void)event;
@@ -12411,6 +12528,8 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     if (task.step == TankPostDecision::Engage)
     {
         hasLast = false;
+        if (sPlayerbotAIConfig.dungeonRunTankPostTaunts && TakeSubject(task, current))
+            return true;
         if (current == task.subject)
             return false;
         return Attack(bot, task.subject);

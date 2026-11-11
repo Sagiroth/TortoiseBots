@@ -1136,6 +1136,17 @@ AiPlayerbot.DungeonRunTankPostLeash = 0
 # 1 - on (recommended on for a fight whose second boss lands later)
 AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
 
+# A tank_post row's Engage step taunts the awaited unit back whenever it is not on the post's tank, off a healer, a
+# damage dealer or another tank. The taunt gate still decides (needs_aura, taunt_immune), a warrior away from
+# Defensive Stance takes the stance first, and the area taunt (Challenging Shout for a warrior, Challenging Roar for a
+# druid) only goes out when the single taunt cannot, the unit stands within 10 yd and on a non-tank, and neither the
+# post reservation nor the taunt gate refuses it. Off, the step attacks the unit and waits for its `taunt_after_cast`
+# row as before. Needs AiPlayerbot.DungeonRunTankPost. The cast writes one BossTacticsTankPost row (event taunt, with
+# the step, the spell, the victim and the cast flag); a word that did not cast is written once per bot and word per 5 s.
+# 0 - off: the Engage step only attacks the unit (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTankPostTaunts = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 

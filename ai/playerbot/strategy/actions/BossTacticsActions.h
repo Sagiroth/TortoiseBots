@@ -937,6 +937,10 @@ namespace ai
         bool Execute(Event& event) override;
 
     private:
+        // The Engage step's taunt (AiPlayerbot.DungeonRunTankPostTaunts): takes the subject back off a healer, a damage
+        // dealer or another tank through the gate, in Defensive Stance first for a warrior, and by area taunt only when
+        // the single taunt cannot go out. True when it acted this tick.
+        bool TakeSubject(const BossTankPost& task, Unit* current);
         // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
         float lastX = 0.0f;
         float lastY = 0.0f;

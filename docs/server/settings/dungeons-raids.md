@@ -1447,7 +1447,7 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 <details>
 <summary>How it works in detail</summary>
 
-**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-40 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
+**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-100 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
 
 **The wait:** while the row is live and a unit of `target_entry` within 200 yd (a grid search, like the hold-kill blocker count) is alive and has not arrived, the named tank walks to the spot and stays within 3 yd of it. It drops its current target only when that target is the row's `boss_entry` (an airborne boss it cannot reach) or nothing; another hostile that attacks a group member is kept and the post waits. A unit has arrived when it stands within `param` of the spot alive and selectable (no `UNIT_FLAG_NOT_SELECTABLE`); combat is not asked. An unselectable unit circling overhead is not arrived however close it is. On arrival the tank attacks it, and a `taunt_after_cast` row then works as it does today.
 
@@ -1549,6 +1549,21 @@ Whether a live `tank_post` owns the unit it waits for: while another tank's post
 **The end:** the reservation ends by itself when the post ends (the unit dies, evades or leaves the band), when its tank dies or is charmed, when the record goes stale (no read for 3 s), when the post tank is farther than 60 yd from the unit, or when the unit has been loose off that tank for 15 s from the first selectable tick it was off it (a short unhittable blip inside those 15 s does not restart it). A post tank that stands still on its spot keeps the subject reserved for the post's whole window, so the `taunt_after_cast` row of its slot is what takes the unit; a tank stranded across the room no longer keeps every other tank from rescuing it.
 
 **The end word:** a post that ends because the raid tank order renumbered after a tank death (its row is still in the fight, for another slot index) logs `reason=slot` with `AiPlayerbot.DungeonRunTankPostOwnsSubject` on; with the key off, and for a band that really closes, it stays `reason=band`.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostTaunts`
+Whether a `tank_post` row's Engage step taunts the awaited unit back off whoever holds it. Off by default: the step only attacks the unit, so walk 2d's three reservations lapsed on grace while slot 1 hit Cindarion without a taunt and its own first taunt came at +108..+121 s.
+**Default:** `0` · **Values:** `0` off (the Engage step attacks the unit as before, and the row's `taunt_after_cast` row takes it), `1` on (needs `AiPlayerbot.DungeonRunTankPost`; does not need `AiPlayerbot.DungeonRunTauntGate`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The step:** on the Engage decision, while the awaited unit is alive, selectable and not on this tank's victim list (`GetVictim() != bot`), the post tank takes it back. The order is: the taunt gate (a refusal logs its own `BossTacticsTauntGate` row), the single taunt (`Taunt`, `Growl` or `Hand of Reckoning`, the first the tank knows and can cast on the unit; the attack goes first so the selection follows), Defensive Stance when the warrior's taunt cannot go out without it, then the area taunt (`Challenging Shout` for a warrior, `Challenging Roar` for a druid) only when the single taunt is not castable, the unit stands within 10 yd, its victim is not a tank, and neither `AreaTauntRefusedByPost` (another live post's subject in the radius) nor the taunt gate refuses it. It runs every tick the post is engaged: a unit pulled off the tank is taken back until the post ends.
+
+**The gate:** the post tank's own reservation is skipped (`TankPostReservesSubject` ignores its own record), so `AiPlayerbot.DungeonRunTankPostOwnsSubject` never refuses the post's own taunt; every other tank stays refused while the reservation holds.
+
+**Diagnostics:** one `BossTacticsTankPost` row per cast (`event=taunt,step=taunt|stance|area,spell=<spell>,victim=<tank|healer|dps|none>,cast=1`), and for a word that did not cast (`gate`, `not_ready`) at most one per bot and word per 5 s; `step=none` writes nothing.
 
 </details>
 

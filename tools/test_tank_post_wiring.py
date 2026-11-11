@@ -40,7 +40,7 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('if (text == "tank_post")\n            return BossTacticKind::TankPost;', POLICY)
         loader = body(POLICY, "            // tank_post: the awaited unit")
         for needle in ("row.targetEntry == 0", "row.priority < 1", "row.priority > 7", "!row.HasSpot()",
-                       "row.param < 5.0f", "row.param > 40.0f", "row.windowSec < 10.0f", "row.windowSec > 120.0f",
+                       "row.param < 5.0f", "row.param > 100.0f", "row.windowSec < 10.0f", "row.windowSec > 120.0f",
                        "row.spellId != 0", "row.mode != TacticMode::Default"):
             self.assertIn(needle, loader)
         # The spot columns belong to the kind, and its map flag arms the trigger.
@@ -334,6 +334,66 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("in.slotMoved = slotMoved;", find)
         end = body(ACTIONS, "const char* TankPostEndReason(")
         self.assertIn("TankPostEndWord(in.live, in.slotMoved, in.tankCanAct, in.windowExpired, in.subjectFound,", end)
+
+    def test_take_subject_taunts_the_subject_back(self):
+        # AiPlayerbot.DungeonRunTankPostTaunts: the Engage step taunts the awaited unit back off whoever holds it,
+        # before the plain attack. The rule is pure (TankPostTauntStep, TankPostTauntWord) and tested with the tests'
+        # mutation case in tools/test_boss_tactics_policy.cpp; these pins prove the live code uses it.
+        action = body(ACTIONS, "bool BossTacticsTankPostAction::Execute(Event& event)")
+        engage = action[action.index("if (task.step == TankPostDecision::Engage)"):]
+        engage = engage[:engage.index("return Attack(bot, task.subject);")]
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunTankPostTaunts && TakeSubject(task, current))\n"
+                      "            return true;", engage)
+        self.assertLess(engage.index("TakeSubject(task, current)"), engage.index("if (current == task.subject)"))
+        take = body(ACTIONS, "bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* current)")
+        self.assertIn("TauntRefusedByGate(ai, bot, subject, taunt)", take)
+        self.assertIn("AreaTauntRefusedByPost(ai, bot, area)", take)
+        self.assertIn("TauntRefusedByGate(ai, bot, subject, area)", take)
+        self.assertIn("KnownTaunt(ai)", take)
+        self.assertIn('"challenging shout"', take)
+        self.assertIn('"challenging roar"', take)
+        self.assertIn('ai->HasAura("defensive stance", bot)', take)
+        self.assertIn("bot->GetDistance(subject) <= kAreaTauntRadiusYd", take)
+        self.assertIn("PlayerbotAI::IsTank(static_cast<Player*>(victim))", take)
+        self.assertIn("TankPostTauntStep(in)", take)
+        self.assertIn("if (current != subject)\n                Attack(bot, subject);", take)
+        self.assertIn("cast = ai->CastSpell(taunt, subject);", take)
+        self.assertIn('cast = ai->CastSpell("defensive stance", bot);', take)
+        self.assertIn("cast = ai->CastSpell(area, bot);", take)
+        self.assertIn("LogTankPostTaunt(ai, bot, *task.row, step, spell, TankPostVictimWord(victim), cast);", take)
+        # The header declares it, and the pure step ships every word the log can name.
+        self.assertIn("bool TakeSubject(const BossTankPost& task, Unit* current);", ACTIONS_H)
+        for needle in ("enum class TankPostTaunt : std::uint8_t { None, Taunt, Stance, AreaTaunt, Gate, NotReady };",
+                       "struct TankPostTauntIn", "inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)",
+                       "inline const char* TankPostTauntWord(TankPostTaunt t)"):
+            self.assertIn(needle, POLICY)
+        for word in ('"none"', '"taunt"', '"stance"', '"area"', '"gate"', '"not_ready"'):
+            self.assertIn("return " + word + ";", POLICY)
+
+    def test_taunt_key_is_read_templated_and_documented(self):
+        self.assertIn('dungeonRunTankPostTaunts = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostTaunts", '
+                      'false);', CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostTaunts = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostTaunts = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostTaunts", DOCS)
+        section = DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostTaunts`"):][:900]
+        self.assertIn("`0` off", section)
+        self.assertNotIn("recommended on", section)  # walk 2e keys are documented without it
+        self.assertIn("DungeonRunTankPostTaunts", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostTaunts", CHANGELOG)
+        # The row: one per cast, and a word that did not cast at most once per bot and word per 5 s, under the lock.
+        log = body(ACTIONS, "void LogTankPostTaunt(")
+        self.assertIn('"event=taunt,step=%s,spell=%s,victim=%s,cast=%d"', log)
+        self.assertIn("TankPostTauntWord(step)", log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', log)
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", log)
+        self.assertIn("if (!cast)", log)
+        self.assertIn("it->second.tauntLogMs[static_cast<std::size_t>(step)]", log)
+        self.assertIn("nowMs - last < kTankPostTauntLogGapMs", log)
+        self.assertIn("std::array<std::uint32_t, 6> tauntLogMs{};", ACTIONS)
+        self.assertIn("stored.tauntLogMs = priorTauntLog;", ACTIONS)
+        # The radius cap went 40 -> 100 for the same branch.
+        self.assertIn("row.param < 5.0f || row.param > 100.0f", POLICY)
 
     def test_owns_subject_key_is_read_templated_and_documented(self):
         self.assertIn('dungeonRunTankPostOwnsSubject =\n        config.GetBoolDefault('
