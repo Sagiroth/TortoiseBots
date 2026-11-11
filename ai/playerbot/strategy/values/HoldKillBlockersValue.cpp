@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "HoldKillBlockersValue.h"
 #include <cstdlib>
-#include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/BossTacticsMgr.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/ServerFacade.h"
 #include "TargetValue.h"
