@@ -1386,9 +1386,10 @@ static void TestTankPost_HoldSpotModeLoadsOnlyOnTankPost()
     CHECK(table.Size() == 2);
 }
 
-// The mutation case: with the victimIsTank check dropped, a post whose subject is on another tank reads NotReady (or
-// the area taunt) and the post keeps hitting Cindarion while the other tank holds him: walk 2d a-2, where he landed on
-// that tank and all three reservations lapsed on grace.
+// The mutation case: with the owns-subject half dropped from TankPostTauntStep, a post whose subject is on another
+// tank taunts it with AiPlayerbot.DungeonRunTankPostOwnsSubject off, and that tank's own class taunt is not refused
+// (TankPostReservesSubject returns false with the key off), so the subject flips between the two tanks every taunt
+// cooldown.
 static void TestTankPostTauntStep_OffAnotherTank()
 {
     TankPostTauntIn in;
@@ -1398,7 +1399,13 @@ static void TestTankPostTauntStep_OffAnotherTank()
     in.subjectSelectable = true;
     in.tauntCastable = true;
     in.victimIsTank = true;
-    CHECK(TankPostTauntStep(in) == TankPostTaunt::Taunt);
+    in.ownsSubjectOn = false;
+    CHECK(TankPostTauntStep(in) == TankPostTaunt::None);
+    TankPostTauntIn reserved = in; reserved.ownsSubjectOn = true;
+    CHECK(TankPostTauntStep(reserved) == TankPostTaunt::Taunt);
+    // Off a healer or a damage dealer the taunt needs no reservation.
+    TankPostTauntIn nonTank = in; nonTank.victimIsTank = false;
+    CHECK(TankPostTauntStep(nonTank) == TankPostTaunt::Taunt);
 }
 
 // Every step that is not a taunt: off the post, off the key, on its own tank, or still in the air.
@@ -1454,7 +1461,9 @@ static void TestTankPostTauntStep_AreaOnlyOffNonTank()
     in.areaInRange = true;
     CHECK(TankPostTauntStep(in) == TankPostTaunt::AreaTaunt);
     TankPostTauntIn tankVictim = in; tankVictim.victimIsTank = true;
-    CHECK(TankPostTauntStep(tankVictim) == TankPostTaunt::NotReady);
+    CHECK(TankPostTauntStep(tankVictim) == TankPostTaunt::None);  // no taunt without the reservation
+    tankVictim.ownsSubjectOn = true;
+    CHECK(TankPostTauntStep(tankVictim) == TankPostTaunt::NotReady);  // nor the area taunt off a tank
     TankPostTauntIn far = in; far.areaInRange = false;
     CHECK(TankPostTauntStep(far) == TankPostTaunt::NotReady);
     TankPostTauntIn reserved = in; reserved.areaGateRefuses = true;

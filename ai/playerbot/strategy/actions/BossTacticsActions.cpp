@@ -12432,10 +12432,10 @@ const char* TankPostVictimWord(Unit* victim)
 
 // AiPlayerbot.DungeonRunTankPostTaunts. Walk 2d: three of three reservations lapsed on grace while slot 1 hit Cindarion
 // without a taunt, and slot 1's own first taunt came at +108..+121 s. The Engage step therefore takes the subject back
-// whenever it is not on the post's tank, off a healer, a damage dealer or another tank. The taunt gate still decides
-// (needs_aura, taunt_immune); a warrior away from Defensive Stance takes the stance first; the area taunt only when
-// the single taunt cannot go out, the subject is within kAreaTauntRadiusYd, it is on a non-tank and neither gate
-// refuses it.
+// whenever it is not on the post's tank, off a healer, a damage dealer, or another tank with
+// AiPlayerbot.DungeonRunTankPostOwnsSubject on. The taunt gate still decides (needs_aura, taunt_immune); a warrior away
+// from Defensive Stance takes the stance first; the area taunt only when the single taunt cannot go out, the subject is
+// within kAreaTauntRadiusYd, it is on a non-tank and neither gate refuses it.
 bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* current)
 {
     Unit* const subject = task.subject;
@@ -12451,6 +12451,9 @@ bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* curr
     in.engage = true;
     in.subjectOnTank = victim == bot;
     in.subjectSelectable = !subject->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+    in.victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
+        PlayerbotAI::IsTank(static_cast<Player*>(victim));
+    in.ownsSubjectOn = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject;
     in.gateRefuses = taunt && TauntRefusedByGate(ai, bot, subject, taunt);
     in.tauntCastable = taunt && ai->CanCastSpell(taunt, subject);
     in.needsStance = taunt && std::strcmp(taunt, "taunt") == 0 && !ai->HasAura("defensive stance", bot);
@@ -12459,8 +12462,6 @@ bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* curr
     in.areaInRange = bot->GetDistance(subject) <= kAreaTauntRadiusYd;
     in.areaGateRefuses = area && (AreaTauntRefusedByPost(ai, bot, area) ||
                                      TauntRefusedByGate(ai, bot, subject, area));
-    in.victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
-        PlayerbotAI::IsTank(static_cast<Player*>(victim));
     TankPostTaunt const step = TankPostTauntStep(in);
     const char* spell = nullptr;
     bool cast = false;

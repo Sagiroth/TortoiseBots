@@ -1137,7 +1137,9 @@ AiPlayerbot.DungeonRunTankPostLeash = 0
 AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
 
 # A tank_post row's Engage step taunts the awaited unit back whenever it is not on the post's tank, off a healer, a
-# damage dealer or another tank. The taunt gate still decides (needs_aura, taunt_immune), a warrior away from
+# damage dealer or another tank. Taunting the subject off another tank also needs AiPlayerbot.DungeonRunTankPostOwnsSubject
+# (without that reservation the other tank's own class taunt is not refused, so the subject would flip between the two
+# tanks). The taunt gate still decides (needs_aura, taunt_immune), a warrior away from
 # Defensive Stance takes the stance first, and the area taunt (Challenging Shout for a warrior, Challenging Roar for a
 # druid) only goes out when the single taunt cannot, the unit stands within 10 yd and on a non-tank, and neither the
 # post reservation nor the taunt gate refuses it. Off, the step attacks the unit and waits for its `taunt_after_cast`

@@ -4059,20 +4059,24 @@ namespace ai
     }
 
     // AiPlayerbot.DungeonRunTankPostTaunts: the Engage step takes the subject back whenever it is not on the post's tank,
-    // off a healer, a damage dealer or another tank (walk 2d: 3 of 3 reservations lapsed on grace while slot 1 hit him
-    // without a taunt; slot 1's first taunt +108..+121 s). The gate still decides (needs_aura, taunt_immune); a warrior
-    // out of Defensive Stance takes it first; the area taunt only when the single taunt cannot go out, the subject is
-    // within kAreaTauntRadiusYd and on a non-tank, and no other post's subject is in its radius.
+    // off a healer or a damage dealer, and off another tank only with AiPlayerbot.DungeonRunTankPostOwnsSubject (without
+    // the reservation that tank's own class taunt is not refused, so the subject flips between the two tanks; walk 2d: 3
+    // of 3 reservations lapsed on grace while slot 1 hit him without a taunt; slot 1's first taunt +108..+121 s). The
+    // gate still decides (needs_aura, taunt_immune); a warrior out of Defensive Stance takes it first; the area taunt
+    // only when the single taunt cannot go out, the subject is within kAreaTauntRadiusYd and on a non-tank, and no other
+    // post's subject is in its radius.
     enum class TankPostTaunt : std::uint8_t { None, Taunt, Stance, AreaTaunt, Gate, NotReady };
     struct TankPostTauntIn
     {
         bool keyOn = false; bool engage = false; bool subjectOnTank = false; bool subjectSelectable = false;
         bool gateRefuses = false; bool tauntCastable = false; bool needsStance = false; bool stanceCastable = false;
         bool areaCastable = false; bool areaInRange = false; bool areaGateRefuses = false; bool victimIsTank = false;
+        bool ownsSubjectOn = false;
     };
     inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)
     {
         if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return TankPostTaunt::None;
+        if (in.victimIsTank && !in.ownsSubjectOn) return TankPostTaunt::None;
         if (in.gateRefuses) return TankPostTaunt::Gate;
         if (in.tauntCastable) return TankPostTaunt::Taunt;
         if (in.needsStance && in.stanceCastable) return TankPostTaunt::Stance;
