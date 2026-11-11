@@ -50,7 +50,7 @@ In a Patchwerk fight with the opt-in tank roles ([Patchwerk roles](../play/dunge
 4. Casts *Mind Blast* on cooldown.
 5. Channels *Mind Flay* as primary filler, stacking *Shadow Weaving* where talented.
 6. Casts *Silence* to interrupt dangerous enemy spellcasters and healers.
-7. Off-heals wounded allies (*Power Word: Shield*, *Greater Heal*, *Renew* by wound band) per [off-healing rules](overview.md#shared-bot-behaviors).
+7. Off-heals wounded allies (*Power Word: Shield*, *Greater Heal*, *Renew* by wound band) per [off-healing rules](overview.md#shared-bot-behaviors). In *Shadowform* the priest leaves a *Renew* to another healer who already covers that ally, and drops the form only when its heal can go out at once (not during a global cooldown or a wand swing).
 
 <details>
 <summary>Healer off-spec damage and wand stops</summary>

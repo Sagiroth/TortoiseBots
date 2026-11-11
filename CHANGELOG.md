@@ -1,5 +1,6 @@
 # Changelog
 
+Fixed: a Shadow priest no longer drops Shadowform to Renew an ally another healer already covers, and drops the form only for a heal it can cast at once, not into a global cooldown or wand swing (found by Tortoise Trials, #1556).
 - Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.
 - New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).
