@@ -60,6 +60,10 @@ namespace ai
     // `target` right now (cast bar still running). Reads the cached
     // "incoming heals" value, so it costs a map lookup, not a scan.
     uint32 GetIncomingHeal(PlayerbotAI* ai, Unit* target);
+    // The heal pick's effective health percent for one unit (HealingTriagePolicy.h HealEffectiveHealthPct): incoming
+    // heals credited above the danger line, then predicted incoming damage under preheal. The top-up gates and the
+    // reserve's tier read this one number, never raw health.
+    float EffectiveHealHealthPct(PlayerbotAI* ai, Unit* target);
     // mod-playerbots PartyMemberMainTankValue (LD-8): the raid/party main
     // tank — explicit raid flag first, else the first live tank. No
     // Misdirection/Tricks consumers exist in 1.18.1; raid tactics read it.

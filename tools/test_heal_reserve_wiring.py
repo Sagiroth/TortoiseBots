@@ -43,7 +43,7 @@ class HealReserveWiring(unittest.TestCase):
         self.assertLess(fn.index("dungeonRunHealReserve"), fn.index("BossHealReserve("))
         # Key off: today's rule and nothing else is read.
         self.assertIn("manaPct >= mediumManaPct", fn)
-        self.assertIn("HealTopUpAllowed(", fn)
+        self.assertIn("HealReserveSkipsTopUp(", fn)
 
     def test_the_row_read_does_not_read_the_key(self):
         fn = body(ACTIONS, "HealReserveRead ai::BossHealReserve(PlayerbotAI* ai, Player* bot, Unit*& boss)")
@@ -72,18 +72,33 @@ class HealReserveWiring(unittest.TestCase):
 
     def test_the_pick_skips_a_refused_top_up(self):
         pick = body(PARTY_HEAL, "Unit* PartyMemberToHeal::Calculate()")
-        self.assertIn("HealReserveRefusesTopUp(ai, bot, target)", pick)
+        self.assertIn("HealReserveRefusesTopUp(ai, bot, target, PredictedHealHealth(candidate))", pick)
         self.assertLess(pick.index("NeedsPartyHealing(candidate, bands)"),
-                        pick.index("HealReserveRefusesTopUp(ai, bot, target)"))
-        self.assertLess(pick.index("HealReserveRefusesTopUp(ai, bot, target)"),
+                        pick.index("HealReserveRefusesTopUp(ai, bot, target, PredictedHealHealth(candidate))"))
+        self.assertLess(pick.index("HealReserveRefusesTopUp(ai, bot, target, PredictedHealHealth(candidate))"),
                         pick.index("candidates.push_back(candidate)"))
-        fn = body(ACTIONS, "bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target)")
+        fn = body(ACTIONS, "bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, "
+                           "float effectiveHealthPct)")
         # Key off and no row never refuse: today's pick.
         self.assertIn("dungeonRunHealReserve", fn)
-        self.assertIn("HealReserveTopUpTier(", fn)
-        self.assertIn("HealReserveRefuses(", fn)
+        self.assertIn("HealReserveSkipsTopUp(", fn)
         self.assertIn("HealReserveTargetExempt(", fn)
         self.assertIn("return refused;", fn)
+
+    def test_the_reserve_tier_reads_the_effective_health_not_raw(self):
+        # The pick passes triage's own PredictedHealHealth; the gate builds the same number for its target.
+        pick = body(PARTY_HEAL, "Unit* PartyMemberToHeal::Calculate()")
+        self.assertIn("PredictedHealHealth(candidate)", pick)
+        fn = body(ACTIONS, "bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)")
+        self.assertIn("EffectiveHealHealthPct(ai, target)", fn)
+        self.assertLess(fn.index("EffectiveHealHealthPct(ai, target)"), fn.index("HealReserveSkipsTopUp("))
+        self.assertIn("effectiveHealthPct", fn.split("HealReserveSkipsTopUp(", 1)[1])
+        # Raw health never classifies the reserve decision at either call site.
+        self.assertNotIn("GetHealthPercent", pick.split("HealReserveRefusesTopUp(", 1)[1].split("\n", 1)[0])
+        wrapper = body(ACTIONS, "bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, "
+                                "float effectiveHealthPct)")
+        self.assertNotIn("GetHealthPercent", wrapper)
+        self.assertNotIn("GetHealthPercent", fn)
 
     def test_the_refusal_count_is_healer_only_per_tick_and_in_band(self):
         count = body(ACTIONS, "static void CountHealReserveRefusal(PlayerbotAI* ai, Player* bot)")
@@ -92,16 +107,16 @@ class HealReserveWiring(unittest.TestCase):
         self.assertIn('hasLog("bot_events.csv")', count)
         gate = body(ACTIONS, "bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)")
         # Only an in-band candidate of a healer counts, once per tick through the counter.
-        self.assertIn("HealReserveTopUpTier(", gate)
+        self.assertIn("HealReserveSkipsTopUp(", gate)
         self.assertIn("ai->IsHeal(bot)", gate)
-        self.assertLess(gate.index("HealReserveTopUpTier("), gate.index("CountHealReserveRefusal("))
+        self.assertLess(gate.index("HealReserveSkipsTopUp("), gate.index("CountHealReserveRefusal("))
         # Rows are written for healers only; the old per-evaluation increment is gone.
         self.assertIn('hasLog("bot_events.csv") && ai->IsHeal(bot)', gate)
         self.assertNotIn("++window.refused", gate)
 
     def test_the_policy_holds_the_pure_rules(self):
-        for name in ("HealReserveReleased(", "HealReservePick(", "HealReserveRefuses(", "HealTopUpAllowed(",
-                     "HealReserveTopUpTier("):
+        for name in ("HealReserveReleased(", "HealReservePick(", "HealReserveRefuses(", "HealReserveSkipsTopUp(",
+                     "HealTopUpAllowedAtHealth(", "HealReserveTopUpTier("):
             self.assertIn(name, POLICY)
         self.assertIn("reservePct", POLICY)
         self.assertIn("released", POLICY)

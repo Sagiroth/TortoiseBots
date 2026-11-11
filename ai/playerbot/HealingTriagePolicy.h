@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include "HealerManaPolicy.h"
 
 namespace ai
 {
@@ -40,6 +41,19 @@ namespace ai
         auto const remaining = candidate.incomingDamage >= candidate.health
             ? 0 : candidate.health - candidate.incomingDamage;
         return 100.0f * remaining / candidate.maxHealth;
+    }
+
+    // The one effective-health number every heal decision classifies: incoming heals other healers are casting are
+    // credited above the danger line (HealthWithIncoming, as the pick credits them) and the predicted incoming damage
+    // comes off after. Triage, the reserve's tier and the top-up gate all read this, never the raw health percent.
+    inline float HealEffectiveHealthPct(std::uint32_t health, std::uint32_t maxHealth, std::uint32_t incomingHeal,
+                                        std::uint32_t incomingDamage, std::uint8_t lowHealth)
+    {
+        HealingCandidate candidate{};
+        candidate.health = HealthWithIncoming(health, maxHealth, incomingHeal, lowHealth);
+        candidate.maxHealth = maxHealth;
+        candidate.incomingDamage = incomingDamage;
+        return PredictedHealHealth(candidate);
     }
 
     inline bool NeedsPartyHealing(HealingCandidate const& candidate, HealingBands const& bands)

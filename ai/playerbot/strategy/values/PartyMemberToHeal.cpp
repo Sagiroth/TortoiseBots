@@ -116,6 +116,18 @@ uint32 ai::GetIncomingHeal(PlayerbotAI* ai, Unit* target)
     return it == incoming.end() ? 0 : it->second;
 }
 
+// The heal pick's effective health for one unit: incoming heals credited and predicted damage applied exactly as the
+// pick's candidate carries them (damage only under preheal). Every top-up gate classifies this, never raw health.
+float ai::EffectiveHealHealthPct(PlayerbotAI* ai, Unit* target)
+{
+    if (!ai || !target)
+        return 100.0f;
+    uint32 const incomingDamage =
+        ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT) ? getIncomingdamage(target) : 0;
+    return HealEffectiveHealthPct(target->GetHealth(), target->GetMaxHealth(), GetIncomingHeal(ai, target),
+        incomingDamage, sPlayerbotAIConfig.lowHealth);
+}
+
 float ai::HealReachLimit(PlayerbotAI* ai)
 {
     return HealReachLimitFor(ai->GetBot()->InBattleGround(), ai->GetRange("heal"), sPlayerbotAIConfig.healDistanceBg,
@@ -281,8 +293,9 @@ Unit* PartyMemberToHeal::Calculate()
         if (!NeedsPartyHealing(candidate, bands))
             return;
         // D2: with the reserve key on, a top-up candidate the live row refuses is not a pick: the heal falls to a
-        // tank, the boss's victim or a member in a lower tier rather than every healer idling on a refused band.
-        if (HealReserveRefusesTopUp(ai, bot, target))
+        // tank, the boss's victim or a member in a lower tier rather than every healer idling on a refused band. The
+        // reserve classifies the candidate on the same effective health triage does, never on raw health.
+        if (HealReserveRefusesTopUp(ai, bot, target, PredictedHealHealth(candidate)))
             return;
         if (targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);

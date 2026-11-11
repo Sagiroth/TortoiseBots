@@ -86,12 +86,26 @@ namespace ai
         return static_cast<float>(manaPct) < HealReserveLine(read, mediumManaPct);
     }
 
-    // D4: today's rule (`mana >= mediumMana`) whenever the key is off, no row is live, the target is exempt or the
-    // window is released; else the reserve, never below the medium line.
-    inline bool HealTopUpAllowed(bool flagOn, const HealReserveRead& read, std::uint8_t manaPct,
-                                 std::uint8_t mediumManaPct, bool targetExempt)
+    // D4: the candidate-level reserve decision both gates read: the reserve governs the almost-full top-up tier only,
+    // and `healthPct` must be the effective health triage reads (HealingTriagePolicy.h HealEffectiveHealthPct /
+    // PredictedHealHealth), never raw health. A member the incoming damage takes below the tier is a lower tier's
+    // heal and is never refused; one the credited incoming heals lift into the tier is a top-up like any other.
+    inline bool HealReserveSkipsTopUp(bool flagOn, const HealReserveRead& read, std::uint8_t manaPct,
+                                      std::uint8_t mediumManaPct, float healthPct, float mediumHealthPct,
+                                      float almostFullPct, bool targetExempt)
     {
-        if (HealReserveRefuses(flagOn, read, manaPct, mediumManaPct, targetExempt))
+        return HealReserveTopUpTier(healthPct, mediumHealthPct, almostFullPct) &&
+            HealReserveRefuses(flagOn, read, manaPct, mediumManaPct, targetExempt);
+    }
+
+    // D4: today's rule (`mana >= mediumMana`) whenever the key is off, no row is live, the target is exempt, the
+    // window is released or the effective health is another tier; else the reserve, never below the medium line.
+    inline bool HealTopUpAllowedAtHealth(bool flagOn, const HealReserveRead& read, std::uint8_t manaPct,
+                                         std::uint8_t mediumManaPct, float healthPct, float mediumHealthPct,
+                                         float almostFullPct, bool targetExempt)
+    {
+        if (HealReserveSkipsTopUp(flagOn, read, manaPct, mediumManaPct, healthPct, mediumHealthPct, almostFullPct,
+                targetExempt))
             return false;
         return manaPct >= mediumManaPct;
     }

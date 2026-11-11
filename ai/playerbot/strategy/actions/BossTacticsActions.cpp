@@ -9473,12 +9473,10 @@ bool ai::HealReserveTargetExempt(Unit* target, Unit* boss)
 
 // The healer top-up pick's skip (D2): with the key on and a live row, an almost-full candidate the reserve refuses
 // stays out of the pick, so it falls to a tank, the boss's victim or a lower tier instead of an idle healer.
-bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target)
+// `effectiveHealthPct` is the candidate's PredictedHealHealth, the same value triage and the priority read.
+bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, float effectiveHealthPct)
 {
     if (!ai || !bot || !target || !sPlayerbotAIConfig.dungeonRunHealReserve)
-        return false;
-    if (!HealReserveTopUpTier(target->GetHealthPercent(), float(sPlayerbotAIConfig.mediumHealth),
-            float(sPlayerbotAIConfig.almostFullHealth)))
         return false;
     Unit* boss = nullptr;
     const HealReserveRead read = BossHealReserve(ai, bot, boss);
@@ -9488,8 +9486,9 @@ bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target)
         std::min<std::uint32_t>(100, sPlayerbotAIConfig.mediumMana));
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::uint8_t manaPct = AI_VALUE2(std::uint8_t, "mana", "self target");
-    const bool refused = HealReserveRefuses(true, read, manaPct, mediumManaPct,
-                                            HealReserveTargetExempt(target, boss));
+    const bool refused = HealReserveSkipsTopUp(true, read, manaPct, mediumManaPct, effectiveHealthPct,
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth),
+        HealReserveTargetExempt(target, boss));
     if (refused && ai->IsHeal(bot))
         CountHealReserveRefusal(ai, bot);
     return refused;
@@ -9498,7 +9497,9 @@ bool ai::HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target)
 // The almost-full top-up tier's mana gate (PartyMemberAlmostFullHealthTrigger and the rejuvenation spread). With the
 // key off or no live row this is today's rule and nothing else is read. With a live row: tanks and the boss's current
 // victim keep today's rule, a top-up outside the row's release window needs the row's reserve, and the release window
-// restores today's rule. One `BossTacticsHealReserve` row per healer per 5 s carries the numbers and the refusals.
+// restores today's rule. The tier is the pick's effective health (incoming heals credited, predicted damage applied),
+// so a member the damage takes below the tier is another tier's heal and is never refused. One
+// `BossTacticsHealReserve` row per healer per 5 s carries the numbers and the refusals.
 bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)
 {
     if (!ai || !bot)
@@ -9514,13 +9515,13 @@ bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)
     if (!read.live)
         return manaPct >= mediumManaPct;
     const bool exempt = HealReserveTargetExempt(target, boss);
-    const bool refused = HealReserveRefuses(true, read, manaPct, mediumManaPct, exempt);
-    const bool allowed = HealTopUpAllowed(true, read, manaPct, mediumManaPct, exempt);
+    const float effectiveHealthPct = target ? EffectiveHealHealthPct(ai, target) : 100.0f;
+    const bool refused = HealReserveSkipsTopUp(true, read, manaPct, mediumManaPct, effectiveHealthPct,
+        float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth), exempt);
+    const bool allowed = !refused && manaPct >= mediumManaPct;
     // Only an almost-full top-up candidate is the reserve's decision to refuse: a 60 % member is another tier, and a
     // non-healer hybrid that runs the spread writes no row and counts nothing.
-    if (refused && target && ai->IsHeal(bot) &&
-        HealReserveTopUpTier(target->GetHealthPercent(), float(sPlayerbotAIConfig.mediumHealth),
-                             float(sPlayerbotAIConfig.almostFullHealth)))
+    if (refused && ai->IsHeal(bot))
         CountHealReserveRefusal(ai, bot);
     if (sPlayerbotAIConfig.hasLog("bot_events.csv") && ai->IsHeal(bot))
     {

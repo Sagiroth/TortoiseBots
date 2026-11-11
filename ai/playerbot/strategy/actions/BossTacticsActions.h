@@ -717,9 +717,11 @@ namespace ai
     // The reserve's target exemption: a tank, or the boss's current victim. Either keeps today's rule at all times.
     bool HealReserveTargetExempt(Unit* target, Unit* boss);
     // Whether the reserve refuses `target`'s top-up right now (the healer top-up pick reads it to skip a refused
-    // candidate). False with the key off, no live row, the window released, an exempt target, or mana at the row's
-    // line. Counts the refusal for the `BossTacticsHealReserve` row once per healer per tick.
-    bool HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target);
+    // candidate), classified on `effectiveHealthPct` — the same effective health triage used (the pick passes
+    // PredictedHealHealth(candidate), the gate EffectiveHealHealthPct), never raw health. False with the key off, no
+    // live row, the window released, an exempt target, mana at the row's line, or effective health outside the
+    // almost-full top-up tier. Counts the refusal for the `BossTacticsHealReserve` row once per healer per tick.
+    bool HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target, float effectiveHealthPct);
     // Whether a healer may top up `target` above the medium-health line right now (the almost-full tier and the
     // rejuvenation spread read it): with AiPlayerbot.DungeonRunHealReserve off or no live row, today's
     // `mana >= MediumMana` rule; else the row's reserve, outside its release window, with tanks and the boss's

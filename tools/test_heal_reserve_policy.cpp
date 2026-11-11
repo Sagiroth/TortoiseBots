@@ -29,34 +29,34 @@ static void TestTopUpHeldUnderReserveOutsideWindow()
     const HealReserveRead outside = Live(85.0f, 60.0f, 70000);
     CHECK(outside.live);
     CHECK(!outside.released);
-    CHECK(!HealTopUpAllowed(true, outside, 84, 40, false));
-    CHECK(HealTopUpAllowed(true, outside, 85, 40, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, outside, 84, 40, 75.0f, 70.0f, 90.0f, false));
+    CHECK(HealTopUpAllowedAtHealth(true, outside, 85, 40, 75.0f, 70.0f, 90.0f, false));
 
     const HealReserveRead released = Live(85.0f, 60.0f, 60000);
     CHECK(released.released);
-    CHECK(HealTopUpAllowed(true, released, 41, 40, false));
-    CHECK(!HealTopUpAllowed(true, released, 39, 40, false));
+    CHECK(HealTopUpAllowedAtHealth(true, released, 41, 40, 75.0f, 70.0f, 90.0f, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, released, 39, 40, 75.0f, 70.0f, 90.0f, false));
 }
 
 // A tank or the boss's current victim is on today's rule whatever the reserve.
 static void TestTopUpExemptTarget()
 {
     const HealReserveRead outside = Live(85.0f, 60.0f, 70000);
-    CHECK(HealTopUpAllowed(true, outside, 41, 40, true));
-    CHECK(!HealTopUpAllowed(true, outside, 39, 40, true));
+    CHECK(HealTopUpAllowedAtHealth(true, outside, 41, 40, 75.0f, 70.0f, 90.0f, true));
+    CHECK(!HealTopUpAllowedAtHealth(true, outside, 39, 40, 75.0f, 70.0f, 90.0f, true));
 }
 
 // The key off is exactly today's rule, whatever the row says.
 static void TestTopUpFlagOffIsToday()
 {
     const HealReserveRead outside = Live(85.0f, 60.0f, 70000);
-    CHECK(HealTopUpAllowed(false, outside, 40, 40, false));
-    CHECK(!HealTopUpAllowed(false, outside, 39, 40, false));
+    CHECK(HealTopUpAllowedAtHealth(false, outside, 40, 40, 75.0f, 70.0f, 90.0f, false));
+    CHECK(!HealTopUpAllowedAtHealth(false, outside, 39, 40, 75.0f, 70.0f, 90.0f, false));
     const HealReserveRead released = Live(85.0f, 60.0f, 1000);
-    CHECK(!HealTopUpAllowed(false, released, 39, 40, false));
+    CHECK(!HealTopUpAllowedAtHealth(false, released, 39, 40, 75.0f, 70.0f, 90.0f, false));
     const HealReserveRead none;
-    CHECK(HealTopUpAllowed(true, none, 40, 40, false));
-    CHECK(!HealTopUpAllowed(true, none, 39, 40, false));
+    CHECK(HealTopUpAllowedAtHealth(true, none, 40, 40, 75.0f, 70.0f, 90.0f, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, none, 39, 40, 75.0f, 70.0f, 90.0f, false));
 }
 
 // No clock, or a lead of 0, never releases the reserve.
@@ -69,7 +69,7 @@ static void TestReserveNoClock()
     CHECK(none.live);
     CHECK(!none.released);
     CHECK(!none.clockKnown);
-    CHECK(!HealTopUpAllowed(true, none, 84, 40, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, none, 84, 40, 75.0f, 70.0f, 90.0f, false));
     const HealReserveRead leadZero = Live(85.0f, 0.0f, 0);
     CHECK(leadZero.live);
     CHECK(!leadZero.released);
@@ -120,8 +120,8 @@ static void TestPickFallsToTheExemptTank()
     candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
         [&](HealingCandidate const& candidate)
         {
-            return HealReserveTopUpTier(PredictedHealHealth(candidate), bands.medium, bands.almostFull) &&
-                HealReserveRefuses(true, read, mana, mediumMana, candidate.tank);
+            return HealReserveSkipsTopUp(true, read, mana, mediumMana, PredictedHealHealth(candidate), bands.medium,
+                bands.almostFull, candidate.tank);
         }), candidates.end());
     CHECK(candidates.size() == 1);
     std::sort(candidates.begin(), candidates.end(), [&](HealingCandidate const& left, HealingCandidate const& right)
@@ -133,16 +133,57 @@ static void TestPickFallsToTheExemptTank()
     CHECK(!HealReserveTopUpTier(60.0f, bands.medium, bands.almostFull));
 }
 
+// The named regression: the reserve used raw health while triage used the effective health, so a member at 75 % raw
+// whose predicted incoming damage takes it to 68 % was refused as a top-up although triage calls it urgent. The
+// effective value is the triage one (HealEffectiveHealthPct, the same PredictedHealHealth the pick passes), and the
+// reserve must not skip it even with the healer under the live 85 % line.
+static void TestReserveTierReadsEffectiveHealthNotRaw()
+{
+    const HealReserveRead read = Live(85.0f, 60.0f, 70000);
+    const std::uint8_t mana = 60;
+    const std::uint8_t mediumMana = 40;
+    const float mediumHealth = 70.0f;
+    const float almostFull = 90.0f;
+    float const damaged = HealEffectiveHealthPct(75000, 100000, 0, 7000, 20);
+    CHECK(damaged < mediumHealth);
+    CHECK(!HealReserveSkipsTopUp(true, read, mana, mediumMana, damaged, mediumHealth, almostFull, false));
+    CHECK(HealTopUpAllowedAtHealth(true, read, mana, mediumMana, damaged, mediumHealth, almostFull, false));
+    // The raw health would have called it a top-up; that is the classification this case replaces.
+    CHECK(HealReserveTopUpTier(75.0f, mediumHealth, almostFull));
+    // The player's own mana rule still stands: a healer under MediumMana is refused at that tier.
+    CHECK(!HealTopUpAllowedAtHealth(true, read, 39, mediumMana, damaged, mediumHealth, almostFull, false));
+}
+
+// The reverse: raw 65 % with credited incoming heals reaching 75 % is a top-up, refused like any other.
+static void TestReserveTierReadsCreditedHealsIntoTheBand()
+{
+    const HealReserveRead read = Live(85.0f, 60.0f, 70000);
+    const std::uint8_t mana = 60;
+    const std::uint8_t mediumMana = 40;
+    const float mediumHealth = 70.0f;
+    const float almostFull = 90.0f;
+    float const healed = HealEffectiveHealthPct(65000, 100000, 10000, 0, 20);
+    CHECK(healed >= mediumHealth && healed < almostFull);
+    CHECK(HealReserveSkipsTopUp(true, read, mana, mediumMana, healed, mediumHealth, almostFull, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, read, mana, mediumMana, healed, mediumHealth, almostFull, false));
+    // Key off: today's rule, so 60 % mana allows the top-up and 39 % does not.
+    CHECK(!HealReserveSkipsTopUp(false, read, mana, mediumMana, healed, mediumHealth, almostFull, false));
+    CHECK(HealTopUpAllowedAtHealth(false, read, mana, mediumMana, healed, mediumHealth, almostFull, false));
+    CHECK(!HealTopUpAllowedAtHealth(false, read, 39, mediumMana, healed, mediumHealth, almostFull, false));
+}
+
 // The reserve never pulls the line under today's MediumMana rule.
 static void TestReserveNeverBelowMedium()
 {
     const HealReserveRead low = Live(20.0f, 60.0f, 70000);
-    CHECK(!HealTopUpAllowed(true, low, 39, 40, false));
-    CHECK(HealTopUpAllowed(true, low, 40, 40, false));
+    CHECK(!HealTopUpAllowedAtHealth(true, low, 39, 40, 75.0f, 70.0f, 90.0f, false));
+    CHECK(HealTopUpAllowedAtHealth(true, low, 40, 40, 75.0f, 70.0f, 90.0f, false));
 }
 
 int main()
 {
+    TestReserveTierReadsEffectiveHealthNotRaw();
+    TestReserveTierReadsCreditedHealsIntoTheBand();
     TestTopUpHeldUnderReserveOutsideWindow();
     TestTopUpExemptTarget();
     TestTopUpFlagOffIsToday();
