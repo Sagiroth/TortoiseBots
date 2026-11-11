@@ -198,7 +198,11 @@ New here? Read [Getting Started](getting-started.md) first.
 | Pool bots fill battleground queues when players queue | Yes | [`AiPlayerbot.RandomBotBgEnabled`](../server/settings/queues.md#aiplayerbotrandombotbgenabled) | [Battlegrounds](../world/queues.md#battleground-auto-queue-human-demand) |
 | Bot-only Warsong Gulch matches when no player queues | Yes | [`AiPlayerbot.RandomBotBgAutonomous`](../server/settings/queues.md#aiplayerbotrandombotbgautonomous) | [Bot matches](../world/queues.md#autonomous-bot-only-matches) |
 | Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Always | — | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
-| Bots play the objectives in WSG, AB and AV | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| Bots play the objectives in WSG, AB, AV, Sunnyglade Valley and Blood Ring | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| WSG teams split into attackers, defenders and midfielders | No | [`AiPlayerbot.WsgFlagRoles`](../server/settings/queues.md#aiplayerbotwsgflagroles) | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
+| Pool bots start fights with flagged enemy players in the open world | No | [`AiPlayerbot.WorldPvpEngage`](../server/settings/combat.md#aiplayerbotworldpvpengage) | [World PvP](../server/settings/combat.md#aiplayerbotworldpvpengage) |
+| Level-up gear top-up for pool bots | No | [`AiPlayerbot.PoolGearTopUpOnLevel`](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) | [Economy](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) |
+| Level-up money top-up for pool bots | No | [`AiPlayerbot.PoolMoneyTopUp`](../server/settings/economy.md#aiplayerbotpoolmoneytopup) | [Economy](../server/settings/economy.md#aiplayerbotpoolmoneytopup) |
 
 ## Server & Monitoring (Dashboard, Logs)
 

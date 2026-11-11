@@ -45,6 +45,7 @@ These settings configure health and mana trigger percentages, engagement ranges,
 | [`AiPlayerbot.WorldPvpSeek`](#aiplayerbotworldpvpseek) | `2` | Free pool bots seek flagged enemy players (`1`) or players and bots (`2`); `0` off. |
 | [`AiPlayerbot.WorldPvpSeekBotPercent`](#aiplayerbotworldpvpseekbotpercent) | `25` | Share of free pool bots holding the `world pvp` seek role. |
 | [`AiPlayerbot.WorldPvpSeekRerollMinutes`](#aiplayerbotworldpvpseekrerollminutes) | `30` | Minutes between seek-role re-rolls, never while the bot is in combat. |
+| [`AiPlayerbot.WorldPvpEngage`](#aiplayerbotworldpvpengage) | `0` | Opt-in: a masterless pool bot out of combat opens a fight with a nearby flagged enemy player. |
 ## Settings
 
 ### `AiPlayerbot.AlmostFullHealth`
@@ -388,6 +389,24 @@ Unflagged players, challenge-mode characters (except War Mode) and GMs with visi
 A seeker chases a fleeing target for up to 60 seconds, camps a player it killed for up to 5 minutes and then ignores that player for 10 minutes, and joins a PvP fight within 30 yards that someone from its own faction is in.
 
 One bot can be switched on with `nc +world pvp` (combat copy needs `co +world pvp`). `nc -world pvp` alone leaves the combat copy seeking, and the next auto-grant can add it back.
+
+</details>
+
+### `AiPlayerbot.WorldPvpEngage`
+A masterless pool bot that is out of combat attacks a PvP-flagged enemy player nearby instead of waiting to be attacked.
+**Default:** `0` · **Values:** `0` off, `1` on · **Restart:** needed
+
+<details>
+<summary>How it works in detail</summary>
+
+With the key on, an eligible bot attacks an enemy player only when every item below holds:
+- the bot has no real player master and is a random pool bot
+- the target is a PvP-flagged enemy-faction player, within 40 yards (20 yards when the target has more health), in line of sight and within 30 yards of height
+- the target is not 5 or more levels above the bot
+- neither stands in a battleground, a city, a sanctuary, or a `AiPlayerbot.PvpProhibitedZoneIds` zone
+- the recent-killer avoidance allows the target
+
+Those bots also receive the `pvp` strategy out of combat; `-pvp` in `AiPlayerbot.RandomBotNonCombatStrategies` still removes it. Owned and hired companions and bots grouped with a real player never engage.
 
 </details>
 

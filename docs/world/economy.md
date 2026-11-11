@@ -43,6 +43,8 @@ To prevent bots from walking to town after every kill, vendor trips are batched 
 - **Beginner batching (levels 1–4):** Governed by [`AiPlayerbot.LowLevelVendorBatchMinCount`](../server/settings/economy.md#aiplayerbotlowlevelvendorbatchmincount--lowlevelvendorbatchminbagspace) and `LowLevelVendorBatchMinBagSpace`. This lets new characters liquidate early pelts and broken weapons without waiting for full bags.
 - **Bag-pressure line:** With stock a vendor buys, bags at 85%+ full trigger the vendor errand; empty food or drink bags trigger it only when the bot can pay to restock.
 - **Camp distance limits:** Masterless bots below level 5 are restricted to nearby camp vendors within [`AiPlayerbot.LowLevelVendorMaxDistance`](../server/settings/economy.md#aiplayerbotlowlevelvendormaxdistance). If a vendor visit yields no valid sales, the errand is parked for ten minutes.
+- **One stock list:** the vendor-trip need, the batch and spell-funding rule, the nearby-service sell verb and the errand sale all read the same list (`SellAction::VendorSaleStock`), and a completed sale clears the cached need values, so a bot does not run a second empty sale and park the errand.
+- **No flip buys:** vendor runs never buy stock to relist on the Auction House. Recipes and gear are bought once per item per visit; stackable stock still buys up to 10. Hunters and gun users buy ammo only when they do not carry any (unless restocking), and item-cheat bots wait five minutes between ammo buys.
 
 </details>
 
@@ -50,7 +52,7 @@ To prevent bots from walking to town after every kill, vendor trips are batched 
 <summary><a id="protected-inventory-items--cleanup-order-in-detail"></a>Protected inventory items & cleanup order in detail</summary>
 
 Autonomous sell routines evaluate inventory items carefully:
-- **Protected goods:** The usage classifier, not a sell filter, protects rations: food and drink the bot eats, bandages, potions, class spell reagents, and ammunition matching the equipped ranged weapon are never classified as vendor trash, so autonomous sell routines never sell them. Quest-class items are still destroyed in an emergency when the bot needs money for a spell rank and has nothing to sell; abandoned quest items fall through to normal handling by their new usage.
+- **Protected goods:** The usage classifier, not a sell filter, protects rations: food and drink the bot eats, bandages, potions, class spell reagents, and ammunition matching the equipped ranged weapon are never classified as vendor trash, so autonomous sell routines never sell them. Usable food, drink, potions and bandages are kept at any item level (a lower tier becomes surplus only once the bot holds a full stack of a better tier), and class poisons, stones and weapon oils are kept until a higher tier of the same line is in the bags. Quest-class items are still destroyed in an emergency when the bot needs money for a spell rank and has nothing to sell; abandoned quest items fall through to normal handling by their new usage.
 - **Liquidated stock:** Only grey trash items, unneeded profession materials, and surplus equipment scoring lower than equipped gear are sold (soulbound Bind-on-Equip gear already worn cannot be listed; repair cost above the auction profit keeps an item at the vendor).
 - **Smart destruction order:** When bags reach 90% capacity and no vendor can be reached, bots destroy items in strict priority order: genuinely useless items first, then quest-class items only when coin is required for a spell rank and sales are impossible (bots with a real-player master or in a real guild destroy grey trash only), then cheapest grey trash, then profession materials and consumables last.
 
@@ -60,7 +62,8 @@ Autonomous sell routines evaluate inventory items carefully:
 <summary>Mount savings & trainer reserves in detail</summary>
 
 Bots budget gold carefully before spending on optional upgrades:
-- **Trainer reserve:** When evaluating travel fares or vendor gear purchases, bots protect a reserve fund dedicated to upcoming class ability ranks (only free money above the spell purse is spendable).
+- **Trainer reserve:** When evaluating travel fares or vendor gear purchases, bots protect a reserve fund dedicated to upcoming class ability ranks (only free money above the spell purse is spendable). A trainer visit charges only ranks the bot can actually learn now: rows above its level are refused before any gold is taken, and the trip and the visit read the same spendable-money figure.
+- **Crafting:** a bot crafts only when it holds every reagent in its bags (the item cheat does not conjure reagents), and each craft writes a `Craft` row to `bot_events.csv`.
 - **Mount travel threshold:** Mount usage is gated by [`AiPlayerbot.MountBreakEvenFactor`](../server/settings/economy.md#aiplayerbotmountbreakevenfactor): only trips longer than the cast-time break-even distance trigger mounting (about 350 yd on the 9%-speed turtle, 50 yd at 60%, 30 yd at 100% with the default `1.5`); `0` removes the threshold.
 
 </details>

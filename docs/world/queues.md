@@ -74,7 +74,7 @@ When you queue for LFT with owned alts or hired companions in your party:
 
 The battleground service fills PvP matches so players get active battlegrounds:
 
-- **Supported battlegrounds:** Warsong Gulch (WSG), Arathi Basin (AB), and Alterac Valley (AV).
+- **Supported battlegrounds:** Warsong Gulch (WSG), Arathi Basin (AB), Alterac Valley (AV), Sunnyglade Valley (SV) and the Blood Ring arena (BR). SV and BR are queued only for their own maps; Blood Ring takes max-level bots only.
 - **Demand-driven backfill:** When human players enter a battleground queue, the service scans every 5 seconds, queueing up to 10 bots per check (5 per faction) toward match minimums. Setting [`AiPlayerbot.RandomBotBgMaxQueuePerInterval = 0`](../server/settings/queues.md#aiplayerbotrandombotbgmaxqueueperinterval) disables both interval scans and bot backfills.
 - **Match launch threshold:** The system fills each faction to the match minimum plus one. This launches matches promptly without accumulating surplus bots that could trigger a separate, unwanted bot-only match.
 - **Prompt exit:** When a battleground match concludes, bots leave the instance rather than waiting for the server instance shutdown timer.
@@ -87,6 +87,9 @@ Bots run dedicated objective strategies inside battlegrounds:
 - **Warsong Gulch:** Flag carriers head for their home base; other bots guard or follow the friendly carrier, chase the enemy carrier, or patrol midfield.
 - **Arathi Basin:** Bots capture neutral or enemy banners within reach, ignoring friendly banners. Banner interactions are rate-limited to once every 4 seconds.
 - **Alterac Valley:** Bots navigate toward Alterac Valley map points (graveyards, towers, bunkers, captains, and end bosses).
+- **Sunnyglade Valley:** Bots read the node world states and capture a neutral or enemy node, skipping the banners their own team already holds.
+- **Blood Ring:** Bots seek the nearest enemy and fight; the arena has no waypoints, so the navmesh walks them straight in.
+- **Warsong Gulch roles:** with [`AiPlayerbot.WsgFlagRoles`](../server/settings/queues.md#aiplayerbotwsgflagroles) on, each team's bots split into attackers, defenders and midfielders instead of all guarding or chasing.
 - **Healer preservation:** Healers (Holy/Discipline Priests, Restoration Shamans/Druids, Holy Paladins) keep their healing talent specs in battlegrounds. A global damage-dealer directive cannot swap them onto a damage spec there; an explicit strategy change or forced role still wins.
 
 </details>

@@ -26,9 +26,9 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
     if (!proto)
         return;
 
-    // Issue #381: the visit loop only lists green rows, but a stale cached row
-    // can still teach above the bot's level; the taught spell's own level
-    // decides (shared rule in ai/playerbot/SpellRankPolicy.h). Collect what the
+    // The visit loop only lists green rows, but a stale cached row can still
+    // teach above the bot's level; the taught spell's own level decides
+    // (shared rule in playerbot/policy/gear/SpellRankPolicy.h). Collect what the
     // row will teach before paying: a row that teaches nothing at this level
     // used to take the money first (a warrior paid 1 s for Elemental Fury on
     // every visit from level 6 on and learned nothing).
