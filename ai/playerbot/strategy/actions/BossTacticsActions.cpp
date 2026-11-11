@@ -11,12 +11,15 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <set>
 #include <tuple>
 #include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/BossEngagedPolicy.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/SeekAuraPolicy.h"
+#include "playerbot/CastKeepsRunningPolicy.h"
 #include "playerbot/SeekFightStatePolicy.h"
 #include "playerbot/SeekWalkoutPolicy.h"
 #include "Maps/PathFinder.h"
@@ -38,6 +41,7 @@
 #include "PositionAction.h"
 #include "FollowActions.h"
 #include "ReachTargetActions.h"
+#include "playerbot/strategy/warrior/WarriorActions.h"
 #include "playerbot/strategy/values/NearestGameObjects.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "EnemyAreaSpell.h"
@@ -85,11 +89,8 @@ Spell* ListedCastSpell(const ActiveBossRows& active, Unit* caster)
 }
 
 // A bot on battle duty: not a tank, not a healer. The hold's role gate, for the clauses an explicit attack order may
-// lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto).
-bool IsBattleDps(Player* bot)
-{
-    return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
-}
+// lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto). Declared in BossTacticsActions.h: the
+// carrier strike trigger reads it too.
 
 // A bot on tank or healer duty keeps it; an explicit player order wins.
 bool IsFreeDps(PlayerbotAI* ai, Player* bot)
@@ -393,6 +394,7 @@ enum class HoldReason
     Budget,
     Sole,
     DpsHold,
+    Gate,
 };
 
 // The subject of an active dps_hold_after row within `maxDistance` of `around`, or null: an area cast that lands
@@ -475,6 +477,29 @@ HoldReason HeldSubjectWithin(PlayerbotAI* ai, Unit* around, const BossTacticsFig
         if (subject)
             *subject = units[index];
         return budget ? HoldReason::Budget : HoldReason::Sole;
+    }
+    // gate_hold: an area cast beside the spared boss (or a DoT on it) would take it below its gate while the blocker
+    // still fights, so it is left alone like a held entry. The units are the same fight-wide grid read.
+    if (sPlayerbotAIConfig.dungeonRunGateHold)
+    {
+        for (const BossTacticRow* row : fight.rows)
+        {
+            if (row->kind != BossTacticKind::GateHold)
+                continue;
+            for (const SoleCandidate& candidate : SoleKillCandidates(ai, row->bossEntry))
+            {
+                Unit* unit = ai->GetUnit(ObjectGuid(candidate.guid));
+                if (!unit || !unit->IsAlive() || unit->GetEntry() != row->bossEntry)
+                    continue;
+                if (around->GetDistance(unit) > maxDistance)
+                    continue;
+                if (!GateHoldsUnit(ai, fight.rows, unit))
+                    continue;
+                if (subject)
+                    *subject = unit;
+                return HoldReason::Gate;
+            }
+        }
     }
     // dps_hold_after: the subject of an active hold is left alone too, so an area cast that lands beside it (or a
     // DoT on it) does not damage the boss/creature the hold exists to keep quiet.
@@ -572,18 +597,21 @@ bool HoldKillLogDue(Player* bot, HoldKillLogKind kind)
     return true;
 }
 
-// The hold-kill action's row: the subject it holds, the blocker counts of the hold_kill rows of its entry and where the
-// bot was sent.
-//   info1 = "held=<entry>:<guid low>,hp=<pct>"
+// The hold-kill action's row: the subject it holds, how long the seek hold has kept it, the blocker counts of the
+// hold_kill rows of its entry and where the bot was sent.
+//   info1 = "held=<entry>:<guid low>,hp=<pct>,held_ms=<n>"
 //   info2 = "blockers=<blocker entry>:<count>,...,to=<entry>:<guid low>|stop"
 void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* held, Unit* destination,
-                     const std::function<std::uint32_t(std::uint32_t)>& countNear)
+                     const std::function<std::uint32_t(std::uint32_t)>& countNear,
+                     const std::map<std::uint64_t, SeekHeldSon>* holdSince = nullptr, std::uint32_t holdNowMs = 0)
 {
     if (!HoldKillLogDue(bot, HoldKillLogKind::Action))
         return;
-    char info1[64];
-    snprintf(info1, sizeof(info1), "held=%u:%u,hp=%u", held->GetEntry(), held->GetGUIDLow(),
-             static_cast<uint32>(held->GetHealthPercent()));
+    const std::uint32_t heldMs = holdSince
+        ? SeekHeldMs(*holdSince, held->GetObjectGuid().GetRawValue(), holdNowMs) : 0;
+    char info1[96];
+    snprintf(info1, sizeof(info1), "held=%u:%u,hp=%u,held_ms=%u", held->GetEntry(), held->GetGUIDLow(),
+             static_cast<uint32>(held->GetHealthPercent()), static_cast<uint32>(heldMs));
     std::string info2 = "blockers=";
     bool first = true;
     for (const BossTacticRow* row : fight.rows)
@@ -607,15 +635,20 @@ void LogHoldKillPick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight
 // The multiplier's row: why it stood the action down (`veto` is the action class, or "sole" when the one_at_a_time pick
 // rather than a hold_kill budget holds the subject) and the subject when the veto has one.
 //   info1 = "veto=<assist|aoe|area|dot|sole>"
-//   info2 = "held=<entry>:<guid low>,hp=<pct>" or "held=none"
-void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subject)
+//   info2 = "held=<entry>:<guid low>,hp=<pct>,held_ms=<n>" or "held=none"
+void LogHoldKillVeto(PlayerbotAI* ai, Player* bot, const char* veto, Unit* subject,
+                     const std::map<std::uint64_t, SeekHeldSon>* holdSince = nullptr, std::uint32_t holdNowMs = 0)
 {
     if (!HoldKillLogDue(bot, HoldKillLogKind::Veto))
         return;
-    char info2[64];
+    char info2[96];
     if (subject)
-        snprintf(info2, sizeof(info2), "held=%u:%u,hp=%u", subject->GetEntry(), subject->GetGUIDLow(),
-                 static_cast<uint32>(subject->GetHealthPercent()));
+    {
+        const std::uint32_t heldMs = holdSince
+            ? SeekHeldMs(*holdSince, subject->GetObjectGuid().GetRawValue(), holdNowMs) : 0;
+        snprintf(info2, sizeof(info2), "held=%u:%u,hp=%u,held_ms=%u", subject->GetEntry(), subject->GetGUIDLow(),
+                 static_cast<uint32>(subject->GetHealthPercent()), static_cast<uint32>(heldMs));
+    }
     else
         snprintf(info2, sizeof(info2), "held=none");
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsHoldKill", std::string("veto=") + veto, info2);
@@ -689,6 +722,37 @@ std::uint32_t ai::HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry)
     return AI_VALUE2(uint32, "hold kill blockers", static_cast<int32>(entry));
 }
 
+std::uint32_t ai::GateHoldFighters(PlayerbotAI* ai, std::uint32_t entry, float radius)
+{
+    if (!ai || !entry)
+        return 0;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    char key[48];
+    snprintf(key, sizeof(key), "%u::%d", entry, static_cast<int>(radius + 0.5f));
+    return AI_VALUE2(uint32, "fighting blockers", key);
+}
+
+bool ai::GateHoldsUnit(PlayerbotAI* ai, const ActiveBossRows& rows, Unit* unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunGateHold || !ai || !unit)
+        return false;
+    const std::uint32_t entry = unit->GetEntry();
+    bool gateRow = false;
+    for (const BossTacticRow* row : rows)
+    {
+        if (row->kind == BossTacticKind::GateHold && row->bossEntry == entry)
+        {
+            gateRow = true;
+            break;
+        }
+    }
+    if (!gateRow)
+        return false;
+    return GateHeld(rows, entry, static_cast<int>(unit->GetHealthPercent()),
+        [ai](const BossTacticRow& row)
+        { return GateHoldFighters(ai, row.targetEntry, GateHoldRadius(row.windowSec)); });
+}
+
 // The living, fighting units of a one_at_a_time entry within kHoldKillRangeYd of the bot, crowd-controlled ones included
 // (`eligible` false): the "sole kill candidates" value, one cached grid search per bot and entry, the whole fight's units
 // of the entry, never the bot's own "attackers" list, which "focus rti targets" collapses to the raid mark. The one
@@ -753,6 +817,7 @@ struct SeekFight
     const BossTacticRow* row = nullptr;
     Unit* boss = nullptr;
     std::uint32_t nowMs = 0;
+    std::uint32_t fightMs = 0;   // since the fight's combat start (0: not seen in combat yet)
     std::uint32_t dueMs = 0;
     std::uint32_t dueInMs = 0;   // clamped at 0: only readers that need "due but not yet seen" take the signed one
     int dueSignedMs = std::numeric_limits<int>::max(); // negative once the due time passed
@@ -778,12 +843,21 @@ struct SeekFight
     // This bot runs the fight's walk-out task (SeekWalkoutPolicy.h): out to shoot pullTarget, or back once shot.
     bool walkout = false;
     bool walkoutShot = false;
+    std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast (0: none this task)
+    std::uint32_t walkoutGen = 0;        // the task's start generation (SeekWalkoutState::startGen)
     // A Son that fights a non-tank: the first off-tank's own take once the fight record says the non-tank has had it
     // for kSeekHealerTakeMs (SeekTakeFightingSonOnHealer), whatever the third off-tank does.
     Unit* healerSon = nullptr;
     // The fight's Sons on a non-tank, and since when (the healer clock): the hold lets one go once it has sat there too
     // long (SeekHoldDecision's non-tank time).
     std::map<std::uint64_t, SeekHeldSon> nonTankSince;
+    // When each Son entered the hold (the hold clock): the 20 s cap releases it to the damage dealers.
+    std::map<std::uint64_t, SeekHeldSon> holdSince;
+    // The pulled Son's meet is open (DungeonRunSeekSonMeet on and the receiver waiting) for this Son: the hold keeps it
+    // for the damage dealers until a tank has it (SeekMeetHoldsSon), and its puller and returner do not count on the
+    // non-tank clocks.
+    bool meetOpen = false;
+    std::uint64_t meetSon = 0;
     // The boss's anchor centre (its spawn), when the boss has an anchor row: the seek's reach is measured from it
     // too (SeekReachYd).
     bool anchored = false;
@@ -821,12 +895,39 @@ void ResetSeekTickCache()
     t_seekTick.read = false;
     t_seekTick.fight = SeekFight();
 }
+
+// The slot read's answer for one bot and one AI update. The slot trigger, the old spread trigger and the action all
+// ask within the same update, and the read builds the ring points, maps the group and samples the floor.
+struct SpreadSlotTickCache
+{
+    bool live = false;
+    PlayerbotAI* ai = nullptr;
+    std::uint64_t botGuid = 0;
+    std::uint32_t tick = 0;
+    BossSpreadSlotTask task;
+};
+thread_local SpreadSlotTickCache t_spreadSlotTick;
+
+void ResetSpreadSlotTickCache()
+{
+    t_spreadSlotTick.live = false;
+    t_spreadSlotTick.ai = nullptr;
+    t_spreadSlotTick.botGuid = 0;
+    t_spreadSlotTick.tick = 0;
+    t_spreadSlotTick.task = BossSpreadSlotTask();
+}
+}
+
+bool ai::IsBattleDps(Player* bot)
+{
+    return !PlayerbotAI::IsTank(bot) && !PlayerbotAI::IsHeal(bot);
 }
 
 ai::BossTacticsScanScope::BossTacticsScanScope()
 {
     t_fightScan.live = true;
     t_seekTick.live = true;
+    t_spreadSlotTick.live = true;
 }
 
 ai::BossTacticsScanScope::~BossTacticsScanScope()
@@ -837,7 +938,111 @@ ai::BossTacticsScanScope::~BossTacticsScanScope()
     t_fightScan.table = nullptr;
     t_fightScan.fight = BossTacticsFight();
     ResetSeekTickCache();
+    ResetSpreadSlotTickCache();
 }
+
+namespace
+{
+// AiPlayerbot.BossTacticsKeepsEngagedBoss: the raid's engaged bosses, one row per (instance, entry), holding the guid
+// of the unit the bots last saw and when. The bots whose attacker list shows a boss note it here; a bot that lost it
+// reads it back while the entry is fresh (BossEngagedPolicy.h). One map lookup per entry per read, never a grid
+// search. Guarded by g_engagedBossMutex; g_engagedBossCount is the cheap "is anything registered" read, and the
+// registry buckets by map instance so a read or a note touches only the caller's own boss list.
+std::mutex g_engagedBossMutex;
+EngagedBossRegistry g_engagedBosses;
+std::atomic<std::uint32_t> g_engagedBossCount{0};
+// The registry's one full walk (a bucket whose instance is gone is never touched by its own bots again) runs at most
+// once a minute, from the note path that already holds the lock; 0 = never swept.
+constexpr std::uint32_t kEngagedBossSweepMs = 60000;
+std::uint32_t g_engagedBossSweepMs = 0;  // guarded by g_engagedBossMutex
+
+// The last note each bot made of a boss entry on this thread: a repeat within the note window skips the registry
+// lock without asking it. A small ring overwritten in turn, so it never grows with the fights the thread has seen.
+struct EngagedNoteMark
+{
+    std::uint64_t bot = 0;
+    std::uint32_t entry = 0;
+    std::uint32_t ms = 0;
+};
+constexpr int kEngagedNoteMarks = 16;
+thread_local EngagedNoteMark t_engagedNoteMarks[kEngagedNoteMarks];
+thread_local int t_engagedNoteNext = 0;
+
+// A boss a bot sees in its attacker list: recorded, at most once per half second per boss. Only an entry the stand
+// or tank-post systems read is registered, and nothing is read or written with the key off.
+void NoteEngagedBoss(Player* bot, Unit* unit, std::uint32_t mapId)
+{
+    if (!bot || !unit || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss || !unit->IsInCombat())
+        return;
+    const std::uint32_t entry = unit->GetEntry();
+    const std::uint64_t botGuid = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t markMs = WorldTimer::getMSTime();
+    for (const EngagedNoteMark& mark : t_engagedNoteMarks)
+        if (mark.bot == botGuid && mark.entry == entry && markMs - mark.ms < kEngagedBossNoteMs)
+            return;
+    if (!EngagedBossEligible(GetBossStands().Rows(mapId, entry) != nullptr,
+                             GetBossTactics().HasKindFor(mapId, entry, BossTacticKind::TankPost)))
+        return;
+    const std::uint32_t instanceId = unit->GetInstanceId();
+    const std::uint64_t guid = unit->GetObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_engagedBossMutex);
+    // The clock is read under the lock: an entry is never judged stale (or fresh) against a tick taken before the wait.
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    g_engagedBosses.Note(mapId, instanceId, entry, guid, nowMs);
+    // A bucket nothing holds any more (the last bot left, the instance was destroyed) only this walk can find.
+    if (g_engagedBossSweepMs == 0 || nowMs - g_engagedBossSweepMs >= kEngagedBossSweepMs)
+    {
+        g_engagedBosses.SweepAbandoned(nowMs, [](std::uint32_t sweepMapId, std::uint32_t sweepInstanceId)
+        {
+            return sMapMgr.FindMap(sweepMapId, sweepInstanceId) != nullptr;
+        });
+        g_engagedBossSweepMs = nowMs;
+    }
+    g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
+    EngagedNoteMark& slot = t_engagedNoteMarks[t_engagedNoteNext++ % kEngagedNoteMarks];
+    slot.bot = botGuid;
+    slot.entry = entry;
+    slot.ms = nowMs;
+}
+
+// The registered bosses of the bot's map instance whose entry the bot has not read yet, still usable: alive, in
+// combat, not evading, within kEngagedBossReachYd, and the bot itself in combat.
+std::vector<Creature*> RegisteredEngagedBosses(Player* bot, const std::vector<std::uint32_t>& seenEntries)
+{
+    std::vector<Creature*> out;
+    if (!bot || !sPlayerbotAIConfig.bossTacticsKeepsEngagedBoss ||
+        g_engagedBossCount.load(std::memory_order_relaxed) == 0)
+        return out;
+    const std::uint32_t mapId = bot->GetMapId();
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    std::vector<EngagedBossNote> registered;
+    {
+        std::lock_guard<std::mutex> lock(g_engagedBossMutex);
+        // The clock is read under the lock: the read's own prune never judges an entry against a tick taken before
+        // the wait.
+        registered = g_engagedBosses.Read(mapId, instanceId, WorldTimer::getMSTime(), seenEntries);
+        g_engagedBossCount.store(g_engagedBosses.size, std::memory_order_relaxed);
+    }
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    for (const EngagedBossNote& row : registered)
+    {
+        Creature* const creature = bot->GetMap()->GetCreature(ObjectGuid(row.guid));
+        if (!creature)
+            continue;
+        EngagedBossView view;
+        view.known = true;
+        view.lastSeenMs = row.lastSeenMs;
+        view.alive = sServerFacade.IsAlive(creature);
+        view.inCombat = creature->IsInCombat();
+        view.evading = creature->IsInEvadeMode();
+        view.botInCombat = bot->IsInCombat();
+        view.botToBossYd = bot->GetDistance(creature);
+        if (EngagedBossUsable(view, nowMs))
+            out.push_back(creature);
+    }
+    return out;
+}
+}  // namespace
 
 BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
 {
@@ -862,6 +1067,7 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit))
             continue;
+        NoteEngagedBoss(bot, unit, mapId);
         fight.units.push_back(unit);
         const uint32 entry = unit->GetEntry();
         const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
@@ -873,12 +1079,29 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
         else
             entryUnits[known - seen.begin()].push_back(unit);
     }
+    // AiPlayerbot.BossTacticsKeepsEngagedBoss: a boss the raid fights but this bot's attacker list lost (a melee bot
+    // that cannot reach an airborne boss gives up on it) is read back from the registry and appended like an attacker.
+    for (Creature* const registered : RegisteredEngagedBosses(bot, seen))
+    {
+        fight.units.push_back(registered);
+        const uint32 entry = registered->GetEntry();
+        const std::vector<std::uint32_t>::const_iterator known = std::find(seen.begin(), seen.end(), entry);
+        if (known == seen.end())
+        {
+            seen.push_back(entry);
+            entryUnits.push_back(std::vector<Unit*>(1, registered));
+        }
+        else
+            entryUnits[known - seen.begin()].push_back(registered);
+    }
     // One boss entry's rows into the fight, gated by the entry's health (inclusive; a boss that vanished carries the health
     // it was last seen at).
     bool const keyOn = sPlayerbotAIConfig.dungeonRunAuraTactics;
     bool const useObjectOn = sPlayerbotAIConfig.dungeonRunUseObject;
     bool const burnManaOn = sPlayerbotAIConfig.dungeonRunBurnMana;
     bool const rangedOnlyOn = sPlayerbotAIConfig.dungeonRunRangedOnly;
+    bool const gateHoldOn = sPlayerbotAIConfig.dungeonRunGateHold;
+    bool const tankPostOn = sPlayerbotAIConfig.dungeonRunTankPost;
     auto const addRows = [&](const std::vector<BossTacticRow>& rows, int bossHpPct)
     {
         for (const BossTacticRow& row : rows)
@@ -896,7 +1119,16 @@ BossTacticsFight ai::ScanBossTactics(PlayerbotAI* ai, Player* bot)
                 continue;
             if (!rangedOnlyOn && row.kind == BossTacticKind::RangedOnly)
                 continue;
-            if (!RowGateOpen(row, keyOn, bossHpPct, row.botAura != 0 && bot->HasAura(row.botAura)))
+            // gate_hold is its own key's: with it off its rows are not read at all, so key-off is exactly today.
+            if (!gateHoldOn && row.kind == BossTacticKind::GateHold)
+                continue;
+            // tank_post keeps its own key too: key-off behaves exactly as before the kind. Its health band is the
+            // kind's own arming gate, so that key reads it instead of the aura-tactics key.
+            bool const tankPostRow = row.kind == BossTacticKind::TankPost;
+            if (tankPostRow && !tankPostOn)
+                continue;
+            if (!RowGateOpen(row, tankPostRow ? true : keyOn, bossHpPct,
+                    row.botAura != 0 && bot->HasAura(row.botAura)))
                 continue;
             fight.rows.push_back(&row);
         }
@@ -995,16 +1227,19 @@ std::mutex g_seekMutex;
 SeekRecordMap g_seekRecords;
 // A record nobody evaluated for this long is gone: the fight ended or the boss left.
 const std::uint32_t kSeekRecordIdleMs = 120000;
-// The siphon count runs one second after the sighting and again two seconds later, and the boss's health is read once
-// more nine seconds after it: the 8 s heal has run its course by then, so that read sees the heal the +1 s and +3 s
-// reads under-count. The first two settle a heal the counts alone cannot explain (a pet, the boss's own stack count).
-const std::uint32_t kSeekSiphonReadMs = 1000;
-const std::uint32_t kSeekSiphonSecondMs = 3000;
-const std::uint32_t kSeekSiphonThirdMs = 9000;
+// Each instance's record sweep runs at most this often: every bot of a fight reads it every tick.
+const std::uint32_t kSeekRecordSweepGapMs = 1000;
+// The per-instance sweep clock. It also marks whether the instance still reads at all: an entry that idles out takes
+// its instance's records with it, so a fight abandoned without an evade read does not stay in the map for ever.
+std::unordered_map<std::uint32_t, std::uint32_t> g_seekRecordSweepMs;
 // The two sides of the siphon: the dummy aura the script effect casts on a target with the poison (24323) and on one
 // without it (24322) (SpellEffects.cpp:3612-3631).
 const std::uint32_t kHakkarSiphonDosedSpell = 24323;
 const std::uint32_t kHakkarSiphonUndosedSpell = 24322;
+// The Sons' entry (the seek row's target) and the radius of the cloud one leaves behind: 24320's radius index 14, the
+// distance the Son death row counts the raid at.
+const std::uint32_t kSonOfHakkarEntry = 11357;
+const float kPoisonCloudYd = 8.0f;
 // The cloud search around the bot (the cached dynamic-object list's own radius), the drag's arrival radius at the
 // spot, and the log throttle.
 const float kSeekCloudSearchYd = 30.0f;
@@ -1012,9 +1247,16 @@ const float kSeekTankArriveYd = 4.0f;
 const std::uint32_t kSeekLogGapMs = 5000;
 std::mutex g_seekLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekLog;
+// The spread slot rows have their own throttle: a seek row or a take row on the same bot must not swallow them.
+std::mutex g_spreadLogMutex;
+// The update tick is kept with the window so a failed move can correct the row its own tick's read wrote.
+struct SpreadLogWindow { std::uint32_t ms = 0; std::uint32_t tick = 0; };
+std::map<std::uint64_t, SpreadLogWindow> g_spreadLog;
 // The pull rows' own throttle, so a pull that keeps walking does not swallow the seek rows' 5 s window.
 std::mutex g_seekPullLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
+// The meet receiver's wait row has its own throttle (the take row on the same tank must not lose its window to it).
+std::unordered_map<std::uint64_t, std::uint32_t> g_seekMeetWaitLog;
 // The walk-out task, one per map instance (Hakkar's fight), shared by every bot's read; the active count lets the
 // anchor's exemption check skip the lock while no task runs.
 const std::uint32_t kHakkarCauseInsanitySpell = 24327;
@@ -1032,33 +1274,84 @@ struct WalkoutRecord
     std::uint64_t scanSon = 0; // the Son out of combat nearest the anchor's centre, not walked to yet
     std::uint64_t scanPuller = 0;           // the scan's pick for that Son (inside, with a path to the stand)
     float scanStandX = 0.0f, scanStandY = 0.0f, scanStandZ = 0.0f;
+    float scanReachYd = 0.0f;               // the shot reach the stand was found at (28, or a hunter's 33)
+    float scanRayDeg = 0.0f;                // the fan offset that gave the stand
     std::uint32_t noStandLogMs = 0;         // the "no stand" row's throttle
+    std::uint32_t noSonLogMs = 0;           // the "no son" row's throttle
+    std::uint32_t noPullerLogMs = 0;        // the "no puller" row's throttle
+    std::uint32_t lateLogMs = 0;            // the "late" row's throttle
+    std::uint32_t preemptLogStartMs = 0;    // the "walk-out preempted" row's throttle: the task start it logged for
+    // The stand rows (DungeonRunSeekWalkoutStandLog): the walk-out they count (its start), the last row, the last read
+    // (tick_ms), and the castrefused rows written for that walk-out.
+    std::uint32_t standLogStartMs = 0;
+    std::uint32_t standRowMs = 0;
+    std::uint32_t standReadMs = 0;
+    std::uint32_t refusedLogStartMs = 0;
+    int refusedRows = 0;
+    WalkoutCycleRules rules;                // the seek_pull row's rules the task runs under (defaults: the old ones)
 };
 std::unordered_map<std::uint32_t, WalkoutRecord> g_walkouts;
 std::atomic<int> g_walkoutsActive{0}; // records whose task or walk back runs (WalkoutBusy)
+std::atomic<int> g_walkoutMeetsOpen{0}; // records holding a meet (meetReceiver != 0), SeekMeetOpenDelta
+std::atomic<int> g_walkoutsRunning{0}; // records whose task runs (WalkoutActive): the walk-out focus's fast path
 // The held pets' stances by puller guid; the bot's own next update hands each back (ReleaseWalkoutPet).
 std::unordered_map<std::uint64_t, WalkoutPetStance> g_petHolds;
 std::atomic<int> g_petHoldCount{0};
 
-// Drops the records of fights nobody evaluated for the idle window and the per-bot log throttles that old: one entry
-// per bot guid that ever logged, so the map is bounded with the fights. Called with g_seekMutex held; the sweep
-// itself runs at most once per idle window.
-void SweepSeekRecords(std::uint32_t nowMs)
+// Drops the records of this instance's fights that nobody evaluated for the idle window, and the per-bot log
+// throttles that old: one entry per bot guid that ever logged, so the map is bounded with the fights. Called with
+// g_seekMutex held, at most once a second per instance; the clock is read here, under the lock, because a fight
+// read's nowMs is taken before the lock and a record stamped after it would look older than it is. A record's age is
+// a signed difference for the same reason. Only this instance's records are swept: another instance's reader stamps
+// them, and the clock it read is the fresher one.
+void SweepSeekRecords(std::uint32_t instanceId)
 {
-    static std::uint32_t lastSweepMs = 0;
-    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordIdleMs)
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint32_t& lastSweepMs = g_seekRecordSweepMs[instanceId];
+    if (lastSweepMs != 0 && nowMs - lastSweepMs < kSeekRecordSweepGapMs)
         return;
-    lastSweepMs = nowMs;
+    lastSweepMs = nowMs != 0 ? nowMs : 1;
+    // An instance whose sweep clock idled out stopped reading (its fight ended, or the raid left): its records go too.
+    for (auto it = g_seekRecordSweepMs.begin(); it != g_seekRecordSweepMs.end();)
+    {
+        if (it->first == instanceId || nowMs - it->second <= kSeekRecordIdleMs)
+        {
+            ++it;
+            continue;
+        }
+        for (auto record = g_seekRecords.begin(); record != g_seekRecords.end();)
+            record = std::get<0>(record->first) == it->first ? g_seekRecords.erase(record) : std::next(record);
+        it = g_seekRecordSweepMs.erase(it);
+    }
     for (auto it = g_seekRecords.begin(); it != g_seekRecords.end();)
-        it = nowMs - it->second.lastSeenMs > kSeekRecordIdleMs ? g_seekRecords.erase(it) : std::next(it);
+    {
+        if (std::get<0>(it->first) != instanceId)
+        {
+            ++it;
+            continue;
+        }
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second.lastSeenMs);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekRecords.erase(it) : std::next(it);
+    }
     // Lock order: the record map, then the log. LogSeek takes the log alone, after the record lock is released.
     std::lock_guard<std::mutex> logLock(g_seekLogMutex);
     for (auto it = g_seekLog.begin(); it != g_seekLog.end();)
-        it = nowMs - it->second > kSeekRecordIdleMs ? g_seekLog.erase(it) : std::next(it);
+    {
+        const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+        it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekLog.erase(it) : std::next(it);
+    }
     {
         std::lock_guard<std::mutex> pullLock(g_seekPullLogMutex);
         for (auto it = g_seekPullLog.begin(); it != g_seekPullLog.end();)
-            it = nowMs - it->second > kSeekRecordIdleMs ? g_seekPullLog.erase(it) : std::next(it);
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekPullLog.erase(it) : std::next(it);
+        }
+        for (auto it = g_seekMeetWaitLog.begin(); it != g_seekMeetWaitLog.end();)
+        {
+            const std::int32_t idleMs = static_cast<std::int32_t>(nowMs - it->second);
+            it = idleMs > static_cast<std::int32_t>(kSeekRecordIdleMs) ? g_seekMeetWaitLog.erase(it) : std::next(it);
+        }
     }
 }
 
@@ -1290,21 +1583,23 @@ void CountHakkarSiphonAuras(Unit* boss, int& healStacks, int& dmgHolders)
 // One siphon row per accepted cycle, read one and three seconds after the sighting: the group members dosed and not,
 // the pets and totems/guardians on either side, and the boss's own heal stacks and damage holders. A no-op unless
 // bot_events.csv is in AiPlayerbot.AllowedLogFiles.
-void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, std::uint32_t elapsedMs, int dosed, int undosed,
-               int petHeal, int petDmg, int totems, int guardians, int healStacks, int dmgHolders, Unit* boss)
+void LogSiphon(PlayerbotAI* ai, Player* bot, std::uint32_t cycle, std::uint32_t elapsedMs, std::uint32_t seenHpPct,
+               int dosed, int undosed, int petHeal, int petDmg, int totems, int guardians, int healStacks,
+               int dmgHolders, Unit* boss)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
         return;
     // The row's clock is the real time since the cycle's first 24324 sighting, not the read's nominal delay.
     const std::string at = SeekSiphonAtLabel(elapsedMs);
-    char info1[224];
+    char info1[256];
     snprintf(info1, sizeof(info1),
              "cycle=%u,%s,dosed=%u,undosed=%u,pets_heal=%u,pets_dmg=%u,totems=%u,guardians=%u,hakkar_stacks=%u,"
-             "hakkar_dmg=%u,hakkar_hp=%u",
+             "hakkar_dmg=%u,hakkar_hp=%u,hp_seen=%u",
              cycle, at.c_str(), static_cast<unsigned>(dosed), static_cast<unsigned>(undosed),
              static_cast<unsigned>(petHeal), static_cast<unsigned>(petDmg), static_cast<unsigned>(totems),
              static_cast<unsigned>(guardians), static_cast<unsigned>(healStacks),
-             static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u);
+             static_cast<unsigned>(dmgHolders), boss ? static_cast<unsigned>(boss->GetHealthPercent()) : 0u,
+             static_cast<unsigned>(seenHpPct));
     char info2[224];
     snprintf(info2, sizeof(info2),
              "Hakkar siphon %u @+%ums: %d dosed, %d not, pets %d heal/%d dmg, totems %d, guardians %d, hakkar heal "
@@ -1384,8 +1679,14 @@ void LogSeekPullSkipAnchor(PlayerbotAI* ai, Player* bot)
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", "seek pull: skip anchor", "");
 }
 
-// One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes and the Son's victim.
-void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)
+// One `seek take` row per tank and 5 s (the pull rows' throttle): the off-tank, the Son it takes, the Son's victim and
+// why this tick did or did not taunt (`SeekTakeReasonWord`). `meet` is 1 for a take from the pulled Son's meet; `src`
+// names the take path that produced the task (`SeekTakeSrcWord`: meet, nearest, healer_clock, receiver, pickup,
+// pull_join, victim_relief, other, with `+edge` when only the take edge let it chase); `reach_yd` the tank's distance
+// to the Son this tick (DungeonRunSeekMeetTakeReach: a meet take now reaches 25 yd); `beyond_yd` the Son's distance past the raid
+// circle of the row's boss anchor (negative inside; -99.0 with no anchor row).
+void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son, const char* reason, bool meet, const std::string& src,
+                 float beyondYd)
 {
     if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
         return;
@@ -1398,10 +1699,110 @@ void LogSeekTake(PlayerbotAI* ai, Player* bot, Unit* son)
         last = nowMs;
     }
     Unit* const victim = son->GetVictim();
-    char info1[160];
-    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s", bot->GetName(), son->GetGUIDLow(),
-             victim ? victim->GetName() : "none");
+    char info1[224];
+    snprintf(info1, sizeof(info1), "seek take: %s -> %u victim=%s reason=%s meet=%d src=%s reach_yd=%.1f beyond_yd=%.1f",
+             bot->GetName(), son->GetGUIDLow(), victim ? victim->GetName() : "none", reason, meet ? 1 : 0, src.c_str(),
+             bot->GetDistance(son), beyondYd);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// The cap guard's read for the `seek take held` row (walk 58 F3): today's cap reference tank and the reference left
+// after this tank's leave as a percent of today's (ThreatCapLeaveReadOf).
+struct SeekCapGuardInfo
+{
+    std::string refName = "none";
+    float sharePct = 100.0f;
+};
+
+// One `seek take held` row per tank and Son and 2 s (walk 58 F3: the collapse guard logged nothing, so its effect
+// could not be measured): the cap guard (ThreatCapLeaveCollapses) held back this tank's reach or healer-clock take of
+// `son`. `src` is the held take's path (nearest_reach or healer_clock); `onNonTankMs` the Son's time on its non-tank
+// victim (the fight's non-tank clock; 0 when unknown), logged with that victim and its health (review M2: the walk-59
+// measures). A no-op unless bot_events.csv is in AllowedLogFiles.
+constexpr std::uint32_t kSeekTakeHeldLogGapMs = 2000;
+std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint32_t> g_seekTakeHeldLog;
+
+void LogSeekTakeHeld(PlayerbotAI* ai, Player* bot, Unit* son, const SeekCapGuardInfo& info, const char* src,
+                     std::uint32_t onNonTankMs)
+{
+    if (!ai || !bot || !son || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        // A long fight's Sons are few, but every Son guid is new: drop stale keys so the map stays small.
+        if (g_seekTakeHeldLog.size() > 256)
+        {
+            for (auto it = g_seekTakeHeldLog.begin(); it != g_seekTakeHeldLog.end();)
+                it = nowMs - it->second >= kSeekTakeHeldLogGapMs ? g_seekTakeHeldLog.erase(it) : std::next(it);
+        }
+        std::uint32_t& last =
+            g_seekTakeHeldLog[std::make_pair(bot->GetObjectGuid().GetRawValue(), son->GetObjectGuid().GetRawValue())];
+        if (last != 0 && nowMs - last < kSeekTakeHeldLogGapMs)
+            return;
+        last = nowMs == 0 ? 1 : nowMs;
+    }
+    Unit* const victim = son->GetVictim();
+    char info1[288];
+    snprintf(info1, sizeof(info1),
+             "seek take held son=%u taker=%s reason=cap_guard ref=%s share=%.0f src=%s victim=%s on_nontank_ms=%u "
+             "victim_hp=%.0f",
+             son->GetGUIDLow(), bot->GetName(), info.refName.c_str(), info.sharePct, src,
+             victim ? victim->GetName() : "none", onNonTankMs, victim ? victim->GetHealthPercent() : 100.0f);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// One `BossTacticsSonMeet` row (the pulled Son's meet with a tank): built by its caller, logged here without a
+// throttle, because one meet is one event.
+void LogSeekMeet(PlayerbotAI* ai, const char* info1)
+{
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSonMeet", info1, "");
+}
+
+// The meet's end without a take: `reason` is one of son_dead, receiver_dead, receiver_charmed, receiver_victim,
+// receiver_busy, peeled, timeout (docs/play/refusal-rows.md), `afterMs` the time since the shot.
+//
+// `peeler` is the Son's victim on a `peeled` loss (null elsewhere): the row gains
+// `victim=<guid low>,victim_role=<tank|healer|dps|pet>,son_yd=<Son to its receiver>` so the next walk names who took
+// the Son off the puller (the frames are 7 s apart and left 8 of 33 peelers unknown in walk 54).
+void LogSeekMeetLost(PlayerbotAI* ai, std::uint64_t guid, const char* reason, std::uint32_t afterMs,
+                     Unit* peeler = nullptr, float sonYd = 0.0f)
+{
+    char info1[192];
+    snprintf(info1, sizeof(info1), "son=%u,event=lost,reason=%s,after_ms=%u", ObjectGuid(guid).GetCounter(), reason,
+             afterMs);
+    if (peeler)
+    {
+        Player* const player = dynamic_cast<Player*>(peeler);
+        const char* const role = !player ? "pet" : PlayerbotAI::IsTank(player) ? "tank" :
+            PlayerbotAI::IsHeal(player) ? "healer" : "dps";
+        const size_t used = strlen(info1);
+        snprintf(info1 + used, sizeof(info1) - used, ",victim=%u,victim_role=%s,son_yd=%.1f", peeler->GetGUIDLow(),
+                 role, sonYd);
+    }
+    LogSeekMeet(ai, info1);
+}
+
+// The receiver's wait row (event=wait, reason=receiver_wait): one per receiver and 5 s, on the meet wait's own throttle.
+// `victim` is the Son's victim (the puller, the returner or none).
+void LogSeekMeetWait(PlayerbotAI* ai, Player* bot, Unit* son, Unit* victim, std::uint32_t meetMs)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv") || !son)
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_seekPullLogMutex);
+        std::uint32_t& last = g_seekMeetWaitLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kSeekLogGapMs)
+            return;
+        last = nowMs;
+    }
+    const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+    char info1[192];
+    snprintf(info1, sizeof(info1), "son=%u,event=wait,reason=receiver_wait,victim=%s,son_yd=%.1f,after_ms=%u",
+             ObjectGuid(guid).GetCounter(), victim ? victim->GetName() : "none", bot->GetDistance(son),
+             nowMs - meetMs);
+    LogSeekMeet(ai, info1);
 }
 
 // The ranged puller's shot from inside a live boss anchor at a Son outside it: the pull rows' throttle, as the skip.
@@ -1436,20 +1837,37 @@ bool AnchorShotStandFor(Player* bot, const BossAnchorCircle& c, Unit* son, float
     return map->isInLineOfSight(x, y, z + 2.0f, son->GetPositionX(), son->GetPositionY(), son->GetPositionZ() + 2.0f, true);
 }
 
-// The busy count follows one record's change (WalkoutBusy before and after).
-void NoteWalkoutBusy(bool before, const SeekWalkoutState& after)
+// The two counts follow one record's change (WalkoutMarksOf before and after): busy (a task or a walk back) and running
+// (a task only).
+void NoteWalkoutBusy(const WalkoutBusyMarks& before, const SeekWalkoutState& after)
 {
-    bool const now = WalkoutBusy(after);
-    if (before && !now)
-        g_walkoutsActive.fetch_sub(1, std::memory_order_relaxed);
-    else if (!before && now)
-        g_walkoutsActive.fetch_add(1, std::memory_order_relaxed);
+    WalkoutBusyMarks const now = WalkoutMarksOf(after);
+    g_walkoutsActive.fetch_add(WalkoutCountStep(before.busy, now.busy), std::memory_order_relaxed);
+    g_walkoutsRunning.fetch_add(WalkoutCountStep(before.running, now.running), std::memory_order_relaxed);
+}
+
+// The open-meet count follows one record's change (g_walkouts' mutex held): the meet's receiver before and after.
+void NoteWalkoutMeet(bool before, const SeekWalkoutState& after)
+{
+    int const delta = SeekMeetOpenDelta(before, after.meetReceiver != 0);
+    if (delta)
+        g_walkoutMeetsOpen.fetch_add(delta, std::memory_order_relaxed);
+}
+
+// WalkoutMeetCloseIf with the count kept (g_walkoutMutex held): the one place a shared meet is cleared.
+bool CloseWalkoutMeetIf(SeekWalkoutState& state, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs)
+{
+    bool const before = state.meetReceiver != 0;
+    bool const closed = WalkoutMeetCloseIf(state, receiver, son, meetMs);
+    NoteWalkoutMeet(before, state);
+    return closed;
 }
 
 std::unordered_map<std::uint32_t, WalkoutRecord>::iterator DropWalkoutRecord(
     std::unordered_map<std::uint32_t, WalkoutRecord>::iterator it)
 {
-    NoteWalkoutBusy(WalkoutBusy(it->second.state), SeekWalkoutState());
+    NoteWalkoutBusy(WalkoutMarksOf(it->second.state), SeekWalkoutState());
+    NoteWalkoutMeet(it->second.state.meetReceiver != 0, SeekWalkoutState());
     return g_walkouts.erase(it);
 }
 
@@ -1475,6 +1893,32 @@ void SweepSeekWalkouts(Map* map, std::uint32_t nowMs)
         it = nowMs - it->second.touchedMs > kSeekWalkoutStaleMs ? DropWalkoutRecord(it) : std::next(it);
 }
 
+// The meet receiver's bounded anchor exemption (DungeonRunSeekMeetTakeReach, SeekMeetReceiverExempt) from one meet
+// snapshot (receiver, Son, shot time) and the anchored boss: the raid circle is the boss's own anchor row (no boss
+// constant). `beyondYdOut` gets the Son's distance past the raid circle (0 when unknown). The meet counts as open only
+// while its Son is on no tank (the taken close ends the exemption).
+bool MeetReceiverExemptEval(Player* bot, std::uint64_t receiver, std::uint64_t sonGuid, std::uint32_t meetMs,
+                            Unit* boss, std::uint32_t nowMs, float* beyondYdOut)
+{
+    if (beyondYdOut)
+        *beyondYdOut = 0.0f;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !boss || sonGuid == 0)
+        return false;
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(sonGuid));
+    const bool sonAlive = son && son->IsInWorld() && sServerFacade.IsAlive(son);
+    BossAnchorCircle raid;
+    if (!sonAlive || !BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), false, raid))
+        return false;
+    Player* const sonVictim = dynamic_cast<Player*>(son->GetVictim());
+    const bool sonOnTank = sonVictim && PlayerbotAI::IsTank(sonVictim);
+    const bool meetOpen = SeekMeetOpen(receiver, meetMs, nowMs) && !sonOnTank;
+    const float beyondYd = BossAnchorDistance2d(raid, son->GetPositionX(), son->GetPositionY()) - raid.radius;
+    if (beyondYdOut)
+        *beyondYdOut = beyondYd;
+    return SeekMeetReceiverExempt(true, meetOpen, receiver == bot->GetObjectGuid().GetRawValue(), sonAlive, beyondYd,
+                                  boss->GetVictim() == bot, SeekMeetTakeDue(bot->GetDistance(son), false, true));
+}
+
 // Whether the anchor lets this bot go: the puller of its instance's running walk-out task, or of a timed-out or aborted
 // one walking back (SeekWalkoutExempts).
 bool SeekWalkoutExemptsBot(Player* bot)
@@ -1488,10 +1932,133 @@ bool SeekWalkoutExemptsBot(Player* bot)
     return it != g_walkouts.end() && WalkoutExempts(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
 }
 
-void LogSeekWalkout(PlayerbotAI* ai, const char* text)
+// The meet take's read for this receiver and `son` (DungeonRunSeekMeetTakeReach), from one locked snapshot of the meet
+// (receiver, Son, shot time, boss): `found` this bot is the open meet's receiver and `son` is its Son; `anchored` the
+// boss has an anchor row; `exempt` the bounded chase exemption holds (MeetReceiverExemptEval); `beyondYd` the Son's
+// distance past the raid circle. Only the meet's own Son is ever exempt: any other target reads false.
+struct MeetTakeRead
+{
+    bool found = false;
+    bool anchored = false;
+    bool exempt = false;
+    float beyondYd = 0.0f;
+};
+
+MeetTakeRead ReadMeetTake(Player* bot, Unit* son)
+{
+    MeetTakeRead out;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !son || !son->ToCreature() ||
+        g_walkoutMeetsOpen.load(std::memory_order_relaxed) <= 0)
+        return out;
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::uint64_t meetReceiver = 0;
+    std::uint64_t meetSon = 0;
+    std::uint32_t meetMs = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it == g_walkouts.end() || it->second.state.meetReceiver != self)
+            return out;
+        meetReceiver = it->second.state.meetReceiver;
+        meetSon = it->second.state.meetSon;
+        meetMs = it->second.state.meetMs;
+        bossGuid = it->second.bossGuid;
+    }
+    // The target is the meet's CURRENT Son, or nothing is exempt (the receiver stays anchored for the boss and any
+    // other unit).
+    const bool targetIsMeetSon = meetSon != 0 && son->GetObjectGuid().GetRawValue() == meetSon;
+    if (!targetIsMeetSon)
+        return out;
+    out.found = true;
+    Creature* const boss = bossGuid ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    BossAnchorCircle raid;
+    out.anchored = boss && BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), false, raid);
+    const bool bounds = MeetReceiverExemptEval(bot, meetReceiver, meetSon, meetMs, boss, WorldTimer::getMSTime(),
+                                               &out.beyondYd);
+    out.exempt = SeekMeetSonChaseExempt(targetIsMeetSon, bounds);
+    return out;
+}
+
+// Whether the meet take of `son` is allowed now (SeekMeetTakeAllowed): due by the reach, and inside the bounded
+// exemption when the boss is anchored (no anchor row: nothing refuses the chase, so the reach alone).
+bool MeetTakeAllowedNow(Player* bot, Unit* son, MeetTakeRead* readOut = nullptr)
+{
+    const MeetTakeRead read = ReadMeetTake(bot, son);
+    if (readOut)
+        *readOut = read;
+    return read.found && SeekMeetTakeAllowed(true, read.anchored,
+                                             SeekMeetTakeDue(bot->GetDistance(son), false, true), read.exempt);
+}
+
+// The meet's one `event=receiver_exempt` row (WalkoutReceiverExemptNote under g_walkoutMutex), when the receiver
+// first takes its Son under the exemption.
+void NoteSeekReceiverExempt(PlayerbotAI* ai, Player* bot, std::uint64_t son, std::uint32_t meetMs, float beyondYd)
+{
+    bool claimed = false;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        claimed = it != g_walkouts.end() && WalkoutReceiverExemptNote(it->second.state, son, meetMs);
+    }
+    if (!claimed)
+        return;
+    const std::uint64_t guid = son;
+    char info1[160];
+    snprintf(info1, sizeof(info1), "son=%u,event=receiver_exempt,receiver=%s,beyond_yd=%.1f",
+             ObjectGuid(guid).GetCounter(), bot->GetName(), beyondYd);
+    LogSeekMeet(ai, info1);
+}
+
+// The receiver's exemption end (review round 2, Opus LOW 1): a MoveChase sent while exempt would run on after the
+// exemption ends. Per receiver: the meet Son it was last exempt for, and the boss.
+std::mutex g_meetExemptLatchMutex;
+std::unordered_map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>> g_meetExemptLatch; // bot -> (son, boss)
+
+void MeetExemptEndTick(PlayerbotAI* ai, Player* bot)
+{
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::uint64_t meetSon = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(bot->GetInstanceId());
+        if (it != g_walkouts.end() && it->second.state.meetReceiver == self)
+        {
+            meetSon = it->second.state.meetSon;
+            bossGuid = it->second.bossGuid;
+        }
+    }
+    Creature* const son = meetSon ? bot->GetMap()->GetCreature(ObjectGuid(meetSon)) : nullptr;
+    const bool exemptNow = son && ReadMeetTake(bot, son).exempt;
+    std::pair<std::uint64_t, std::uint64_t> was(0, 0);
+    {
+        std::lock_guard<std::mutex> lock(g_meetExemptLatchMutex);
+        auto const it = g_meetExemptLatch.find(self);
+        if (exemptNow)
+        {
+            g_meetExemptLatch[self] = std::make_pair(meetSon, bossGuid);
+            return;
+        }
+        if (it == g_meetExemptLatch.end())
+            return;
+        was = it->second;
+        g_meetExemptLatch.erase(it);
+    }
+    Creature* const wasSon = bot->GetMap()->GetCreature(ObjectGuid(was.first));
+    Creature* const boss = was.second ? bot->GetMap()->GetCreature(ObjectGuid(was.second)) : nullptr;
+    BossAnchorCircle tanks;
+    const bool outside = boss && BossAnchorOfBoss(bot->GetMapId(), boss->GetEntry(), true, tanks) &&
+        !InsideAnchor(tanks, bot->GetPositionX(), bot->GetPositionY());
+    const bool onMeetSon = wasSon && wasSon->GetVictim() == bot;
+    if (SeekMeetExemptEndStop(true, false, outside, onMeetSon))
+        ai->StopMoving();
+}
+
+void LogSeekWalkout(PlayerbotAI* ai, const char* text, const char* info2 = "")
 {
     if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
-        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", text, "");
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", text, info2);
 }
 
 void LogSeekWalkoutEnd(PlayerbotAI* ai, WalkoutEnd end)
@@ -1518,6 +2085,30 @@ Spell* WalkoutCurrentCast(Player* bot, Unit* son, bool& onSon)
     return current;
 }
 
+// The no-shot abort row's cast state: the puller's sight, range, facing and movement to its Son, and the cast it is
+// running. The no-sight cut writes the same fields.
+void WalkoutShotStateInfo(Player* puller, Creature* son, char* out, std::size_t size)
+{
+    if (puller && son)
+    {
+        bool castOnSon = false;
+        Spell* const cast = WalkoutCurrentCast(puller, son, castOnSon);
+        std::uint32_t const spellId = cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0;
+        float const sonYd = puller->GetDistance(son);
+        bool const los = puller->IsWithinLOSInMap(son);
+        bool const inRange = sonYd <= WalkoutShotRangeYd(puller->GetClass() == CLASS_HUNTER);
+        bool const front = sServerFacade.isInFront(puller, son, sPlayerbotAIConfig.sightDistance,
+                                                   CAST_ANGLE_IN_FRONT);
+        bool const moving = sServerFacade.isMoving(puller);
+        float const dz = puller->GetPositionZ() - son->GetPositionZ();
+        snprintf(out, size, " los=%d inrange=%d spell=%u onson=%d front=%d moving=%d dz=%.1f", los ? 1 : 0,
+                 inRange ? 1 : 0, static_cast<unsigned>(spellId), castOnSon ? 1 : 0, front ? 1 : 0,
+                 moving ? 1 : 0, dz);
+    }
+    else
+        snprintf(out, size, " los=-1 inrange=-1 spell=-1 onson=-1 front=-1 moving=-1 dz=-1.0");
+}
+
 // A timeout's row: whether the shot landed (the Son joined the fight), the puller's distance to its Son (-1: unknown),
 // whether the cycle stays open for one more walk-out, the cast that was running (0: none), its target being the Son,
 // and the puller's height and distance to the stand it was given.
@@ -1532,14 +2123,16 @@ void LogSeekWalkoutTimeout(PlayerbotAI* ai, bool shot, float sonYd, bool retry, 
 }
 
 // An abort's row: why, the puller's distance to its Son (-1: unknown), the stand, the last move's result, and for the last
-// refused move the path type, the path's length to the stand and the mover's reason.
-void LogSeekWalkoutAbort(PlayerbotAI* ai, const char* reason, float sonYd, const SeekWalkoutState& s)
+// refused move the path type, the path's length to the stand and the mover's reason. `extra` appends the caller's own
+// fields, each with its leading space: the no-shot row's cast state, the reset's `cause=`.
+void LogSeekWalkoutAbort(PlayerbotAI* ai, const char* reason, float sonYd, const SeekWalkoutState& s,
+                         const char* extra = nullptr)
 {
-    char info1[224];
+    char info1[320];
     snprintf(info1, sizeof(info1),
-             "seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s", reason,
+             "seek pull: walk-out abort %s dist=%.1f stand=%.1f,%.1f,%.1f moved=%d path=%u len=%.1f why=%s%s", reason,
              sonYd, s.standX, s.standY, s.standZ, s.lastMoveOk ? 1 : 0, static_cast<unsigned>(s.failPathType),
-             s.failPathYd, MoveFailReasonName(s.failReason));
+             s.failPathYd, MoveFailReasonName(s.failReason), extra ? extra : "");
     LogSeekWalkout(ai, info1);
 }
 
@@ -1571,8 +2164,9 @@ void HoldWalkoutPet(PlayerbotAI* ai, Player* bot)
         pet->GetMotionMaster()->MoveFollow(bot, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
 }
 
-// A re-pull or an evade ends the instance's walk-out with the seek record: a running task is closed as an abort.
-void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
+// A re-pull or an evade ends the instance's walk-out with the seek record: a running task is closed as an abort, its row
+// naming which of the two (`cause=repull` / `cause=evade`).
+void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId, const char* cause)
 {
     bool wasActive = false;
     SeekWalkoutState state;
@@ -1586,23 +2180,28 @@ void ForgetSeekWalkout(PlayerbotAI* ai, std::uint32_t instanceId)
         DropWalkoutRecord(it);
     }
     if (wasActive)
-        LogSeekWalkoutAbort(ai, "reset", -1.0f, state);
+    {
+        char suffix[32];
+        snprintf(suffix, sizeof(suffix), " cause=%s", cause);
+        LogSeekWalkoutAbort(ai, "reset", -1.0f, state, suffix);
+    }
 }
 
 // The shot cannot be cast at the stand: the task aborts at once, its Son is free again, and the walk back starts. The
 // cycle stays spent (one walk-out per cycle) and the puller sits out the picks for 60 s, so the next cycle's walk-out
 // goes to another bot.
-void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
+void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd, std::uint32_t gen)
 {
     SeekWalkoutState state;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         auto const it = g_walkouts.find(bot->GetInstanceId());
-        if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
             return;
         state = it->second.state;
-        bool const before = WalkoutBusy(it->second.state);
-        WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime());
+        WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+        WalkoutCastFailed(it->second.state, bot->GetObjectGuid().GetRawValue(), WorldTimer::getMSTime(),
+                          it->second.rules);
         // The cached scan may name this bot: the next read scans afresh.
         it->second.scanned = false;
         NoteWalkoutBusy(before, it->second.state);
@@ -1611,18 +2210,22 @@ void AbortSeekWalkoutUnspent(PlayerbotAI* ai, Player* bot, float sonYd)
 }
 
 // One move of the task (the walk to its stand): the result is noted, and kSeekWalkoutMoveFails refused moves in a row
-// abort the task unspent ("move failed"), its walk back starting.
+// abort the task unspent ("move failed"), its walk back starting. With DungeonRunSeekWalkoutStandSight a refusal within
+// 3 yd of the stand (`standYd`) does not count: it re-plans the stand (WalkoutMoveRefusalCounts, WalkoutNoteOutboundMove).
 void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t failReason, std::uint32_t pathType,
-                         float pathYd)
+                         float pathYd, float standYd, std::uint32_t gen)
 {
     SeekWalkoutState state;
     bool abort = false;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         auto const it = g_walkouts.find(bot->GetInstanceId());
-        if (it == g_walkouts.end() || it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
             return;
-        abort = WalkoutNoteMove(it->second.state, moved);
+        bool const counts =
+            WalkoutMoveRefusalCounts(sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight, moved, standYd,
+                                     it->second.state.freeReplans);
+        abort = WalkoutNoteOutboundMove(it->second.state, moved, counts, WorldTimer::getMSTime());
         if (!moved)
         {
             it->second.state.failReason = failReason;
@@ -1635,8 +2238,8 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
             // No pull happened: like a cast fail the Son is free again and the cycle stays spent (one walk-out per
             // cycle), and this puller sits out its 60 s exclusion, so another bot takes the Son next cycle.
             std::uint32_t const nowMs = WorldTimer::getMSTime();
-            bool const before = WalkoutBusy(it->second.state);
-            WalkoutAbortUnspent(it->second.state, nowMs);
+            WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+            WalkoutAbortUnspent(it->second.state, nowMs, it->second.rules);
             WalkoutExclude(it->second.state, bot->GetObjectGuid().GetRawValue(), nowMs);
             // The cached scan may name this bot: the next read scans afresh.
             it->second.scanned = false;
@@ -1648,6 +2251,122 @@ void NoteSeekWalkoutMove(PlayerbotAI* ai, Player* bot, bool moved, std::uint32_t
         Unit* const son = bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(state.son)) : nullptr;
         LogSeekWalkoutAbort(ai, "move failed", son ? bot->GetDistance(son) : -1.0f, state);
     }
+}
+
+// The puller reached its stand: the shot-stall clock starts at its first read there (WalkoutNoteAtStand), so a shot
+// that never comes aborts after kSeekWalkoutShotStallMs instead of running out the 25 s task.
+void NoteSeekWalkoutAtStand(Player* bot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
+        return;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    WalkoutNoteAtStand(it->second.state, nowMs);
+}
+
+// One read of the puller's shot position for the in-shot stall clock (DungeonRunSeekWalkoutFaceCast,
+// WalkoutNoteInShot).
+void NoteSeekWalkoutInShot(Player* bot, bool inShot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
+        return;
+    WalkoutNoteInShot(it->second.state, inShot, WorldTimer::getMSTime());
+}
+
+// One stand read of the puller (DungeonRunSeekWalkoutStandLog), under g_walkoutMutex: `tickMs` is the time since its
+// previous read this walk-out (0 for the first), and true when this read writes the stand row (WalkoutStandRowClaim:
+// the walk-out's first, then one a second). False for a bot that is not the running task's puller.
+bool ClaimSeekWalkoutStandRow(Player* bot, std::uint32_t& tickMs)
+{
+    tickMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const nowMs = WorldTimer::getMSTime();
+    std::uint32_t const startMs = record.state.startMs;
+    bool const fresh = record.standLogStartMs != startMs;
+    tickMs = fresh ? 0 : nowMs - record.standReadMs;
+    bool const due = WalkoutStandRowClaim(record.standLogStartMs, startMs, record.standRowMs, nowMs);
+    record.standLogStartMs = startMs;
+    record.standReadMs = nowMs;
+    if (due)
+        record.standRowMs = nowMs;
+    return due;
+}
+
+// Whether a refused pull cast writes its castrefused row (WalkoutCastRefusedRowDue: at most
+// kSeekWalkoutCastRefusedRowsMax a walk-out), counting it under g_walkoutMutex.
+bool ClaimSeekWalkoutCastRefusedRow(Player* bot)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutActive(it->second.state) ||
+        it->second.state.puller != bot->GetObjectGuid().GetRawValue())
+        return false;
+    WalkoutRecord& record = it->second;
+    std::uint32_t const startMs = record.state.startMs;
+    if (!WalkoutCastRefusedRowDue(record.refusedLogStartMs, startMs, record.refusedRows))
+        return false;
+    if (record.refusedLogStartMs != startMs)
+    {
+        record.refusedLogStartMs = startMs;
+        record.refusedRows = 0;
+    }
+    ++record.refusedRows;
+    return true;
+}
+
+// The stand row (DungeonRunSeekWalkoutStandLog, diagnostic): one a second while the puller walks out unshot, naming the
+// branch its tick took, its engine state, whether the Son is in range, sight and front, whether it stands still, the
+// cast it attempted and the refusal's reason. A no-op with the key off.
+void LogSeekWalkoutStand(PlayerbotAI* ai, Player* bot, Unit* son, WalkoutStandBranch branch, float rangeYd,
+                         std::uint32_t castSpellId = 0, const std::string& refuse = std::string())
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog || !ai || !bot || !son)
+        return;
+    std::uint32_t tickMs = 0;
+    if (!ClaimSeekWalkoutStandRow(bot, tickMs))
+        return;
+    bool const front = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    std::string const text = WalkoutStandRowText(branch, ai->IsStateActive(BotState::BOT_STATE_COMBAT),
+        bot->GetDistance(son) <= rangeYd, bot->IsWithinLOSInMap(son), front, bot->IsStopped(), castSpellId, refuse,
+        tickMs);
+    LogSeekWalkout(ai, text.c_str());
+}
+
+// The puller's state just before its pull cast, for the refusal's reason word (WalkoutCastRefuseWord).
+struct WalkoutCastBefore
+{
+    bool flying = false;
+    bool standing = true;
+    bool stopped = true;
+    bool inFront = true;
+};
+
+WalkoutCastBefore ReadWalkoutCastBefore(Player* bot, Unit* son)
+{
+    WalkoutCastBefore before;
+    before.flying = bot->IsFlying() || bot->IsTaxiFlying();
+    before.standing = bot->GetStandState() == UNIT_STAND_STATE_STAND;
+    before.stopped = bot->IsStopped();
+    before.inFront = sServerFacade.isInFront(bot, son, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT);
+    return before;
+}
+
+// The walk-out focus's pull cast went out now (the shot-in-flight wait, WalkoutPullShotInFlight).
+void NoteSeekWalkoutPullCast(Player* bot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(bot->GetInstanceId());
+    if (it == g_walkouts.end() || !WalkoutTaskIs(it->second.state, bot->GetObjectGuid().GetRawValue(), gen))
+        return;
+    it->second.state.pullCastMs = WorldTimer::getMSTime();
 }
 
 // Whether the member has a whole navmesh path from where it stands to the stand (it ends there).
@@ -1677,42 +2396,91 @@ void SeekWalkoutPathProbe(Player* bot, float x, float y, float z, std::uint32_t&
 }
 
 // The walk-out stand for `son`: the first point out from the anchor's edge toward it (WalkoutStandCandidates, 2 yd
-// apart) with a floor at or above kSeekWalkoutMinStandZ, within `rangeYd` of the Son and in sight of it. False: none,
-// the walk-out does not start.
-bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd, float& x, float& y, float& z)
+// apart) with a floor at or above kSeekWalkoutMinStandZ, within `rangeYd` of the Son and in sight of it. A seek_pull
+// row (rules.standFan) also tries the rays 10 and 20 degrees either side, so a ledge blocks one direction, not the
+// walk-out; `rayDeg` reports the offset that gave the stand. False: none, the walk-out does not start.
+bool FindSeekWalkoutStand(Player* bot, const BossAnchorCircle& c, Unit* son, float rangeYd, float& x, float& y,
+                          float& z, const WalkoutCycleRules& rules = WalkoutCycleRules(), float* rayDeg = nullptr)
 {
     Map* const map = bot->GetMap();
     if (!map)
         return false;
-    for (const std::pair<float, float>& point : WalkoutStandCandidates(c, son->GetPositionX(), son->GetPositionY()))
+    auto const test = [&](float px, float py) -> bool
     {
-        float const floor = map->GetHeight(point.first, point.second, c.z + 5.0f);
+        float const floor = map->GetHeight(px, py, c.z + 5.0f);
         bool const found = floor > INVALID_HEIGHT;
-        float const dx = son->GetPositionX() - point.first;
-        float const dy = son->GetPositionY() - point.second;
+        float const dx = son->GetPositionX() - px;
+        float const dy = son->GetPositionY() - py;
         float const dz = son->GetPositionZ() - floor;
         float const toSon = std::sqrt(dx * dx + dy * dy + dz * dz);
+        // DungeonRunSeekWalkoutStandSight: aim the way the bot's own sight test does (its collision height to the
+        // Son's z + the Son's collision height, IsWithinLOSInMap -> Unit::GetLosCheckPosition), so a stand that passes
+        // here passes at the stand too. Off: floor + 2 to z + 2. The start scan runs with the reading bot's eye height
+        // (the puller is picked afterwards); the puller's own re-plan corrects it within 1 s.
+        bool const standSight = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandSight;
         bool const sight = found && toSon <= rangeYd &&
-            map->isInLineOfSight(point.first, point.second, floor + 2.0f, son->GetPositionX(), son->GetPositionY(),
-                                 son->GetPositionZ() + 2.0f, true);
-        if (WalkoutStandOk(found, floor, toSon, rangeYd, sight))
-        {
-            x = point.first;
-            y = point.second;
-            z = floor;
-            return true;
-        }
+            map->isInLineOfSight(px, py, WalkoutStandEyeZ(standSight, floor, bot->GetCollisionHeight()),
+                                 son->GetPositionX(), son->GetPositionY(),
+                                 WalkoutStandSightZ(standSight, son->GetPositionZ(), son->GetCollisionHeight()), true);
+        if (!WalkoutStandOk(found, floor, toSon, rangeYd, sight))
+            return false;
+        x = px;
+        y = py;
+        z = floor;
+        return true;
+    };
+    if (!rules.standFan)
+    {
+        for (const std::pair<float, float>& point : WalkoutStandCandidates(c, son->GetPositionX(), son->GetPositionY()))
+            if (test(point.first, point.second))
+            {
+                if (rayDeg)
+                    *rayDeg = 0.0f;
+                return true;
+            }
+        return false;
+    }
+    for (float const offset : {0.0f, 10.0f, -10.0f, 20.0f, -20.0f})
+    {
+        const std::vector<std::pair<float, float>> ray =
+            WalkoutStandCandidatesFan(c, son->GetPositionX(), son->GetPositionY(), {offset});
+        for (const std::pair<float, float>& point : ray)
+            if (test(point.first, point.second))
+            {
+                if (rayDeg)
+                    *rayDeg = offset;
+                return true;
+            }
     }
     return false;
 }
 
+// The live top tank's threat on the boss this tick: the highest of the living, in-world tank group members' (`except`
+// left out, the running puller itself), read live and never cached. The pick and the running abort compare with this
+// one reference, so a threat reset that zeroes the old main tank cannot pass a bot the abort turns on seconds later.
+float LiveTopTankThreat(Group* group, Unit* boss, Player* except)
+{
+    std::vector<float> tankThreats;
+    if (group && boss)
+        for (Player* member : LiveGroupMembers(group))
+            if (member && member != except && member->IsInWorld() && sServerFacade.IsAlive(member) &&
+                PlayerbotAI::IsTank(member))
+                tankThreats.push_back(boss->GetThreatManager().getThreat(member));
+    return WalkoutTopTankThreat(tankThreats);
+}
+
 // The walk-out puller: one ranged damage dealer of the raid (SeekWalkoutPolicy.h WalkoutRoleOf, WalkoutEligible:
 // never a tank, a healer, the boss's victim, one at his main tank's threat, a charmed bot or one under Cause Insanity,
-// only one inside the anchor whose own shot (WalkoutShotSpell) it can cast at `son` now, range aside), the best by
-// role, then the nearest to the boss; the navmesh path to the stand is asked in that order and the first with one is it.
+// only one on the platform whose own shot (WalkoutShotSpell) it can cast at `son` now or once its cast ends, range
+// aside), the best by role, then the nearest to the boss; the navmesh path to the stand is asked in that order and the
+// first with one is it. A seek_pull row's pick compares with the live top tank (rules.pickTopTankThreat) like the
+// abort; a scan that only found a stand at the hunter's reach passes hunterOnly, so no shorter shot is sent to it. A
+// `tally` collects why each ranged candidate was refused (the no-puller row).
 Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* son, const BossAnchorCircle& circle,
                               float standX, float standY, float standZ, const SeekWalkoutState& state,
-                              std::uint32_t nowMs)
+                              std::uint32_t nowMs, bool hunterOnly = false,
+                              const WalkoutCycleRules& rules = WalkoutCycleRules(),
+                              WalkoutRejectTally* tally = nullptr)
 {
     Group* group = bot->GetGroup();
     if (!group || !boss || !son)
@@ -1720,15 +2488,28 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     Player* const mainTank = roles.tanks.empty() ? nullptr : roles.tanks[0];
     ThreatManager& threat = boss->GetThreatManager();
+    float const topTankThreat = rules.pickTopTankThreat ? LiveTopTankThreat(group, boss, nullptr) : 0.0f;
+    if (tally)
+        tally->top = topTankThreat;
     std::vector<Player*> members;
     std::vector<WalkoutCandidate> candidates;
     for (Player* member : LiveGroupMembers(group))
     {
+        if (tally)
+            ++tally->members;
         if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId())
+        {
+            if (tally)
+                tally->Add(WalkoutReject::Away);
             continue;
+        }
         PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(member);
         if (!memberAi)
+        {
+            if (tally)
+                tally->Add(WalkoutReject::NoAi);
             continue;
+        }
         uint8 const cls = member->GetClass();
         bool const healer = PlayerbotAI::IsHeal(member);
         bool const rangedDps = ai->IsRanged(member) && !healer;
@@ -1736,38 +2517,170 @@ Player* FindSeekWalkoutPuller(PlayerbotAI* ai, Player* bot, Unit* boss, Unit* so
         c.guid = member->GetObjectGuid().GetRawValue();
         c.role = WalkoutRoleOf(cls == CLASS_HUNTER,
             rangedDps && (cls == CLASS_MAGE || cls == CLASS_WARLOCK || cls == CLASS_PRIEST), rangedDps);
+        if (hunterOnly && c.role != WalkoutRole::Hunter)
+        {
+            if (tally)
+                tally->Add(WalkoutReject::HunterOnly);
+            continue;
+        }
         c.alive = sServerFacade.IsAlive(member);
         c.tank = PlayerbotAI::IsTank(member);
         c.healer = healer;
         c.bossVictim = boss->GetVictim() == member;
         c.charmed = !member->GetCharmerGuid().IsEmpty();
         c.insane = member->HasAura(kHakkarCauseInsanitySpell);
-        c.inside = InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());
+        // DungeonRunSeekWalkoutHoldCombat: the walk-out is a combat-engine action, so a bot on the non-combat engine (or
+        // one eating or drinking) is never sent (walk 56: three of five shot=0 timeouts were picked mid-meal). The bot's
+        // own engine is read, not its pet's combat. Off, the field stays true.
+        if (WalkoutHoldCombatOn(sPlayerbotAIConfig.dungeonRunSeekWalkoutHoldCombat,
+                                sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus))
+            c.combatEngine = WalkoutCombatEngineReady(memberAi->IsStateActive(BotState::BOT_STATE_COMBAT),
+                memberAi->HasAura("food", member) || memberAi->HasAura("drink", member));
+        c.inside = rules.platformPick
+            ? WalkoutOnPlatform(BossAnchorDistance2d(circle, member->GetPositionX(), member->GetPositionY()),
+                                member->GetPositionZ())
+            : InsideAnchor(circle, member->GetPositionX(), member->GetPositionY());
         c.excluded = WalkoutExcluded(state, c.guid, nowMs);
         c.yd = member->GetDistance2d(boss);
-        // The costly questions last, only for a bot that passes every other: its threat against the main tank's and
+        // The costly questions last, only for a bot that passes every other: its threat against the tank reference and
         // its own cast at the Son (range and sight are the walk's to answer).
         const char* const spell = WalkoutShotSpell(cls);
         c.canShoot = *spell != '\0';
         if (c.canShoot && WalkoutEligible(c))
-            c.highThreat = mainTank && mainTank != member &&
-                WalkoutThreatTooHigh(threat.getThreat(member), threat.getThreat(mainTank));
-        if (c.canShoot && WalkoutEligible(c))
-            c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);
+        {
+            float const memberThreat = threat.getThreat(member);
+            if (tally && (tally->low < 0.0f || memberThreat < tally->low))
+                tally->low = memberThreat;
+            c.highThreat = rules.pickTopTankThreat
+                ? WalkoutPickThreatTooHigh(memberThreat, topTankThreat)
+                : (mainTank && mainTank != member &&
+                    WalkoutThreatTooHigh(memberThreat, threat.getThreat(mainTank)));
+            if (WalkoutEligible(c))
+            {
+                if (rules.pickCastLater)
+                {
+                    SpellCastResult r = SPELL_CAST_OK;
+                    bool const ok = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true, false, &r);
+                    c.canShoot = WalkoutShotReadyLater(ok, r == SPELL_FAILED_SPELL_IN_PROGRESS,
+                                                       r == SPELL_FAILED_NOT_READY);
+                }
+                else
+                    c.canShoot = memberAi->CanCastSpell(spell, son, 0, nullptr, true, true);
+            }
+        }
         members.push_back(member);
         candidates.push_back(c);
     }
+    if (tally)
+        for (const WalkoutCandidate& c : candidates)
+            if (!WalkoutEligible(c))
+                tally->Add(WalkoutRejectOf(c));
     for (int index : RankWalkoutPullers(candidates))
     {
         Player* const member = members[static_cast<std::size_t>(index)];
         if (SeekWalkoutPathOk(member, standX, standY, standZ))
             return member;
+        if (tally)
+            tally->Add(WalkoutReject::NoPath);
     }
     return nullptr;
 }
 
+// Whether this fight runs a seek_pull row with the flag on: the walk-out's own clock (the arrival note, the facing)
+// reads the row's rules.
+bool SeekPullRulesOn(std::uint32_t mapId, const BossTacticRow* seekRow)
+{
+    return sPlayerbotAIConfig.dungeonRunSeekPullCycle && seekRow &&
+        GetBossTactics().SeekPullRow(mapId, seekRow->bossEntry, seekRow->targetEntry) != nullptr;
+}
+
+// Whether `member` is the victim of a living Son of the fight other than `exceptSon` (0: any). The Sons are the fight's
+// whole set (the group's attackers, the source walk's Sons and the sole-candidate grid search).
+bool PlayerHoldsFightSon(const std::vector<Unit*>& fightSons, std::uint32_t sonEntry, Player* member,
+                         std::uint64_t exceptSon)
+{
+    if (!member)
+        return false;
+    for (Unit* son : fightSons)
+    {
+        if (son && son->GetEntry() == sonEntry && sServerFacade.IsAlive(son) && son->GetVictim() == member &&
+            (exceptSon == 0 || son->GetObjectGuid().GetRawValue() != exceptSon))
+            return true;
+    }
+    return false;
+}
+
+// The meet's pre-place at the walk-out's start (DungeonRunSeekMeetPrePlace, walk 56 F2): the raid's third tank, when
+// today's receiver rules let it wait (PickMeetPrePlaceReceiver), and its point inside the tanks' circle edge toward the
+// stand (WalkoutMeetPrePlacePoint). The point's floor is read as the anchor clamp reads it (AnchorFloorOk): a point off
+// the platform's level gives no pre-place, and `floorRefused` names the tank for the `reason=floor` row. Null: no
+// pre-place, today's behaviour.
+Player* PickWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss, const std::vector<Unit*>& fightSons,
+                            std::uint32_t sonEntry, const BossAnchorCircle& tank, float standX, float standY, float& x,
+                            float& y, Player*& floorRefused)
+{
+    floorRefused = nullptr;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    std::vector<MeetCandidate> tanks;
+    tanks.reserve(roles.tanks.size());
+    for (Player* member : roles.tanks)
+    {
+        MeetCandidate candidate;
+        candidate.alive = member && member->IsInWorld() && sServerFacade.IsAlive(member);
+        candidate.charmed = member && (!member->GetCharmerGuid().IsEmpty() ||
+                                       member->HasAura(kHakkarCauseInsanitySpell));
+        candidate.bossVictim = member && boss->GetVictim() == member;
+        candidate.holdsSon = PlayerHoldsFightSon(fightSons, sonEntry, member, 0);
+        candidate.inside = member && InsideAnchor(tank, member->GetPositionX(), member->GetPositionY());
+        tanks.push_back(candidate);
+    }
+    int const pick = PickMeetPrePlaceReceiver(tanks);
+    if (pick < 0 || !roles.tanks[static_cast<std::size_t>(pick)])
+        return nullptr;
+    if (!WalkoutMeetPrePlacePoint(tank, standX, standY, x, y))
+        return nullptr;
+    float const floor = map ? map->GetHeight(x, y, tank.z + 5.0f) : INVALID_HEIGHT;
+    if (!AnchorFloorOk(tank, floor > INVALID_HEIGHT, floor))
+    {
+        floorRefused = roles.tanks[static_cast<std::size_t>(pick)];
+        return nullptr;
+    }
+    return roles.tanks[static_cast<std::size_t>(pick)];
+}
+
+// The running pre-place's live check: the pre-placed tank died, left, is charmed or became Hakkar's victim, so the
+// pre-place ends (its own task's record only) and the pick at the shot is today's. One `event=preplace_end` row.
+void EndLostWalkoutPrePlace(PlayerbotAI* ai, Map* map, Unit* boss, std::uint32_t instanceId,
+                            const SeekWalkoutState& state)
+{
+    Player* const receiver = map->GetPlayer(ObjectGuid(state.prePlaceReceiver));
+    bool const alive = receiver && receiver->IsInWorld() && sServerFacade.IsAlive(receiver);
+    bool const charmed = alive && (!receiver->GetCharmerGuid().IsEmpty() ||
+                                   receiver->HasAura(kHakkarCauseInsanitySpell));
+    bool const victim = alive && boss->GetVictim() == receiver;
+    if (MeetPrePlaceKeeps(alive, charmed, victim))
+        return;
+    bool ended = false;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        ended = it != g_walkouts.end() &&
+            WalkoutPrePlaceClearIf(it->second.state, state.prePlaceReceiver, state.prePlacePuller,
+                                   state.prePlaceStartMs, state.prePlaceGen);
+    }
+    if (!ended)
+        return;
+    const std::uint64_t guid = state.son ? state.son : state.meetSon;
+    char info1[128];
+    snprintf(info1, sizeof(info1), "son=%u,event=preplace_end,receiver=%s,reason=%s",
+             ObjectGuid(guid).GetCounter(), receiver ? receiver->GetName() : "none",
+             !alive ? "receiver_dead" : charmed ? "receiver_charmed" : "receiver_victim");
+    LogSeekMeet(ai, info1);
+}
+
 void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, Unit* boss, std::uint32_t cycleNo,
-                       std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, SeekFight& out)
+                       std::uint32_t nowMs, std::uint32_t dueInMs, bool wanted, const std::vector<Unit*>& fightSons,
+                       SeekFight& out)
 {
     const std::uint32_t instanceId = bot->GetInstanceId();
     const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
@@ -1779,12 +2692,24 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     Map* map = bot->GetMap();
     if (!map)
         return;
+    // The seek_pull row's rules, when its flag is on: the old one-walk-out rules otherwise.
+    WalkoutCycleRules rules;
+    if (sPlayerbotAIConfig.dungeonRunSeekPullCycle)
+    {
+        if (const BossTacticRow* const pull =
+                GetBossTactics().SeekPullRow(bot->GetMapId(), row.bossEntry, row.targetEntry))
+            rules = WalkoutRulesFromRow(pull->priority, pull->windowSec, row.windowSec);
+        if (sPlayerbotAIConfig.dungeonRunSeekSiphonClock)
+            rules = WalkoutSiphonClockRules(rules);
+    }
+    const bool meetOn = SeekPullRulesOn(bot->GetMapId(), &row) && sPlayerbotAIConfig.dungeonRunSeekSonMeet;
     SeekWalkoutState state;
     bool scanFresh = false;
     bool scanBlocked = true;
     std::uint64_t scanSon = 0;
     std::uint64_t scanPuller = 0;
     float scanStandX = 0.0f, scanStandY = 0.0f, scanStandZ = 0.0f;
+    float scanReachYd = 0.0f, scanRayDeg = 0.0f;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         // The boss's death or leaving the fight drops the record here too, busy or not (its walked Sons and cycle).
@@ -1797,6 +2722,9 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
                 Creature* const son = map->GetCreature(ObjectGuid(guid));
                 return !son || !sServerFacade.IsAlive(son);
             });
+            if (rules.perCycleWalked)
+                WalkoutForgetEarlierCycles(it->second.state, cycleNo);
+            it->second.rules = rules;
             state = it->second.state;
             it->second.touchedMs = nowMs;
             scanFresh = it->second.scanned && nowMs - it->second.scanMs < 1000;
@@ -1806,8 +2734,76 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             scanStandX = it->second.scanStandX;
             scanStandY = it->second.scanStandY;
             scanStandZ = it->second.scanStandZ;
+            scanReachYd = it->second.scanReachYd;
+            scanRayDeg = it->second.scanRayDeg;
         }
     }
+    if (state.meetReceiver != 0)
+    {
+        // The meet ends when the Son dies or leaves, the receiver dies or leaves, the receiver can no longer wait
+        // (charmed, Hakkar's victim, or holding another Son), the Son's victim is any player tank (its take, logged
+        // once), or the 20 s clock runs out. Every read checks it, whether a task runs or not. After a loss the puller
+        // walks to the circle edge again (no open meet).
+        Creature* const meetSon = state.meetSon ? map->GetCreature(ObjectGuid(state.meetSon)) : nullptr;
+        Player* const meetReceiver = map->GetPlayer(ObjectGuid(state.meetReceiver));
+        const char* lost = nullptr;
+        Player* takenBy = nullptr;
+        if (!meetSon || !meetSon->IsInWorld() || !sServerFacade.IsAlive(meetSon))
+            lost = "son_dead";
+        else if (!meetReceiver || !meetReceiver->IsInWorld() || !sServerFacade.IsAlive(meetReceiver))
+            lost = "receiver_dead";
+        else
+        {
+            Player* const victim = dynamic_cast<Player*>(meetSon->GetVictim());
+            const bool sonOnTank = victim && PlayerbotAI::IsTank(victim);
+            lost = MeetReceiverLostWhy(!meetReceiver->GetCharmerGuid().IsEmpty() ||
+                                           meetReceiver->HasAura(kHakkarCauseInsanitySpell),
+                                       boss->GetVictim() == meetReceiver,
+                                       !sonOnTank && PlayerHoldsFightSon(fightSons, row.targetEntry, meetReceiver,
+                                                                         state.meetSon));
+            if (!lost)
+            {
+                if (sonOnTank)
+                    takenBy = victim;
+                else if (!SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs))
+                    lost = "timeout";
+            }
+        }
+        if (lost || takenBy)
+        {
+            // Every reader holds its own copy of the meet: only the one whose compare-and-clear succeeds logs the
+            // terminal row, so a stale reader cannot log a duplicate or a contradicting end.
+            bool cleared = false;
+            {
+                std::lock_guard<std::mutex> lock(g_walkoutMutex);
+                auto const it = g_walkouts.find(instanceId);
+                cleared = it != g_walkouts.end() &&
+                    CloseWalkoutMeetIf(it->second.state, state.meetReceiver, state.meetSon, state.meetMs);
+                // The taken Son (DungeonRunSeekTakenSonThreatCap): recorded by the one closer, before the meet is
+                // cleared, so the damage dealers' threat cap on it knows its taker and the take time.
+                if (cleared && takenBy)
+                    WalkoutTakenNote(it->second.state, state.meetSon, takenBy->GetObjectGuid().GetRawValue(), nowMs);
+                // A `receiver_victim` close counts as a lost meet for the nearest take's reach.
+                if (cleared && !takenBy)
+                    WalkoutNoteMeetLost(it->second.state.lostMeets, lost, state.meetSon, nowMs,
+                                        kSeekNearestTakeMeetLostMs);
+            }
+            const std::uint64_t guid = state.meetSon;
+            if (cleared && takenBy)
+            {
+                char info1[192];
+                snprintf(info1, sizeof(info1), "son=%u,event=taken,receiver=%s,by=%s,after_ms=%u",
+                         ObjectGuid(guid).GetCounter(), meetReceiver ? meetReceiver->GetName() : "none",
+                         takenBy->GetName(), nowMs - state.meetMs);
+                LogSeekMeet(ai, info1);
+            }
+            else if (cleared)
+                LogSeekMeetLost(ai, guid, lost, nowMs - state.meetMs);
+            WalkoutMeetClear(state);
+        }
+    }
+    if (meetOn && sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace && WalkoutPrePlaceLive(state))
+        EndLostWalkoutPrePlace(ai, map, boss, instanceId, state);
     if (WalkoutActive(state))
     {
         Player* const puller = map->GetPlayer(ObjectGuid(state.puller));
@@ -1815,16 +2811,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         // The running threat abort (t1105h review): the puller against the live top tank on the boss's list this tick.
         bool threatHigh = false;
         if (puller && puller->IsInWorld())
-        {
-            std::vector<float> tankThreats;
-            if (Group* const group = puller->GetGroup())
-                for (Player* member : LiveGroupMembers(group))
-                    if (member && member != puller && member->IsInWorld() && sServerFacade.IsAlive(member) &&
-                        PlayerbotAI::IsTank(member))
-                        tankThreats.push_back(boss->GetThreatManager().getThreat(member));
             threatHigh = WalkoutRunningThreatTooHigh(boss->GetThreatManager().getThreat(puller),
-                WalkoutTopTankThreat(tankThreats));
-        }
+                LiveTopTankThreat(puller->GetGroup(), boss, puller));
         const char* const problem = !puller || !puller->IsInWorld() ? "gone" :
             WalkoutPullerProblem(sServerFacade.IsAlive(puller), !puller->GetCharmerGuid().IsEmpty(),
                 puller->HasAura(kHakkarCauseInsanitySpell), boss->GetVictim() == puller, threatHigh);
@@ -1833,24 +2821,173 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         bool const shotNow = sonOk && (son->IsInCombat() || son->GetVictim() == puller);
         if (shotNow)
             WalkoutNoteShot(state);
-        bool const backInside = puller && WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
+        // The no-sight cut (DungeonRunSeekSiphonClock): a task that sent no cast and never stood in shot position is
+        // aborted after kSeekWalkoutNoSightCutMs, freeing its Son and the cycle, so a later start still doses. Only
+        // with the focus (which writes the pull cast) and the in-shot clock (which writes firstInShotMs), and never
+        // for a vanished Son or a puller that can no longer pull: that task ends as gone, and nothing blames or
+        // benches it here.
+        if (pullerOk && sonOk && sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus &&
+            WalkoutNoSightCutDue(state, nowMs, rules, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+        {
+            bool cut = false;
+            {
+                std::lock_guard<std::mutex> lock(g_walkoutMutex);
+                auto const it = g_walkouts.find(instanceId);
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
+                    return; // another read closed or replaced it
+                // A read between the snapshot and this lock may have landed the shot or the in-shot read: the cut is
+                // decided again on the shared state, the one the abort would change.
+                if (WalkoutNoSightCutDue(it->second.state, nowMs, rules,
+                                         sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast))
+                {
+                    WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                    WalkoutAbortUnspent(it->second.state, nowMs, rules);
+                    WalkoutExclude(it->second.state, state.puller, nowMs);
+                    it->second.scanned = false;
+                    NoteWalkoutBusy(before, it->second.state);
+                    cut = true;
+                }
+            }
+            if (cut)
+            {
+                char info2[160];
+                WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
+                LogSeekWalkoutAbort(ai, "no sight", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
+                return;
+            }
+        }
+        // A shot that does not come: the puller has stood at its stand 6 s unshot (a blocked sight line, a cast the
+        // generic AI keeps interrupting). Abort unspent and sit the puller out, so the next bot retries.
+        // A pull shot sent under 2 s ago may still land (the Son is not in combat yet): no abort for it.
+        // With DungeonRunSeekWalkoutFaceCast the clock counts only the time in shot position (WalkoutStallDue).
+        // DungeonRunSeekShotWaitsReceiver: a shot waiting for the pre-placed receiver is not a stalled one (the wait's
+        // latch is set only with the key, so off this reads as before).
+        bool const stallDue = WalkoutStallDue(state, nowMs, sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast) &&
+            !WalkoutStallHeldByShotWait(state, nowMs);
+        if (rules.shotStall && WalkoutNoShotAbortDue(stallDue, state.pullCastMs, nowMs))
+        {
+            {
+                std::lock_guard<std::mutex> lock(g_walkoutMutex);
+                auto const it = g_walkouts.find(instanceId);
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
+                    return; // another read closed or replaced it
+                WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                WalkoutAbortUnspent(it->second.state, nowMs, rules);
+                WalkoutExclude(it->second.state, state.puller, nowMs);
+                it->second.scanned = false;
+                NoteWalkoutBusy(before, it->second.state);
+            }
+            char info2[160];
+            WalkoutShotStateInfo(puller, son, info2, sizeof(info2));
+            LogSeekWalkoutAbort(ai, "no shot", puller && son ? puller->GetDistance(son) : -1.0f, state, info2);
+            return;
+        }
+        bool backInside = false;
+        if (puller)
+        {
+            Player* const meetReceiver = state.meetReceiver != 0
+                ? map->GetPlayer(ObjectGuid(state.meetReceiver)) : nullptr;
+            if (meetOn && SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs) && meetReceiver &&
+                meetReceiver->IsInWorld())
+            {
+                float px = 0.0f, py = 0.0f;
+                WalkoutMeetBackPoint(true, meetReceiver->GetPositionX(), meetReceiver->GetPositionY(), tank,
+                                     puller->GetPositionX(), puller->GetPositionY(), px, py);
+                backInside = WalkoutMeetArrived(true, px, py, tank, puller->GetPositionX(), puller->GetPositionY());
+            }
+            else
+                backInside = WalkoutBackArrived(tank, puller->GetPositionX(), puller->GetPositionY());
+        }
         WalkoutEnd const end = WalkoutCheck(state, nowMs, pullerOk, sonOk, backInside);
         bool reopened = false;
+        std::string meetRow;
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
-            if (it == g_walkouts.end() || it->second.state.puller != state.puller ||
-                it->second.state.startMs != state.startMs)
+            if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                 return; // another read closed or replaced it
             if (shotNow)
+            {
+                bool const firstShot = !it->second.state.shot;
                 WalkoutNoteShot(it->second.state);
+                // The shot lands once: the Son now chases this puller, so one of the raid's tanks goes to meet it.
+                if (firstShot && meetOn)
+                {
+                    const RaidTankRoles meetRoles = GetRaidTankRoles(ai);
+                    std::vector<MeetCandidate> tanks;
+                    tanks.reserve(meetRoles.tanks.size());
+                    for (Player* member : meetRoles.tanks)
+                    {
+                        MeetCandidate candidate;
+                        candidate.alive = member && member->IsInWorld() && sServerFacade.IsAlive(member);
+                        candidate.charmed = member && !member->GetCharmerGuid().IsEmpty();
+                        candidate.bossVictim = member && boss->GetVictim() == member;
+                        candidate.holdsSon = PlayerHoldsFightSon(fightSons, row.targetEntry, member, 0);
+                        candidate.inside = member && InsideAnchor(tank, member->GetPositionX(),
+                                                                  member->GetPositionY());
+                        tanks.push_back(candidate);
+                    }
+                    int const pick = PickMeetReceiver(tanks);
+                    std::uint64_t const guid = it->second.state.son;
+                    char info1[224];
+                    if (pick >= 0 && static_cast<std::size_t>(pick) < meetRoles.tanks.size() &&
+                        meetRoles.tanks[static_cast<std::size_t>(pick)])
+                    {
+                        Player* const receiver = meetRoles.tanks[static_cast<std::size_t>(pick)];
+                        // The receiver's distance to its pre-place point at the shot (walk 57 F3; -1: not the
+                        // pre-placed tank, or no pre-place).
+                        float const receiverPointYd =
+                            it->second.state.prePlaceReceiver != 0 &&
+                                    it->second.state.prePlaceReceiver == receiver->GetObjectGuid().GetRawValue()
+                                ? receiver->GetDistance2d(it->second.state.prePlaceX, it->second.state.prePlaceY)
+                                : -1.0f;
+                        bool const meetBefore = it->second.state.meetReceiver != 0;
+                        it->second.state.meetReceiver = receiver->GetObjectGuid().GetRawValue();
+                        it->second.state.meetSon = guid;
+                        it->second.state.meetMs = nowMs;
+                        it->second.state.meetPuller = it->second.state.puller;
+                        NoteWalkoutMeet(meetBefore, it->second.state);
+                        state.meetReceiver = it->second.state.meetReceiver;
+                        state.meetSon = guid;
+                        state.meetMs = nowMs;
+                        state.meetPuller = it->second.state.puller;
+                        snprintf(info1, sizeof(info1),
+                                 "son=%u,event=meet,receiver=%s,tank_idx=%d,receiver_yd=%.1f,due_in=%u,"
+                                 "receiver_point_yd=%.1f",
+                                 ObjectGuid(guid).GetCounter(), receiver->GetName(), pick,
+                                 puller ? puller->GetDistance(receiver) : -1.0f, out.dueInMs / 1000,
+                                 receiverPointYd);
+                    }
+                    else
+                    {
+                        snprintf(info1, sizeof(info1), "son=%u,event=no_meet,reason=%s,tanks=%d",
+                                 ObjectGuid(guid).GetCounter(), MeetRefusalCounts(tanks).c_str(),
+                                 static_cast<int>(tanks.size()));
+                    }
+                    meetRow = info1;
+                    // The pre-place hands over to a meet with its own tank, and ends on any other pick.
+                    WalkoutPrePlaceNoteMeet(it->second.state);
+                }
+            }
             if (end != WalkoutEnd::None)
             {
-                bool const before = WalkoutBusy(it->second.state);
-                reopened = WalkoutFinish(it->second.state, end, nowMs);
+                WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                // A seek_pull row: the puller-side aborts free the Son for the retry and sit the puller out; a
+                // Son-side end, a timeout and an abort after the shot keep it walked this cycle.
+                bool const freeSon = rules.perCycleWalked && end == WalkoutEnd::Abort && !it->second.state.shot &&
+                    WalkoutEndFreesSon(problem ? problem : "son gone");
+                std::uint64_t const walkedSon = it->second.state.son;
+                reopened = WalkoutFinish(it->second.state, end, nowMs, rules);
+                if (freeSon)
+                {
+                    WalkoutEraseWalked(it->second.state, walkedSon);
+                    WalkoutExclude(it->second.state, state.puller, nowMs);
+                }
                 NoteWalkoutBusy(before, it->second.state);
             }
         }
+        if (!meetRow.empty())
+            LogSeekMeet(ai, meetRow.c_str());
         if (end == WalkoutEnd::Abort)
         {
             LogSeekWalkoutAbort(ai, problem ? problem : "son gone", puller && son ? puller->GetDistance(son) : -1.0f,
@@ -1881,20 +3018,26 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             // own reach and path, and the newest one is walked to. 5 s straight without one aborts unspent.
             float standX = 0.0f, standY = 0.0f, standZ = 0.0f;
             bool const found = FindSeekWalkoutStand(bot, shooter, son, WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER),
-                                                    standX, standY, standZ) &&
+                                                    standX, standY, standZ, rules) &&
                 SeekWalkoutPathOk(bot, standX, standY, standZ);
+            // In shot position (range, floor and sight line) a patrolling Son keeps moving the stand; the no-shot
+            // clock must keep running there, so a shot that never lands still aborts.
+            bool const inShot = rules.shotStall && son &&
+                bot->GetDistance(son) <= WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER) &&
+                bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(son);
             bool noStand = false;
             {
                 std::lock_guard<std::mutex> lock(g_walkoutMutex);
                 auto const it = g_walkouts.find(instanceId);
-                if (it == g_walkouts.end() || it->second.state.puller != self ||
-                    it->second.state.startMs != state.startMs)
+                // state.puller == self here: the snapshot's own task, generation included.
+                if (it == g_walkouts.end() || !WalkoutSnapshotCurrent(it->second.state, state))
                     return;
-                noStand = WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs);
+                noStand = WalkoutNoteStand(it->second.state, found, standX, standY, standZ, nowMs, inShot);
                 if (noStand)
                 {
-                    bool const before = WalkoutBusy(it->second.state);
-                    WalkoutAbortUnspent(it->second.state, nowMs);
+                    WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
+                    // A seek_pull row keeps the Son walked this cycle: the retry goes to the other one.
+                    WalkoutAbortUnspent(it->second.state, nowMs, rules, !rules.perCycleWalked);
                     NoteWalkoutBusy(before, it->second.state);
                 }
                 else
@@ -1910,6 +3053,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         {
             out.walkout = true;
             out.walkoutShot = state.shot;
+            out.walkoutPullCastMs = state.pullCastMs;
+            out.walkoutGen = state.startGen;
             out.puller = !state.shot;
             out.pullTarget = !state.shot && sonOk ? son : nullptr;
             out.shotX = state.standX;
@@ -1922,15 +3067,31 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     {
         // The walk back after a timeout or an abort: over once the puller is inside, gone, or the 15 s are up.
         Player* const returner = map->GetPlayer(ObjectGuid(state.returner));
-        bool const done = !returner || !sServerFacade.IsAlive(returner) || !WalkoutReturning(state, nowMs) ||
-            WalkoutBackArrived(tank, returner->GetPositionX(), returner->GetPositionY());
+        bool arrived = false;
+        if (returner && sServerFacade.IsAlive(returner))
+        {
+            Player* const meetReceiver = state.meetReceiver != 0
+                ? map->GetPlayer(ObjectGuid(state.meetReceiver)) : nullptr;
+            if (meetOn && SeekMeetOpen(state.meetReceiver, state.meetMs, nowMs) && meetReceiver &&
+                meetReceiver->IsInWorld())
+            {
+                float px = 0.0f, py = 0.0f;
+                WalkoutMeetBackPoint(true, meetReceiver->GetPositionX(), meetReceiver->GetPositionY(), tank,
+                                     returner->GetPositionX(), returner->GetPositionY(), px, py);
+                arrived = WalkoutMeetArrived(true, px, py, tank, returner->GetPositionX(),
+                                             returner->GetPositionY());
+            }
+            else
+                arrived = WalkoutBackArrived(tank, returner->GetPositionX(), returner->GetPositionY());
+        }
+        bool const done = !returner || !sServerFacade.IsAlive(returner) || !WalkoutReturning(state, nowMs) || arrived;
         if (done)
         {
             std::lock_guard<std::mutex> lock(g_walkoutMutex);
             auto const it = g_walkouts.find(instanceId);
-            if (it != g_walkouts.end() && it->second.state.returner == state.returner)
+            if (it != g_walkouts.end() && WalkoutReturnCurrent(it->second.state, state))
             {
-                bool const before = WalkoutBusy(it->second.state);
+                WalkoutBusyMarks const before = WalkoutMarksOf(it->second.state);
                 WalkoutReturnDone(it->second.state);
                 NoteWalkoutBusy(before, it->second.state);
             }
@@ -1945,7 +3106,42 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         }
         return;
     }
-    if (!wanted || !WalkoutCycleOpen(state, cycleNo) || !WalkoutRetryStartInTime(state, cycleNo, nowMs))
+    // A seek_pull row's start needs firstStartMinMs left to the siphon; a retry this late is not worth the scan.
+    if (wanted && sPlayerbotAIConfig.dungeonRunSeekPullCycle && rules.firstStartMinMs != 0 &&
+        dueInMs < rules.firstStartMinMs)
+    {
+        // A cycle already spent (its walk-out done, or its starts used) does not log: the row is about a retry it
+        // refuses.
+        if (!WalkoutCycleOpen(state, cycleNo, rules))
+            return;
+        bool lateLog = false;
+        {
+            std::lock_guard<std::mutex> lock(g_walkoutMutex);
+            WalkoutRecord& record = g_walkouts[instanceId];
+            record.bossGuid = boss->GetObjectGuid().GetRawValue();
+            record.touchedMs = nowMs;
+            record.rules = rules;
+            if (nowMs - record.lateLogMs >= 10000)
+            {
+                record.lateLogMs = nowMs;
+                lateLog = true;
+            }
+        }
+        if (lateLog)
+        {
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out late due=%u need=%u", dueInMs / 1000,
+                     rules.firstStartMinMs / 1000);
+            LogSeekWalkout(ai, info1);
+        }
+        return;
+    }
+    // The first Cause Insanity lands at +17-18 s and deletes the main tank's threat: a pick before it aborts on the
+    // top tank's threat seconds later (walk 52: 15 of 19 threat aborts).
+    if (wanted && !WalkoutFightOldEnough(rules, out.fightMs))
+        return;
+    if (!wanted || !WalkoutCycleOpen(state, cycleNo, rules) ||
+        !WalkoutRetryStartInTime(state, cycleNo, nowMs, rules))
         return;
     // The start check's scan: nothing else can pull (no Son fights, none in the tanks' reach or the anchored shot's),
     // and the Son out of combat nearest the anchor's centre not walked to yet. One grid walk per instance a second.
@@ -1956,6 +3152,9 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         std::uint64_t puller = 0;
         bool stand = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;
+        float reachYd = 0.0f;
+        float rayDeg = 0.0f;
+        WalkoutRejectTally tally;
     } scan;
     if (scanFresh)
     {
@@ -1966,6 +3165,8 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
         scan.x = scanStandX;
         scan.y = scanStandY;
         scan.z = scanStandZ;
+        scan.reachYd = scanReachYd;
+        scan.rayDeg = scanRayDeg;
     }
     else
     {
@@ -1991,22 +3192,38 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             sonYd.push_back(BossAnchorDistance2d(tank, candidate->GetPositionX(), candidate->GetPositionY()));
         }
         // The Son, nearest first, that has a stand on the platform (the shorter, non-hunter reach, so any puller's shot
-        // reaches), and the puller with a path to it. A Son without a stand never blocks the next one; only when none
-        // has one is "no stand" logged.
+        // reaches), and the puller with a path to it. A seek_pull row searches again at a hunter's reach when no Son
+        // has a stand at 28 yd, and then only a hunter may be picked. A Son without a stand never blocks the next one;
+        // only when none has one is "no stand" logged.
         bool noStandLog = false;
+        bool noSonLog = false;
+        bool noPullerLog = false;
+        float reachYd = WalkoutShotRangeYd(false);
+        bool hunterOnly = false;
         if (!scan.blocked && !sons.empty())
         {
-            int const pickSon = PickWalkoutSon(sonYd, [&](int i)
+            int pickSon = PickWalkoutSon(sonYd, [&](int i)
             {
-                return FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)], WalkoutShotRangeYd(false),
-                                            scan.x, scan.y, scan.z);
+                return FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)], reachYd,
+                                            scan.x, scan.y, scan.z, rules, &scan.rayDeg);
             });
+            if (pickSon < 0 && rules.hunterReachScan)
+            {
+                reachYd = WalkoutShotRangeYd(true);
+                hunterOnly = true;
+                pickSon = PickWalkoutSon(sonYd, [&](int i)
+                {
+                    return FindSeekWalkoutStand(bot, shooter, sons[static_cast<std::size_t>(i)], reachYd,
+                                                scan.x, scan.y, scan.z, rules, &scan.rayDeg);
+                });
+            }
             scan.stand = pickSon >= 0;
             scan.son = scan.stand ? sons[static_cast<std::size_t>(pickSon)] : nullptr;
+            scan.reachYd = reachYd;
             if (scan.stand)
             {
                 Player* const pick = FindSeekWalkoutPuller(ai, bot, boss, scan.son, shooter, scan.x, scan.y, scan.z,
-                                                           state, nowMs);
+                                                           state, nowMs, hunterOnly, rules, &scan.tally);
                 scan.puller = pick ? pick->GetObjectGuid().GetRawValue() : 0;
             }
         }
@@ -2015,6 +3232,7 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             WalkoutRecord& record = g_walkouts[instanceId];
             record.bossGuid = boss->GetObjectGuid().GetRawValue();
             record.touchedMs = nowMs;
+            record.rules = rules;
             record.scanned = true;
             record.scanMs = nowMs;
             record.scanBlocked = scan.blocked;
@@ -2023,37 +3241,121 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
             record.scanStandX = scan.x;
             record.scanStandY = scan.y;
             record.scanStandZ = scan.z;
+            record.scanReachYd = scan.reachYd;
+            record.scanRayDeg = scan.rayDeg;
             if (!scan.blocked && !sons.empty() && !scan.stand && nowMs - record.noStandLogMs >= 10000)
             {
                 record.noStandLogMs = nowMs;
                 noStandLog = true;
             }
+            // A stand was found, but no eligible puller has a path to it (the hunter-only pass included): the row
+            // says so once per instance per 10 s, like "no son".
+            if (rules.perCycleWalked && !scan.blocked && scan.stand && scan.puller == 0 &&
+                nowMs - record.noPullerLogMs >= 10000)
+            {
+                record.noPullerLogMs = nowMs;
+                noPullerLog = true;
+            }
+            // Every Son near is walked this cycle already: the row says so, throttled like "no stand".
+            if (rules.perCycleWalked && !scan.blocked && sons.empty() &&
+                nowMs - record.noSonLogMs >= 10000)
+            {
+                record.noSonLogMs = nowMs;
+                noSonLog = true;
+            }
         }
         if (noStandLog)
-            LogSeekWalkout(ai, "seek pull: walk-out no stand");
+        {
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out no stand sons=%d reach=%.0f hunter_pass=%d",
+                     static_cast<int>(sons.size()), reachYd, hunterOnly ? 1 : 0);
+            LogSeekWalkout(ai, info1);
+        }
+        if (noPullerLog)
+        {
+            // The pick's reason per member, as its info2: `<code>:<n>|...` in WalkoutReject's order, `members=<m>`,
+            // then the threat reference (the word set is in SeekWalkoutPolicy.h next to the enum).
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out no puller stand=%.1f,%.1f reach=%.0f",
+                     scan.x, scan.y, scan.reachYd);
+            LogSeekWalkout(ai, info1, WalkoutRejectText(scan.tally).c_str());
+        }
+        if (noSonLog)
+        {
+            char info1[96];
+            snprintf(info1, sizeof(info1), "seek pull: walk-out no son walked=%d",
+                     static_cast<int>(state.walkedSons.size()));
+            LogSeekWalkout(ai, info1);
+        }
     }
     if (scan.blocked || !scan.son || scan.son->IsInCombat() || !sServerFacade.IsAlive(scan.son) || !scan.stand)
         return;
     if (scan.puller != self)
         return;
     const std::uint64_t sonGuid = scan.son->GetObjectGuid().GetRawValue();
+    // The meet's pre-place: the third tank walks to the circle's edge on this task's way back now, not at the shot.
+    float prePlaceX = 0.0f, prePlaceY = 0.0f;
+    Player* prePlaceFloorRefused = nullptr;
+    Player* const prePlaceTank = meetOn && sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace
+        ? PickWalkoutPrePlace(ai, map, boss, fightSons, row.targetEntry, tank, scan.x, scan.y, prePlaceX, prePlaceY,
+                              prePlaceFloorRefused)
+        : nullptr;
+    int starts = 0;
     {
         std::lock_guard<std::mutex> lock(g_walkoutMutex);
         WalkoutRecord& record = g_walkouts[instanceId];
         record.bossGuid = boss->GetObjectGuid().GetRawValue();
         record.touchedMs = nowMs;
-        if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs))
+        record.rules = rules;
+        if (!WalkoutMayStartFor(record.state, cycleNo, sonGuid, self, nowMs, dueInMs, rules))
             return;
-        bool const before = WalkoutBusy(record.state);
+        WalkoutBusyMarks const before = WalkoutMarksOf(record.state);
         WalkoutStart(record.state, self, sonGuid, nowMs, cycleNo, dueInMs);
         record.state.standX = scan.x;
         record.state.standY = scan.y;
         record.state.standZ = scan.z;
+        WalkoutPrePlaceSet(record.state, prePlaceTank ? prePlaceTank->GetObjectGuid().GetRawValue() : 0, prePlaceX,
+                           prePlaceY);
+        starts = record.state.cycleStarts;
         NoteWalkoutBusy(before, record.state);
+        // The new task's generation: the puller's own writes on this start tick match it (WalkoutTaskIs).
+        out.walkoutGen = record.state.startGen;
     }
-    char info1[128];
-    snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), scan.son->GetGUIDLow());
+    char info1[192];
+    if (rules.perCycleWalked)
+    {
+        float const topThreat = LiveTopTankThreat(bot->GetGroup(), boss, nullptr);
+        float const tr = topThreat > 0.0f ? boss->GetThreatManager().getThreat(bot) / topThreat : -1.0f;
+        if (sPlayerbotAIConfig.dungeonRunSeekSiphonClock)
+            snprintf(info1, sizeof(info1),
+                     "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f floor=%u",
+                     bot->GetName(), scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr,
+                     rules.firstStartMinMs / 1000);
+        else
+            snprintf(info1, sizeof(info1),
+                     "seek pull: ranged walk-out %s -> %u due=%u try=%d reach=%.0f ray=%.0f tr=%.2f", bot->GetName(),
+                     scan.son->GetGUIDLow(), dueInMs / 1000, starts, scan.reachYd, scan.rayDeg, tr);
+    }
+    else
+        snprintf(info1, sizeof(info1), "seek pull: ranged walk-out %s -> %u", bot->GetName(), scan.son->GetGUIDLow());
     LogSeekWalkout(ai, info1);
+    if (prePlaceTank)
+    {
+        const std::uint64_t guid = sonGuid;
+        char info2[160];
+        snprintf(info2, sizeof(info2), "son=%u,event=preplace,receiver=%s,receiver_yd=%.1f,point_yd=%.1f",
+                 ObjectGuid(guid).GetCounter(), prePlaceTank->GetName(), bot->GetDistance(prePlaceTank),
+                 prePlaceTank->GetDistance2d(prePlaceX, prePlaceY));
+        LogSeekMeet(ai, info2);
+    }
+    else if (prePlaceFloorRefused)
+    {
+        const std::uint64_t guid = sonGuid;
+        char info2[128];
+        snprintf(info2, sizeof(info2), "son=%u,event=preplace_skip,receiver=%s,reason=%s",
+                 ObjectGuid(guid).GetCounter(), prePlaceFloorRefused->GetName(), "floor");
+        LogSeekMeet(ai, info2);
+    }
     out.walkout = true;
     out.walkoutShot = false;
     out.puller = true;
@@ -2062,6 +3364,318 @@ void UpdateSeekWalkout(PlayerbotAI* ai, Player* bot, const BossTacticRow& row, U
     out.shotY = scan.y;
     out.shotZ = scan.z;
 }
+
+// The meet this map instance's fight has open (g_walkoutMutex): the receiver, the Son and the shot's time. False when
+// no receiver is named. The callers check SeekMeetOpen and resolve the units themselves.
+bool SeekMeetSnapshot(std::uint32_t instanceId, std::uint64_t& receiver, std::uint64_t& son, std::uint32_t& meetMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return false;
+    receiver = it->second.state.meetReceiver;
+    son = it->second.state.meetSon;
+    meetMs = it->second.state.meetMs;
+    return receiver != 0;
+}
+
+// The walkers of the open meet (g_walkoutMutex): the puller that brought the Son and the returner (0: none). The
+// receiver waits only while the Son's victim is one of them or nobody (MeetReceiverShouldWait).
+void SeekMeetWalkers(std::uint32_t instanceId, std::uint64_t& puller, std::uint64_t& returner)
+{
+    puller = 0;
+    returner = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return;
+    puller = it->second.state.meetPuller;
+    returner = it->second.state.returner;
+}
+
+// The pre-place's one snapshot for this bot (g_walkoutMutex, walk 57 F3; review: one lock for all of it): the point,
+// the walk-out's puller and stand, whether the puller is in position (WalkoutPullerInPos), whether the walk already
+// began, the pre-place's generation and its Son. False without a live pre-place naming this bot.
+struct SeekPrePlaceProgress
+{
+    float x = 0.0f, y = 0.0f;
+    std::uint64_t puller = 0;
+    float standX = 0.0f, standY = 0.0f;
+    bool standKnown = false;
+    bool pullerInPos = false;
+    bool walking = false;
+    std::uint32_t gen = 0;
+    std::uint64_t son = 0;
+    bool holdLogged = false; // the pre-place's one `event=preplace_hold` row is already out
+};
+
+bool SeekMeetPrePlaceProgressRead(std::uint32_t instanceId, std::uint64_t bot, SeekPrePlaceProgress& out)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end() || it->second.state.prePlaceReceiver != bot ||
+        !WalkoutPrePlaceLive(it->second.state))
+        return false;
+    const SeekWalkoutState& s = it->second.state;
+    out.x = s.prePlaceX;
+    out.y = s.prePlaceY;
+    out.puller = s.prePlacePuller;
+    out.standKnown = WalkoutActive(s) && s.puller == s.prePlacePuller;
+    out.standX = s.standX;
+    out.standY = s.standY;
+    out.pullerInPos = WalkoutPullerInPos(s);
+    out.walking = s.prePlaceWalking;
+    out.gen = s.prePlaceGen;
+    out.son = s.son ? s.son : s.meetSon;
+    out.holdLogged = s.prePlaceHoldLogged;
+    return true;
+}
+
+// Claims the pre-place's one chase-hold row (WalkoutPrePlaceNoteHold) under g_walkoutMutex.
+bool SeekMeetPrePlaceNoteHold(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceNoteHold(it->second.state, bot, gen);
+}
+
+// The snapshot's commit (WalkoutPrePlaceConfirm) under g_walkoutMutex: true while the snapshot's generation is still
+// this bot's live pre-place; `latchWalk` latches the walk's start too. False: the pre-place was replaced or ended.
+bool SeekMeetPrePlaceConfirm(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, bool latchWalk,
+                             std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceConfirm(it->second.state, bot, gen, latchWalk, nowMs);
+}
+
+// Claims the pre-place's one arrival row (WalkoutPrePlaceNoteArrive) under g_walkoutMutex.
+bool SeekMeetPrePlaceNoteArrive(std::uint32_t instanceId, std::uint64_t bot, std::uint32_t gen, std::uint32_t nowMs,
+                                std::uint32_t& afterMs)
+{
+    afterMs = 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutPrePlaceNoteArrive(it->second.state, bot, gen, nowMs, afterMs);
+}
+
+// The walk-out shot's wait (DungeonRunSeekShotWaitsReceiver, walk 58 F2): one locked snapshot for the puller of task
+// `gen` of the pre-place's receiver and point (whether that pre-place is live and this task's) and the Son, and the
+// wait's latch (WalkoutShotWaitNote) with the time waited. False: no wait applies (no live pre-place and no wait
+// started, not this task, or the wait is already over), and the shot goes as today.
+struct SeekShotWaitSnapshot
+{
+    bool prePlaceLive = false;
+    std::uint64_t receiver = 0;
+    float x = 0.0f, y = 0.0f;
+    std::uint64_t son = 0;
+    std::uint32_t waitedMs = 0;
+    std::uint32_t taskAgeMs = 0; // since the walk-out task started (WalkoutShotReady's late clause)
+};
+
+bool SeekWalkoutShotWaitRead(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs,
+                             SeekShotWaitSnapshot& out)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return false;
+    SeekWalkoutState& s = it->second.state;
+    out.prePlaceLive = WalkoutPrePlaceLive(s) && s.prePlacePuller == puller && s.prePlaceGen == gen;
+    if (out.prePlaceLive)
+    {
+        out.receiver = s.prePlaceReceiver;
+        out.x = s.prePlaceX;
+        out.y = s.prePlaceY;
+    }
+    out.son = s.son;
+    out.taskAgeMs = nowMs - s.startMs;
+    // No live pre-place and no wait under way: nothing to wait for (and nothing latched, so the late walk and the
+    // stall read as without the key).
+    if (!out.prePlaceLive && s.shotWaitSinceMs == 0)
+        return false;
+    return WalkoutShotWaitNote(s, puller, gen, nowMs, out.waitedMs);
+}
+
+// The wait's end under g_walkoutMutex (WalkoutShotWaitEnd): true once per task, the one shot_wait row.
+bool SeekWalkoutShotWaitEnd(std::uint32_t instanceId, std::uint64_t puller, std::uint32_t gen, std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    return it != g_walkouts.end() && WalkoutShotWaitEnd(it->second.state, puller, gen, nowMs);
+}
+
+// The walk-out focus's read (g_walkoutMutex): whether this bot is the running task's puller, whether its shot landed
+// and when the task started. False with no task running or another puller. `in` carries the bot's own inputs (alive,
+// charmed, health); with the record's filled in, `preemptRow` says the focus holds `action` now (WalkoutFocusHolds) and
+// this walk-out has not logged its `walk-out preempted` row yet; the claim is made here, under the lock, so one row
+// per walk-out goes out.
+bool SeekWalkoutFocusRead(Player* bot, std::uint32_t nowMs, WalkoutFocusInput& in, const std::string& action,
+                          bool& preemptRow)
+{
+    bool& shot = in.shot;
+    std::uint32_t startMs = 0;
+    shot = false;
+    in.recordedPuller = false;
+    preemptRow = false;
+    // A walk back holds nothing: only a running task is worth the lock.
+    if (g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return false;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    // The bot's own instance's record naming it as the running task's puller (another instance's never matches).
+    WalkoutRecord* const record =
+        WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+    if (!record)
+        return false;
+    shot = record->state.shot;
+    startMs = record->state.startMs;
+    in.recordedPuller = true;
+    in.sinceStartMs = nowMs - startMs;
+    if (WalkoutFocusHolds(in, action) && WalkoutPreemptRowDue(record->preemptLogStartMs, startMs))
+    {
+        record->preemptLogStartMs = startMs;
+        preemptRow = true;
+    }
+    return true;
+}
+
+// Closes the meet the receiver names (g_walkoutMutex): true for the one caller that finds it still open, so one row
+// follows. The receiver, the Son and `meetMs` tell this meet from a later one. A counted close word (`reason`,
+// WalkoutMeetLostCounts) records the Son as a lost meet for the nearest take's reach.
+bool SeekMeetClose(std::uint32_t instanceId, std::uint64_t receiver, std::uint64_t son, std::uint32_t meetMs,
+                   const char* reason)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end() || !CloseWalkoutMeetIf(it->second.state, receiver, son, meetMs))
+        return false;
+    WalkoutNoteMeetLost(it->second.state.lostMeets, reason, son, WorldTimer::getMSTime(), kSeekNearestTakeMeetLostMs);
+    return true;
+}
+
+// The cap take latch as one read sees it (WalkoutCapTakeLatched's inputs).
+struct SeekCapLatch
+{
+    std::uint64_t taker = 0;
+    std::uint64_t son = 0;
+    std::uint32_t ms = 0;
+};
+
+// The nearest take's reach read (g_walkoutMutex, DungeonRunSeekNearestTakeReach): the instance's walked Sons, its
+// recent lost meets (WalkoutNoteMeetLost) and the cap take latch. All empty with no record. A latched Son that is
+// dead, gone or on any tank ends the latch here (WalkoutCapTakeEnds, round 2), so a later peel of it checks again.
+void SeekWalkoutReachRead(Player* bot, std::vector<std::uint64_t>& walked,
+                          std::vector<std::pair<std::uint64_t, std::uint32_t>>& lostMeets, SeekCapLatch& latch)
+{
+    walked.clear();
+    lostMeets.clear();
+    latch = SeekCapLatch();
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it == g_walkouts.end())
+            return;
+        walked = it->second.state.walkedSons;
+        lostMeets = it->second.state.lostMeets;
+        latch.taker = it->second.state.capTaker;
+        latch.son = it->second.state.capTakeSon;
+        latch.ms = it->second.state.capTakeMs;
+    }
+    if (latch.son == 0)
+        return;
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(latch.son));
+    const bool alive = son && son->IsInWorld() && sServerFacade.IsAlive(son);
+    Player* const victim = alive ? dynamic_cast<Player*>(son->GetVictim()) : nullptr;
+    if (!WalkoutCapTakeEnds(alive, victim && PlayerbotAI::IsTank(victim)))
+        return;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it != g_walkouts.end() && it->second.state.capTakeSon == latch.son &&
+            it->second.state.capTakeMs == latch.ms)
+            WalkoutCapTakeClear(it->second.state);
+    }
+    latch = SeekCapLatch();
+}
+
+// A cap-guarded take's execution result (WalkoutCapTakeNoteExec) under g_walkoutMutex: latched once it really
+// started, cleared when refused or failed. No record (no walk-out yet): nothing to latch, and each tick checks again.
+void SeekCapTakeNoteExec(std::uint32_t instanceId, std::uint64_t taker, std::uint64_t son, bool started,
+                         std::uint32_t nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it != g_walkouts.end())
+        WalkoutCapTakeNoteExec(it->second.state, taker, son, started, nowMs);
+}
+
+// The meet's taken Son as one bot reads it (DungeonRunSeekTakenSonThreatCap): the Son, the tank that took it and the
+// time since the take (0 when a reader is a tick behind). All 0 with no taken state.
+struct SeekTakenSon
+{
+    std::uint64_t son = 0;
+    std::uint64_t by = 0;
+    std::uint32_t sinceMs = 0;
+    std::uint32_t takenMs = 0; // the take's identity with `son` (a re-take of the same Son is a new take)
+};
+
+// The taken state's snapshot under one g_walkoutMutex lock; a state kSeekTakenSonHoldMs old is cleared in that same
+// lock. A Son found dead or gone afterwards clears it with a compare-and-clear (the same take only), as the cap take
+// latch does.
+SeekTakenSon SeekTakenSonRead(PlayerbotAI* ai, Player* bot)
+{
+    (void)ai;
+    SeekTakenSon out;
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint32_t takenMs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it == g_walkouts.end() || it->second.state.takenSon == 0)
+            return out;
+        SeekWalkoutState& s = it->second.state;
+        const std::int64_t age = WalkoutTakenAgeMs(nowMs, s.takenMs);
+        if (WalkoutTakenEnds(s.takenSon, true, age))
+        {
+            WalkoutTakenClear(s);
+            return out;
+        }
+        out.son = s.takenSon;
+        out.by = s.takenBy;
+        out.sinceMs = age > 0 ? static_cast<std::uint32_t>(age) : 0;
+        out.takenMs = s.takenMs;
+        takenMs = s.takenMs;
+    }
+    Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(out.son));
+    if (son && son->IsInWorld() && sServerFacade.IsAlive(son))
+        return out;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        auto const it = g_walkouts.find(instanceId);
+        if (it != g_walkouts.end() && it->second.state.takenSon == out.son && it->second.state.takenMs == takenMs)
+            WalkoutTakenClear(it->second.state);
+    }
+    return SeekTakenSon();
+}
+
+// One bot_events.csv row collected under g_seekMutex and emitted after it is released: logEvent writes to the log
+// file, and the fight record's lock is never held across that I/O.
+struct SeekLogRow
+{
+    std::string type;
+    std::string info1;
+    std::string info2;
+};
+
+// Defined after SeekHoldsUnit (the hold clock reads it); ReadSeekFight calls it under the record lock.
+void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs, std::vector<SeekLogRow>& rows);
+
+// Defined after the Son rows (it reads the boss's threat list); ReadSeekFight hands it a charm after the 1.5 s wait.
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles);
 
 // The fight's seek state after this bot's read: the clock (due, window, forced burn), the gather and the counts. The
 // state itself is the fight's, so every bot's read feeds the one record.
@@ -2087,16 +3701,24 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     const SeekRecordKey key = SeekRecordKeyOf(bot->GetInstanceId(), boss->GetObjectGuid().GetRawValue(), *row);
     std::uint32_t dueMs = 0;
     std::uint32_t cycleNo = 0;
+    std::uint32_t fightMs = 0;
+    std::uint32_t rolled = 0;
     bool pendingSiphon = false;
     int pendingSiphonAtSec = 0;
     std::uint32_t pendingSiphonElapsedMs = 0;
+    std::uint32_t pendingSiphonHpPct = 0;
     std::uint32_t pendingCycle = 0;
     std::uint64_t gatherGuid = 0;
     std::uint64_t pullGuid = 0;
     std::uint32_t pullStartMs = 0;
+    std::uint64_t charmRowGuid = 0;
+    std::uint32_t charmPrevResetMs = 0;
+    std::uint32_t charmSeenMs = 0;
+    std::uint32_t charmEngageMs = 0;
+    std::vector<SeekLogRow> seekRows;
     {
         std::lock_guard<std::mutex> lock(g_seekMutex);
-        SweepSeekRecords(nowMs);
+        SweepSeekRecords(bot->GetInstanceId());
         auto it = g_seekRecords.find(key);
         if (it == g_seekRecords.end())
             it = g_seekRecords.emplace(key, SeekCycleRecord()).first;
@@ -2107,7 +3729,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (SeekClockStartOver(boss->IsInCombat(), record.lastSeenMs, nowMs))
         {
             record = SeekCycleRecord();
-            ForgetSeekWalkout(ai, bot->GetInstanceId());
+            ForgetSeekWalkout(ai, bot->GetInstanceId(), "repull");
         }
         record.lastSeenMs = nowMs;
         record.cycleMs = cycleMs;
@@ -2121,7 +3743,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (!boss->IsInCombat() && boss->GetHealthPercent() >= 100.0f)
         {
             g_seekRecords.erase(it);
-            ForgetSeekWalkout(ai, bot->GetInstanceId());
+            ForgetSeekWalkout(ai, bot->GetInstanceId(), "evade");
             return false;
         }
         // The fight's combat start: the first read that sees the boss in combat with the group. The core arms
@@ -2129,23 +3751,38 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         // this. The victim is read too: a boss in combat with the group can be without one for a tick.
         if (record.engageMs == 0 && (boss->IsInCombat() || boss->GetVictim()))
             record.engageMs = nowMs;
+        if (record.engageMs != 0)
+            fightMs = nowMs - record.engageMs;
         // The cycle: the row's spell on this group member (every member within 100 yd carries the dummy aura),
-        // accepted once per half cycle so the raid's sightings of one siphon move the clock once.
-        if (bot->HasAura(row->cycleSpell) && SeekCycleAccepts(record.lastCycleMs, nowMs, cycleMs))
+        // accepted once per half cycle so the raid's sightings of one siphon move the clock once. A sighting of a cycle
+        // the roll already counted as missed re-anchors the clock instead: the roll's estimate was a few seconds early
+        // or late, and counting another cycle would move the one it already counted.
+        const SeekCycleSighting sighting =
+            SeekCycleSightingOf(bot->HasAura(row->cycleSpell), record.lastCycleMs, nowMs, cycleMs,
+                                record.lastCycleEstimated);
+        if (sighting == SeekCycleSighting::Next)
         {
             record.lastCycleMs = nowMs;
             ++record.cycleNo;
+            record.lastCycleEstimated = false;
             record.siphonAtMs = nowMs + kSeekSiphonReadMs;
             record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
             record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
             record.siphonSeenMs = nowMs;
+            record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
             record.siphonCycle = record.cycleNo;
+        }
+        else if (sighting == SeekCycleSighting::Resync)
+        {
+            SeekCycleResync(record, nowMs);
+            record.siphonSeenHpPct = static_cast<std::uint32_t>(boss->GetHealthPercent());
         }
         if (record.siphonAtMs != 0 && nowMs >= record.siphonAtMs)
         {
             pendingSiphon = true;
             pendingSiphonAtSec = 1;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonAtMs = 0;
         }
@@ -2154,6 +3791,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphon = true;
             pendingSiphonAtSec = 3;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonSecondAtMs = 0;
         }
@@ -2162,11 +3800,16 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             pendingSiphon = true;
             pendingSiphonAtSec = 9;
             pendingSiphonElapsedMs = nowMs - record.siphonSeenMs;
+            pendingSiphonHpPct = record.siphonSeenHpPct;
             pendingCycle = record.siphonCycle;
             record.siphonThirdAtMs = 0;
         }
         // A due time nobody saw the siphon for is stale: past the overdue grace it rolls a cycle at a time, so the
         // window and the forced burn follow the estimate instead of the missed siphon's past due.
+        // DungeonRunSeekCycleRoll also moves the record's cycle number, so the walk-out's closed cycle does not stay
+        // closed for the rest of the fight after a missed sighting.
+        if (sPlayerbotAIConfig.dungeonRunSeekCycleRoll && record.engageMs != 0)
+            rolled = SeekRollMissedCycles(record, nowMs);
         dueMs = SeekRolledDueMs(nowMs, SeekCycleDueMs(record.engageMs, record.lastCycleMs, cycleMs), cycleMs);
         cycleNo = record.cycleNo;
     }
@@ -2174,6 +3817,7 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.row = row;
     out.boss = boss;
     out.nowMs = nowMs;
+    out.fightMs = fightMs;
     out.dueMs = dueMs;
     out.dueInMs = dueMs > nowMs ? dueMs - nowMs : 0;
     out.dueSignedMs = dueMs
@@ -2182,6 +3826,13 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
     out.windowOpen = dueMs != 0 && SeekWindowOpen(nowMs, dueMs, leadMs);
     out.forceBurn = dueMs != 0 && SeekForceBurn(nowMs, dueMs);
     out.cycleNo = cycleNo;
+    if (rolled != 0)
+    {
+        // The roll mutated the shared record, so exactly the reader that rolled it writes the row.
+        char info1[96];
+        snprintf(info1, sizeof(info1), "cycle=%u,rolls=%u,due_in=%u", out.cycleNo, rolled, out.dueInMs / 1000);
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekCycleRoll", info1, "");
+    }
     if (pendingSiphon)
     {
         int dosed = 0;
@@ -2205,8 +3856,8 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         CountSiphonPets(bot, petHeal, petDmg);
         CountSiphonSummons(bot, totems, guardians);
         CountHakkarSiphonAuras(boss, healStacks, dmgHolders);
-        LogSiphon(ai, bot, pendingCycle, pendingSiphonElapsedMs, dosed, undosed, petHeal, petDmg, totems, guardians,
-                  healStacks, dmgHolders, boss);
+        LogSiphon(ai, bot, pendingCycle, pendingSiphonElapsedMs, pendingSiphonHpPct, dosed, undosed, petHeal, petDmg,
+                  totems, guardians, healStacks, dmgHolders, boss);
         std::lock_guard<std::mutex> lock(g_seekMutex);
         auto it = g_seekRecords.find(key);
         if (it != g_seekRecords.end())
@@ -2421,17 +4072,13 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             }
         }
     }
-    // The walk-out pull, when nothing else can bring a Son (UpdateSeekWalkout).
-    // Fewer than two tanks leave nobody to take the Son it brings.
-    const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
-        LiveBossAnchorRow(ai, bot);
-    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, out);
     // A Son camped on a non-tank: the first off-tank's own take once the non-tank has had it for kSeekHealerTakeMs,
     // whatever the third off-tank does (it had those seconds). The fight record times it (the take must not
-    // flip with every read, and the healer gets its 8 s first). The Sons it judges are the fight-wide set, never
-    // fight.units alone: under "focus rti targets" that list collapses to the raid mark, so a Son on a healer would
-    // never be seen. They are the group's attackers and the source walk's Sons (out.sons) plus the "sole kill
-    // candidates" grid search of the entry (the living Sons that fight within kHoldKillRangeYd of the bot).
+    // flip with every read, and the healer gets its 8 s first). The Sons it judges (and the walk-out's meet judges
+    // for a tank holding a Son) are the fight-wide set, never fight.units alone: under "focus rti targets" that list
+    // collapses to the raid mark, so a Son on a healer would never be seen. They are the group's attackers and the
+    // source walk's Sons (out.sons) plus the "sole kill candidates" grid search of the entry (the living Sons that
+    // fight within kHoldKillRangeYd of the bot).
     std::vector<Unit*> fightSons = out.sons;
     for (const SoleCandidate& candidate : SoleKillCandidates(ai, row->targetEntry))
     {
@@ -2439,6 +4086,29 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         if (creature && creature->GetEntry() == row->targetEntry &&
             std::find(fightSons.begin(), fightSons.end(), static_cast<Unit*>(creature)) == fightSons.end())
             fightSons.push_back(creature);
+    }
+    // The walk-out pull, when nothing else can bring a Son (UpdateSeekWalkout).
+    // Fewer than two tanks leave nobody to take the Son it brings.
+    const bool walkoutWanted = out.windowOpen && out.seekers >= kSeekPullMinMissing && roles.tanks.size() >= 2 &&
+        LiveBossAnchorRow(ai, bot);
+    UpdateSeekWalkout(ai, bot, *row, boss, cycleNo, nowMs, out.dueInMs, walkoutWanted, fightSons, out);
+    // The pulled Son's open meet (DungeonRunSeekSonMeet): the hold keeps that Son until a tank has it, and its puller
+    // and returner count on neither non-tank clock (the 3 s healer take and the 5 s release), so neither the second
+    // tank nor the damage dealers take it off the puller before the receiver can act.
+    std::uint64_t meetPuller = 0;
+    std::uint64_t meetReturner = 0;
+    if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), row))
+    {
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSonGuid = 0;
+        std::uint32_t meetMs = 0;
+        if (SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSonGuid, meetMs) &&
+            SeekMeetOpen(meetReceiver, meetMs, nowMs))
+        {
+            out.meetOpen = true;
+            out.meetSon = meetSonGuid;
+            SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);
+        }
     }
     std::vector<SeekSonSeen> seenSons;
     seenSons.reserve(fightSons.size());
@@ -2453,6 +4123,12 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
             Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
             seen.victimTank = victim && PlayerbotAI::IsTank(victim);
             seen.victimNonTank = victim && !seen.victimTank;
+            if (out.meetOpen && seen.guid == out.meetSon && victim &&
+                SeekMeetWalkerHasSon(victim->GetObjectGuid().GetRawValue(), meetPuller, meetReturner))
+            {
+                seen.victimTank = false;
+                seen.victimNonTank = false;
+            }
         }
         seenSons.push_back(seen);
     }
@@ -2475,9 +4151,25 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         source = latched;
     out.source = source;
     // A picked Son that joined the fight with the siphon due inside 30 s is burnt at once, not at the forced burn's
-    // 15 s: the pick (the gather's latched one, else this read's) is too late to be walked down otherwise.
+    // 15 s: the pick (the gather's latched one, else this read's) is too late to be walked down otherwise. A seek_pull
+    // row's kill lead replaces the 30 s (walk 51: back -> death median 27 s, p75 31 s).
     Unit* const pickedSon = latched && latchInReach ? static_cast<Unit*>(latched) : source;
-    if (SeekLateEngagedBurn(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs))
+    std::uint32_t lateLeadMs = kSeekLateEngageMs;
+    if (sPlayerbotAIConfig.dungeonRunSeekPullCycle)
+    {
+        if (const BossTacticRow* const pull =
+                GetBossTactics().SeekPullRow(bot->GetMapId(), row->bossEntry, row->targetEntry))
+            lateLeadMs = static_cast<std::uint32_t>(pull->param * 1000.0f);
+    }
+    // The meet Son is held until a tank has it, so no forced burn while the meet is open and it is not on a tank.
+    bool meetKeepsSon = false;
+    if (out.meetOpen && pickedSon && pickedSon->GetObjectGuid().GetRawValue() == out.meetSon)
+    {
+        Player* const pickedVictim = dynamic_cast<Player*>(pickedSon->GetVictim());
+        meetKeepsSon = !(pickedVictim && PlayerbotAI::IsTank(pickedVictim));
+    }
+    if (SeekLateEngagedBurnWithin(pickedSon && pickedSon->IsInCombat(), dueMs, out.dueInMs, lateLeadMs) &&
+        !meetKeepsSon)
         out.forceBurn = true;
     std::uint64_t healerTakeGuid = 0;
     {
@@ -2515,10 +4207,57 @@ bool ReadSeekFight(PlayerbotAI* ai, Player* bot, SeekFight& out)
         out.missing = record.missing;
         // The Son-on-a-non-tank clock: a guid enters on its first such read and leaves once a read sees it dead, out
         // of combat or on a tank; a Son this read did not see stays (SeekHealerClockTick).
+        std::set<std::uint64_t> healerBefore;
+        for (const auto& entry : record.healerHeldSince)
+            healerBefore.insert(entry.first);
         SeekHealerClockTick(record.healerHeldSince, seenSons, nowMs);
+        // A release latch belongs to the record it was logged for: the healer clock letting go of a Son no hold record
+        // still covers drops it, so the next hold's own release logs again.
+        for (std::uint64_t guid : healerBefore)
+        {
+            if (!record.healerHeldSince.count(guid) && !record.holdSince.count(guid))
+                record.releaseLogged.erase(guid);
+        }
         healerTakeGuid = SeekHealerTakeGuid(record.healerHeldSince, nowMs);
         out.nonTankSince = record.healerHeldSince;
+        TickSeekHoldClock(bot, out, fightSons, record, nowMs, seekRows);
+        // Cause Insanity's successor: one group-wide aura scan per fight per 500 ms (the lock makes one reading bot the
+        // scanner), over the members in this bot's world, map and instance only. A new charmed guid starts its 1.5 s
+        // clock (Hakkar has turned to his next victim by then, median 1.05 s after the cast); a scan that finds nobody
+        // charmed forgets the last guid, so the same player charmed again logs a new row (SeekCharmScan).
+        if (nowMs - record.charmScanMs >= 500)
+        {
+            record.charmScanMs = nowMs;
+            std::uint64_t charmed = 0;
+            if (Group* const group = bot->GetGroup())
+            {
+                for (Player* member : LiveGroupMembers(group))
+                {
+                    if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+                        member->GetInstanceId() != bot->GetInstanceId())
+                        continue;
+                    if (member->HasAura(kHakkarCauseInsanitySpell))
+                    {
+                        charmed = member->GetObjectGuid().GetRawValue();
+                        break;
+                    }
+                }
+            }
+            SeekCharmScan(record, charmed, nowMs);
+        }
+        if (SeekCharmRowDue(record, nowMs))
+        {
+            charmRowGuid = record.charmGuid;
+            charmPrevResetMs = record.prevResetMs;
+            charmSeenMs = record.charmSeenMs;
+            charmEngageMs = record.engageMs;
+        }
     }
+    // The hold and death rows were built under the lock; logEvent runs without it.
+    for (const SeekLogRow& row : seekRows)
+        sPlayerbotAIConfig.logEvent(ai, row.type, row.info1, row.info2);
+    if (charmRowGuid != 0)
+        LogSeekCharm(ai, bot, boss, charmRowGuid, charmPrevResetMs, charmSeenMs, charmEngageMs, roles);
     if (healerTakeGuid)
     {
         // The take's Son is resolved from the map, not from this bot's lists: the first off-tank may be the one bot
@@ -2565,6 +4304,27 @@ bool IsSeekSource(const SeekFight& state, Unit* unit)
     return state.live && state.row && unit && unit->IsAlive() && unit->GetEntry() == state.row->targetEntry;
 }
 
+// The open meet's Son stays held until a tank has it (SeekMeetHoldsSon, DungeonRunSeekSonMeet): the state's meetOpen is
+// false with the flag off.
+bool SeekMeetHoldsUnit(const SeekFight& state, Unit* unit)
+{
+    Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
+    return SeekMeetHoldsSon(state.meetOpen, unit->GetObjectGuid().GetRawValue() == state.meetSon,
+                            victim && PlayerbotAI::IsTank(victim));
+}
+
+// The row's hold verdict for this source (SeekHoldWhyOf): the reason SeekHoldsUnit and the release log both read.
+SeekHoldWhy SeekHoldWhyOfUnit(const SeekFight& state, Unit* unit)
+{
+    if (SeekMeetHoldsUnit(state, unit))
+        return SeekHoldWhy::Held;
+    const float holdPct = static_cast<float>(state.row->priority);
+    return SeekHoldWhyOf(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
+                         unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
+                         SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs),
+                         SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+}
+
 // Whether the row holds the damage on this source: every Son but the one selected source, always, and the selected
 // source outside the dose window or beyond the seek's reach, and at the hold percent until the gather is ready or the
 // burn is forced. The decision itself is the policy's (SeekHoldDecision).
@@ -2572,10 +4332,449 @@ bool SeekHoldsUnit(const SeekFight& state, Unit* unit)
 {
     if (!IsSeekSource(state, unit))
         return false;
+    if (SeekMeetHoldsUnit(state, unit))
+        return true;
     const float holdPct = static_cast<float>(state.row->priority);
     return SeekHoldDecision(unit == state.source, state.windowOpen, state.ready, state.forceBurn,
                             unit->GetHealthPercent(), holdPct, SeekReachOf(state, unit), state.seekers,
-                            SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+                            SeekNonTankHeldMs(state.nonTankSince, unit->GetObjectGuid().GetRawValue(), state.nowMs),
+                            SeekHeldMs(state.holdSince, unit->GetObjectGuid().GetRawValue(), state.nowMs));
+}
+
+const char* SeekHoldWhyWord(SeekHoldWhy why)
+{
+    switch (why)
+    {
+        case SeekHoldWhy::Cap20:
+            return "cap20";
+        case SeekHoldWhy::NonTank:
+            return "nontank";
+        case SeekHoldWhy::SelectedBurn:
+            return "selected_burn";
+        case SeekHoldWhy::Dosed:
+            return "dosed";
+        case SeekHoldWhy::Held:
+            break;
+    }
+    return "held";
+}
+
+// The release reason in words for the row's plain-English half.
+const char* SeekHoldWhyText(SeekHoldWhy why)
+{
+    switch (why)
+    {
+        case SeekHoldWhy::Cap20:
+            return "the 20 s cap";
+        case SeekHoldWhy::NonTank:
+            return "time on a non-tank";
+        case SeekHoldWhy::SelectedBurn:
+            return "the burn";
+        case SeekHoldWhy::Dosed:
+            return "a dosed raid";
+        case SeekHoldWhy::Held:
+            break;
+    }
+    return "the hold";
+}
+
+const char* SeekHoldEndWord(SeekHoldEndReason reason)
+{
+    switch (reason)
+    {
+        case SeekHoldEndReason::Died:
+            return "died";
+        case SeekHoldEndReason::Gone:
+            return "gone";
+        case SeekHoldEndReason::Unticked:
+            return "unticked";
+        case SeekHoldEndReason::Unseen:
+            return "unseen";
+    }
+    return "died";
+}
+
+// The victim's role, the test TickSeekHoldClock makes for the clock: a player tank, a player non-tank, a pet or another
+// non-player unit, or none.
+const char* SeekVictimWord(Unit* son)
+{
+    Unit* const victim = son ? son->GetVictim() : nullptr;
+    if (!victim)
+        return "none";
+    Player* const player = dynamic_cast<Player*>(victim);
+    if (!player)
+        return "pet";
+    return PlayerbotAI::IsTank(player) ? "tank" : "nontank";
+}
+
+// The fight's phase for an event of a Son no live unit can answer for: the gather's readiness names the burn, the
+// gather itself gather, and the open dose window the hold. The death row reads this: a dead Son is never a source, so
+// the seek row's own word could only say gather or none.
+const char* SeekFightPhaseWord(const SeekFight& state)
+{
+    if (state.gathering)
+        return state.ready || state.forceBurn ? "burn" : "gather";
+    return state.windowOpen ? "hold" : "none";
+}
+
+// The numbers a Son hold or death row prints, read at the transition.
+struct SeekSonLogFacts
+{
+    std::uint32_t hp = 0;
+    float spotYd = 0.0f;
+    const char* victim = "none";
+    std::uint32_t nonTankMs = 0;
+};
+
+SeekSonLogFacts SeekSonFactsOf(Unit* son, const SeekCycleRecord& record, const SeekFight& state,
+                               std::uint32_t nowMs)
+{
+    SeekSonLogFacts facts;
+    if (!son || !state.row)
+        return facts;
+    facts.hp = static_cast<std::uint32_t>(son->GetHealthPercent());
+    facts.spotYd = son->GetDistance3dToCenter(state.row->spotX, state.row->spotY, state.row->spotZ);
+    facts.victim = SeekVictimWord(son);
+    facts.nonTankMs = SeekNonTankHeldMs(record.healerHeldSince, son->GetObjectGuid().GetRawValue(), nowMs);
+    return facts;
+}
+
+void PushSonHoldRow(std::vector<SeekLogRow>& rows, const SeekFight& state, const SeekCycleRecord& record,
+                    std::uint32_t nowMs, std::uint64_t guid, Unit* son, const char* event, const char* reason,
+                    std::uint32_t heldMs, const char* text)
+{
+    const SeekSonLogFacts facts = SeekSonFactsOf(son, record, state, nowMs);
+    char info1[256];
+    snprintf(info1, sizeof(info1),
+             "son=%u,event=%s,reason=%s,held_ms=%u,nontank_ms=%u,hp=%u,spot_yd=%.1f,cycle=%u,due_in=%u,victim=%s",
+             ObjectGuid(guid).GetCounter(), event, reason, static_cast<unsigned>(heldMs),
+             static_cast<unsigned>(facts.nonTankMs), static_cast<unsigned>(facts.hp), facts.spotYd, state.cycleNo,
+             static_cast<unsigned>(state.dueInMs / 1000), facts.victim);
+    rows.push_back(SeekLogRow{"BossTacticsSonHold", info1, text});
+}
+
+void PushSonDeathRow(std::vector<SeekLogRow>& rows, Player* bot, const SeekFight& state, SeekCycleRecord& record,
+                     std::uint32_t nowMs, std::uint64_t guid, Unit* son, const char* phase)
+{
+    int raidAlive = 0;
+    int raidInCloud = 0;
+    if (bot)
+    {
+        const auto count = [&](Player* member)
+        {
+            if (!member || member->GetMapId() != bot->GetMapId() || !sServerFacade.IsAlive(member))
+                return;
+            ++raidAlive;
+            if (son && member->GetDistance2dToCenter(son->GetPositionX(), son->GetPositionY()) <= kPoisonCloudYd)
+                ++raidInCloud;
+        };
+        if (Group* group = bot->GetGroup())
+        {
+            for (Player* member : LiveGroupMembers(group))
+                count(member);
+        }
+        else
+            count(bot);
+    }
+    const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
+    const int sinceSiphon = record.siphonSeenMs
+        ? static_cast<int>(SeekAgeMs(nowMs, record.siphonSeenMs) / 1000) : -1;
+    const char* lastReason = "none";
+    const auto release = record.lastRelease.find(guid);
+    if (release != record.lastRelease.end())
+        lastReason = SeekHoldWhyWord(release->second);
+    char info1[256];
+    snprintf(info1, sizeof(info1),
+             "son=%u,cycle=%u,due_in=%u,since_siphon=%d,phase=%s,raid_alive=%d,raid_in_cloud=%d,held_ms=%u,"
+             "last_reason=%s",
+             ObjectGuid(guid).GetCounter(), state.cycleNo, static_cast<unsigned>(state.dueInMs / 1000), sinceSiphon,
+             phase, raidAlive, raidInCloud, static_cast<unsigned>(heldMs), lastReason);
+    char info2[192];
+    snprintf(info2, sizeof(info2), "Son %u died in the %s phase, %d of %d raid members in its cloud, held %u ms",
+             ObjectGuid(guid).GetCounter(), phase, raidInCloud, raidAlive, static_cast<unsigned>(heldMs));
+    rows.push_back(SeekLogRow{"BossTacticsSonDeath", info1, info2});
+    record.sonDeathLogged.insert(guid);
+}
+
+// A unit's role and class in the Cause Insanity row: tank, healer, dps, pet or other, and the class word lowercase.
+const char* CharmRoleWord(Unit* unit)
+{
+    if (!unit)
+        return "other";
+    if (dynamic_cast<Pet*>(unit))
+        return "pet";
+    Player* const player = dynamic_cast<Player*>(unit);
+    if (!player)
+        return "other";
+    if (PlayerbotAI::IsTank(player))
+        return "tank";
+    if (PlayerbotAI::IsHeal(player))
+        return "healer";
+    if (IsBattleDps(player))
+        return "dps";
+    return "other";
+}
+
+const char* CharmClassWord(Unit* unit)
+{
+    Player* const player = dynamic_cast<Player*>(unit);
+    if (!player)
+        return "other";
+    switch (player->GetClass())
+    {
+        case CLASS_WARRIOR: return "warrior";
+        case CLASS_PALADIN: return "paladin";
+        case CLASS_HUNTER: return "hunter";
+        case CLASS_ROGUE: return "rogue";
+        case CLASS_PRIEST: return "priest";
+        case CLASS_SHAMAN: return "shaman";
+        case CLASS_MAGE: return "mage";
+        case CLASS_WARLOCK: return "warlock";
+        case CLASS_DRUID: return "druid";
+        default: return "other";
+    }
+}
+
+// The Cause Insanity row, built once per charm after its 1.5 s wait: the charmed player, Hakkar's new victim, the two
+// off-tanks' threat on him and the five highest threat entries (the charmed player left out). Logged without the
+// fight's lock; it measures who the threat cap had to hold back, so the next brief can read the margin.
+void LogSeekCharm(PlayerbotAI* ai, Player* bot, Unit* boss, std::uint64_t charmedGuid, std::uint32_t prevResetMs,
+                  std::uint32_t charmSeenMs, std::uint32_t engageMs, const RaidTankRoles& roles)
+{
+    if (!ai || !bot || !boss)
+        return;
+    Player* const charmed = bot->GetMap()->GetPlayer(ObjectGuid(charmedGuid));
+    if (!charmed)
+        return;
+    struct CharmThreat
+    {
+        float threat;
+        Unit* unit;
+    };
+    std::vector<CharmThreat> ranked;
+    for (HostileReference const* ref : boss->GetThreatManager().getThreatList())
+    {
+        Unit* const unit = ref ? ref->getTarget() : nullptr;
+        if (!unit || unit->GetObjectGuid().GetRawValue() == charmedGuid)
+            continue;
+        ranked.push_back(CharmThreat{ref->getThreat(), unit});
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const CharmThreat& a, const CharmThreat& b)
+    {
+        return a.threat != b.threat ? a.threat > b.threat : a.unit < b.unit;
+    });
+    char top[256];
+    top[0] = '\0';
+    std::size_t used = 0;
+    for (std::size_t i = 0; i < ranked.size() && i < 5; ++i)
+    {
+        char entry[96];
+        int const n = snprintf(entry, sizeof(entry), "%s%s:%s:%.0f", i == 0 ? "" : "|",
+                               CharmRoleWord(ranked[i].unit), CharmClassWord(ranked[i].unit), ranked[i].threat);
+        if (n <= 0 || used + static_cast<std::size_t>(n) >= sizeof(top))
+            break;
+        std::memcpy(top + used, entry, static_cast<std::size_t>(n));
+        used += static_cast<std::size_t>(n);
+        top[used] = '\0';
+    }
+    Unit* const victim = boss->GetVictim();
+    float const ot1 = roles.tanks.size() > 1 && roles.tanks[1]
+        ? boss->GetThreatManager().getThreat(roles.tanks[1]) : -1.0f;
+    float const ot2 = roles.tanks.size() > 2 && roles.tanks[2]
+        ? boss->GetThreatManager().getThreat(roles.tanks[2]) : -1.0f;
+    // Walk 58 F3: the threat cap's reference at this moment (the cap's own tank list and pick, ThreatCapTanksOf and
+    // ThreatCapPickReference as ThreatValue::GetTankThreat reads them) and the top damage dealer's threat, so a walk
+    // can tell the main-tank fall-back from white damage past an off-tank reference. `none`/-1: no tank listed.
+    std::vector<Player*> capWho;
+    const std::vector<ThreatCapTank> capTanks = ThreatCapTanksOf(ai, boss, roles, nullptr, &capWho);
+    const ThreatCapPick capPick = ThreatCapPickReference(capTanks, ThreatSuccessorTarget(boss),
+                                                         sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    Player* const capRef = capPick.index >= 0 && static_cast<std::size_t>(capPick.index) < capWho.size()
+        ? capWho[static_cast<std::size_t>(capPick.index)] : nullptr;
+    float topDpsThreat = 0.0f;
+    for (const CharmThreat& entry : ranked)
+    {
+        if (std::strcmp(CharmRoleWord(entry.unit), "dps") == 0)
+        {
+            topDpsThreat = entry.threat;
+            break;
+        }
+    }
+    char extra[64];
+    extra[0] = '\0';
+    if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+    {
+        // The reset window's state when this charm was first seen, counted from the reset before it (or the fight's
+        // start): the A/B walk reads how many charms land inside the window.
+        const ThreatResetWindow* const win = GetBossTactics().ThreatResetWindowOf(boss->GetMapId(), boss->GetEntry());
+        const bool open = win && ThreatResetWindowOpen(ThreatResetSince(charmSeenMs, prevResetMs, engageMs),
+                                                       win->minGapMs, win->maxGapMs);
+        snprintf(extra, sizeof(extra), ",win=%d,since_prev_ms=%u", open ? 1 : 0,
+                 prevResetMs ? charmSeenMs - prevResetMs : 0);
+    }
+    char info1[512];
+    snprintf(info1, sizeof(info1),
+             "charmed=%s:%s,victim=%s:%s,ot1=%.0f,ot2=%.0f,top=%s,cap_ref=%s,ref_kind=%s,cap_ref_threat=%.0f,"
+             "top_dps_threat=%.0f%s",
+             CharmRoleWord(charmed), CharmClassWord(charmed), CharmRoleWord(victim), CharmClassWord(victim),
+             ot1, ot2, top, capRef ? capRef->GetName() : "none",
+             !capRef ? "none" : capPick.offTank ? "offtank" : "main", capRef ? capPick.threat : -1.0f, topDpsThreat,
+             extra);
+    char info2[160];
+    snprintf(info2, sizeof(info2), "Cause Insanity on %s: Hakkar turned to %s (%s)", CharmRoleWord(charmed),
+             CharmRoleWord(victim), CharmClassWord(victim));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsCharm", info1, info2);
+}
+
+// The hold clock: a Son held longer than 20 s is released to the damage dealers (SeekHoldDecision). Read with the clock
+// from the previous read, then tick, so one bot's read sees one consistent hold time. Only fighting time counts, and a
+// Son the cap already released keeps its release while it is alive and seen (SeekHoldClockTick); an idle spare never
+// gets a record, so the cap cannot release one the area veto protects. A read that does not tick a Son (it selected
+// another Son, or none) leaves that Son's record alone: the record is fight-wide and another bot may be feeding it.
+// Hakkar's seek row also collects the held, released and dead Sons' rows here, under the caller's record lock; the
+// caller logs them once it is released.
+void TickSeekHoldClock(Player* bot, SeekFight& out, const std::vector<Unit*>& fightSons, SeekCycleRecord& record,
+                       std::uint32_t nowMs, std::vector<SeekLogRow>& rows)
+{
+    out.holdSince = record.holdSince;
+    const bool log = sPlayerbotAIConfig.hasLog("bot_events.csv") && out.row &&
+        out.row->targetEntry == kSonOfHakkarEntry;
+    // Every Son this fight's read has listed. A Son can drop out of fightSons (dead, errant) or still sit in it as a
+    // corpse, so this set remembers them for the death check, which asks the map for the truth.
+    if (out.row && out.row->targetEntry == kSonOfHakkarEntry)
+    {
+        for (Unit* const son : fightSons)
+            record.sonsSeen.insert(son->GetObjectGuid().GetRawValue());
+    }
+    std::map<std::uint64_t, Unit*> sonsByGuid;
+    std::vector<std::pair<Unit*, SeekHoldWhy>> whys;
+    std::vector<SeekHoldSeen> holdSeen;
+    holdSeen.reserve(fightSons.size());
+    if (log)
+        whys.reserve(fightSons.size());
+    for (Unit* const son : fightSons)
+    {
+        const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+        if (log)
+            sonsByGuid[guid] = son;
+        Unit* const victim = son->GetVictim();
+        const bool engaged = sServerFacade.IsAlive(son) && son->IsInCombat() && victim;
+        Player* const victimPlayer = engaged ? dynamic_cast<Player*>(victim) : nullptr;
+        const bool victimTank = victimPlayer && PlayerbotAI::IsTank(victimPlayer);
+        const bool alive = IsSeekSource(out, son);
+        const bool ticks = SeekSonTicks(alive, SeekHoldClockTicks(son == out.source, engaged, victimTank, out.windowOpen),
+                                        SeekHoldsUnit(out, son));
+        holdSeen.push_back(SeekHoldSeen{guid, alive, ticks});
+        if (log && alive)
+            whys.push_back(std::make_pair(son, SeekHoldWhyOfUnit(out, son)));
+    }
+
+    std::vector<SeekHoldEvent> goneEvents;
+    if (log)
+    {
+        // One release row per hold record: the verdict is each read's own (SelectedBurn follows that bot's source
+        // search), so the first read that lets a held Son go logs it and the other reads stay silent until this hold
+        // ends. A Son the fight holds no record for was never held, so it is not released.
+        for (const auto& entry : whys)
+        {
+            Unit* const son = entry.first;
+            const SeekHoldWhy why = entry.second;
+            const std::uint64_t guid = son->GetObjectGuid().GetRawValue();
+            const bool hasHoldRecord = record.holdSince.count(guid) || record.healerHeldSince.count(guid);
+            if (SeekHoldWhyHolds(why) || !SeekShouldLogRelease(hasHoldRecord, record.releaseLogged.count(guid) != 0))
+                continue;
+            const std::uint32_t heldMs = SeekHeldMs(record.holdSince, guid, nowMs);
+            const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
+            char text[192];
+            snprintf(text, sizeof(text), "Son %u released after %.1f s held (%s), %u %% hp, %.1f yd from the spot",
+                     ObjectGuid(guid).GetCounter(), static_cast<double>(heldMs) / 1000.0, SeekHoldWhyText(why),
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+            PushSonHoldRow(rows, out, record, nowMs, guid, son, "release", SeekHoldWhyWord(why), heldMs, text);
+            record.releaseLogged.insert(guid);
+            record.lastRelease[guid] = why;
+        }
+
+        // A Son the fight had seen alive that this read no longer has alive. A corpse can still sit in fightSons for
+        // up to a second (a sole-kill candidate resolved from the map), so a listed Son that is not alive counts as
+        // gone from the living list: its death row is pushed here, before the clock tick would end its hold. A missing
+        // creature is a despawn or an evade, which is no death: its hold ends as gone and it is not looked up again.
+        // A Son alive but out of this read's sight was simply not listed.
+        std::set<std::uint64_t> liveNow;
+        for (Unit* const son : fightSons)
+        {
+            if (sServerFacade.IsAlive(son))
+                liveNow.insert(son->GetObjectGuid().GetRawValue());
+        }
+        for (std::uint64_t guid : SeekDeathCandidates(record.sonsSeen, liveNow, record.sonDeathLogged))
+        {
+            Creature* const creature = bot ? bot->GetMap()->GetCreature(ObjectGuid(guid)) : nullptr;
+            if (creature && !sServerFacade.IsAlive(creature))
+            {
+                PushSonDeathRow(rows, bot, out, record, nowMs, guid, creature, SeekFightPhaseWord(out));
+                continue;
+            }
+            if (creature)
+                continue;
+            const auto held = record.holdSince.find(guid);
+            if (held != record.holdSince.end())
+            {
+                goneEvents.push_back(SeekHoldEvent{guid, false, SeekHoldEndReason::Gone,
+                                                   SeekAgeMs(nowMs, held->second.sinceMs)});
+                record.goneLogged.insert(guid);
+            }
+            record.sonsSeen.erase(guid);
+        }
+    }
+
+    std::vector<SeekHoldEvent> events;
+    SeekHoldClockTick(record.holdSince, holdSeen, nowMs, log ? &events : nullptr);
+    out.holdSince = record.holdSince;
+    if (log)
+        events.insert(events.end(), goneEvents.begin(), goneEvents.end());
+    for (const SeekHoldEvent& event : events)
+    {
+        // The gone row already ended this hold; the clock's own end for the same record adds nothing.
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.goneLogged.erase(event.guid) != 0)
+        {
+            record.releaseLogged.erase(event.guid);
+            continue;
+        }
+        // A record that ends while the Son is dead is a death, whatever the sweep's own clock said.
+        SeekHoldEndReason reason = event.reason;
+        if (!event.start && event.reason != SeekHoldEndReason::Gone && record.sonDeathLogged.count(event.guid))
+            reason = SeekHoldEndReason::Died;
+        Unit* son = nullptr;
+        const auto seen = sonsByGuid.find(event.guid);
+        if (seen != sonsByGuid.end())
+            son = seen->second;
+        else if (bot)
+            son = bot->GetMap()->GetCreature(ObjectGuid(event.guid));
+        const SeekSonLogFacts facts = SeekSonFactsOf(son, record, out, nowMs);
+        char text[224];
+        if (event.start)
+            snprintf(text, sizeof(text), "Son %u entered the hold at %u %% hp, %.1f yd from the spot",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<unsigned>(facts.hp), facts.spotYd);
+        else if (reason == SeekHoldEndReason::Died)
+            snprintf(text, sizeof(text), "Son %u died after %.1f s held (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        else if (reason == SeekHoldEndReason::Gone)
+            snprintf(text, sizeof(text), "Son %u vanished from the map after %.1f s held",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0);
+        else if (reason == SeekHoldEndReason::Unticked)
+            snprintf(text, sizeof(text),
+                     "Son %u left the hold after %.1f s without a read ticking it (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        else
+            snprintf(text, sizeof(text), "Son %u left the hold after %.1f s unseen (%u %% hp, %.1f yd from the spot)",
+                     ObjectGuid(event.guid).GetCounter(), static_cast<double>(event.heldMs) / 1000.0,
+                     static_cast<unsigned>(facts.hp), facts.spotYd);
+        PushSonHoldRow(rows, out, record, nowMs, event.guid, son, event.start ? "start" : "end",
+                       event.start ? "tick" : SeekHoldEndWord(reason), event.heldMs, text);
+        // A new hold is a new latch; a hold's end has no release left to suppress. Either way the old latch goes.
+        record.releaseLogged.erase(event.guid);
+    }
 }
 
 // The source a single-target damage action would hit: its own target. The read's source alone used to answer the area
@@ -2660,6 +4859,84 @@ bool SeekTankHoldsSwing(PlayerbotAI* ai, Player* bot, Unit* target)
                              static_cast<float>(state.row->priority));
 }
 }  // namespace
+
+// One `BossTacticsSpread` row per bot and 5 s: the slot read writes it with the key on, the old step-away with it off,
+// and that one writer per state is SpreadLogOwned. The row carries the key, the verdict word, the owned slot and its
+// distance, the spare point the walk goes to, and the numbers the walk reads. The throttle is checked before any
+// distance is computed. A no-op unless bot_events.csv is an allowed log.
+void ai::LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
+                       const char* centre, bool replaceSameTick)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint32_t tick = ai->UpdateTick();
+    {
+        std::lock_guard<std::mutex> lock(g_spreadLogMutex);
+        SpreadLogWindow& last = g_spreadLog[bot->GetObjectGuid().GetRawValue()];
+        // A failed move corrects the verdict row its own tick's read wrote; any older row keeps the bot's window.
+        if (last.ms != 0 && nowMs - last.ms < kSeekLogGapMs &&
+            !(replaceSameTick && tick != 0 && last.tick == tick))
+            return;
+        last.ms = nowMs;
+        last.tick = tick;
+    }
+    float nearestYd = -1.0f;
+    int within = 0;
+    const float spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member == bot || !member->IsInWorld() || !sServerFacade.IsAlive(member) ||
+                member->GetMapId() != bot->GetMapId())
+                continue;
+            const float yd = sServerFacade.getDistance2d(bot, member);
+            if (nearestYd < 0.0f || yd < nearestYd)
+                nearestYd = yd;
+            if (yd < spacingYd)
+                ++within;
+        }
+    }
+    int aura = 0;
+    int dueIn = -1;
+    SeekFight state;
+    if (ReadSeekFightCached(ai, bot, state))
+    {
+        aura = state.row && bot->HasAura(state.row->spellId) ? 1 : 0;
+        // No cycle sighted yet: the clock is unknown, not due now.
+        if (state.dueMs != 0)
+            dueIn = static_cast<int>(state.dueInMs / 1000);
+    }
+    char info1[192];
+    // The read knows the centre it used; the legacy writer derives it. No anchor and no seek spot is `none`, never
+    // `spot`: the field exists to show exactly that failure.
+    if (!centre)
+    {
+        BossAnchorCircle circle;
+        const bool anchored = LiveBossAnchor(ai, bot, circle);
+        centre = SpreadCentreWord(SpreadCentreFor(anchored, FindBossSeek(ai, bot).valid));
+    }
+    snprintf(info1, sizeof(info1),
+             "flag=%d,verdict=%s,slot=%d,slot_yd=%.1f,fallback=%d,centre=%s,nearest_yd=%.1f,within=%d,aura=%d,due_in=%d",
+             sPlayerbotAIConfig.dungeonRunBossSpreadSlots ? 1 : 0, verdict ? verdict : "no_centre", slot, slotYd,
+             fallback, centre, nearestYd, within, aura, dueIn);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSpread", info1, "");
+}
+
+std::uint64_t ai::SeekMeetHealPuller(std::uint32_t instanceId)
+{
+    // The cheap exits first: the key off, or no meet open anywhere on the server, never reaches the lock.
+    if (!SeekMeetHealScope(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal,
+                           g_walkoutMeetsOpen.load(std::memory_order_relaxed)))
+        return 0;
+    std::lock_guard<std::mutex> lock(g_walkoutMutex);
+    auto const it = g_walkouts.find(instanceId);
+    if (it == g_walkouts.end())
+        return 0;
+    const SeekWalkoutState& state = it->second.state;
+    return SeekMeetOpen(state.meetReceiver, state.meetMs, WorldTimer::getMSTime()) ? state.meetPuller : 0;
+}
 
 void ai::ReconcileSeekFightState(const BossTacticTable& next)
 {
@@ -2768,6 +5045,67 @@ float BossTacticsSeekPetHoldMultiplier::GetValue(Action* action)
     if (!SeekPetCallAction(action->getName()))
         return 1.0f;
     return BossSeekPetMustLeave(ai, bot) ? 0.0f : 1.0f;
+}
+
+float BossTacticsWalkoutFocusMultiplier::GetValue(Action* action)
+{
+    if (!action || !sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus || !bot)
+        return 1.0f;
+    const std::string& name = action->getName();
+    // The walk-out and the pet's dismissal are never held, and a bot off the seek map has no walk-out: no lock for
+    // either.
+    if (WalkoutFocusAllows(name) || !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return 1.0f;
+    // A dead or charmed puller holds nothing, even while the record still names it (the abort clears it on the next
+    // reader's update): its release, its revive and its charmer's orders run as without the focus. Below 40 % health
+    // nothing is held either: potions, healthstones and Mend Pet run as usual.
+    WalkoutFocusInput in;
+    in.flagOn = true;
+    in.alive = sServerFacade.IsAlive(bot);
+    in.charmed = !bot->GetCharmerGuid().IsEmpty();
+    in.hpPct = bot->GetHealthPercent();
+    bool preemptRow = false;
+    SeekWalkoutFocusRead(bot, WorldTimer::getMSTime(), in, name, preemptRow);
+    if (!WalkoutFocusHolds(in, name))
+        return 1.0f;
+    if (preemptRow)
+    {
+        char info1[128];
+        snprintf(info1, sizeof(info1), "seek pull: walk-out preempted action=%s", name.c_str());
+        LogSeekWalkout(ai, info1);
+    }
+    return 0.0f;
+}
+
+bool ai::IsLiveWalkoutPuller(Player* bot)
+{
+    // No task runs (a walk back holds nothing), or the bot is off a seek map: no lock.
+    if (!bot || g_walkoutsRunning.load(std::memory_order_relaxed) == 0)
+        return false;
+    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return false;
+    // The focus's record read (WalkoutPullerRecordIn: the bot's own instance, a running task, this bot its puller),
+    // plus the record's boss.
+    bool shot = false;
+    std::uint32_t sinceStartMs = 0;
+    std::uint64_t bossGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_walkoutMutex);
+        const WalkoutRecord* const record =
+            WalkoutPullerRecordIn(g_walkouts, bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue());
+        if (!record)
+            return false;
+        shot = record->state.shot;
+        sinceStartMs = WorldTimer::getMSTime() - record->state.startMs;
+        bossGuid = record->bossGuid;
+    }
+    // The fight still runs (review L2): the boss read the way the record's sweep reads it, plus its evade, so a wipe,
+    // an evade or a kill ends the hold at once.
+    Creature* const boss = bossGuid != 0 && bot->GetMap() ? bot->GetMap()->GetCreature(ObjectGuid(bossGuid)) : nullptr;
+    bool const bossFighting = WalkoutBossFighting(boss != nullptr, boss && sServerFacade.IsAlive(boss),
+                                                  boss && boss->IsInCombat(), boss && boss->IsInEvadeMode());
+    return WalkoutHoldsCombat(true, true, sServerFacade.IsAlive(bot), !bot->GetCharmerGuid().IsEmpty(), sinceStartMs,
+                              shot, bossFighting);
 }
 
 bool ai::IsSeekSourceForTankPickup(PlayerbotAI* ai, Player* bot, Unit* unit)
@@ -3023,8 +5361,186 @@ BossInterruptScan ai::FindBossInterrupt(PlayerbotAI* ai, Player* bot, const Boss
 
 namespace
 {
+// Whether a grid hit's owner is a unit of this fight.
+bool GridOwnerInFight(const BossTacticsFight& fight, std::uint64_t owner)
+{
+    if (!owner)
+        return false;
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetObjectGuid().GetRawValue() == owner)
+            return true;
+    return false;
+}
+
+// The carrier scan's hits: every living unit of an open carrier row's entry within kBossTacticsEngageRange of the bot
+// (the row's own grid read, 1 s cached), with the checks CarrierScanRefuses reads. A unit the fight's list already
+// holds is read again here on purpose: the list held it as unpickable, and the scan asks the core the same questions
+// itself.
+void CollectCarrierScanHits(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight,
+    std::vector<CarrierScanFacts>& facts, std::vector<Unit*>& units)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    std::unordered_set<std::uint64_t> seen;
+    for (const BossTacticRow* row : fight.rows)
+    {
+        if (!CarrierKillFirstRow(*row))
+            continue;
+        const std::vector<KillFirstGridUnit> grid = AI_VALUE2(std::vector<KillFirstGridUnit>,
+            "kill first grid units", static_cast<int32>(TacticSubjectEntry(*row)));
+        for (const KillFirstGridUnit& hit : grid)
+        {
+            if (!hit.alive || !seen.insert(hit.guid).second)
+                continue;
+            Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive())
+                continue;
+            CarrierScanFacts factsOfHit;
+            factsOfHit.unitFound = true;
+            factsOfHit.gridEligible = KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
+                GridOwnerInFight(fight, hit.owner));
+            factsOfHit.distanceYd = hit.distance;
+            factsOfHit.los = bot->IsWithinLOSInMap(unit);
+            factsOfHit.validAttack = bot->IsValidAttackTarget(unit);
+            facts.push_back(factsOfHit);
+            units.push_back(unit);
+        }
+    }
+}
+
+// Whether `entry` is the subject of an open carrier row.
+bool IsCarrierRowEntry(const BossTacticsFight& fight, std::uint32_t entry)
+{
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row) && TacticSubjectEntry(*row) == entry)
+            return true;
+    return false;
+}
+
+// The row for a scan Shade that took the pick over an ordinary kill_first pick (a ward or a totem in view): one
+// BossTacticsKillFirst row per bot per 5 s, its own throttle (the no-switch row is a different event).
+//   info1 = "reason=scan_over"
+//   info2 = "pick=<entry>:<guid low>,over=<entry>,mode=<carrier|free>"
+constexpr uint32 kCarrierScanOverLogGapMs = 5000;
+std::mutex g_carrierScanOverLogMutex;
+std::unordered_map<uint64, uint32> g_carrierScanOverLog;
+
+void LogCarrierScanOver(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* over, KillFirstPickMode mode)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    {
+        const uint32 nowMs = WorldTimer::getMSTime();
+        std::lock_guard<std::mutex> lock(g_carrierScanOverLogMutex);
+        uint32& last = g_carrierScanOverLog[bot->GetObjectGuid().GetRawValue()];
+        if (last != 0 && nowMs - last < kCarrierScanOverLogGapMs)
+            return;
+        last = nowMs;
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "pick=%u:%u,over=%u,mode=%s", pick->GetEntry(), pick->GetGUIDLow(),
+             over->GetEntry(), mode == KillFirstPickMode::Free ? "free" : "carrier");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=scan_over", info2);
+}
+
+// The switch row (F3 a): when a carrier turns onto a Shade, one BossTacticsKillFirst row per bot per Shade says how long
+// its pick had known that Shade, so the walk can measure the reaction on the server clock instead of from 2 s frames.
+//   info1 = "reason=switch"
+//   info2 = "pick=<entry>:<guid low>,from=<entry|0>,since_ms=<ms since this bot's pick first saw the Shade>"
+// First sight is kept per (bot, Shade) in a bounded map. Every pick pass syncs it (SyncShadesSeen): a record is dropped
+// only once the bot's pick has not listed that Shade for kShadeSeenGraceMs (it died, left the fight, the curse ended or the
+// fight is over), never on a single missed pass, so a flickering attackers list does not reset `since_ms`. A pass with no
+// Shade and an empty map costs one relaxed atomic load: no lock, no allocation. Past kShadeSeenMaxEntries the oldest
+// quarter (by last sight) is dropped, so the `logged` flags of the live records survive.
+constexpr std::size_t kShadeSeenMaxEntries = 512;
+constexpr std::size_t kShadeSeenMaxPerPass = 16;
+struct ShadeSeen
+{
+    uint32 firstMs = 0;
+    uint32 lastMs = 0;
+    bool logged = false;
+};
+std::mutex g_shadeSeenMutex;
+std::map<std::pair<uint64, uint64>, ShadeSeen> g_shadeSeen;
+std::atomic<std::size_t> g_shadeSeenCount{0};
+
+void SyncShadesSeen(Player* bot, const uint64* shades, std::size_t count)
+{
+    if (count == 0 && g_shadeSeenCount.load(std::memory_order_relaxed) == 0)
+        return;
+    const uint32 nowMs = WorldTimer::getMSTime();
+    const uint64 botKey = bot->GetObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_shadeSeenMutex);
+    auto it = g_shadeSeen.lower_bound(std::make_pair(botKey, uint64(0)));
+    while (it != g_shadeSeen.end() && it->first.first == botKey)
+    {
+        if (std::find(shades, shades + count, it->first.second) != shades + count)
+        {
+            it->second.lastMs = nowMs;
+            ++it;
+        }
+        else if (ShadeSeenExpired(it->second.lastMs, nowMs))
+            it = g_shadeSeen.erase(it);
+        else
+            ++it;
+    }
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        auto const inserted = g_shadeSeen.emplace(std::make_pair(botKey, shades[i]), ShadeSeen());
+        if (inserted.second)
+        {
+            inserted.first->second.firstMs = nowMs;
+            inserted.first->second.lastMs = nowMs;
+        }
+    }
+    if (g_shadeSeen.size() > kShadeSeenMaxEntries)
+    {
+        std::vector<std::pair<uint32, std::pair<uint64, uint64>>> byAge;
+        byAge.reserve(g_shadeSeen.size());
+        for (auto const& entry : g_shadeSeen)
+            byAge.push_back(std::make_pair(nowMs - entry.second.lastMs, entry.first));
+        const std::size_t drop = g_shadeSeen.size() / 4;
+        std::nth_element(byAge.begin(), byAge.begin() + drop, byAge.end(),
+            [](auto const& a, auto const& b) { return a.first > b.first; });
+        for (std::size_t i = 0; i < drop; ++i)
+            g_shadeSeen.erase(byAge[i].second);
+    }
+    g_shadeSeenCount.store(g_shadeSeen.size(), std::memory_order_relaxed);
+}
+
+void LogCarrierSwitch(PlayerbotAI* ai, Player* bot, Unit* pick, Unit* from)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    uint32 sinceMs = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_shadeSeenMutex);
+        auto const known = g_shadeSeen.find(std::make_pair(bot->GetObjectGuid().GetRawValue(),
+                                                            pick->GetObjectGuid().GetRawValue()));
+        if (known == g_shadeSeen.end() || known->second.logged)
+            return;
+        known->second.logged = true;
+        sinceMs = CarrierSwitchSinceMs(known->second.firstMs, WorldTimer::getMSTime());
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "pick=%u:%u,from=%u,since_ms=%u", pick->GetEntry(), pick->GetGUIDLow(),
+             from ? from->GetEntry() : 0u, sinceMs);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", "reason=switch", info2);
+}
+
 Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,
     float carrierReachYd);
+}
+
+bool ai::ShadeOnGroupHealer(Player* bot, Unit* unit)
+{
+    if (!bot || !unit)
+        return false;
+    Unit* const victim = unit->GetVictim();
+    Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    Group* const group = bot->GetGroup();
+    return victimPlayer && dynamic_cast<Player*>(victim) &&
+        (victimPlayer == bot || (group && group->IsMember(victimPlayer->GetObjectGuid()))) &&
+        PlayerbotAI::IsHeal(victimPlayer);
 }
 
 Unit* ai::FindBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
@@ -3072,6 +5588,79 @@ Unit* ai::FindBossCarrierPick(PlayerbotAI* ai, Player* bot)
     return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
 }
 
+// The off-tank's healer-cover latch, per bot (AiPlayerbot.DungeonRunShadeHealerCover). The strike trigger updates it
+// (ShadeCoverLatchHolds) and the strike pick reads it first, so the trigger and the action agree on the Shade. An empty
+// latch drops its entry; past kShadeCoverLatchMaxEntries the expired latches go.
+constexpr std::size_t kShadeCoverLatchMaxEntries = 256;
+std::mutex g_shadeCoverLatchMutex;
+std::unordered_map<uint64, ShadeCoverLatch> g_shadeCoverLatch;
+
+ShadeCoverLatch ai::GetShadeCoverLatch(Player* bot)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLatchMutex);
+    auto const it = g_shadeCoverLatch.find(bot->GetObjectGuid().GetRawValue());
+    return it == g_shadeCoverLatch.end() ? ShadeCoverLatch() : it->second;
+}
+
+void ai::SetShadeCoverLatch(Player* bot, const ShadeCoverLatch& latch)
+{
+    uint64 const key = bot->GetObjectGuid().GetRawValue();
+    std::lock_guard<std::mutex> lock(g_shadeCoverLatchMutex);
+    if (latch.shade == 0)
+    {
+        g_shadeCoverLatch.erase(key);
+        return;
+    }
+    if (g_shadeCoverLatch.size() >= kShadeCoverLatchMaxEntries && g_shadeCoverLatch.find(key) == g_shadeCoverLatch.end())
+    {
+        uint32 const nowMs = WorldTimer::getMSTime();
+        for (auto it = g_shadeCoverLatch.begin(); it != g_shadeCoverLatch.end();)
+        {
+            if (nowMs - it->second.sinceMs >= kShadeCoverLatchMs)
+                it = g_shadeCoverLatch.erase(it);
+            else
+                ++it;
+        }
+    }
+    g_shadeCoverLatch[key] = latch;
+}
+
+// The latched Shade, while it keeps the pick (ShadeCoverKeepsLatched), else null.
+static Unit* LatchedCoverShade(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    ShadeCoverLatch const latch = GetShadeCoverLatch(bot);
+    if (latch.shade == 0)
+        return nullptr;
+    Unit* const unit = ai->GetUnit(ObjectGuid(latch.shade));
+    ShadeCoverLatchedShade facts;
+    facts.found = unit && unit->IsInWorld();
+    if (facts.found)
+    {
+        facts.carrierEntry = IsCarrierRowEntry(fight, unit->GetEntry());
+        facts.alive = sServerFacade.IsAlive(unit);
+        facts.attackable = PossibleAttackTargetsValue::IsValid(unit, bot);
+        facts.distanceYd = bot->GetDistance(unit);
+        facts.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
+        facts.onSelf = unit->GetVictim() == bot;
+    }
+    // The fight scan drops the gated row for a bot without the curse: an open carrier row means it carries it.
+    uint64 const pick = ShadeCoverResolvePick(latch, HasCarrierKillFirstRow(fight.rows), facts, 0,
+        WorldTimer::getMSTime());
+    return pick != 0 ? unit : nullptr;
+}
+
+Unit* ai::FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    if (!ai || !bot)
+        return nullptr;
+    // The healer cover's latch first: the Shade an off-tank pulled off a healer stays its pick while it is on the
+    // off-tank, before the general pick could hand it a nearer Shade.
+    if (sPlayerbotAIConfig.dungeonRunShadeHealerCover)
+        if (Unit* const latched = LatchedCoverShade(ai, bot, fight))
+            return latched;
+    return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);
+}
+
 bool ai::CarriesAuraGatedKillFirst(PlayerbotAI* ai, Player* bot)
 {
     if (!ai || !bot)
@@ -3103,14 +5692,8 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
         c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
         // The attackers path sets the victim's role itself: a Shade found here is in `seen`, so the grid pass below
         // never reaches it (a Shade eating a healer would rank as one eating a damage dealer).
-        {
-            Unit* const victim = unit->GetVictim();
-            Player* const victimPlayer = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
-            Group* const group = bot->GetGroup();
-            c.victimHealer = victimPlayer && dynamic_cast<Player*>(victim) &&
-                (victimPlayer == bot || (group && group->IsMember(victimPlayer->GetObjectGuid()))) &&
-                PlayerbotAI::IsHeal(victimPlayer);
-        }
+        c.victimHealer = ShadeOnGroupHealer(bot, unit);
+        c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
         index.emplace(unit->GetObjectGuid().GetRawValue(), candidates.size());
         candidates.push_back(c);
         units.push_back(unit);
@@ -3122,15 +5705,6 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
     // (KillFirstGridEligible).
     if (sPlayerbotAIConfig.dungeonRunKillFirstGrid)
     {
-        auto const ownerInFight = [&fight](std::uint64_t owner)
-        {
-            if (!owner)
-                return false;
-            for (Unit* unit : fight.units)
-                if (unit && unit->GetObjectGuid().GetRawValue() == owner)
-                    return true;
-            return false;
-        };
         std::unordered_set<std::uint32_t> entries;
         for (const BossTacticRow* row : fight.rows)
             if (row->kind == BossTacticKind::KillFirst && row->targetEntry != 0)
@@ -3149,7 +5723,7 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                     continue;
                 }
                 if (!KillFirstGridEligible(hit.alive, hit.evading, hit.victimOurs, hit.weHoldIt,
-                        ownerInFight(hit.owner)) ||
+                        GridOwnerInFight(fight, hit.owner)) ||
                     !seen.insert(hit.guid).second)
                     continue;
                 Unit* unit = ai->GetUnit(ObjectGuid(hit.guid));
@@ -3160,16 +5734,54 @@ Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fi
                 c.distance = bot->GetDistance(unit);
                 c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
                 c.victimHealer = hit.victimHealer;
+                c.dropYd = bot->GetPositionZ() - unit->GetPositionZ();
                 index.emplace(hit.guid, candidates.size());
                 candidates.push_back(c);
                 units.push_back(unit);
             }
         }
     }
+    // First sight of each living Shade of an open carrier row, for the switch row (SyncShadesSeen).
+    {
+        uint64 shadeGuids[kShadeSeenMaxPerPass];
+        std::size_t shadeCount = 0;
+        if (HasCarrierKillFirstRow(fight.rows))
+            for (std::size_t i = 0; i < units.size() && shadeCount < kShadeSeenMaxPerPass; ++i)
+                if (sServerFacade.IsAlive(units[i]) && IsCarrierRowEntry(fight, candidates[i].entry))
+                    shadeGuids[shadeCount++] = units[i]->GetObjectGuid().GetRawValue();
+        SyncShadesSeen(bot, shadeGuids, shadeCount);
+    }
+    // The healer cover key ranks a Shade on a healer of ours within 30 yd ahead of a nearer Shade (the free pick,
+    // PickKillFirst, already ranks it first).
     const int picked = mode == KillFirstPickMode::Carrier
-        ? PickCarrierOverride(fight.rows, candidates, carrierReachYd)
+        ? PickCarrierOverride(fight.rows, candidates, carrierReachYd, sPlayerbotAIConfig.dungeonRunShadeHealerCover)
         : PickKillFirst(fight.rows, candidates);
-    return picked < 0 ? nullptr : units[picked];
+    Unit* const ordinary = picked < 0 ? nullptr : units[picked];
+    // The carrier scan (walk 53): the carrier row's entry read off the grid, and the nearest hit that passes every
+    // check. It runs BEFORE the ordinary pick is accepted, for every mode but None (a player's order is never
+    // overridden): a free DPS takes every open row, so a ward or a totem in view would win the ordinary pick while a
+    // Shade lives, and a carrier is the only one who can kill that Shade (CarrierScanTakesPrecedence). An ordinary pick
+    // that already is a carrier-row Shade stays and the scan is skipped. A second path, never a widened first one:
+    // PickCarrierOverride and the grid pass above stay as they are.
+    bool const isCarrier = HasCarrierKillFirstRow(fight.rows);
+    bool const ordinaryIsCarrierEntry = ordinary && IsCarrierRowEntry(fight, ordinary->GetEntry());
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan && isCarrier && mode != KillFirstPickMode::None &&
+        !ordinaryIsCarrierEntry)
+    {
+        std::vector<CarrierScanFacts> facts;
+        std::vector<Unit*> scanUnits;
+        CollectCarrierScanHits(ai, bot, fight, facts, scanUnits);
+        int const scanned = CarrierScanPick(facts, carrierReachYd);
+        Unit* const scanUnit = scanned >= 0 ? scanUnits[scanned] : nullptr;
+        if (CarrierScanTakesPrecedence(isCarrier, sPlayerbotAIConfig.dungeonRunCarrierScan, mode, scanUnit != nullptr,
+                ordinaryIsCarrierEntry))
+        {
+            if (ordinary && ordinary != scanUnit)
+                LogCarrierScanOver(ai, bot, scanUnit, ordinary, mode);
+            return scanUnit;
+        }
+    }
+    return ordinary;
 }
 }
 
@@ -3197,8 +5809,87 @@ Unit* ai::FindBossHoldKill(PlayerbotAI* ai, Player* bot, const BossTacticsFight&
                 return current;
         }
     }
+    // gate_hold: the spared boss at or below its gate with a blocker still fighting is dropped exactly like a held
+    // entry, so the bot switches to the kill_first blocker instead of feeding the boss.
+    if (GateHoldsUnit(ai, fight.rows, current))
+        return current;
     const auto countNear = [ai](std::uint32_t entry) { return HoldKillBlockers(ai, entry); };
     return KillHeld(fight.rows, current->GetEntry(), countNear) ? current : nullptr;
+}
+
+namespace
+{
+// The per-bot latch of the taken Son's threat cap (SeekTakenCapLatch): one per bot, for the take it last read (Son and
+// take time). It carries the hysteresis (held on the last read) and the take's one `seek take capped` row.
+std::mutex g_seekTakenCapMutex;
+std::unordered_map<std::uint64_t, SeekTakenCapLatch> g_seekTakenCapLatches;
+// The victim relief's per-Son latch (SeekReliefLatch, DungeonRunSeekVictimRelief): one per Son of the fight, keyed by
+// the map instance and the Son's raw guid (SeekReliefKey). Instance copies of one DB spawn can share the guid, so a
+// guid alone would let one raid's claim, cap or spacing block another raid's relief. It carries the dwell clock (the
+// run on the boss's tank), the last start and its count (the anti-ping-pong). Each instance sweeps its own latches,
+// at most once a second: entries untouched for more than 120 s (a dead Son, a wiped fight) drop.
+std::mutex g_seekReliefMutex;
+SeekReliefLatches g_seekReliefLatches;
+// The relief's sweep clock, one per map instance. The sweep's own clock is read here, under the mutex: a fight read's
+// nowMs is taken before the lock, so a stamp another thread lands after it would look older than it is and the
+// unsigned age would wrap, dropping a live latch.
+std::unordered_map<std::uint32_t, std::uint32_t> g_seekReliefSweepMs;
+constexpr std::uint32_t kSeekReliefSweepGapMs = 1000;
+
+void LogSeekTakenSonCapped(PlayerbotAI* ai, Player* bot, Unit* son, std::uint8_t pct, std::uint32_t sinceTakeMs)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[160];
+    snprintf(info1, sizeof(info1), "seek take capped son=%u bot=%s pct=%u since_take_ms=%u", son->GetGUIDLow(),
+             bot->GetName(), static_cast<unsigned>(pct), sinceTakeMs);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// The damage dealers' threat cap on the meet's just-taken Son (DungeonRunSeekTakenSonThreatCap, SeekTakenSonDpsHeld):
+// true holds this bot's attacks and casts on `unit`. Only a free damage dealer that is not the taker, and only on the
+// taken state's own Son; never a tank or a healer. No boss constant: the Son is the walk-out's own.
+bool TakenSonDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekTakenSonThreatCap)
+        return false;
+    // The cheap filters first, before any lock: a seek map, a creature whose victim is a player tank (a taken Son is on
+    // its taker), and a free damage dealer that is no tank.
+    if (!GetBossTactics().HasSeekAuraMap(bot->GetMapId()) || !unit->ToCreature())
+        return false;
+    Player* const victim = dynamic_cast<Player*>(unit->GetVictim());
+    if (!victim || !PlayerbotAI::IsTank(victim))
+        return false;
+    if (PlayerbotAI::IsTank(bot) || !IsFreeDps(ai, bot))
+        return false;
+    const SeekTakenSon taken = SeekTakenSonRead(ai, bot);
+    if (taken.son == 0 || unit->GetObjectGuid().GetRawValue() != taken.son ||
+        bot->GetObjectGuid().GetRawValue() == taken.by)
+        return false;
+    const bool sonTakenByTank = victim->GetObjectGuid().GetRawValue() == taken.by;
+    ThreatManager& threat = unit->GetThreatManager();
+    const std::uint8_t pct = ThreatPctOf(threat.getThreat(bot), threat.getThreat(victim), unit->IsInCombat(), false);
+    // The next Blood Siphon from the seek fight's own clock. No read, or no known due time (INT_MAX): unknown, which
+    // releases the hold (dosing first).
+    SeekFight state;
+    const bool fightRead = ReadSeekFightCached(ai, bot, state);
+    const bool siphonKnown = fightRead && state.dueSignedMs != std::numeric_limits<int>::max();
+    const int siphonInMs = siphonKnown ? state.dueSignedMs : 0;
+    bool held = false;
+    bool rowDue = false;
+    {
+        std::lock_guard<std::mutex> lock(g_seekTakenCapMutex);
+        SeekTakenCapLatch& latch =
+            SeekTakenCapLatchFor(g_seekTakenCapLatches[bot->GetObjectGuid().GetRawValue()], taken.son, taken.takenMs);
+        held = SeekTakenSonDpsHeld(true, sonTakenByTank, pct, unit->GetHealthPercent(), taken.sinceMs, siphonKnown,
+                                   siphonInMs, PlayerbotAI::IsHeal(bot), latch.held);
+        latch.held = held;
+        rowDue = SeekTakenCapRowDue(latch, held);
+    }
+    if (rowDue)
+        LogSeekTakenSonCapped(ai, bot, unit, pct, taken.sinceMs);
+    return held;
+}
 }
 
 bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* trigger)
@@ -3207,6 +5898,10 @@ bool ai::IsDpsHeld(PlayerbotAI* ai, Player* bot, Unit* unit, DpsHoldTrigger* tri
         *trigger = DpsHoldTrigger::None;
     if (!ai || !bot || !unit || !unit->IsAlive())
         return false;
+    // The threat cap on the meet's just-taken Son (DungeonRunSeekTakenSonThreatCap): its own key, read first, before
+    // the aura-tactics gates.
+    if (sPlayerbotAIConfig.dungeonRunSeekTakenSonThreatCap && TakenSonDpsHeld(ai, bot, unit))
+        return true;
     // The kind is the new key's own, and the map flag keeps every other map at one lookup.
     if (!sPlayerbotAIConfig.dungeonRunAuraTactics || !GetBossTactics().HasAuraTacticMap(bot->GetMapId()))
         return false;
@@ -3772,6 +6467,10 @@ bool BossTacticsDispelSweepAction::Execute(Event& event)
 // for a whole fight.
 //   info1 = "reason=<not_read|not_attackable|beyond_reach|reattack|player_order>"
 //   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,pick=<entry>:<guid low>|none,current=<entry>:<guid low>|none"
+// With AiPlayerbot.DungeonRunCarrierScan on, the reason words come from the scan's tally instead (the row then says
+// which check kept every grid hit out of the pick):
+//   info1 = "reason=<no_unit|ineligible|beyond_reach|no_los|invalid_target|not_pickable|player_order|attack_refused>"
+//   info2 = ...,current=...,codes=<word>:<n>[|<word>:<n>],grid=<hits>,pickable=<0|1>,mode=<carrier|free|none>
 constexpr uint32 kCarrierNoSwitchLogGapMs = 5000;
 std::mutex g_carrierNoSwitchLogMutex;
 std::unordered_map<uint64, uint32> g_carrierNoSwitchLog;
@@ -3785,6 +6484,44 @@ static bool CarrierNoSwitchLogDue(Player* bot)
         return false;
     last = nowMs;
     return true;
+}
+
+// The scan's tally for the row: which check refused each grid hit of the carrier row, whether a player's order
+// closed the pick, and whether any candidate of the entry was pickable at all (the attackers list first, then the
+// grid). Reads the same value the scan pick read (1 s cached), so the row explains exactly what the pick saw.
+static CarrierScanTally CarrierScanTallyOf(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight,
+    std::uint32_t entry)
+{
+    std::vector<CarrierScanFacts> facts;
+    std::vector<Unit*> units;
+    CollectCarrierScanHits(ai, bot, fight, facts, units);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    CarrierScanTally tally;
+    tally.hits = static_cast<int>(facts.size());
+    for (const CarrierScanFacts& hit : facts)
+        ++tally.byCode[static_cast<int>(CarrierScanRefuses(hit, kCarrierHoldReachYd))];
+    ObjectGuid const ordered = AI_VALUE(ObjectGuid, "explicit attack target");
+    // The caller only gets here with an open carrier row (entry != 0), so the row is what FindBossKillFirst reads too.
+    KillFirstPickMode const mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),
+        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, "automated attack target").GetRawValue()),
+        true);
+    tally.playerOrder = mode == KillFirstPickMode::None;
+    tally.freeMode = mode == KillFirstPickMode::Free;
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetEntry() == entry && sServerFacade.IsAlive(unit) &&
+            PossibleAttackTargetsValue::IsValid(unit, bot))
+        {
+            tally.pickableSeen = true;
+            break;
+        }
+    if (!tally.pickableSeen)
+        for (Unit* unit : units)
+            if (unit && PossibleAttackTargetsValue::IsValid(unit, bot))
+            {
+                tally.pickableSeen = true;
+                break;
+            }
+    return tally;
 }
 
 void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick,
@@ -3804,6 +6541,10 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         }
     if (!entry)
         return; // the bot carries no gated row: no Shade is its subject
+    // The throttle first: the scan tally reads the grid and asks the core for every hit, which a row that is not due
+    // would only throw away.
+    if (!CarrierNoSwitchLogDue(bot))
+        return;
     Unit* shade = nullptr;
     float shadeYd = -1.0f;
     for (Unit* unit : fight.units)
@@ -3818,7 +6559,29 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         }
     }
     const char* reason = keptReason;
-    if (!reason)
+    char scanText[160];
+    scanText[0] = '\0';
+    if (sPlayerbotAIConfig.dungeonRunCarrierScan)
+    {
+        CarrierScanTally const tally = CarrierScanTallyOf(ai, bot, fight, entry);
+        bool const pickableNow = shade && PossibleAttackTargetsValue::IsValid(shade, bot);
+        if (!reason)
+            reason = CarrierScanWord(tally, shade != nullptr, pickableNow);
+        std::string codes;
+        for (int code = 0; code < 6; ++code)
+        {
+            if (tally.byCode[code] <= 0)
+                continue;
+            if (!codes.empty())
+                codes += '|';
+            codes += CarrierScanReasonWord(static_cast<CarrierScanRefusal>(code));
+            codes += ':';
+            codes += std::to_string(tally.byCode[code]);
+        }
+        snprintf(scanText, sizeof(scanText), ",codes=%s,grid=%d,pickable=%d,mode=%s", codes.c_str(), tally.hits,
+            tally.pickableSeen ? 1 : 0, tally.playerOrder ? "none" : tally.freeMode ? "free" : "carrier");
+    }
+    else if (!reason)
     {
         bool const pickable = shade && PossibleAttackTargetsValue::IsValid(shade, bot);
         switch (CarrierNoSwitchReason(true, shade != nullptr, pickable, shadeYd, kCarrierHoldReachYd))
@@ -3833,8 +6596,6 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
                 break;
         }
     }
-    if (!CarrierNoSwitchLogDue(bot))
-        return;
     char info1[64];
     snprintf(info1, sizeof(info1), "reason=%s", reason);
     char shadeText[48];
@@ -3852,9 +6613,304 @@ void ai::LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight
         snprintf(currentText, sizeof(currentText), "%u:%u", current->GetEntry(), current->GetGUIDLow());
     else
         snprintf(currentText, sizeof(currentText), "none");
-    char info2[192];
-    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s", shadeText, shadeYd, pickText, currentText);
+    char info2[256];
+    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,pick=%s,current=%s%s", shadeText, shadeYd, pickText,
+             currentText, scanText);
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsKillFirst", info1, info2);
+}
+
+// The Shade cover row (walk 56 F3, no flag): a Shade of Jin'do on a healer of the group, and a cursed damage dealer or
+// a cursed off-tank that does not hold the boss that is not on it. A Delusions carrier runs the pass (only a carrier sees
+// the Shades) over the whole group, and the row is logged under the member it names, so a dead or charmed carrier gets
+// its row too. One record per (member, Shade) in a bounded map (ShadeCoverLogBook): a miss is logged once it lasts
+// kShadeCoverGraceMs, then at most once per kShadeCoverLogGapMs (ShadeCoverLogDue), a `dead` row once per pair; a member
+// on the Shade drops its record.
+//   info1 = "reason=<dead|charmed|other_shade|out_of_range|threat_gate|guard|on_boss|other_target|no_target>,
+//            role=<dps|offtank>"
+//   info2 = "shade=<entry>:<guid low>,healer=<name>,dist=<yd>,target=<entry>:<guid low>|none"
+std::mutex g_shadeCoverLogMutex;
+ShadeCoverLogBook g_shadeCoverLog;
+
+// Note the (member, Shade) state at `nowMs` (`miss`: the member is not on the Shade); true when a row is due.
+static bool ShadeCoverMissDue(uint64 member, uint64 shade, bool miss, bool dead, uint32 nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
+    return g_shadeCoverLog.Note(member, shade, miss, dead, nowMs);
+}
+
+// Whether a miss is running for the pair: a member that died while missing the Shade gets its one `dead` row.
+static bool ShadeCoverMissOpen(uint64 member, uint64 shade, uint32 nowMs)
+{
+    std::lock_guard<std::mutex> lock(g_shadeCoverLogMutex);
+    return g_shadeCoverLog.MissOpen(member, shade, nowMs);
+}
+
+void ai::LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    if (!ai || !bot || !sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    std::uint32_t entry = 0;
+    std::uint32_t aura = 0;
+    for (const BossTacticRow* row : fight.rows)
+        if (CarrierKillFirstRow(*row))
+        {
+            entry = TacticSubjectEntry(*row);
+            aura = row->botAura;
+            break;
+        }
+    if (!entry)
+        return; // only a carrier sees the Shades
+    Group* const group = bot->GetGroup();
+    if (!group)
+        return;
+    // The Shades on a healer of ours this carrier sees: the fight's units, then the kill-first grid read of the entry.
+    std::vector<Unit*> shades;
+    std::unordered_set<std::uint64_t> seen;
+    auto const consider = [&](Unit* unit)
+    {
+        if (!unit || !unit->IsInWorld() || !sServerFacade.IsAlive(unit) || unit->GetEntry() != entry ||
+            shades.size() >= kShadeSeenMaxPerPass || !seen.insert(unit->GetObjectGuid().GetRawValue()).second)
+            return;
+        if (ShadeOnGroupHealer(bot, unit))
+            shades.push_back(unit);
+    };
+    for (Unit* unit : fight.units)
+        consider(unit);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::vector<KillFirstGridUnit> grid =
+        AI_VALUE2(std::vector<KillFirstGridUnit>, "kill first grid units", static_cast<int32>(entry));
+    for (const KillFirstGridUnit& hit : grid)
+        if (hit.alive && hit.victimHealer)
+            consider(ai->GetUnit(ObjectGuid(hit.guid)));
+    if (shades.empty())
+        return;
+
+    auto const isFightBoss = [&](Unit* unit)
+    {
+        if (!unit)
+            return false;
+        for (const BossTacticRow* row : fight.rows)
+            if (row->bossEntry == unit->GetEntry())
+                return true;
+        return false;
+    };
+    Player* const mainTank = GetRaidTankRoles(ai).MainTank();
+    std::uint8_t const mainTankPct = mainTank ? static_cast<std::uint8_t>(mainTank->GetHealthPercent()) : 0;
+    std::uint8_t const lowHealthPct = static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth);
+    bool const successor = HasThreatSuccessorRow(fight.rows);
+    // The off-tank's half of the healer cover rides the carrier strike.
+    bool const coverOn = sPlayerbotAIConfig.dungeonRunShadeHealerCover && sPlayerbotAIConfig.dungeonRunCarrierStrike;
+    uint32 const nowMs = WorldTimer::getMSTime();
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (!member || !member->IsInWorld() || member->GetMapId() != bot->GetMapId() ||
+            member->GetInstanceId() != bot->GetInstanceId())
+            continue;
+        PlayerbotAI* const memberAi = PlayerbotAIStorage::Instance().GetAI(member);
+        if (!memberAi || PlayerbotAI::IsHeal(member))
+            continue; // a player's choices are its own; a healer keeps its carrier-strike guards
+        CarrierStrikeRole role = CarrierStrikeRole::Dps;
+        if (PlayerbotAI::IsTank(member))
+            role = member == mainTank ? CarrierStrikeRole::MainTank : CarrierStrikeRole::OffTank;
+        bool holdsBoss = false;
+        for (Unit* unit : fight.units)
+            if (unit && unit->GetVictim() == member && isFightBoss(unit))
+            {
+                holdsBoss = true;
+                break;
+            }
+        Unit* target = member->GetVictim();
+        if (!target && !member->GetSelectionGuid().IsEmpty())
+            target = ai->GetUnit(member->GetSelectionGuid());
+        uint64 const memberKey = member->GetObjectGuid().GetRawValue();
+        bool const cursed = member->HasAura(aura);
+        for (Unit* shade : shades)
+        {
+            uint64 const shadeKey = shade->GetObjectGuid().GetRawValue();
+            // The curse drops at death: a member that was missing this Shade when it died is still asked, and gets one
+            // `dead` row per Shade (ShadeCoverLogBook).
+            bool const asked = ShadeCoverAsks(role, cursed, holdsBoss) ||
+                (!member->IsAlive() && role != CarrierStrikeRole::MainTank &&
+                 ShadeCoverMissOpen(memberKey, shadeKey, nowMs));
+            if (!asked)
+                continue;
+            ShadeCoverFacts facts;
+            facts.alive = member->IsAlive();
+            facts.charmed = !member->GetCharmerGuid().IsEmpty();
+            facts.distanceYd = member->GetDistance(shade);
+            facts.dropYd = member->GetPositionZ() - shade->GetPositionZ();
+            facts.threatGate = ShadeCoverThreatGate(role, successor, coverOn);
+            facts.guard = ShadeCoverOffTankGuard(role, coverOn, mainTankPct,
+                static_cast<std::uint8_t>(member->GetHealthPercent()), lowHealthPct);
+            facts.onThisShade = target == shade;
+            facts.onOtherShade = target && target != shade && target->GetEntry() == entry;
+            facts.onBoss = isFightBoss(target);
+            facts.hasTarget = target != nullptr;
+            ShadeCoverMiss const miss = ShadeCoverMissReason(facts, kShadeCoverReachYd);
+            if (!ShadeCoverMissDue(memberKey, shadeKey, miss != ShadeCoverMiss::None, miss == ShadeCoverMiss::Dead,
+                    nowMs))
+                continue;
+            Unit* const victim = shade->GetVictim();
+            char info1[64];
+            snprintf(info1, sizeof(info1), "reason=%s,role=%s", ShadeCoverMissWord(miss),
+                     role == CarrierStrikeRole::OffTank ? "offtank" : "dps");
+            char targetText[48];
+            if (target)
+                snprintf(targetText, sizeof(targetText), "%u:%u", target->GetEntry(), target->GetGUIDLow());
+            else
+                snprintf(targetText, sizeof(targetText), "none");
+            char info2[160];
+            snprintf(info2, sizeof(info2), "shade=%u:%u,healer=%s,dist=%.1f,target=%s", shade->GetEntry(),
+                     shade->GetGUIDLow(), victim ? victim->GetName() : "none", facts.distanceYd, targetText);
+            sPlayerbotAIConfig.logEvent(memberAi, "BossTacticsShadeCover", info1, info2);
+        }
+    }
+}
+
+// The taunt gate (AiPlayerbot.DungeonRunTauntGate): a tank never taunts a needs_aura subject (the Shade of Jin'do,
+// which only a carrier can damage and which the core answers with a copy of the boss's threat list) or a creature the
+// core marks immune to taunts (Jin'do himself, where the taunt would hand the boss to a damage dealer). The gate sits
+// in the taunt actions, not in "attacker of non-tank target": that value also picks the warrior gap closer's Charge,
+// which is no taunt.
+//   info1 = "reason=<needs_aura|taunt_immune|holding_boss>"
+//   info2 = "target=<entry>:<guid low>,spell=<spell>"
+constexpr uint32 kTauntGateLogGapMs = 5000;
+std::mutex g_tauntGateLogMutex;
+std::unordered_map<uint64, TauntGateLogTimes> g_tauntGateLog;
+
+// One row per (bot, gate word) per kTauntGateLogGapMs (TauntGateLogDueFor): a taunt_immune row must not hide a needs_aura one.
+static bool TauntGateLogDue(Player* bot, TauntGate gate)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_tauntGateLogMutex);
+    return TauntGateLogDueFor(g_tauntGateLog[bot->GetObjectGuid().GetRawValue()], gate, nowMs, kTauntGateLogGapMs);
+}
+
+// The bot is the current victim of a boss of the fight: a creature with tactic rows (or a world boss) that is not the
+// taunt target itself. Only read for a carrier at a needs_aura subject, so the attackers walk is rare.
+static bool BotHoldsBoss(PlayerbotAI* ai, Player* bot, Unit* exclude)
+{
+    AiObjectContext* context = ai->GetAiObjectContext();
+    for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* attacker = ai->GetUnit(guid);
+        if (!attacker || attacker == exclude || !attacker->IsAlive() || attacker->GetVictim() != bot)
+            continue;
+        Creature* creature = dynamic_cast<Creature*>(attacker);
+        if (creature && GetBossTactics().Rows(creature->GetMapId(), creature->GetEntry()) != nullptr)
+            return true;
+    }
+    return false;
+}
+
+bool ai::TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell)
+{
+    if (!sPlayerbotAIConfig.dungeonRunTauntGate)
+        return false;
+    if (!ai || !bot || !target)
+        return false;
+    std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), target->GetEntry());
+    bool const botHasAura = requiredAura != 0 && bot->HasAura(requiredAura);
+    // Only a carrier at a needs_aura subject needs the boss-victim read (the NeedsAura word comes first otherwise).
+    bool const holdsBoss = botHasAura && BotHoldsBoss(ai, bot, target);
+    TauntGate const gate = TauntGateFor(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura, botHasAura,
+        TargetTauntImmune(target), holdsBoss);
+    if (gate == TauntGate::Allow)
+        return false;
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv") && TauntGateLogDue(bot, gate))
+    {
+        char info1[32];
+        snprintf(info1, sizeof(info1), "reason=%s", TauntGateWord(gate));
+        char info2[64];
+        snprintf(info2, sizeof(info2), "target=%u:%u,spell=%s", target->GetEntry(), target->GetGUIDLow(),
+                 spell ? spell : "none");
+        sPlayerbotAIConfig.logEvent(ai, "BossTacticsTauntGate", info1, info2);
+    }
+    return true;
+}
+
+// The carrier strike's verdict row (t1106c item 1): why a cursed healer or off-tank did or did not turn on its Shade,
+// with the guard numbers behind the verdict. One row per bot whenever the verdict changes, and at most one every
+// kCarrierStrikeLogGapMs while it stays the same: the trigger evaluates it every second and a healer can sit under one
+// guard for a whole curse.
+//   info1 = "verdict=<strike|not_carrier|no_shade|main_tank|threat_successor|holds_boss|guard_low_member|guard_tank|
+//             guard_healers|guard_mana|guard_dispel>,role=<healer|offtank|maintank|dps>"
+//   info2 = "shade=<entry>:<guid low>|none,dist=<yd>,low=<pct>,tank=<pct>,healers=<n>,mana=<pct>,spell=<id|melee|none>"
+constexpr uint32 kCarrierStrikeLogGapMs = 5000;
+std::mutex g_carrierStrikeLogMutex;
+
+struct CarrierStrikeLogRecord
+{
+    CarrierStrikeVerdict verdict = CarrierStrikeVerdict::NotCarrier;
+    uint32 atMs = 0;
+};
+std::unordered_map<uint64, CarrierStrikeLogRecord> g_carrierStrikeLog;
+
+static bool CarrierStrikeLogDue(Player* bot, CarrierStrikeVerdict verdict)
+{
+    const uint32 nowMs = WorldTimer::getMSTime();
+    std::lock_guard<std::mutex> lock(g_carrierStrikeLogMutex);
+    CarrierStrikeLogRecord& record = g_carrierStrikeLog[bot->GetObjectGuid().GetRawValue()];
+    if (record.atMs != 0 && record.verdict == verdict && nowMs - record.atMs < kCarrierStrikeLogGapMs)
+        return false;
+    record.verdict = verdict;
+    record.atMs = nowMs;
+    return true;
+}
+
+const char* CarrierStrikeVerdictWord(CarrierStrikeVerdict verdict)
+{
+    switch (verdict)
+    {
+        case CarrierStrikeVerdict::Strike:          return "strike";
+        case CarrierStrikeVerdict::NotCarrier:      return "not_carrier";
+        case CarrierStrikeVerdict::NoShade:         return "no_shade";
+        case CarrierStrikeVerdict::MainTank:        return "main_tank";
+        case CarrierStrikeVerdict::ThreatSuccessor: return "threat_successor";
+        case CarrierStrikeVerdict::HoldsBoss:       return "holds_boss";
+        case CarrierStrikeVerdict::GuardLowMember:  return "guard_low_member";
+        case CarrierStrikeVerdict::GuardTank:       return "guard_tank";
+        case CarrierStrikeVerdict::GuardHealers:    return "guard_healers";
+        case CarrierStrikeVerdict::GuardMana:       return "guard_mana";
+        case CarrierStrikeVerdict::GuardDispel:     return "guard_dispel";
+        case CarrierStrikeVerdict::Dps:             return "dps";
+    }
+    return "not_carrier";
+}
+
+const char* CarrierStrikeRoleWord(CarrierStrikeRole role)
+{
+    switch (role)
+    {
+        case CarrierStrikeRole::Healer:   return "healer";
+        case CarrierStrikeRole::OffTank:  return "offtank";
+        case CarrierStrikeRole::MainTank: return "maintank";
+        case CarrierStrikeRole::Dps:      return "dps";
+    }
+    return "dps";
+}
+
+void ai::LogCarrierStrike(PlayerbotAI* ai, Player* bot, CarrierStrikeVerdict verdict, CarrierStrikeRole role,
+    Unit* shade, float shadeYd, std::uint8_t lowestPct, std::uint8_t tankPct, std::uint8_t otherHealers,
+    std::uint8_t manaPct, const char* spell)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    if (!CarrierStrikeLogDue(bot, verdict))
+        return;
+    char info1[96];
+    snprintf(info1, sizeof(info1), "verdict=%s,role=%s", CarrierStrikeVerdictWord(verdict),
+             CarrierStrikeRoleWord(role));
+    char shadeText[48];
+    if (shade)
+        snprintf(shadeText, sizeof(shadeText), "%u:%u", shade->GetEntry(), shade->GetGUIDLow());
+    else
+        snprintf(shadeText, sizeof(shadeText), "none");
+    char info2[192];
+    snprintf(info2, sizeof(info2), "shade=%s,dist=%.1f,low=%u,tank=%u,healers=%u,mana=%u,spell=%s", shadeText,
+             shadeYd, static_cast<unsigned>(lowestPct), static_cast<unsigned>(tankPct),
+             static_cast<unsigned>(otherHealers), static_cast<unsigned>(manaPct), spell ? spell : "none");
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsCarrierStrike", info1, info2);
 }
 
 bool BossTacticsKillFirstAction::Execute(Event& event)
@@ -3890,7 +6946,39 @@ bool BossTacticsKillFirstAction::Execute(Event& event)
         context->GetValue<ObjectGuid>("explicit attack target")->Set(ObjectGuid());
         context->GetValue<ObjectGuid>("automated attack target")->Set(ObjectGuid());
     }
-    return Attack(bot, pick);
+    if (!Attack(bot, pick))
+    {
+        // A pick that passed every check and the core still refused says so next to the no-switch row (the carrier scan
+        // turns the pick list into one the bot reads itself, so a refusal there is worth a row of its own).
+        if (sPlayerbotAIConfig.dungeonRunCarrierScan)
+            LogCarrierNoSwitch(ai, bot, fight, pick, current, "attack_refused");
+        return false;
+    }
+    // A carrier that turned onto a needs_aura Shade says how long it had known it (one row per bot per Shade).
+    if (IsCarrierRowEntry(fight, pick->GetEntry()))
+        LogCarrierSwitch(ai, bot, pick, current);
+    return true;
+}
+
+bool BossTacticsCarrierStrikeAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTacticsFight fight = ScanBossTactics(ai, bot);
+    Unit* shade = FindBossCarrierStrikePick(ai, bot, fight);
+    if (!shade)
+        return false;
+    // A healer uses the class's shortest damaging spell; when none can be cast (a talentless paladin, mana, cooldown)
+    // the melee/wand fallback keeps it on the Shade. An off-tank always attacks.
+    if (PlayerbotAI::IsHeal(bot))
+    {
+        for (const char* name : CarrierStrikeSpells(bot->GetClass()))
+        {
+            std::string const spell(name);
+            if (ai->CanCastSpell(spell, shade))
+                return ai->CastSpell(spell, shade);
+        }
+    }
+    return Attack(bot, shade);
 }
 
 bool BossTacticsHoldKillAction::Execute(Event& event)
@@ -3904,9 +6992,9 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
     // A seek_aura source the row holds takes the drop path at once: the nearest pick would be the Son itself (it is
     // not a hold_kill entry), and re-attacking it is what kept the pre-damage going past the hold percent (H2).
     bool seekHeld = false;
+    SeekFight state;
     if (sPlayerbotAIConfig.dungeonRunSeekAura)
     {
-        SeekFight state;
         seekHeld = ReadSeekFightCached(ai, bot, state) && SeekHoldsUnit(state, held);
     }
     // The kill_first pick moves the bot off a held boss entry (a Voidwalker, the Blood Priest). A pick that is the held
@@ -3917,14 +7005,14 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
         {
             if (pick != held)
             {
-                LogHoldKillPick(ai, bot, fight, held, pick, countNear);
+                LogHoldKillPick(ai, bot, fight, held, pick, countNear, &state.holdSince, state.nowMs);
                 return Attack(bot, pick);
             }
         }
     }
     // Else the nearest creature this bot may attack, by the same candidate rules the kill_first pick applies
-    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds and,
-    // for a held seek source, every source entry.
+    // (PossibleAttackTargetsValue::IsValid and kBossTacticsEngageRange), minus the entries a hold_kill row holds, a
+    // unit a gate_hold row spares and, for a held seek source, every source entry.
     if (!seekHeld)
     {
         std::vector<TacticCandidate> candidates;
@@ -3934,19 +7022,20 @@ bool BossTacticsHoldKillAction::Execute(Event& event)
             TacticCandidate c;
             c.entry = unit->GetEntry();
             c.distance = bot->GetDistance(unit);
-            c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot);
+            c.pickable = PossibleAttackTargetsValue::IsValid(unit, bot) && !GateHoldsUnit(ai, fight.rows, unit);
             candidates.push_back(c);
         }
         const int nearestIndex = PickNearestUnheld(fight.rows, candidates, countNear);
         if (nearestIndex >= 0)
         {
-            LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear);
+            LogHoldKillPick(ai, bot, fight, held, fight.units[nearestIndex], countNear, &state.holdSince,
+                            state.nowMs);
             return Attack(bot, fight.units[nearestIndex]);
         }
     }
     // Nothing to switch to: drop the held pick and stop, so the assist rows re-pick once the blocker is dead. Every
     // picker skips a held entry, so the bot has no dps target while the blocker lives and waits the Servant out.
-    LogHoldKillPick(ai, bot, fight, held, nullptr, countNear);
+    LogHoldKillPick(ai, bot, fight, held, nullptr, countNear, &state.holdSince, state.nowMs);
     AiObjectContext* context = ai->GetAiObjectContext();
     context->GetValue<Unit*>("current target")->Set(nullptr);
     context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
@@ -4054,6 +7143,15 @@ Unit* HeldSwapBoss(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
             return boss;
     }
     return nullptr;
+}
+
+// A tank's control and silence for a taunt (the taunt-after pick and the nearest take read the same): in control (no
+// stun, fear, confuse, hex or charm) and silenced or pacified.
+void TankTauntGuards(Player* tank, bool& inControl, bool& silenced)
+{
+    inControl = tank && !tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) && !tank->IsCharmed() &&
+        !tank->IsPolymorphed();
+    silenced = tank && (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
 }
 
 // The tank's taunt this bot knows, first learned wins: Taunt (warrior), Growl (druid), Hand of Reckoning (Turtle's
@@ -4233,7 +7331,7 @@ bool BossTacticsTankSwapAction::Execute(Event& event)
     if (!task.valid || !task.boss)
         return false;
     const char* const taunt = CastableTaunt(ai, task.boss);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.boss, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.boss)
@@ -4302,11 +7400,16 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     const bool seeksRow = sPlayerbotAIConfig.dungeonRunSeekAura &&
         ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
         GetBossTactics().HasSeekAuraMap(bot->GetMapId());
+    // gate_hold is the gate key's own: with it off its rows are not in the fight and the veto never runs.
+    const bool gateHold = sPlayerbotAIConfig.dungeonRunGateHold &&
+        ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) &&
+        GetBossTactics().HasGateHoldMap(bot->GetMapId());
     // A heal, a buff or a move has only the area clause to answer, and that one needs a hold_kill, one_at_a_time,
-    // linked_death, dps_hold_after or seek_aura row: a map with only kill_first or interrupt rows (every other raid)
-    // pays for no scan here.
+    // linked_death, dps_hold_after, seek_aura or gate_hold row: a map with only kill_first or interrupt rows (every
+    // other raid) pays for no scan here.
     if (other && !GetBossTactics().HasHoldMap(bot->GetMapId()) &&
-        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && !seeksRow)
+        !(linkedDeath && GetBossTactics().HasLinkedDeathMap(bot->GetMapId())) && !auraHolds && !seeksRow &&
+        !gateHold)
         return 1.0f;
     AiObjectContext* context = ai->GetAiObjectContext();
     const BossTacticsFight fight = ScanBossTactics(ai, bot);
@@ -4318,7 +7421,8 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     bool dpsHoldRows = false;
     for (const BossTacticRow* row : fight.rows)
     {
-        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime)
+        if (row->kind == BossTacticKind::HoldKill || row->kind == BossTacticKind::OneAtATime ||
+            (gateHold && row->kind == BossTacticKind::GateHold))
             holdsRows = true;
         if (auraHolds && row->kind == BossTacticKind::DpsHoldAfter)
             dpsHoldRows = true;
@@ -4361,7 +7465,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
             Unit* const struck = action->GetTarget();
             if (SeekDotOnSource(state, action))
             {
-                LogHoldKillVeto(ai, bot, "seek", action->GetTarget());
+                LogHoldKillVeto(ai, bot, "seek", action->GetTarget(), &state.holdSince, state.nowMs);
                 return 0.0f;
             }
             const bool pullHit = IsSeekSource(state, struck) &&
@@ -4379,7 +7483,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
                     heldSource = SeekHeldSourceInArea(state, picked ? picked : static_cast<Unit*>(bot));
                 if (heldSource)
                 {
-                    LogHoldKillVeto(ai, bot, "seek", heldSource);
+                    LogHoldKillVeto(ai, bot, "seek", heldSource, &state.holdSince, state.nowMs);
                     return 0.0f;
                 }
             }
@@ -4452,7 +7556,8 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
     if ((dpsAssist || aoe) && freeDps)
     {
         Unit* picked = aoe ? AI_VALUE(Unit*, "dps aoe target") : AI_VALUE(Unit*, "dps target");
-        if (picked && KillHeld(fight.rows, picked->GetEntry(), countNear))
+        if (picked && (KillHeld(fight.rows, picked->GetEntry(), countNear) ||
+                GateHoldsUnit(ai, fight.rows, picked)))
         {
             LogHoldKillVeto(ai, bot, veto, picked);
             return 0.0f;
@@ -4470,7 +7575,7 @@ float BossTacticsHoldMultiplier::GetValue(Action* action)
         return 1.0f;
     if (!freeDps)
         return 1.0f;
-    if (KillHeld(fight.rows, current->GetEntry(), countNear))
+    if (KillHeld(fight.rows, current->GetEntry(), countNear) || GateHoldsUnit(ai, fight.rows, current))
     {
         LogHoldKillVeto(ai, bot, veto, current);
         return 0.0f;
@@ -5120,6 +8225,64 @@ struct StandPlan
 };
 std::unordered_map<StandPlanKey, StandPlan, StandPlanKeyHash> g_standPlans;
 
+// AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid and anchor), and the rows of a read. The
+// seat and the arrival are logged once per episode, a read that ends without a seat logs `unseated` once, and the
+// episode is released when its window is over or another window takes over. Guarded by g_standHoldMutex and counted
+// into g_standStateCount; with the key off nothing is read, written or logged.
+std::unordered_map<uint64, StandEpisode> g_standEpisodes;
+
+const char* StandRoleName(std::uint8_t role)
+{
+    switch (static_cast<StandRole>(role))
+    {
+        case StandRole::Healer:
+            return "healer";
+        case StandRole::Ranged:
+            return "ranged";
+        case StandRole::Melee:
+            return "melee";
+        default:
+            return "none";
+    }
+}
+
+// One BossStand row per episode event: assigned, arrived, unseated, released.
+void LogBossStand(PlayerbotAI* ai, const StandEpisode& episode, const char* info2)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,anchor=%u,role=%s,spell=%u",
+             ObjectGuid(episode.boss).GetEntry(), episode.anchor, StandRoleName(episode.role), episode.windowSpell);
+    sPlayerbotAIConfig.logEvent(ai, "BossStand", info1, info2);
+}
+
+// Logs `released` for the bot's recorded episode and drops it (a dead, gone or teleporting bot keeps nothing of its
+// last window).
+void ReleaseStandEpisode(PlayerbotAI* ai, uint64 key, const char* reason)
+{
+    if (!sPlayerbotAIConfig.bossStandEvents)
+        return;
+    // A bot that never held anything (the usual case) costs one atomic read, not the lock; the check only answers
+    // "is there anything at all", and the lock still decides whether this bot has an episode.
+    if (g_standStateCount.load(std::memory_order_relaxed) == 0)
+        return;
+    StandEpisode episode;
+    {
+        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        auto it = g_standEpisodes.find(key);
+        if (it == g_standEpisodes.end())
+            return;
+        episode = it->second;
+        g_standEpisodes.erase(it);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
+    }
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=released,reason=%s,seated=%d", reason, episode.arrivedLogged ? 1 : 0);
+    LogBossStand(ai, episode, info2);
+}
+
 // Drops what is remembered of a bot (it died, left, or is on a map without stand rows).
 void ForgetStand(uint64 key)
 {
@@ -5128,7 +8291,9 @@ void ForgetStand(uint64 key)
     std::lock_guard<std::mutex> lock(g_standHoldMutex);
     g_standHolds.erase(key);
     g_standFailures.erase(key);
-    g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+    g_standEpisodes.erase(key);
+    g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                            std::memory_order_relaxed);
 }
 }
 
@@ -5141,6 +8306,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // A bot that is dead, gone or teleporting keeps nothing of its last window.
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
     {
+        ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");
         ForgetStand(selfKey);
         return target;
     }
@@ -5149,12 +8315,14 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     const uint32 mapId = bot->GetMapId();
     if (!table.HasMap(mapId))
     {
+        ReleaseStandEpisode(ai, selfKey, "gone");
         ForgetStand(selfKey);
         return target;
     }
     // The rows only act for a bot whose tactics are armed (the same gate as BossTacticsTriggers.cpp Ready).
     if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
     {
+        ReleaseStandEpisode(ai, selfKey, "gone");
         ForgetStand(selfKey);
         return target;
     }
@@ -5164,30 +8332,40 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     const uint32 nowMs = WorldTimer::getMSTime();
+    const bool events = sPlayerbotAIConfig.bossStandEvents;
     StandHold hold;
+    StandEpisode episode;
+    bool haveEpisode = false;
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         auto it = g_standHolds.find(selfKey);
         if (it != g_standHolds.end())
             hold = it->second;
+        auto recorded = g_standEpisodes.find(selfKey);
+        if (events && recorded != g_standEpisodes.end())
+        {
+            episode = recorded->second;
+            haveEpisode = true;
+        }
     }
     // What the other bots can see of this one: its hold as of the last tick, before this tick arms it again.
     const StandHold heldBefore = hold;
     bool sawBoss = false;
     Unit* boss = nullptr;
+    Unit* episodeBoss = nullptr;  // the unit of the recorded episode's boss, for its release reason
     const std::vector<BossStandRow>* bossRows = nullptr;
     std::vector<const BossStandRow*> points;
-    for (const ObjectGuid& guid : attackers)
+    // One unit of the attacker list: whether it opened the window. The registry read below reuses it unchanged.
+    const auto readStandUnit = [&](Unit* unit)
     {
-        Unit* unit = ai->GetUnit(guid);
         if (!unit || !sServerFacade.IsAlive(unit))
-            continue;
+            return false;
         // While a hold is active only its own boss is read: another boss with rows must not clear it.
         if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)
-            continue;
+            return false;
         const std::vector<BossStandRow>* rows = table.Rows(mapId, unit->GetEntry());
         if (!rows)
-            continue;
+            return false;
         // The spell the boss is casting now (a cast with a cast time, as FindBossInterrupt reads it).
         uint32 casting = 0;
         if (Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL))
@@ -5202,13 +8380,40 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         // The open window's points; after the cast the same seats for up to the row's hold time, until the boss
         // is at the release anchor (StandPointsNow arms, keeps and clears the hold).
         sawBoss = true;
+        if (haveEpisode && unit->GetEntry() == ObjectGuid(episode.boss).GetEntry())
+            episodeBoss = unit;
         points = StandPointsNow(*rows, role, unit->GetPositionX(), unit->GetPositionY(), casting,
                                 [unit](uint32 aura) { return unit->HasAura(aura); }, hold, nowMs, stoppedNoTarget);
         if (!points.empty())
         {
             boss = unit;
             bossRows = rows;
+            return true;
+        }
+        return false;
+    };
+    std::vector<std::uint32_t> readEntries;  // the entries the read saw: the registry read skips them
+    bool openedWindow = false;
+    for (const ObjectGuid& guid : attackers)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        NoteEngagedBoss(bot, unit, mapId);
+        if (unit)
+            readEntries.push_back(unit->GetEntry());
+        if (readStandUnit(unit))
+        {
+            openedWindow = true;
             break;
+        }
+    }
+    // AiPlayerbot.BossTacticsKeepsEngagedBoss: a boss the raid fights but this bot's attacker list lost is read back
+    // from the registry (the same read, so the same window, hold and release rules).
+    if (!openedWindow)
+    {
+        for (Creature* const registered : RegisteredEngagedBosses(bot, readEntries))
+        {
+            if (readStandUnit(registered))
+                break;
         }
     }
 
@@ -5232,8 +8437,11 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             candidate.id = member->GetObjectGuid().GetRawValue();
             candidate.x = member->GetPositionX();
             candidate.y = member->GetPositionY();
-            // On the boss's threat list (as AttackersValue.cpp:367 reads it), or the boss's victim.
-            candidate.engaged = boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member;
+            // On the boss's threat list (as AttackersValue.cpp:367 reads it), its victim, or (with
+            // AiPlayerbot.BossStandWholeRaid) both in combat: a threat wipe must not cost the wiped bot its seat.
+            candidate.engaged = StandMemberEngaged(boss->GetThreatManager().getThreat(member) > 0.0f,
+                                                   boss->GetVictim() == member, sPlayerbotAIConfig.bossStandWholeRaid,
+                                                   member->IsInCombat(), boss->IsInCombat());
             candidate.holdsSameAnchor = memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor;
             return candidate;
         };
@@ -5285,10 +8493,127 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
             g_standHolds.erase(selfKey);
             g_standFailures.erase(selfKey);  // the window is over: the next one starts afresh
         }
-        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
     }
+
+    // AiPlayerbot.BossStandEvents: every return path below ends here, so the read's one episode row set is decided in
+    // one place. `read` is the seat the read ends with (or an invalid target), `seatValid` says whether it has one;
+    // `stayApplied` is the seat that is the bot's own position (S2).
+    bool stayApplied = false;
+    const auto finishStandRead =
+        [&](BossStandTarget read, bool seatValid, const char* unseatedReason) -> BossStandTarget
+    {
+        if (!events)
+            return read;
+        const bool windowOn = !points.empty();
+        const bool sameWindow = haveEpisode && windowOn &&
+            episode.boss == boss->GetObjectGuid().GetRawValue() && episode.anchor == points[0]->anchor;
+        StandEpisodeIn in;
+        in.have = haveEpisode;
+        in.sameWindow = sameWindow;
+        in.windowOn = windowOn;
+        in.seatValid = seatValid;
+        in.arrived = seatValid && StandArrived(bot->GetPositionX(), bot->GetPositionY(), read.x, read.y);
+        in.assignedLogged = haveEpisode && episode.assignedLogged;
+        in.arrivedLogged = haveEpisode && episode.arrivedLogged;
+        in.unseatedLogged = haveEpisode && episode.unseatedLogged;
+        const StandEpisodeOut step = StandEpisodeStep(in);
+        // No row to log and no episode to start or release: the read changes nothing, so it skips the lock. Most of a
+        // bot's reads in a window land here (the seat is known and the rows went out once).
+        if (!step.release && !step.start && !step.assigned && !step.arrived && !step.unseated)
+            return read;
+        // Why the recorded episode ends: the window went to another anchor, the bot has no boss with rows in view, the
+        // boss reached the lane's far end (its last hold's release anchor, at the boss's last seen position), or the
+        // hold time ran out.
+        const char* releaseReason = "hold_time";
+        if (step.release)
+        {
+            if (windowOn && !sameWindow)
+                releaseReason = "other_window";
+            else if (!sawBoss)
+                releaseReason = "no_boss";
+            else if (episodeBoss)
+            {
+                const std::vector<BossStandRow>* rows = table.Rows(mapId, ObjectGuid(episode.boss).GetEntry());
+                if (rows && StandReleaseAnchorReached(*rows, heldBefore.releaseAnchor, episodeBoss->GetPositionX(),
+                                                      episodeBoss->GetPositionY()))
+                    releaseReason = "release_anchor";
+            }
+        }
+        StandEpisode released;
+        StandEpisode logged;
+        bool logRelease = false, logAssigned = false, logArrived = false, logUnseated = false;
+        uint32 assignedMs = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_standHoldMutex);
+            if (step.release)
+            {
+                auto it = g_standEpisodes.find(selfKey);
+                if (it != g_standEpisodes.end())
+                {
+                    released = it->second;
+                    logRelease = true;
+                    g_standEpisodes.erase(it);
+                }
+            }
+            if (windowOn)
+            {
+                if (step.start)
+                {
+                    StandEpisode& fresh = g_standEpisodes[selfKey];
+                    StandEpisodeKeep(fresh, step, nowMs);
+                    fresh.boss = boss->GetObjectGuid().GetRawValue();
+                    fresh.anchor = points[0]->anchor;
+                    fresh.windowSpell = points[0]->windowSpell;
+                    fresh.role = static_cast<uint8>(role);
+                    logged = fresh;
+                }
+                else
+                {
+                    auto it = g_standEpisodes.find(selfKey);
+                    if (it != g_standEpisodes.end())
+                        logged = StandEpisodeKeep(it->second, step, nowMs);
+                }
+                assignedMs = logged.assignedMs;
+                logAssigned = step.assigned;
+                logArrived = step.arrived;
+                logUnseated = step.unseated;
+            }
+            g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                    std::memory_order_relaxed);
+        }
+        if (logRelease)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=released,reason=%s,seated=%d", releaseReason,
+                     released.arrivedLogged ? 1 : 0);
+            LogBossStand(ai, released, info2);
+        }
+        if (logAssigned)
+        {
+            const float yd = std::sqrt(stand_detail::Dist2(bot->GetPositionX(), bot->GetPositionY(), read.x, read.y));
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=assigned,yd=%.1f,stay=%d,src=%s", yd, stayApplied ? 1 : 0,
+                     hold.lastOpenMs == nowMs ? "open" : "hold");
+            LogBossStand(ai, logged, info2);
+        }
+        if (logArrived)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=arrived,ms=%u", static_cast<uint32>(nowMs - assignedMs));
+            LogBossStand(ai, logged, info2);
+        }
+        if (logUnseated)
+        {
+            char info2[96];
+            snprintf(info2, sizeof(info2), "event=unseated,reason=%s", unseatedReason ? unseatedReason : "side_full");
+            LogBossStand(ai, logged, info2);
+        }
+        return read;
+    };
     if (points.empty())
-        return target;
+        return finishStandRead(target, false, nullptr);
 
     // The side is the side of the lane (anchor -> release anchor) the bot stands on. The seats come from the window's
     // one plan (PlanStandSeats), built when the window opens, grown by the bots that join the fight later and by the
@@ -5327,19 +8652,34 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // A bot the plan did not seat (its side was full, or it was not in the fight when the window opened) keeps the
     // reactive dodge.
     if (!seat.valid)
-        return target;
+        return finishStandRead(target, false, selfCounts ? "side_full" : "not_counted");
     // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
     {
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(selfKey);
         if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
-            return target;
+            return finishStandRead(target, false, "given_up");
+    }
+    // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
+    // the seats next to it along the lane stays where it stands; the seat is its own position, so the reach, the dodge
+    // and the flee see it seated and the stand action sees it arrived. A stay is not a planned seat, so the tank post
+    // does not yield to it (TankPostSeated).
+    if (sPlayerbotAIConfig.bossStandWholeRaid && bossRows &&
+        StandAlreadyClear(lane, *points[0], *bossRows, bot->GetPositionX(), bot->GetPositionY(), seat.x, seat.y))
+    {
+        stayApplied = true;
+        target.valid = true;
+        target.stay = true;
+        target.x = bot->GetPositionX();
+        target.y = bot->GetPositionY();
+        target.z = bot->GetPositionZ();
+        return finishStandRead(target, true, nullptr);
     }
     target.valid = true;
     target.x = seat.x;
     target.y = seat.y;
     target.z = seat.z;
-    return target;
+    return finishStandRead(target, true, nullptr);
 }
 
 bool BossTacticsStandAction::isPossible()
@@ -5389,7 +8729,8 @@ bool BossTacticsStandAction::Execute(Event& event)
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
         std::lock_guard<std::mutex> lock(g_standHoldMutex);
         StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);
-        g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+        g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
         return false;
     }
     {
@@ -5398,7 +8739,8 @@ bool BossTacticsStandAction::Execute(Event& event)
         if (failure != g_standFailures.end())
         {
             g_standFailures.erase(failure);
-            g_standStateCount.store(g_standHolds.size() + g_standFailures.size(), std::memory_order_relaxed);
+            g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
+                                std::memory_order_relaxed);
         }
     }
     lastX = seatX;
@@ -5966,6 +9308,201 @@ float ai::BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback)
     return WidestSpreadYd(params, fallback);
 }
 
+namespace
+{
+// D5: one slot point, clamped into the live anchor and standing on the centre's floor. False when the anchor refuses
+// it, the clamp moves it, or no ground within the height rule lies under it.
+bool SpreadSlotPointUsable(PlayerbotAI* ai, Player* bot, float centreZ, const SpreadSlotPoint& point, float& x, float& y,
+                           float& z)
+{
+    x = point.x;
+    y = point.y;
+    z = centreZ;
+    float clampX = x;
+    float clampY = y;
+    float clampZ = z;
+    if (!ClampMoveToBossAnchor(ai, bot, clampX, clampY, clampZ))
+        return false;
+    if (std::fabs(clampX - x) > 0.5f || std::fabs(clampY - y) > 0.5f)
+        return false;
+    Map* const map = bot->GetMap();
+    const float floor = map ? map->GetHeight(clampX, clampY, centreZ + 5.0f) : INVALID_HEIGHT;
+    if (floor <= INVALID_HEIGHT || std::fabs(floor - centreZ) > kBossAnchorFloorYd)
+        return false;
+    x = clampX;
+    y = clampY;
+    z = floor;
+    return true;
+}
+
+// The read proper. It never reads the key for its decision, so the caller decides whether the slot moves the bot;
+// only the row it writes is keyed, and with the key off the old step-away owns the row.
+BossSpreadSlotTask ReadBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+{
+    BossSpreadSlotTask task;
+    if (!ai || !bot)
+        return task;
+    // D1: a ranged bot that is not a tank, alive in the world and in the fight, under a live spread row.
+    if (!ai->IsRanged(bot) || PlayerbotAI::IsTank(bot))
+        return task;
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot) ||
+        !sServerFacade.IsInCombat(bot))
+        return task;
+    if (!BossSpreadLive(ai, bot))
+        return task;
+    task.slotBot = true;
+    AiObjectContext* const context = ai->GetAiObjectContext();
+
+    // D6's early gates.
+    const SeekTask seek = FindBossSeek(ai, bot);
+    const BossStandTarget stand = FindBossStand(ai, bot);
+    SeekFight state;
+    const bool fightRead = ReadSeekFightCached(ai, bot, state);
+    Unit* const boss = fightRead ? state.boss : nullptr;
+    const bool charmed = !bot->GetCharmerGuid().IsEmpty();
+    const bool victimOrCharmed = charmed || (boss && boss->GetVictim() == bot);
+    const bool walkout = SeekWalkoutExemptsBot(bot);
+
+    // D2: the centre is the live anchor's circle, else the fight's seek_aura spot.
+    bool anchored = false;
+    float cx = 0.0f, cy = 0.0f, cz = 0.0f, radius = 0.0f;
+    BossAnchorCircle circle;
+    if (LiveBossAnchor(ai, bot, circle))
+    {
+        anchored = true;
+        cx = circle.x;
+        cy = circle.y;
+        cz = circle.z;
+        radius = circle.radius;
+    }
+    else if (fightRead && state.row)
+    {
+        cx = state.row->spotX;
+        cy = state.row->spotY;
+        cz = state.row->spotZ;
+    }
+    const bool hasCentre = anchored || (fightRead && state.row);
+
+    // D3's preference point: the seek spot when the fight has one, else the centre.
+    const bool hasSeekSpot = fightRead && state.row;
+    task.centreKind = SpreadCentreFor(anchored, hasSeekSpot);
+    const float prefX = hasSeekSpot ? state.row->spotX : cx;
+    const float prefY = hasSeekSpot ? state.row->spotY : cy;
+
+    std::vector<SpreadSlotPoint> points;
+    if (hasCentre)
+    {
+        const float spacingYd = BossSpreadYd(ai, bot, kSpreadSettledDistance);
+        points = SpreadSlotPoints(cx, cy, spacingYd, SpreadSlotRings(spacingYd, anchored, radius));
+        SpreadSlotOrder(points, prefX, prefY);
+    }
+
+    // D4: the bot's index among the slot-eligible members, dead ones included so a death moves nobody.
+    std::vector<std::uint64_t> eligible;
+    if (Group* group = bot->GetGroup())
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || member->GetMapId() != bot->GetMapId())
+                continue;
+            if (!ai->IsRanged(member) || PlayerbotAI::IsTank(member))
+                continue;
+            eligible.push_back(member->GetObjectGuid().GetRawValue());
+        }
+    }
+    const int index = SpreadSlotIndexOf(eligible, bot->GetObjectGuid().GetRawValue());
+    const int count = static_cast<int>(eligible.size());
+    const int total = static_cast<int>(points.size());
+    const bool hasSlot = hasCentre && index >= 0 && index < total;
+    const int owned = hasSlot ? index : -1;
+
+    // D5: the owned slot; one spare-slot fallback when it is unusable, then the floor verdict.
+    bool ownedUsable = false;
+    int fallback = -1;
+    bool fallbackUsable = false;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    if (owned >= 0)
+    {
+        ownedUsable = SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(owned)], x, y, z);
+        if (!ownedUsable)
+        {
+            fallback = SpreadSlotFallback(index, count, total);
+            fallbackUsable = fallback >= 0 && fallback < total &&
+                             SpreadSlotPointUsable(ai, bot, cz, points[static_cast<std::size_t>(fallback)], x, y, z);
+        }
+    }
+    const SpreadSlotSelection selection = SpreadSlotSelect(owned, fallback, ownedUsable, fallbackUsable);
+    const bool slotUsable = selection.moveSlot >= 0;
+
+    // The row always reports the owned slot and its distance; the walk and the arrival use the point actually stood on.
+    const auto pointYd = [bot](const SpreadSlotPoint& point) {
+        const float dx = bot->GetPositionX() - point.x;
+        const float dy = bot->GetPositionY() - point.y;
+        return std::sqrt(dx * dx + dy * dy);
+    };
+    float slotYd = -1.0f;
+    bool arrived = false;
+    bool inRange = true;
+    if (owned >= 0)
+    {
+        slotYd = pointYd(points[static_cast<std::size_t>(owned)]);
+        if (selection.moveSlot >= 0)
+            arrived = pointYd(points[static_cast<std::size_t>(selection.moveSlot)]) <= kSpreadSlotArriveYd;
+        // A healer measures from the boss's victim, a damage dealer from its own target; no target is in range.
+        Unit* const targetUnit = ai->IsHeal(bot) ? (boss ? boss->GetVictim() : nullptr) :
+                                                  AI_VALUE(Unit*, "current target");
+        if (slotUsable && targetUnit)
+        {
+            const float tx = x - targetUnit->GetPositionX();
+            const float ty = y - targetUnit->GetPositionY();
+            inRange = std::sqrt(tx * tx + ty * ty) <= kSpreadSlotMaxTargetYd;
+        }
+    }
+
+    const bool castBlocked = MoveBlockedByCast(bot->IsNonMeleeSpellCasted(false, true, true), false);
+    task.verdict = SpreadSlotWanted(seek.valid, stand.valid, victimOrCharmed, walkout, hasCentre, hasSlot,
+                                    slotUsable, inRange, castBlocked, arrived);
+    task.slot = selection.slot;
+    task.fallback = selection.fallback;
+    task.slotYd = selection.slot >= 0 ? slotYd : -1.0f;
+    if (slotUsable)
+    {
+        task.x = x;
+        task.y = y;
+        task.z = z;
+    }
+    // The row has one writer per key state: with the key on this read writes every slot verdict; with it off the old
+    // step-away writes its gate words and this read writes nothing. The action only adds move_failed for a move it
+    // could not send.
+    if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Read))
+        LogBossSpread(ai, bot, SpreadSlotVerdictWord(task.verdict), task.slot, task.slotYd, task.fallback,
+                      SpreadCentreWord(task.centreKind));
+    return task;
+}
+}  // namespace
+
+// One read per bot and AI update: the slot trigger, the old spread trigger and the action all ask on the same tick.
+// Outside an update (an explicit command moved the world on) the answer is read fresh and not kept.
+BossSpreadSlotTask ai::FindBossSpreadSlot(PlayerbotAI* ai, Player* bot)
+{
+    if (!ai || !bot)
+        return BossSpreadSlotTask();
+    const std::uint32_t tick = ai->UpdateTick();
+    const std::uint64_t guid = bot->GetObjectGuid().GetRawValue();
+    const bool cache = t_spreadSlotTick.live;
+    if (cache && t_spreadSlotTick.ai == ai && t_spreadSlotTick.botGuid == guid && t_spreadSlotTick.tick == tick)
+        return t_spreadSlotTick.task;
+    const BossSpreadSlotTask task = ReadBossSpreadSlot(ai, bot);
+    if (cache)
+    {
+        t_spreadSlotTick.ai = ai;
+        t_spreadSlotTick.botGuid = guid;
+        t_spreadSlotTick.tick = tick;
+        t_spreadSlotTick.task = task;
+    }
+    return task;
+}
+
 void ai::ReleaseWalkoutPet(Player* bot)
 {
     if (!bot || g_petHoldCount.load(std::memory_order_relaxed) == 0)
@@ -6045,6 +9582,74 @@ const BossTacticRow* ai::LiveBossAnchorRow(PlayerbotAI* ai, Player* bot)
     return nullptr;
 }
 
+namespace
+{
+// The receiver and liveness part of the chase hold (DungeonRunSeekMeetPrePlaceHold): the key, the cheap map filter and
+// the one locked snapshot (review: not the walk-out counter, which drops at the task's Back while the pre-place lives on
+// through its meet, and is process-wide), so the hold ends exactly when the pre-place clears. True: a live pre-place
+// names this bot and its walk began; `progress` is that snapshot.
+bool PrePlaceReceiverHeldRead(PlayerbotAI* ai, Player* bot, SeekPrePlaceProgress& progress)
+{
+    // Key off: today's behaviour, nothing held (and no lock taken).
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
+        return false;
+    if (!ai || !bot || !GetBossTactics().HasSeekAuraMap(bot->GetMapId()))
+        return false;
+    if (!SeekMeetPrePlaceProgressRead(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress))
+        return false;
+    return progress.walking;
+}
+
+// The pre-place's one `event=preplace_hold` row, the first time any hold applies (no second lock once the snapshot
+// says it is out).
+void NotePrePlaceHold(PlayerbotAI* ai, Player* bot, const SeekPrePlaceProgress& progress, std::uint32_t bossEntry,
+                      const char* actionKind)
+{
+    if (progress.holdLogged ||
+        !SeekMeetPrePlaceNoteHold(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(), progress.gen))
+        return;
+    const std::uint64_t guid = progress.son;
+    char info1[200];
+    snprintf(info1, sizeof(info1), "son=%u,event=preplace_hold,receiver=%s,boss=%u,action=%s,point_yd=%.1f",
+             ObjectGuid(guid).GetCounter(), bot->GetName(), bossEntry, actionKind ? actionKind : "reach",
+             bot->GetDistance2d(progress.x, progress.y));
+    LogSeekMeet(ai, info1);
+}
+}
+
+bool ai::SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind)
+{
+    SeekPrePlaceProgress progress;
+    if (!PrePlaceReceiverHeldRead(ai, bot, progress))
+        return false;
+    // The row's boss is the live anchor row's (0: none); read only for the one row.
+    if (!progress.holdLogged)
+    {
+        const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+        NotePrePlaceHold(ai, bot, progress, anchorRow ? anchorRow->bossEntry : 0, actionKind);
+    }
+    return true;
+}
+
+bool ai::SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold)
+        return false;
+    if (!target || !target->ToCreature())
+        return false;
+    // The receiver and liveness part (the key, the map filter, one locked snapshot).
+    SeekPrePlaceProgress progress;
+    if (!PrePlaceReceiverHeldRead(ai, bot, progress))
+        return false;
+    // The boss is the live anchor row's own (no boss constant: every raid's anchored boss).
+    const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+    const bool targetIsBoss = anchorRow && target->GetEntry() == anchorRow->bossEntry;
+    if (!MeetPrePlaceHoldsChase(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold, progress.walking, targetIsBoss))
+        return false;
+    NotePrePlaceHold(ai, bot, progress, target->GetEntry(), actionKind);
+    return true;
+}
+
 bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y, float& z)
 {
     BossAnchorCircle circle;
@@ -6065,12 +9670,24 @@ bool ai::ClampMoveToBossAnchor(PlayerbotAI* ai, Player* bot, float& x, float& y,
     return true;
 }
 
+bool ai::MeetSonChaseExempt(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    (void)ai;
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach || !bot || !target)
+        return false;
+    return ReadMeetTake(bot, target).exempt;
+}
+
 bool ai::BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle)
 {
     if (!unit)
         return false;
     const BossTacticRow* row = LiveBossAnchorRow(ai, bot);
     if (!row)
+        return false;
+    // The meet receiver's chase of its own meet Son inside the bounded allowance (DungeonRunSeekMeetTakeReach): only
+    // that target is let through; every other chase keeps the circle.
+    if (MeetSonChaseExempt(ai, bot, unit))
         return false;
     const BossAnchorCircle circle = raidCircle ? AnchorCircleOf(*row, false) : AnchorCircleOf(*row, PlayerbotAI::IsTank(bot));
     return !InsideAnchor(circle, unit->GetPositionX(), unit->GetPositionY());
@@ -6115,6 +9732,8 @@ bool ai::SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, See
         out.dueInMs = out.dueMs > nowMs ? out.dueMs - nowMs : 0;
         out.windowOpen = SeekWindowOpen(nowMs, out.dueMs, record.leadMs);
         out.cycleNo = record.cycleNo;
+        out.lastResetMs = record.lastResetMs;
+        out.engageMs = record.engageMs;
         out.gathering = record.gatherSourceGuid != 0;
         out.gatherReady = record.ready;
         out.missing = record.missing;
@@ -6147,6 +9766,397 @@ Unit* ai::FindBossSeekKill(PlayerbotAI* ai, Player* bot)
     return state.source;
 }
 
+namespace
+{
+// Whether a tank's taunt is ready now (SeekTankTauntReadyNow): the taunt-after pick's guards (TankTauntGuards), its
+// known taunt (KnownTaunt: Taunt, Growl or Turtle's Hand of Reckoning), that spell's own cooldown ready, and its stance
+// or form (Defensive Stance for Taunt, Bear or Dire Bear Form for Growl). An explicit read, not the full cast check:
+// the global cooldown does not count as "not ready", and nothing is written into the tank's AI. Range is the nearest
+// take's 8 yd test. A dead, absent or human (non-bot) tank reads as not ready.
+bool SeekTankTauntReady(Player* tank)
+{
+    if (!tank || !tank->IsInWorld() || !sServerFacade.IsAlive(tank))
+        return false;
+    PlayerbotAI* const tankAi = PlayerbotAIStorage::Instance().GetAI(tank);
+    if (!tankAi)
+        return false;
+    const char* const taunt = KnownTaunt(tankAi);
+    bool inControl = false;
+    bool silenced = false;
+    TankTauntGuards(tank, inControl, silenced);
+    std::uint32_t const spellId =
+        taunt ? tankAi->GetAiObjectContext()->GetValue<std::uint32_t>("spell id", taunt)->Get() : 0;
+    const bool spellCooldownReady = spellId && !tank->HasSpellCooldown(spellId);
+    const bool defensiveStance = tankAi->HasAura("defensive stance", tank);
+    const bool bearForm = tankAi->HasAura("bear form", tank) || tankAi->HasAura("dire bear form", tank);
+    return SeekTankTauntReadyNow(inControl, silenced, taunt != nullptr, spellCooldownReady,
+                                 SeekTauntFormOk(tank->GetClass(), defensiveStance, bearForm));
+}
+
+// Whether `bot` walking off `boss` would collapse the damage dealers' threat-cap reference (ThreatCapLeaveCollapses,
+// walk 57 F4 review H1/M2): the cap's own tank list (ThreatCapTanksOf, as ThreatValue::GetTankThreat builds it, read
+// with this tank's AI and nobody skipped) with this tank marked off the boss, whoever holds it. A boss without a
+// `threat_successor` row has no off-tank reference to collapse.
+// `info` (when given) gets the reference tank's name and the share left for the `seek take held` row.
+bool SeekTankLeaveCollapsesCap(PlayerbotAI* ai, const RaidTankRoles& roles, Unit* boss, Player* bot,
+                               SeekCapGuardInfo* info = nullptr)
+{
+    if (!ai || !boss || !bot || !ThreatSuccessorTarget(boss))
+        return false;
+    std::vector<Player*> who;
+    const std::vector<ThreatCapTank> tanks = ThreatCapTanksOf(ai, boss, roles, nullptr, &who);
+    int selfPos = -1;
+    for (std::size_t i = 0; i < who.size(); ++i)
+    {
+        if (who[i] == bot)
+            selfPos = static_cast<int>(i);
+    }
+    const ThreatCapLeaveRead read =
+        ThreatCapLeaveReadOf(tanks, selfPos, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    if (info)
+    {
+        info->refName = read.refIndex >= 0 && static_cast<std::size_t>(read.refIndex) < who.size() &&
+                who[static_cast<std::size_t>(read.refIndex)]
+            ? who[static_cast<std::size_t>(read.refIndex)]->GetName() : "none";
+        info->sharePct = read.sharePct;
+    }
+    return read.collapses;
+}
+
+// The healer clock's cap guard (DungeonRunSeekNearestTakeReach only; the caller skips it with the key off): the take
+// of `son` goes ahead when the clock overrides the guard (it sat on that non-tank 6 s, or its victim is under 40 %
+// health: HealerClockOverridesCap), this tank's started take of it is still latched, or its leave does not collapse the
+// cap. False: the take is held back this tick. The latch is set by Execute once the take really starts.
+bool SeekHealerClockCapOk(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state, Unit* son)
+{
+    std::vector<std::uint64_t> walked;
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+    SeekCapLatch latch;
+    SeekWalkoutReachRead(bot, walked, lostMeets, latch);
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint64_t sonGuid = son->GetObjectGuid().GetRawValue();
+    const auto held = state.nonTankSince.find(sonGuid);
+    const std::uint32_t onNonTankMs = held != state.nonTankSince.end() ? state.nowMs - held->second.sinceMs : 0;
+    Unit* const victim = son->GetVictim();
+    const float victimHpPct = victim ? victim->GetHealthPercent() : 100.0f;
+    SeekCapGuardInfo capInfo;
+    const bool allowed =
+        SeekHealerClockTakeAllowed(true, SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo),
+                                   WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, sonGuid, state.nowMs),
+                                   HealerClockOverridesCap(onNonTankMs, victimHpPct));
+    // Walk 58 F3: the held take is visible (the guard alone holds it: the caller skips this with the key off).
+    if (!allowed)
+        LogSeekTakeHeld(ai, bot, son, capInfo, "healer_clock", onNonTankMs);
+    return allowed;
+}
+
+// The nearest take (DungeonRunSeekNearestTake): the Son on a non-tank this first off-tank takes at once, without the
+// 3 s healer clock, the nearest of them (PickSeekNearestTake); null when the receiver can take it itself or this tank
+// cannot. Only Sons the fight's non-tank clock knows (it already leaves out the open meet's walkers), not the open
+// meet's Son, and only with the victim inside the live anchor's raid circle plus 2 yd. No live anchor: null, and the
+// 3 s rule stands.
+Unit* FindSeekNearestTake(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state,
+                          bool& viaReach)
+{
+    viaReach = false;
+    if (!state.row || roles.tanks.size() < 3 || state.nonTankSince.empty())
+        return nullptr;
+    const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot);
+    if (!anchorRow)
+        return nullptr;
+    BossAnchorCircle raid = AnchorCircleOf(*anchorRow, false);
+    raid.radius += kSeekTakeEdgeSlackYd;
+    Player* const receiver = roles.tanks[2];
+    const bool receiverUp = receiver && receiver->IsInWorld() && sServerFacade.IsAlive(receiver);
+    const bool selfIsBossVictim = state.boss && state.boss->GetVictim() == bot;
+    const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+    // The reach (DungeonRunSeekNearestTakeReach, walk 57 F4): the walk-out record's walked Sons, lost meets and cap take
+    // latch, and whether this tank's leave would collapse the damage dealers' threat-cap reference.
+    const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    std::vector<std::uint64_t> walked;
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> lostMeets;
+    SeekCapLatch latch;
+    if (reachOn)
+        SeekWalkoutReachRead(bot, walked, lostMeets, latch);
+    SeekCapGuardInfo capInfo;
+    const bool selfCollapsesCap = reachOn && SeekTankLeaveCollapsesCap(ai, roles, state.boss, bot, &capInfo);
+    std::vector<Unit*> units;
+    std::vector<SeekNearestTakeCand> cands;
+    for (const auto& entry : state.nonTankSince)
+    {
+        Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(entry.first));
+        if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
+            continue;
+        Player* const victim = dynamic_cast<Player*>(son->GetVictim());
+        SeekNearestTakeCand c;
+        c.victimNonTank = victim && !PlayerbotAI::IsTank(victim);
+        c.openMeetSon = state.meetOpen && entry.first == state.meetSon;
+        c.victimInside = victim && InsideAnchor(raid, victim->GetPositionX(), victim->GetPositionY());
+        c.selfYd = bot->GetDistance(son);
+        c.receiverYd = receiverUp ? receiver->GetDistance(son) : std::numeric_limits<float>::max();
+        if (reachOn)
+        {
+            c.meetLost = WalkoutMeetLostWithin(lostMeets, entry.first, nowMs, kSeekNearestTakeMeetLostMs);
+            // A walked Son: walked this cycle, or its meet just lost (a Son that joined by itself is not the reach's).
+            c.reachKey = c.meetLost || std::find(walked.begin(), walked.end(), entry.first) != walked.end();
+            c.capLatched = WalkoutCapTakeLatched(latch.taker, latch.son, latch.ms, self, entry.first, nowMs);
+        }
+        if (SeekNearestTakeSonOk(c.victimNonTank, c.openMeetSon, c.victimInside))
+        {
+            // Readiness is read only for an eligible Son (it no longer depends on the Son: no cast check on it).
+            c.receiverTauntReady = receiverUp && SeekTankTauntReady(receiver);
+            c.selfTauntReady = SeekTankTauntReady(bot);
+        }
+        units.push_back(son);
+        cands.push_back(c);
+    }
+    const int pick = PickSeekNearestTake(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
+                                         selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap, &viaReach);
+    // Walk 58 F3: a reach take the cap guard held back logs its row (SeekCapGuardHeldPick: the guard alone stopped it).
+    if (pick < 0 && selfCollapsesCap)
+    {
+        const int held = SeekCapGuardHeldPick(sPlayerbotAIConfig.dungeonRunSeekNearestTake, roles.botIndex, 2,
+                                              selfIsBossVictim, selfHoldsSon, cands, selfCollapsesCap);
+        if (held >= 0)
+        {
+            Unit* const heldSon = units[static_cast<std::size_t>(held)];
+            const auto since = state.nonTankSince.find(heldSon->GetObjectGuid().GetRawValue());
+            const std::uint32_t heldOnNonTankMs =
+                since != state.nonTankSince.end() ? state.nowMs - since->second.sinceMs : 0;
+            LogSeekTakeHeld(ai, bot, heldSon, capInfo, "nearest_reach", heldOnNonTankMs);
+        }
+    }
+    // A reach take that passed the cap guard is latched by Execute once it really starts (round 2), not here.
+    return pick >= 0 ? units[static_cast<std::size_t>(pick)] : nullptr;
+}
+
+// DungeonRunSeekVictimRelief: a Son whose victim is the boss's own victim tank is taken off it by another living
+// tank of the raid.
+Unit* FindSeekVictimRelief(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekVictimRelief || !state.row || !state.boss ||
+        !SeekVictimReliefAllowed(roles.tanks.size()))
+        return nullptr;
+    const std::uint32_t nowMs = state.nowMs;
+    Unit* const bossVictim = state.boss->GetVictim();
+    const bool bossTank = bossVictim != nullptr && [bossVictim, &roles]()
+    {
+        for (Player* tank : roles.tanks)
+        {
+            if (tank && tank == bossVictim && sServerFacade.IsAlive(tank))
+                return true;
+        }
+        return false;
+    }();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    // This read's own call answers: any tank of the raid's order; roles.tanks holds live members only, so a dead
+    // tank is not in it.
+    const bool tankRole = roles.botIndex >= 0;
+    Unit* kept = nullptr;
+    Unit* due = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+        const std::uint32_t sweepNowMs = WorldTimer::getMSTime();
+        std::uint32_t& sweptMs = g_seekReliefSweepMs[bot->GetInstanceId()];
+        if (sweptMs == 0 || sweepNowMs - sweptMs >= kSeekReliefSweepGapMs)
+        {
+            sweptMs = sweepNowMs;
+            SweepSeekReliefLatches(g_seekReliefLatches, bot->GetInstanceId(), sweepNowMs);
+        }
+        for (Unit* son : state.sons)
+        {
+            if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) || !son->IsInCombat())
+                continue;
+            const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+            const bool reliefSon = bossTank && son->GetVictim() == bossVictim;
+            auto found = g_seekReliefLatches.find(key);
+            if (found == g_seekReliefLatches.end() && !reliefSon)
+                continue;
+            SeekReliefLatch& latch =
+                found != g_seekReliefLatches.end() ? found->second : g_seekReliefLatches[key];
+            SeekReliefClockTick(latch, reliefSon, nowMs);
+            SeekVictimReliefKeepTick(latch, self, son->GetVictim() == bot, nowMs);
+            if (!kept && SeekVictimReliefKept(true, latch, self, son->GetVictim() == bot, nowMs))
+                kept = son;
+        }
+        if (!kept && tankRole)
+        {
+            const bool selfIsBossVictim = state.boss->GetVictim() == bot;
+            const bool selfCharmed = !bot->GetCharmerGuid().IsEmpty();
+            const bool selfHoldsSon = PlayerHoldsFightSon(state.sons, state.row->targetEntry, bot, 0);
+            const bool tauntReady = SeekTankTauntReady(bot);
+            for (Unit* son : state.sons)
+            {
+                if (!son || son->GetEntry() != state.row->targetEntry || !sServerFacade.IsAlive(son) ||
+                    !son->IsInCombat())
+                    continue;
+                const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+                const auto found = g_seekReliefLatches.find(key);
+                if (found == g_seekReliefLatches.end())
+                    continue;
+                SeekReliefLatch& latch = found->second;
+                // Eligible first, so a bot that cannot take never holds the claim; the claim stops another tank
+                // from picking the same Son before this take stamps it, and a nearer one may take it over.
+                const float sonYd = bot->GetDistance(son);
+                if (SeekVictimRelieverOk(tankRole, selfIsBossVictim, selfCharmed, selfHoldsSon, tauntReady,
+                                         sonYd) &&
+                    SeekVictimReliefClaimFor(true, latch, self, nowMs, roles.botIndex, sonYd))
+                {
+                    due = son;
+                    break;
+                }
+            }
+        }
+    }
+    if (kept)
+        return kept;
+    return due;
+}
+
+// The victim relief task for one tank: a Son on the boss's victim handed to `task`. False (task untouched) when the
+// tank takes nothing this read. One fill for both call sites, the off-tanks' late one and the raid tanks' early one.
+bool SeekReliefTaskFor(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, const SeekFight& state,
+                       SeekTankTask& task)
+{
+    Unit* const reliefSon = FindSeekVictimRelief(ai, bot, roles, state);
+    if (!reliefSon)
+        return false;
+    task.valid = true;
+    task.row = state.row;
+    task.source = reliefSon;
+    task.take = true;
+    task.takeSrc = "victim_relief";
+    task.boss = state.boss;
+    task.pickMs = state.nowMs;
+    return true;
+}
+
+// The relief take's gate (DungeonRunSeekVictimRelief): under the latch lock, immediately before the attack order or
+// the taunt cast, the take's claim is re-read on the pick's clock (the task carries it). A take a nearer tank has
+// taken over since its pick is refused here, so it issues no attack and no taunt; this tank's live claim is confirmed
+// and counted before the action.
+SeekReliefGate SeekReliefTakeGate(Player* bot, const SeekTankTask& task)
+{
+    if (!task.source)
+        return SeekReliefGate::Refuse;
+    std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+    const auto key = SeekReliefKey(bot->GetInstanceId(), task.source->GetObjectGuid().GetRawValue());
+    const auto found = g_seekReliefLatches.find(key);
+    if (found == g_seekReliefLatches.end())
+        return SeekReliefGate::Refuse;
+    return SeekVictimReliefPreExec(found->second, bot->GetObjectGuid().GetRawValue(), task.pickMs);
+}
+
+// A confirmed take that issued neither an attack order nor a taunt after all: its stamp, count and keep window are
+// undone, so the take counts nothing and the Son is claimable again.
+void SeekReliefTakeRollback(Player* bot, Unit* son, std::uint32_t pickMs)
+{
+    if (!son)
+        return;
+    std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+    const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+    const auto found = g_seekReliefLatches.find(key);
+    if (found != g_seekReliefLatches.end())
+        SeekVictimReliefRollback(found->second, bot->GetObjectGuid().GetRawValue(), pickMs);
+}
+
+// The confirmed take's start row, once its attack order or taunt cast went out: the stamps the gate took are read
+// under the lock, and `from` is the Son's victim read before the cast (after it the victim may already be the
+// reliever). The row is built and written after the mutex is released, so the count it prints is the confirmed one.
+void SeekReliefTakeNoteExec(PlayerbotAI* ai, Player* bot, const RaidTankRoles& roles, Unit* boss, Unit* son,
+                            Unit* from, std::uint32_t pickMs)
+{
+    if (!son)
+        return;
+    std::uint32_t dwellMs = 0;
+    std::uint8_t takes = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_seekReliefMutex);
+        const auto key = SeekReliefKey(bot->GetInstanceId(), son->GetObjectGuid().GetRawValue());
+        const auto found = g_seekReliefLatches.find(key);
+        if (found == g_seekReliefLatches.end())
+            return;
+        const SeekReliefLatch& latch = found->second;
+        if (latch.lastTaker != bot->GetObjectGuid().GetRawValue() || latch.lastStartMs != pickMs)
+            return;
+        dwellMs = pickMs - latch.sinceMs;
+        takes = latch.takes;
+    }
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[192];
+    snprintf(info1, sizeof(info1), "seek relief son=%u from=%s by=%s dwell_ms=%u n=%u cap=%d reach_yd=%.1f",
+             son->GetGUIDLow(), from ? from->GetName() : "none", bot->GetName(), static_cast<unsigned>(dwellMs),
+             static_cast<unsigned>(takes), SeekTankLeaveCollapsesCap(ai, roles, boss, bot, nullptr) ? 1 : 0,
+             bot->GetDistance(son));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsSeekPull", info1, "");
+}
+
+// The pre-placed receiver's walk (DungeonRunSeekMeetPrePlace, walk 56 F2): true while a live pre-place names this bot.
+// More than kSeekMeetPrePlaceArriveYd from its point, the task walks it there (walkToSpot); at the point the task stays
+// valid and holds it (prePlaceHold: Execute stops a walk and otherwise leaves the tick to the rotation), until the meet
+// starts or the pre-place ends. False: no pre-place, the task is untouched.
+bool SeekMeetPrePlaceTask(Player* bot, const BossTacticRow* row, SeekTankTask& task)
+{
+    if (!sPlayerbotAIConfig.dungeonRunSeekMeetPrePlace || !row)
+        return false;
+    // One locked snapshot: the point, the walk-out's progress and the pre-place generation (review: a second read could
+    // pair an old point with a new generation).
+    const std::uint32_t instanceId = bot->GetInstanceId();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    SeekPrePlaceProgress progress;
+    if (!SeekMeetPrePlaceProgressRead(instanceId, self, progress))
+        return false;
+    const float x = progress.x;
+    const float y = progress.y;
+    // The late walk (DungeonRunSeekMeetPrePlaceLate, walk 57 F3): until the walk is due the tank stays on Hakkar (the
+    // task is untouched, as with no pre-place). Key off: due at once, as before. The puller's walk left to its stand is
+    // weighed against this tank's own walk to its point.
+    if (!progress.walking)
+    {
+        Player* const puller = progress.puller ? bot->GetMap()->GetPlayer(ObjectGuid(progress.puller)) : nullptr;
+        const float pullerToStandYd = puller && puller->IsInWorld() && progress.standKnown
+            ? puller->GetDistance2d(progress.standX, progress.standY) : std::numeric_limits<float>::max();
+        if (!MeetPrePlaceWalkDue(sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceLate, pullerToStandYd,
+                                 bot->GetDistance2d(x, y), progress.pullerInPos))
+            return false;
+    }
+    // The commit: the snapshot's generation must still be the live pre-place (and the first due read latches the walk's
+    // start for the arrival row); a pre-place replaced since the snapshot publishes no move toward the old point.
+    if (!SeekMeetPrePlaceConfirm(instanceId, self, progress.gen, true, nowMs))
+        return false;
+    task.row = row;
+    task.source = nullptr;
+    task.take = false;
+    task.pull = false;
+    task.holdSwing = false;
+    task.valid = true;
+    task.x = x;
+    task.y = y;
+    task.z = row->spotZ;
+    const bool walk = MeetPrePlaceStepFor(bot->GetDistance2d(x, y), false, false) == MeetPrePlaceStep::Walk;
+    task.walkToSpot = walk;
+    task.prePlaceHold = !walk;
+    // The arrival row (always on with the pre-place): once per pre-place, when the tank first comes within
+    // kSeekMeetPrePlaceArriveYd of its point, with the time since its walk began. Walk 57 could not tell "pulled back
+    // by reach melee" from "still walking".
+    std::uint32_t afterMs = 0;
+    PlayerbotAI* const botAi = PlayerbotAIStorage::Instance().GetAI(bot);
+    if (!walk && botAi && SeekMeetPrePlaceNoteArrive(instanceId, self, progress.gen, nowMs, afterMs))
+    {
+        const std::uint64_t guid = progress.son;
+        char info1[160];
+        snprintf(info1, sizeof(info1), "son=%u,event=preplace_arrive,receiver=%s,after_ms=%u,point_yd=%.1f",
+                 ObjectGuid(guid).GetCounter(), bot->GetName(), afterMs, bot->GetDistance2d(x, y));
+        LogSeekMeet(botAi, info1);
+    }
+    return true;
+}
+}
+
 SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
 {
     SeekTankTask task;
@@ -6157,7 +10167,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     const RaidTankRoles roles = GetRaidTankRoles(ai);
     // The third off-tank pulls a Son that is not fighting; with fewer than three tanks alive its fallback does (the
     // raid's nearest hunter, else a ranged damage dealer) and tanks[1] takes the Son over. Every other bot answers
-    // false before the fight read.
+    // false before the fight read; a raid tank's victim relief is the one answer these pull paths never made.
     const bool thirdTank = roles.tanks.size() >= 3 && roles.tanks[2] == bot;
     const bool pickupTank = roles.tanks.size() >= 2 && roles.tanks.size() < 3 && roles.tanks[1] == bot;
     // The first off-tank also takes a Son off a healer once the state's healer pick says it has waited long enough
@@ -6171,11 +10181,96 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             return task;
         // (With three tanks the fallback also pulls while the third off-tank is the boss's victim: the state says so.)
         if (bot->GetClass() != CLASS_HUNTER && !(ai->IsRanged(bot) && !PlayerbotAI::IsHeal(bot)))
+        {
+            // The pull paths never run for this bot. The victim relief still does when it is a raid tank (the main
+            // tank, a fourth tank, a two-tank off-tank's partner): a Son on the boss's victim is taken, never pulled,
+            // and nothing else here answers. Key off: the block reads nothing at all.
+            if (roles.botIndex >= 0 && sPlayerbotAIConfig.dungeonRunSeekVictimRelief)
+            {
+                SeekFight reliefState;
+                if (ReadSeekFightCached(ai, bot, reliefState))
+                    SeekReliefTaskFor(ai, bot, roles, reliefState, task);
+            }
             return task;
+        }
     }
     SeekFight state;
     if (!ReadSeekFightCached(ai, bot, state))
         return task;
+    // The receiver's chase exemption ended (DungeonRunSeekMeetTakeReach): stop a chase it sent while exempt.
+    if (sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach && (thirdTank || pickupTank || healerTaker))
+        MeetExemptEndTick(ai, bot);
+    // The pulled Son's meet: this tank keeps its normal tank AI, the puller follows its live position, and it takes the
+    // Son on arrival, before any other Son, pull or drag takes its tick.
+    if (sPlayerbotAIConfig.dungeonRunSeekSonMeet && SeekPullRulesOn(bot->GetMapId(), state.row) &&
+        SeekTankTakeAllowed(state.boss && state.boss->GetVictim() == bot))
+    {
+        std::uint64_t meetReceiver = 0;
+        std::uint64_t meetSon = 0;
+        std::uint32_t meetMs = 0;
+        if (SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs) &&
+            meetReceiver == bot->GetObjectGuid().GetRawValue() &&
+            SeekMeetOpen(meetReceiver, meetMs, WorldTimer::getMSTime()))
+        {
+            Creature* const son = bot->GetMap()->GetCreature(ObjectGuid(meetSon));
+            if (son && son->GetEntry() == state.row->targetEntry && sServerFacade.IsAlive(son))
+            {
+                task.row = state.row;
+                if (son->GetVictim() == bot)
+                {
+                    // On the receiver already: today's own-source branch drags it back to the spot and holds it.
+                    task.valid = true;
+                    task.source = son;
+                    task.holdSwing = SeekTankSwingHeld(state.windowOpen, son->GetHealthPercent(),
+                                                       static_cast<float>(state.row->priority));
+                    if (bot->GetDistance2dToCenter(state.row->spotX, state.row->spotY) > kSeekTankArriveYd)
+                        task.walkToSpot = true;
+                    return task;
+                }
+                // DungeonRunSeekMeetTakeReach: the take reaches 25 yd, not 8 (Attack closes the gap), and is due only
+                // while the receiver's bounded anchor exemption holds (MeetReceiverExemptEval: the Son at most 12 yd past
+                // the raid circle, the receiver not the boss's victim), so the anchor never refuses the chase. Not due:
+                // it falls through to the wait and the pre-place below, unchanged. The pre-place hold
+                // (DungeonRunSeekMeetPrePlaceHold) holds only the boss as a chase target, never this Son.
+                const bool reachOn = sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach;
+                MeetTakeRead meetRead;
+                const bool takeAllowed = reachOn ? MeetTakeAllowedNow(bot, son, &meetRead)
+                                                 : SeekMeetTakeDue(bot->GetDistance(son), false, false);
+                if (takeAllowed)
+                {
+                    if (meetRead.exempt)
+                        NoteSeekReceiverExempt(ai, bot, meetSon, meetMs, meetRead.beyondYd);
+                    task.valid = true;
+                    task.source = son;
+                    task.take = true;
+                    task.meet = true;
+                    task.takeSrc = "meet";
+                    return task;
+                }
+                // Waiting is for the walker's Son only: while its victim is the puller, the returner or nobody, no other
+                // Son, pull or drag takes this tick (the tank is not moved off by a task; the puller follows it). A Son
+                // on anyone else (a DPS or a healer peeled it) closes the meet as `peeled` and goes to today's take
+                // branches.
+                std::uint64_t meetPuller = 0;
+                std::uint64_t meetReturner = 0;
+                SeekMeetWalkers(bot->GetInstanceId(), meetPuller, meetReturner);
+                Unit* const sonVictim = son->GetVictim();
+                if (MeetReceiverShouldWait(sonVictim ? sonVictim->GetObjectGuid().GetRawValue() : 0, meetPuller,
+                                           meetReturner))
+                {
+                    LogSeekMeetWait(ai, bot, son, sonVictim, meetMs);
+                    task.valid = false;
+                    // The pre-placed receiver keeps to its point on the way back until the Son arrives.
+                    SeekMeetPrePlaceTask(bot, state.row, task);
+                    return task;
+                }
+                if (SeekMeetClose(bot->GetInstanceId(), meetReceiver, meetSon, meetMs, "peeled"))
+                    LogSeekMeetLost(ai, meetSon, "peeled", WorldTimer::getMSTime() - meetMs, sonVictim,
+                                    bot->GetDistance(son));
+                task.row = nullptr;
+            }
+        }
+    }
     if (!thirdTank && !pickupTank && !healerTaker && state.walkout)
     {
         // The walk-out task the state runs for this bot: out to the Son and one shot, then back.
@@ -6183,6 +10278,9 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
         task.valid = true;
         task.walkout = true;
         task.walkoutShot = state.walkoutShot;
+        task.walkoutPullCastMs = state.walkoutPullCastMs;
+        task.walkoutGen = state.walkoutGen;
+        task.walkoutDueInMs = state.dueSignedMs; // signed ms, INT_MAX when unknown (compared in ms, never truncated)
         task.source = state.pullTarget;
         task.x = state.shotX;
         task.y = state.shotY;
@@ -6243,7 +10341,19 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
                 onTank = candidate;
         }
         else if (candidate->IsInCombat() && !fighting)
-            fighting = candidate;
+        {
+            // With the nearest take on, the receiver leaves a Son already on a tank (the first off-tank just took it).
+            // Only a Son on the first off-tank is left; one on the main tank or any other tank is still taken.
+            Unit* const candidateVictim = candidate->GetVictim();
+            int victimTankIdx = -1;
+            for (std::size_t i = 0; i < roles.tanks.size(); ++i)
+            {
+                if (candidateVictim && roles.tanks[i] == candidateVictim)
+                    victimTankIdx = static_cast<int>(i);
+            }
+            if (!SeekReceiverSkipsFighting(sPlayerbotAIConfig.dungeonRunSeekNearestTake, thirdTank, victimTankIdx))
+                fighting = candidate;
+        }
     }
     if (thirdTank || pickupTank || healerTaker)
     {
@@ -6261,6 +10371,8 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             return task;
         }
     }
+    if (roles.botIndex >= 0 && SeekReliefTaskFor(ai, bot, roles, state, task))
+        return task;
     if (thirdTank || pickupTank)
     {
         // A Son camped on a healer is tanks[1]'s take here too when the third off-tank is dead (two tanks left) and
@@ -6270,6 +10382,7 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = state.healerSon;
             task.take = true;
+            task.takeSrc = "healer_clock";
             return task;
         }
         if (fighting)
@@ -6277,8 +10390,12 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = fighting;
             task.take = true;
+            task.takeSrc = thirdTank ? "receiver" : "pickup";
             return task;
         }
+        // The meet's pre-place: the third tank walks to the circle's edge on the walk-out's way back and waits there.
+        if (thirdTank && SeekMeetPrePlaceTask(bot, state.row, task))
+            return task;
         // Only the third off-tank's own pull walks the Son down; the pick is the state's own (the running pull's latch,
         // else the tick's due pickup). A Son that joined the fight mid-pull is taken and dragged back to B.
         if (thirdTank && state.pullTarget)
@@ -6286,7 +10403,10 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
             task.valid = true;
             task.source = state.pullTarget;
             if (state.pullTarget->IsInCombat())
+            {
                 task.take = true;
+                task.takeSrc = "pull_join";
+            }
             else
                 task.pull = true;
         }
@@ -6294,12 +10414,31 @@ SeekTankTask ai::FindBossSeekTank(PlayerbotAI* ai, Player* bot)
     }
     if (healerTaker)
     {
-        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot.
-        if (state.healerSon)
+        // The nearest take: a Son on a non-tank that the receiver cannot taunt now (too far, or its taunt on cooldown)
+        // and this tank can (within 8 yd, its taunt ready, not Hakkar's victim, holding no Son) is taken at once. With
+        // DungeonRunSeekNearestTakeReach a walked Son is also taken from 20 yd (`src=nearest_reach`).
+        if (sPlayerbotAIConfig.dungeonRunSeekNearestTake)
+        {
+            bool viaReach = false;
+            if (Unit* const nearestSon = FindSeekNearestTake(ai, bot, roles, state, viaReach))
+            {
+                task.valid = true;
+                task.source = nearestSon;
+                task.take = true;
+                task.takeSrc = viaReach ? "nearest_reach" : "nearest";
+                return task;
+            }
+        }
+        // A Son that has sat on a healer or a damage dealer long enough: taunt it off and drag it to the spot. With
+        // DungeonRunSeekNearestTakeReach the cap guard holds it back when this tank's leave would collapse the damage
+        // dealers' threat-cap reference (review H1); key off: today's take, no check.
+        if (state.healerSon && (!sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach ||
+                                SeekHealerClockCapOk(ai, bot, roles, state, state.healerSon)))
         {
             task.valid = true;
             task.source = state.healerSon;
             task.take = true;
+            task.takeSrc = "healer_clock";
         }
         return task;
     }
@@ -6370,6 +10509,83 @@ bool BossTacticsSeekAction::Execute(Event& event)
     return true;
 }
 
+bool BossTacticsSpreadSlotAction::isUseful()
+{
+    return ai->CanMove();
+}
+
+bool BossTacticsSpreadSlotAction::isPossible()
+{
+    return MovementAction::isPossible() && ai->CanMove();
+}
+
+bool BossTacticsSpreadSlotAction::Execute(Event& event)
+{
+    (void)event;
+    if (!sPlayerbotAIConfig.dungeonRunBossSpreadSlots)
+        return false;
+    const BossSpreadSlotTask task = FindBossSpreadSlot(ai, bot);
+    if (!task.slotBot)
+        return false;
+    // A damage dealer that has read `cast` for 6 s in a row stops its own cast for the walk; a healer never does.
+    bool castCut = false;
+    if (task.verdict == SpreadSlotVerdict::Cast)
+    {
+        const std::uint32_t nowMs = WorldTimer::getMSTime();
+        SpreadCastClock clock;
+        clock.sinceMs = castSinceMs;
+        clock.seenMs = castSeenMs;
+        castSinceMs = SpreadSlotCastStart(clock, nowMs);
+        castSeenMs = clock.seenMs;
+        if (SpreadSlotCastCutDue(ai->IsHeal(bot), castSinceMs, nowMs))
+        {
+            bot->CastStop();
+            castSinceMs = 0;
+            castSeenMs = 0;
+            castCut = true;
+        }
+    }
+    else
+    {
+        castSinceMs = 0;
+        castSeenMs = 0;
+    }
+    if (task.verdict == SpreadSlotVerdict::SlotHold)
+    {
+        // At the slot: stop a walk once, then leave the tick to the rotation (the seek action's atSpot branch,
+        // without CastStop).
+        hasLast = false;
+        const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
+        if (SeekActionConsumesTick(true, moving))
+        {
+            ai->StopMoving();
+            return true;
+        }
+        return false;
+    }
+    if (task.verdict != SpreadSlotVerdict::SlotMove && !castCut)
+        return false;
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() && std::fabs(lastX - task.x) < 1.0f &&
+        std::fabs(lastY - task.y) < 1.0f)
+        return true;
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, task.z, false, false, false, true))
+    {
+        hasLast = false;
+        LogBossSpread(ai, bot, "move_failed", task.slot, task.slotYd, task.fallback, nullptr, true);
+        return false;
+    }
+    lastX = task.x;
+    lastY = task.y;
+    hasLast = true;
+    // The landing becomes the stay spot, as the raid spread step does, so the return to the stay keeps the slot.
+    if (ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT))
+    {
+        ai::PositionMap& posMap = ai->GetAiObjectContext()->GetValue<ai::PositionMap&>("position")->Get();
+        posMap["stay"].Set(task.x, task.y, task.z, bot->GetMapId());
+    }
+    return true;
+}
+
 namespace
 {
 // Whether the bot may taunt this subject at all: a needs_aura entry is for the carriers of the row's aura (a Shade of
@@ -6410,30 +10626,158 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             // From the platform only: in range and sight of the Son, standing at or above the stand's floor rule.
             const float range = WalkoutShotRangeYd(bot->GetClass() == CLASS_HUNTER);
             const float sonYd = bot->GetDistance(task.source);
+            // The stand's arrival starts the shot-stall clock: in shot range with the floor and the sight line, or at
+            // the stand itself (a stand whose sight line is blocked still reads as arrived). Only a seek_pull row's
+            // rules read that clock.
+            if (SeekPullRulesOn(bot->GetMapId(), task.row) &&
+                (bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd ||
+                 (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ &&
+                  bot->IsWithinLOSInMap(task.source))))
+                NoteSeekWalkoutAtStand(bot, task.walkoutGen);
+            // DungeonRunSeekWalkoutFaceCast: the no-shot clock counts only the time in shot position (range, sight,
+            // the stand's floor, not moving), so a Son that patrols out of sight under the ledge does not run it.
+            if (sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast && SeekPullRulesOn(bot->GetMapId(), task.row))
+                NoteSeekWalkoutInShot(bot, WalkoutInShotPosition(sonYd <= range, bot->IsWithinLOSInMap(task.source),
+                                                                 bot->GetPositionZ() >= kSeekWalkoutMinStandZ,
+                                                                 sServerFacade.isMoving(bot)),
+                                      task.walkoutGen);
             if (sonYd <= range && bot->GetPositionZ() >= kSeekWalkoutMinStandZ && bot->IsWithinLOSInMap(task.source))
             {
                 hasLast = false;
+                // The Son patrols: a running Auto Shot or Shoot keeps facing it, so the shot lands.
+                const bool focusOn = sPlayerbotAIConfig.dungeonRunSeekWalkoutFocus;
+                const bool rulesOn = SeekPullRulesOn(bot->GetMapId(), task.row);
+                const bool inFront = sServerFacade.isInFront(bot, task.source, sPlayerbotAIConfig.sightDistance,
+                                                             CAST_ANGLE_IN_FRONT);
+                // The walk-out focus: a pull shot sent under 2 s ago is waited for while the Son is not in combat
+                // yet (the instant Arcane Shot leaves no cast behind): no second cast, no abort.
+                if (focusOn && WalkoutPullShotWaits(task.walkoutPullCastMs, WorldTimer::getMSTime(),
+                                                    task.source->IsInCombat()))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Wait, range);
+                    return true;
+                }
+                // DungeonRunSeekShotWaitsReceiver (walk 58 F2): with a live pre-place the shot waits until the
+                // pre-placed receiver is within 5 yd of its point, at most 6 s, never with the siphon 15 s or less
+                // away (WalkoutShotReady). The puller stands still meanwhile; one shot_wait row when the wait ends.
+                if (sPlayerbotAIConfig.dungeonRunSeekShotWaitsReceiver)
+                {
+                    const std::uint32_t waitNowMs = WorldTimer::getMSTime();
+                    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+                    SeekShotWaitSnapshot wait;
+                    if (SeekWalkoutShotWaitRead(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs, wait))
+                    {
+                        Player* const receiver =
+                            wait.receiver ? bot->GetMap()->GetPlayer(ObjectGuid(wait.receiver)) : nullptr;
+                        const bool live = wait.prePlaceLive && receiver && receiver->IsInWorld();
+                        const float pointYd = live ? receiver->GetDistance2d(wait.x, wait.y) : -1.0f;
+                        if (!WalkoutShotReady(true, live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                              wait.taskAgeMs))
+                        {
+                            if (!bot->IsStopped())
+                                ai->StopMoving();
+                            return true;
+                        }
+                        if (SeekWalkoutShotWaitEnd(bot->GetInstanceId(), self, task.walkoutGen, waitNowMs))
+                        {
+                            const std::uint64_t guid = wait.son;
+                            char info1[192];
+                            snprintf(info1, sizeof(info1),
+                                     "son=%u,event=shot_wait,receiver=%s,receiver_point_yd=%.1f,waited_ms=%u,reason=%s",
+                                     ObjectGuid(guid).GetCounter(), receiver ? receiver->GetName() : "none",
+                                     pointYd, wait.waitedMs,
+                                     WalkoutShotWaitReason(live, pointYd, wait.waitedMs, task.walkoutDueInMs,
+                                                           wait.taskAgeMs));
+                            LogSeekMeet(ai, info1);
+                        }
+                    }
+                }
+                // DungeonRunSeekWalkoutFaceCast: stop, turn with the instant forced turn and cast in this same tick
+                // (walk 56: the split turn lost to UpdateFaceTarget). Off, the t1106k steps (WalkoutFaceFirst).
+                const WalkoutFaceStep step = WalkoutFaceThenCast(sPlayerbotAIConfig.dungeonRunSeekWalkoutFaceCast,
+                                                                 focusOn, rulesOn, inFront);
+                // The focus stops the bot before it turns, so the stop's spline cannot undo the facing.
+                if (step.stop && !bot->IsStopped())
+                    ai->StopMoving();
+                if (step.face)
+                    sServerFacade.SetFacingTo(bot, task.source, step.force);
+                // The walk-out focus without FaceCast: the turn takes this tick and the cast goes out on the next one,
+                // facing the Son (walk 55: 10 of 13 no-shot aborts stood in range and sight without facing it).
+                if (step.returnAfterFace)
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::Face, range);
+                    return true;
+                }
                 // A cast already under way is waited for only when it is aimed at the Son (the pull shot itself). The
                 // Auto Shot or wand's Shoot still on the boss is not the pull: it is interrupted, and the shot goes out
                 // now.
                 bool castOnSon = false;
                 Spell* const cast = WalkoutCurrentCast(bot, task.source, castOnSon);
                 if (WalkoutShotWaits(castOnSon, cast != nullptr))
+                {
+                    LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CastWait, range,
+                                        cast && cast->m_spellInfo ? cast->m_spellInfo->Id : 0);
                     return true;
+                }
                 bot->InterruptNonMeleeSpells(false);
                 if (!bot->IsStopped())
                     ai->StopMoving();
                 // The exact cast, cast directly: the generic attack would send the pet in. A shot that cannot be cast
                 // here aborts at once: the Son is free again and the spent cycle is not reopened, its puller sitting
                 // out the next picks.
-                const char* const spell = WalkoutShotSpell(bot->GetClass());
+                // With the focus a hunter opens with the instant Arcane Shot when it can (never a DoT), else Auto Shot.
+                const char* const spell = focusOn
+                    ? WalkoutPullShotSpell(bot->GetClass(), bot->GetClass() == CLASS_HUNTER &&
+                                                                ai->CanCastSpell("arcane shot", task.source))
+                    : WalkoutShotSpell(bot->GetClass());
+                // DungeonRunSeekWalkoutStandLog (diagnostic): the attempted cast's id and the refusal's reason.
+                const bool standLog = sPlayerbotAIConfig.dungeonRunSeekWalkoutStandLog;
+                const std::uint32_t spellId = standLog && *spell ? AI_VALUE2(uint32, "spell id", spell) : 0;
+                // The Arcane Shot probe above may have noted its own refusal: the check_<n> below names this check's.
+                if (standLog)
+                    ai->ClearLastCastCheckFail();
                 if (!*spell || !ai->CanCastSpell(spell, task.source))
                 {
-                    AbortSeekWalkoutUnspent(ai, bot, sonYd);
+                    // Logged before the abort, which clears the record the row is keyed by.
+                    if (standLog)
+                    {
+                        std::string const check =
+                            "check_" + std::to_string(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()));
+                        LogSeekWalkoutStand(ai, bot, task.source, WalkoutStandBranch::CheckFail, range, spellId, check);
+                    }
+                    AbortSeekWalkoutUnspent(ai, bot, sonYd, task.walkoutGen);
                     return false;
                 }
-                return ai->CastSpell(spell, task.source);
+                WalkoutCastBefore before;
+                if (standLog)
+                {
+                    before = ReadWalkoutCastBefore(bot, task.source);
+                    ai->ClearLastCastCheckFail();
+                }
+                const bool pullCast = ai->CastSpell(spell, task.source);
+                if (pullCast && focusOn)
+                    NoteSeekWalkoutPullCast(bot, task.walkoutGen);
+                if (standLog)
+                {
+                    // Every refused pull cast logs its castrefused row at once (at most 10 a walk-out); the stand row
+                    // names the branch once a second.
+                    std::string const refuse = pullCast ? std::string() :
+                        WalkoutCastRefuseWord(static_cast<std::uint32_t>(ai->GetLastCastCheckFail()),
+                                              static_cast<std::uint32_t>(SPELL_CAST_OK), before.flying, before.standing,
+                                              before.stopped, before.inFront);
+                    if (!pullCast && ClaimSeekWalkoutCastRefusedRow(bot))
+                        LogSeekWalkout(ai, WalkoutCastRefusedRowText(spellId, refuse).c_str());
+                    LogSeekWalkoutStand(ai, bot, task.source,
+                                        pullCast ? WalkoutStandBranch::Cast : WalkoutStandBranch::CastRefused, range,
+                                        spellId, refuse);
+                }
+                return pullCast;
             }
+            // Not in shot position: at the stand (range, floor or sight missing) or still walking out.
+            LogSeekWalkoutStand(ai, bot, task.source,
+                                bot->GetDistance2d(task.x, task.y) <= kSeekWalkoutStandArriveYd
+                                    ? WalkoutStandBranch::InPos : WalkoutStandBranch::Out,
+                                range);
             // The stand the platform search found (never the Son's own height, down the slope).
             x = task.x;
             y = task.y;
@@ -6443,13 +10787,28 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         else
         {
             // Back (shot, or the walk back after a timeout or an abort): nothing is attacked on the way.
-            if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
-                bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-            bot->AttackStop();
             BossAnchorCircle tank;
             if (!task.row || !BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, true, tank))
                 return false;
-            WalkoutBackPoint(tank, bot->GetPositionX(), bot->GetPositionY(), x, y);
+            // With the meet on, the walk ends at the waiting receiver instead of the circle's edge, so the Son that
+            // follows lands on that tank. Without an open meet or a live receiver the old point stands.
+            std::uint64_t meetReceiver = 0;
+            std::uint64_t meetSon = 0;
+            std::uint32_t meetMs = 0;
+            Player* const receiver = sPlayerbotAIConfig.dungeonRunSeekSonMeet &&
+                    SeekPullRulesOn(bot->GetMapId(), task.row) &&
+                    SeekMeetSnapshot(bot->GetInstanceId(), meetReceiver, meetSon, meetMs) &&
+                    SeekMeetOpen(meetReceiver, meetMs, WorldTimer::getMSTime())
+                ? bot->GetMap()->GetPlayer(ObjectGuid(meetReceiver)) : nullptr;
+            const bool meetBack = receiver && receiver->IsInWorld();
+            if (bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+                bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            bot->AttackStop();
+            if (meetBack)
+                WalkoutMeetBackPoint(true, receiver->GetPositionX(), receiver->GetPositionY(), tank,
+                                     bot->GetPositionX(), bot->GetPositionY(), x, y);
+            else
+                WalkoutBackPoint(tank, bot->GetPositionX(), bot->GetPositionY(), x, y);
             z = tank.z;
         }
         bot->UpdateGroundPositionZ(x, y, z);
@@ -6474,7 +10833,8 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
             if (!moved)
                 SeekWalkoutPathProbe(bot, x, y, z, probeType, probeYd);
             NoteSeekWalkoutMove(ai, bot, moved, lastMove.moveFailReason,
-                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd);
+                                lastMove.movePathType ? lastMove.movePathType : probeType, probeYd,
+                                bot->GetDistance2d(x, y), task.walkoutGen);
         }
         if (!moved)
             return false;
@@ -6482,6 +10842,21 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         lastY = y;
         hasLast = true;
         return true;
+    }
+    if (task.prePlaceHold)
+    {
+        // The pre-placed tank at its point: its own walk to the point (the move this action sent there) finishes to 1 yd;
+        // any other walk (its tank AI's chase) is stopped, and a standing tank leaves the tick to its rotation, so it
+        // stays on the point (MeetPrePlaceStepFor).
+        const bool moving = sServerFacade.isMoving(bot) || !bot->movespline->Finalized();
+        const bool ownWalk = moving && hasLast && std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f;
+        const MeetPrePlaceStep step = MeetPrePlaceStepFor(bot->GetDistance2d(task.x, task.y), moving, ownWalk);
+        if (step == MeetPrePlaceStep::Walk)
+            return true; // the own walk runs on (or the next read sends the walk again)
+        hasLast = false;
+        if (step == MeetPrePlaceStep::HoldStop)
+            ai->StopMoving();
+        return MeetPrePlaceStepConsumesTick(step);
     }
     if (task.take)
     {
@@ -6493,31 +10868,134 @@ bool BossTacticsSeekTankAction::Execute(Event& event)
         // Class-correct taunt (the Gluth swap's list: 1.12 has no paladin taunt). Attack() sticks even when the taunt
         // itself cannot fire yet (cooldown, range).
         const char* taunt = nullptr;
-        switch (bot->GetClass())
+        if (SeekTakeUsesKnownTaunt(sPlayerbotAIConfig.dungeonRunSeekNearestTake, task.takeSrc))
         {
-            case CLASS_WARRIOR: taunt = "taunt"; break;
-            case CLASS_DRUID: taunt = "growl"; break;
-            default: break;
+            // With the nearest take on, the take casts the taunt the readiness read counts (KnownTaunt), so a paladin's
+            // Hand of Reckoning goes out the way the tank swap and the taunt-after casts do. The relief take always
+            // casts it: the taunt that qualified the tank is the taunt it casts.
+            taunt = KnownTaunt(ai);
+        }
+        else
+        {
+            switch (bot->GetClass())
+            {
+                case CLASS_WARRIOR: taunt = "taunt"; break;
+                case CLASS_DRUID: taunt = "growl"; break;
+                default: break;
+            }
         }
         // A live anchor never lets the take chase a Son out of it (Attack walks to melee): the tank taunts from where
         // it stands, and the Son comes in to it.
         // The Son on a non-tank stands where the raid stands, inside the everyone circle: the off-tank may go that far.
-        const bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
-        LogSeekTake(ai, bot, task.source);
+        bool chaseRefused = BossAnchorRefusesChase(ai, bot, task.source, true);
+        bool edgeFar = false;
+        bool edgeTake = false; // only the take edge let this chase through (the row's `+edge`)
+        if (chaseRefused && sPlayerbotAIConfig.dungeonRunSeekTakeEdge)
+        {
+            // The take edge (DungeonRunSeekTakeEdge): a Son just outside the raid circle whose victim stands inside it
+            // (plus 2 yd) is taken, but only a bounded one: within 8 yd of the circle and within 10 yd of that victim,
+            // on the platform (SeekTakeEdgeCheck). Anything else stays refused (`edge_far` when only a distance fails),
+            // so Attack() below never walks the tank far off the circle or under Hakkar's evade line.
+            // BossAnchorRefusesChase was true, so the anchor row is live and the Son stands outside the circle.
+            if (const BossTacticRow* const anchorRow = LiveBossAnchorRow(ai, bot))
+            {
+                Unit* const sonVictim = task.source->GetVictim();
+                const SeekTakeEdge edge = SeekTakeEdgeCheck(AnchorCircleOf(*anchorRow, false),
+                    task.source->GetPositionX(), task.source->GetPositionY(), task.source->GetPositionZ(),
+                    sonVictim != nullptr, sonVictim ? sonVictim->GetPositionX() : 0.0f,
+                    sonVictim ? sonVictim->GetPositionY() : 0.0f);
+                chaseRefused = edge != SeekTakeEdge::Allowed;
+                edgeFar = edge == SeekTakeEdge::Far;
+                edgeTake = !chaseRefused;
+            }
+        }
+        const bool canTaunt = taunt && ai->CanCastSpell(taunt, task.source);
+        // The taunt gate (a taunt-immune boss, a Shade) is read before the row, so the row never says `taunt` for a
+        // cast that the gate then refuses.
+        const bool gateRefused = canTaunt && TauntRefusedByGate(ai, bot, task.source, taunt);
+        // A cap-guarded take (DungeonRunSeekNearestTakeReach: `nearest_reach`, `healer_clock`) is latched only once it
+        // really starts (the attack or chase command went out, the tank is already after it, or the taunt cast), and a
+        // refused or failed one clears its latch (Codex round 2). Key off: no latch is ever read or written.
+        const bool capGuarded = sPlayerbotAIConfig.dungeonRunSeekNearestTakeReach && task.takeSrc &&
+            (std::strcmp(task.takeSrc, "nearest_reach") == 0 || std::strcmp(task.takeSrc, "healer_clock") == 0);
+        const bool reliefTake = sPlayerbotAIConfig.dungeonRunSeekVictimRelief && task.takeSrc &&
+            std::strcmp(task.takeSrc, "victim_relief") == 0;
+        // The relief take's claim is confirmed here, before the row and before any attack or taunt, on the pick's
+        // clock: a take a nearer tank has taken over since its pick issues nothing at all.
+        SeekReliefGate reliefGate = SeekReliefGate::Refuse;
+        if (reliefTake)
+        {
+            reliefGate = SeekReliefTakeGate(bot, task);
+            if (reliefGate == SeekReliefGate::Refuse)
+                return false;
+        }
+        float beyondYd = -99.0f;
+        BossAnchorCircle raidCircle;
+        if (task.row && BossAnchorOfBoss(bot->GetMapId(), task.row->bossEntry, false, raidCircle))
+            beyondYd = BossAnchorDistance2d(raidCircle, task.source->GetPositionX(), task.source->GetPositionY()) -
+                raidCircle.radius;
+        LogSeekTake(ai, bot, task.source,
+                    gateRefused ? "taunt_gated" : SeekTakeReasonWord(chaseRefused, taunt != nullptr, canTaunt, edgeFar),
+                    task.meet, SeekTakeSrcWord(task.takeSrc, edgeTake), beyondYd);
         if (chaseRefused && AI_VALUE(Unit*, "current target") == task.source)
         {
             // Already after it: drop the target so the reach-melee follow stops, and stand.
             SET_AI_VALUE(Unit*, "current target", nullptr);
             ai->StopMoving();
         }
+        bool started = false;
+        // The meet take re-checks its tuple (this receiver, the current meet Son, the bounded exemption) right before
+        // its Attack (DungeonRunSeekMeetTakeReach): a meet that closed or left the allowance since the pick sends none.
+        if (task.meet && sPlayerbotAIConfig.dungeonRunSeekMeetTakeReach && !MeetTakeAllowedNow(bot, task.source))
+            return false;
         if (!chaseRefused && AI_VALUE(Unit*, "current target") != task.source)
         {
-            if (Attack(bot, task.source) && (!taunt || !ai->CanCastSpell(taunt, task.source)))
+            const bool attacked = Attack(bot, task.source);
+            started = attacked;
+            if (attacked && !canTaunt)
+            {
+                if (capGuarded)
+                    SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                        task.source->GetObjectGuid().GetRawValue(), true, WorldTimer::getMSTime());
+                if (reliefTake && reliefGate == SeekReliefGate::Confirm)
+                    SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source,
+                                           task.source->GetVictim(), task.pickMs);
                 return true;
+            }
         }
-        if (!taunt || !ai->CanCastSpell(taunt, task.source))
+        else if (!chaseRefused)
+            started = true; // already after it
+        if (!canTaunt || gateRefused)
+        {
+            if (capGuarded)
+                SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                    task.source->GetObjectGuid().GetRawValue(), started, WorldTimer::getMSTime());
+            if (reliefTake && reliefGate == SeekReliefGate::Confirm)
+            {
+                if (started)
+                    SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source,
+                                           task.source->GetVictim(), task.pickMs);
+                else
+                    SeekReliefTakeRollback(bot, task.source, task.pickMs);
+            }
             return false;
-        return ai->CastSpell(taunt, task.source);
+        }
+        // The Son's victim is read before the cast: the taunt's own effect may already hand the Son to this tank, and
+        // `from=` names the tank the Son was taken off.
+        Unit* const reliefFrom = task.source->GetVictim();
+        const bool cast = ai->CastSpell(taunt, task.source);
+        if (capGuarded)
+            SeekCapTakeNoteExec(bot->GetInstanceId(), bot->GetObjectGuid().GetRawValue(),
+                                task.source->GetObjectGuid().GetRawValue(), started || cast, WorldTimer::getMSTime());
+        if (reliefTake && reliefGate == SeekReliefGate::Confirm)
+        {
+            if (started || cast)
+                SeekReliefTakeNoteExec(ai, bot, GetRaidTankRoles(ai), task.boss, task.source, reliefFrom,
+                                       task.pickMs);
+            else
+                SeekReliefTakeRollback(bot, task.source, task.pickMs);
+        }
+        return cast;
     }
     if (task.pull)
     {
@@ -6663,12 +11141,32 @@ float BossTacticsSeekHoldMultiplier::GetValue(Action* action)
 {
     if (!action || !sPlayerbotAIConfig.dungeonRunSeekAura)
         return 1.0f;
+    // The pre-placed receiver's chase hold for the reach casts (DungeonRunSeekMeetPrePlaceHold, review): Charge, Feral
+    // Charge and every other CastReachTargetSpellAction move the caster but are no MovementAction, so they are held
+    // here, before the movement check, on the anchored boss (no class or spell constant). The key is read first so
+    // that with it off no action's target is read here (a gap closer's GetTarget runs its whole decision).
+    // The map filter also comes before the target (review: no gap-closer decision off a seek map).
+    const bool prePlaceHold = sPlayerbotAIConfig.dungeonRunSeekMeetPrePlaceHold &&
+        GetBossTactics().HasSeekAuraMap(bot->GetMapId());
+    if (prePlaceHold && dynamic_cast<CastReachTargetSpellAction*>(action) &&
+        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "charge"))
+        return 0.0f;
+    // Intervene (review round 2) jumps the receiver to an ally, a friendly target, so it is held for the receiver
+    // whatever its target, while its pre-place walk runs.
+    if (prePlaceHold && dynamic_cast<CastInterveneAction*>(action) && SeekMeetPrePlaceReceiverHeld(ai, bot, "intervene"))
+        return 0.0f;
     if (!dynamic_cast<MovementAction*>(action))
         return 1.0f;
     // The seek walk itself, the freeze, the flee and the avoid_cast walk must all run.
     if (dynamic_cast<BossTacticsSeekAction*>(action) || dynamic_cast<BossTacticsFreezeAction*>(action) ||
         dynamic_cast<BossTacticsFleeAction*>(action) || dynamic_cast<BossTacticsAvoidCastAction*>(action))
         return 1.0f;
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): its reach actions (reach melee,
+    // charge's reach alternative, the reach spells, as prerequisites or alternatives too) get nothing on the anchored
+    // boss once its pre-place walk began, so the walk at ACTION_HIGH+6 wins the tick. A Son is still reached.
+    if (prePlaceHold && dynamic_cast<ReachTargetAction*>(action) &&
+        SeekMeetPrePlaceHoldsChase(ai, bot, action->GetTarget(), "reach"))
+        return 0.0f;
     // An attack only picks a target: holding it would stop the pre-damage and the burn (the trap hold's rule). The one
     // exception is the holding off-tank's own swing on a Son already close to the hold with the window shut: the tank
     // action stops the swing, and this keeps the "tank target" pick from re-arming it every tick.
@@ -6906,10 +11404,9 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 Player* const tank = roles.tanks[i];
                 PlayerbotAI* const tankAi = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
                 const char* const taunt = tankAi ? KnownTaunt(tankAi) : nullptr;
-                bool const inControl = tank && !tank->HasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
-                    !tank->IsCharmed() && !tank->IsPolymorphed();
-                bool const silenced = tank &&
-                    (tank->GetUInt32Value(UNIT_FIELD_FLAGS) & (UNIT_FLAG_SILENCED | UNIT_FLAG_PACIFIED)) != 0;
+                bool inControl = false;
+                bool silenced = false;
+                TankTauntGuards(tank, inControl, silenced);
                 bool const ready = taunt && tankAi->CanCastSpell(taunt, unit);
                 available[i] = TauntAfterTankAvailable(inControl, silenced, taunt != nullptr);
                 canHold[i] = TauntAfterTankCanHold(inControl, silenced, taunt != nullptr, ready, victim == tank);
@@ -7071,7 +11568,7 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (!task.valid)
         return false;
     const char* const taunt = ClassTauntSpell(bot);
-    if (!taunt)
+    if (!taunt || TauntRefusedByGate(ai, bot, task.subject, taunt))
         return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     if (AI_VALUE(Unit*, "current target") != task.subject)
@@ -7087,6 +11584,461 @@ bool BossTacticsTauntAfterAction::Execute(Event& event)
     if (cast)
         NoteBossTauntAfterCast(ai, bot, task);
     return cast;
+}
+
+namespace
+{
+// The tank_post record: one per bot (a bot holds at most one post), keyed by its own guid. The start time and the
+// arrival flag are what the trigger and the action share; the row's copied columns let a band change close the post
+// without dereferencing a row the reload may have freed. A mutex guards it: a bot's trigger and action reach the same
+// record from the world thread, and the sweep reaches other bots' records.
+struct TankPostRecord
+{
+    std::uint32_t map = 0;
+    std::uint32_t bossEntry = 0;
+    std::uint32_t targetEntry = 0;
+    std::uint8_t hpMin = 0;
+    std::uint8_t hpMax = 100;
+    float param = 0.0f;
+    float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+    std::uint64_t bossGuid = 0;
+    std::uint32_t startMs = 0;
+    std::uint32_t lastReadMs = 0;
+    bool arrivedLogged = false;
+    std::uint64_t arrivedSubjectGuid = 0;
+    std::uint8_t lastStep = 0;
+};
+
+std::mutex g_tankPostMutex;
+std::map<std::uint64_t, TankPostRecord> g_tankPost;
+// A record nobody read for this long belongs to a fight that is over (the window is at most 120 s).
+constexpr std::uint32_t kTankPostIdleMs = 150000;
+// The dead-tank sweep runs at most this often, whatever asks.
+constexpr std::uint32_t kTankPostSweepMs = 1000;
+std::atomic<std::uint32_t> g_tankPostSweepMs{0};
+
+bool TankPostSameRow(const TankPostRecord& record, const BossTacticRow& row)
+{
+    return record.map == row.map && record.bossEntry == row.bossEntry &&
+           record.targetEntry == row.targetEntry && record.hpMin == row.hpMin && record.hpMax == row.hpMax &&
+           record.param == row.param && record.spotX == row.spotX && record.spotY == row.spotY &&
+           record.spotZ == row.spotZ;
+}
+
+// Whether the player may run a post: alive, and not charmed by a creature (a creature-charmed bot yields its AI).
+bool TankPostTankCanAct(Player* player)
+{
+    if (!player || !sServerFacade.IsAlive(player))
+        return false;
+    const ObjectGuid charmer = player->GetCharmerGuid();
+    return charmer.IsEmpty() || charmer.IsPlayer();
+}
+
+float TankPostDistanceYd(float x1, float y1, float z1, float x2, float y2, float z2)
+{
+    const float dx = x1 - x2;
+    const float dy = y1 - y2;
+    const float dz = z1 - z2;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// The living unit of the row's boss entry the fight sees, or null.
+Unit* TankPostBoss(const BossTacticsFight& fight, std::uint32_t entry)
+{
+    for (Unit* unit : fight.units)
+        if (unit && unit->GetEntry() == entry && sServerFacade.IsAlive(unit))
+            return unit;
+    return nullptr;
+}
+
+// Whether the tank's current target is another hostile that attacks a group member. Such a target is kept and the
+// post waits; the row's own boss is never kept this way.
+bool TankPostHoldsOtherHostile(Player* bot, Unit* current, std::uint32_t bossEntry)
+{
+    if (!bot || !current || current->GetEntry() == bossEntry || !sServerFacade.IsAlive(current))
+        return false;
+    Unit* const victim = current->GetVictim();
+    Player* const owner = victim ? victim->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!owner)
+        return false;
+    Group* const group = bot->GetGroup();
+    return owner == bot || (group && group->IsMember(owner->GetObjectGuid()));
+}
+
+// One BossTacticsTankPost row per post event: start, arrive, end. `reason` is empty for start and arrive.
+void LogTankPost(PlayerbotAI* ai, const BossTacticRow& row, const char* event, const char* reason)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[48];
+    if (reason && reason[0])
+        snprintf(info2, sizeof(info2), "event=%s,reason=%s", event, reason);
+    else
+        snprintf(info2, sizeof(info2), "event=%s", event);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// One BossTacticsTankPost row when a post enters a step (drag, yield or leash), never while it stays in it.
+void LogTankPostStep(PlayerbotAI* ai, const BossTacticRow& row, TankPostDecision step, float tankYd,
+                     float subjectYd, bool onTank)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const char* name = step == TankPostDecision::Drag ? "drag"
+        : step == TankPostDecision::Yield            ? "yield"
+                                                     : "leash";
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    char info2[96];
+    snprintf(info2, sizeof(info2), "event=%s,tank_yd=%.1f,subject_yd=%.1f,on_tank=%d", name, tankYd, subjectYd,
+             onTank ? 1 : 0);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
+// The end word of a post that the step closed: the first closed input in the step's own order.
+const char* TankPostEndReason(const TankPostIn& in)
+{
+    if (!in.live)
+        return "band";
+    if (!in.tankCanAct)
+        return "tank";
+    if (in.windowExpired)
+        return "window";
+    if (!in.subjectFound)
+        return "gone";
+    if (!in.subjectAlive)
+        return "dead";
+    if (in.subjectEvading)
+        return "evade";
+    return "band";
+}
+}  // namespace
+
+BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight)
+{
+    BossTankPost out;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunTankPost)
+        return out;
+    if (!ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) || !PlayerbotAI::IsTank(bot))
+        return out;
+    if (!GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return out;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    if (roles.botIndex < 0)
+        return out;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t mapId = bot->GetMapId();
+    AiObjectContext* context = ai->GetAiObjectContext();
+
+    // The row this bot's slot holds now, if any.
+    const BossTacticRow* row = nullptr;
+    Unit* boss = nullptr;
+    for (const BossTacticRow* candidate : fight.rows)
+    {
+        if (candidate->kind != BossTacticKind::TankPost || candidate->priority != roles.botIndex)
+            continue;
+        Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+        if (!candidateBoss)
+            continue;
+        row = candidate;
+        boss = candidateBoss;
+        break;
+    }
+
+    TankPostRecord record;
+    bool haveRecord = false;
+    bool sweepDue = false;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        auto const mine = g_tankPost.find(self);
+        if (mine != g_tankPost.end())
+        {
+            record = mine->second;
+            haveRecord = true;
+        }
+        const std::uint32_t lastSweep = g_tankPostSweepMs.load(std::memory_order_relaxed);
+        sweepDue = lastSweep == 0 || nowMs - lastSweep >= kTankPostSweepMs;
+        if (sweepDue)
+            g_tankPostSweepMs.store(nowMs, std::memory_order_relaxed);
+    }
+
+    // A post whose tank died, was charmed or logged out ends wherever its record is read from, and a record nobody
+    // reads any more goes. The sweep runs once a second, from whichever tank asks.
+    if (sweepDue)
+    {
+        std::vector<std::pair<std::uint64_t, TankPostRecord> > ended;
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            for (auto it = g_tankPost.begin(); it != g_tankPost.end();)
+            {
+                if (nowMs - it->second.lastReadMs > kTankPostIdleMs)
+                {
+                    it = g_tankPost.erase(it);
+                    continue;
+                }
+                // This bot's own record is ended by the step below, once, with its reason.
+                if (it->first == self)
+                {
+                    ++it;
+                    continue;
+                }
+                Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(it->first));
+                if (tank && !TankPostTankCanAct(tank))
+                {
+                    ended.push_back(std::make_pair(it->first, it->second));
+                    it = g_tankPost.erase(it);
+                    continue;
+                }
+                ++it;
+            }
+        }
+        for (const std::pair<std::uint64_t, TankPostRecord>& dead : ended)
+        {
+            Player* const tank = sObjectMgr.GetPlayer(ObjectGuid(dead.first));
+            PlayerbotAI* const tankAi = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+            BossTacticRow endedRow;
+            endedRow.map = dead.second.map;
+            endedRow.bossEntry = dead.second.bossEntry;
+            endedRow.targetEntry = dead.second.targetEntry;
+            endedRow.kind = BossTacticKind::TankPost;
+            endedRow.hpMin = dead.second.hpMin;
+            endedRow.hpMax = dead.second.hpMax;
+            endedRow.param = dead.second.param;
+            endedRow.spotX = dead.second.spotX;
+            endedRow.spotY = dead.second.spotY;
+            endedRow.spotZ = dead.second.spotZ;
+            if (tankAi)
+                LogTankPost(tankAi, endedRow, "end", "tank");
+        }
+    }
+
+    // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over.
+    if (haveRecord && (!row || record.map != mapId || !TankPostSameRow(record, *row) ||
+            record.bossGuid != boss->GetObjectGuid().GetRawValue()))
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            g_tankPost.erase(self);
+        }
+        BossTacticRow closed;
+        closed.map = record.map;
+        closed.bossEntry = record.bossEntry;
+        closed.targetEntry = record.targetEntry;
+        closed.kind = BossTacticKind::TankPost;
+        closed.hpMin = record.hpMin;
+        closed.hpMax = record.hpMax;
+        closed.param = record.param;
+        closed.spotX = record.spotX;
+        closed.spotY = record.spotY;
+        closed.spotZ = record.spotZ;
+        LogTankPost(ai, closed, "end", row ? "slot" : "band");
+        return out;
+    }
+    if (!row || !boss)
+        return out;
+    const bool holdSpot = sPlayerbotAIConfig.dungeonRunTankPostHoldSpot && row->mode == TacticMode::HoldSpot;
+
+    std::vector<TankPostUnit> const candidates =
+        AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(row->targetEntry));
+    const int pick = PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ);
+    TankPostUnit const* subjectUnit = pick < 0 ? nullptr : &candidates[pick];
+    Unit* const subject = subjectUnit ? ai->GetUnit(ObjectGuid(subjectUnit->guid)) : nullptr;
+    if (subjectUnit && !subject)
+        subjectUnit = nullptr; // gone from the map between the search and the read
+    TankPostIn in;
+    in.live = true;
+    in.started = haveRecord;
+    in.tankCanAct = TankPostTankCanAct(bot);
+    in.subjectFound = subjectUnit != nullptr;
+    in.subjectAlive = subjectUnit && subjectUnit->alive;
+    in.subjectSelectable = subjectUnit && subjectUnit->selectable;
+    in.subjectEvading = subjectUnit && subjectUnit->evading;
+    in.arrivalRadiusYd = row->param;
+    if (subjectUnit)
+        in.subjectToSpotYd = TankPostDistanceYd(subjectUnit->x, subjectUnit->y, subjectUnit->z,
+            row->spotX, row->spotY, row->spotZ);
+    in.botToSpotYd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+        row->spotX, row->spotY, row->spotZ);
+    Unit* const currentTarget = AI_VALUE(Unit*, "current target");
+    in.holdingOtherHostile = TankPostHoldsOtherHostile(bot, currentTarget, row->bossEntry);
+    in.holdSpot = holdSpot;
+    in.subjectGuid = subjectUnit ? subjectUnit->guid : 0;
+    in.arrivedBefore = haveRecord &&
+        TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid);
+    in.subjectOnTank = subject && subject->GetVictim() == bot;
+    const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();
+    in.seated = TankPostSeated(stand.valid, stand.stay);
+    in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
+    // The arrived subject is not "another hostile": it outranks everything else the tank holds.
+    if (holdSpot && currentTarget == subject)
+        in.holdingOtherHostile = false;
+    const std::uint32_t windowMs = static_cast<std::uint32_t>(row->windowSec * 1000.0f + 0.5f);
+    in.windowExpired = haveRecord && windowMs > 0 && nowMs - record.startMs >= windowMs;
+
+    // A post starts once there is a living subject to wait for: no record before that, so an idle row costs nothing,
+    // and an add the tank holds does not spend the post's window. A hold_spot post also starts while the tank holds
+    // another hostile (the post waits on it until the subject arrives).
+    bool startedNow = false;
+    if (!haveRecord)
+    {
+        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || (!holdSpot && in.holdingOtherHostile))
+            return out;
+        record.map = row->map;
+        record.bossEntry = row->bossEntry;
+        record.targetEntry = row->targetEntry;
+        record.hpMin = row->hpMin;
+        record.hpMax = row->hpMax;
+        record.param = row->param;
+        record.spotX = row->spotX;
+        record.spotY = row->spotY;
+        record.spotZ = row->spotZ;
+        record.bossGuid = boss->GetObjectGuid().GetRawValue();
+        record.startMs = nowMs;
+        record.lastReadMs = nowMs;
+        record.arrivedLogged = false;
+        record.arrivedSubjectGuid = 0;
+        haveRecord = true;
+        startedNow = true;
+        in.started = true;
+    }
+
+    const TankPostDecision step = TankPostStep(in);
+    if (step == TankPostDecision::End)
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            g_tankPost.erase(self);
+        }
+        LogTankPost(ai, *row, "end", TankPostEndReason(in));
+        return out;
+    }
+    if (step == TankPostDecision::None)
+        return out;
+
+    bool arrivedNow = false;
+    bool stepEntered = false;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        TankPostRecord& stored = g_tankPost[self];
+        stored = record;
+        stored.lastReadMs = nowMs;
+        stepEntered = TankPostStepEntered(stored.lastStep, step);
+        stored.lastStep = static_cast<std::uint8_t>(step);
+        if (TankPostLatchesArrival(in, step))
+        {
+            if (!stored.arrivedLogged)
+                arrivedNow = true;
+            stored.arrivedLogged = true;
+            stored.arrivedSubjectGuid = in.subjectGuid;
+        }
+    }
+    if (startedNow)
+        LogTankPost(ai, *row, "start", nullptr);
+    if (arrivedNow)
+        LogTankPost(ai, *row, "arrive", nullptr);
+    if (stepEntered)
+        LogTankPostStep(ai, *row, step, in.botToSpotYd, in.subjectToSpotYd, in.subjectOnTank);
+    // A stand seat owns the tank: the post stands down (the record and its arrival stay) until the seat is released.
+    if (step == TankPostDecision::Yield)
+        return out;
+
+    out.valid = true;
+    // hold_spot: the arrived subject outranks another hostile (the step has already chosen Engage or Drag), so the
+    // trigger and the action must not stand down for that add. Before the arrival the leash outranks it the same way:
+    // the tank walks back to the spot with its target kept instead of standing down for it.
+    const bool subjectOutranks = holdSpot && (step == TankPostDecision::Engage || step == TankPostDecision::Drag ||
+                                               step == TankPostDecision::Leash);
+    out.holdingOtherHostile = in.holdingOtherHostile && !subjectOutranks;
+    out.step = step;
+    out.boss = boss;
+    out.subject = subject;
+    out.row = row;
+    out.tankIndex = roles.botIndex;
+    out.x = row->spotX;
+    out.y = row->spotY;
+    out.z = row->spotZ;
+    out.arrived = step == TankPostDecision::Engage;
+    return out;
+}
+
+bool BossTacticsTankPostAction::Execute(Event& event)
+{
+    (void)event;
+    const BossTankPost task = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
+    if (!task.valid || !task.row || !task.subject)
+    {
+        hasLast = false;
+        return false;
+    }
+    // Drag: the arrived subject is on this tank and it drifted from the spot. Leash: before the arrival the tank is
+    // past 8 yd from the spot on a whelp. Both walk back keeping the target (no AttackStop, no target change), so the
+    // subject follows on a drag and whatever the tank fights follows on a leash; the same spline guard as the walk.
+    if (task.step == TankPostDecision::Drag || task.step == TankPostDecision::Leash)
+    {
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+            std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f)
+            return true;
+        float z = task.z;
+        bot->UpdateGroundPositionZ(task.x, task.y, z);
+        if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+            return false;
+        lastX = task.x;
+        lastY = task.y;
+        hasLast = true;
+        return true;
+    }
+    // Another hostile on a group member is the tank's job: the post waits and the ordinary rotation keeps it.
+    if (task.holdingOtherHostile)
+    {
+        hasLast = false;
+        return false;
+    }
+    AiObjectContext* context = ai->GetAiObjectContext();
+    Unit* const current = AI_VALUE(Unit*, "current target");
+    if (task.step == TankPostDecision::Engage)
+    {
+        hasLast = false;
+        if (current == task.subject)
+            return false;
+        return Attack(bot, task.subject);
+    }
+    // Walk or hold: drop only the row's boss (an airborne boss) or nothing, and keep every other hostile.
+    if (current && current->GetEntry() != task.row->bossEntry)
+    {
+        hasLast = false;
+        return false;
+    }
+    if (current)
+    {
+        context->GetValue<Unit*>("current target")->Set(nullptr);
+        context->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+        bot->AttackStop();
+    }
+    if (task.step == TankPostDecision::Hold)
+    {
+        hasLast = false;
+        if (!bot->IsStopped())
+            ai->StopMoving();
+        return true;
+    }
+    // The walk: already on its way to this spot, leave the spline alone.
+    if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+        std::fabs(lastX - task.x) < 1.0f && std::fabs(lastY - task.y) < 1.0f)
+        return true;
+    float z = task.z;
+    bot->UpdateGroundPositionZ(task.x, task.y, z);
+    bot->AttackStop();
+    if (!MoveTo(bot->GetMapId(), task.x, task.y, z, false, false, false, true))
+        return false;
+    lastX = task.x;
+    lastY = task.y;
+    hasLast = true;
+    return true;
 }
 
 namespace

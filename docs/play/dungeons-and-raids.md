@@ -131,6 +131,17 @@ The reverse also happens: an unlinked short stairs or ramp (the walkway into Odo
 
 When following out of combat inside instances, navmesh paths can occasionally stop responding if a bot is stuck on complex geometry. A bot that is more than 3 yards beyond its follow distance and has remained stationary for 2 seconds automatically attempts a local rescue walk to rejoin the leader.
 
+### Bots Cut Off on a Navmesh Island
+
+A teleport, a summon, a knockback or a raid placement can drop a bot on a small patch of ground that has no walkable way off it. The bot then stands still for the rest of the fight: every move it tries finds no path. With `AiPlayerbot.DungeonRunPlaceUnstick` on (recommended), a bot inside a dungeon or raid whose moves have found no path for 10 seconds, and whose own spot really is cut off from you (not just a target it cannot reach), is teleported beside you (or the bot it follows) the way [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon) picks the spot.
+- It lands wherever you stand, inside a boss room too.
+- It stays in combat. Its pet comes along only when the pet is stuck on the island too; a pet that is free (fighting elsewhere, for one) is left to walk after it.
+- It is not whispered about; a stay or guard point on the island is cleared, any other is kept.
+- Only while you are more than 20 yards away and within sight range (any distance when a dungeon run or raid walk drives the group), at most once every 30 seconds per bot.
+- Never on a battleground, never while the bot is dead, charmed, mind-controlling something or casting, never while you ride a boat, zeppelin or lift, and never while you are fighting its own target right next to it.
+
+It is not rescued while you stand somewhere off the walkable ground yourself (on a crate, say): step back onto the floor. Without the setting, summon such a bot yourself.
+
 ### Bots in Deep Water
 
 In deep water a bot swims a straight line to where it is going when the whole line is water and nothing is in the way. If it makes no progress, it swims up to the surface and to the nearest shore within 30 yards. A bot stuck in water out of combat can always be fetched with [`.bot summon <Name>`](commands/roster-and-hiring.md#bot-summon).

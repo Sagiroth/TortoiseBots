@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <unordered_map>
 
@@ -95,10 +96,133 @@ void LogThreatCap(PlayerbotAI* ai, Player* bot, const ThreatCapPick& pick, Unit*
         }
     }
     // The first off-tank's current target: the cap reference stalls when that tank is stuck on a Son instead of the boss.
-    char info1[128];
-    snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s", pick.offTank ? "offtank" : "main",
-             pick.threat, offTankTarget ? offTankTarget->GetName() : "none");
+    // holder= is the tank the boss is hitting right now (none: a damage dealer, or nobody).
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict adds `white=held|free ref0=0|1`: whether this bot's white damage is
+    // stopped by the successor latch, and whether the reference is the 0 of a just-Hexed tank (white damage is never
+    // stopped then), so a walk can split the Hex-window hold from the 92 % stop. Key off: the row is unchanged.
+    char info1[192];
+    if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict)
+        snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s white=%s ref0=%d",
+                 pick.offTank ? "offtank" : "main", pick.threat, offTankTarget ? offTankTarget->GetName() : "none",
+                 ThreatCapHolderWord(pick.holder), ai->SuccessorWhiteCap().stopped ? "held" : "free",
+                 pick.threat == 0.0f ? 1 : 0);
+    else
+        snprintf(info1, sizeof(info1), "threat cap: ref=%s %.0f offtank_target=%s holder=%s", pick.offTank ? "offtank" : "main",
+                 pick.threat, offTankTarget ? offTankTarget->GetName() : "none", ThreatCapHolderWord(pick.holder));
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatCap", info1, "");
+}
+
+// BossTacticsHex: one row per Jin'do Hex (17172) on a member of the fight, so a walk can see who the boss turned to after
+// it. Hex lands on the boss's current victim and wipes that member's threat; the row is the state right after:
+//   info1 = "holder=<main|off|dps> ot_threat=<n> mt_threat=<n> top_dps=<name>:<threat>"
+// `holder` is the member who WORE the Hex (the walk-report parser reads the field name; it is not the boss's victim).
+// ot_threat is the wearer's threat when an off-tank wore it, else the first off-tank's; mt_threat the main tank's; -1 when
+// the raid's tank order has no such tank (a dead tank reads what the boss still holds for it). top_dps is the highest
+// non-tank, non-healer member.
+// The wearer is found by its aura among the tanks and then the group's members, once per second per boss (HexScanDue):
+// the boss has turned to someone else by the time this runs, so the current victim is no clue. The aura-watch hook of
+// the combat timeline (host/CombatMonitorAdapter.cpp OnAuraApply) runs on a map thread behind AiPlayerbot.CombatTimeline
+// and has no bot to log under, so the snapshot is taken here, on the world thread, at the next read of the boss's tank
+// threat (sub-second while any bot with the threat value is in combat). One row per member and Hex (HexSnapshotDue); the
+// throttle maps are pruned past 256 / 64 entries. Nothing runs without the log file, and with no wearer the scan is one
+// aura lookup per member once a second.
+constexpr std::size_t kHexLogMaxEntries = 256;
+constexpr std::size_t kHexScanMaxBosses = 64;
+std::mutex g_hexLogMutex;
+std::unordered_map<std::uint64_t, std::uint32_t> g_hexLog;
+// Keyed by (instance id, boss guid): two Zul'Gurub instances never share a scan slot.
+std::map<std::pair<std::uint32_t, std::uint64_t>, std::uint32_t> g_hexScan;
+
+void LogHexSnapshot(PlayerbotAI* ai, Unit* boss, const RaidTankRoles& roles, Group* group)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(g_hexLogMutex);
+        std::uint32_t& lastScan = g_hexScan[std::make_pair(static_cast<std::uint32_t>(boss->GetInstanceId()), boss->GetObjectGuid().GetRawValue())];
+        if (!HexScanDue(lastScan, nowMs))
+            return;
+        lastScan = nowMs;
+        if (g_hexScan.size() > kHexScanMaxBosses)
+            g_hexScan.clear();
+    }
+    const auto tankIndexOf = [&roles](Player* player) -> int
+    {
+        for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+            if (roles.tanks[index] == player)
+                return static_cast<int>(index);
+        return -1;
+    };
+    std::vector<HexMember> wearers;
+    std::vector<Player*> wearerPlayers;
+    const auto consider = [&](Player* player)
+    {
+        if (!player || !player->IsInWorld() || !ai->HasAura(kJindoHexSpellId, player))
+            return;
+        for (Player* known : wearerPlayers)
+            if (known == player)
+                return;
+        HexMember member;
+        member.key = player->GetObjectGuid().GetRawValue();
+        member.tankIndex = tankIndexOf(player);
+        wearers.push_back(member);
+        wearerPlayers.push_back(player);
+    };
+    for (Player* tank : roles.tanks)
+        consider(tank);
+    if (group)
+        for (Player* member : LiveGroupMembers(group))
+            consider(member);
+    if (wearers.empty())
+        return;
+    int pickedIndex;
+    {
+        std::lock_guard<std::mutex> lock(g_hexLogMutex);
+        for (HexMember& member : wearers)
+        {
+            auto const known = g_hexLog.find(member.key);
+            member.lastLoggedMs = known == g_hexLog.end() ? 0 : known->second;
+        }
+        pickedIndex = HexWearerToLog(wearers, nowMs);
+        if (pickedIndex < 0)
+            return;
+        g_hexLog[wearers[pickedIndex].key] = nowMs;
+        if (g_hexLog.size() > kHexLogMaxEntries)
+        {
+            for (auto it = g_hexLog.begin(); it != g_hexLog.end();)
+                it = nowMs - it->second > kHexSnapshotGapMs * 8 ? g_hexLog.erase(it) : std::next(it);
+        }
+    }
+    const int wearerTankIndex = wearers[pickedIndex].tankIndex;
+    const std::size_t offIndex = static_cast<std::size_t>(HexOffTankIndex(wearerTankIndex));
+    auto const threatOf = [boss](Player* player) -> float
+    {
+        return player ? sServerFacade.GetThreatManager(boss).getThreat(player) : -1.0f;
+    };
+    Player* const mainTank = roles.tanks.size() >= 1 ? roles.tanks[0] : nullptr;
+    Player* const offTank = roles.tanks.size() > offIndex ? roles.tanks[offIndex] : nullptr;
+    Player* topDps = nullptr;
+    float topDpsThreat = 0.0f;
+    if (group)
+    {
+        for (Player* member : LiveGroupMembers(group))
+        {
+            if (!member || !sServerFacade.IsAlive(member) || ai->IsTank(member) || PlayerbotAI::IsHeal(member))
+                continue;
+            const float threat = sServerFacade.GetThreatManager(boss).getThreat(member);
+            if (!topDps || threat > topDpsThreat)
+            {
+                topDps = member;
+                topDpsThreat = threat;
+            }
+        }
+    }
+    char info1[160];
+    snprintf(info1, sizeof(info1), "holder=%s ot_threat=%.0f mt_threat=%.0f top_dps=%s:%.0f",
+             HexHolderWord(HexHolderOf(true, wearerTankIndex)), threatOf(offTank), threatOf(mainTank),
+             topDps ? topDps->GetName() : "none", topDpsThreat);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsHex", info1, "");
 }
 }
 
@@ -119,6 +243,43 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
     float botThreat = sServerFacade.GetThreatManager(target).getThreat(player);
 
     return botThreat;
+}
+
+namespace ai
+{
+// The threat cap's own tank list (ThreatValues.h): GetTankThreat's successor pick and the nearest take's cap guard.
+std::vector<ThreatCapTank> ThreatCapTanksOf(PlayerbotAI* ai, Unit* target, const RaidTankRoles& roles, Player* skip,
+                                            std::vector<Player*>* who)
+{
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions (on its Shade by design) counts as on the
+    // boss while it keeps a real share of the Jin'do threat (ThreatCapPolicy.h ThreatCapCursedOnBoss).
+    const bool keepsAway = sPlayerbotAIConfig.dungeonRunThreatSuccessorKeepsAway;
+    std::vector<ThreatCapTank> tanks;
+    tanks.reserve(roles.tanks.size());
+    if (who)
+        who->clear();
+    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
+    {
+        Player* player = roles.tanks[index];
+        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == skip)
+            continue;
+        ObjectGuid const charmer = player->GetCharmerGuid();
+        if (!charmer.IsEmpty() && !charmer.IsPlayer())
+            continue;
+        // onBoss: this tank hits the boss. holdsBoss: the boss hits this tank (AiPlayerbot.DungeonRunThreatSuccessorNotHolder).
+        // A tank wearing Jin'do's Hex is polymorphed and cannot hit, but it is still on the boss (ThreatCapOnBoss).
+        ThreatCapTank tank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
+            ThreatCapOnBoss(player->GetVictim() == target, ai->HasAura(kJindoHexSpellId, player)),
+            target->GetVictim() == player};
+        tank.cursed = keepsAway && ai->HasAura(kJindoDelusionsSpellId, player);
+        tanks.push_back(tank);
+        if (who)
+            who->push_back(player);
+    }
+    if (keepsAway)
+        ThreatCapCursedOnBoss(tanks);
+    return tanks;
+}
 }
 
 float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
@@ -158,28 +319,34 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
     // The raid's own tank order: [0] the main tank, [1..] the assigned off-tanks (GetRaidTankRoles). A charmed tank is
     // hostile and its threat is gone (the charm handler deletes it), so it cannot be the boss's successor.
+    // AiPlayerbot.DungeonRunThreatSuccessorKeepsAway: a tank wearing Delusions (on its Shade by design) counts as on the
+    // boss while it keeps a real share of the Jin'do threat (ThreatCapPolicy.h ThreatCapCursedOnBoss).
     const RaidTankRoles roles = GetRaidTankRoles(ai);
-    std::vector<ThreatCapTank> tanks;
-    tanks.reserve(roles.tanks.size());
-    for (std::size_t index = 0; index < roles.tanks.size(); ++index)
-    {
-        Player* player = roles.tanks[index];
-        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
-            continue;
-        ObjectGuid const charmer = player->GetCharmerGuid();
-        if (!charmer.IsEmpty() && !charmer.IsPlayer())
-            continue;
-        tanks.push_back(ThreatCapTank{sServerFacade.GetThreatManager(target).getThreat(player), index >= 1,
-            player->GetVictim() == target});
-    }
+    const std::vector<ThreatCapTank> tanks = ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);
 
-    const ThreatCapPick pick = ThreatCapPickReference(tanks, true);
+    const ThreatCapPick pick = ThreatCapPickReference(tanks, true, sPlayerbotAIConfig.dungeonRunThreatSuccessorNotHolder);
+    LogHexSnapshot(ai, target, roles, group);
     // roles.tanks[1] can be dead or out of the world: read its victim only when it stands in the world.
     Player* const offTankPlayer = roles.tanks.size() >= 2 ? roles.tanks[1] : nullptr;
     Unit* const offTankVictim = offTankPlayer && offTankPlayer->IsInWorld() ? offTankPlayer->GetVictim() : nullptr;
     Unit* const offTankTarget = offTankVictim && offTankVictim->IsInWorld() ? offTankVictim : nullptr;
     LogThreatCap(ai, ai->GetBot(), pick, offTankTarget);
     return pick.threat;
+}
+
+float ThreatValue::GetResetSuccessorThreat(PlayerbotAI* ai, Unit* target)
+{
+    if (!target || !ai)
+        return -1.0f;
+    if (sServerFacade.IsFriendlyTo(target, ai->GetBot()))
+        target = target->GetVictim();
+    if (!target || target->getObjectGuid().IsPlayer() || !ai->GetBot()->GetGroup())
+        return -1.0f;
+    if (!ai::ThreatSuccessorTarget(target))
+        return -1.0f;
+    const RaidTankRoles roles = GetRaidTankRoles(ai);
+    const std::vector<ThreatCapTank> tanks = ai::ThreatCapTanksOf(ai, target, roles, ai->GetBot(), nullptr);
+    return ai::ThreatResetReference(tanks);
 }
 
 bool ai::TargetTauntImmune(Unit* target)
@@ -193,6 +360,13 @@ bool ai::ThreatSuccessorTarget(Unit* target)
     if (!target || target->getObjectGuid().IsPlayer())
         return false;
     return GetBossTactics().HasThreatSuccessor(target->GetMapId(), target->GetEntry());
+}
+
+bool ai::StrictThreatSuccessorRow(Unit* target)
+{
+    if (!target || target->getObjectGuid().IsPlayer())
+        return false;
+    return GetBossTactics().HasStrictThreatSuccessor(target->GetMapId(), target->GetEntry());
 }
 
 uint8 ThreatValue::Calculate(Unit* target)
@@ -234,13 +408,6 @@ uint8 ThreatValue::Calculate(Unit* target)
     bool fleeing = motion == FLEEING_MOTION_TYPE || motion == TIMED_FLEEING_MOTION_TYPE ||
         motion == ASSISTANCE_MOTION_TYPE || motion == ASSISTANCE_DISTRACT_MOTION_TYPE;
 
-    // return high threat if tank has no threat
-    if (target->IsInCombat() && maxThreat == 0 && !fleeing)
-        return 100;
-
-    // return low threat if mob if fleeing
-    if (maxThreat > 0 && fleeing)
-        return 0;
-
-    return botThreat * 100 / maxThreat;
+    // A reference of 0 on an engaged target reads 100 ("the tank has no threat": hold), see ThreatPctOf.
+    return ThreatPctOf(botThreat, maxThreat, target->IsInCombat(), fleeing);
 }

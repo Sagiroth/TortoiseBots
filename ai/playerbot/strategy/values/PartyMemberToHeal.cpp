@@ -5,6 +5,8 @@
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/policy/raid/FankrissRaidPolicy.h"
 #include "playerbot/strategy/actions/PatchwerkSafety.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
+#include "playerbot/SeekAuraPolicy.h"
 #include "HealerCoverage.h"
 #include "playerbot/HealTargetPolicy.h"
 #include "playerbot/HealReachPolicy.h"
@@ -231,11 +233,26 @@ Unit* PartyMemberToHeal::Calculate()
                 return true;
         return false;
     };
+    // DungeonRunSeekMeetNoHeal: the open meet's puller, read once per pick (0: the key is off or no meet is open), so
+    // a candidate costs one guid compare. Only the puller itself pays for the incoming-damage scan.
+    std::uint64_t const meetPuller = SeekMeetHealPuller(bot->GetInstanceId());
+    auto const meetHealHeld = [&](Unit* target)
+    {
+        if (!SeekMeetHealWalker(target->GetObjectGuid().GetRawValue(), meetPuller))
+            return false;
+        return SeekMeetHealHeld(sPlayerbotAIConfig.dungeonRunSeekMeetNoHeal, true, true,
+            SeekMeetHealHpAfterIncoming(target->GetHealthPercent(), getIncomingdamage(target), target->GetMaxHealth()));
+    };
     std::vector<HealingCandidate> candidates;
     std::map<uint64, Unit*> targets;
     auto addTarget = [&](Unit* target, bool tank, bool pet)
     {
         if (!Check(target))
+            return;
+        // DungeonRunSeekMeetNoHeal: while the pulled Son's meet is open, its puller is not a heal target (a heal on it
+        // adds threat on the Son and peels it onto the healer) unless its hp after the incoming hits is under 40 %.
+        // One check for every pick through this value (HoTs and Power Word: Shield included).
+        if (meetHealHeld(target))
             return;
         // Issue #904: in combat an ally this healer cannot reach from where it
         // stands and another healer covers is that healer's to heal. Dropping it

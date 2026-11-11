@@ -36,6 +36,8 @@ STRATEGY_CPP = (STRATEGY / "generic/BossTacticsStrategy.cpp").read_text()
 ACTION_CONTEXT = (STRATEGY / "actions/ActionContext.h").read_text()
 TRIGGER_CONTEXT = (STRATEGY / "triggers/TriggerContext.h").read_text()
 REACH = (STRATEGY / "actions/ReachTargetActions.h").read_text()
+MOVEMENT_ACTIONS = (STRATEGY / "actions/MovementActions.cpp").read_text()
+MOVEMENT_ACTIONS_H = (STRATEGY / "actions/MovementActions.h").read_text()
 DUNGEON_ACTIONS = (STRATEGY / "actions/DungeonActions.cpp").read_text()
 DUNGEON_ACTIONS_H = (STRATEGY / "actions/DungeonActions.h").read_text()
 MIGRATIONS = sorted((ROOT / "data/sql/world").glob("*_world.sql"))
@@ -103,7 +105,7 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
         self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 5)
+        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 6)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
@@ -154,7 +156,7 @@ class BossStandWiring(unittest.TestCase):
 
     def test_a_hold_reads_only_its_own_boss(self):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
-        self.assertIn("if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)\n            continue;", fn)
+        self.assertIn("if (hold.armed && hold.bossEntry != 0 && unit->GetEntry() != hold.bossEntry)\n            return false;", fn)
         self.assertLess(fn.index("unit->GetEntry() != hold.bossEntry"), fn.index("table.Rows(mapId, unit->GetEntry())"))
 
     def test_a_stand_set_alone_arms_the_strategy(self):
@@ -183,7 +185,7 @@ class BossStandWiring(unittest.TestCase):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         # One rule for every bot that evaluates the plan: engaged with THIS boss (its threat list or its victim) in
         # range of the anchor, or holding a stand for the same boss and anchor.
-        self.assertIn("boss->GetThreatManager().getThreat(member) > 0.0f || boss->GetVictim() == member", fn)
+        self.assertIn("StandMemberEngaged(boss->GetThreatManager().getThreat(member) > 0.0f,", fn)
         self.assertIn("memberHold.armed && memberHold.bossEntry == bossEntry && memberHold.anchor == anchor", fn)
         self.assertIn("bots = SelectStandBots(candidates, anchorX, anchorY);", fn)
         # The anchor is the one the open window picked, and the boss the one that owns it.
@@ -339,6 +341,8 @@ class BossStandWiring(unittest.TestCase):
             # (AiPlayerbot.RaidReactions with a live spread row), never
             # unconditionally.
             self.assertIn("if (!MovementAction::isUseful()", fn)
+            # Both read the seat before they report themselves usable.
+            self.assertIn("FindBossStand(ai, bot).valid", fn)
             if cls == "RaidSpreadAction":
                 flat = " ".join(fn.split())
                 self.assertIn("if (!MovementAction::isUseful())", flat)
@@ -354,9 +358,94 @@ class BossStandWiring(unittest.TestCase):
                 # never from the combat state alone: a stay kept in another
                 # state is not the refusal the exemption answers.
                 self.assertNotIn("BotState::BOT_STATE_COMBAT", fn)
+                # The seat refusal comes after the stay exemption; the spread action's slot verdict row logs the
+                # stand on the way, and it still answers false for a seated bot.
+                self.assertIn("if (FindBossStand(ai, bot).valid)", fn)
+                self.assertIn("\n        return false;\n    }\n    return true;", fn)
+                self.assertLess(flat.index("if (!sPlayerbotAIConfig.raidReactions) return false;"),
+                                flat.index("if (FindBossStand(ai, bot).valid)"))
             else:
                 self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
-            self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
+                self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
+        self.assertIn("return !FindBossStand(ai, bot).valid;",
+                      body(DUNGEON_ACTIONS, "bool DragonFlankAction::isUseful()"))
+        spread = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
+        self.assertIn("if (FindBossStand(ai, bot).valid)", spread)
+        self.assertIn("\n        return false;\n    }\n    return true;", spread)
+
+    def test_stand_episode_rows_are_gated_by_their_key(self):
+        # AiPlayerbot.BossStandEvents: one BossStand row per bot's episode, nothing read, written or logged without it.
+        self.assertIn('bossStandEvents = config.GetBoolDefault("AiPlayerbot.BossStandEvents", false);', CONFIG)
+        log = body(ACTIONS, "void LogBossStand(")
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossStand", info1, info2);', log)
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        # The recorded episode is read only with the key on, and the read is decided in one place.
+        self.assertIn("if (events && recorded != g_standEpisodes.end())", fn)
+        self.assertIn("const StandEpisodeOut step = StandEpisodeStep(in);", fn)
+        # A start read stores the flags of the rows it logs, so a fresh assigned-and-arrived read logs each row once.
+        self.assertIn("StandEpisodeKeep(fresh, step, nowMs);", fn)
+        self.assertIn("logged = StandEpisodeKeep(it->second, step, nowMs);", fn)
+        self.assertIn("return finishStandRead(target, false, nullptr);", fn)
+        self.assertIn("return finishStandRead(target, false, selfCounts ? \"side_full\" : \"not_counted\");", fn)
+        self.assertIn('return finishStandRead(target, false, "given_up");', fn)
+        self.assertIn("return finishStandRead(target, true, nullptr);", fn)
+        for function, reason in (("void ReleaseStandEpisode(", "dead"), ("BossStandTarget ai::FindBossStand(", "gone")):
+            text = body(ACTIONS, function)
+            if reason == "dead":
+                self.assertLess(text.index("if (!sPlayerbotAIConfig.bossStandEvents)"), text.index("std::lock_guard"))
+            else:
+                self.assertIn('ReleaseStandEpisode(ai, selfKey, sServerFacade.IsAlive(bot) ? "gone" : "dead");', text)
+                self.assertEqual(text.count('ReleaseStandEpisode(ai, selfKey, "gone");'), 2)
+        self.assertIn("g_standEpisodes.erase(key);", body(ACTIONS, "void ForgetStand(uint64 key)"))
+        # A bot that never held anything leaves the lock alone: the release fast path comes before it.
+        release = body(ACTIONS, "void ReleaseStandEpisode(")
+        count_gate = release.index("g_standStateCount.load(std::memory_order_relaxed) == 0")
+        self.assertLess(release.index("if (!sPlayerbotAIConfig.bossStandEvents)"), count_gate)
+        self.assertLess(count_gate, release.index("std::lock_guard"))
+        # A read with no row to log and no episode to start or release never takes the episode lock.
+        finish = body(ACTIONS, "const auto finishStandRead =", end="\n    };\n")
+        quiet = finish.index(
+            "if (!step.release && !step.start && !step.assigned && !step.arrived && !step.unseated)")
+        self.assertLess(finish.index("const StandEpisodeOut step = StandEpisodeStep(in);"), quiet)
+        self.assertLess(quiet, finish.index("std::lock_guard"))
+        # The fresh record is stored through the keep and never re-zeroed after it (a re-zero drops the flags the
+        # read just logged and the rows go out again).
+        keep = fn.index("StandEpisodeKeep(fresh, step, nowMs);")
+        self.assertLess(keep, fn.index("fresh.boss ="))
+        self.assertNotIn("fresh = StandEpisode()", fn)
+        self.assertEqual(fn.count("g_standEpisodes[selfKey]"), 1)
+
+    def test_the_whole_raid_key_seats_the_wiped_and_keeps_the_clear(self):
+        # AiPlayerbot.BossStandWholeRaid, S2: both keys are read; the engagement rule is the policy's; the stay sits
+        # after the given-up check and before the target is handed out; the flee action asks before it flees.
+        for key, member in (("AiPlayerbot.BossStandEvents", "bossStandEvents"),
+                            ("AiPlayerbot.BossStandWholeRaid", "bossStandWholeRaid")):
+            self.assertIn('%s = config.GetBoolDefault("%s", false);' % (member, key), CONFIG)
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        self.assertIn("candidate.engaged = StandMemberEngaged(", fn)
+        self.assertIn("member->IsInCombat(), boss->IsInCombat());", fn)
+        given_up = fn.index('return finishStandRead(target, false, "given_up");')
+        stay = fn.index("StandAlreadyClear(lane, *points[0], *bossRows, bot->GetPositionX(),")
+        valid = fn.index("target.valid = true;\n    target.x = seat.x;")
+        self.assertLess(given_up, stay)
+        self.assertLess(stay, valid)
+        self.assertIn("stayApplied = true;", fn)
+        self.assertIn("target.stay = true;", fn)
+        # The stay compares the window's seats next to the bot along the lane, not the seat the plan gave it.
+        self.assertIn("kBossStandStayAlongYd", POLICY)
+        self.assertIn("return finishStandRead(target, true, nullptr);", fn)
+        flee = body(MOVEMENT_ACTIONS, "bool FleeAction::isUseful()")
+        gate = flee.index("sPlayerbotAIConfig.bossStandWholeRaid")
+        self.assertLess(gate, flee.index("FindBossStand(ai, bot).valid"))
+        self.assertIn("FleeYieldsToStand(true, FindBossStand(ai, bot).valid)", flee)
+        self.assertIn('#include "playerbot/BossTacticsStand.h"', MOVEMENT_ACTIONS)
+        self.assertIn('#include "playerbot/BossStandPolicy.h"', MOVEMENT_ACTIONS)
+        # The step-out from a ground cloud keeps its own rule.
+        area = body(MOVEMENT_ACTIONS, "bool FleeFromAreaAction::isUseful()")
+        self.assertNotIn("FindBossStand", area)
+        declared = body(MOVEMENT_ACTIONS_H, "class FleeAction", end="\n    };\n")
+        self.assertIn("virtual bool isUseful() override;", declared)
 
     def test_generic_code_names_no_boss(self):
         for name, text in (("BossStandPolicy.h", POLICY), ("BossTacticsStand.h", STAND_H)):

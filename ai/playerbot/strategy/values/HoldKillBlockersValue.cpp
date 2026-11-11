@@ -55,6 +55,27 @@ uint32 HoldKillBlockersValue::Calculate()
     return count;
 }
 
+// The qualifier of the gate value is "<entry>::<radius>": the blocker entry and the row's search radius in yards.
+uint32 GateHoldFightingBlockersValue::Calculate()
+{
+    std::vector<std::string> const parts = Qualified::getMultiQualifiers(qualifier, "::");
+    const uint32 entry = parts.empty() ? 0 : static_cast<uint32>(std::strtoul(parts[0].c_str(), nullptr, 10));
+    const float radius = parts.size() > 1 ? static_cast<float>(std::strtod(parts[1].c_str(), nullptr))
+                                          : kGateHoldRadiusYd;
+    std::list<Creature*> found;
+    ScanEntry(bot, entry, found, radius > 0.0f ? radius : kGateHoldRadiusYd);
+    uint32 count = 0;
+    for (Creature* creature : found)
+    {
+        if (!creature->IsAlive())
+            continue;
+        if (CountsAsFightingBlocker(creature->IsInCombat(), creature->IsInEvadeMode(),
+                creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE)))
+            ++count;
+    }
+    return count;
+}
+
 // The one_at_a_time candidates: every living creature of the entry within kHoldKillRangeYd of the bot that fights. A
 // crowd-controlled or evading one stays on the list with `eligible` false: only PickSoleKill reads that flag (the raid
 // never converges on a sheep or a mob running home), while the area veto still counts it as a held unit standing in the
@@ -137,6 +158,31 @@ std::vector<KillFirstGridUnit> KillFirstGridUnitsValue::Calculate()
                 summoner = summon->GetSummonerGuid();
         }
         unit.owner = summoner.GetRawValue();
+        units.push_back(unit);
+    }
+    return units;
+}
+
+// The awaited units of a tank_post row: every creature of the entry within kTankPostSearchYd of the bot, alive or
+// dead (a dead one still ends the post), with the flags the arrival read needs. The same grid search as the blocker
+// count; the pick is PickTankPostUnit's.
+std::vector<TankPostUnit> TankPostUnitsValue::Calculate()
+{
+    std::vector<TankPostUnit> units;
+    std::list<Creature*> found;
+    ScanEntry(bot, QualifierEntry(qualifier), found, kTankPostSearchYd);
+    for (Creature* creature : found)
+    {
+        if (!creature)
+            continue;
+        TankPostUnit unit;
+        unit.guid = creature->GetObjectGuid().GetRawValue();
+        unit.x = creature->GetPositionX();
+        unit.y = creature->GetPositionY();
+        unit.z = creature->GetPositionZ();
+        unit.alive = creature->IsAlive();
+        unit.selectable = !creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        unit.evading = creature->IsInEvadeMode();
         units.push_back(unit);
     }
     return units;

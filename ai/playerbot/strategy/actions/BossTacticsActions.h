@@ -1,6 +1,8 @@
 #pragma once
+#include <limits>
 #include "playerbot/PlayerbotAI.h"
 #include "playerbot/BossTacticsPolicy.h"
+#include "playerbot/CombatSpreadPolicy.h"
 #include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
@@ -29,6 +31,9 @@ namespace ai
         ActiveBossRows rows;
     };
     BossTacticsFight ScanBossTactics(PlayerbotAI* ai, Player* bot);
+    // A bot on battle duty: not a tank, not a healer. The hold's role gate, for the clauses an explicit attack order
+    // may lift (IsFreeDps) and for those it may not (the area and attacker-debuff veto).
+    bool IsBattleDps(Player* bot);
     // The fight scan's one-slot cache belongs to one AI update: an explicit command runs between updates on the same
     // world thread with the same update tick, so ScanBossTactics only caches while a scope is open, and UpdateAI
     // clears the slot when it returns. One scope per UpdateAI, the whole body.
@@ -71,6 +76,15 @@ namespace ai
     // (CountsAsBlocker, BossTacticsPolicy.h): the "hold kill blockers" value, a grid search at most once a second per
     // bot and entry. Never the bots' "attackers" list: a Portal of Madness is unselectable and never attacks.
     std::uint32_t HoldKillBlockers(PlayerbotAI* ai, std::uint32_t entry);
+
+    // How many living blockers of a gate_hold row fight within `radius` yd of the bot (in combat and not evading:
+    // CountsAsFightingBlocker): the "fighting blockers" value, one cached grid search per bot, entry and radius.
+    std::uint32_t GateHoldFighters(PlayerbotAI* ai, std::uint32_t entry, float radius);
+
+    // Whether `unit` is spared right now by a gate_hold row of the fight: its health is at or below the row's gate %
+    // and more than the row's `priority` blockers still fight (GateHeld). Gated by AiPlayerbot.DungeonRunGateHold; the
+    // callers apply the role gate (free DPS) and the explicit-order rule, as for hold_kill.
+    bool GateHoldsUnit(PlayerbotAI* ai, const ActiveBossRows& rows, Unit* unit);
 
     // The living, fighting units of `entry` within kHoldKillRangeYd of the bot, a crowd-controlled or evading one
     // included (`eligible` false): the "sole kill candidates" value, one cached grid search per bot and entry, the
@@ -126,6 +140,16 @@ namespace ai
     // (DungeonRun::CarrierFocusSkip, FocusSkipsBot), so its refocus does not pull it back off its Shade.
     Unit* FindBossCarrierPick(PlayerbotAI* ai, Player* bot);
 
+    // The carrier strike's Shade, whatever the bot's role or orders: the nearest pickable unit of an open aura-gated
+    // kill_first row within kCarrierHoldReachYd, or null. The engine only reads it while
+    // AiPlayerbot.DungeonRunCarrierStrike is on; the trigger and the action both go through here.
+    Unit* FindBossCarrierStrikePick(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The off-tank's healer-cover latch (AiPlayerbot.DungeonRunShadeHealerCover): the strike trigger updates it, and
+    // FindBossCarrierStrikePick keeps the latched Shade as the pick while ShadeCoverKeepsLatched holds.
+    ShadeCoverLatch GetShadeCoverLatch(Player* bot);
+    void SetShadeCoverLatch(Player* bot, const ShadeCoverLatch& latch);
+
     // Whether this bot carries the aura of an open aura-gated kill_first row right now (a Delusions carrier), whatever
     // its target: such a bot can hurt only the row's unit, so the totem focus never sends it at a totem and counts no
     // volley of it (t1106b). False on a map without rows and for a bot that lacks the aura (the fight scan drops a
@@ -138,6 +162,27 @@ namespace ai
     // (BossTacticsKillFirstAction's stale current target); nullptr derives it from the fight read.
     void LogCarrierNoSwitch(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, Unit* pick, Unit* current,
         const char* keptReason = nullptr);
+
+    // Whether `unit`'s victim is a healer of the bot's group (the bot itself included): a Shade of Jin'do on a healer.
+    bool ShadeOnGroupHealer(Player* bot, Unit* unit);
+
+    // The Shade cover row (walk 56 F3, no flag): run by a Delusions carrier, it names every cursed damage dealer, and
+    // every cursed off-tank that does not hold the boss, that is not on a Shade it can see attacking a healer of the
+    // group, with the reason word (ShadeCoverMissReason). The row is logged under the member it names, at most once per
+    // (member, Shade) per 5 s and only after a 2 s miss. A no-op without bot_events.csv and for an uncursed bot.
+    void LogShadeCover(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The taunt gate (AiPlayerbot.DungeonRunTauntGate): whether a taunt at `target` must not go out, because it is a
+    // needs_aura subject (a Shade of Jin'do, which only a carrier may damage) or a taunt-immune creature. Logs one
+    // BossTacticsTauntGate row per bot per 5 s while it refuses. `spell` is the taunt being tried, for the row.
+    bool TauntRefusedByGate(PlayerbotAI* ai, Player* bot, Unit* target, const char* spell);
+
+    // The carrier strike verdict row: one BossTacticsCarrierStrike row whenever the verdict changes, and at most one
+    // every 5 s while it stays the same. `spell` is the strike the action would use ("<id>", "melee" or "none").
+    // A no-op without bot_events.csv.
+    void LogCarrierStrike(PlayerbotAI* ai, Player* bot, CarrierStrikeVerdict verdict, CarrierStrikeRole role,
+        Unit* shade, float shadeYd, std::uint8_t lowestPct, std::uint8_t tankPct, std::uint8_t otherHealers,
+        std::uint8_t manaPct, const char* spell);
 
     // tank_ignore (t1105h J2): whether this bot, a tank, leaves the target alone because a boss whose tank_ignore row
     // names the target's entry fights within kBossTacticsEngageRange of it (alive, not evading, engaged with our group).
@@ -217,6 +262,16 @@ namespace ai
     {
     public:
         BossTacticsKillFirstAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics kill first") {}
+        bool Execute(Event& event) override;
+    };
+
+    // A cursed healer or off-tank strikes its own Shade with the class's shortest damaging spell, or with Attack when
+    // no spell can be cast (and always for an off-tank). No order or attack target is recorded, so when the guard
+    // fails or the curse ends the heal rows win again and the Shade is dropped by the aura gate.
+    class BossTacticsCarrierStrikeAction : public AttackAction
+    {
+    public:
+        BossTacticsCarrierStrikeAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics carrier strike") {}
         bool Execute(Event& event) override;
     };
 
@@ -483,6 +538,9 @@ namespace ai
         std::uint32_t dueInMs = 0;  // max(0, dueMs - now)
         bool windowOpen = false;
         std::uint32_t cycleNo = 0;
+        // The Cause Insanity reset clock (DungeonRunThreatResetWindow): when the fight's last new charm was seen, and
+        // the fight's combat start (the first reset is counted from it plus an offset).
+        std::uint32_t lastResetMs = 0, engageMs = 0;
         bool gathering = false;     // a source stands at the spot and the gather is under way
         bool gatherReady = false;
         int missing = 0;            // seekers still outside the gather radius
@@ -493,6 +551,11 @@ namespace ai
         int siphonUndosed = 0;
     };
     bool SeekCycleSnapshot(std::uint32_t instanceId, std::uint64_t bossGuid, SeekCycleView& out);
+
+    // The puller of this instance's open pulled-Son meet, or 0 (DungeonRunSeekMeetNoHeal). The heal-target value reads it
+    // once per pick and skips that bot (SeekMeetHealHeld). Returns 0 before any lock with the key off or no meet open on
+    // the server (an atomic count); otherwise one locked read of the meet's receiver, shot time and puller together.
+    std::uint64_t SeekMeetHealPuller(std::uint32_t instanceId);
 
     // The seek_aura fight records' handoff across `.bot run reloadplans`: records whose stable row identity still
     // exists in the new tactic table with the same cycle spell, cycle length and dose window keep their engage, last
@@ -558,6 +621,23 @@ namespace ai
         BossTacticsSeekPetHoldMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics seek pet hold") {}
         float GetValue(Action* action) override;
     };
+    // The walk-out focus (DungeonRunSeekWalkoutFocus): while this bot is the live walk-out puller, at or above 40 %
+    // health, and its shot has not landed, every combat-engine action but the walk-out ("boss tactics seek tank") and
+    // the pet's dismissal ("boss tactics seek pet") is held (WalkoutFocusHolds; reaction actions still run), so
+    // "follow", "hunter step out" or "wait for attack" no longer take the puller's ticks at the stand. One
+    // `seek pull: walk-out preempted action=<name>` row per walk-out.
+    class BossTacticsWalkoutFocusMultiplier : public Multiplier
+    {
+    public:
+        BossTacticsWalkoutFocusMultiplier(PlayerbotAI* ai) : Multiplier(ai, "boss tactics walkout focus") {}
+        float GetValue(Action* action) override;
+    };
+
+    // Whether this bot is the live, unshot walk-out puller of its instance's task (the walk-out focus's record read:
+    // recorded as the puller, alive, not charmed, inside the 25 s, the shot not landed; WalkoutHoldsCombat). False,
+    // without a lock, while no task runs or off a seek_aura map. `combat end` (DungeonRunSeekWalkoutHoldCombat) and
+    // UpdateFaceTarget (DungeonRunSeekWalkoutFaceCast) read it.
+    bool IsLiveWalkoutPuller(Player* bot);
 
     // The third off-tank's own seek_aura source: while it drags one, the generic loose-add pickup must not pull it
     // off. False on every other bot, row or target.
@@ -576,6 +656,14 @@ namespace ai
     bool LiveBossAnchor(PlayerbotAI* ai, Player* bot, BossAnchorCircle& out);
     // The same read, handing back the live anchor row itself (so a caller can take another role's circle of it).
     const BossTacticRow* LiveBossAnchorRow(PlayerbotAI* ai, Player* bot);
+    // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5, MeetPrePlaceHoldsChase): true
+    // while the key is on, this bot is the live pre-place's receiver, its walk began, and `target` is the boss of its
+    // live anchor row. Its reach actions (BossTacticsSeekHoldMultiplier) and its warrior gap closer then skip the boss.
+    // The first hold of a pre-place logs one `event=preplace_hold` row naming `actionKind` (reach, charge, gapclose or intervene).
+    bool SeekMeetPrePlaceHoldsChase(PlayerbotAI* ai, Player* bot, Unit* target, const char* actionKind = "reach");
+    // Its receiver and liveness part alone (no target test): the key, the map filter and the one locked snapshot. The
+    // multiplier holds the receiver's Intervene (a friendly target) on it; the first hold logs the row too.
+    bool SeekMeetPrePlaceReceiverHeld(PlayerbotAI* ai, Player* bot, const char* actionKind);
     // Every boss/raid mover's destination goes through here before its MoveTo: unchanged without a live anchor or
     // inside it; outside, moved onto the circle toward the destination with the floor read there. False: the clamped
     // point has no floor on the centre's level, so the caller skips the move this tick.
@@ -585,6 +673,11 @@ namespace ai
     // `raidCircle`: judge against the everyone circle (the raid's 30 yd) instead of the bot's own (a tank's 25 yd): the
     // off-tank's take of a Son on a non-tank, which stands where the raid stands.
     bool BossAnchorRefusesChase(PlayerbotAI* ai, Player* bot, Unit* unit, bool raidCircle = false);
+    // The meet receiver's bounded chase exemption (DungeonRunSeekMeetTakeReach, SeekMeetReceiverExempt): true only when
+    // `target` is the open meet's current Son, this bot is its receiver, and every bound holds (the Son alive and at
+    // most 12 yd past the raid circle, the receiver not the boss's victim, the take due by the reach). The anchor's
+    // chase refusal (BossAnchorRefusesChase) and ChaseTo's anchor gate and clamps skip that one target only.
+    bool MeetSonChaseExempt(PlayerbotAI* ai, Player* bot, Unit* target);
     // A boss's anchor row from the table alone (no fight read): the run leader's stand search for a boss step reads
     // it before the pull. False when the boss has no anchor row.
     bool BossAnchorOfBoss(std::uint32_t map, std::uint32_t bossEntry, bool tank, BossAnchorCircle& out);
@@ -593,6 +686,31 @@ namespace ai
     // `fallback`. BossSpreadLive says whether any live spread row widened it (the stay exemption drops then).
     float BossSpreadYd(PlayerbotAI* ai, Player* bot, float fallback);
     bool BossSpreadLive(PlayerbotAI* ai, Player* bot);
+
+    // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
+    // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false
+    // for every bot the row does not apply to. The read never reads the key for its decision (the caller does); the key
+    // only owns the row it writes, through SpreadLogOwned.
+    struct BossSpreadSlotTask
+    {
+        bool slotBot = false;
+        SpreadSlotVerdict verdict = SpreadSlotVerdict::NoCentre;
+        int slot = -1;
+        // The spare point the walk goes to when the owned slot is unusable; the row still reports `slot` and `slotYd`.
+        int fallback = -1;
+        // The centre the ring order was built around (`anchor`, `spot`, `none`); the row reports it.
+        SpreadCentreKind centreKind = SpreadCentreKind::None;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        float slotYd = -1.0f;
+    };
+    BossSpreadSlotTask FindBossSpreadSlot(PlayerbotAI* ai, Player* bot);
+    // One `BossTacticsSpread` row per bot and 5 s: the key, the verdict word, the owned slot, the distance to it, the
+    // fallback point actually used (-1 when none), the centre (`anchor`, `spot` or `none`), the nearest living group
+    // member, how many members stand inside the row's spacing, the seek aura and the clock. A null `centre` derives it
+    // from the live anchor and the seek spot (the legacy writer); `replaceSameTick` lets a failed move correct the row
+    // its own tick's read wrote instead of being swallowed by it.
+    void LogBossSpread(PlayerbotAI* ai, Player* bot, const char* verdict, int slot, float slotYd, int fallback,
+                       const char* centre = nullptr, bool replaceSameTick = false);
 
     // The source a free DPS bot damages or burns: the one the gather stands around, while the dose window is open and
     // the row's hold allows the damage (the pre-damage, or the burn once the gather is ready). Null otherwise.
@@ -614,6 +732,17 @@ namespace ai
         bool fromAnchor = false; // a live boss anchor: the shot is fired from (x, y, z) inside it, never chased
         bool walkout = false;     // the walk-out task (SeekWalkoutPolicy.h): out to shoot `source` once, then back
         bool walkoutShot = false; // the shot landed: walk back into the tanks' circle
+        std::uint32_t walkoutPullCastMs = 0; // the walk-out focus's pull cast went out then (0: none this task)
+        std::uint32_t walkoutGen = 0;        // the task's start generation: the puller's own writes match it (WalkoutTaskIs)
+        // Milliseconds to the next Blood Siphon (signed; INT_MAX: unknown), for the shot's wait (WalkoutShotReady).
+        int walkoutDueInMs = std::numeric_limits<int>::max();
+        bool meet = false;        // this take is the pulled Son's meet (the log row's meet=1)
+        const char* takeSrc = "other"; // the take path that produced it (the log row's src=, SeekTakeSrcWord)
+        Unit* boss = nullptr;     // the fight's boss (the relief row's cap read)
+        // The relief pick's clock (the tick's state.nowMs): the take's claim, confirm and rollback all use it, so a
+        // task that executes a tick later confirms a claim it still held at the pick.
+        std::uint32_t pickMs = 0;
+        bool prePlaceHold = false; // the pre-placed tank stands at its point (x, y): stop a walk, leave the rotation free
         bool walkToSpot = false;
         bool holdSwing = false;
         float x = 0.0f, y = 0.0f, z = 0.0f;
@@ -634,6 +763,27 @@ namespace ai
         float lastX = 0.0f;
         float lastY = 0.0f;
         bool hasLast = false;
+    };
+
+    // The fixed slot between the doses (DungeonRunBossSpreadSlots): stand on the owned point, walk back to it once the
+    // seek lets go. A healer's cast is never cut for the walk; a damage dealer cuts its own after 6 s.
+    class BossTacticsSpreadSlotAction : public MovementAction
+    {
+    public:
+        BossTacticsSpreadSlotAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics spread slot") {}
+        bool isUseful() override;
+        bool isPossible() override;
+        bool Execute(Event& event) override;
+
+    private:
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
+        // The first read of an unbroken run of `cast` verdicts; 0: the last verdict was another.
+        std::uint32_t castSinceMs = 0;
+        // When the `cast` verdict was last read: a read more than kSpreadSlotCastGapMs later starts the run over, so a
+        // stamp left by another verdict or the previous pull cannot cut the first cast after a gather.
+        std::uint32_t castSeenMs = 0;
     };
 
     // The second off-tank's source: take it, pull it, drag it to the row's spot.
@@ -697,6 +847,43 @@ namespace ai
     public:
         BossTacticsTauntAfterAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics taunt after") {}
         bool Execute(Event& event) override;
+    };
+
+    // One read of the tank_post rows of the fight: the post the bot's raid tank slot holds, the awaited unit it waits
+    // for, and what the post does this tick. `valid` is true only for the row's own tank, only while the post runs and
+    // only when the tank may act; `holdingOtherHostile` means the tank keeps another hostile that attacks a group
+    // member, so the post waits and the action stands down (a hold_spot post clears it once the subject has arrived:
+    // the subject then outranks that hostile). The post's state (start, arrival, window) is kept per bot
+    // in one record, written and read here alone, so each post logs one start, one arrival and one end.
+    struct BossTankPost
+    {
+        bool valid = false;
+        bool holdingOtherHostile = false;
+        TankPostDecision step = TankPostDecision::None;
+        Unit* boss = nullptr;
+        Unit* subject = nullptr;
+        const BossTacticRow* row = nullptr;
+        int tankIndex = -1;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        bool arrived = false;
+    };
+    // Gated by AiPlayerbot.DungeonRunTankPost, the map's tank_post rows and the "boss tactics" strategy.
+    BossTankPost FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight);
+
+    // The post's tank walks to the row's spot and holds there; on arrival it attacks the awaited unit. While walking or
+    // holding it drops only the row's boss (an airborne boss) or nothing, and it never drops another hostile that
+    // attacks a group member.
+    class BossTacticsTankPostAction : public AttackAction
+    {
+    public:
+        BossTacticsTankPostAction(PlayerbotAI* ai) : AttackAction(ai, "boss tactics tank post") {}
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk was started for this spot: MoveTo relaunches the spline on every call (the stand action's pattern).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
     };
 
     // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap

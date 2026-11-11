@@ -3,6 +3,7 @@
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/VictimEscapeActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 
 #include "GenericActions.h"
@@ -111,6 +112,8 @@ namespace ai
             creators["fankriss rear stack"] = [](PlayerbotAI* ai) { return new FankrissStackAction(ai); };
             creators["fankriss control spawn"] = [](PlayerbotAI* ai) { return new FankrissControlAction(ai); };
             creators["fankriss focus spawn"] = [](PlayerbotAI* ai) { return new FankrissFocusAction(ai); };
+            creators["immune boss victim escape"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimEscapeAction(ai); };
+            creators["bop immune boss victim"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimProtectAction(ai); };
             creators["patchwerk melee retreat"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeRetreatAction(ai); };
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
@@ -133,6 +136,8 @@ namespace ai
             creators["idle wander"] = [](PlayerbotAI* ai) { return new IdleWanderAction(ai); };
             creators["attack"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
             creators["melee"] = [](PlayerbotAI* ai) { return new MeleeAction(ai); };
+            creators["successor white cap noop"] = [](PlayerbotAI* ai) { return new SuccessorWhiteCapNoopAction(ai); };
+            creators["threat reset white stop noop"] = [](PlayerbotAI* ai) { return new ThreatResetWhiteStopNoopAction(ai); };
             creators["switch to melee"] = [](PlayerbotAI* ai) { return new SwitchToMeleeAction(ai); };
             creators["switch to ranged"] = [](PlayerbotAI* ai) { return new SwitchToRangedAction(ai); };
             creators["reach spell"] = [](PlayerbotAI* ai) { return new ReachSpellAction(ai); };
@@ -368,6 +373,7 @@ namespace ai
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptAction(ai); };
             creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepAction(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstAction(ai); };
+            creators["boss tactics carrier strike"] = [](PlayerbotAI* ai) { return new BossTacticsCarrierStrikeAction(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillAction(ai); };
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathAction(ai); };
             creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldAction(ai); };
@@ -385,9 +391,11 @@ namespace ai
             creators["boss tactics seek"] = [](PlayerbotAI* ai) { return new BossTacticsSeekAction(ai); };
             creators["boss tactics seek tank"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTankAction(ai); };
             creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillAction(ai); };
+            creators["boss tactics spread slot"] = [](PlayerbotAI* ai) { return new BossTacticsSpreadSlotAction(ai); };
             creators["boss tactics seek pet"] = [](PlayerbotAI* ai) { return new BossTacticsSeekPetAction(ai); };
             creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemAction(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterAction(ai); };
+            creators["boss tactics tank post"] = [](PlayerbotAI* ai) { return new BossTacticsTankPostAction(ai); };
             creators["enable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
             creators["disable onyxia's lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
             creators["enable molten core strategy"] = [](PlayerbotAI* ai) { return new MoltenCoreEnableDungeonStrategyAction(ai); };

@@ -23,9 +23,33 @@ COMMANDS = read("commands/Commander.cpp")
 SPELLS = read("ai/playerbot/strategy/actions/GenericSpellActions.cpp")
 ATTACK = read("ai/playerbot/strategy/actions/AttackAction.cpp")
 TRIGGERS = read("ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp")
+STRATEGY = read("ai/playerbot/strategy/generic/BossTacticsStrategy.cpp")
+TRIGGER_CONTEXT = read("ai/playerbot/strategy/triggers/TriggerContext.h")
+ACTION_CONTEXT = read("ai/playerbot/strategy/actions/ActionContext.h")
 
 
 class JindoShadesWiring(unittest.TestCase):
+    def test_carrier_strike_wiring(self):
+        # t1106c item 1: a cursed healer or off-tank strikes its own Shade behind AiPlayerbot.DungeonRunCarrierStrike.
+        self.assertIn('"boss tactics carrier strike",\n'
+                      '        NextAction::array(0, new NextAction("boss tactics carrier strike", '
+                      'ACTION_CRITICAL_HEAL - 1), NULL)));', STRATEGY)
+        self.assertIn('creators["boss tactics carrier strike"]', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics carrier strike"]', ACTION_CONTEXT)
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunCarrierStrike)", TRIGGERS)
+        self.assertIn("if (IsBattleDps(bot))", TRIGGERS)
+        start = ACTIONS.index("bool BossTacticsCarrierStrikeAction::Execute(")
+        action = ACTIONS[start:ACTIONS.index("\n}\n", start)]
+        self.assertNotIn('"explicit attack target"', action)
+        self.assertNotIn('"attack target"', action)
+        # The count is only the healers that can heal the raid, and the fight-level reads reach the policy.
+        self.assertIn("if (member == bot || !PlayerbotAI::IsHeal(member))", TRIGGERS)
+        self.assertIn("healer.charmed = !member->GetCharmerGuid().IsEmpty();", TRIGGERS)
+        self.assertIn("uint8 const otherHealerCount = CarrierHealerCount(otherHealers, reach);", TRIGGERS)
+        self.assertIn("in.threatSuccessor = HasThreatSuccessorRow(fight.rows);", TRIGGERS)
+        self.assertIn("CarrierStrikeAllowed(in, static_cast<uint8>(sPlayerbotAIConfig.lowHealth))", TRIGGERS)
+        self.assertIn('return "threat_successor";', ACTIONS)
+
     def test_kill_first_reads_the_carrier_mode(self):
         self.assertIn("const KillFirstPickMode mode = KillFirstPickModeFor(IsBattleDps(bot), !ordered.IsEmpty(),\n"
                       "        OrderIsAutomated(ordered.GetRawValue(), AI_VALUE(ObjectGuid, \"automated attack target\")"
@@ -34,7 +58,7 @@ class JindoShadesWiring(unittest.TestCase):
         self.assertIn("return PickBossKillFirst(ai, bot, fight, mode, kCarrierHoldReachYd);", ACTIONS)
         self.assertIn("return PickBossKillFirst(ai, bot, fight, KillFirstPickMode::Carrier, kCarrierHoldReachYd);",
                       ACTIONS)
-        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd)", ACTIONS)
+        self.assertIn("? PickCarrierOverride(fight.rows, candidates, carrierReachYd,", ACTIONS)
         # The old gate is gone from the pick: an explicit order no longer returns before the carrier override.
         start = ACTIONS.index("Unit* ai::FindBossKillFirst(")
         self.assertNotIn("IsFreeDps", ACTIONS[start:ACTIONS.index("Unit* ai::FindBossCarrierPick(", start)])

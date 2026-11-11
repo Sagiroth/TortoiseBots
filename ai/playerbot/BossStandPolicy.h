@@ -430,6 +430,14 @@ namespace ai
         return member.engaged && dx * dx + dy * dy <= kBossStandMemberRange * kBossStandMemberRange;
     }
 
+    // AiPlayerbot.BossStandWholeRaid: in the fight with the boss = threat on it, its victim, or (with the key) both in
+    // combat: a boss threat wipe (a -100 % threat cast) must not cost its target the seat.
+    inline bool StandMemberEngaged(bool threatPositive, bool isVictim, bool wholeRaid, bool memberInCombat,
+                                   bool bossInCombat)
+    {
+        return threatPositive || isVictim || (wholeRaid && memberInCombat && bossInCombat);
+    }
+
     // A bot of the stand set, as the assignment sees it.
     struct StandBot
     {
@@ -564,6 +572,63 @@ namespace ai
         }
         return lane;
     }
+
+    // The signed distance of (x, y) from the lane line through the anchor; positive is side 0 (StandSideOf's sign).
+    inline float StandLateral(const StandLane& lane, float anchorX, float anchorY, float x, float y)
+    {
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        if (!(length > 0.0001f))
+            return 0.0f;
+        return (lane.dx * (y - anchorY) - lane.dy * (x - anchorX)) / length;
+    }
+
+    // AiPlayerbot.BossStandWholeRaid, the stay: a bot on its seat's side of the lane and at least as far from the lane
+    // line as the seats of that side standing next to it along the lane is already clear. The comparison is the
+    // window's own seats (every role) whose along-lane coordinate is within kBossStandStayAlongYd of the bot's, never
+    // the far seat it was assigned: a mid-lane bot at that seat's lateral would still take the ticks, and where no seat
+    // of its side stands next to it along the lane (the seats sit past the tick chain, at the lane's ends) it walks.
+    constexpr float kBossStandStayAlongYd = 3.0f;  // the seat lattice is 2.83 yd
+
+    inline bool StandAlreadyClear(const StandLane& lane, const BossStandRow& window,
+                                  const std::vector<BossStandRow>& rows, float botX, float botY, float seatX,
+                                  float seatY)
+    {
+        if (!lane.valid)
+            return false;
+        const float length = std::sqrt(lane.dx * lane.dx + lane.dy * lane.dy);
+        if (!(length > 0.0001f))
+            return false;
+        const float anchorX = window.anchorX;
+        const float anchorY = window.anchorY;
+        const float bot = StandLateral(lane, anchorX, anchorY, botX, botY);
+        const float seat = StandLateral(lane, anchorX, anchorY, seatX, seatY);
+        if (std::fabs(seat) < 0.5f || (bot >= 0.0f) != (seat >= 0.0f))
+            return false;
+        const bool seatSide = seat >= 0.0f;
+        const float along = (lane.dx * (botX - anchorX) + lane.dy * (botY - anchorY)) / length;
+        bool any = false;
+        float need = 0.0f;
+        for (const BossStandRow& row : rows)
+        {
+            if (row.anchor != window.anchor || row.windowSpell != window.windowSpell || (row.side == 0) != seatSide)
+                continue;
+            const float rowAlong = (lane.dx * (row.x - anchorX) + lane.dy * (row.y - anchorY)) / length;
+            if (std::fabs(rowAlong - along) > kBossStandStayAlongYd)
+                continue;
+            const float lateral = std::fabs(StandLateral(lane, anchorX, anchorY, row.x, row.y));
+            if (lateral < 0.5f)
+                continue;
+            if (!any || lateral > need)
+            {
+                any = true;
+                need = lateral;
+            }
+        }
+        return any && std::fabs(bot) >= need;
+    }
+
+    // AiPlayerbot.BossStandWholeRaid: a seated bot does not flee (the seat is the escape).
+    inline bool FleeYieldsToStand(bool wholeRaid, bool seated) { return wholeRaid && seated; }
 
     // Yards a bot covers in a 5 s breath cast at run speed (7 yd/s): a seat further than this is still taken, but the
     // plan seats as many bots as it can within it.
@@ -1110,5 +1175,74 @@ namespace ai
     inline bool StandShouldStopCast(float botX, float botY, float slotX, float slotY)
     {
         return stand_detail::Dist2(botX, botY, slotX, slotY) > kBossStandKeepCastRange * kBossStandKeepCastRange;
+    }
+
+    // AiPlayerbot.BossStandEvents: one episode per bot and window (boss guid + anchor), holding the rows of that window
+    // already logged.
+    struct StandEpisode
+    {
+        std::uint64_t boss = 0;
+        std::uint32_t anchor = 0;
+        std::uint32_t windowSpell = 0;
+        std::uint8_t role = 0;
+        std::uint32_t assignedMs = 0;
+        bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
+    };
+
+    // AiPlayerbot.BossStandEvents: what a read logs. The first read of a window can assign and arrive at once, so the
+    // record it stores carries the flags of the rows that read logs; later reads only add the rows they log.
+    struct StandEpisodeIn
+    {
+        bool have = false;            // an episode is recorded for this bot
+        bool sameWindow = false;      // ... and it is this boss guid and anchor
+        bool windowOn = false;        // StandPointsNow gave this bot points (open window or held seats)
+        bool seatValid = false;       // the read ends with a seat (or a stay)
+        bool arrived = false;         // StandArrived(bot, seat)
+        bool assignedLogged = false, arrivedLogged = false, unseatedLogged = false;
+    };
+
+    struct StandEpisodeOut
+    {
+        bool release = false;   // log `released` for the recorded episode and drop it
+        bool start = false;     // record a new episode, its flags the rows this read logs
+        bool assigned = false, arrived = false, unseated = false;
+    };
+
+    // The episode one read belongs to, after the read: a start read begins a fresh record carrying the flags of the
+    // rows it logs (a first read can assign and arrive at once), a later read adds the rows it logs to the record it
+    // finds. The caller fills boss, anchor, spell and role on the fresh record; the episode to log is what this
+    // returns, so a row that went out is never logged again in the same episode.
+    inline StandEpisode& StandEpisodeKeep(StandEpisode& record, const StandEpisodeOut& step, std::uint32_t nowMs)
+    {
+        if (step.start)
+        {
+            record = StandEpisode();
+            record.assignedMs = nowMs;
+        }
+        record.assignedLogged = record.assignedLogged || step.assigned;
+        record.arrivedLogged = record.arrivedLogged || step.arrived;
+        record.unseatedLogged = record.unseatedLogged || step.unseated;
+        return record;
+    }
+
+    inline StandEpisodeOut StandEpisodeStep(const StandEpisodeIn& in)
+    {
+        StandEpisodeOut out;
+        out.release = in.have && (!in.windowOn || !in.sameWindow);
+        if (!in.windowOn)
+            return out;
+        const bool fresh = !in.have || out.release;
+        out.start = fresh;
+        const bool assignedLogged = !fresh && in.assignedLogged;
+        const bool arrivedLogged = !fresh && in.arrivedLogged;
+        const bool unseatedLogged = !fresh && in.unseatedLogged;
+        if (in.seatValid)
+        {
+            out.assigned = !assignedLogged;
+            out.arrived = in.arrived && !arrivedLogged;
+        }
+        else
+            out.unseated = !unseatedLogged && !assignedLogged;
+        return out;
     }
 }

@@ -4,6 +4,7 @@
 #include "playerbot/strategy/actions/FankrissTankActions.h"
 #include "playerbot/strategy/actions/FankrissRaidActions.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/VictimEscapeActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
@@ -52,6 +53,8 @@ namespace ai
             creators["fankriss rear needed"] = [](PlayerbotAI* ai) { return new FankrissStackTrigger(ai); };
             creators["fankriss control needed"] = [](PlayerbotAI* ai) { return new FankrissControlTrigger(ai); };
             creators["fankriss focus needed"] = [](PlayerbotAI* ai) { return new FankrissFocusTrigger(ai); };
+            creators["immune boss victim"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimTrigger(ai); };
+            creators["immune boss victim protect"] = [](PlayerbotAI* ai) { return new ImmuneBossVictimProtectTrigger(ai); };
             creators["patchwerk melee unsafe"] = [](PlayerbotAI* ai) { return new PatchwerkMeleeTrigger(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
@@ -162,6 +165,8 @@ namespace ai
             creators["multiple attackers"] = [](PlayerbotAI* ai) { return new MultipleAttackersTrigger(ai); };
             creators["high threat"] = [](PlayerbotAI* ai) { return new HighThreatTrigger(ai); };
             creators["medium threat"] = [](PlayerbotAI* ai) { return new MediumThreatTrigger(ai); };
+            creators["successor white cap"] = [](PlayerbotAI* ai) { return new SuccessorWhiteCapTrigger(ai); };
+            creators["threat reset white stop"] = [](PlayerbotAI* ai) { return new ThreatResetWhiteStopTrigger(ai); };
             creators["low tank threat"] = [](PlayerbotAI* ai) { return new LowTankThreatTrigger(ai); };
             creators["some threat"] = [](PlayerbotAI* ai) { return new SomeThreatTrigger(ai); };
             creators["no threat"] = [](PlayerbotAI* ai) { return new NoThreatTrigger(ai); };
@@ -340,6 +345,7 @@ namespace ai
             creators["boss tactics interrupt"] = [](PlayerbotAI* ai) { return new BossTacticsInterruptTrigger(ai); };
             creators["boss tactics dispel sweep"] = [](PlayerbotAI* ai) { return new BossTacticsDispelSweepTrigger(ai); };
             creators["boss tactics kill first"] = [](PlayerbotAI* ai) { return new BossTacticsKillFirstTrigger(ai); };
+            creators["boss tactics carrier strike"] = [](PlayerbotAI* ai) { return new BossTacticsCarrierStrikeTrigger(ai); };
             creators["boss tactics hold kill"] = [](PlayerbotAI* ai) { return new BossTacticsHoldKillTrigger(ai); };
             creators["boss tactics linked death"] = [](PlayerbotAI* ai) { return new BossTacticsLinkedDeathTrigger(ai); };
             creators["boss tactics dps hold"] = [](PlayerbotAI* ai) { return new BossTacticsDpsHoldTrigger(ai); };
@@ -359,7 +365,9 @@ namespace ai
             creators["boss tactics seek pet"] = [](PlayerbotAI* ai) { return new BossTacticsSeekPetTrigger(ai); };
             creators["boss tactics seek totem"] = [](PlayerbotAI* ai) { return new BossTacticsSeekTotemTrigger(ai); };
             creators["boss tactics seek kill"] = [](PlayerbotAI* ai) { return new BossTacticsSeekKillTrigger(ai); };
+            creators["boss tactics spread slot"] = [](PlayerbotAI* ai) { return new BossTacticsSpreadSlotTrigger(ai); };
             creators["boss tactics taunt after"] = [](PlayerbotAI* ai) { return new BossTacticsTauntAfterTrigger(ai); };
+            creators["boss tank post"] = [](PlayerbotAI* ai) { return new BossTacticsTankPostTrigger(ai); };
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };

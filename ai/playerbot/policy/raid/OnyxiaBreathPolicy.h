@@ -97,4 +97,11 @@ namespace ai
     {
         return breathCasting && !alreadySafe;
     }
+
+    // A bot holding a boss stand seat keeps it through the breath: the seat
+    // already stands clear of the lane, the generic dodge would walk it back.
+    inline bool BreathDodgeYieldsToStand(bool flagOn, bool seated)
+    {
+        return flagOn && seated;
+    }
 }

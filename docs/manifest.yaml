@@ -132,6 +132,10 @@ nodes:
     path: play/boss-tactics.md
     category: play
     summary: The per-boss tactics table (ai_boss_tactic), the stand sets (ai_boss_stand) and the opt-in boss tactics strategy that applies them.
+  - id: play-refusal-rows
+    path: play/refusal-rows.md
+    category: play
+    summary: The inventory of log rows and run notes that record a decision not to act, the reason field each carries and the fixed word set behind it.
   - id: play-known-limitations
     path: play/known-limitations.md
     category: play

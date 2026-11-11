@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/AoeFearPolicy.h"
 #include "playerbot/RetaliationPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
@@ -171,7 +172,17 @@ namespace ai
     };
     SNARE_ACTION(CastHamstringAction, "hamstring");
     MELEE_ACTION(CastOverpowerAction, "overpower");
-    MELEE_ACTION(CastMockingBlowAction, "mocking blow");
+    // The second taunt: never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss).
+    class CastMockingBlowAction : public CastMeleeSpellAction
+    {
+    public:
+        CastMockingBlowAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "mocking blow") {}
+
+        virtual bool isUseful() override
+        {
+            return CastMeleeSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "mocking blow");
+        }
+    };
     class CastRetaliationAction : public CastBuffSpellAction
     {
     public:
@@ -428,8 +439,29 @@ namespace ai
     };
 
     // protection
-    MELEE_ACTION_U(CastTauntAction, "taunt", GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);
-    SNARE_ACTION(CastTauntOnSnareTargetAction, "taunt");
+    // The taunt row itself: no subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss).
+    class CastTauntAction : public CastMeleeSpellAction
+    {
+    public:
+        CastTauntAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "taunt") {}
+
+        virtual bool isUseful() override
+        {
+            return GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot &&
+                !TauntRefusedByGate(ai, bot, GetTarget(), "taunt");
+        }
+    };
+    // The snare-target taunt: the same gate as the taunt row.
+    class CastTauntOnSnareTargetAction : public CastSnareSpellAction
+    {
+    public:
+        CastTauntOnSnareTargetAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "taunt") {}
+
+        virtual bool isUseful() override
+        {
+            return CastSnareSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "taunt");
+        }
+    };
 
     // Taunt the mob picked by "attacker of non-tank target"; the cast reads
     // its real range from the spell and the reach prerequisite walks the
@@ -438,6 +470,12 @@ namespace ai
     {
     public:
         CastTauntOnAttackerAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "taunt") {}
+
+        // The pick is the value's; the gate is the backstop, so a refused subject never gets here by any route.
+        virtual bool isUseful() override
+        {
+            return CastSnareSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "taunt");
+        }
 
     protected:
         virtual std::string GetTargetName() override { return "attacker of non-tank target"; }

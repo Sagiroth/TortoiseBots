@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <iostream>
 #include <map>
@@ -117,6 +118,27 @@ static void TestCarrierNoSwitchReasonAndDirectOnly()
     CHECK(!AuraGatedDirectOnlyDamage(true, 0));
 }
 
+// t1106k F3 a: the kill-first switch row's since_ms is the server-clock time from this bot's first sight of the Shade
+// to the switch. Unknown first sight reads 0 (the row never invents a delay), and the 32-bit clock wrap is safe.
+static void TestCarrierSwitchSinceMs()
+{
+    CHECK(CarrierSwitchSinceMs(1000, 2300) == 1300);
+    CHECK(CarrierSwitchSinceMs(1000, 1000) == 0);
+    CHECK(CarrierSwitchSinceMs(0, 5000) == 0);
+    CHECK(CarrierSwitchSinceMs(0xFFFFFF00u, 0x00000100u) == 0x200u); // the clock wrapped between sight and switch
+}
+
+// t1106k R3 L3: a Shade missed by one pass (or two) keeps its first-sight record; it goes only after kShadeSeenGraceMs.
+static void TestShadeSeenGrace()
+{
+    CHECK(kShadeSeenGraceMs == 3000);
+    CHECK(!ShadeSeenExpired(10000, 10000));
+    CHECK(!ShadeSeenExpired(10000, 11000));  // one missed 1 s pass: kept (the old code erased here)
+    CHECK(!ShadeSeenExpired(10000, 13000));
+    CHECK(ShadeSeenExpired(10000, 13001));
+    CHECK(!ShadeSeenExpired(0xFFFFFF00u, 0x00000100u)); // clock wrap
+}
+
 // t1106b round 2: "current target" can already name the pick while the live victim is another unit (or none), and the
 // old current-target-only test left the trigger off for the rest of the fight. The trigger must fire and the action
 // must re-attack the pick, not only log.
@@ -136,6 +158,252 @@ static TacticCandidate Cand(std::uint32_t entry, float distance, bool pickable =
     c.distance = distance;
     c.pickable = pickable;
     return c;
+}
+
+static CarrierScanFacts ScanHit(bool unitFound, bool eligible, float distanceYd, bool los, bool validAttack)
+{
+    CarrierScanFacts f;
+    f.unitFound = unitFound;
+    f.gridEligible = eligible;
+    f.distanceYd = distanceYd;
+    f.los = los;
+    f.validAttack = validAttack;
+    return f;
+}
+
+// walk 53: a Delusions carrier's attackers list held only Jin'do while a Shade stood beside it (295 of 357 no-switch
+// rows read `not_read`). The carrier override finds nothing there; the grid fallback takes the nearest Shade that
+// passes every check, and leaves the nearer one behind a wall out.
+static void TestCarrierScanTakesGridShadeTheAttackersListMissed()
+{
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    ActiveBossRows active = Active(rows);
+    // The attackers list of that carrier: Jin'do alone, pickable, 5 yd.
+    std::vector<TacticCandidate> candidates{Cand(11380, 5.0f, true)};
+    CHECK(PickCarrierOverride(active, candidates, kCarrierHoldReachYd) == -1);
+
+    // The grid read of the carrier row's entry: a Shade at 12 yd and one at 8 yd without line of sight.
+    std::vector<CarrierScanFacts> hits;
+    hits.push_back(ScanHit(true, true, 12.0f, true, true));
+    hits.push_back(ScanHit(true, true, 8.0f, false, true));
+    CHECK(CarrierScanRefuses(hits[0], kCarrierHoldReachYd) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(hits[1], kCarrierHoldReachYd) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanPick(hits, kCarrierHoldReachYd) == 0);
+}
+
+// Each check alone, then the order the checks run in, then the reach's edge.
+static void TestCarrierScanRefusal()
+{
+    CHECK(CarrierScanRefuses(ScanHit(false, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 10.0f, true, true), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, true), 40.0f) == CarrierScanRefusal::NoLos);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, false), 40.0f) == CarrierScanRefusal::InvalidTarget);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+
+    CHECK(CarrierScanRefuses(ScanHit(false, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::NoUnit);
+    CHECK(CarrierScanRefuses(ScanHit(true, false, 41.0f, false, false), 40.0f) == CarrierScanRefusal::Ineligible);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 41.0f, false, false), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 10.0f, false, false), 40.0f) == CarrierScanRefusal::NoLos);
+
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.0f, true, true), 40.0f) == CarrierScanRefusal::None);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, 40.01f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+    CHECK(CarrierScanRefuses(ScanHit(true, true, -1.0f, true, true), 40.0f) == CarrierScanRefusal::BeyondReach);
+}
+
+static void TestCarrierScanPick()
+{
+    std::vector<CarrierScanFacts> none;
+    CHECK(CarrierScanPick(none, 40.0f) == -1); // TestCarrierScanPickEmpty
+    std::vector<CarrierScanFacts> refused;
+    refused.push_back(ScanHit(true, false, 5.0f, true, true));
+    refused.push_back(ScanHit(true, true, 45.0f, false, false));
+    CHECK(CarrierScanPick(refused, 40.0f) == -1); // TestCarrierScanPickAllRefused
+    std::vector<CarrierScanFacts> eligible;
+    eligible.push_back(ScanHit(true, true, 22.0f, true, true));
+    eligible.push_back(ScanHit(true, true, 9.0f, true, false));
+    CHECK(CarrierScanPick(eligible, 40.0f) == 0); // the nearer hit refused, the far one alone
+    eligible[1].validAttack = true;
+    CHECK(CarrierScanPick(eligible, 40.0f) == 1); // TestCarrierScanPickNearest
+}
+
+static void TestCarrierScanReasonWord()
+{
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::None), "none") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoUnit), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::Ineligible), "ineligible") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::BeyondReach), "beyond_reach") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::NoLos), "no_los") == 0);
+    CHECK(std::strcmp(CarrierScanReasonWord(CarrierScanRefusal::InvalidTarget), "invalid_target") == 0);
+}
+
+// Codex round 3: a free DPS carrier takes the Shade the scan found over a Powerful Healing Ward in view; every other
+// case keeps the ordinary pick.
+static void TestCarrierScanTakesPrecedence()
+{
+    using M = KillFirstPickMode;
+    // A carrier, the key on, a ward the ordinary pick took, a Shade the scan found: the Shade.
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Free, true, false));
+    CHECK(CarrierScanTakesPrecedence(true, true, M::Carrier, true, false));
+    // Not a carrier: the ward stays (the uncursed raid's job).
+    CHECK(!CarrierScanTakesPrecedence(false, true, M::Free, true, false));
+    // Key off: the ward stays.
+    CHECK(!CarrierScanTakesPrecedence(true, false, M::Free, true, false));
+    // A player's order is never overridden.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::None, true, false));
+    // No Shade found: the ordinary pick stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Free, false, false));
+    // The ordinary pick already is a Shade: it stays.
+    CHECK(!CarrierScanTakesPrecedence(true, true, M::Carrier, true, true));
+
+    // The walk shape: the free pick takes a ward (entry 14987) while a carrier row for 14986 is open.
+    std::vector<BossTacticRow> rows;
+    BossTacticRow shade = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+    shade.botAura = 24306;
+    rows.push_back(shade);
+    rows.push_back(Row(310, 11380, BossTacticKind::KillFirst, 14987));
+    ActiveBossRows active = Active(rows);
+    std::vector<TacticCandidate> candidates{Cand(14987, 10.0f, true)};
+    int const ordinary = PickKillFirst(active, candidates);
+    CHECK(ordinary == 0); // the ward wins the ordinary free pick
+    CHECK(HasCarrierKillFirstRow(active));
+    CHECK(CarrierScanTakesPrecedence(HasCarrierKillFirstRow(active), true, M::Free, true,
+                                     candidates[ordinary].entry == 14986));
+}
+
+// The no-switch row's word from the scan tally: a player's order first, then the most common refusal (the enum order
+// breaks a tie), then why there was no hit at all.
+static void TestCarrierScanWord()
+{
+    // TestCarrierScanWordPlayerOrderWins: the order beats a tally full of refusals.
+    CarrierScanTally ordered;
+    ordered.playerOrder = true;
+    ordered.hits = 2;
+    ordered.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 2;
+    CHECK(std::strcmp(CarrierScanWord(ordered, true, true), "player_order") == 0);
+
+    // TestCarrierScanWordMostCommon and TestCarrierScanWordTieBreak.
+    CarrierScanTally mixed;
+    mixed.hits = 5;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 4; // hits that passed are never the word
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::NoLos)] = 3;
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "no_los") == 0);
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::BeyondReach)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "beyond_reach") == 0); // equal: the earlier code
+    mixed.byCode[static_cast<int>(CarrierScanRefusal::Ineligible)] = 3;
+    CHECK(std::strcmp(CarrierScanWord(mixed, true, true), "ineligible") == 0);
+
+    // TestCarrierScanWordNotPickable: no refused hit, so the unit the fight holds decides.
+    CarrierScanTally empty;
+    CHECK(std::strcmp(CarrierScanWord(empty, false, false), "no_unit") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, false), "not_pickable") == 0);
+    CHECK(std::strcmp(CarrierScanWord(empty, true, true), "beyond_reach") == 0);
+    CarrierScanTally passed;
+    passed.hits = 1;
+    passed.byCode[static_cast<int>(CarrierScanRefusal::None)] = 1;
+    CHECK(std::strcmp(CarrierScanWord(passed, true, true), "not_pickable") == 0);
+}
+
+// A tank never taunts a needs_aura subject (the Shade of Jin'do) or a taunt-immune creature; the key off leaves every
+// taunt as it was.
+static void TestTauntGate()
+{
+    // TauntGateFor(keyOn, requiredAura, botHasAura, tauntImmune, holdsBoss)
+    CHECK(TauntGateFor(false, 24306, false, true, false) == TauntGate::Allow);   // TestTauntGateOffAllows
+    CHECK(TauntGateFor(false, 24306, true, true, true) == TauntGate::Allow);
+    CHECK(TauntGateFor(true, 24306, false, false, false) == TauntGate::NeedsAura);  // TestTauntGateNeedsAura: no aura, refused
+    CHECK(TauntGateFor(true, 24306, true, false, false) == TauntGate::Allow);       // TestTauntGateCarrierAllowed: a cursed off-tank may
+    CHECK(TauntGateFor(true, 0, false, true, false) == TauntGate::TauntImmune);     // TestTauntGateTauntImmune
+    CHECK(TauntGateFor(true, 0, true, true, false) == TauntGate::TauntImmune);      // the aura does not lift immunity
+    CHECK(TauntGateFor(true, 24306, true, true, false) == TauntGate::TauntImmune);  // immune stays refused for a carrier
+    CHECK(TauntGateFor(true, 24306, false, true, false) == TauntGate::NeedsAura);   // no aura: the aura word comes first
+    CHECK(TauntGateFor(true, 0, false, false, false) == TauntGate::Allow);
+    // TestTauntGateHoldingBoss (1c): a cursed main tank that is the boss's victim does not taunt the Shade.
+    CHECK(TauntGateFor(true, 24306, true, false, true) == TauntGate::HoldingBoss);
+    CHECK(TauntGateFor(true, 24306, true, true, true) == TauntGate::HoldingBoss);   // holding_boss comes before taunt_immune
+    CHECK(TauntGateFor(true, 24306, false, false, true) == TauntGate::NeedsAura);   // an uncursed tank: needs_aura first
+    CHECK(TauntGateFor(true, 24306, true, false, false) == TauntGate::Allow);       // a cursed off-tank off the boss
+    CHECK(TauntGateFor(false, 24306, true, false, true) == TauntGate::Allow);       // key off: allow
+    CHECK(TauntGateFor(true, 0, false, false, true) == TauntGate::Allow);           // holding a boss is no rule for a plain target
+    CHECK(std::strcmp(TauntGateWord(TauntGate::Allow), "allow") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::NeedsAura), "needs_aura") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::TauntImmune), "taunt_immune") == 0);
+    CHECK(std::strcmp(TauntGateWord(TauntGate::HoldingBoss), "holding_boss") == 0);
+}
+
+// 1b: the refusal row is throttled per (bot, gate word); a taunt_immune row at t=0 must not block a needs_aura row at 1 s.
+static void TestTauntGateLogThrottlePerWord()
+{
+    TauntGateLogTimes last{};
+    constexpr std::uint32_t gap = 5000;
+    CHECK(TauntGateLogDueFor(last, TauntGate::TauntImmune, 1000, gap));        // first row of the word
+    CHECK(TauntGateLogDueFor(last, TauntGate::NeedsAura, 2000, gap));          // another word, 1 s later: not blocked
+    CHECK(!TauntGateLogDueFor(last, TauntGate::TauntImmune, 3000, gap));       // same word inside the gap
+    CHECK(!TauntGateLogDueFor(last, TauntGate::NeedsAura, 6999, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::TauntImmune, 6000, gap));        // gap over
+    CHECK(TauntGateLogDueFor(last, TauntGate::NeedsAura, 7000, gap));
+    CHECK(TauntGateLogDueFor(last, TauntGate::HoldingBoss, 7001, gap));        // the new word has its own slot
+    CHECK(!TauntGateLogDueFor(last, TauntGate::HoldingBoss, 7002, gap));
+    TauntGateLogTimes other{};
+    CHECK(TauntGateLogDueFor(other, TauntGate::TauntImmune, 7003, gap));       // another bot has its own array
+}
+
+// 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
+// interval is 1 s under the hold.
+static void TestCarrierHold()
+{
+    // CarrierHoldsCurrent(keyOn, currentIsNeedsAura, botHasRequiredAura)
+    CHECK(CarrierHoldsCurrent(true, true, true));      // a carrier on a Shade, dps target Jin'do: the trigger does not fire
+    CHECK(!CarrierHoldsCurrent(true, false, false));   // a non-carrier on Jin'do: the trigger fires
+    CHECK(!CarrierHoldsCurrent(true, false, true));    // a carrier on Jin'do (not a Shade): fires
+    CHECK(!CarrierHoldsCurrent(true, true, false));    // an uncursed bot on a Shade (cannot hurt it): today's rule
+    CHECK(!CarrierHoldsCurrent(false, true, true));    // key off: today
+    CHECK(!CarrierHoldsCurrent(false, false, false));
+    // KillFirstCheckSeconds(totemFocus, carrierHold)
+    CHECK(KillFirstCheckSeconds(false, false) == 2);   // today
+    CHECK(KillFirstCheckSeconds(true, false) == 1);    // TotemFocus
+    CHECK(KillFirstCheckSeconds(false, true) == 1);    // CarrierHold, whatever TotemFocus says
+    CHECK(KillFirstCheckSeconds(true, true) == 1);
+}
+
+// Fix round: the hold never beats a hostile player target, and only suppresses the dps-target comparison.
+static void TestNotDpsTargetFires()
+{
+    // NotDpsTargetFires(enemyKnown, targetIsEnemy, holdsCurrent, dpsKnown, targetIsDps)
+    CHECK(NotDpsTargetFires(true, false, true, true, false));    // carrier on a Shade, enemy player known: fires as before
+    CHECK(NotDpsTargetFires(true, false, false, false, false));  // enemy known, target is not it: fires
+    CHECK(!NotDpsTargetFires(true, true, true, true, false));    // already on the enemy player: quiet
+    CHECK(!NotDpsTargetFires(false, false, true, true, false));  // carrier on a Shade, dps target Jin'do: the hold keeps it
+    CHECK(NotDpsTargetFires(false, false, false, true, false));  // non-carrier on Jin'do's side: fires (today)
+    CHECK(!NotDpsTargetFires(false, false, false, true, true));  // on the dps target: quiet
+    CHECK(!NotDpsTargetFires(false, false, false, false, false));  // nothing to compare: quiet
+}
+
+// Fix round: the kill-first interval follows the keys at every check, so an already-built trigger flips between 1 s
+// and 2 s on a `.reload config`.
+static void TestKillFirstCheckDueFlips()
+{
+    std::int64_t last = 0;
+    // Keys off: the base interval-2 rule. First check is due, then every second tick is skipped.
+    CHECK(KillFirstCheckDue(false, false, 100, last));
+    CHECK(!KillFirstCheckDue(false, false, 101, last));
+    CHECK(KillFirstCheckDue(false, false, 102, last));
+    CHECK(!KillFirstCheckDue(false, false, 103, last));
+    // The key flips on (same trigger, same `last`): every second is due now.
+    CHECK(KillFirstCheckDue(false, true, 103, last));
+    CHECK(KillFirstCheckDue(false, true, 104, last));
+    CHECK(KillFirstCheckDue(false, true, 105, last));
+    CHECK(KillFirstCheckDue(true, false, 106, last));            // TotemFocus alone does the same
+    // The key flips off again: two seconds from the last due check.
+    CHECK(!KillFirstCheckDue(false, false, 107, last));
+    CHECK(KillFirstCheckDue(false, false, 108, last));
+    // Same second asked twice with the key on: still due (the base interval-1 rule asks every tick).
+    CHECK(KillFirstCheckDue(false, true, 108, last));
+    CHECK(KillFirstCheckDue(false, true, 108, last));
 }
 
 static SoleCandidate Sole(std::uint64_t guid, int hpPct, bool inCombat, bool eligible = true)
@@ -216,6 +484,632 @@ static int ThekalRaises(const std::vector<std::pair<std::uint32_t, int>>& deaths
     return raises;
 }
 
+// gate_hold (brief C): DPS spare a boss at or below its health gate while a second unit still fights. The modal case:
+// Onyxia 10184 at 42 % with Cindarion 50143 up: the row spares her while more than `priority` blockers fight.
+static void GateHold_HoldsSparedAtGateWhileBlockerFights()
+{
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const ActiveBossRows active = Active(rows);
+    const auto fighters = [](std::uint32_t n)
+    {
+        return [n](const BossTacticRow&) -> std::uint32_t { return n; };
+    };
+    CHECK(ParseBossTacticKind("gate_hold") == BossTacticKind::GateHold);
+    CHECK(static_cast<int>(BossTacticKind::GateHold) == 26);
+    CHECK(GateHoldRadius(0.0f) == kGateHoldRadiusYd);
+    CHECK(GateHoldRadius(200.0f) == 200.0f);
+    CHECK(GateHeld(active, 10184, 42, fighters(1)));     // at the gate, one blocker fighting: spared
+    CHECK(GateHeld(active, 10184, 20, fighters(1)));
+    CHECK(!GateHeld(active, 10184, 42, fighters(0)));    // no blocker fighting: the boss is free
+    CHECK(!GateHeld(active, 50143, 42, fighters(1)));    // the blocker is never spared itself
+}
+
+static void GateHold_EvadedBlockerReleases()
+{
+    // The count keeps only living, in-combat, non-evading blockers. An evaded Cindarion is out of combat, evading and
+    // back in the air (unselectable): he must release the hold so the raid can finish Onyxia.
+    CHECK(!CountsAsFightingBlocker(false, true, true));
+    CHECK(!CountsAsFightingBlocker(false, false, true));   // out of combat and unselectable: not a fight
+    CHECK(CountsAsFightingBlocker(true, false, true));     // unselectable but fighting: still a blocker
+    CHECK(!CountsAsFightingBlocker(true, true, false));    // evading: never
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const auto count = [](bool inCombat, bool evading, bool notSelectable) -> std::uint32_t
+    { return CountsAsFightingBlocker(inCombat, evading, notSelectable) ? 1u : 0u; };
+    const std::uint32_t evaded = count(false, true, true);
+    CHECK(evaded == 0);
+    CHECK(!GateHeld(Active(rows), 10184, 42, [evaded](const BossTacticRow&) { return evaded; }));
+    const std::uint32_t fighting = count(true, false, false);
+    CHECK(fighting == 1);
+    CHECK(GateHeld(Active(rows), 10184, 42, [fighting](const BossTacticRow&) { return fighting; }));
+}
+
+static void GateHold_AboveGateNotHeld()
+{
+    BossTacticRow row = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    row.windowSec = 200.0f;
+    const std::vector<BossTacticRow> rows = { row };
+    const auto fighters = [](const BossTacticRow&) -> std::uint32_t { return 1; };
+    CHECK(!GateHeld(Active(rows), 10184, 43, fighters));   // one point above the gate: full damage
+    CHECK(!GateHeld(Active(rows), 10184, 100, fighters));
+    CHECK(GateHeld(Active(rows), 10184, 42, fighters));    // the gate is inclusive
+    // The row is about its own boss_entry; its target_entry is the blocker, never spared itself.
+    CHECK(!GateHeld(Active(rows), 50143, 20, fighters));
+    CHECK(!GateHeld(ActiveBossRows(), 10184, 20, fighters));
+    // priority is how many blockers may still fight (0 = not one more).
+    BossTacticRow budget = row;
+    budget.priority = 1;
+    const std::vector<BossTacticRow> budgetRows = { budget };
+    const auto n = [](std::uint32_t count)
+    { return [count](const BossTacticRow&) -> std::uint32_t { return count; }; };
+    CHECK(!GateHeld(Active(budgetRows), 10184, 42, n(1)));
+    CHECK(GateHeld(Active(budgetRows), 10184, 42, n(2)));
+    // The picker rule: a free DPS bot drops the spared entry, a tank or healer never does.
+    const auto countNear = [](std::uint32_t) -> std::uint32_t { return 0; };
+    CHECK(DpsLeavesAlone(true, Active(rows), 10184, 42, countNear, fighters));
+    CHECK(!DpsLeavesAlone(true, Active(rows), 10184, 43, countNear, fighters));
+    CHECK(!DpsLeavesAlone(false, Active(rows), 10184, 42, countNear, fighters));
+}
+
+static void GateHold_RowShape()
+{
+    BossTacticRow good = Row(249, 10184, BossTacticKind::GateHold, 50143, 0, 0, 42.0f);
+    good.windowSec = 200.0f;
+    {
+        BossTacticTable table;
+        CHECK(table.Add(good));
+        CHECK(!table.Add(good));                       // same key
+        table.Seal();
+        CHECK(table.HasGateHoldMap(249));
+        CHECK(!table.HasGateHoldMap(250));
+        BossTacticRow defaultRadius = good;
+        defaultRadius.windowSec = 0.0f;                // 0 means the 200 yd default
+        BossTacticTable other;
+        CHECK(other.Add(defaultRadius));
+    }
+    const std::vector<BossTacticRow> refused = [&good]()
+    {
+        std::vector<BossTacticRow> rows;
+        BossTacticRow noTarget = good; noTarget.targetEntry = 0;
+        BossTacticRow selfTarget = good; selfTarget.targetEntry = good.bossEntry;
+        BossTacticRow spell = good; spell.spellId = 33439;
+        BossTacticRow lowGate = good; lowGate.param = 0.0f;
+        BossTacticRow highGate = good; highGate.param = 100.0f;
+        BossTacticRow shortRadius = good; shortRadius.windowSec = 49.0f;
+        BossTacticRow dbDefaultRadius = good; dbDefaultRadius.windowSec = 7.0f;
+        BossTacticRow wideRadius = good; wideRadius.windowSec = 251.0f;
+        BossTacticRow band = good; band.hpMax = 50;
+        BossTacticRow mode = good; mode.mode = TacticMode::UntilTank;
+        BossTacticRow spot = good; spot.spotX = 1.0f;
+        BossTacticRow cycle = good; cycle.cycleSec = 30.0f;
+        rows.push_back(noTarget);
+        rows.push_back(selfTarget);
+        rows.push_back(spell);
+        rows.push_back(lowGate);
+        rows.push_back(highGate);
+        rows.push_back(shortRadius);
+        rows.push_back(dbDefaultRadius);
+        rows.push_back(wideRadius);
+        rows.push_back(band);
+        rows.push_back(mode);
+        rows.push_back(spot);
+        rows.push_back(cycle);
+        return rows;
+    }();
+    for (const BossTacticRow& bad : refused)
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(bad));
+    }
+}
+static TankPostIn TankPostWaiting()
+{
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.tankCanAct = true;
+    in.subjectFound = true;
+    in.subjectAlive = true;
+    in.subjectSelectable = false; // a second boss still in the air
+    in.subjectEvading = false;
+    in.subjectToSpotYd = 30.0f;
+    in.arrivalRadiusYd = 15.0f;
+    in.botToSpotYd = 25.0f;
+    in.holdingOtherHostile = false;
+    in.windowExpired = false;
+    return in;
+}
+
+// The case that fails without the kind: nothing moves the slot tank to the post, so it stays on the boss it cannot
+// reach while the awaited unit is unselectable overhead.
+static void TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable()
+{
+    TankPostIn in = TankPostWaiting();
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+    // At the spot (within 3 yd) it holds.
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.botToSpotYd = 3.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.botToSpotYd = 3.5f;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+    // Within the arrival radius but still unselectable: still not arrived.
+    in.botToSpotYd = 1.0f;
+    in.subjectToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    // Selectable (combat is not asked): engage.
+    in.subjectSelectable = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // Another hostile on a group member keeps the tank on it and the post waits, on the ground and after arrival.
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.subjectSelectable = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// The case that fails if the combat requirement comes back: a unit that is alive, selectable and in range but not in
+// combat yet is arrived, so the posted tank engages it. (TankPostUnit and TankPostIn carry no combat flag any more.)
+static void TestTankPost_EngagesSelectableOutOfCombatSubject()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostArrived(true, true, true, 2.0f, 15.0f));
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // The not-selectable case still holds.
+    in.subjectSelectable = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// The mutation case: dropping the selectable check from TankPostArrived makes an unselectable unit "arrived", so this
+// check fails.
+static void TestTankPost_UnselectableSubjectNotArrived()
+{
+    CHECK(!TankPostArrived(true, true, false, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, false, true, 1.0f, 15.0f));
+    CHECK(!TankPostArrived(true, true, true, 16.0f, 15.0f));
+    CHECK(!TankPostArrived(false, true, true, 1.0f, 15.0f));
+    CHECK(TankPostArrived(true, true, true, 15.0f, 15.0f));
+
+    // The grid pick: the nearest living unit to the spot; a dead one only when none lives. Three units: a dead one on
+    // the spot, a living one 20 yd away and a living one 5 yd away.
+    {
+        std::vector<TankPostUnit> units(3);
+        units[0].guid = 1;
+        units[0].x = 0.0f;
+        units[0].y = 0.0f;
+        units[0].z = 0.0f;
+        units[0].alive = false;
+        units[1].guid = 2;
+        units[1].x = 20.0f;
+        units[1].y = 0.0f;
+        units[1].z = 0.0f;
+        units[1].alive = true;
+        units[2].guid = 3;
+        units[2].x = 5.0f;
+        units[2].y = 0.0f;
+        units[2].z = 0.0f;
+        units[2].alive = true;
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 2);
+        units[2].alive = false;
+        units[1].alive = false;
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 0);  // the nearest, now that none lives
+        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f) == -1);
+    }
+
+    // The step closes a held post on each of the row's ends, and does nothing before a post exists.
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.subjectAlive = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.subjectAlive = true;
+    in.subjectEvading = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.subjectEvading = false;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.windowExpired = false;
+    in.tankCanAct = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.tankCanAct = true;
+    in.live = false; // the band closed
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.started = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    in.live = true;
+    in.subjectFound = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    in.started = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// Onyxia walk 2: the raid guard needs to know which units a tank row assigns to a tank slot (AiPlayerbot.
+// DungeonRunGuardLeavesAssignedTank). An until_tank row with a slot names the unit it taunts; a tank_post row names the
+// unit it waits for; the lowest slot wins when several rows name one unit; a row without a slot, or one of another
+// mode, assigns nothing; the table answers nothing before the seal. The kinds are kept with the slot: the guard asks
+// the assigning kind's own key.
+static void TestAssignedTankSlot_UntilTankAndTankPostRows()
+{
+    BossTacticRow untilTank = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 1, 10.0f);
+    untilTank.mode = TacticMode::UntilTank;
+    BossTacticRow post = Row(249, 10184, BossTacticKind::TankPost, 50143, 0, 2, 25.0f);
+    post.spotX = 8.0f;
+    post.spotY = -200.0f;
+    post.spotZ = -85.8f;
+    post.windowSec = 120.0f;
+    {
+        BossTacticTable table;
+        CHECK(table.AssignedTankSlotOf(249, 50143).untilTankSlot == 0); // not sealed
+        CHECK(table.Add(untilTank));
+        CHECK(table.AssignedTankSlotOf(249, 50143).untilTankSlot == 0); // still not sealed
+        table.Seal();
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.untilTankSlot == 1);
+        CHECK(assigned.tankPostSlot == 0);
+        CHECK(table.AssignedTankSlotOf(249, 50144).untilTankSlot == 0);
+        CHECK(table.AssignedTankSlotOf(1, 50143).untilTankSlot == 0);
+        // Only one map's own rows count.
+        CHECK(table.AssignedTankSlotOf(250, 50143).untilTankSlot == 0);
+    }
+    {
+        // An until_tank row and a tank_post row on the same unit: each kind keeps its own slot.
+        BossTacticTable table;
+        CHECK(table.Add(untilTank));
+        CHECK(table.Add(post));
+        table.Seal();
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.untilTankSlot == 1);
+        CHECK(assigned.tankPostSlot == 2);
+    }
+    {
+        // The post alone: the unit it waits for is assigned to its slot, by the post kind only.
+        BossTacticTable table;
+        CHECK(table.Add(post));
+        table.Seal();
+        ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+        CHECK(assigned.untilTankSlot == 0);
+        CHECK(assigned.tankPostSlot == 2);
+        CHECK(table.AssignedTankSlotOf(249, 10184).tankPostSlot == 0);
+    }
+    {
+        // A slot-less until_tank row assigns nothing, nor does a blink row.
+        BossTacticRow slotless = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 0, 10.0f);
+        slotless.mode = TacticMode::UntilTank;
+        BossTacticRow blink = Row(249, 10184, BossTacticKind::TauntAfterCast, 50144, 0, 1, 10.0f);
+        blink.mode = TacticMode::Blink;
+        BossTacticTable table;
+        CHECK(table.Add(slotless));
+        CHECK(table.Add(blink));
+        table.Seal();
+        CHECK(table.AssignedTankSlotOf(249, 50143).untilTankSlot == 0);
+        CHECK(table.AssignedTankSlotOf(249, 50144).untilTankSlot == 0);
+    }
+}
+
+// The two kinds name different tanks: the guard uses the enabled kind's own slot, even when the other kind named a lower
+// slot. Until_tank names slot 1, tank_post slot 2; with only tank_post on, slot 2 is the assignment (the failure with one
+// shared lowest slot: slot 1's tank was checked though nothing live named it); with both on, the lower slot 1.
+static void TestAssignedTankSlot_EnabledKindUsesItsOwnSlot()
+{
+    BossTacticRow untilTank = Row(249, 10184, BossTacticKind::TauntAfterCast, 50143, 0, 1, 10.0f);
+    untilTank.mode = TacticMode::UntilTank;
+    BossTacticRow post = Row(249, 10184, BossTacticKind::TankPost, 50143, 0, 2, 25.0f);
+    post.spotX = 8.0f;
+    post.spotY = -200.0f;
+    post.spotZ = -85.8f;
+    post.windowSec = 120.0f;
+    BossTacticTable table;
+    CHECK(table.Add(untilTank));
+    CHECK(table.Add(post));
+    table.Seal();
+    ai::AssignedTankSlot const assigned = table.AssignedTankSlotOf(249, 50143);
+    CHECK(assigned.SlotFor(false, true) == 2); // the post's own slot, not the until_tank row's
+    CHECK(assigned.SlotFor(true, false) == 1);
+    CHECK(assigned.SlotFor(true, true) == 1); // both enabled: the lowest of the two
+    // A kind with no row of its own has no slot, whatever its key says.
+    BossTacticTable postOnly;
+    CHECK(postOnly.Add(post));
+    postOnly.Seal();
+    CHECK(postOnly.AssignedTankSlotOf(249, 50143).SlotFor(true, true) == 2);
+    CHECK(postOnly.AssignedTankSlotOf(249, 50143).SlotFor(true, false) == 0);
+    CHECK(postOnly.AssignedTankSlotOf(249, 50143).SlotFor(false, false) == 0);
+}
+
+// The case that fails without the drag: the arrived unit walks off with the tank following it, and only a walk back
+// keeping the target brings it to the spot; without the mode the arrived post engages wherever the unit stands.
+static void TestTankPost_HoldSpotDragsSubjectBackToSpot()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;  // the unit walked away from the spot
+    in.botToSpotYd = 12.0f;      // the tank followed it
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    // At 8 yd or less the tank stays engaged; the rule is "more than 8 yd".
+    in.botToSpotYd = 8.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    // One yard past it the drag resumes.
+    in.botToSpotYd = 9.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    // Not arrived yet: the tank walks back to the spot instead, whatever the unit does.
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk);
+}
+
+// The mutation case: latching only on Engage leaves a first arrival that chose Drag unlatched, so once the unit walks
+// off the spot the window ends a post that really arrived (the window applies only before the arrival).
+static void TestTankPost_HoldSpotFirstArrivalAsDragLatches()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;   // the unit lands on the spot
+    in.botToSpotYd = 12.0f;      // the tank is already more than 8 yd from it
+    in.subjectOnTank = true;
+    TankPostDecision const first = TankPostStep(in);
+    CHECK(first == TankPostDecision::Drag);
+    CHECK(TankPostLatchesArrival(in, first));
+    // Next tick: the unit left the radius and the window has passed. The latched arrival keeps the post live.
+    in.arrivedBefore = true;
+    in.subjectToSpotYd = 30.0f;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) != TankPostDecision::End);
+    // Without the latch that same read ends the post on its window.
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// The mutation case: removing the plain-post guard latches (and logs) an arrival while the tank still holds another
+// hostile; a plain post latches only when it engages.
+static void TestTankPost_PlainPostLatchesOnlyOnEngage()
+{
+    TankPostIn in = TankPostWaiting();
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;  // arrived
+    in.botToSpotYd = 1.0f;
+    in.holdingOtherHostile = true;
+    in.holdSpot = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    CHECK(!TankPostLatchesArrival(in, TankPostDecision::Hold));
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    CHECK(TankPostLatchesArrival(in, TankPostDecision::Engage));
+}
+
+// The mutation case: a latch that does not name its unit counts for any later unit of the entry, so a new unit would
+// inherit an arrival it never made and the post would outlive its window with that unit unarrived.
+static void TestTankPost_LatchIsPerSubject()
+{
+    bool const latchedOld = TankPostLatchCounts(true, 42, 42);
+    bool const latchedNew = TankPostLatchCounts(true, 42, 43);
+    CHECK(latchedOld);
+    CHECK(!latchedNew);
+    CHECK(!TankPostLatchCounts(false, 42, 42));
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.windowExpired = true;
+    // The same unit's latched arrival keeps the post past its window; a second unit of the entry starts unarrived.
+    in.arrivedBefore = latchedOld;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.arrivedBefore = latchedNew;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// The mutation case: dropping `in.subjectOnTank` from the drag test makes this fail (a unit that is not on the tank
+// would be dragged too).
+static void TestTankPost_HoldSpotNoDragWhileSubjectOffTank()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;
+    in.botToSpotYd = 12.0f;
+    in.arrivedBefore = true;
+    in.subjectOnTank = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// hold_spot: the arrived subject outranks another hostile the tank holds; a plain post keeps the other hostile.
+static void TestTankPost_HoldSpotSubjectOutranksOtherHostile()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    in.botToSpotYd = 1.0f;
+    in.subjectOnTank = false;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.holdSpot = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// hold_spot: a boss stand seat yields the post, before and after the arrival; a plain post never yields.
+static void TestTankPost_HoldSpotYieldsToSeat()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.seated = true;
+    in.holdingOtherHostile = true;  // it also started during another fight, and still yields
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;  // arrived
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    in.botToSpotYd = 12.0f;     // a drag is due, and the seat still wins
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+    in.holdSpot = false;
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// TankPost_StaySeatDoesNotYield: the post's seated read is a planned stand seat, not S2's stay. A stay (the bot
+// already stood clear of the lane) leaves the post going, so the leash keeps slot 1 at the spot while the tank is
+// clear; a real seat still yields it.
+static void TestTankPost_StaySeatDoesNotYield()
+{
+    CHECK(TankPostSeated(true, false));
+    CHECK(!TankPostSeated(true, true));
+    CHECK(!TankPostSeated(false, false));
+    CHECK(!TankPostSeated(false, true));
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.seated = TankPostSeated(true, true);   // a stay
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;
+    in.botToSpotYd = 1.0f;
+    CHECK(TankPostStep(in) != TankPostDecision::Yield);
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.seated = TankPostSeated(true, false);  // a planned seat
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+}
+
+// hold_spot: the window ends a post only before its arrival; a plain post still ends on it either way.
+static void TestTankPost_HoldSpotWindowKeepsArrivedPost()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 1.0f;
+    in.botToSpotYd = 2.0f;
+    in.arrivedBefore = true;
+    in.windowExpired = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.arrivedBefore = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    in.holdSpot = false;
+    in.arrivedBefore = true;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+}
+
+// The leash case: before the arrival the tank on a whelp follows it out of the post and waits at whelp range. With the
+// leash it walks back to the spot with the whelp as its target, so it fights what comes to the spot.
+static void TestTankPost_LeashWalksBackWhileHoldingWhelp()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;   // still on its way in
+    in.botToSpotYd = 22.0f;       // the tank followed a whelp that far
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Leash); // without the leash: Hold
+}
+
+// The leash bound is the drag's own 8 yd: inside it the tank fights where it stands, at the spot it holds.
+static void TestTankPost_LeashNotWithinDragYd()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 7.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.holdingOtherHostile = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Walk); // 7 yd is still past the 3 yd hold
+}
+
+// The mutation case: dropping `in.leash &&` from the step leashes a post with the key off, so this fails.
+static void TestTankPost_LeashOffKeepsHold()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = false;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 22.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+}
+
+// A seat still wins over the leash: the breath seat moves the tank and the leash resumes after it.
+static void TestTankPost_LeashYieldsToSeat()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.seated = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 45.0f;
+    in.botToSpotYd = 22.0f;
+    in.holdingOtherHostile = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Yield);
+}
+
+// The leash is a pre-arrival rule only: an arrived subject is dragged back when it is on the tank and engaged when it
+// is not, whatever the leash key says.
+static void TestTankPost_NoLeashAfterArrival()
+{
+    TankPostIn in = TankPostWaiting();
+    in.holdSpot = true;
+    in.leash = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 30.0f;
+    in.botToSpotYd = 22.0f;
+    in.arrivedBefore = true;
+    in.subjectOnTank = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Drag);
+    in.subjectOnTank = false;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+}
+
+// One step row per episode: a post that stays in the drag writes nothing more, a post that leaves it and comes back
+// writes again, and Walk, Hold, Engage and End are rows the post never writes.
+static void TestTankPost_StepEnteredOncePerEpisode()
+{
+    auto const last = [](TankPostDecision step) { return static_cast<std::uint8_t>(step); };
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Drag) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Leash), TankPostDecision::Leash) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Yield), TankPostDecision::Yield) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Engage), TankPostDecision::Drag) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Hold), TankPostDecision::Leash) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Walk), TankPostDecision::Yield) == true);
+    CHECK(TankPostStepEntered(0, TankPostDecision::Drag) == true);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Engage) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Walk) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::Hold) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::None) == false);
+    CHECK(TankPostStepEntered(last(TankPostDecision::Drag), TankPostDecision::End) == false);
+}
+
+// hold_spot is tank_post's own mode word: parsed there, refused by every other kind, and both modes load.
+static void TestTankPost_HoldSpotModeLoadsOnlyOnTankPost()
+{
+    CHECK(static_cast<int>(TacticMode::HoldSpot) == 14);
+    CHECK(ParseTacticMode(BossTacticKind::TankPost, "hold_spot") == TacticMode::HoldSpot);
+    CHECK(ParseTacticMode(BossTacticKind::TankPost, "until_tank") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::KillFirst, "hold_spot") == TacticMode::Invalid);
+    CHECK(ParseTacticMode(BossTacticKind::Anchor, "hold_spot") == TacticMode::Invalid);
+    BossTacticTable table;
+    BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, 50143, 0, 1, 25.0f);
+    row.windowSec = 120.0f;
+    row.spotX = 8.0f;
+    row.spotY = -200.0f;
+    row.spotZ = -85.8f;
+    row.mode = ParseTacticMode(row.kind, "hold_spot");
+    CHECK(table.Add(row));
+    BossTacticRow plain = Row(249, 10184, BossTacticKind::TankPost, 50144, 0, 2, 25.0f);
+    plain.windowSec = 120.0f;
+    plain.spotX = 8.0f;
+    plain.spotY = -200.0f;
+    plain.spotZ = -85.8f;
+    CHECK(table.Add(plain));  // the empty word stays the plain post
+    table.Seal();
+    CHECK(table.Size() == 2);
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -231,7 +1125,45 @@ int main()
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
     TestCarrierPicksItsShadeAt35Yd();
     TestCarrierNoSwitchReasonAndDirectOnly();
+    TestCarrierSwitchSinceMs();
+    TestShadeSeenGrace();
     TestKillFirstReattacksAStalePick();
+    TestCarrierScanTakesGridShadeTheAttackersListMissed();
+    TestCarrierScanRefusal();
+    TestCarrierScanPick();
+    TestCarrierScanReasonWord();
+    TestCarrierScanWord();
+    TestCarrierScanTakesPrecedence();
+    TestTauntGate();
+    TestTauntGateLogThrottlePerWord();
+    TestCarrierHold();
+    TestNotDpsTargetFires();
+    TestKillFirstCheckDueFlips();
+    GateHold_HoldsSparedAtGateWhileBlockerFights();
+    GateHold_EvadedBlockerReleases();
+    GateHold_AboveGateNotHeld();
+    GateHold_RowShape();
+    TestTankPost_SlotTankWalksToSpotWhileSubjectUnselectable();
+    TestTankPost_UnselectableSubjectNotArrived();
+    TestTankPost_EngagesSelectableOutOfCombatSubject();
+    TestAssignedTankSlot_UntilTankAndTankPostRows();
+    TestAssignedTankSlot_EnabledKindUsesItsOwnSlot();
+    TestTankPost_HoldSpotDragsSubjectBackToSpot();
+    TestTankPost_HoldSpotFirstArrivalAsDragLatches();
+    TestTankPost_PlainPostLatchesOnlyOnEngage();
+    TestTankPost_LatchIsPerSubject();
+    TestTankPost_HoldSpotNoDragWhileSubjectOffTank();
+    TestTankPost_HoldSpotSubjectOutranksOtherHostile();
+    TestTankPost_HoldSpotYieldsToSeat();
+    TestTankPost_StaySeatDoesNotYield();
+    TestTankPost_HoldSpotWindowKeepsArrivedPost();
+    TestTankPost_LeashWalksBackWhileHoldingWhelp();
+    TestTankPost_LeashNotWithinDragYd();
+    TestTankPost_LeashOffKeepsHold();
+    TestTankPost_LeashYieldsToSeat();
+    TestTankPost_NoLeashAfterArrival();
+    TestTankPost_StepEnteredOncePerEpisode();
+    TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.
@@ -408,6 +1340,80 @@ int main()
         }
     }
 
+    // seek_pull (walk 51): the seek source, the most walk-outs in one cycle, the kill lead and the last-start window.
+    {
+        BossTacticRow pull = Row(309, 14834, BossTacticKind::SeekPull, 11357, 0, 3, 45.0f);
+        pull.windowSec = 60.0f;
+        {
+            BossTacticTable table;
+            CHECK(table.Add(pull));
+            CHECK(table.SeekPullRow(309, 14834, 11357) == nullptr); // not sealed
+            table.Seal();
+            const BossTacticRow* found = table.SeekPullRow(309, 14834, 11357);
+            CHECK(found != nullptr);
+            CHECK(found->priority == 3);
+            CHECK(Near(found->param, 45.0f));
+            CHECK(Near(found->windowSec, 60.0f));
+            CHECK(table.SeekPullRow(309, 14834, 11358) == nullptr);
+            CHECK(table.SeekPullRow(531, 14834, 11357) == nullptr);
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.priority = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.priority = 6;
+            CHECK(!table.Add(bad));
+            bad.priority = 1;
+            CHECK(table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.param = 5.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.param = 86.0f;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.windowSec = 90.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+            bad.windowSec = 9.0f;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.spellId = 24321;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.spotZ = 54.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.cycleSec = 90.0f;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = pull;
+            bad.targetEntry = 0;
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        {
+            BossTacticRow bad = Gated(pull, 0, 50);
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+    }
+
     // Kind text: exactly the lowercase spellings the table holds.
     CHECK(ParseBossTacticKind("interrupt") == BossTacticKind::Interrupt);
     CHECK(ParseBossTacticKind("kill_first") == BossTacticKind::KillFirst);
@@ -442,9 +1448,12 @@ int main()
     CHECK(ParseBossTacticKind("seek_aura") == BossTacticKind::SeekAura);
     CHECK(ParseBossTacticKind("pull_gate") == BossTacticKind::PullGate);
     CHECK(ParseBossTacticKind("spread") == BossTacticKind::Spread);
+    CHECK(ParseBossTacticKind("tank_post") == BossTacticKind::TankPost);
     CHECK(static_cast<int>(BossTacticKind::SeekAura) == 16);
     CHECK(static_cast<int>(BossTacticKind::PullGate) == 17);
     CHECK(static_cast<int>(BossTacticKind::Spread) == 18);
+    CHECK(static_cast<int>(BossTacticKind::GateHold) == 26);
+    CHECK(static_cast<int>(BossTacticKind::TankPost) == 27);
 
     // Mode words belong to their kind only; an empty word is the kind's own behaviour, a foreign word is Invalid.
     CHECK(ParseTacticMode(BossTacticKind::DispelPriority, "") == TacticMode::Default);
@@ -674,6 +1683,49 @@ int main()
         CHECK(!table.Add(never));
     }
 
+    // Loader: a tank_post row names the awaited unit, a tank slot 1-7, a spot, an arrival radius of 5-40 yd and a
+    // window of 10-120 s. No spell; `hold_spot` is the only mode word (TestTankPost_HoldSpotModeLoadsOnlyOnTankPost
+    // proves a foreign word is refused), no cycle columns; its health band is the kind's own arming gate.
+    {
+        BossTacticTable table;
+        auto tankPost = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, float param,
+                           float window, bool spot)
+        {
+            BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, target, spell, priority, param);
+            row.windowSec = window;
+            if (spot)
+            {
+                row.spotX = -17.0f;
+                row.spotY = -212.75f;
+                row.spotZ = -88.3f;
+            }
+            return row;
+        };
+        CHECK(!table.Add(tankPost(0, 0, 1, 15.0f, 60.0f, true)));       // no awaited unit
+        CHECK(!table.Add(tankPost(50143, 33439, 1, 15.0f, 60.0f, true)));  // a spell
+        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 is the main tank, not a post
+        CHECK(!table.Add(tankPost(50143, 0, 8, 15.0f, 60.0f, true)));   // no such slot
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 60.0f, false)));  // no spot
+        CHECK(!table.Add(tankPost(50143, 0, 1, 4.0f, 60.0f, true)));    // radius below 5
+        CHECK(!table.Add(tankPost(50143, 0, 1, 41.0f, 60.0f, true)));   // radius above 40
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 9.0f, true)));    // window below 10
+        CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 121.0f, true)));  // window above 120
+        BossTacticRow modeWord = tankPost(50143, 0, 1, 15.0f, 60.0f, true);
+        modeWord.mode = ParseTacticMode(modeWord.kind, "until_tank");
+        CHECK(modeWord.mode == TacticMode::Invalid);
+        CHECK(!table.Add(modeWord));
+        CHECK(table.Add(Gated(tankPost(50143, 0, 1, 15.0f, 60.0f, true), 41, 66)));  // the band arms it
+        CHECK(table.Add(tankPost(50143, 0, 2, 15.0f, 60.0f, true)));    // another slot, another key
+        CHECK(table.Size() == 2);
+        CHECK(!table.HasTankPostMap(249));                              // not sealed yet
+        table.Seal();
+        CHECK(table.HasTankPostMap(249));
+        CHECK(!table.HasTankPostMap(309));
+        CHECK(table.HasKindFor(249, 10184, BossTacticKind::TankPost));
+        CHECK(!table.HasKindFor(249, 10184, BossTacticKind::Interrupt));
+        CHECK(!table.HasKindFor(309, 10184, BossTacticKind::TankPost));
+    }
+
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
     CHECK(!BossTacticsWanted(false, false, true));   // default install, normal player's bots: unchanged
     CHECK(BossTacticsWanted(true, false, true));     // AiPlayerbot.DungeonTactics = 1
@@ -852,7 +1904,8 @@ int main()
                                const std::function<std::uint32_t(std::uint32_t)>& count) -> std::uint32_t
         {
             for (std::uint32_t entry : entries)
-                if (!DpsLeavesAlone(true, r, entry, count))
+                if (!DpsLeavesAlone(true, r, entry, 100, count,
+                        [](const BossTacticRow&) -> std::uint32_t { return 0; }))
                     return entry;
             return 0;
         };
@@ -861,7 +1914,8 @@ int main()
         CHECK(firstUnheld(active, { 15111 }, countOf(15146, 1)) == 0);
         CHECK(firstUnheld(ActiveBossRows(), both, countOf(15146, 1)) == 15111);
         CHECK(firstUnheld(active, both, countOf(15146, 0)) == 15111);       // no blocker: the Servant is free again
-        CHECK(!DpsLeavesAlone(false, active, 15111, countOf(15146, 1)));    // a tank or healer is not a free DPS bot
+        CHECK(!DpsLeavesAlone(false, active, 15111, 100, countOf(15146, 1),
+            [](const BossTacticRow&) -> std::uint32_t { return 0; }));       // a tank or healer is not a free DPS bot
 
         // The fallback still skips an unattackable or too-far candidate, like PickKillFirst.
         CHECK(PickNearestUnheld(active, { Cand(15146, 41.0f) }, countOf(15146, 0)) == -1);
@@ -3177,7 +4231,7 @@ int main()
         }
     }
 
-    // T4 threat_successor: the boss itself (target_entry 0), no mode word and no gate. The row turns the damage
+    // T4 threat_successor: the boss itself (target_entry 0), no gate, and no mode word but `strict` (below). The row turns the damage
     // dealers' threat cap into the assigned off-tanks' highest (ThreatCapPolicy.h) and is read straight from the table
     // by ThreatValue::GetTankThreat, so a gate could never be answered.
     CHECK(ParseBossTacticKind("threat_successor") == BossTacticKind::ThreatSuccessor); // ParseThreatSuccessorKind
@@ -3215,6 +4269,92 @@ int main()
             CHECK(table.HasThreatSuccessor(309, 14834));  // ThreatSuccessorByEntry
             CHECK(!table.HasThreatSuccessor(309, 11357));
             CHECK(!table.HasThreatSuccessor(509, 14834)); // another map's boss of the same entry
+        }
+        // threat_successor_strict_mode_word (t1106m): `strict` is the kind's one mode word, the row's opt-in to
+        // AiPlayerbot.DungeonRunThreatSuccessorStrict. Accepted on threat_successor only; every other kind refuses it
+        // (ParseTacticMode reads it as Invalid there, and Add skips an Invalid row). A plain row is not strict.
+        CHECK(static_cast<int>(TacticMode::Strict) == 13);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "strict") == TacticMode::Strict);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "") == TacticMode::Default);
+        CHECK(ParseTacticMode(BossTacticKind::ThreatSuccessor, "all") == TacticMode::Invalid);
+        for (BossTacticKind other : {BossTacticKind::AvoidCast, BossTacticKind::DispelPriority, BossTacticKind::DpsHoldAfter,
+                 BossTacticKind::TankIgnore, BossTacticKind::RangedOnly, BossTacticKind::KillFirst})
+            CHECK(ParseTacticMode(other, "strict") == TacticMode::Invalid); // StrictRefusedOnOtherKinds
+        {
+            BossTacticRow strictRow = cap;
+            strictRow.bossEntry = 11380;
+            strictRow.mode = TacticMode::Strict;
+            BossTacticTable table;
+            CHECK(table.Add(strictRow));                  // ThreatSuccessorStrictRowAccepted
+            CHECK(table.Add(cap));                        // Hakkar's plain row
+            CHECK(!table.HasStrictThreatSuccessor(309, 11380)); // not sealed yet
+            table.Seal();
+            CHECK(table.HasThreatSuccessor(309, 11380));
+            CHECK(table.HasStrictThreatSuccessor(309, 11380));  // StrictRowOptsIn
+            CHECK(table.HasThreatSuccessor(309, 14834));
+            CHECK(!table.HasStrictThreatSuccessor(309, 14834)); // PlainRowIsNotStrict (Hakkar)
+            CHECK(!table.HasStrictThreatSuccessor(509, 11380)); // another map's boss of the same entry
+        }
+        {
+            // A strict word on another kind makes the whole row unusable.
+            BossTacticRow strictAvoid = Row(309, 11380, BossTacticKind::AvoidCast);
+            strictAvoid.spellId = 24306;
+            strictAvoid.param = 10.0f;
+            {
+                BossTacticTable table;
+                CHECK(table.Add(strictAvoid));            // the row itself is usable
+            }
+            strictAvoid.mode = ParseTacticMode(BossTacticKind::AvoidCast, "strict");
+            BossTacticTable table;
+            CHECK(!table.Add(strictAvoid));               // StrictRowRefusedOnAvoidCast
+        }
+        // The reset window (DungeonRunThreatResetWindow): a threat_successor row with cycle_spell carries the boss's
+        // reset timer - param/window_s the gap bounds in seconds, priority the stop percent. Refused outside
+        // 5 <= param < window_s <= 60 and 50 <= priority <= 100; a row without cycle_spell is today's plain cap.
+        {
+            BossTacticRow timed = cap;
+            timed.cycleSpell = 24327;
+            timed.param = 19.0f;
+            timed.windowSec = 26.0f;
+            timed.priority = 95;
+            BossTacticTable table;
+            CHECK(table.ThreatResetWindowOf(309, 14834) == nullptr); // not sealed
+            CHECK(table.Add(timed));                                 // ThreatResetRowAccepted
+            table.Seal();
+            const ThreatResetWindow* const win = table.ThreatResetWindowOf(309, 14834);
+            CHECK(win != nullptr);                                   // ThreatResetWindowOf
+            CHECK(win->spell == 24327u);
+            CHECK(win->minGapMs == 19000u && win->maxGapMs == 26000u);
+            CHECK(win->stopPct == 95);
+            CHECK(table.ThreatResetWindowOf(509, 14834) == nullptr); // another map's boss
+            CHECK(table.ThreatResetWindowOf(309, 11357) == nullptr);
+        }
+        {
+            BossTacticRow timed = cap;
+            timed.cycleSpell = 24327;
+            timed.param = 19.0f;
+            timed.windowSec = 26.0f;
+            timed.priority = 95;
+            BossTacticTable table;
+            timed.param = 30.0f;                                     // param above window_s
+            CHECK(!table.Add(timed));
+            timed.param = 19.0f;
+            timed.windowSec = 61.0f;
+            CHECK(!table.Add(timed));
+            timed.windowSec = 19.0f;                                 // param == window_s
+            CHECK(!table.Add(timed));
+            timed.windowSec = 26.0f;
+            timed.priority = 49;
+            CHECK(!table.Add(timed));
+            timed.priority = 101;
+            CHECK(!table.Add(timed));
+        }
+        {
+            // cycle_spell 0 is today's Hakkar row: no window.
+            BossTacticTable table;
+            CHECK(table.Add(cap));
+            table.Seal();
+            CHECK(table.ThreatResetWindowOf(309, 14834) == nullptr);
         }
     }
 
@@ -3310,10 +4450,156 @@ int main()
         }
     }
 
+    // t1106c item 1: a cursed healer or off-tank strikes its own Shade while the raid is safe (CarrierStrikeAllowed).
+    {
+        // The lowest-member line is the caller's live AiPlayerbot.LowHealth, passed with the read (50 = the default).
+        CarrierStrikeInput safe;
+        safe.role = CarrierStrikeRole::Healer;
+        safe.cursed = true;
+        safe.shadeInReach = true;
+        safe.holdsBoss = false;
+        safe.threatSuccessor = false;
+        safe.lowestMemberPct = 72;
+        safe.tankPct = 80;
+        safe.otherHealers = 3;
+        safe.manaPct = 60;
+        safe.dispelNowPending = false;
+        CHECK(CarrierStrikeAllowed(safe, 50) == CarrierStrikeVerdict::Strike); // TestCursedHealerStrikesWhenRaidSafe
+        {
+            CarrierStrikeInput in = safe;
+            in.lowestMemberPct = 49;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember); // TestCursedHealerYieldsBelowLowHealth
+        }
+        {
+            // A live band below the member's health lets the strike through: the guard is the config's, not a literal.
+            CarrierStrikeInput in = safe;
+            in.lowestMemberPct = 45;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardLowMember); // TestLowHealthBandRefuses
+            CHECK(CarrierStrikeAllowed(in, 40) == CarrierStrikeVerdict::Strike);         // TestLowHealthBandIsTheConfig
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.tankPct = 59;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardTank); // TestCursedHealerYieldsForTank
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.otherHealers = 1;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardHealers); // TestLastHealersKeepHealing
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.dispelNowPending = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardDispel); // TestDispelNowPendingWins
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.manaPct = 29;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::GuardMana); // TestHealerManaFloor
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::MainTank;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::MainTank); // TestMainTankNeverStrikes
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::HoldsBoss); // TestOffTankOnBossNeverStrikes
+        }
+        {
+            // A fight whose boss asks for a threat successor keeps its off-tank on the boss even when the boss is not on
+            // it: with no off-tank holding, the damage dealers' cap falls to half the main tank's threat and the next
+            // threat wipe (Jin'do's Hex) hands the boss to a damage dealer.
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = false;
+            in.threatSuccessor = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::ThreatSuccessor); // TestOffTankOnSuccessorFightNeverStrikes
+        }
+        {
+            // The rule is the tanks': a healer on the same fight still strikes, and the row only stops the off-tank.
+            CarrierStrikeInput in = safe;
+            in.threatSuccessor = true;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike); // TestHealerStrikesOnSuccessorFight
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::OffTank;
+            in.holdsBoss = false;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Strike); // TestOffTankStrikesWhenFree
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.cursed = false;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::NotCarrier); // TestUncursedHealerNoStrike
+        }
+        {
+            CarrierStrikeInput in = safe;
+            in.role = CarrierStrikeRole::Dps;
+            CHECK(CarrierStrikeAllowed(in, 50) == CarrierStrikeVerdict::Dps); // TestDpsLeftToKillFirst
+        }
+        // The fight-level read behind the refusal: the fight's open rows carry the kind (HasThreatSuccessorRow).
+        {
+            std::vector<BossTacticRow> none;
+            BossTacticRow successor = Row(309, 11380, BossTacticKind::ThreatSuccessor);
+            BossTacticRow first = Row(309, 11380, BossTacticKind::KillFirst, 14986);
+            CHECK(!HasThreatSuccessorRow(Active(none))); // TestNoSuccessorRow
+            CHECK(HasThreatSuccessorRow(Active(std::vector<BossTacticRow>{successor}))); // TestSuccessorRowRead
+            CHECK(!HasThreatSuccessorRow(Active(std::vector<BossTacticRow>{first}))); // TestOtherRowIsNoSuccessor
+        }
+        // t1106c round 2: the other-healer count keeps only healers that can heal the raid (CarrierHealerCount).
+        {
+            CarrierHealer healer;
+            healer.alive = true;
+            healer.cursed = false;
+            healer.charmed = false;
+            healer.distanceYd = 20.0f;
+            healer.dropYd = 0.0f;
+            std::vector<CarrierHealer> healers(3, healer);
+            CHECK(CarrierHealerCount(healers, 40.0f) == 3); // TestOtherHealerCount
+            std::vector<CarrierHealer> one = healers;
+            one[0].alive = false;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestDeadHealerNotCounted
+            one = healers;
+            one[0].cursed = true;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCursedHealerNotCounted
+            one = healers;
+            one[0].charmed = true;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCharmedHealerNotCounted
+            one = healers;
+            one[0].distanceYd = 41.0f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestHealerBeyondReachNotCounted
+            one = healers;
+            one[0].distanceYd = 40.0f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestHealerAtReachCounts
+            one = healers;
+            one[0].dropYd = 12.4f; // Jin'do's pit floor sits ~12 yd under the boss's
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestHealerInThePitNotCounted
+            one = healers;
+            one[0].dropYd = kCarrierPitDropYd;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestHealerAtThePitLineCounts
+            // The carrier can be the one in the pit: a healer on the room floor then reads the same ~12 yd above it, and
+            // "above" is not "on the carrier's floor" either (TestCarrierInThePitCountsOnlyItsOwnFloor).
+            one = healers;
+            one[0].dropYd = -12.4f;
+            CHECK(CarrierHealerCount(one, 40.0f) == 2); // TestCarrierInThePitLeavesTheRoomFloorOut
+            one = healers;
+            one[0].dropYd = -kCarrierPitDropYd;
+            CHECK(CarrierHealerCount(one, 40.0f) == 3); // TestCarrierInThePitKeepsItsOwnFloor
+        }
+        // The strike spells: the class's shortest casts first, nothing for a class without one (melee or wand).
+        CHECK(CarrierStrikeSpells(5) == std::vector<const char*>({"mind blast", "smite"})); // TestCarrierStrikeSpellsPriest
+        CHECK(CarrierStrikeSpells(1).empty()); // TestCarrierStrikeSpellsWarrior
+    }
+
     // t1105h J2: tank_ignore. Jin'do 11380 hands the Sacrificed Trolls 14826 to the damage dealers.
     {
         BossTacticRow ignore = Row(309, 11380, BossTacticKind::TankIgnore, 14826);
         CHECK(ParseBossTacticKind("tank_ignore") == BossTacticKind::TankIgnore);
+        CHECK(ParseBossTacticKind("seek_pull") == BossTacticKind::SeekPull);
+        CHECK(static_cast<int>(BossTacticKind::SeekPull) == 25);
         {
             BossTacticTable table;
             CHECK(table.TankIgnoreBosses(309, 14826).empty()); // not sealed

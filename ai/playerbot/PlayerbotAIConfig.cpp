@@ -146,13 +146,57 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunTotemFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunTotemFocus", false);
     dungeonRunUseObject = config.GetBoolDefault("AiPlayerbot.DungeonRunUseObject", false);
     dungeonRunTankSwap = config.GetBoolDefault("AiPlayerbot.DungeonRunTankSwap", false);
+    dungeonRunTankPost = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPost", false);
+    dungeonRunGuardLeavesAssignedTank =
+        config.GetBoolDefault("AiPlayerbot.DungeonRunGuardLeavesAssignedTank", false);
+    dungeonRunTankPostHoldSpot = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostHoldSpot", false);
+    dungeonRunTankPostLeash = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostLeash", false);
     dungeonRunSeekAura = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekAura", false);
+    dungeonRunSeekPullCycle = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekPullCycle", false);
+    dungeonRunSeekSonMeet = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekSonMeet", false);
+    dungeonRunSeekTakeEdge = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekTakeEdge", false);
+    dungeonRunSeekMeetNoHeal = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetNoHeal", false);
+    dungeonRunSeekWalkoutFocus = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutFocus", false);
+    dungeonRunSeekWalkoutHoldCombat = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutHoldCombat", false);
+    dungeonRunSeekVictimRelief = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekVictimRelief", false);
+    dungeonRunSeekWalkoutFaceCast = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutFaceCast", false);
+    dungeonRunSeekWalkoutStandLog = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandLog", false);
+    dungeonRunSeekWalkoutStandSight = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekWalkoutStandSight", false);
+    dungeonRunPlaceUnstick = config.GetBoolDefault("AiPlayerbot.DungeonRunPlaceUnstick", false);
+    dungeonRunSeekNearestTake = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekNearestTake", false);
+    dungeonRunSeekNearestTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekNearestTakeReach", false);
+    dungeonRunSeekMeetPrePlace = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlace", false);
+    dungeonRunSeekMeetPrePlaceLate = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceLate", false);
+    dungeonRunSeekShotWaitsReceiver = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekShotWaitsReceiver", false);
+    dungeonRunSeekMeetPrePlaceHold = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetPrePlaceHold", false);
+    dungeonRunSeekMeetTakeReach = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekMeetTakeReach", false);
+    dungeonRunSeekTakenSonThreatCap = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekTakenSonThreatCap", false);
+    dungeonRunSeekSiphonClock = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekSiphonClock", false);
+    dungeonRunSeekCycleRoll = config.GetBoolDefault("AiPlayerbot.DungeonRunSeekCycleRoll", false);
+    dungeonRunThreatResetWindow = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatResetWindow", false);
     dungeonRunPullGate = config.GetBoolDefault("AiPlayerbot.DungeonRunPullGate", false);
     dungeonRunBossSpread = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpread", false);
+    dungeonRunBossSpreadSlots = config.GetBoolDefault("AiPlayerbot.DungeonRunBossSpreadSlots", false);
     dungeonRunAvoidCastAll = config.GetBoolDefault("AiPlayerbot.DungeonRunAvoidCastAll", false);
     dungeonRunBurnMana = config.GetBoolDefault("AiPlayerbot.DungeonRunBurnMana", false);
+    bossStandOutranksBreathDodge = config.GetBoolDefault("AiPlayerbot.BossStandOutranksBreathDodge", false);
+    bossStandEvents = config.GetBoolDefault("AiPlayerbot.BossStandEvents", false);
+    bossStandWholeRaid = config.GetBoolDefault("AiPlayerbot.BossStandWholeRaid", false);
+    bossTacticsKeepsEngagedBoss = config.GetBoolDefault("AiPlayerbot.BossTacticsKeepsEngagedBoss", false);
     dungeonRunRangedOnly = config.GetBoolDefault("AiPlayerbot.DungeonRunRangedOnly", false);
+    dungeonRunGateHold = config.GetBoolDefault("AiPlayerbot.DungeonRunGateHold", false);
     dungeonRunCharmYield = config.GetBoolDefault("AiPlayerbot.DungeonRunCharmYield", false);
+    dungeonRunImmuneBossVictimEscape = config.GetBoolDefault("AiPlayerbot.DungeonRunImmuneBossVictimEscape", false);
+    dungeonRunCarrierStrike = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierStrike", false);
+    dungeonRunCarrierScan = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierScan", false);
+    dungeonRunShadeHealerCover = config.GetBoolDefault("AiPlayerbot.DungeonRunShadeHealerCover", false);
+    dungeonRunCarrierHold = config.GetBoolDefault("AiPlayerbot.DungeonRunCarrierHold", false);
+    dungeonRunThreatSuccessorNotHolder = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorNotHolder", false);
+    dungeonRunCureIgnoresThreat = config.GetBoolDefault("AiPlayerbot.DungeonRunCureIgnoresThreat", false);
+    dungeonRunThreatSuccessorStrict = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorStrict", false);
+    dungeonRunThreatSuccessorKeepsAway = config.GetBoolDefault("AiPlayerbot.DungeonRunThreatSuccessorKeepsAway", false);
+    dungeonRunFactJudgeCharmedLead = config.GetBoolDefault("AiPlayerbot.DungeonRunFactJudgeCharmedLead", false);
+    dungeonRunTauntGate = config.GetBoolDefault("AiPlayerbot.DungeonRunTauntGate", false);
     dungeonRunMaxMinutes = static_cast<uint32>(std::max(0, config.GetIntDefault("AiPlayerbot.DungeonRunMaxMinutes", 180)));
     dungeonRunAggroEstimate = config.GetBoolDefault("AiPlayerbot.DungeonRunAggroEstimate", false);
     dungeonRunAggroCeiling = static_cast<uint32>(std::max(1, config.GetIntDefault("AiPlayerbot.DungeonRunAggroCeiling", 6)));
@@ -201,6 +245,8 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     botLfgChat = config.GetBoolDefault("AiPlayerbot.BotLfgChat", true);
     if (botLfgGroups && !dungeonSelfClear)
         sLog.outString("TortoiseBots: AiPlayerbot.BotLfgGroups = 1 needs AiPlayerbot.DungeonSelfClear = 1: bot LFG groups stay dormant.");
+    if (dungeonRunThreatResetWindow && !dungeonRunSeekAura)
+        sLog.outString("TortoiseBots: AiPlayerbot.DungeonRunThreatResetWindow = 1 needs AiPlayerbot.DungeonRunSeekAura = 1: the reset clock is the seek fight's charm scan, so the window stays shut.");
 }
 
 void PlayerbotAIConfig::LoadObservabilityRaids()
@@ -1065,6 +1111,7 @@ bool PlayerbotAIConfig::Initialize()
     sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", false);
     warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", false);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
+    hunterCarveInReachOnly = config.GetBoolDefault("AiPlayerbot.HunterCarveInReachOnly", false);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
     dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);

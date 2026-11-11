@@ -5,6 +5,7 @@
 #include "TargetValue.h"
 #include "CcMarkHoldPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/BossTacticsMgr.h"
 
 using namespace ai;
 
@@ -28,6 +29,13 @@ Unit* AttackerOfNonTankTargetValue::Calculate()
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || unit->IsPlayer())
+            continue;
+        // A needs_aura subject (the Shade of Jin'do) is no pick for either user, the tank's taunt or the warrior gap
+        // closer's Charge, unless this bot has the aura (a cursed tank can hurt it): DungeonRunTauntGate, off = every
+        // unit as before.
+        std::uint32_t const requiredAura = GetBossTactics().RequiredAura(bot->GetMapId(), unit->GetEntry());
+        if (AttackerOfNonTankSkipsUnit(sPlayerbotAIConfig.dungeonRunTauntGate, requiredAura,
+                requiredAura != 0 && bot->HasAura(requiredAura)))
             continue;
 
         Unit* victim = unit->GetVictim();

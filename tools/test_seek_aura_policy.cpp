@@ -2,9 +2,13 @@
 //   g++ -std=c++17 -Wall -Wextra tools/test_seek_aura_policy.cpp -o /tmp/test_seek_aura_policy
 //   /tmp/test_seek_aura_policy
 #include "../ai/playerbot/SeekAuraPolicy.h"
+#include "../ai/playerbot/ThreatCapPolicy.h"
 
 #include <cstdlib>
+#include <limits>
 #include <iostream>
+#include <map>
+#include <utility>
 
 #define CHECK(x) do { \
     if (!(x)) { \
@@ -160,16 +164,270 @@ int main()
     CHECK(!SeekLateEngagedBurn(true, 0, 0));
     CHECK(SeekLateEngagedBurn(true, 91000, 0));
 
-    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 8 s is the first
-    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 8 s (walk 45: with three
+    // seek_pull's kill lead (walk 51: back -> death median 27 s, p75 31 s): the same rule with the row's own lead.
+    CHECK(SeekLateEngagedBurnWithin(true, 91000, 44000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(true, 91000, 46000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(false, 91000, 44000, 45000));
+    CHECK(!SeekLateEngagedBurnWithin(true, 0, 0, 45000));
+    // The old 30 s rule is the same function at its own lead.
+    for (std::uint32_t dueIn : {0u, 25000u, 30000u, 30001u})
+        CHECK(SeekLateEngagedBurn(true, 91000, dueIn) == SeekLateEngagedBurnWithin(true, 91000, dueIn, 30000));
+
+    // SeekTakeFightingSonOnHealer: a Son that has sat on a healer (or any other non-tank) for 3 s is the first
+    // off-tank's own take, whatever the third off-tank does: the third off-tank had those 3 s (walk 45: with three
     // tanks alive the old gate never let the first off-tank take one, and 87 of 99 deaths from Sons were non-tanks).
-    CHECK(kSeekHealerTakeMs == 8000);
-    CHECK(SeekTakeFightingSonOnHealer(8000));
-    CHECK(!SeekTakeFightingSonOnHealer(7999));
+    CHECK(kSeekHealerTakeMs == 3000);
+    CHECK(SeekTakeFightingSonOnHealer(3000));
+    CHECK(!SeekTakeFightingSonOnHealer(2999));
     // An off-tank that is Hakkar's victim (Cause Insanity, then the threat successor) takes no Son and walks no drag:
     // it would bring Hakkar onto the gather. The other off-tank takes it.
     CHECK(SeekTankTakeAllowed(false));
     CHECK(!SeekTankTakeAllowed(true));
+
+    // SeekNearestTakerIs (DungeonRunSeekNearestTake). Failing case before the nearest take: the receiver (tanks[2])
+    // 14 yd from the Son, tanks[1] 4 yd away with its taunt ready -> tanks[1] takes at once. Today nobody but the
+    // receiver takes until the 3 s healer clock.
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, false));
+    // The receiver's taunt on cooldown: tanks[1] takes even with the receiver close.
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, false, 4.0f, true, false, false));
+    // The receiver at 5 yd with its taunt ready keeps the take: tanks[1] does not take, the receiver does.
+    CHECK(!SeekNearestTakerIs(1, 2, 5.0f, true, 4.0f, true, false, false));
+    CHECK(SeekNearestTakerIs(2, 2, 5.0f, true, 4.0f, true, false, false));
+    // The 8 yd edges.
+    CHECK(!SeekNearestTakerIs(1, 2, kSeekNearestTakeYd, true, 4.0f, true, false, false));
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, kSeekNearestTakeYd, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 8.5f, true, false, false));
+    // tanks[1] is Hakkar's victim -> no (mutation: drop the boss-victim test and this fails).
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, true, false));
+    // tanks[1] holds a Son already, or its own taunt is on cooldown -> no.
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, true));
+    CHECK(!SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, false, false, false));
+    // The main tank never takes, however close; a fourth tank is no taker here.
+    CHECK(!SeekNearestTakerIs(0, 2, 14.0f, false, 1.0f, true, false, false));
+    CHECK(!SeekNearestTakerIs(3, 2, 14.0f, false, 1.0f, true, false, false));
+    // A dead receiver is passed as far and not ready: tanks[1] in reach takes.
+    CHECK(SeekNearestTakerIs(1, 2, 1.0e9f, false, 4.0f, true, false, false));
+    // Flag off: the pick names no Son even for the failing case's Son, so the 3 s healer clock is the only take.
+    {
+        SeekNearestTakeCand c;
+        c.victimNonTank = true;
+        c.victimInside = true;
+        c.selfYd = 4.0f;
+        c.receiverYd = 14.0f;
+        c.receiverTauntReady = true;
+        c.selfTauntReady = true;
+        const std::vector<SeekNearestTakeCand> one = {c};
+        CHECK(PickSeekNearestTake(false, 1, 2, false, false, one) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, one) == 0);
+    }
+    // Which Son: on a non-tank, not the open meet's, its victim inside the raid circle (+2 yd).
+    CHECK(SeekNearestTakeSonOk(true, false, true));
+    CHECK(!SeekNearestTakeSonOk(false, false, true));
+    CHECK(!SeekNearestTakeSonOk(true, true, true));
+    CHECK(!SeekNearestTakeSonOk(true, false, false));
+
+    // PickSeekNearestTake: the nearest eligible Son this tank takes.
+    {
+        auto cand = [](float selfYd, float receiverYd) {
+            SeekNearestTakeCand c;
+            c.victimNonTank = true;
+            c.victimInside = true;
+            c.selfYd = selfYd;
+            c.receiverYd = receiverYd;
+            c.receiverTauntReady = true;
+            c.selfTauntReady = true;
+            return c;
+        };
+        // Nearest of several (mutation: pick the farthest and this fails).
+        std::vector<SeekNearestTakeCand> sons = {cand(7.0f, 14.0f), cand(3.0f, 15.0f), cand(5.0f, 20.0f)};
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, sons) == 1);
+        // The distances are each tank's own (mutation: pass selfYd as receiverYd and this fails): a Son 3 yd from
+        // tanks[1] but 4 yd from a ready receiver stays the receiver's; the next nearest is taken.
+        sons[1].receiverYd = 4.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, sons) == 2);
+        // The receiver 12 yd away, tanks[1] 10 yd: neither in reach for tanks[1].
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {cand(10.0f, 12.0f)}) == -1);
+        // The open meet's Son, a victim outside the circle, a victim that is a tank: skipped.
+        std::vector<SeekNearestTakeCand> skip = {cand(2.0f, 14.0f), cand(3.0f, 14.0f), cand(4.0f, 14.0f),
+                                                 cand(6.0f, 14.0f)};
+        skip[0].openMeetSon = true;
+        skip[1].victimInside = false;
+        skip[2].victimNonTank = false;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, skip) == 3);
+        // tanks[1] is Hakkar's victim or holds a Son: no pick.
+        CHECK(PickSeekNearestTake(true, 1, 2, true, false, skip) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, true, skip) == -1);
+        // The main tank never picks.
+        CHECK(PickSeekNearestTake(true, 0, 2, false, false, skip) == -1);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {}) == -1);
+    }
+
+    // The nearest take's reach (DungeonRunSeekNearestTakeReach, walk 57 F4). Named failing case: tanks[1] 14 yd from a
+    // walked Son on a non-tank, the receiver 18 yd from it, the reach key on -> tanks[1] takes. Before the reach the
+    // 8 yd rule left it alone (and with the key off it still does).
+    CHECK(SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, /*reach*/true, /*meetLost*/false,
+                             /*ref*/false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, false, false, false));
+    CHECK(kSeekNearestTakeReachYd == 20.0f);
+    CHECK(kSeekNearestTakeReachRecvYd == 15.0f);
+    CHECK(kSeekNearestTakeMeetLostMs == 10000u);
+    // The 20 yd edge (mutation 20 -> 8: the failing case and this fail): 20 takes, 21 holds back.
+    CHECK(SeekNearestTakerIs(1, 2, 18.0f, true, 20.0f, true, false, false, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 21.0f, true, false, false, true, false, false));
+    // Holds back as Hakkar's victim, holding a Son, or when its leave collapses the threat cap (review H1; mutation:
+    // drop the collapse guard and the last one fails).
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, true, false, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, true, true, false, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, true, false, false, true, false, true));
+    // Its own taunt not ready: no reach take either.
+    CHECK(!SeekNearestTakerIs(1, 2, 18.0f, true, 14.0f, false, false, false, true, false, false));
+    // The receiver within 15 yd keeps the Son (15 is not "more than 15")...
+    CHECK(!SeekNearestTakerIs(1, 2, 15.0f, true, 14.0f, true, false, false, true, false, false));
+    CHECK(SeekNearestTakerIs(1, 2, 15.5f, true, 14.0f, true, false, false, true, false, false));
+    // ...unless the Son's meet was just lost and the receiver cannot take it itself: meetLost with the receiver at 6 yd,
+    // its taunt NOT ready, lets tanks[1] take at 18 yd (review M1: was the "receiver 6 yd" case).
+    CHECK(SeekNearestTakerIs(1, 2, 6.0f, false, 18.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, false, 18.0f, true, false, false, true, false, false));
+    // Review M1: meetLost, the receiver at 6 yd with its taunt ready -> the receiver takes; tanks[1] does not (two tanks
+    // would taunt one Son). Mutation: drop the receiver's own take test and this fails.
+    CHECK(!SeekNearestTakerIs(1, 2, 6.0f, true, 18.0f, true, false, false, true, true, false));
+    // The receiver within 8 yd but not ready, or ready but past 8 yd (yet within 15): tanks[1] takes a lost-meet Son.
+    CHECK(SeekNearestTakerIs(1, 2, 12.0f, true, 18.0f, true, false, false, true, true, false));
+    CHECK(SeekNearestTakerIs(1, 2, 8.0f, false, 18.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(1, 2, 8.0f, true, 18.0f, true, false, false, true, true, false));
+    // The collapse guard is the reach's only: the 8 yd rule still takes (today's behaviour, not narrowed).
+    CHECK(SeekNearestTakerIs(1, 2, 14.0f, true, 4.0f, true, false, false, true, false, true));
+    // Only tanks[1]: the main tank and a fourth tank never reach.
+    CHECK(!SeekNearestTakerIs(0, 2, 18.0f, true, 14.0f, true, false, false, true, true, false));
+    CHECK(!SeekNearestTakerIs(3, 2, 18.0f, true, 14.0f, true, false, false, true, true, false));
+    // Flag off (reach false) keeps today's 8 yd rule exactly: the near rule's answer for every case above.
+    {
+        const float ys[] = {1.0f, 4.0f, 8.0f, 8.5f, 14.0f, 18.0f, 21.0f};
+        for (float r : ys)
+            for (float m : ys)
+                for (int b = 0; b < 16; ++b)
+                    CHECK(SeekNearestTakerIs(1, 2, r, b & 1, m, b & 2, b & 4, b & 8, false, true, false) ==
+                          SeekNearestTakerNear(1, 2, r, b & 1, m, b & 2, b & 4, b & 8));
+    }
+    // The pick says when only the reach took (the row's `src=nearest_reach`), and passes the reference through.
+    {
+        SeekNearestTakeCand c;
+        c.victimNonTank = true;
+        c.victimInside = true;
+        c.selfYd = 14.0f;
+        c.receiverYd = 18.0f;
+        c.receiverTauntReady = true;
+        c.selfTauntReady = true;
+        bool viaReach = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == -1);
+        CHECK(!viaReach);
+        c.reachKey = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == 0);
+        CHECK(viaReach);
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, true, &viaReach) == -1);
+        CHECK(!viaReach);
+        // Review L3: a Son whose cap-checked take already started (latched) keeps it although the cap would collapse
+        // now (mutation: ignore the latch and this fails).
+        c.capLatched = true;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, true, &viaReach) == 0);
+        CHECK(viaReach);
+        c.capLatched = false;
+        CHECK(SeekCapGuardBlocks(true, false));
+        // Walk 58 F3: the Son the guard held back (the `seek take held` row): the reach would take it, the guard
+        // stops it. No collapse, a latched take, or no takeable Son: nothing held.
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == 0);
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, false) == -1);
+        c.capLatched = true;
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == -1);
+        c.capLatched = false;
+        c.reachKey = false;
+        CHECK(SeekCapGuardHeldPick(true, 1, 2, false, false, {c}, true) == -1);
+        c.reachKey = true;
+        CHECK(SeekCapGuardHeldPick(false, 1, 2, false, false, {c}, true) == -1);
+        // Review H1: tanks[1] is the cap's reference (main tank holds, tanks[1] 400 on the boss, tanks[2] away), the
+        // healer clock fires for it: its leave collapses the cap, so with the reach key on the take is held back; key
+        // off: today's take. A latched take goes on. Mutation: drop the collapse check and the key-on case fails.
+        const std::vector<ThreatCapTank> h1 = {{1000.0f, false, true, true}, {400.0f, true, true, false},
+                                               {200.0f, true, false, false}};
+        const bool collapses = ThreatCapLeaveCollapses(h1, 1);
+        CHECK(collapses);
+        CHECK(!SeekHealerClockTakeAllowed(true, collapses, false));
+        CHECK(SeekHealerClockTakeAllowed(false, collapses, false));
+        CHECK(SeekHealerClockTakeAllowed(true, collapses, true));
+        // Round 2 NEW-1, the reviewer's case: 3+ tanks, NotHolder on, tanks[2] dead (off the list), tanks[1] under half
+        // the main tank's threat. The main tank holds; tanks[1] 400 is the not-holder reference; its leave collapses the
+        // cap. Blocked at 3 s, taken at 6 s (the clock overrides), and at once when the victim is at 35 %.
+        const std::vector<ThreatCapTank> r2 = {{1000.0f, false, true, true}, {400.0f, true, true, false}};
+        const bool r2Collapses = ThreatCapLeaveCollapses(r2, 1, true);
+        CHECK(r2Collapses);
+        CHECK(kSeekHealerClockOverrideMs == 6000u);
+        CHECK(kSeekHealerClockOverrideHpPct == 40.0f);
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 90.0f)));
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(5999, 90.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(6000, 90.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 35.0f)));
+        CHECK(!SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(3000, 40.0f)));
+        CHECK(SeekHealerClockTakeAllowed(true, r2Collapses, false, HealerClockOverridesCap(0, 39.9f)));
+        // tanks[2] (away) leaving collapses nothing: its healer-clock take is not held back.
+        CHECK(SeekHealerClockTakeAllowed(true, ThreatCapLeaveCollapses(h1, 2), false));
+        CHECK(!SeekCapGuardBlocks(true, true));
+        CHECK(!SeekCapGuardBlocks(false, false));
+        CHECK(PickSeekNearestTake(false, 1, 2, false, false, {c}, false, &viaReach) == -1);
+        // A Son the 8 yd rule takes is `nearest`, not `nearest_reach`, even with the key on.
+        c.selfYd = 4.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {c}, false, &viaReach) == 0);
+        CHECK(!viaReach);
+        // The nearest Son wins whichever rule takes it.
+        SeekNearestTakeCand far = c;
+        far.selfYd = 16.0f;
+        CHECK(PickSeekNearestTake(true, 1, 2, false, false, {far, c}, false, &viaReach) == 1);
+        CHECK(!viaReach);
+    }
+
+    // SeekTankTauntReadyNow: the taunt-after guards, a known taunt, its own spell cooldown, its stance or form.
+    // A warrior in Defensive Stance with Taunt off cooldown, on the global cooldown only (a Sunder a moment ago): ready.
+    // The GCD is no input at all: the spell's own cooldown is what counts.
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, true, false)));
+    // A druid in Bear Form: ready.
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, true)));
+    // A stunned or feared receiver (not in control) with its taunt off cooldown is not ready, so tanks[1] takes.
+    CHECK(!SeekTankTauntReadyNow(false, false, true, true, true));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(false, false, true, true, true), 4.0f, true,
+                             false, false));
+    // Silenced or pacified, no taunt known, the taunt's own cooldown running: not ready.
+    CHECK(!SeekTankTauntReadyNow(true, true, true, true, true));
+    CHECK(!SeekTankTauntReadyNow(true, false, false, true, true));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, false, true));
+    // A warrior out of Defensive Stance (Battle or Berserker) is not ready: Taunt needs the stance.
+    CHECK(!SeekTauntFormOk(1, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, false, false)));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(1, false, false)),
+                             4.0f, true, false, false));
+    // Growl outside Bear Form is not ready: a druid receiver in caster or cat form leaves the take to tanks[1].
+    CHECK(!SeekTauntFormOk(11, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, false)));
+    CHECK(SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(11, false, false)),
+                             4.0f, true, false, false));
+    // A paladin with Hand of Reckoning (KnownTaunt) has a taunt and needs no form: ready, so a close paladin receiver
+    // keeps its take; a paladin without it has no taunt and is not ready.
+    CHECK(SeekTauntFormOk(2, false, false));
+    CHECK(SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(2, false, false)));
+    CHECK(!SeekNearestTakerIs(1, 2, 5.0f, SeekTankTauntReadyNow(true, false, true, true, SeekTauntFormOk(2, false, false)),
+                              4.0f, true, false, false));
+    CHECK(!SeekTankTauntReadyNow(true, false, false, true, SeekTauntFormOk(2, false, false)));
+
+    // SeekReceiverSkipsFighting: with the nearest take on, the receiver leaves only a Son on the first off-tank (index
+    // 1, which just took it). Failing case before round 2: a Son on the main tank (index 0) -> not skipped; the round-1
+    // skip left every Son on any tank, and nobody took a Son off the main tank. (Mutation: skip on any tank index >= 0
+    // and this fails.)
+    CHECK(!SeekReceiverSkipsFighting(true, true, 0));
+    CHECK(SeekReceiverSkipsFighting(true, true, 1));
+    CHECK(!SeekReceiverSkipsFighting(true, true, 2)); // the receiver itself (its own Son is the onTank branch)
+    CHECK(!SeekReceiverSkipsFighting(true, true, 3)); // a fourth tank
+    CHECK(!SeekReceiverSkipsFighting(true, true, -1)); // a non-tank victim
+    // Off, or not the receiver: today's pick.
+    CHECK(!SeekReceiverSkipsFighting(false, true, 1));
+    CHECK(!SeekReceiverSkipsFighting(true, false, 1));
 
     // Who pulls an unengaged Son: exactly one actor. The third off-tank while it lives and is not the boss's victim;
     // with it the victim (the guard above stands its whole task down), the ranged fallback takes the pull that cycle.
@@ -187,18 +445,71 @@ int main()
         CHECK(!none.thirdTank && !none.fallback);
     }
 
-    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 4 s past the take (12 s) is no longer held, the
-    // damage dealers kill it (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0),
-    // the hold is today's.
-    CHECK(kSeekNonTankBurnMs == kSeekHealerTakeMs + 4000);
-    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 11999));
-    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 12000));
+    // SeekHoldDecision with the Son's victim: a Son on a non-tank for 5 s is no longer held, the damage dealers kill it
+    // (the cycle's cloud is lost, which beats losing the raid). Below that, and on a tank (0), the hold is today's.
+    CHECK(kSeekNonTankBurnMs == 5000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 4999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000));
     // Not the pick, the window shut, far from the spot, the raid dosed: released all the same.
-    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 12000));
+    CHECK(!SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 5000));
     CHECK(SeekHoldDecision(false, false, false, false, 98.0f, 30.0f, 40.0f, 0, 0));
     // On a tank (no non-tank time): held exactly as before.
     CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0) ==
           SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5));
+
+    // SeekHoldReleasesAfter20s: a Son the hold keeps longer than 20 s is released to the damage dealers, whatever the
+    // window and the gather say. Walk 48: the held Sons lasted a median 26.5 s (up to 126 s) and 12 of the 23 losses
+    // were Son wipes.
+    CHECK(kSeekHoldMaxMs == 20000);
+    CHECK(SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 19999));
+    CHECK(!SeekHoldDecision(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
+    // Not the pick (otherwise held all fight), the window shut and the gather still running: released too.
+    CHECK(!SeekHoldDecision(false, true, true, false, 80.0f, 30.0f, 5.0f, 5, 0, 20000));
+    CHECK(!SeekHoldDecision(true, false, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000));
+
+    // SeekHoldWhyOf: the hold rule's one body answers why, and SeekHoldDecision reads held-ness through it. The cap
+    // wins over the healer's burn and every other reason; the dosed path (no seeker left) still holds the Son, since a
+    // kill buys nothing then.
+    CHECK(SeekHoldWhyOf(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000) == SeekHoldWhy::Cap20);
+    CHECK(SeekHoldWhyOf(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000) == SeekHoldWhy::NonTank);
+    CHECK(SeekHoldWhyOf(true, true, true, false, 14.0f, 30.0f, 5.0f, 5) == SeekHoldWhy::SelectedBurn);
+    CHECK(SeekHoldWhyOf(false, true, true, false, 20.0f, 30.0f, 5.0f, 5) == SeekHoldWhy::Held);
+    CHECK(SeekHoldWhyOf(true, true, true, false, 20.0f, 30.0f, 5.0f, 0) == SeekHoldWhy::Dosed);
+    CHECK(SeekHoldWhyHolds(SeekHoldWhy::Held) && SeekHoldWhyHolds(SeekHoldWhy::Dosed));
+    CHECK(!SeekHoldWhyHolds(SeekHoldWhy::Cap20) && !SeekHoldWhyHolds(SeekHoldWhy::NonTank) &&
+          !SeekHoldWhyHolds(SeekHoldWhy::SelectedBurn));
+    // The decision and its reason cannot drift: over the decision's cases (the dosed one aside) SeekHoldDecision is
+    // exactly (SeekHoldWhyOf == Held).
+    {
+        const auto agrees = [](bool selected, bool windowOpen, bool gatherReady, bool forceBurn, float hpPct,
+                               float holdPct, float dist, int seekers, std::uint32_t nonTankMs = 0,
+                               std::uint32_t heldMs = 0)
+        {
+            return SeekHoldDecision(selected, windowOpen, gatherReady, forceBurn, hpPct, holdPct, dist, seekers,
+                                    nonTankMs, heldMs) ==
+                (SeekHoldWhyOf(selected, windowOpen, gatherReady, forceBurn, hpPct, holdPct, dist, seekers, nonTankMs,
+                               heldMs) == SeekHoldWhy::Held);
+        };
+        CHECK(agrees(true, true, true, false, 20.0f, 30.0f, 5.0f, 5));    // held at the percent
+        CHECK(agrees(true, true, false, false, 14.0f, 30.0f, 5.0f, 5));   // held until the gather is ready
+        CHECK(agrees(true, true, true, false, 14.0f, 30.0f, 5.0f, 5));    // the burn
+        CHECK(agrees(false, true, true, false, 20.0f, 30.0f, 5.0f, 5));   // not the pick
+        CHECK(agrees(true, false, false, false, 20.0f, 30.0f, 5.0f, 5));  // the window shut
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 40.0f, 5));  // out of reach
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 4999)); // below the non-tank burn
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 5000)); // the non-tank burn
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 19999)); // below the cap
+        CHECK(agrees(true, true, false, false, 20.0f, 30.0f, 5.0f, 5, 0, 20000)); // the cap
+    }
+
+    // SeekSonTicks: what one read feeds into the shared hold clock. Only a Son this read saw alive, that the clock
+    // counts and that the hold rule still holds is fed; a read of a Son seen dead erases its record, and a
+    // non-ticking read of a live Son changes nothing (another bot may be feeding it). An idle spare or a Son the rule
+    // already releases never gets a record, so the 20 s cap cannot empty the reservoir the area veto protects.
+    CHECK(!SeekSonTicks(true, false, true));   // idle spare, held by the rule: no clock
+    CHECK(SeekSonTicks(true, true, true));     // engaged and held: fed
+    CHECK(!SeekSonTicks(true, true, false));   // engaged and released by the rule: not fed
+    CHECK(!SeekSonTicks(false, true, true));   // dead or gone: erased, never fed
 
     // Who seeks: every living bot without the aura, except the boss's victim, the two exempt tanks and a charmed bot.
     CHECK(!SeekWanted(true, true, false, true, false, false, true));
@@ -502,6 +813,598 @@ int main()
         CHECK(SeekReachYd(fromB, 30.0f, true, anchorYd) <= kSeekFallbackYd);
         // A Son past both reaches is held.
         CHECK(SeekReachYd(50.0f, 36.0f, true, anchorYd) > kSeekFallbackYd);
+    }
+
+    // The take row's source (walk 56 F4, `src=`): the path's word, `other` without one, `+edge` when only the take edge
+    // let the chase through. Failing case before F4: the row had no source at all.
+    CHECK(SeekTakeSrcWord("nearest", false) == "nearest");
+    CHECK(SeekTakeSrcWord("healer_clock", false) == "healer_clock");
+    CHECK(SeekTakeSrcWord("receiver", true) == "receiver+edge");
+    CHECK(SeekTakeSrcWord("meet", false) == "meet");
+    CHECK(SeekTakeSrcWord(nullptr, false) == "other");
+    CHECK(SeekTakeSrcWord("", true) == "other+edge");
+
+    // The take row's reason (walk 53): all eight inputs of the chase refusal, a taunt's presence and its cast.
+    CHECK(std::string(SeekTakeReasonWord(false, false, false)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, false, true)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, true, false)) == "attack");
+    CHECK(std::string(SeekTakeReasonWord(false, true, true)) == "taunt");
+    CHECK(std::string(SeekTakeReasonWord(true, false, false)) == "chase_refused");
+    CHECK(std::string(SeekTakeReasonWord(true, false, true)) == "no_taunt");
+    CHECK(std::string(SeekTakeReasonWord(true, true, false)) == "chase_refused");
+    CHECK(std::string(SeekTakeReasonWord(true, true, true)) == "taunt");
+    // The bounded take edge's own word, only for a refusal that could not taunt.
+    CHECK(std::string(SeekTakeReasonWord(true, true, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, false, false, true)) == "edge_far");
+    CHECK(std::string(SeekTakeReasonWord(true, true, true, true)) == "taunt");
+    CHECK(std::string(SeekTakeReasonWord(false, true, false, true)) == "attack");
+    CHECK(std::string(SeekTakeReasonWord(false, false, false, true)) == "no_taunt");
+
+    // The open meet's Son stays held until a tank has it (walk 54: released 2-6 s after the shot at 98 % hp, because the
+    // puller counted as a non-tank for 5 s and the late-engaged burn was forced).
+    {
+        // The meet Son on the puller (a non-tank) at 5 s non-tank time and with the forced burn: the hold rule alone
+        // releases it (NonTank), the meet hold keeps it.
+        CHECK(SeekHoldWhyOf(true, true, false, true, 98.0f, 30.0f, 34.0f, 3, 5000, 0) == SeekHoldWhy::NonTank);
+        CHECK(!SeekHoldDecision(true, true, false, true, 98.0f, 30.0f, 34.0f, 3, 5000, 0));
+        CHECK(SeekMeetHoldsSon(true, true, false));
+        // Also the 6 s clock and a Son the selected burn would release (no non-tank time at all).
+        CHECK(!SeekHoldDecision(true, true, true, true, 98.0f, 30.0f, 34.0f, 3, 6000, 0));
+        CHECK(SeekMeetHoldsSon(true, true, false));
+        // A Son on a tank is released as today.
+        CHECK(!SeekMeetHoldsSon(true, true, true));
+        // The meet closed (or the flag off): today's decision.
+        CHECK(!SeekMeetHoldsSon(false, true, false));
+        // Another Son is not the meet's.
+        CHECK(!SeekMeetHoldsSon(true, false, false));
+        CHECK(!SeekMeetHoldsSon(true, false, true));
+    }
+
+    // Healers skip the open meet's puller as a heal target (DungeonRunSeekMeetNoHeal, walk 55: 24 of 27 meets were
+    // peeled onto a healer by heal threat).
+    {
+        // Failing case: the meet is open and the puller stands at 60 % hp -> held. Before the change nothing held it.
+        CHECK(SeekMeetHealHeld(true, true, true, 60.0f));
+        CHECK(SeekMeetHealHeld(true, true, true, 100.0f));
+        // Under the floor the heal wins over the threat; at the floor it is still held (below, not at or below).
+        CHECK(kSeekMeetHealFloorPct == 40.0f);
+        CHECK(!SeekMeetHealHeld(true, true, true, 35.0f));
+        CHECK(!SeekMeetHealHeld(true, true, true, 39.9f));
+        CHECK(SeekMeetHealHeld(true, true, true, 40.0f));
+        // The meet closed lifts the hold.
+        CHECK(!SeekMeetHealHeld(true, false, true, 60.0f));
+        // Any other member is healed as ever.
+        CHECK(!SeekMeetHealHeld(true, true, false, 60.0f));
+        CHECK(!SeekMeetHealHeld(true, true, false, 10.0f));
+        // Flag off is today's behaviour whatever the rest says.
+        CHECK(!SeekMeetHealHeld(false, true, true, 60.0f));
+        CHECK(!SeekMeetHealHeld(false, true, true, 100.0f));
+        CHECK(!SeekMeetHealHeld(false, false, false, 0.0f));
+    }
+
+    // Whose heal is held: the meet's own puller. The returner is the same bot in the normal path (the abort moves the
+    // puller to `returner`) and is held as the puller; an unrelated walk-out puller that became the returner during the
+    // open meet is not held (review L2).
+    {
+        const std::uint64_t puller = 0x1234;
+        const std::uint64_t returnerSameBot = puller;
+        const std::uint64_t unrelatedReturner = 0x5678;
+        CHECK(SeekMeetHealWalker(puller, puller));
+        CHECK(SeekMeetHealWalker(returnerSameBot, puller));
+        CHECK(!SeekMeetHealWalker(unrelatedReturner, puller));
+        CHECK(!SeekMeetHealWalker(0x9999, puller));
+        // No open meet / no puller named: nobody is held, not even guid 0.
+        CHECK(!SeekMeetHealWalker(0, 0));
+        CHECK(!SeekMeetHealWalker(puller, 0));
+    }
+
+    // The scope: the key on and at least one meet open on the server (an atomic count). The key off, or a count of 0,
+    // never reaches the lock; no map constant is involved, so a seek_pull row on any map works.
+    {
+        CHECK(SeekMeetHealScope(true, 1));
+        CHECK(SeekMeetHealScope(true, 3));
+        CHECK(!SeekMeetHealScope(false, 1));   // key off: no lock
+        CHECK(!SeekMeetHealScope(true, 0));    // count 0: no lock
+        CHECK(!SeekMeetHealScope(false, 0));
+    }
+
+    // The open-meet count stays exact over every life a meet can have. The delta is applied wherever a record's receiver
+    // is set, cleared or dropped; this replays the sequences, and a path that skipped its decrement would leave the
+    // count above 0 here.
+    {
+        int count = 0;
+        auto step = [&](bool before, bool after) { count += SeekMeetOpenDelta(before, after); };
+        CHECK(SeekMeetOpenDelta(false, true) == 1);
+        CHECK(SeekMeetOpenDelta(true, false) == -1);
+        CHECK(SeekMeetOpenDelta(true, true) == 0);   // a second meet on a record that still holds one
+        CHECK(SeekMeetOpenDelta(false, false) == 0);
+        // Opened, then closed by a taken or lost reader: back to 0.
+        step(false, true);
+        CHECK(count == 1);
+        step(true, false);
+        CHECK(count == 0);
+        // Opened, then the record is dropped (a wipe, a reset, the stale sweep): back to 0.
+        step(false, true);
+        step(true, false);
+        CHECK(count == 0);
+        // Two instances at once, one replaced while open (delta 0), both closed.
+        step(false, true);
+        step(false, true);
+        step(true, true);
+        CHECK(count == 2);
+        step(true, false);
+        step(true, false);
+        CHECK(count == 0);
+        // A stale second close of a record that no longer holds a meet changes nothing.
+        step(false, false);
+        CHECK(count == 0);
+    }
+
+    // The floor reads the hp after the incoming hits (review M1): the puller at 45 % with a swing worth 10 % is at 35 %
+    // and is healed; at 60 % with 25 % incoming it is at 35 % and healed; at 60 % with 10 % it stays held.
+    {
+        CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 1000) == 35.0f);
+        CHECK(!SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 100, 1000)));
+        CHECK(!SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(60.0f, 250, 1000)));
+        CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(60.0f, 100, 1000)));
+        // No incoming damage: the plain hp. A swing larger than the bar clamps at 0 (healed). No max hp: unchanged.
+        CHECK(SeekMeetHealHeld(true, true, true, SeekMeetHealHpAfterIncoming(45.0f, 0, 1000)));
+        CHECK(SeekMeetHealHpAfterIncoming(20.0f, 500, 1000) == 0.0f);
+        CHECK(SeekMeetHealHpAfterIncoming(45.0f, 100, 0) == 45.0f);
+    }
+
+    // taken_son_dps_held_at_85pct (DungeonRunSeekTakenSonThreatCap, walk 60 lever 2): a damage dealer at 85 % of the
+    // taking tank's threat on the just-taken Son is held off it; the base has no such function.
+    {
+        // Args: flag, on its taker, pct, Son hp, ms since the take, siphon known, siphon in ms, heal action, was held.
+        // Named failing case: at 85 % (and above) with the Son on its taker, healthy, 5 s after the take, siphon 30 s.
+        CHECK(SeekTakenSonDpsHeld(true, true, 85, 80.0f, 5000, true, 30000, false, false));
+        CHECK(SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, false, false));
+        CHECK(kSeekTakenSonCapPct == 85);
+        CHECK(kSeekTakenSonReleasePct == 75);
+        // 84 % passes.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 84, 80.0f, 5000, true, 30000, false, false));
+        // Key off passes.
+        CHECK(!SeekTakenSonDpsHeld(false, true, 99, 80.0f, 5000, true, 30000, false, false));
+        // The Son not on the tank that took it passes (mutation: the cap ignoring "taken by a tank" fails here).
+        CHECK(!SeekTakenSonDpsHeld(true, false, 99, 80.0f, 5000, true, 30000, false, false));
+        // Son health: 20 % is still held, 19 % passes.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 20.0f, 5000, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 19.0f, 5000, true, 30000, false, false));
+        // 15 s after the take or later passes; 16 s too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 14999, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 15000, true, 30000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 16000, true, 30000, false, false));
+        // The siphon within 8 s passes (mutation: the siphon bound removed fails here); 7 s, due and overdue too.
+        CHECK(SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8001, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 7000, false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, -500, false, false));
+        // An unknown siphon clock releases (Codex round 1: it used to count as far), whatever the value.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, false, std::numeric_limits<int>::max(), false, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, false, 30000, false, true));
+        // A heal is never held (mutation: the cap holding heals fails here), held before or not.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, true, false));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 99, 80.0f, 5000, true, 30000, true, true));
+        // Hysteresis: once held it stays held down to 75 %; 74 % releases; 80 % without a hold is not held.
+        CHECK(SeekTakenSonDpsHeld(true, true, 80, 80.0f, 5000, true, 30000, false, true));
+        CHECK(SeekTakenSonDpsHeld(true, true, 75, 80.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 74, 80.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 80, 80.0f, 5000, true, 30000, false, false));
+        // A held bot is still released by every bound.
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 19.0f, 5000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 15000, true, 30000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, true, 90, 80.0f, 5000, true, 8000, false, true));
+        CHECK(!SeekTakenSonDpsHeld(true, false, 90, 80.0f, 5000, true, 30000, false, true));
+        // A custom cap.
+        CHECK(SeekTakenSonDpsHeld(true, true, 70, 80.0f, 5000, true, 30000, false, false, 70));
+        // ThreatPctOf feeds it: 85 of 100 reads 85, a 0 reference on an engaged Son reads 100 (held).
+        CHECK(ThreatPctOf(85.0f, 100.0f, true, false) == 85);
+        CHECK(ThreatPctOf(10.0f, 0.0f, true, false) == 100);
+    }
+
+    // The per-bot latch of one take: the hysteresis and the one row are per take (Son and take time), so a re-take of
+    // the same Son guid starts clean and writes its own row (Codex round 1).
+    {
+        SeekTakenCapLatch latch;
+        SeekTakenCapLatchFor(latch, 22, 1000).held = true;
+        CHECK(SeekTakenCapRowDue(latch, true));
+        CHECK(!SeekTakenCapRowDue(latch, true)); // one row per take
+        CHECK(SeekTakenCapLatchFor(latch, 22, 1000).held); // same take: kept
+        CHECK(latch.logged);
+        // The same Son guid, taken again later: a new take, reset.
+        SeekTakenCapLatch& again = SeekTakenCapLatchFor(latch, 22, 9000);
+        CHECK(!again.held);
+        CHECK(!again.logged);
+        CHECK(SeekTakenCapRowDue(again, true)); // the second take writes its own row
+        // Not held: no row, and the row stays due for a later hold.
+        SeekTakenCapLatch& other = SeekTakenCapLatchFor(latch, 33, 9500);
+        CHECK(!SeekTakenCapRowDue(other, false));
+        CHECK(SeekTakenCapRowDue(other, true));
+    }
+
+    // The victim relief (DungeonRunSeekVictimRelief): a Son on the boss's victim tank is taken off it by another
+    // living tank, at most twice per Son and 8 s apart. Named failing case VictimRelief_DueAfterDwell: a fresh latch
+    // ticks true at 5000, due at 6000, not at 5999.
+    {
+        SeekReliefLatch latch;
+        CHECK(!SeekVictimReliefDue(true, latch, 5000));
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(!SeekVictimReliefDue(true, latch, 5999));
+        CHECK(SeekVictimReliefDue(true, latch, 6000));
+        SeekReliefClockTick(latch, false, 6100);
+        CHECK(!SeekVictimReliefDue(true, latch, 9000));
+        CHECK(!SeekVictimReliefDue(false, latch, 9000));
+    }
+    // VictimRelief_DwellRestartsAfterGap: a read gap over 2 s starts the dwell over (the Son may have left the tank
+    // and come back unseen); a gap of exactly 2 s keeps the run.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        SeekReliefClockTick(latch, true, 7000);
+        CHECK(latch.sinceMs == 5000);
+        CHECK(SeekVictimReliefDue(true, latch, 7000));
+        SeekReliefClockTick(latch, true, 10000);
+        CHECK(latch.sinceMs == 10000);
+        CHECK(!SeekVictimReliefDue(true, latch, 10500));
+        CHECK(SeekVictimReliefDue(true, latch, 11000));
+    }
+    // The retake latch: after a start the same Son waits 8 s, and a second start is the last one.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 6000);
+        SeekVictimReliefStart(latch, 7, 6000);
+        CHECK(!SeekVictimReliefDue(true, latch, 13999));
+        CHECK(SeekVictimReliefDue(true, latch, 14000));
+        SeekVictimReliefStart(latch, 7, 14000);
+        CHECK(!SeekVictimReliefDue(true, latch, 22000));
+        CHECK(!SeekVictimReliefDue(true, latch, 30000));
+    }
+    // The reliever: any living tank of the raid's order, not the boss's victim, not charmed, holding no Son, its
+    // taunt ready, within 20 yd.
+    {
+        CHECK(SeekVictimRelieverOk(true, false, false, false, true, 20.0f));
+        CHECK(!SeekVictimRelieverOk(false, false, false, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, true, false, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, true, false, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, true, true, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, false, false, 5.0f));
+        CHECK(!SeekVictimRelieverOk(true, false, false, false, true, 20.1f));
+    }
+    // The keep: a started relief stays valid for its tank for 6 s without the taunt and dwell checks.
+    {
+        SeekReliefLatch latch;
+        latch.sinceMs = 6000;
+        latch.seenMs = 6000;
+        SeekVictimReliefStart(latch, 7, 6000);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 11999));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 12000));
+        CHECK(!SeekVictimReliefKept(true, latch, 8, false, 7000));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, true, 7000));
+        CHECK(!SeekVictimReliefKept(false, latch, 7, false, 7000));
+    }
+    // The clock wraps: a tick at 0 starts the clock, and a dwell across the 32-bit wrap is due.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 0);
+        CHECK(latch.sinceMs == 1);
+        SeekReliefLatch wrapped;
+        SeekReliefClockTick(wrapped, true, 0xFFFFFE00u);
+        CHECK(SeekVictimReliefDue(true, wrapped, 0x00000300u));
+    }
+    // VictimRelief_TauntPickIgnoresNearestTake: the relief take casts the tank's known taunt whatever the nearest
+    // flag says; any other take follows the flag.
+    {
+        CHECK(SeekTakeUsesKnownTaunt(false, "victim_relief"));
+        CHECK(SeekTakeUsesKnownTaunt(true, "victim_relief"));
+        CHECK(!SeekTakeUsesKnownTaunt(false, "nearest"));
+        CHECK(SeekTakeUsesKnownTaunt(true, "nearest"));
+        CHECK(!SeekTakeUsesKnownTaunt(false, nullptr));
+    }
+    // VictimRelief_ConfirmStampsAndRollbackUndoes: the gate confirms a claimed take (counts it, opens its keep
+    // window) before the attack or taunt; a take that then issues neither rolls the confirmation back, so it counts
+    // nothing, its window and start stamp go back to what they were, and the Son is claimable again.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastStartMs == 6000);
+        CHECK(latch.lastTaker == 7);
+        CHECK(latch.activeTaker == 7);
+        CHECK(latch.activeSinceMs == 6000);
+        SeekVictimReliefRollback(latch, 7, 6000);
+        CHECK(latch.takes == 0);
+        CHECK(latch.lastStartMs == 0);
+        CHECK(latch.lastTaker == 0);
+        CHECK(latch.activeTaker == 0);
+        CHECK(latch.activeSinceMs == 0);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
+    }
+    // VictimRelief_KeptAttemptStampsOnce: the same kept, already-targeted relief executes every tick while the tank
+    // chases it, but only the first execution stamps and counts.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 9000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 10000));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 10000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        const auto firstStartMs = latch.lastStartMs;
+        for (unsigned tick = 11000; tick <= 14000; tick += 1000)
+            CHECK(SeekVictimReliefPreExec(latch, 7, tick) == SeekReliefGate::Keep);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 14000));
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastStartMs == firstStartMs);
+    }
+    // VictimRelief_KeepWindowNotExtended: later execution ticks stamp nothing, so the keep still ends 6 s after the
+    // first stamp.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Confirm);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 2000) == SeekReliefGate::Keep);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 4000) == SeekReliefGate::Keep);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 2000));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 4000));
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 5999));
+        CHECK(!SeekVictimReliefKept(true, latch, 7, false, 6000));
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_SecondTakerBlockedByClaim: A claims the due Son; B's selection finds nothing while the claim
+    // lives, and B cannot stamp over it; A confirms once.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 0));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 500));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 500) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 500) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_TriggerThenActionSameTick (the walk 71 failing case): the trigger's read claims the Son, and the
+    // action's read of the same tick must get the Son back, so the take starts and stamps once.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Confirm);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 0) == SeekReliefGate::Keep); // a second read of the same take
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastTaker == 7);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 500));
+    }
+    // VictimRelief_OwnClaimNotRefreshed: a live own claim answers its taker's later reads, and they never move it:
+    // the claim still expires 1 s after the first pick, when the other tank may claim.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 500));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 900));
+        CHECK(latch.claimMs == 0);
+        CHECK(latch.claimTaker == 7);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 999));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 1000));
+        CHECK(latch.claimTaker == 8);
+    }
+    // VictimRelief_ConfirmOnThePickClock: a take picked at 999 confirms on that clock even though a live read at 1999
+    // finds the claim lapsed (1000 ms after the pick); the gate never reads the live clock, so a task that executes a
+    // tick late still stamps, counts and opens its keep window instead of lapsing into another tank's claim.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 999));
+        CHECK(!SeekVictimReliefClaimLive(latch, 1999));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 999) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        CHECK(latch.lastStartMs == 999);
+        CHECK(latch.activeSinceMs == 999);
+        CHECK(SeekVictimReliefKept(true, latch, 7, false, 1999));
+    }
+    // VictimRelief_TwoTanksAliveRelieves: relief runs with two living tanks, and the free tank takes the Son off the
+    // boss's victim; one tank alone never relieves.
+    {
+        CHECK(SeekVictimReliefAllowed(2));
+        CHECK(SeekVictimReliefAllowed(3));
+        CHECK(SeekVictimReliefAllowed(5));
+        CHECK(!SeekVictimReliefAllowed(1));
+        CHECK(!SeekVictimReliefAllowed(0));
+        // The boss's victim is tanks[0] and holds the Son; tanks[1] is free and its taunt is ready, 5 yd off.
+        CHECK(!SeekVictimRelieverOk(true, true, false, false, true, 5.0f));
+        CHECK(SeekVictimRelieverOk(true, false, false, false, true, 5.0f));
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefDue(true, latch, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 1, 5.0f));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_MainAndFourthTankRelieve: no tank position is a filter; the main tank (index 0) and a fourth tank
+    // (index 3) each claim and confirm a due Son when no other tank holds it. The ranking only decides contention.
+    {
+        SeekReliefLatch mainTank;
+        SeekReliefClockTick(mainTank, true, 5000);
+        CHECK(SeekVictimReliefDue(true, mainTank, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, mainTank, 7, 6000, 0, 5.0f));
+        CHECK(SeekVictimReliefPreExec(mainTank, 7, 6000) == SeekReliefGate::Confirm);
+        CHECK(mainTank.takes == 1);
+        SeekReliefLatch fourthTank;
+        SeekReliefClockTick(fourthTank, true, 5000);
+        CHECK(SeekVictimReliefDue(true, fourthTank, 6000));
+        CHECK(SeekVictimReliefClaimFor(true, fourthTank, 8, 6000, 3, 5.0f));
+        CHECK(SeekVictimReliefPreExec(fourthTank, 8, 6000) == SeekReliefGate::Confirm);
+        CHECK(fourthTank.takes == 1);
+    }
+    // VictimRelief_OffTankRankedBeforeTheMainTank: the main tank (tanks[0]) is the raid's Hakkar tank, so it is the
+    // last reliever. A main tank's claim is taken over by any off-tank whatever the distance, never the reverse; among
+    // off-tanks the nearer one takes over, and an equal-distance higher index is refused.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 0, 4.0f));  // the main tank, nearest, picks first
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 2, 9.0f));  // an off-tank takes it over
+        CHECK(latch.claimTaker == 8);
+        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 0, 3.0f));  // the main tank cannot take it back
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 10, 6000, 2, 9.0f)); // equal distance, higher index: refused
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Refuse); // displaced: acts on nothing
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+    }
+    // VictimRelief_OffTankNearerTakesOver: among off-tanks the nearer wins the claim without moving its stamp, a tie
+    // goes to the lower tank index, and the displaced picker cannot confirm over the new one.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 1, 8.0f));  // the farther tank picks first
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000, 2, 4.0f));  // nearer: takes the claim over
+        CHECK(latch.claimTaker == 8);
+        CHECK(latch.claimMs == 6000);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 9, 6000, 3, 6.0f));  // farther than the holder: refused
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 10, 6000, 2, 4.0f)); // equal distance, higher index: refused
+    }
+    // VictimRelief_OnlyTheOwnerActs (the takeover finding): the farther tank picks, the nearer one takes over, then
+    // both execute, in both orders: only the owner's take produces a side effect (a counted call at the gate), and
+    // only its confirmation is counted. The displaced task fails before any attack or taunt.
+    {
+        auto sideEffects = [](SeekReliefLatch& latch, std::uint64_t self)
+        {
+            return SeekVictimReliefPreExec(latch, self, 6000) != SeekReliefGate::Refuse ? 1 : 0;
+        };
+        SeekReliefLatch displacedFirst;
+        SeekReliefClockTick(displacedFirst, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, displacedFirst, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, displacedFirst, 8, 6000, 2, 4.0f));
+        int effects = sideEffects(displacedFirst, 7);
+        CHECK(effects == 0);
+        effects += sideEffects(displacedFirst, 8);
+        CHECK(effects == 1);
+        CHECK(displacedFirst.takes == 1);
+        CHECK(displacedFirst.lastTaker == 8);
+        SeekReliefLatch ownerFirst;
+        SeekReliefClockTick(ownerFirst, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, ownerFirst, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, ownerFirst, 8, 6000, 2, 4.0f));
+        effects = sideEffects(ownerFirst, 8);
+        CHECK(effects == 1);
+        effects += sideEffects(ownerFirst, 7);
+        CHECK(effects == 1);
+        CHECK(ownerFirst.takes == 1);
+        CHECK(ownerFirst.lastTaker == 8);
+    }
+    // VictimRelief_ClaimExpires: an unconfirmed claim stops blocking after 1000 ms.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 4294966296u); // 1000 ms before 0: the dwell passes at once
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 0));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 999));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 1000));
+        CHECK(latch.claimTaker == 8);
+    }
+    // VictimRelief_CapHoldsWithTwoTakers: with one start already, A and B race for the second; it goes to one of
+    // them at least 8 s later, and the cap stops any third.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        const auto firstStartMs = latch.lastStartMs;
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 14000));
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 14000));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 2);
+        CHECK(latch.lastStartMs - firstStartMs >= kSeekVictimReliefRetakeMs);
+        CHECK(!SeekVictimReliefClaimFor(true, latch, 8, 22000));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 22000) == SeekReliefGate::Refuse);
+        CHECK(latch.takes == 2);
+    }
+    // VictimRelief_FailedTakeRollsBack: a take another tank already lost is refused before any side effect and leaves
+    // the owner's claim alone; a confirmed take that then issues neither order rolls its own confirmation back (no
+    // count, no window) and the Son is claimable at once.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000));
+        CHECK(SeekVictimReliefPreExec(latch, 8, 6000) == SeekReliefGate::Refuse);
+        CHECK(latch.claimTaker == 7);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        SeekVictimReliefRollback(latch, 7, 6000);
+        CHECK(latch.claimTaker == 0);
+        CHECK(latch.takes == 0);
+        CHECK(latch.activeTaker == 0);
+        CHECK(latch.lastStartMs == 0);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 6000));
+    }
+    // VictimRelief_TakeoverFailedCastRollsBack: the new owner's confirmed take issues nothing (its cast fails): its
+    // rollback restores the previous take's stamps, so the 8 s spacing still runs from it, and the displaced tank
+    // cannot act.
+    {
+        SeekReliefLatch latch;
+        SeekReliefClockTick(latch, true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 6000, 1, 8.0f));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 6000) == SeekReliefGate::Confirm);
+        CHECK(latch.takes == 1);
+        // 8 s later a fresh claim passes to the nearer off-tank, whose take then fails.
+        CHECK(SeekVictimReliefClaimFor(true, latch, 7, 14000, 1, 8.0f));
+        CHECK(SeekVictimReliefClaimFor(true, latch, 8, 14000, 2, 4.0f));
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Refuse); // displaced: acts on nothing
+        CHECK(SeekVictimReliefPreExec(latch, 8, 14000) == SeekReliefGate::Confirm);
+        SeekVictimReliefRollback(latch, 8, 14000);
+        CHECK(latch.takes == 1);          // the first take still stands
+        CHECK(latch.lastStartMs == 6000); // and so does its spacing
+        CHECK(latch.lastTaker == 7);
+        CHECK(latch.activeTaker == 0);
+        CHECK(SeekVictimReliefPreExec(latch, 7, 14000) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefPreExec(latch, 8, 14000) == SeekReliefGate::Refuse);
+        CHECK(SeekVictimReliefDue(true, latch, 14000)); // a retry is due 8 s after the take that stands
+    }
+    // VictimRelief_LatchesIsolatedByInstance: the same Son guid in two map instances is two latches (the production
+    // key helper). A claim, a start and the count in one leave the other's latch untouched, and back.
+    {
+        SeekReliefLatches latches;
+        const auto first = SeekReliefKey(1, 99);
+        const auto second = SeekReliefKey(2, 99);
+        SeekReliefClockTick(latches[first], true, 5000);
+        SeekReliefClockTick(latches[second], true, 5000);
+        CHECK(SeekVictimReliefClaimFor(true, latches[first], 7, 6000));
+        CHECK(SeekVictimReliefPreExec(latches[first], 7, 6000) == SeekReliefGate::Confirm);
+        CHECK(latches[first].takes == 1);
+        CHECK(latches[second].takes == 0);
+        CHECK(latches[second].claimTaker == 0);
+        CHECK(latches[second].lastStartMs == 0);
+        CHECK(SeekVictimReliefClaimFor(true, latches[second], 8, 6000));
+        CHECK(SeekVictimReliefPreExec(latches[second], 8, 6000) == SeekReliefGate::Confirm);
+        CHECK(latches[second].takes == 1);
+        CHECK(latches[first].takes == 1);
+        CHECK(latches[first].claimTaker == 0);
+        CHECK(latches[first].lastTaker == 7);
+        CHECK(latches[second].lastTaker == 8);
+    }
+    // VictimRelief_SweepOnlyOwnInstance: a stale latch of another instance survives the caller's sweep; the caller's
+    // stale one drops and a fresh one stays.
+    {
+        SeekReliefLatches latches;
+        latches[SeekReliefKey(1, 10)].seenMs = 1000;
+        latches[SeekReliefKey(1, 11)].seenMs = 129999;
+        latches[SeekReliefKey(2, 10)].seenMs = 1000;
+        SweepSeekReliefLatches(latches, 1, 130000);
+        CHECK(latches.count(SeekReliefKey(1, 10)) == 0);
+        CHECK(latches.count(SeekReliefKey(1, 11)) == 1);
+        CHECK(latches.count(SeekReliefKey(2, 10)) == 1);
+    }
+    // VictimRelief_SweepUsesFreshClock: a latch whose stamp is newer than the clock the caller passed (a stamp landed
+    // after a pre-lock read) is not erased by the unsigned wrap; one that is really stale still drops.
+    {
+        SeekReliefLatches latches;
+        latches[SeekReliefKey(1, 10)].seenMs = 5000;
+        latches[SeekReliefKey(1, 11)].seenMs = 135000;
+        SweepSeekReliefLatches(latches, 1, 130000);
+        CHECK(latches.count(SeekReliefKey(1, 10)) == 0);
+        CHECK(latches.count(SeekReliefKey(1, 11)) == 1);
     }
 
     std::cout << "All seek-aura policy tests passed.\n";

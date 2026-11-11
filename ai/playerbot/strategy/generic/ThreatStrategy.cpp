@@ -2,10 +2,14 @@
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
 #include "playerbot/strategy/actions/FankrissFocusActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/values/ThreatValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/BossTacticsMgr.h"
+#include "playerbot/strategy/actions/GenericActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/ThreatCapPolicy.h"
+#include "playerbot/ServerFacade.h"
 #include "playerbot/BotActionLog.h"
 #include "Spells/SpellMgr.h"
 #include "../../../../runtime/CommandedGroupQuery.h"
@@ -20,6 +24,40 @@ using namespace ai;
 
 namespace
 {
+// The white damage the threat multiplier exempts: the melee auto-attack, the wand's Shoot and the hunter's Auto Shot.
+// The successor white stop has to see them (AiPlayerbot.DungeonRunThreatSuccessorStrict, ThreatCapPolicy.h).
+bool AutoAttackAction(Action* action)
+{
+    return dynamic_cast<MeleeAction*>(action) || dynamic_cast<CastShootAction*>(action) ||
+        action->getName() == "auto shot";
+}
+
+// One BossTacticsThreatReset row per bot per reset window: a walk reads whether the hold fired when it should. The key
+// packs the reset and which of the three gap windows it is, so one reset can log up to three windows.
+std::mutex g_threatResetLogMutex;
+std::unordered_map<std::uint64_t, std::uint64_t> g_threatResetLog;
+
+void LogThreatResetHold(PlayerbotAI* ai, Player* bot, std::uint8_t pct, float ref, std::uint32_t sinceMs,
+                        std::uint32_t lastResetMs, std::uint32_t windowIndex)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    const std::uint64_t windowKey = (static_cast<std::uint64_t>(lastResetMs) << 8) | windowIndex;
+    {
+        std::lock_guard<std::mutex> lock(g_threatResetLogMutex);
+        auto const it = g_threatResetLog.find(bot->GetObjectGuid().GetRawValue());
+        if (it != g_threatResetLog.end() && it->second == windowKey)
+            return;
+        g_threatResetLog[bot->GetObjectGuid().GetRawValue()] = windowKey;
+        if (g_threatResetLog.size() > 4096)
+            g_threatResetLog.clear();
+    }
+    char info1[96];
+    snprintf(info1, sizeof(info1), "reset hold: pct=%u ref=%.0f since_ms=%u", static_cast<unsigned>(pct), ref,
+             sinceMs);
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsThreatReset", info1, "");
+}
+
 // One row per bot and second while an interrupt is vetoed with AiPlayerbot.InterruptIgnoresThreat on: the bot's
 // threat, the tank's, the interrupt's flat threat and the pull line it was measured against, so a live run shows why
 // a Kick or Counterspell still waited (the engine's own `MULT threat x0.000` line carries no numbers).
@@ -54,6 +92,43 @@ void LogInterruptVeto(PlayerbotAI* ai, Player* bot, CastInterruptSpellAction con
 }
 }
 
+bool ai::ThreatResetHolds(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+        return false;
+    if (!target || target->IsPlayer() || !bot->GetGroup())
+        return false;
+    if (PlayerbotAI::IsTank(bot) || PlayerbotAI::IsHeal(bot))
+        return false;
+    // The row is read before the fight's seek snapshot: the snapshot costs a lock.
+    const ThreatResetWindow* const win = GetBossTactics().ThreatResetWindowOf(target->GetMapId(), target->GetEntry());
+    if (!win)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
+        return false;
+    }
+    SeekCycleView view;
+    if (!SeekCycleSnapshot(bot->GetInstanceId(), target->GetObjectGuid().GetRawValue(), view) || !view.valid)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
+        return false;
+    }
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    const std::uint32_t sinceMs = ThreatResetSince(nowMs, view.lastResetMs, view.engageMs);
+    const std::uint32_t windowIndex = ThreatResetWindowIndex(sinceMs, win->minGapMs, win->maxGapMs);
+    // A shut window holds nothing: drop the latch before the tank list is built, so the common read costs no scan.
+    if (windowIndex == 0)
+    {
+        ai->ThreatResetCap().Update(false, false, 0.0f, 0.0f, 0);
+        return false;
+    }
+    const float botThreat = sServerFacade.GetThreatManager(target).getThreat(bot);
+    const float ref = ThreatValue::GetResetSuccessorThreat(ai, target);
+    const bool held = ai->ThreatResetCap().Update(true, true, botThreat, ref, win->stopPct);
+    if (held)
+        LogThreatResetHold(ai, bot, ThreatPctSaturated(botThreat, ref), ref, sinceMs, view.lastResetMs, windowIndex);
+    return held;
+}
 float ThreatMultiplier::GetValue(Action* action)
 {
     // Per-fight suppression (mod-playerbots "neglect threat"): a boss
@@ -62,7 +137,42 @@ float ThreatMultiplier::GetValue(Action* action)
     if (AI_VALUE(bool, "neglect threat"))
         return 1.0f;
 
-    if (action == NULL || action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
+    if (action == NULL)
+        return 1.0f;
+
+    // AiPlayerbot.DungeonRunThreatResetWindow: around each expected Cause Insanity, a damage dealer at or above the
+    // row's stop percent of the best tank that does not hold Hakkar stops every damage action on him, white damage
+    // included, so the reset hands him to a tank. Heals and cures are never held, and an action aimed at another
+    // target keeps its damage.
+    if (sPlayerbotAIConfig.dungeonRunThreatResetWindow)
+    {
+        Unit* const resetTarget = AI_VALUE(Unit*, "current target");
+        if (!ThreatCapExempt(dynamic_cast<CastHealingSpellAction*>(action) != nullptr,
+                             dynamic_cast<CurePartyMemberAction*>(action) != nullptr,
+                             sPlayerbotAIConfig.dungeonRunCureIgnoresThreat) &&
+            (AutoAttackAction(action) || action->GetThreatType() != ActionThreatType::ACTION_THREAT_NONE) &&
+            (!action->GetTarget() || action->GetTarget() == resetTarget) &&
+            ThreatResetHolds(ai, bot, resetTarget))
+            return 0.0f;
+    }
+
+    // AiPlayerbot.DungeonRunThreatSuccessorStrict: on a boss whose `threat_successor` row carries `strict` (a plain
+    // successor row clears the latch and keeps the old exemption) the auto-attack, the wand's Shoot and
+    // Auto Shot do not start again while this bot's white stop holds (92 % stop, 85 % resume; tanks never; a 0 reference
+    // never stops them). The row decides before the percentage is read; a target without it clears the latch. Auto Shot
+    // is SINGLE-threat, so the 80 % veto below still gates its restart. Key off: the old exemption below.
+    if (sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict && AutoAttackAction(action))
+    {
+        Unit* const target = AI_VALUE(Unit*, "current target");
+        if (!StrictSuccessorTarget(sPlayerbotAIConfig.dungeonRunThreatSuccessorStrict, StrictThreatSuccessorRow(target)))
+            ai->SuccessorWhiteCap().Update(false, false, 0);
+        else if (ai->SuccessorWhiteCap().Update(true, PlayerbotAI::IsTank(bot),
+                     AI_VALUE2(uint8, "threat", "current target"),
+                     AI_VALUE2(float, "tank threat", "current target") == 0.0f))
+            return 0.0f;
+    }
+
+    if (action->GetThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     // Burn the raid's timed Fankriss Spawn before its enrage. Single-target
@@ -80,6 +190,9 @@ float ThreatMultiplier::GetValue(Action* action)
     // never the worse choice. mod-playerbots does not give its healers this
     // multiplier by default, and its FocusMultiplier exempts heals the same
     // way.
+    // A party cure or dispel joins the heals behind AiPlayerbot.DungeonRunCureIgnoresThreat: it is a SINGLE-threat
+    // CastSpellAction, so a healer whose own threat on its target sat at the high line had every cure vetoed and
+    // Jin'do's Hex stayed on the tank for its full 5 s (ThreatCapPolicy.h ThreatCapExempt).
     // An interrupt joins the heals behind AiPlayerbot.InterruptIgnoresThreat: Kick and the other pure interrupts are
     // SINGLE-threat spell actions, so a rogue at the high line had every Kick vetoed and stood idle at full energy
     // while the caster finished. It is measured on the interrupt's own target (the "interrupt target" pick, which can
@@ -87,6 +200,7 @@ float ThreatMultiplier::GetValue(Action* action)
     // threat (spell threat table) under 110 % of the tank's when the mob can reach the bot in melee, 130 % otherwise
     // (ThreatCapPolicy.h ThreatCapInterruptExempt). Earth Shock and Death Coil rows stay gated.
     bool const heal = dynamic_cast<CastHealingSpellAction*>(action) != nullptr;
+    bool const cure = dynamic_cast<CurePartyMemberAction*>(action) != nullptr;
     CastInterruptSpellAction const* interruptAction = dynamic_cast<CastInterruptSpellAction*>(action);
     bool const interrupt = interruptAction != nullptr && interruptAction->IgnoresThreatCap();
     bool const interruptKey = interrupt && sPlayerbotAIConfig.interruptIgnoresThreat;
@@ -104,8 +218,9 @@ float ThreatMultiplier::GetValue(Action* action)
         // The core's own test for the 110 % rule: can the mob reach this attacker with a melee swing.
         interruptRanged = !interruptTarget || !interruptTarget->CanReachWithMeleeAutoAttack(bot);
     }
-    if (heal || ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, interruptBotThreat,
-                                         interruptTankThreat, interruptFlatThreat, interruptRanged))
+    if (ThreatCapExempt(heal, cure, sPlayerbotAIConfig.dungeonRunCureIgnoresThreat) ||
+        ThreatCapInterruptExempt(interrupt, sPlayerbotAIConfig.interruptIgnoresThreat, interruptBotThreat,
+                                 interruptTankThreat, interruptFlatThreat, interruptRanged))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
@@ -156,6 +271,21 @@ float ThreatMultiplier::GetValue(Action* action)
     }
 
     return 1.0f;
+}
+
+// The successor white stop (AiPlayerbot.DungeonRunThreatSuccessorStrict): the trigger stops the swing and the auto-repeat
+// itself in the trigger pass and is never active, so its handler is never queued. The handler is a no-op at
+// ACTION_PASSTROUGH only so the node's first relevance is 100: Engine::ProcessTriggers(minimal) checks just the nodes at
+// 100 or more, and an empty node (-1) was skipped on every minimal tick, letting a swing run on past the line. Key off:
+// the trigger returns at its first line.
+void ThreatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
+{
+    triggers.push_back(new TriggerNode("successor white cap",
+        NextAction::array(0, new NextAction("successor white cap noop", ACTION_PASSTROUGH), NULL)));
+    // AiPlayerbot.DungeonRunThreatResetWindow's white-damage stop: the trigger stops the swing and auto-repeat in the
+    // trigger pass and is never active, so its handler is never queued (the same shape as the successor stop).
+    triggers.push_back(new TriggerNode("threat reset white stop",
+        NextAction::array(0, new NextAction("threat reset white stop noop", ACTION_PASSTROUGH), NULL)));
 }
 
 void ThreatStrategy::InitCombatMultipliers(std::list<Multiplier*> &multipliers)

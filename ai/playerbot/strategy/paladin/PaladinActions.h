@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 
 namespace ai
 {
@@ -596,10 +597,17 @@ namespace ai
 		virtual std::string getName() override { return "purify disease on party"; }
 	};
 
+	// Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+	// inherits this isUseful, and GetTarget() there is the value's pick.
 	class CastHandOfReckoningAction : public CastSpellAction
 	{
 	public:
 		CastHandOfReckoningAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of reckoning") {}
+
+		virtual bool isUseful() override
+		{
+			return CastSpellAction::isUseful() && !TauntRefusedByGate(ai, bot, GetTarget(), "hand of reckoning");
+		}
 	};
 
 	// Taunt the mob picked by "attacker of non-tank target"; the cast reads

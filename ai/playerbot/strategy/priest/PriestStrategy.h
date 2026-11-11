@@ -13,6 +13,8 @@ namespace ai
         virtual void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
         virtual void InitReactionTriggers(std::list<TriggerNode*>& triggers) override;
         virtual void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
     class PriestPvpStrategy : public ClassPvpStrategy

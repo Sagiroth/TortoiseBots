@@ -268,6 +268,16 @@ NOT_BOSSES.update({15963, 15957, 15475, 15896, 15378, 15379, 15380, 15502, 15503
 BOSS_PLANS["emerald_sanctum"] = 807
 SEEDED_BOSSES.update({(807, 60747): "Erennius", (807, 60748): "Solnius"})
 NOT_BOSSES.update({883, 1420})
+# Onyxia's Lair (20261109200000), the 40-man raid of map 249: its one boss step, Onyxia 10184, from the core's
+# creature_template. The Onyxian Warders 12129 are trash pulls; the whelps 11262 have no spawn on the map (Onyxia
+# summons them); Cindarion 50143 spawns on the map (core update 20261108142635, guid 473281) and the Hatcher 50144
+# is summoned at the 40 % landing (boss_onyxia.cpp:720-721): neither is seeded here.
+BOSS_PLANS["onyxias_lair"] = 249
+SEEDED_BOSSES.update({(249, 10184): "Onyxia", (249, 50143): "Cindarion"})
+# The Hatcher 50144 is summoned at the 40 % landing and fought as a tactic target, never a boss row's entry:
+# a seeded boss it must not be, so the boss DELETE must not scope it either.
+NOT_BOSSES.update({50144})
+
 # Lower Karazhan Halls (20261028100000), the 10-man raid of map 532: its five boss steps, names from the core's creature_template
 # (all rank 3). Lord Blackwald II 61222 has no creature spawn row: the instance script (instance_lower_karazhan_halls.cpp Update)
 # summons him at -11088.2 -1995.74 76.1774 when the Dark Rider Champion 61204 is DONE, and the plan's boss step is him. A
@@ -375,6 +385,10 @@ def leg_steps(rows, leg):
 
 def dist(row, x, y):
     return math.hypot(float(row["x"]) - x, float(row["y"]) - y)
+
+
+def dist3(row, x, y, z):
+    return math.sqrt((float(row["x"]) - x) ** 2 + (float(row["y"]) - y) ** 2 + (float(row["z"]) - z) ** 2)
 
 
 def created_columns():
@@ -4850,13 +4864,19 @@ class DungeonPlanSql(unittest.TestCase):
             self.assertNotRegex(text, r"(?m)^INSERT INTO `ai_dungeon_boss`", name)  # REPLACE, so a re-run keeps one row
             # The DELETE before the rows is scoped to exactly the maps the file seeds: a seeded map it leaves out keeps a
             # row a later file drops; a map it names beyond them loses rows it does not put back. A map shared by several
-            # plans (189, the four SM wings) scopes the DELETE to its own boss entries too.
-            seeded = {int(m) for m in re.findall(r"(?m)^\((\d+), \d+, '", text)}
-            seeded_entries = {(int(m), int(e)) for m, e in re.findall(r"(?m)^\((\d+), (\d+), '", text)}
+            # plans (189, the four SM wings) scopes the DELETE to its own boss entries too. The seeded rows come only from
+            # the REPLACE INTO `ai_dungeon_boss` statements themselves, each up to its `;`: the same file's other statements
+            # (a second boss REPLACE, or the ai_boss_tactic rows whose target_entry column shares the (map, entry) shape)
+            # do not count.
+            boss_text = " ".join(m.group(0) for m in re.finditer(r"(?s)REPLACE INTO `ai_dungeon_boss` \(.*?;", text))
+            self.assertTrue(boss_text, "no REPLACE INTO `ai_dungeon_boss` statement in %s" % name)
+            seeded = {int(m) for m in re.findall(r"(?m)^\((\d+), \d+, '", boss_text)}
+            seeded_entries = {(int(m), int(e)) for m, e in re.findall(r"(?m)^\((\d+), (\d+), '", boss_text)}
             scoped = re.findall(r"DELETE FROM `ai_dungeon_boss` WHERE `map` IN \(([\d, ]+)\)(?: AND `entry` IN \(([\d, ]+)\))?;", text)
             self.assertEqual(len(scoped), 1, name)
             if scoped[0][1]:
-                self.assertEqual({int(e) for e in scoped[0][1].split(",")}, {e for _m, e in seeded_entries}, name)
+                scoped_entries = {int(e) for e in scoped[0][1].split(",")}
+                self.assertEqual(scoped_entries, {e for _m, e in seeded_entries}, name)
             self.assertEqual({int(m) for m in scoped[0][0].split(",")}, seeded, name)
 
     def test_boss_tactic_inserts_delete_their_own_keys_first(self):
@@ -6246,6 +6266,52 @@ class DungeonPlanSql(unittest.TestCase):
         self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["zul_gurub"])
         self.assertNotIn("`ai_dungeon_boss`", text)
         self.assertNotIn("`ai_boss_tactic`", text)
+
+    def test_onyxias_lair_is_the_fresh_two_leg_plan(self):
+        # 20261110120100 (turtle-agent plan/ony-walk2 f752900f, 2026-11-10): the 40-man Onyxia's Lair plan for the
+        # 1181dev fight (Cindarion 50143, Hatchers 50144, Inciter 49016 and Flamespawn 49017 trash), two legs:
+        # `tunnel` with seven packs and the boss leg `onyxia`. Packs 2, 4, 5 and 6 are stand pulls (flag 8192,
+        # param 0: the run leader's 40); pack 0 is a plain pull in route order (no 8192); the plan row carries
+        # kill_first '12129' (the Warder's instant Fire Nova 20203). The boss row is Onyxia 10184 at her spawn;
+        # the stand row (-80, -211.4) ahead of it stands at least 75 yd 3D from her spawn (58 yd wake plus bounding
+        # radii, the raid ring and margin). Walk 1's five resumed plain pulls of pack 0 killed it in about a minute
+        # with 0-3 deaths; the stand's sight line is a vmap question the offline navmesh cannot answer.
+        name, text = newest_plan_text("onyxias_lair")
+        self.assertEqual(name, "20261110120100_world.sql")
+        self.assertIn("('onyxias_lair', 249, '', '', '12129', 'turtle-agent f752900f", text)
+        self.assertEqual([v[0] for v in leg_rows(text, "onyxias_lair").values()], ["tunnel", "onyxia"])
+        rows = [r for r in self.step_rows(text) if r["plan"] == "onyxias_lair"]
+        leg0 = leg_steps(rows, 0)
+        leg1 = leg_steps(rows, 1)
+        self.assertEqual({r["kind"] for r in rows}, {"move", "pull", "boss"})
+        pulls = [r for r in rows if r["kind"] == "pull"]
+        self.assertEqual(len(pulls), 7)
+        self.assertEqual([(r["entries"], r["radius"]) for r in pulls],
+                         [("12129", "1"), ("12129", "1"), ("49017,49016,12129", "20"), ("12129", "1"),
+                          ("12129,49016", "10"), ("49017", "3"), ("49016,49017,12129", "8")])
+        # Pulls 2, 4, 5 and 6 carry the stand-pull flag with param 0; pack 0 and the rest carry no flag.
+        flagged = {int(r["seq"]) for r in leg0 if r["kind"] == "pull" and int(r["flags"]) & 8192}
+        self.assertEqual(flagged, {20, 30, 32, 34})
+        for r in pulls:
+            if int(r["flags"]) & 8192:
+                self.assertEqual(r["param"], "0", r["seq"])
+            else:
+                self.assertEqual(r["flags"], "0", r["seq"])
+        # Pack 0 is the plain pull: same spot and radius, no stand-pull flag or comment.
+        pack0 = [r for r in pulls if r["entries"] == "12129"][0]
+        self.assertEqual((pack0["x"], pack0["y"], pack0["radius"]), ("49.82", "-114.61", "1"))
+        self.assertEqual(pack0["comment"], "pull group 0")
+        # The boss leg: the corridor-junction `to`, the two floor approach points, the stand, then Onyxia.
+        self.assertEqual([(r["kind"], r["comment"]) for r in leg1],
+                         [("move", "to"), ("move", "boss approach"),
+                          ("move", "boss approach"), ("boss", "boss")])
+        self.assertEqual((leg1[-1]["kind"], leg1[-1]["entry"], leg1[-1]["x"], leg1[-1]["y"], leg1[-1]["z"]),
+                         ("boss", "10184", "0.69628", "-211.972", "-86.075"))
+        # The stand row ahead of the boss row is at least 75 yd 3D from her spawn.
+        stand = leg1[-2]
+        self.assertEqual((stand["x"], stand["y"], stand["z"]), ("-80", "-211.4", "-83"))
+        self.assertGreaterEqual(dist3(stand, 0.69628, -211.972, -86.075), 75.0)
+        self.assertEqual(re.findall(r"(?m)^DELETE FROM `ai_dungeon_step` WHERE `plan` = '(\w+)';", text), ["onyxias_lair"])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/actions/GenericActions.h"
+#include "playerbot/strategy/actions/BossTacticsActions.h"
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
 #include "playerbot/policy/class/ShamanFireGatePolicy.h"
 #include "playerbot/policy/class/ShamanTankPolicy.h"
@@ -484,7 +485,19 @@ namespace ai
     // row queues it at warrior protection priority (INTERRUPT+1) when a mob
     // peels onto a non-tank member; the target check mirrors the warrior
     // CastTauntAction guard (victim exists and is not us).
-    MELEE_ACTION_U(CastEarthshakerSlamAction, "earthshaker slam", GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);
+    // Never at a subject the taunt gate refuses (a Shade of Jin'do, a taunt-immune boss); the on-attacker action below
+    // inherits this isUseful.
+    class CastEarthshakerSlamAction : public CastMeleeSpellAction
+    {
+    public:
+        CastEarthshakerSlamAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "earthshaker slam") {}
+
+        virtual bool isUseful() override
+        {
+            return GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot &&
+                !TauntRefusedByGate(ai, bot, GetTarget(), "earthshaker slam");
+        }
+    };
 
     // Taunt the mob picked by "attacker of non-tank target". CastMeleeSpellAction's
     // own reach prerequisite targets that mob (a taunt past 5 yards fails, so

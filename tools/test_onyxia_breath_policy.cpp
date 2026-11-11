@@ -12,6 +12,7 @@
 
 using ai::BreathAxisFromFacing;
 using ai::BreathAxisIndex;
+using ai::BreathDodgeYieldsToStand;
 using ai::IsOnyxiaBreathSpell;
 using ai::kBreathSafeZoneRadius;
 using ai::kOnyxiaEntry;
@@ -68,6 +69,13 @@ int main()
     CHECK(!ShouldMoveToBreathSafeZone(true, true));
     CHECK(!ShouldMoveToBreathSafeZone(false, false));
     std::cout << "  [PASS] move/hold rule\n";
+
+    // The dodge yields to a stand seat only with the flag on.
+    CHECK(BreathDodgeYieldsToStand(true, true));
+    CHECK(!BreathDodgeYieldsToStand(false, true));
+    CHECK(!BreathDodgeYieldsToStand(true, false));
+    CHECK(!BreathDodgeYieldsToStand(false, false));
+    std::cout << "  [PASS] dodge yields to a seat with the flag on\n";
 
     std::cout << "All onyxia-breath policy tests passed.\n";
     return 0;

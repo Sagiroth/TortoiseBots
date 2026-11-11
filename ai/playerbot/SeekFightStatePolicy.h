@@ -20,18 +20,27 @@
 #include <cstdio>
 #include <iterator>
 #include <map>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
 
 namespace ai
 {
-    // One Son's entry in the healer-held clock: `sinceMs` is the first read that saw it fighting a non-tank, `seenMs`
-    // the last one that did.
+    // An age that never wraps: a bot keeps its WorldTimer sample while waiting for the map's lock, so a sample can
+    // arrive after a newer one. An older sample reads age 0, never a huge unsigned difference.
+    inline std::uint32_t SeekAgeMs(std::uint32_t nowMs, std::uint32_t stampMs)
+    {
+        return nowMs < stampMs ? 0 : nowMs - stampMs;
+    }
+
+    // One Son's entry in a clock: `sinceMs` is the first read that fed it, `seenMs` the last read that saw the Son
+    // alive, `tickedMs` the last read that fed it (the hold clock's own sweep; the healer clock sweeps on `seenMs`).
     struct SeekHeldSon
     {
         std::uint32_t sinceMs = 0;
         std::uint32_t seenMs = 0;
+        std::uint32_t tickedMs = 0;
     };
 
     // What one bot's read saw of one Son it can reach: alive and fighting, and whether its victim is a player tank or a
@@ -46,15 +55,36 @@ namespace ai
     };
 
     // An entry nobody has seen on a non-tank for this long is dropped (a Son whose reads stopped: it left every bot's
-    // reach, or the raid left). Far above the 8 s take, far below a fight.
+    // reach, or the raid left). Far above the 3 s take, far below a fight.
     constexpr std::uint32_t kSeekHealerStaleMs = 20000;
+
+    // One Son's hold read: whether this read saw it alive, and whether it feeds the one fight-wide record
+    // (SeekSonTicks).
+    struct SeekHoldSeen
+    {
+        std::uint64_t guid = 0;
+        bool alive = false;
+        bool ticks = false;
+    };
+
+    // A hold entry below the cap that no read ticked for this long is dropped: the fight stopped holding the Son, and
+    // the next tick starts a clean clock. The feed is fight-wide, so a bot that selected another Son (or none) cannot
+    // erase or restart the record of the Son the others are holding; an entry a read did not tick is left alone.
+    constexpr std::uint32_t kSeekHoldUntickedMs = 5000;
+
+    // A capped hold entry no read has seen the Son alive for this long is dropped. A read only sees the Sons inside its
+    // reach (a grid walk around the bot), so one bot not seeing a Son says nothing; the sweep only removes Sons that
+    // left every bot's view or died out of it, and a Son respawning under the same guid then starts a clean hold
+    // instead of inheriting the old release. One cap long, so a genuinely held Son is never dropped between two reads.
+    constexpr std::uint32_t kSeekHoldStaleMs = 20000;
 
     // The Son-on-a-non-tank clock after one bot's read. Every bot of the fight feeds the one record, and a read only
     // sees the Sons inside ITS reach (a range-limited grid search), so a Son the read did not see says nothing: a Son
     // this read saw anywhere but on a non-tank (dead, out of combat, on a tank, with no victim or on a pet) leaves the
     // clock; one it saw on a non-tank enters it (or refreshes `seenMs`, never `sinceMs`); a Son it did not see stays
-    // untouched until the sweep drops what no read has seen on a non-tank for kSeekHealerStaleMs. Erasing every guid the read did not list kept the clock from ever reaching
-    // 8 s, since the bots that did not see the Son erased it between the ones that did.
+    // untouched until the sweep drops what no read has seen on a non-tank for kSeekHealerStaleMs. Erasing every guid
+    // the read did not list kept the clock from ever reaching the take, since the bots that did not see the Son erased
+    // it between the ones that did.
     inline void SeekHealerClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekSonSeen>& seen,
                                     std::uint32_t nowMs)
     {
@@ -69,12 +99,12 @@ namespace ai
             }
             auto it = held.find(son.guid);
             if (it == held.end())
-                held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs}));
-            else
+                held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs, nowMs}));
+            else if (nowMs > it->second.seenMs)
                 it->second.seenMs = nowMs;
         }
         for (auto it = held.begin(); it != held.end();)
-            it = nowMs - it->second.seenMs > kSeekHealerStaleMs ? held.erase(it) : std::next(it);
+            it = SeekAgeMs(nowMs, it->second.seenMs) > kSeekHealerStaleMs ? held.erase(it) : std::next(it);
     }
 
     // The Son the first off-tank takes off a non-tank now: the first (lowest guid) of the clock's entries that has been
@@ -83,7 +113,7 @@ namespace ai
     {
         for (const auto& entry : held)
         {
-            if (SeekTakeFightingSonOnHealer(nowMs - entry.second.sinceMs))
+            if (SeekTakeFightingSonOnHealer(SeekAgeMs(nowMs, entry.second.sinceMs)))
                 return entry.first;
         }
         return 0;
@@ -95,13 +125,133 @@ namespace ai
                                            std::uint32_t nowMs)
     {
         auto const it = held.find(son);
-        return it == held.end() ? 0 : nowMs - it->second.sinceMs;
+        return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
+    }
+
+    // Why a hold record ended: the read saw the Son dead, the Son vanished from the map (despawn, evade), no read
+    // ticked it for kSeekHoldUntickedMs, or the capped record was not seen alive for kSeekHoldStaleMs.
+    enum class SeekHoldEndReason
+    {
+        Died,
+        Gone,
+        Unticked,
+        Unseen,
+    };
+
+    // One hold-clock transition: `start` when a read creates a Son's record, `end` when one is erased. `reason` is the
+    // erase's own (unused on a start), `heldMs` the record's age at the erase (0 on a start).
+    struct SeekHoldEvent
+    {
+        std::uint64_t guid = 0;
+        bool start = false;
+        SeekHoldEndReason reason = SeekHoldEndReason::Died;
+        std::uint32_t heldMs = 0;
+    };
+
+    // The hold clock after one bot's read. Every bot of the fight feeds the one record, but each read picks its own
+    // source (the shared gather latch, else its own search around the spot), so a read that selects another Son or
+    // none must not touch this Son's entry: a read that does not tick it changes nothing. A ticking read creates the
+    // entry (`sinceMs = nowMs`) or keeps its first tick and refreshes `tickedMs`; a read that sees the Son alive
+    // refreshes `seenMs`. `sinceMs` is the first tick, and SeekHoldDecision releases the Son at kSeekHoldMaxMs whatever
+    // later reads say.
+    //
+    // An entry is erased only when:
+    // - this read saw the Son dead (or it despawned: no read ticks it and a respawn under the same guid starts clean);
+    // - below the cap, no read ticked it for kSeekHoldUntickedMs (the fight stopped holding it);
+    // - at or past the cap, no read saw the Son alive for kSeekHoldStaleMs. The capped entry stays while the Son is
+    //   alive and seen, so a closing window or a changed victim cannot start a fresh 20 s hold.
+    // `events` (optional) gets one entry per insert (start) and per erase (end, with its reason and the record's age),
+    // so a caller can log the transitions; passing null changes nothing.
+    inline void SeekHoldClockTick(std::map<std::uint64_t, SeekHeldSon>& held, const std::vector<SeekHoldSeen>& seen,
+                                  std::uint32_t nowMs, std::vector<SeekHoldEvent>* events = nullptr)
+    {
+        for (const SeekHoldSeen& son : seen)
+        {
+            auto it = held.find(son.guid);
+            if (!son.alive)
+            {
+                if (it != held.end())
+                {
+                    if (events)
+                        events->push_back(
+                            SeekHoldEvent{son.guid, false, SeekHoldEndReason::Died,
+                                          SeekAgeMs(nowMs, it->second.sinceMs)});
+                    held.erase(it);
+                }
+                continue;
+            }
+            if (son.ticks)
+            {
+                if (it == held.end())
+                {
+                    it = held.insert(std::make_pair(son.guid, SeekHeldSon{nowMs, nowMs, nowMs})).first;
+                    if (events)
+                        events->push_back(SeekHoldEvent{son.guid, true, SeekHoldEndReason::Died, 0});
+                }
+                else if (nowMs > it->second.tickedMs)
+                    it->second.tickedMs = nowMs;
+            }
+            if (it != held.end() && nowMs > it->second.seenMs)
+                it->second.seenMs = nowMs;
+        }
+        for (auto it = held.begin(); it != held.end();)
+        {
+            const bool capped = SeekAgeMs(nowMs, it->second.sinceMs) >= kSeekHoldMaxMs;
+            const std::uint32_t idleMs = capped ? SeekAgeMs(nowMs, it->second.seenMs)
+                                                : SeekAgeMs(nowMs, it->second.tickedMs);
+            if (idleMs > (capped ? kSeekHoldStaleMs : kSeekHoldUntickedMs))
+            {
+                if (events)
+                    events->push_back(
+                        SeekHoldEvent{it->first, false,
+                                      capped ? SeekHoldEndReason::Unseen : SeekHoldEndReason::Unticked,
+                                      SeekAgeMs(nowMs, it->second.sinceMs)});
+                it = held.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    // How long the fight has held this Son (0: no entry, it is not held). The hold reads it (SeekHoldDecision).
+    inline std::uint32_t SeekHeldMs(const std::map<std::uint64_t, SeekHeldSon>& held, std::uint64_t son,
+                                    std::uint32_t nowMs)
+    {
+        auto const it = held.find(son);
+        return it == held.end() ? 0 : SeekAgeMs(nowMs, it->second.sinceMs);
+    }
+
+    // Whether a read logs a Son's release: the fight must still hold a record to release (a Son that was never held is
+    // not "released after 0.0 s"), and one row per hold record is enough — every bot's read can see the same release,
+    // and the first one logs it.
+    inline bool SeekShouldLogRelease(bool hasHoldRecord, bool alreadyLogged)
+    {
+        return hasHoldRecord && !alreadyLogged;
+    }
+
+    // The Sons a read must look up for a death: seen alive by an earlier read of this fight, absent from the read's
+    // living list, and without a death row yet. The caller looks each one up on the map: dead is a death, a missing
+    // creature is a despawn or an evade and not a death.
+    inline std::vector<std::uint64_t> SeekDeathCandidates(const std::set<std::uint64_t>& seen,
+                                                          const std::set<std::uint64_t>& live,
+                                                          const std::set<std::uint64_t>& logged)
+    {
+        std::vector<std::uint64_t> candidates;
+        for (std::uint64_t guid : seen)
+        {
+            if (!live.count(guid) && !logged.count(guid))
+                candidates.push_back(guid);
+        }
+        return candidates;
     }
 
     struct SeekCycleRecord
     {
         std::uint32_t engageMs = 0;     // the fight's combat start (the boss first seen in combat with the group)
         std::uint32_t lastCycleMs = 0;  // the last accepted cycle spell sighting (0: none)
+        // lastCycleMs is the roll's estimate, not a real sighting: a real sighting of that same cycle re-anchors the
+        // clock instead of counting a second cycle (SeekCycleSightingOf).
+        bool lastCycleEstimated = false;
         std::uint32_t lastSeenMs = 0;
         // The row's own clock, copied at every read: the record outlives the row pointer, and SeekCycleSnapshot reads
         // the due time without a row.
@@ -118,6 +268,26 @@ namespace ai
         // The first off-tank takes such a Son off a healer once the third off-tank cannot, and the healer has had it
         // for a while. See SeekHealerClockTick for who may leave the map.
         std::map<std::uint64_t, SeekHeldSon> healerHeldSince;
+        // When each Son of the fight entered the hold: the 20 s cap releases it to the damage dealers (SeekHeldMs).
+        // Only fighting time counts, and a release sticks while the Son lives and is seen (SeekHoldClockTick,
+        // SeekSonTicks).
+        std::map<std::uint64_t, SeekHeldSon> holdSince;
+        // The Sons whose release row this fight already logged for the current hold record: the release is one row per
+        // record, not one per bot's read. Erased when that hold ends or a new one starts. Cleared with the fight (the
+        // whole record).
+        std::set<std::uint64_t> releaseLogged;
+        // The Sons whose hold already ended as gone (they left the map): the clock's later end for the same record is
+        // the same hold and adds no row. Erased when that end arrives. Cleared with the fight.
+        std::set<std::uint64_t> goneLogged;
+        // The reason of each Son's last logged release: the death row reports what the hold actually did. Cleared with
+        // the fight.
+        std::map<std::uint64_t, SeekHoldWhy> lastRelease;
+        // Every Son this fight's Hakkar read saw alive. A guid here that a read no longer lists is looked up: still
+        // alive is out of this read's sight, dead is a death, a missing creature is gone (despawn, evade). Cleared
+        // with the fight.
+        std::set<std::uint64_t> sonsSeen;
+        // The Sons whose death row this fight already logged (one per guid). Cleared with the fight.
+        std::set<std::uint64_t> sonDeathLogged;
         bool ready = false;
         std::uint32_t cycleNo = 0;
         int missing = 0;
@@ -125,12 +295,113 @@ namespace ai
         std::uint32_t siphonSecondAtMs = 0; // the +3 s read, which settles the heal the first one cannot explain
         std::uint32_t siphonThirdAtMs = 0;  // the +9 s read, after the 8 s heal has run its course
         std::uint32_t siphonSeenMs = 0;     // the cycle's first 24324 sighting: the note's clock starts here
+        std::uint32_t siphonSeenHpPct = 0;  // Hakkar's health percent at that sighting
         std::uint32_t siphonCycle = 0;
         int siphonDosed = 0;            // the +1 s read, which the run line reports
         int siphonUndosed = 0;
         int siphonLateDosed = 0;        // the +3 s read, kept beside it
         int siphonLateUndosed = 0;
+        // The Cause Insanity measurement: the charmed guid this fight last saw, when it was first seen, whether its
+        // row is out, and when the group-wide aura scan last ran. Cleared with the fight.
+        std::uint64_t charmGuid = 0;
+        std::uint32_t charmSeenMs = 0;
+        bool charmLogged = false;
+        std::uint32_t charmScanMs = 0;
+        // The Cause Insanity reset clock (DungeonRunThreatResetWindow): when the last new charmed guid was seen, and the
+        // reset before it (the charm row's window state is read against that one).
+        std::uint32_t lastResetMs = 0;
+        std::uint32_t prevResetMs = 0;
     };
+
+    // Cause Insanity's scan result for one fight: a charmed guid that differs from the last one starts its clock (seen
+    // now, row not out); a scan that finds nobody charmed forgets the last one, so the same player charmed again later
+    // logs a new row.
+    inline void SeekCharmScan(SeekCycleRecord& record, std::uint64_t charmed, std::uint32_t nowMs)
+    {
+        if (charmed == 0)
+        {
+            record.charmGuid = 0;
+            record.charmSeenMs = 0;
+            record.charmLogged = false;
+        }
+        else if (charmed != record.charmGuid)
+        {
+            record.prevResetMs = record.lastResetMs;
+            record.lastResetMs = nowMs;
+            record.charmGuid = charmed;
+            record.charmSeenMs = nowMs;
+            record.charmLogged = false;
+        }
+    }
+
+    // DungeonRunSeekCycleRoll: a due time past its grace with no sighting counts the missed siphons as cycles. The record
+    // then reads as if each had been sighted at its estimated time. Returns the rolls applied.
+    inline std::uint32_t SeekRollMissedCycles(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        std::uint32_t const raw = SeekCycleDueMs(record.engageMs, record.lastCycleMs, record.cycleMs);
+        std::uint32_t const rolls = SeekRolledCycles(nowMs, raw, record.cycleMs);
+        if (rolls)
+        {
+            record.cycleNo += rolls;
+            record.lastCycleMs = raw + (rolls - 1) * record.cycleMs;
+            record.lastCycleEstimated = true;
+        }
+        return rolls;
+    }
+
+    // The siphon read's delays: the count runs one second after the sighting and again two seconds later, and the boss's
+    // health is read once more nine seconds after it (the 8 s heal has run its course by then, so that read sees the
+    // heal the +1 s and +3 s reads under-count).
+    constexpr std::uint32_t kSeekSiphonReadMs = 1000;
+    constexpr std::uint32_t kSeekSiphonSecondMs = 3000;
+    constexpr std::uint32_t kSeekSiphonThirdMs = 9000;
+
+    // What a read that sees the row's cycle spell on a group member does with the record's clock. `Next`: no cycle known
+    // or the sighting is at least half a cycle after the last accepted one, so it counts. `Resync`: the clock holds the
+    // roll's estimate (lastCycleEstimated) and the real sighting is too close to count, but it is that cycle's own
+    // siphon (the roll was a few seconds early or late), so the clock re-anchors without a second cycle. `None`: the
+    // raid's other sightings of the same siphon.
+    enum class SeekCycleSighting
+    {
+        None,
+        Next,
+        Resync,
+    };
+
+    inline SeekCycleSighting SeekCycleSightingOf(bool hasAura, std::uint32_t lastCycleMs, std::uint32_t seenMs,
+                                                 std::uint32_t cycleMs, bool estimated)
+    {
+        if (!hasAura)
+            return SeekCycleSighting::None;
+        if (SeekCycleAccepts(lastCycleMs, seenMs, cycleMs))
+            return SeekCycleSighting::Next;
+        return estimated ? SeekCycleSighting::Resync : SeekCycleSighting::None;
+    }
+
+    // The re-sync of a rolled cycle on its real sighting: the sighting is the cycle's clock and its siphon reads, and
+    // the cycle number stays where the roll put it (`siphonCycle` is the cycle the reads report). The caller sets the
+    // sighting's health percent.
+    inline void SeekCycleResync(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        record.lastCycleMs = nowMs;
+        record.siphonAtMs = nowMs + kSeekSiphonReadMs;
+        record.siphonSecondAtMs = nowMs + kSeekSiphonSecondMs;
+        record.siphonThirdAtMs = nowMs + kSeekSiphonThirdMs;
+        record.siphonSeenMs = nowMs;
+        record.siphonCycle = record.cycleNo;
+        record.lastCycleEstimated = false;
+    }
+
+    // The charm row is due once, kSeekCharmWaitMs after the charm was first seen (Hakkar has picked his next victim 1.05 s
+    // after the cast, median). Marks it logged when due.
+    constexpr std::uint32_t kSeekCharmWaitMs = 1500;
+    inline bool SeekCharmRowDue(SeekCycleRecord& record, std::uint32_t nowMs)
+    {
+        if (record.charmGuid == 0 || record.charmLogged || nowMs - record.charmSeenMs < kSeekCharmWaitMs)
+            return false;
+        record.charmLogged = true;
+        return true;
+    }
 
     // Where a siphon read goes: the +1 s read is the cycle's own (the run line reads it), the +3 s read is kept beside
     // it. The second read settles a heal the first cannot explain and must never erase the first; the +9 s read (the

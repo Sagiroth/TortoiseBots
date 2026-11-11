@@ -101,6 +101,10 @@ WarriorGapCloser ai::DecideWarriorGapCloser(PlayerbotAI* ai, Unit** chosen)
             continue;
         if (std::find(units.begin(), units.end(), unit) != units.end())
             continue;
+        // The pre-placed receiver's chase hold (DungeonRunSeekMeetPrePlaceHold, walk 59 F5): no Intercept or Charge
+        // (and no stance swap for one) onto the anchored boss once its pre-place walk began.
+        if (SeekMeetPrePlaceHoldsChase(ai, bot, unit, "gapclose"))
+            continue;
 
         WarriorGapCloserFacts f;
         f.enabled = true;

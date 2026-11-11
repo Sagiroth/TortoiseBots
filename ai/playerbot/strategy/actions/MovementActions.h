@@ -81,6 +81,10 @@ namespace ai
 
         // False when the path leads nowhere (fewer than two points): nothing was launched.
         bool DispatchMovement(TravelPath movePath, bool generatePath, bool masterWalking);
+        // The navmesh-island unstick (AiPlayerbot.DungeonRunPlaceUnstick, PlaceUnstickPolicy.h): feeds a
+        // failed MoveTo2 dispatch into the NOPATH clock and teleports the bot to its master once the
+        // policy says so. True when the bot was teleported.
+        bool TryPlaceUnstick(LastMovement& lastMove);
         // MoveTo2's swim hand-off (SwimPathPolicy.h ChooseSwimHandoff). Moving (MoveTo2 returns true),
         // Refused (a guard refused its line: MoveTo2 returns false), NotTaken (MoveTo2 goes on).
         // Round 1: takes MoveTo2's packHold (a follow that holds never hands off) and ignoreEnemyTargets
@@ -195,6 +199,7 @@ namespace ai
     public:
         FleeAction(PlayerbotAI* ai, float distance = sPlayerbotAIConfig.spellDistance, std::string name = "flee") : MovementAction(ai, name), distance(distance) {}
         virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
 
     private:
         float distance;
