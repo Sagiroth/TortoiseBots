@@ -207,22 +207,21 @@ namespace ai
 
     // The stay term the universal spread gate receives: a live spread row outranks the stay order (the run holds the
     // ranged bots on their spots, and the row's splash still has to be answered there), so the order only vetoes
-    // while no row widened the spacing. RaidSpreadNeededTrigger::IsActive, RaidSpreadAction::Execute and
-    // RaidSpreadAction::isUseful all read the order through this one construction.
+    // while no row widened the spacing. RaidSpreadNeededTrigger::IsActive and RaidSpreadAction::Execute read the
+    // order through this one construction.
     inline bool ShouldSpreadStayVeto(bool stayOrdered, bool spreadLive)
     {
         return stayOrdered && !spreadLive;
     }
 
-    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses a stay-held bot before the action's own
-    // exemption is reached. With AiPlayerbot.RaidReactions on, the row's spacing outranks a stay exactly as the
-    // trigger and Execute read it, so the refusal stands only while no row is live. Off: today's logic, whatever
-    // the caller's stay read.
-    inline bool IsRaidSpreadStayExempt(bool raidReactions, bool stayOrdered, bool spreadLive)
+    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses a bot whose CURRENT state holds a stay
+    // (MovementAction::isUseful reads ai->GetState()), so the stay read here must come from that same state: a stay
+    // kept in another state is not the refusal being answered. With AiPlayerbot.RaidReactions on, a live spread row
+    // outranks that stay exactly as the trigger and Execute read the order through ShouldSpreadStayVeto, so the
+    // refusal is overruled only then; a stay with no live row still refuses the step. Off: today's logic.
+    inline bool IsRaidSpreadStayExempt(bool raidReactions, bool stayInCurrentState, bool spreadLive)
     {
-        if (!raidReactions)
-            return false;
-        return !ShouldSpreadStayVeto(stayOrdered, spreadLive);
+        return raidReactions && stayInCurrentState && spreadLive;
     }
 
     // Spread re-step throttle: a step-out within the cooldown of the last

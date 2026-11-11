@@ -168,12 +168,12 @@ int main()
     CHECK(!IsSpreadOnCooldown(100000u, 0xFFFFFF00u));
     std::cout << "  [PASS] spread re-step throttle\n";
 
-    // RaidSpreadAction::isUseful's stay gate. Key off: the base movement
-    // gate's refusal stands, whatever the caller's stay read, so the action
-    // is exactly today's. Key on: the same stay term the trigger and Execute
-    // pass to ShouldRaidSurvivalSpread is exempted - a stay with a live
-    // spread row no longer refuses the step - and a stay with no live row
-    // still does.
+    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses
+    // a bot whose current state holds a stay; only that stay can be
+    // exempted, and only with the key on and a live spread row. A stay in
+    // the current state with no live row still refuses the step, and a bot
+    // the base gate did not refuse is never exempt, whatever row is live
+    // (the combat-state stay is not the refusal being answered).
     CHECK(!ShouldSpreadStayVeto(false, true));
     CHECK(!ShouldSpreadStayVeto(false, false));
     CHECK(ShouldSpreadStayVeto(true, false));
@@ -185,9 +185,9 @@ int main()
 
     CHECK(IsRaidSpreadStayExempt(true, true, true));
     CHECK(!IsRaidSpreadStayExempt(true, true, false));
-    CHECK(IsRaidSpreadStayExempt(true, false, true));
-    CHECK(IsRaidSpreadStayExempt(true, false, false));
-    std::cout << "  [PASS] raid spread stay gate reads the key and the live row\n";
+    CHECK(!IsRaidSpreadStayExempt(true, false, true));
+    CHECK(!IsRaidSpreadStayExempt(true, false, false));
+    std::cout << "  [PASS] raid spread stay gate reads the key, the current-state stay and the live row\n";
     std::cout << "TortoiseBots combat-spread policy tests passed.\n";
     return 0;
 }

@@ -340,7 +340,20 @@ class BossStandWiring(unittest.TestCase):
             # unconditionally.
             self.assertIn("if (!MovementAction::isUseful()", fn)
             if cls == "RaidSpreadAction":
-                self.assertIn("!IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions,", fn)
+                flat = " ".join(fn.split())
+                self.assertIn("if (!MovementAction::isUseful())", flat)
+                self.assertIn("if (!sPlayerbotAIConfig.raidReactions) return false;", flat)
+                self.assertIn('IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions, '
+                              'ai->HasStrategy("stay", ai->GetState()), BossSpreadLive(ai, bot))', flat)
+                # The key is tested before either term is evaluated, so a
+                # stay-held bot costs no strategy lookup and no boss-tactics
+                # scan while the rows are off.
+                self.assertLess(flat.index("if (!sPlayerbotAIConfig.raidReactions) return false;"),
+                                flat.index('ai->HasStrategy("stay", ai->GetState())'))
+                # The stay comes from the state the base movement gate reads,
+                # never from the combat state alone: a stay kept in another
+                # state is not the refusal the exemption answers.
+                self.assertNotIn("BotState::BOT_STATE_COMBAT", fn)
             else:
                 self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
             self.assertIn("return !FindBossStand(ai, bot).valid;", fn)

@@ -73,8 +73,12 @@ class ReactStrategyWiringTest(unittest.TestCase):
         fn = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()", "\n}\n")
         self.assertIn("IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions,", fn)
         self.assertIn("MovementAction::isUseful()", fn)
+        # The base gate refuses on the stay of ai->GetState(); the exemption
+        # must read the same state, or a stay kept elsewhere would exempt a
+        # bot the gate refused.
+        self.assertIn('ai->HasStrategy("stay", ai->GetState())', fn)
         # The trigger and Execute read the order through the same helper, so the
-        # three cannot drift apart.
+        # two cannot drift apart.
         self.assertIn("ShouldSpreadStayVeto(ai->HasStrategy(\"stay\", BotState::BOT_STATE_COMBAT), spreadLive)",
             DUNGEON_ACTIONS)
         triggers = (ROOT / "ai/playerbot/strategy/triggers/DungeonTriggers.cpp").read_text()
