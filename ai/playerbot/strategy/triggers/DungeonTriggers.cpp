@@ -365,7 +365,7 @@ bool BossProtectionPotionReadyTrigger::IsActive()
         return false;
 
     uint32 buffSpellId = 0;
-    itemID = FindBossProtectionPotion(ai, &buffSpellId);
+    itemID = FindListedBossProtectionPotion(ai, &buffSpellId);
     if (!itemID || bot->HasAura(buffSpellId))
         return false;
 

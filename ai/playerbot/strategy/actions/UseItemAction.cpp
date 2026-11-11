@@ -1292,14 +1292,12 @@ bool UseItemIdAction::isUseful()
     return false;
 }
 
-uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)
+uint32 ai::FindListedBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
 {
-    // `fromRow` tells the caller that a spread row, not the entry table, named the potion, so only the row's own
-    // health rule is applied to it.
-    if (fromRow)
-        *fromRow = false;
     // The bot's own cached attacker list: a listed boss only shows up once
-    // its pull has started, so trash pulls never spend the potion.
+    // its pull has started, so trash pulls never spend the potion. The entry
+    // table only: a spread row's potion is not a listed boss's, and the legacy
+    // trigger that reads this carries no row health rule.
     AiObjectContext* context = ai->GetAiObjectContext();
     const std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
     for (const ObjectGuid& attackerGuid : attackers)
@@ -1316,6 +1314,20 @@ uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* 
             return potion.itemId;
         }
     }
+
+    return 0;
+}
+
+uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)
+{
+    // `fromRow` tells the caller that a spread row, not the entry table, named the potion, so only the row's own
+    // health rule is applied to it.
+    if (fromRow)
+        *fromRow = false;
+
+    const uint32 listed = FindListedBossProtectionPotion(ai, buffSpellId);
+    if (listed)
+        return listed;
 
     // No listed boss among the attackers: a live spread row can name the school for its own boss and the roles that
     // drink it (DungeonRunBossProtectionPotion). The table answers first, so a listed boss never changes.

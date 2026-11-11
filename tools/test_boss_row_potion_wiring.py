@@ -52,12 +52,22 @@ def body(text, signature):
 class BossRowPotionWiring(unittest.TestCase):
     def test_the_entry_table_answers_before_the_row(self):
         fn = body(USE_ITEM, "uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)")
-        self.assertIn("BossProtectionPotion(", fn)
+        self.assertIn("FindListedBossProtectionPotion(ai, buffSpellId)", fn)
         self.assertIn("BossRowProtectionPotion(", fn)
-        self.assertLess(fn.index("BossProtectionPotion("), fn.index("BossRowProtectionPotion("))
-        # The row is asked only after the attacker loop has found nothing.
-        self.assertLess(fn.index("for (const ObjectGuid& attackerGuid : attackers)"),
-                        fn.index("BossRowProtectionPotion("))
+        self.assertLess(fn.index("FindListedBossProtectionPotion("), fn.index("BossRowProtectionPotion("))
+        # The row is asked only after the listed lookup has found nothing.
+        self.assertIn("if (listed)", fn)
+
+    def test_the_legacy_lookup_is_the_entry_table_only(self):
+        # BossProtectionPotionReadyTrigger has no row health rule, so its lookup must never answer with a row potion.
+        fn = body(USE_ITEM, "uint32 ai::FindListedBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)")
+        self.assertIn("BossProtectionPotion(attacker->GetEntry())", fn)
+        self.assertNotIn("BossRowProtectionPotion(", fn)
+        self.assertNotIn("fromRow", fn)
+        listed = body(DUNGEON_TRIGGERS, "bool BossProtectionPotionReadyTrigger::IsActive()")
+        self.assertIn("FindListedBossProtectionPotion(ai, &buffSpellId)", listed)
+        self.assertNotIn("FindBossProtectionPotion(", listed)
+        self.assertNotIn("BossRowProtectionPotion(", listed)
 
     def test_the_row_read_is_the_potion_keys_own(self):
         fn = body(ACTIONS, "ProtectionPotion ai::BossRowProtectionPotion(PlayerbotAI* ai, Player* bot)")
@@ -90,12 +100,20 @@ class BossRowPotionWiring(unittest.TestCase):
         self.assertIn("BossRowPotionDue(", trigger)
         # The listed bosses keep today's read: only the row branch marks the potion, and their trigger never asks.
         finder = body(USE_ITEM, "uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)")
-        self.assertIn("*fromRow = false;", finder[:finder.index("for (const ObjectGuid& attackerGuid : attackers)")])
+        self.assertIn("*fromRow = false;", finder[:finder.index("FindListedBossProtectionPotion(")])
         self.assertNotIn("*fromRow = true;", finder[:finder.index("BossRowProtectionPotion(")])
         self.assertIn("*fromRow = true;", finder[finder.index("BossRowProtectionPotion("):])
         listed = body(DUNGEON_TRIGGERS, "bool BossProtectionPotionReadyTrigger::IsActive()")
         self.assertNotIn("BossRowPotionDue(", listed)
-        self.assertIn("FindBossProtectionPotion(ai, &buffSpellId)", listed)
+        self.assertIn("FindListedBossProtectionPotion(ai, &buffSpellId)", listed)
+
+    def test_every_trigger_path_to_a_row_potion_applies_the_health_rule(self):
+        # The row potion has exactly one trigger path, and that trigger reads the shared rule. Any second trigger that
+        # starts naming a row potion would have to apply BossRowPotionDue too.
+        self.assertEqual(1, DUNGEON_TRIGGERS.count("BossRowProtectionPotion("))
+        trigger = body(DUNGEON_TRIGGERS, "bool BossRowProtectionPotionReadyTrigger::IsActive()")
+        self.assertIn("BossRowProtectionPotion(", trigger)
+        self.assertIn("BossRowPotionDue(", trigger)
 
     def test_the_combat_strategy_queues_one_node(self):
         nodes = re.findall(r'new TriggerNode\(\s*"boss row protection potion ready"', STRATEGY)
