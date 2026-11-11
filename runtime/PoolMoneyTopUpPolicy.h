@@ -9,11 +9,9 @@ namespace TortoiseBots
 //
 // Pool money is seeded once (PlayerbotFactory::SeedFreshMoney, 1 g x
 // urand(1, 5 x level)) and every class rank is bought at a trainer, so a bot
-// that spends its seed early stays broke: 121 of 504 pool bots held under 1 g
-// and TrainerNoMoney fired 1,020 times on 164 bots in 16 h (Oct 2026 pool).
-// mod-playerbots pays random bots a small stipend on every refresh
-// (RandomPlayerbotMgr::Refresh); this module instead lifts a broke bot to
-// what its next trainer visit needs, once per level.
+// that spends its seed early stays broke and cannot afford its next rank
+// visit. Rather than pay a periodic stipend, this lifts a broke bot to what
+// its next trainer visit needs, once per level.
 //
 // Pure functions, unit-tested in tools/test_pool_money_topup_policy.cpp.
 

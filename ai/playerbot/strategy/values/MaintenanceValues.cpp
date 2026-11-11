@@ -688,9 +688,9 @@ bool ShouldSellValue::GroupMemberLeavingForVendor(PlayerbotAI* ai)
 //"Should ah sell" means AH stock worth a trip of its own, nothing else. It used
 //to inherit "should sell", which is also true for a broke bot whose VENDOR
 //stock covers a missing spell rank (SellableStockWorthAVendorTrip): that is a
-//reason to walk to a vendor, not to an auction house, and it sent broke bots on
-//73 % of all AH trips (batch-8 audit: 8,066 AH picks in 16 h, the top pickers
-//all broke, many with no listing at all). Two reasons remain, both about AH
+//reason to walk to a vendor, not to an auction house, and it sent broke bots
+//on most auction-house trips, many with no listing at all. Two reasons remain,
+//both about AH
 //stock: the bags are under pressure (the same line "should sell" uses) while
 //the bot holds stock worth listing (the "can ah sell" count), or an AH item is
 //damaged enough that repairing it would cost real money. The city trip reads

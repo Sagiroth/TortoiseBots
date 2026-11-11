@@ -15,8 +15,7 @@ namespace ai
     // "trainable spells" list), the rpg/nearby trainer trigger
     // (RpgTrainTrigger::TeachesAffordableSpell) and the visit itself
     // (TrainerAction) must agree on which rows count and what they cost, or a
-    // bot walks to a trainer that then teaches it nothing (batch-8 audit:
-    // 1,020 TrainerNoMoney on 164 bots in 16 h).
+    // bot walks to a trainer that then teaches it nothing.
 
     // A row the visit would actually teach now: the trainer shows it green and
     // at least one spell it teaches passes the level gate (SpellRankPolicy.h).

@@ -8,12 +8,9 @@ namespace TortoiseBots
 //
 // The fresh-bot seed (GearSeedingGuard.h) gears a pool bot once, on its first
 // login at level 5+. A bot that was created at level 1, or that outlevels its
-// seed, then levels on drops alone, and the 11-20 band ended up in 63 %
-// white/grey gear with half the bots under 13 filled slots (Oct 2026 pool).
-// mod-playerbots runs an incremental InitEquipment on every random-bot
-// level-up (AutoMaintenanceOnLevelupAction::AutoUpgradeEquip); this module
-// does the same through its own fresh-seed item selection, but only for the
-// slots below, so earned gear is never replaced.
+// seed, then levels on drops alone and drifts into white/grey gear with empty
+// slots. This top-up runs the fresh-seed item selection incrementally, but
+// only for the slots below, so earned gear is never replaced.
 //
 // Pure functions, unit-tested in tools/test_pool_gear_topup_policy.cpp.
 
