@@ -20,11 +20,25 @@ namespace ai
         bool nearSide; // the side the bot already stands on
     };
 
+    // The side the bot stands on, from the signed difference in [-PI, PI]. The core keeps orientations in [0, 2PI)
+    // (MapManager::NormalizeOrientation) and WorldPosition::getAngleTo returns the same range, so a bare subtraction
+    // reads a bot just clockwise of north (e.g. 5.28 rad) as the positive side of a north-facing dragon. No core
+    // include: the fold is the same [0, 2PI) parallel, then the arc the core's HasInArc uses.
+    inline float DragonFlankSignedDelta(float facing, float angleToBot)
+    {
+        float delta = angleToBot - facing;
+        while (delta > 3.1415926536f)
+            delta -= 6.2831853072f;
+        while (delta < -3.1415926536f)
+            delta += 6.2831853072f;
+        return delta;
+    }
+
     // The two side points, the nearer side first; the far side is the other half of the facing axis.
     inline void DragonFlankPoints(float facing, float angleToBot,
         DragonFlankPoint (&points)[kDragonFlankPointCount])
     {
-        if (angleToBot - facing > 0.0f)
+        if (DragonFlankSignedDelta(facing, angleToBot) > 0.0f)
         {
             points[0] = { facing + kDragonFlankSideAngle, true };
             points[1] = { facing - kDragonFlankSideAngle, false };

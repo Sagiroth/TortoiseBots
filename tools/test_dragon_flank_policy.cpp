@@ -52,6 +52,23 @@ int main()
     CHECK(Near(points[1].angle, 1.5707963268f));
     std::cout << "  [PASS] the nearer side comes first\n";
 
+    // Production orientations are in [0, 2PI), so the side is the sign
+    // of the signed delta folded into [-PI, PI]. A bot just clockwise of a
+    // north-facing dragon (2PI - 1, i.e. about -1 rad) stands on the minus
+    // side, not the plus side the raw subtraction reports.
+    DragonFlankPoints(0.0f, 6.2831853072f - 1.0f, points);
+    CHECK(points[0].nearSide && !points[1].nearSide);
+    CHECK(Near(points[0].angle, -1.5707963268f));
+    CHECK(Near(points[1].angle, 1.5707963268f));
+
+    // The same seam across north: facing 2PI - 0.1 and a bot at 0.1 is
+    // 0.2 rad counter-clockwise from the facing, so the plus side is nearer.
+    DragonFlankPoints(6.2831853072f - 0.1f, 0.1f, points);
+    CHECK(points[0].nearSide && !points[1].nearSide);
+    CHECK(Near(points[0].angle, 6.2831853072f - 0.1f + 1.5707963268f));
+    CHECK(Near(points[1].angle, 6.2831853072f - 0.1f - 1.5707963268f));
+    std::cout << "  [PASS] the wrapped 0/2PI seam keeps the nearer side first\n";
+
     // Facing anywhere: both candidates stay 90 degrees off the facing axis,
     // one on each side of it.
     for (float facing = -3.0f; facing <= 3.0f; facing += 0.5f)
