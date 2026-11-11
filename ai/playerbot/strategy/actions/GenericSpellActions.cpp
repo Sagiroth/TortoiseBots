@@ -1071,7 +1071,7 @@ bool CastShootAction::isUseful()
 }
 bool CastAirborneShootAction::isUseful()
 {
-    return CastShootAction::isUseful() && !AirborneWandYields(sPlayerbotAIConfig.airborneWandYieldsToNukes, IsWandCasterClass(bot->getClass()), PlayerbotAI::IsHeal(bot));
+    return CastShootAction::isUseful() && !AirborneWandYields(sPlayerbotAIConfig.airborneWandYieldsToNukes, IsWandCasterClass(bot->GetClass()), PlayerbotAI::IsHeal(bot));
 }
 
 
