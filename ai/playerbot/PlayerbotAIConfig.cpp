@@ -1115,6 +1115,9 @@ bool PlayerbotAIConfig::Initialize()
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);
     onyxiaWhelpsAndEggs = config.GetBoolDefault("AiPlayerbot.OnyxiaWhelpsAndEggs", true);
     dungeonTactics = config.GetBoolDefault("AiPlayerbot.DungeonTactics", false);
+    // Startup-only on purpose (not in LoadDungeonRunKeys): the key shapes the reaction engine's trigger list, which
+    // is built when an engine inits, so `.reload config` must not change it under live engines; a restart applies it.
+    raidReactions = config.GetBoolDefault("AiPlayerbot.RaidReactions", false);
     LoadDungeonRunKeys();
     avoidCreatureAuras = config.GetBoolDefault("AiPlayerbot.AvoidCreatureAuras", true);
     allowRepairedTaxiPaths = config.GetBoolDefault("AiPlayerbot.AllowRepairedTaxiPaths", false);

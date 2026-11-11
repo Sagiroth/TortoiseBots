@@ -614,6 +614,12 @@ public:
     bool raidHealerSeatsByClass = false;
     // A layout tank healer's second seat on its tank helps the raid while the tank is quiet (default off).
     bool raidTankHealerAssist = false;
+    // The reaction engine's universal raid rows (environmental hazard step-away, raid bomb runout, Four Horsemen
+    // mark rotation, dragon flank, ranged raid spread): on, the `react` strategy carries them (ReactionRowsPolicy.h)
+    // and a live spread row outranks a stay in the spread action's own gate. Off, the rows are not built at all, so
+    // every engine's trigger list and every spread verdict is what it was while the strategy had no creator
+    // (default off; the lists are built when an engine inits, so it needs a restart).
+    bool raidReactions = false;
     // A raid boss fight's healer guard: an add on a healer goes to the nearest ranged dps, up to two, and the off-tanks
     // take such an add only when none is free (only with dungeonRunRaidBossRules; default off, the off-tanks take it).
     bool dungeonRunRaidHealerGuard = false;

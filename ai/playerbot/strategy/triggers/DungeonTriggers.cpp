@@ -522,7 +522,7 @@ bool RaidSpreadNeededTrigger::IsActive()
     // raid survival and applies to companions too.
     if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
         ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-        !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+        ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive),
         ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
         ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))

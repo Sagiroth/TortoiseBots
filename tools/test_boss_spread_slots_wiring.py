@@ -124,12 +124,14 @@ class SpreadSlotsWiring(unittest.TestCase):
 
     def test_flag_off_keeps_the_spread_live_stay_precedence(self):
         # With the slots key at 0 a live spread row still widens the spacing and outranks a stay: both the old trigger
-        # and the step-away test the stay only while no spread row is live, and the stand check still answers false.
+        # and the step-away hand the combat-state stay and the live row to ShouldSpreadStayVeto, and the stand check
+        # still answers false.
+        stay = 'ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive)'
         trigger = body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()")
-        self.assertIn('!spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT)', trigger)
+        self.assertIn(stay, trigger)
         self.assertIn("sPlayerbotAIConfig.dungeonRunBossSpreadSlots && spreadLive", trigger)
         action = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")
-        self.assertIn('!spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT)', action)
+        self.assertIn(stay, action)
         useful = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")
         self.assertLess(useful.index("FindBossStand(ai, bot).valid"), useful.index("return true;"))
         self.assertIn("if (FindBossStand(ai, bot).valid)", useful)

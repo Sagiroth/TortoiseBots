@@ -14,11 +14,13 @@
 
 using ai::FleeHeadingDistance;
 using ai::FleeFailureMemory;
+using ai::IsRaidSpreadStayExempt;
 using ai::IsSpreadExemptOwned;
 using ai::IsSpreadOnCooldown;
 using ai::kSpreadStepCooldownMs;
 using ai::ShouldCombatSpread;
 using ai::ShouldRaidSurvivalSpread;
+using ai::ShouldSpreadStayVeto;
 using ai::SpreadLogCaller;
 using ai::SpreadLogOwned;
 using ai::SpreadCastClock;
@@ -328,6 +330,26 @@ int main()
     }
     std::cout << "  [PASS] the cast clock restarts after a gap\n";
 
+    // RaidSpreadAction::isUseful's stay gate. The base movement gate refuses
+    // a bot whose current state holds a stay; only that stay can be
+    // exempted, and only with the key on and a live spread row. A stay in
+    // the current state with no live row still refuses the step, and a bot
+    // the base gate did not refuse is never exempt, whatever row is live
+    // (the combat-state stay is not the refusal being answered).
+    CHECK(!ShouldSpreadStayVeto(false, true));
+    CHECK(!ShouldSpreadStayVeto(false, false));
+    CHECK(ShouldSpreadStayVeto(true, false));
+
+    CHECK(!IsRaidSpreadStayExempt(false, true, true));
+    CHECK(!IsRaidSpreadStayExempt(false, true, false));
+    CHECK(!IsRaidSpreadStayExempt(false, false, true));
+    CHECK(!IsRaidSpreadStayExempt(false, false, false));
+
+    CHECK(IsRaidSpreadStayExempt(true, true, true));
+    CHECK(!IsRaidSpreadStayExempt(true, true, false));
+    CHECK(!IsRaidSpreadStayExempt(true, false, true));
+    CHECK(!IsRaidSpreadStayExempt(true, false, false));
+    std::cout << "  [PASS] raid spread stay gate reads the key, the current-state stay and the live row\n";
     std::cout << "TortoiseBots combat-spread policy tests passed.\n";
     return 0;
 }

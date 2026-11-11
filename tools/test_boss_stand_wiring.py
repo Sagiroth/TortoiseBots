@@ -336,10 +336,37 @@ class BossStandWiring(unittest.TestCase):
             declared = body(DUNGEON_ACTIONS_H, "class %s" % cls, end="\n    };\n")
             self.assertIn("bool isUseful() override;", declared)
             fn = body(DUNGEON_ACTIONS, "bool %s::isUseful()" % cls)
-            self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
-            # Both read the seat before they report themselves usable; the spread action's slot verdict row logs the
-            # stand on the way, and it still answers false for a seated bot.
+            # The base movement gate still runs first; RaidSpreadAction may
+            # only step past its refusal through the key-gated stay exemption
+            # (AiPlayerbot.RaidReactions with a live spread row), never
+            # unconditionally.
+            self.assertIn("if (!MovementAction::isUseful()", fn)
+            # Both read the seat before they report themselves usable.
             self.assertIn("FindBossStand(ai, bot).valid", fn)
+            if cls == "RaidSpreadAction":
+                flat = " ".join(fn.split())
+                self.assertIn("if (!MovementAction::isUseful())", flat)
+                self.assertIn("if (!sPlayerbotAIConfig.raidReactions) return false;", flat)
+                self.assertIn('IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions, '
+                              'ai->HasStrategy("stay", ai->GetState()), BossSpreadLive(ai, bot))', flat)
+                # The key is tested before either term is evaluated, so a
+                # stay-held bot costs no strategy lookup and no boss-tactics
+                # scan while the rows are off.
+                self.assertLess(flat.index("if (!sPlayerbotAIConfig.raidReactions) return false;"),
+                                flat.index('ai->HasStrategy("stay", ai->GetState())'))
+                # The stay comes from the state the base movement gate reads,
+                # never from the combat state alone: a stay kept in another
+                # state is not the refusal the exemption answers.
+                self.assertNotIn("BotState::BOT_STATE_COMBAT", fn)
+                # The seat refusal comes after the stay exemption; the spread action's slot verdict row logs the
+                # stand on the way, and it still answers false for a seated bot.
+                self.assertIn("if (FindBossStand(ai, bot).valid)", fn)
+                self.assertIn("\n        return false;\n    }\n    return true;", fn)
+                self.assertLess(flat.index("if (!sPlayerbotAIConfig.raidReactions) return false;"),
+                                flat.index("if (FindBossStand(ai, bot).valid)"))
+            else:
+                self.assertIn("if (!MovementAction::isUseful())\n        return false;", fn)
+                self.assertIn("return !FindBossStand(ai, bot).valid;", fn)
         self.assertIn("return !FindBossStand(ai, bot).valid;",
                       body(DUNGEON_ACTIONS, "bool DragonFlankAction::isUseful()"))
         spread = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::isUseful()")

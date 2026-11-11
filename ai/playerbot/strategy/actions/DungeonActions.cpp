@@ -15,6 +15,7 @@
 #include "playerbot/policy/combat/DebuffSpreadPolicy.h"
 #include "playerbot/BombRunoutPolicy.h"
 #include "playerbot/FourHorsemenRotationPolicy.h"
+#include "playerbot/DragonFlankPolicy.h"
 #include "Movement/spline/MoveSpline.h"
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
@@ -509,28 +510,40 @@ bool DragonFlankAction::Execute(Event& event)
         return false;
     const WorldPosition bossPos(target);
     const WorldPosition botPos(bot);
-    float facing = target->GetOrientation();
-    // Flank = 90 degrees off the facing axis; pick the nearer side.
-    float toBot = bossPos.GetAngleTo(botPos);
-    float side = (toBot - facing) > 0 ? (facing + M_PI_F / 2.0f) : (facing - M_PI_F / 2.0f);
+    // Flank = 90 degrees off the facing axis, the nearer side first. Only the two side points are candidates: a side
+    // that fails line of sight or the path check is skipped, and when both fail the bot stays put rather than walking
+    // into the breath or the tail sweep.
+    DragonFlankPoint points[kDragonFlankPointCount];
+    DragonFlankPoints(target->GetOrientation(), bossPos.GetAngleTo(botPos), points);
     const float dist = std::max(botPos.distance(bossPos), 8.0f);
-    for (int i = 0; i < 4; ++i)
+    int const chosen = PickDragonFlankPoint(points, [&](const DragonFlankPoint& point)
     {
-        WorldPosition point = bossPos + WorldPosition(0, dist * cos(side), dist * sin(side), 1.0f);
-        point.setZ(point.GetHeight());
-        if (bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()) &&
-            bossPos.canPathTo(point, bot) &&
-            MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
-            return true;
-        side += M_PI_F / 2.0f;
-    }
-    return false;
+        WorldPosition destination = bossPos + WorldPosition(0, dist * cos(point.angle), dist * sin(point.angle), 1.0f);
+        destination.setZ(destination.GetHeight());
+        return bot->IsWithinLOS(destination.getX(), destination.getY(),
+                   destination.getZ() + bot->GetCollisionHeight()) &&
+            bossPos.canPathTo(destination, bot) &&
+            MoveTo(bot->GetMapId(), destination.getX(), destination.getY(), destination.getZ(), false,
+                IsReaction(), false, true);
+    });
+    return chosen >= 0;
 }
 
 bool RaidSpreadAction::isUseful()
 {
+    // The base movement gate refuses a bot its current engine holds on a stay. With the reaction raid rows on, a
+    // live spread row outranks that stay (the trigger and Execute already read the order that way through
+    // ShouldSpreadStayVeto), so the refusal stands only while no row is live. Key off: today's logic. The key is
+    // tested first, so a stay-held bot costs no strategy lookup and no boss-tactics scan while the rows are off.
     if (!MovementAction::isUseful())
-        return false;
+    {
+        if (!sPlayerbotAIConfig.raidReactions)
+            return false;
+        if (!IsRaidSpreadStayExempt(sPlayerbotAIConfig.raidReactions,
+                ai->HasStrategy("stay", ai->GetState()), BossSpreadLive(ai, bot)))
+            return false;
+    }
+    // A spread slot hold owns the bot's position: the legacy step-away leaves it to the slot seek.
     if (FindBossStand(ai, bot).valid)
     {
         if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy) &&
@@ -580,7 +593,7 @@ bool RaidSpreadAction::Execute(Event& event)
         // maps. Inside a raid companions spread like pool bots.
         if (!ShouldRaidSurvivalSpread(sServerFacade.IsInCombat(bot), ai->HasRealPlayerMaster(),
             ai->IsOwnedBot(), bot->GetMap() && bot->GetMap()->IsRaid(),
-            !spreadLive && ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT),
+            ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive),
             ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("wait for attack", BotState::BOT_STATE_COMBAT),
             ai->HasStrategy("grind", BotState::BOT_STATE_COMBAT)))

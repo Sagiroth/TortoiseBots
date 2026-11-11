@@ -1586,6 +1586,20 @@ AiPlayerbot.RaidHealerSeatsByClass = 0
 # 1 - on
 AiPlayerbot.RaidTankHealerAssist = 0
 
+# The reaction engine's universal raid answers: step out of an environmental hazard (a brazier, a ground effect),
+# run a bomb debuff carrier 30 yd clear of the living group, rotate a Four Horsemen mark carrier (3+ stacks) to the
+# next horseman's corner, flank a dragon's breath/cleave cone, and keep the ranged raid spread while a stack would
+# bracket the casters. They run from the reaction engine, in and out of combat where their trigger allows; the
+# ranged spread answers only while the bot is in combat.
+# With 1 a live spread row (AiPlayerbot.DungeonRunBossSpread) also outranks a stay order in the spread action itself.
+# With 0 the `react` strategy is still registered and shows in `react ?` and in strategy output, but it adds no row:
+# that is expected, not a bug.
+# A restart is needed: the lists are built when an engine inits, so `.reload config` does not rebuild them.
+# Not yet verified in a live walk: leave it off until one says the rows help.
+# 0 - off: no raid row is built, the engines' trigger lists are as before (Default)
+# 1 - on
+AiPlayerbot.RaidReactions = 0
+
 # Opt-in "fankriss tank" role (.bot strategy +fankriss tank): an assigned tank with no Mortal Wound
 # stacks taunts Fankriss off the current tank at this many stacks (1-9, clamped). Does not enable the role.
 AiPlayerbot.FankrissSwapStacks = 5

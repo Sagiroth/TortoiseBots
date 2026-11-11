@@ -27,6 +27,7 @@ ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_t
 POLICY = (ROOT / "ai/playerbot/SeekAuraPolicy.h").read_text()
 STATE_POLICY = (ROOT / "ai/playerbot/SeekFightStatePolicy.h").read_text()
 TACTICS_POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
+SPREAD_POLICY = (ROOT / "ai/playerbot/CombatSpreadPolicy.h").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
 TRIGGERS_H = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.h").read_text()
@@ -488,7 +489,11 @@ class SpreadKindWiring(unittest.TestCase):
         for text in (body(DUNGEON_TRIGGERS, "bool RaidSpreadNeededTrigger::IsActive()"),
                      body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")):
             self.assertIn("BossSpreadLive(ai, bot)", text)
-            self.assertIn('!spreadLive && ai->HasStrategy("stay"', text)
+            self.assertIn('ShouldSpreadStayVeto(ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT), spreadLive)', text)
+        # The one helper both callers read: the stay only vetoes while no
+        # row is live.
+        veto = body(SPREAD_POLICY, "inline bool ShouldSpreadStayVeto(", end="\n    }\n")
+        self.assertIn("return stayOrdered && !spreadLive;", veto)
 
     def test_the_step_lands_in_the_stay_spot(self):
         act = body(DUNGEON_ACTIONS, "bool RaidSpreadAction::Execute(Event& event)")
