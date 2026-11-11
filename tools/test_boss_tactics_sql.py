@@ -720,7 +720,7 @@ class BossTacticsSql(unittest.TestCase):
         # 8 healer): 7 = tanks and both damage roles, no healer. `param` stays the 12 yd spacing.
         self.assertEqual((7, 12.0), (spread["priority"], spread["param"]),
                          "the Hakkar spread row drifted")
-        self.assertEqual("20261111120000_world.sql", spread["file"],
+        self.assertEqual("20261111120100_world.sql", spread["file"],
                          "the r11-4 migration owns the Hakkar spread row")
         self.assertNotIn((309, 14834, "taunt_after_cast", 0, 0), live,
                          "the Hakkar taunt_after_cast row is back: Hakkar is taunt-immune")

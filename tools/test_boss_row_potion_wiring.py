@@ -21,7 +21,26 @@ CONFIG_H = (ROOT / "ai" / "playerbot" / "PlayerbotAIConfig.h").read_text()
 CONFIG_CPP = (ROOT / "ai" / "playerbot" / "PlayerbotAIConfig.cpp").read_text()
 CONF = (ROOT / "ai" / "playerbot" / "aiplayerbot.conf.dist.in").read_text()
 SETTINGS = (ROOT / "docs" / "server" / "settings" / "dungeons-raids.md").read_text()
+BOSS_TACTICS = (ROOT / "docs" / "play" / "boss-tactics.md").read_text()
 DUNGEON_TRIGGERS = (ROOT / "ai" / "playerbot" / "strategy" / "triggers" / "DungeonTriggers.cpp").read_text()
+
+# The key does nothing without the boss-tactics strategy, which the shipped default DungeonTactics = 0 leaves off
+# outside a commander-bound group. One sentence, carried by the template, the settings doc and the boss-tactics doc.
+DEPENDENCY = ("It works only for bots that run the boss tactics: `AiPlayerbot.DungeonTactics = 1` "
+              "or a commander-bound run group.")
+
+
+def conf_prose(text):
+    """The template's comment lines without their `# ` prefixes, so a wrapped sentence reads as one line."""
+    lines = []
+    for line in text.splitlines():
+        if line.startswith("# "):
+            lines.append(line[2:])
+        elif line.startswith("#"):
+            lines.append(line[1:].lstrip())
+        else:
+            lines.append("")
+    return " ".join(lines)
 
 
 def body(text, signature):
@@ -84,6 +103,14 @@ class BossRowPotionWiring(unittest.TestCase):
         section = SETTINGS[SETTINGS.index("### `AiPlayerbot.DungeonRunBossProtectionPotion`"):]
         section = section[:section.index("### ", 5)]
         self.assertNotIn("recommended on", section)
+
+    def test_the_boss_tactics_dependency_is_stated(self):
+        # The trigger is installed by the boss-tactics strategy and BossRowProtectionPotion refuses a bot without it,
+        # so enabling this key alone does nothing under the shipped DungeonTactics = 0. Every place an operator reads
+        # the key has to say that.
+        self.assertIn(DEPENDENCY, conf_prose(CONF))
+        self.assertIn(DEPENDENCY, SETTINGS)
+        self.assertIn(DEPENDENCY, BOSS_TACTICS)
 
     def test_the_policy_names_no_boss(self):
         self.assertNotIn("14834", POLICY)
