@@ -11,6 +11,7 @@
 } while (0)
 
 using ai::BossProtectionPotion;
+using ai::BossRowPotionDue;
 using ai::ProtectionPotion;
 using ai::ProtectionPotionForSchool;
 using ai::PotionRoleBit;
@@ -89,6 +90,24 @@ static void TestRowPotionDue()
     CHECK(!RowPotionDue(false, true, 80, 50, 60));
 }
 
+static void TestRowPotionHealthDropBeforeExecution()
+{
+    // The row trigger reads the bot at 72 % and starts the action; the bot drops to 20 % before the action runs. Both
+    // sites run BossRowPotionDue, so the execution-time read is what stops the drink below the low line.
+    const ProtectionPotion row = SpreadRowPotion(true, 5, 7, kPotionRoleTank);
+    CHECK(BossRowPotionDue(row, false, 72, 35, 60));  // the trigger: fires above the line
+    CHECK(!BossRowPotionDue(row, false, 20, 35, 60)); // the action: not useful after the drop
+    // At the line it is still due; the aura and the level still block it.
+    CHECK(BossRowPotionDue(row, false, 35, 35, 60));
+    CHECK(!BossRowPotionDue(row, true, 72, 35, 60));
+    CHECK(!BossRowPotionDue(row, false, 72, 35, 47));
+
+    // A listed boss's potion comes from the entry table, which has no health rule: it still answers the fire potion at
+    // 10 % health, and only the action's fromRow gate keeps this rule off it.
+    CHECK(BossProtectionPotion(10184).itemId == 13457);
+    CHECK(!BossRowPotionDue(BossProtectionPotion(10184), false, 10, 35, 60));
+}
+
 int main()
 {
     std::cout << "Starting TortoiseBots protection potion policy tests...\n";
@@ -125,6 +144,7 @@ int main()
     TestPotionRoleBit();
     TestSpreadRowPotionShadowForMaskedRole();
     TestRowPotionDue();
+    TestRowPotionHealthDropBeforeExecution();
 
     std::cout << "Protection potion policy tests passed.\n";
     return 0;

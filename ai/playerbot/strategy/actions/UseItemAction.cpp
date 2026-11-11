@@ -1292,8 +1292,12 @@ bool UseItemIdAction::isUseful()
     return false;
 }
 
-uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
+uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)
 {
+    // `fromRow` tells the caller that a spread row, not the entry table, named the potion, so only the row's own
+    // health rule is applied to it.
+    if (fromRow)
+        *fromRow = false;
     // The bot's own cached attacker list: a listed boss only shows up once
     // its pull has started, so trash pulls never spend the potion.
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -1320,6 +1324,8 @@ uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)
     {
         if (buffSpellId)
             *buffSpellId = row.buffSpellId;
+        if (fromRow)
+            *fromRow = true;
         return row.itemId;
     }
 
@@ -1334,7 +1340,18 @@ bool UseBossProtectionPotionAction::isUseful()
         return false;
 
     uint32 buffSpellId = 0;
-    if (!FindBossProtectionPotion(ai, &buffSpellId))
+    bool fromRow = false;
+    const uint32 itemId = FindBossProtectionPotion(ai, &buffSpellId, &fromRow);
+    if (!itemId)
+        return false;
+
+    // The row potion's own health rule, re-read at execution time: the trigger may have picked it above the low line
+    // and the bot can drop below it before the action runs, where a healing potion comes first. A listed boss's potion
+    // never reads it (fromRow false), so the entry table behaves exactly as before.
+    const ProtectionPotion rowPotion = { itemId, buffSpellId };
+    if (fromRow && !BossRowPotionDue(rowPotion, bot->HasAura(buffSpellId),
+            static_cast<std::uint8_t>(bot->GetHealthPercent()),
+            static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth), bot->GetLevel()))
         return false;
 
     return UseItemIdAction::isUseful() && !bot->HasAura(buffSpellId);

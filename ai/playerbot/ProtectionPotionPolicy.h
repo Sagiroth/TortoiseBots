@@ -86,6 +86,15 @@ namespace ai
         return healthPct >= lowHealthPct;
     }
 
+    // The row potion's health rule at one instant, over the potion a live row named for the bot. The row trigger and
+    // the action's execution-time re-check both call it: a potion picked above the low line is not drunk once the bot
+    // has dropped below it, where a healing potion comes first.
+    inline bool BossRowPotionDue(const ProtectionPotion& potion, bool hasAura, std::uint8_t healthPct,
+        std::uint8_t lowHealthPct, std::uint32_t level)
+    {
+        return RowPotionDue(potion.itemId != 0, hasAura, healthPct, lowHealthPct, level);
+    }
+
     inline ProtectionPotion BossProtectionPotion(std::uint32_t entry)
     {
         switch (entry)

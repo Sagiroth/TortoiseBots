@@ -51,7 +51,7 @@ def body(text, signature):
 
 class BossRowPotionWiring(unittest.TestCase):
     def test_the_entry_table_answers_before_the_row(self):
-        fn = body(USE_ITEM, "uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId)")
+        fn = body(USE_ITEM, "uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)")
         self.assertIn("BossProtectionPotion(", fn)
         self.assertIn("BossRowProtectionPotion(", fn)
         self.assertLess(fn.index("BossProtectionPotion("), fn.index("BossRowProtectionPotion("))
@@ -73,9 +73,29 @@ class BossRowPotionWiring(unittest.TestCase):
     def test_the_trigger_is_the_keys_own_and_stays_due(self):
         fn = body(DUNGEON_TRIGGERS, "bool BossRowProtectionPotionReadyTrigger::IsActive()")
         self.assertIn("dungeonRunBossProtectionPotion", fn)
-        self.assertIn("RowPotionDue(", fn)
+        self.assertIn("BossRowPotionDue(", fn)
+        self.assertNotIn("\n    RowPotionDue(", fn)
         self.assertIn("ItemReadyTrigger::IsActive()", fn)
         self.assertIn('creators["boss row protection potion ready"]', TRIGGER_CONTEXT)
+
+    def test_the_action_rechecks_the_row_health_rule_at_execution(self):
+        # The trigger picks the potion; the action must re-read the same rule, because the bot can drop below
+        # AiPlayerbot.LowHealth before isUseful runs and a healing potion then comes first.
+        fn = body(USE_ITEM, "bool UseBossProtectionPotionAction::isUseful()")
+        self.assertIn("bool fromRow = false;", fn)
+        self.assertIn("FindBossProtectionPotion(ai, &buffSpellId, &fromRow)", fn)
+        self.assertIn("if (fromRow && !BossRowPotionDue(", fn)
+        # One shared predicate for both sites.
+        trigger = body(DUNGEON_TRIGGERS, "bool BossRowProtectionPotionReadyTrigger::IsActive()")
+        self.assertIn("BossRowPotionDue(", trigger)
+        # The listed bosses keep today's read: only the row branch marks the potion, and their trigger never asks.
+        finder = body(USE_ITEM, "uint32 ai::FindBossProtectionPotion(PlayerbotAI* ai, uint32* buffSpellId, bool* fromRow)")
+        self.assertIn("*fromRow = false;", finder[:finder.index("for (const ObjectGuid& attackerGuid : attackers)")])
+        self.assertNotIn("*fromRow = true;", finder[:finder.index("BossRowProtectionPotion(")])
+        self.assertIn("*fromRow = true;", finder[finder.index("BossRowProtectionPotion("):])
+        listed = body(DUNGEON_TRIGGERS, "bool BossProtectionPotionReadyTrigger::IsActive()")
+        self.assertNotIn("BossRowPotionDue(", listed)
+        self.assertIn("FindBossProtectionPotion(ai, &buffSpellId)", listed)
 
     def test_the_combat_strategy_queues_one_node(self):
         nodes = re.findall(r'new TriggerNode\(\s*"boss row protection potion ready"', STRATEGY)
@@ -118,6 +138,9 @@ class BossRowPotionWiring(unittest.TestCase):
         self.assertIn("PotionRoleBit(", POLICY)
         self.assertIn("ProtectionPotionForSchool(", POLICY)
         self.assertIn("RowPotionDue(", POLICY)
+        # The row health rule is one predicate shared by the trigger and the action's execution-time re-check.
+        self.assertIn("inline bool BossRowPotionDue(", POLICY)
+        self.assertIn("return RowPotionDue(", POLICY)
 
 
 if __name__ == "__main__":

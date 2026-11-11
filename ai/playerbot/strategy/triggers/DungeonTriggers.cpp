@@ -382,8 +382,7 @@ bool BossRowProtectionPotionReadyTrigger::IsActive()
         return false;
 
     const ProtectionPotion potion = BossRowProtectionPotion(ai, bot);
-    const bool hasPotion = potion.itemId != 0;
-    if (!RowPotionDue(hasPotion, hasPotion && bot->HasAura(potion.buffSpellId),
+    if (!BossRowPotionDue(potion, potion.itemId && bot->HasAura(potion.buffSpellId),
             static_cast<std::uint8_t>(bot->GetHealthPercent()),
             static_cast<std::uint8_t>(sPlayerbotAIConfig.lowHealth), bot->GetLevel()))
         return false;
