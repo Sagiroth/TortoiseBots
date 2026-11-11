@@ -3674,6 +3674,7 @@ namespace ai
     // guard's assignment clock keeps its kGuardAssignedGraceMs.
     constexpr float kTankPostReserveRangeYd = 60.0f;
     constexpr std::uint32_t kTankPostReserveGraceMs = 15000;
+    static_assert(kTankPostReserveGraceMs == kGuardPostGraceMs, "the guard's tank_post grace is the post's own");
     inline bool TankPostReserves(bool keyOn, bool otherPostLive, bool otherTankCanAct, bool botOwnsPost,
                                  bool ownerWithinRange, bool subjectOnOwner, std::uint32_t looseMs)
     {

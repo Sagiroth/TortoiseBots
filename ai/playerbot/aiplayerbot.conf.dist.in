@@ -1115,6 +1115,15 @@ AiPlayerbot.DungeonRunAddCrew = 0
 # 1 - on (recommended on where a tank row assigns a second boss to a tank slot)
 AiPlayerbot.DungeonRunGuardLeavesAssignedTank = 0
 
+# The raid guard's assignment clock starts on the first hittable tick (the unit the group can attack and selectable,
+# so a boss still in the air does not spend the grace), and a tank_post unit gets the post's 15 s grace instead of
+# 8 s. Needs AiPlayerbot.DungeonRunRaid, AiPlayerbot.DungeonRunRaidBossRules and
+# AiPlayerbot.DungeonRunGuardLeavesAssignedTank.
+# `.reload config` reads it again with the other AiPlayerbot.DungeonRun* keys.
+# 0 - off: the clock starts on the first loose tick and every unit gets 8 s (Default)
+# 1 - on
+AiPlayerbot.DungeonRunGuardClockHittable = 0
+
 # The `hold_spot` mode of a tank_post row (needs DungeonRunTankPost): on, the post starts while the tank still holds
 # another hostile, its arrival latches (it stays arrived while the unit is alive and selectable, wherever it walks),
 # the arrived unit outranks any other hostile, the tank drags it back to the spot once it is more than 8 yd away with

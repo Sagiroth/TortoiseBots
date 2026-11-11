@@ -680,6 +680,11 @@ public:
     // a tank_post row): on, the off-tank pick-ups never send another tank at it; off, the raid's off-tanks take it as
     // before (its own key on top of the raid and boss rules; default off).
     bool dungeonRunGuardLeavesAssignedTank = false;
+    // The raid guard's assignment clock starts on the first hittable tick (the unit attackable and selectable: a boss
+    // still in the air does not spend the grace), and a tank_post unit gets the post's 15 s grace instead of 8 s: on,
+    // those rules; off, the clock starts on the first loose tick and every unit gets 8 s, as before (its own key on top
+    // of the raid and boss rules; default off).
+    bool dungeonRunGuardClockHittable = false;
     // The tank_post `hold_spot` mode (the post starts while the tank holds another hostile, its arrival latches and
     // outlives the window, it drags the subject back to the spot, and it yields to a boss stand seat): on, the rows'
     // mode runs; off, every tank_post row is a plain post as before the mode (default off).

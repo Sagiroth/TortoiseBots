@@ -150,6 +150,7 @@ void PlayerbotAIConfig::LoadDungeonRunKeys()
     dungeonRunAddCrew = config.GetBoolDefault("AiPlayerbot.DungeonRunAddCrew", false);
     dungeonRunGuardLeavesAssignedTank =
         config.GetBoolDefault("AiPlayerbot.DungeonRunGuardLeavesAssignedTank", false);
+    dungeonRunGuardClockHittable = config.GetBoolDefault("AiPlayerbot.DungeonRunGuardClockHittable", false);
     dungeonRunTankPostHoldSpot = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostHoldSpot", false);
     dungeonRunTankPostLeash = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostLeash", false);
     dungeonRunTankPostOwnsSubject =

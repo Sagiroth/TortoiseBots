@@ -1,5 +1,6 @@
 # Changelog
 
+- New: behind AiPlayerbot.DungeonRunGuardClockHittable (default 0), the raid guard's assignment clock starts on the first hittable tick (attackable and selectable), so a boss still in the air no longer spends the grace, and a tank_post unit gets the post's 15 s grace instead of 8 s; an unhittable spell shorter than 8 s keeps the running clock's start, a longer one clears it.
 
 - New: behind AiPlayerbot.AirborneWandYieldsToNukes (default 0), the Onyxia P2 `onyxia airborne` row's `airborne shoot` yields to the class nuke rows for mage, warlock and non-healer priest, so casters nuke her instead of wanding while each wand shot would renew the GCD; hunters, melee, tanks and healers keep the wand.
 - New: behind AiPlayerbot.HoverCastHoldsSpread (default 0), a ranged damage dealer in spell range of a hovering target takes no `raid spread` spacing step (a live boss `spread` row still steps), so its cast-time nukes are not refused for moving.
