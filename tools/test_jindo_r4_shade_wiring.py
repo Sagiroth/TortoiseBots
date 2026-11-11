@@ -14,6 +14,17 @@ def read(path):
         return handle.read()
 
 
+def newest_release_block(text):
+    """The changelog from its top to the second release heading: the newest release's own entries.
+
+    The window is a search of that block, not a count of lines: every fix that adds a top line keeps it
+    inside, and a new release moves the block by itself.
+    """
+    lines = text.splitlines(keepends=True)
+    heads = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    return text if len(heads) < 2 else "".join(lines[:heads[1]])
+
+
 ACTIONS = read("ai/playerbot/strategy/actions/BossTacticsActions.cpp")
 ACTIONS_H = read("ai/playerbot/strategy/actions/BossTacticsActions.h")
 TRIGGERS = read("ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp")
@@ -79,7 +90,7 @@ class ShadeCoverRow(unittest.TestCase):
     def test_documented(self):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
-        self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 20)[1:20]))  # newest entries
+        self.assertIn("BossTacticsShadeCover", newest_release_block(CHANGELOG))  # newest entries
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
@@ -94,7 +105,7 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("Recommended on.", member(DOCS_RUNS, "### `AiPlayerbot.DungeonRunShadeHealerCover`", "</details>"))
         self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
         self.assertIn("DungeonRunShadeHealerCover", DOCS)
-        self.assertIn("DungeonRunShadeHealerCover", "".join(CHANGELOG.split("\n- ", 20)[1:20]))  # newest entries
+        self.assertIn("DungeonRunShadeHealerCover", newest_release_block(CHANGELOG))  # newest entries
 
     def test_the_carrier_pick_reads_the_key(self):
         pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")
