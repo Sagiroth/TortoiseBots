@@ -1414,6 +1414,53 @@ int main()
         }
     }
 
+    // heal_reserve (r11-3): the healer top-up reserve. The boss itself (target_entry 0, no spell, priority 0), the
+    // reserve percent (`param`, 10-100) and the release lead (`window_s`, 0-120). A fight-scan kind, so its health
+    // band arms it; no mode word, spot or cycle columns. The map flag is the only table index.
+    {
+        CHECK(ParseBossTacticKind("heal_reserve") == BossTacticKind::HealReserve);
+        CHECK(static_cast<int>(BossTacticKind::HealReserve) == 29);
+        BossTacticRow heal = Row(309, 14834, BossTacticKind::HealReserve, 0, 0, 0, 85.0f);
+        heal.windowSec = 60.0f;
+        {
+            BossTacticTable table;
+            CHECK(table.Add(heal));
+            CHECK(!table.HasHealReserveMap(309)); // not sealed
+            table.Seal();
+            CHECK(table.HasHealReserveMap(309));
+            CHECK(!table.HasHealReserveMap(531));
+        }
+        // The shape: each deviation is a different refusal.
+        for (const BossTacticRow& bad : std::vector<BossTacticRow>{
+                 [&] { BossTacticRow row = heal; row.targetEntry = 11357; return row; }(),
+                 [&] { BossTacticRow row = heal; row.spellId = 24321; return row; }(),
+                 [&] { BossTacticRow row = heal; row.priority = 1; return row; }(),
+                 [&] { BossTacticRow row = heal; row.param = 9.0f; return row; }(),
+                 [&] { BossTacticRow row = heal; row.param = 101.0f; return row; }(),
+                 [&] { BossTacticRow row = heal; row.windowSec = -1.0f; return row; }(),
+                 [&] { BossTacticRow row = heal; row.windowSec = 121.0f; return row; }(),
+                 [&] { BossTacticRow row = heal; row.mode = TacticMode::All; return row; }(),
+                 [&] { BossTacticRow row = heal; row.spotX = -11787.4f; return row; }(),
+                 [&] { BossTacticRow row = heal; row.cycleSpell = 24324; return row; }(),
+                 [&] { BossTacticRow row = heal; row.cycleSec = 90.0f; return row; }()})
+        {
+            BossTacticTable table;
+            CHECK(!table.Add(bad));
+        }
+        // A health band is a fight-scan question: heal_reserve rows may carry one.
+        {
+            BossTacticTable table;
+            CHECK(table.Add(Gated(heal, 0, 50)));
+        }
+        // A priority of 0 and the band's edges are the usable row.
+        {
+            BossTacticRow edge = Row(309, 14834, BossTacticKind::HealReserve, 0, 0, 0, 10.0f);
+            edge.windowSec = 0.0f;
+            BossTacticTable table;
+            CHECK(table.Add(edge));
+        }
+    }
+
     // Kind text: exactly the lowercase spellings the table holds.
     CHECK(ParseBossTacticKind("interrupt") == BossTacticKind::Interrupt);
     CHECK(ParseBossTacticKind("kill_first") == BossTacticKind::KillFirst);
@@ -3580,6 +3627,10 @@ int main()
         seekSource.spotZ = 52.9f;
         seekSource.windowSec = 80.0f;
         CHECK(table.Add(seekSource));
+        // A heal_reserve row is not a crowd-control exclusion either (r11-3): the map's set stays the five above.
+        BossTacticRow healReserve = Row(309, 14834, BossTacticKind::HealReserve, 0, 0, 0, 85.0f);
+        healReserve.windowSec = 60.0f;
+        CHECK(table.Add(healReserve));
         // Before the seal a reader sees nothing.
         CHECK(table.NoCcEntries(309).empty() && table.FreezeAuras(309).empty());
         table.Seal();

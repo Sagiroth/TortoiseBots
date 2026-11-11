@@ -69,6 +69,7 @@ namespace ai
         SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
         GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
         TankPost = 27,        // a named tank waits at a spot for a unit that is not in the fight yet, then attacks it
+        HealReserve = 29,     // healers keep the row's mana % back from top-ups outside the row's release window
     };
 
     // The per-kind mode word of a row (`tactic_mode`), or Invalid when the word does not belong to the row's kind. An
@@ -206,6 +207,8 @@ namespace ai
             return BossTacticKind::GateHold;
         if (text == "tank_post")
             return BossTacticKind::TankPost;
+        if (text == "heal_reserve")
+            return BossTacticKind::HealReserve;
         return BossTacticKind::None;
     }
 
@@ -620,6 +623,14 @@ namespace ai
                     row.param < 5.0f || row.param > 40.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
                     row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;
+            // heal_reserve: the boss itself (target_entry 0, no spell, priority 0), the reserve percent (`param`,
+            // 10-100) and the release lead in seconds (`window_s`, 0-120). A fight-scan kind, so its health band
+            // arms it. No mode word, no spot and no cycle columns.
+            if (row.kind == BossTacticKind::HealReserve &&
+                (row.targetEntry != 0 || row.spellId != 0 || row.priority != 0 || row.param < 10.0f ||
+                    row.param > 100.0f || row.windowSec < 0.0f || row.windowSec > 120.0f ||
+                    row.mode != TacticMode::Default))
+                return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
             // the spot columns the seek_aura, anchor and tank_post kinds'.
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
@@ -673,6 +684,8 @@ namespace ai
                 pullGateMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Spread)
                 spreadMaps_[row.map] = true;
+            if (row.kind == BossTacticKind::HealReserve)
+                healReserveMaps_[row.map] = true;
             if (row.kind == BossTacticKind::Anchor)
                 anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::TankPost)
@@ -817,6 +830,12 @@ namespace ai
         bool HasSpreadMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && spreadMaps_.find(map) != spreadMaps_.end();
+        }
+
+        // Whether the map has a heal_reserve row (the healer top-up gates read it only there). False before the seal.
+        bool HasHealReserveMap(std::uint32_t map) const
+        {
+            return sealed_.load(std::memory_order_acquire) && healReserveMaps_.find(map) != healReserveMaps_.end();
         }
 
         // Whether the map has an anchor row (the movers' clamp looks for a live one only there). False before the seal.
@@ -1042,6 +1061,7 @@ namespace ai
         std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>> seekTargets_;
         std::unordered_map<std::uint32_t, bool> pullGateMaps_;
         std::unordered_map<std::uint32_t, bool> spreadMaps_;
+        std::unordered_map<std::uint32_t, bool> healReserveMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, bool> tankPostMaps_;
         // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to, and which

@@ -1447,6 +1447,10 @@ AiPlayerbot.DungeonRunBossSpreadSlots = 0
 # drinks the Greater Protection Potion of that school when it has none up and its health is not low. Off: only the
 # bosses of the built-in list use one.
 AiPlayerbot.DungeonRunBossProtectionPotion = 0
+# The healer top-up reserve (needs a heal_reserve row for the boss): outside the row's release window a healer tops
+# up members above the medium-health line only while its mana is at or above the row's percent; tanks and the boss's
+# victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule.
+AiPlayerbot.DungeonRunHealReserve = 0
 
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
 # tank walks out of that blast too (the Zul'Gurub Bat Rider's self-destruct, where nothing is gained by staying).

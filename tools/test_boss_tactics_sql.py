@@ -22,7 +22,8 @@ DOC = os.path.join(ROOT, "docs/play/boss-tactics.md")
 KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_kill", "one_at_a_time",
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
-         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post"}
+         "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post",
+         "heal_reserve"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
 TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
@@ -349,6 +350,23 @@ def new_kind_problem(row):
             return "seek_pull last-start window outside [10, 85]"
         if row["tactic_mode"]:
             return "a mode word on seek_pull"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
+        return None
+    if kind == "heal_reserve":
+        # The boss itself (target_entry 0, no spell, priority 0); `param` the reserve percent 10-100 and `window_s`
+        # the release lead 0-120 s. A fight-scan kind, so a health band may arm it; no mode word, spot or cycle
+        # columns.
+        if row["target_entry"] or row["spell_id"]:
+            return "heal_reserve with a target or a spell"
+        if row["priority"]:
+            return "heal_reserve with a priority"
+        if not 10.0 <= row["param"] <= 100.0:
+            return "heal_reserve reserve outside [10, 100]"
+        if not 0.0 <= row["window_s"] <= 120.0:
+            return "heal_reserve release lead outside [0, 120]"
+        if row["tactic_mode"]:
+            return "a mode word on heal_reserve"
         if row["cycle_spell"] or row["cycle_s"] or has_spot:
             return "cycle or spot columns on another kind"
         return None
@@ -759,6 +777,29 @@ class BossTacticsSql(unittest.TestCase):
             text = handle.read()
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
                       "AND `kind` = 'seek_pull' AND `target_entry` = 11357 AND `spell_id` = 0 "
+                      "AND `hp_min` = 0 AND `hp_max` = 100;", text)
+        self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
+
+    def test_hakkar_heal_reserve_row(self):
+        # 20261111140000_world.sql: r11-3, the healer top-up reserve. 85 % of mana, released 60 s before each Blood
+        # Siphon (the gather); tanks and the boss's victim are exempt in the code, not in the row.
+        name = "20261111140000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the heal_reserve migration is missing")
+        self.assertGreater(name, "20261110120300_world.sql")
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        row = live.get((309, 14834, "heal_reserve", 0, 0))
+        self.assertIsNotNone(row, "the Hakkar heal_reserve row is missing")
+        self.assertEqual(name, row["file"], "the heal_reserve migration owns the row")
+        self.assertEqual((0, 85.0, 60.0, 0, "", 0, 0.0, 0, 100),
+                         (row["priority"], row["param"], row["window_s"], row["bot_aura"], row["tactic_mode"],
+                          row["cycle_spell"], row["cycle_s"], row["hp_min"], row["hp_max"]),
+                         "the Hakkar heal_reserve row drifted")
+        self.assertIsNone(new_kind_problem(row))
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 309 AND `boss_entry` = 14834 "
+                      "AND `kind` = 'heal_reserve' AND `target_entry` = 0 AND `spell_id` = 0 "
                       "AND `hp_min` = 0 AND `hp_max` = 100;", text)
         self.assertEqual(1, len(re.findall(r"(?m)^\(309, 14834, '", text)))
 

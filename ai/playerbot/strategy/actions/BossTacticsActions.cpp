@@ -1254,6 +1254,10 @@ std::mutex g_spreadLogMutex;
 // The update tick is kept with the window so a failed move can correct the row its own tick's read wrote.
 struct SpreadLogWindow { std::uint32_t ms = 0; std::uint32_t tick = 0; };
 std::map<std::uint64_t, SpreadLogWindow> g_spreadLog;
+// The healer top-up reserve's row has its own throttle too: it counts the refusals since the last row.
+std::mutex g_healReserveLogMutex;
+struct HealReserveLogWindow { std::uint32_t ms = 0; std::uint32_t refused = 0; };
+std::unordered_map<std::uint64_t, HealReserveLogWindow> g_healReserveLog;
 // The pull rows' own throttle, so a pull that keeps walking does not swallow the seek rows' 5 s window.
 std::mutex g_seekPullLogMutex;
 std::unordered_map<std::uint64_t, std::uint32_t> g_seekPullLog;
@@ -9396,6 +9400,82 @@ ProtectionPotion ai::BossRowProtectionPotion(PlayerbotAI* ai, Player* bot)
             return potion;
     }
     return kNoProtectionPotion;
+}
+
+// The boss's live `heal_reserve` rows of this bot's fight (HealReservePolicy.h): the highest reserve wins, with its
+// own release window. The clock is the seek_aura cycle's, so a fight without one is never released. The key is the
+// caller's: this read answers only what the rows and the fight say.
+HealReserveRead ai::BossHealReserve(PlayerbotAI* ai, Player* bot)
+{
+    HealReserveRead out;
+    if (!ai || !bot || !bot->IsInWorld() || !ai->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT) ||
+        !GetBossTactics().HasHealReserveMap(bot->GetMapId()))
+        return out;
+    std::vector<std::pair<float, float>> rows;
+    for (const BossTacticRow* row : ScanBossTactics(ai, bot).rows)
+        if (row->kind == BossTacticKind::HealReserve)
+            rows.emplace_back(row->param, row->windowSec);
+    SeekFight state;
+    const bool clockKnown = ReadSeekFightCached(ai, bot, state) && state.dueMs != 0;
+    return HealReservePick(rows, clockKnown, clockKnown ? state.dueInMs : 0);
+}
+
+// The almost-full top-up tier's mana gate (PartyMemberAlmostFullHealthTrigger and the rejuvenation spread). With the
+// key off or no live row this is today's rule and nothing else is read. With a live row: tanks and the boss's current
+// victim keep today's rule, a top-up outside the row's release window needs the row's reserve, and the release window
+// restores today's rule. One `BossTacticsHealReserve` row per healer per 5 s carries the numbers and the refusals.
+bool ai::HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target)
+{
+    if (!ai || !bot)
+        return true;
+    const std::uint8_t mediumManaPct = static_cast<std::uint8_t>(
+        std::min<std::uint32_t>(100, sPlayerbotAIConfig.mediumMana));
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const std::uint8_t manaPct = AI_VALUE2(std::uint8_t, "mana", "self target");
+    if (!sPlayerbotAIConfig.dungeonRunHealReserve)
+        return manaPct >= mediumManaPct;
+    const HealReserveRead read = BossHealReserve(ai, bot);
+    if (!read.live)
+        return manaPct >= mediumManaPct;
+    SeekFight state;
+    const bool fightRead = ReadSeekFightCached(ai, bot, state);
+    bool exempt = false;
+    if (Player* targetPlayer = dynamic_cast<Player*>(target))
+        exempt = PlayerbotAI::IsTank(targetPlayer);
+    if (!exempt && fightRead && state.boss)
+        exempt = state.boss->GetVictim() == target;
+    const bool allowed = HealTopUpAllowed(true, read, manaPct, mediumManaPct, exempt);
+    if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+    {
+        const std::uint32_t nowMs = WorldTimer::getMSTime();
+        std::uint32_t refused = 0;
+        bool rowDue = false;
+        {
+            std::lock_guard<std::mutex> lock(g_healReserveLogMutex);
+            HealReserveLogWindow& window = g_healReserveLog[bot->GetObjectGuid().GetRawValue()];
+            if (!allowed)
+                ++window.refused;
+            if (window.ms == 0 || nowMs - window.ms >= kSeekLogGapMs)
+            {
+                window.ms = nowMs;
+                refused = window.refused;
+                window.refused = 0;
+                rowDue = true;
+            }
+        }
+        if (rowDue)
+        {
+            int dueIn = -1;
+            if (fightRead && state.dueMs != 0)
+                dueIn = static_cast<int>(state.dueInMs / 1000);
+            char info1[128];
+            snprintf(info1, sizeof(info1), "mana=%d,reserve=%d,released=%d,refused=%d,due_in=%d",
+                     static_cast<int>(manaPct), static_cast<int>(read.reservePct + 0.5f), read.released ? 1 : 0,
+                     static_cast<int>(refused), dueIn);
+            sPlayerbotAIConfig.logEvent(ai, "BossTacticsHealReserve", info1, "");
+        }
+    }
+    return allowed;
 }
 
 namespace

@@ -813,6 +813,11 @@ public:
     // priority the roles that drink (1 tanks, 2 melee damage, 4 ranged damage, 8 healers). Off, only the bosses of the
     // built-in entry table use one (default off).
     bool dungeonRunBossProtectionPotion = false;
+    // The healer top-up reserve (the `heal_reserve` boss-tactic row): outside the row's release window a healer tops
+    // up members above the medium-health line only while its mana is at or above the row's percent; tanks and the
+    // boss's current victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule
+    // (default off).
+    bool dungeonRunHealReserve = false;
     // The avoid_cast blast mode `all` (a listed blast also clears the tanks while its spell is cast): on, an `all`
     // row holds no caster for any bot, so every tank walks out of that blast too (its own key on top of the tactics
     // gate; default off).

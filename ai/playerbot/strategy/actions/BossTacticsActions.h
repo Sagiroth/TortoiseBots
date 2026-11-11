@@ -4,6 +4,7 @@
 #include "playerbot/BossTacticsPolicy.h"
 #include "playerbot/CombatSpreadPolicy.h"
 #include "playerbot/ProtectionPotionPolicy.h"
+#include "playerbot/HealReservePolicy.h"
 #include "Objects/DynamicObject.h"
 #include "playerbot/BossTacticsStand.h"
 #include "ChangeStrategyAction.h"
@@ -706,6 +707,17 @@ namespace ai
     // roles that drink it. Nothing unless the bot is in the world, runs the `boss tactics` combat strategy and the map
     // has a spread row; the row read does not need DungeonRunBossSpread.
     ProtectionPotion BossRowProtectionPotion(PlayerbotAI* ai, Player* bot);
+
+    // The boss's live `heal_reserve` row for this bot's fight (HealReservePolicy.h): whether one is live, its reserve
+    // percent, and whether its release window is open (the cycle clock is the fight's, from the seek read). Not live
+    // unless the bot is in the world, runs the "boss tactics" combat strategy, and its map has a row. Does not read
+    // the key: the caller decides what to do with it.
+    HealReserveRead BossHealReserve(PlayerbotAI* ai, Player* bot);
+    // Whether a healer may top up `target` above the medium-health line right now (the almost-full tier and the
+    // rejuvenation spread read it): with AiPlayerbot.DungeonRunHealReserve off or no live row, today's
+    // `mana >= MediumMana` rule; else the row's reserve, outside its release window, with tanks and the boss's
+    // current victim always on today's rule. Writes the `BossTacticsHealReserve` row once per 5 s while it runs.
+    bool HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target);
 
     // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
     // around the boss anchor, the verdict that decides what it does with it, and the point itself. `slotBot` is false
