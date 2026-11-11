@@ -671,6 +671,11 @@ public:
     // attacks it on arrival): on, the rows are read (its own key on top of the tactics gate). Off, the rows are ignored,
     // so the table behaves exactly as before the kind (default off).
     bool dungeonRunTankPost = false;
+    // The add_crew boss-tactic kind (once the row's switch unit `target_entry` is dead, the boss's add duty goes to the
+    // melee, the tanks and the first `priority` AoE ranged bots of the raid, the other ranged staying on the boss): on,
+    // the rows are read (its own key on top of the tactics gate). Off, the rows are ignored, so the table behaves
+    // exactly as before the kind (default off).
+    bool dungeonRunAddCrew = false;
     // The raid guard leaves a unit to the tank a boss-tactic row assigns it to (an until_tank row with a tank slot, or
     // a tank_post row): on, the off-tank pick-ups never send another tank at it; off, the raid's off-tanks take it as
     // before (its own key on top of the raid and boss rules; default off).

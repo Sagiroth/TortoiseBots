@@ -405,6 +405,7 @@ namespace ai
             creators["onyxia deep breath"] = [](PlayerbotAI* ai) { return new OnyxiaDeepBreathTrigger(ai); };
             creators["onyxia whelps"] = [](PlayerbotAI* ai) { return new OnyxiaWhelpsTrigger(ai); };
             creators["onyxia eggs near"] = [](PlayerbotAI* ai) { return new OnyxiaEggsNearTrigger(ai); };
+            creators["onyxia boss duty"] = [](PlayerbotAI* ai) { return new OnyxiaBossDutyTrigger(ai); };
 
             // Dungeon Boss Triggers
 

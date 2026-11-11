@@ -1572,6 +1572,140 @@ static CastDangerZone Zone(float x, float y, float z, float radius)
     return zone;
 }
 
+// Onyxia walk 2e (AiPlayerbot.DungeonRunAddCrew): the failing case is the switch itself. The kind says nothing while
+// the key or the row is off, or while the row's switch unit still lives; once it is dead, the crew takes the boss's
+// adds and every bot past the crew does not.
+static void AddCrewState_SwitchesAfterDeath()
+{
+    CHECK(AddCrewStateFor(true, true, false, true) == AddCrewState::Crew);
+    CHECK(AddCrewStateFor(true, true, false, false) == AddCrewState::NotCrew);
+    CHECK(AddCrewStateFor(true, true, true, true) == AddCrewState::Waiting);   // the switch unit still lives
+    CHECK(AddCrewStateFor(true, true, true, false) == AddCrewState::Waiting);
+    CHECK(AddCrewStateFor(false, true, false, true) == AddCrewState::Waiting);  // key off: today's duty
+    CHECK(AddCrewStateFor(true, false, false, true) == AddCrewState::Waiting);  // no row on the map
+    CHECK(static_cast<int>(AddCrewState::Waiting) == 0);
+    CHECK(static_cast<int>(AddCrewState::Crew) == 1);
+    CHECK(static_cast<int>(AddCrewState::NotCrew) == 2);
+}
+
+// The loader's rule for the row: the switch unit (never the boss itself) and the crew size 0-5, nothing else. A gate
+// is refused like on every kind read straight from the table.
+static void AddCrewLoader_Rows()
+{
+    BossTacticRow good = Row(249, 10184, BossTacticKind::AddCrew, 50143, 0, 2);
+    {
+        BossTacticTable table;
+        std::uint32_t switchEntry = 0;
+        std::uint8_t crewSize = 0;
+        CHECK(!table.AddCrewOf(249, 10184, switchEntry, crewSize));  // not sealed yet
+        CHECK(table.Add(good));
+        CHECK(!table.Add(good));                                      // same key
+        table.Seal();
+        CHECK(table.AddCrewOf(249, 10184, switchEntry, crewSize));
+        CHECK(switchEntry == 50143);
+        CHECK(crewSize == 2);
+        // Another boss entry, or another map, has no add_crew row.
+        switchEntry = 1;
+        crewSize = 9;
+        CHECK(!table.AddCrewOf(249, 50143, switchEntry, crewSize));
+        CHECK(!table.AddCrewOf(250, 10184, switchEntry, crewSize));
+        CHECK(switchEntry == 1 && crewSize == 9);                     // untouched on false
+    }
+    {
+        // A crew of 0 is the melee and the tanks alone.
+        BossTacticRow noRanged = good;
+        noRanged.priority = 0;
+        BossTacticTable table;
+        CHECK(table.Add(noRanged));
+        table.Seal();
+        std::uint32_t switchEntry = 0;
+        std::uint8_t crewSize = 9;
+        CHECK(table.AddCrewOf(249, 10184, switchEntry, crewSize));
+        CHECK(switchEntry == 50143 && crewSize == 0);
+    }
+    const std::vector<BossTacticRow> refused = [&good]()
+    {
+        std::vector<BossTacticRow> rows;
+        BossTacticRow noTarget = good;
+        noTarget.targetEntry = 0;
+        BossTacticRow selfTarget = good;
+        selfTarget.targetEntry = good.bossEntry;
+        BossTacticRow spell = good;
+        spell.spellId = 1;
+        BossTacticRow crew6 = good;
+        crew6.priority = 6;
+        BossTacticRow param = good;
+        param.param = 5.0f;
+        BossTacticRow band = good;
+        band.hpMin = 10;
+        BossTacticRow mode = good;
+        mode.mode = TacticMode::HoldSpot;
+        BossTacticRow cycle = good;
+        cycle.cycleSec = 30.0f;
+        BossTacticRow spot = good;
+        spot.spotX = 1.0f;
+        rows.push_back(noTarget);
+        rows.push_back(selfTarget);
+        rows.push_back(spell);
+        rows.push_back(crew6);
+        rows.push_back(param);
+        rows.push_back(band);
+        rows.push_back(mode);
+        rows.push_back(cycle);
+        rows.push_back(spot);
+        return rows;
+    }();
+    for (const BossTacticRow& bad : refused)
+    {
+        BossTacticTable table;
+        CHECK(!table.Add(bad));
+    }
+}
+
+// The crew order: class order first (mage, warlock, hunter, shaman, druid), the lower guid first inside one class.
+static void AddCrewRank_Order()
+{
+    CHECK(AddCrewClassOrder(8) == 0);   // mage
+    CHECK(AddCrewClassOrder(9) == 1);   // warlock
+    CHECK(AddCrewClassOrder(3) == 2);   // hunter
+    CHECK(AddCrewClassOrder(7) == 3);   // shaman
+    CHECK(AddCrewClassOrder(11) == 4);  // druid
+    CHECK(AddCrewClassOrder(5) == -1);  // priest
+    CHECK(AddCrewClassOrder(1) == -1);  // warrior
+    // mage g9, warlock g3, hunter g1, mage g5 -> order g5, g9, g3, g1; rank of g3 = 2.
+    std::vector<AddCrewCandidate> raid;
+    raid.push_back(AddCrewCandidate{9, AddCrewClassOrder(8)});
+    raid.push_back(AddCrewCandidate{3, AddCrewClassOrder(9)});
+    raid.push_back(AddCrewCandidate{1, AddCrewClassOrder(3)});
+    raid.push_back(AddCrewCandidate{5, AddCrewClassOrder(8)});
+    std::vector<AddCrewCandidate> sorted = raid;
+    std::sort(sorted.begin(), sorted.end(), [](const AddCrewCandidate& a, const AddCrewCandidate& b)
+        { return a.order != b.order ? a.order < b.order : a.guid < b.guid; });
+    CHECK(sorted.size() == 4);
+    CHECK(sorted[0].guid == 5 && sorted[1].guid == 9 && sorted[2].guid == 3 && sorted[3].guid == 1);
+    CHECK(AddCrewRank(raid, 5) == 0);
+    CHECK(AddCrewRank(raid, 9) == 1);
+    CHECK(AddCrewRank(raid, 3) == 2);
+    CHECK(AddCrewRank(raid, 1) == 3);
+    CHECK(AddCrewRank(raid, 7) == -1);        // not in the raid: no place
+    CHECK(AddCrewRank({}, 7) == -1);          // no AoE ranged at all
+}
+
+// The roles: no healer is ever crew, a tank or a melee damage dealer always is, and a ranged one only inside the crew
+// size.
+static void AddCrewMember_Roles()
+{
+    CHECK(!AddCrewMember(false, true, true, 0, 2));   // healer
+    CHECK(!AddCrewMember(true, true, true, 0, 2));    // a healing tank is still a healer
+    CHECK(AddCrewMember(true, false, true, -1, 2));   // tank
+    CHECK(AddCrewMember(false, false, false, -1, 2)); // melee
+    CHECK(AddCrewMember(false, false, true, 0, 2));   // the first AoE ranged bot
+    CHECK(AddCrewMember(false, false, true, 1, 2));   // the second
+    CHECK(!AddCrewMember(false, false, true, 2, 2));  // past the crew
+    CHECK(!AddCrewMember(false, false, true, -1, 2)); // a ranged class outside the AoE list
+    CHECK(!AddCrewMember(false, false, true, 0, 0));  // crew 0 is the melee and the tanks
+}
+
 int main()
 {
     std::cout << "Starting TortoiseBots boss tactics policy tests...\n";
@@ -1642,6 +1776,10 @@ int main()
     TestTankPostTauntStep_AreaOnlyOffNonTank();
     TestTankPostTauntWord_All();
     TestTankPostRow_RadiusCap();
+    AddCrewState_SwitchesAfterDeath();
+    AddCrewLoader_Rows();
+    AddCrewRank_Order();
+    AddCrewMember_Roles();
 
     // A boss that vanishes (Arlokk: invisible + not selectable, so it leaves the attackers list while it stays alive and
     // in combat) keeps its rows active while its adds fight on; the rows end with the fight or the grace window.

@@ -69,4 +69,17 @@ namespace ai
             : CalculatedValue<std::vector<TankPostUnit>>(ai, "tank post units", 1), Qualified() {}
         std::vector<TankPostUnit> Calculate() override;
     };
+
+    // "add crew::<boss>": AiPlayerbot.DungeonRunAddCrew's state for this bot, once the map's add_crew row for the
+    // qualifier boss exists and its switch unit (`target_entry`) no longer stands alive: Waiting (the key or the row is
+    // off, or the switch unit still lives: today's add duty stands), Crew (melee, tanks, and the first `priority` AoE
+    // ranged bots of the raid) or NotCrew (a ranged damage dealer past the crew: it stays on the boss). The switch unit
+    // is read through the cached "tank post units" search (an empty list counts as dead: a corpse that despawned).
+    // Written for the uint8 enum (AddCrewState): 0 Waiting, 1 Crew, 2 NotCrew.
+    class AddCrewValue : public CalculatedValue<std::uint8_t>, public Qualified
+    {
+    public:
+        AddCrewValue(PlayerbotAI* ai) : CalculatedValue<uint8>(ai, "add crew", 2), Qualified() {}
+        uint8 Calculate() override;
+    };
 }

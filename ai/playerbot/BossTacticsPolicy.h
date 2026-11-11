@@ -70,6 +70,7 @@ namespace ai
         SeekPull = 25,        // the seek walk-out's rules for one source: walk-outs a cycle, the kill lead, the last start
         GateHold = 26,        // DPS spare `boss_entry` at or below `param` % while more than `priority` blockers fight near
         TankPost = 27,        // a named tank waits at a spot for a unit that is not in the fight yet, then attacks it
+        AddCrew = 28,         // once `target_entry` is dead, the boss's add duty goes to a named crew
         HealReserve = 29,     // healers keep the row's mana % back from top-ups outside the row's release window
     };
 
@@ -210,6 +211,8 @@ namespace ai
             return BossTacticKind::TankPost;
         if (text == "heal_reserve")
             return BossTacticKind::HealReserve;
+        if (text == "add_crew")
+            return BossTacticKind::AddCrew;
         return BossTacticKind::None;
     }
 
@@ -458,6 +461,14 @@ namespace ai
         }
     };
 
+    // An add_crew row: the switch unit whose death hands the boss's adds over (`switchEntry`), and how many AoE
+    // ranged bots of the raid join the crew (`crewSize`, 0: melee and tanks only).
+    struct AddCrewRow
+    {
+        std::uint32_t switchEntry = 0;
+        std::uint8_t crewSize = 0;
+    };
+
     class BossTacticTable
     {
     public:
@@ -480,12 +491,13 @@ namespace ai
             // The health band is a percentage range, low to high.
             if (row.hpMin > row.hpMax || row.hpMax > 100)
                 return false;
-            // Only a row a fight scan answers can carry a gate. These five are read straight from the table (the dps
+            // Only a row a fight scan answers can carry a gate. These kinds are read straight from the table (the dps
             // and tank pickers, the linked_death scan, the threat reference), so a gate on one of them would never be
             // consulted.
             if (RowGateSet(row) && (row.kind == BossTacticKind::HoldKill || row.kind == BossTacticKind::TankHold ||
                     row.kind == BossTacticKind::OneAtATime || row.kind == BossTacticKind::LinkedDeath ||
-                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore))
+                    row.kind == BossTacticKind::ThreatSuccessor || row.kind == BossTacticKind::TankIgnore ||
+                    row.kind == BossTacticKind::AddCrew))
                 return false;
             if (row.kind == BossTacticKind::Interrupt && row.spellId == 0)
                 return false;
@@ -633,6 +645,13 @@ namespace ai
                     row.param > 100.0f || row.windowSec < 0.0f || row.windowSec > 120.0f ||
                     row.mode != TacticMode::Default))
                 return false;
+            // add_crew: the switch unit whose death hands the boss's adds over (`target_entry`, never the boss itself)
+            // and the crew size (`priority`, 0-5; the first `priority` AoE ranged bots of the crew class order join the
+            // melee and the tanks). No spell, no radius, no gate (see above) and no mode word.
+            if (row.kind == BossTacticKind::AddCrew &&
+                (row.targetEntry == 0 || row.targetEntry == row.bossEntry || row.spellId != 0 ||
+                    row.priority > 5 || row.param != 0.0f || RowGateSet(row) || row.mode != TacticMode::Default))
+                return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
             // the spot columns the seek_aura, anchor and tank_post kinds'.
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
@@ -692,6 +711,10 @@ namespace ai
                 anchorMaps_[row.map] = true;
             if (row.kind == BossTacticKind::TankPost)
                 tankPostMaps_[row.map] = true;
+            // The value's lookup is one row per boss: a second add_crew row of the same map and boss replaces the
+            // first here (the table holds one such row per boss in the data).
+            if (row.kind == BossTacticKind::AddCrew)
+                addCrew_[Key(row.map, row.bossEntry)] = AddCrewRow{row.targetEntry, row.priority};
             // A row that assigns the unit to a tank slot: the raid guard leaves the unit to that tank, so the table
             // keeps each kind's lowest slot for the unit (the guard uses the kind whose key is on).
             if (row.priority > 0 && row.kind == BossTacticKind::TankPost)
@@ -850,6 +873,22 @@ namespace ai
         bool HasTankPostMap(std::uint32_t map) const
         {
             return sealed_.load(std::memory_order_acquire) && tankPostMaps_.find(map) != tankPostMaps_.end();
+        }
+
+        // The map's add_crew row for a boss, keyed by (map, boss entry): the switch unit whose death hands the boss's
+        // adds over and the crew size (0-5). False before the seal, or when the boss has no such row: the "add crew"
+        // value then reads no crew and every bot keeps today's add duty. The outputs are untouched on false.
+        bool AddCrewOf(std::uint32_t map, std::uint32_t bossEntry, std::uint32_t& switchEntry,
+                       std::uint8_t& crewSize) const
+        {
+            if (!sealed_.load(std::memory_order_acquire) || addCrew_.empty())
+                return false;
+            auto const it = addCrew_.find(Key(map, bossEntry));
+            if (it == addCrew_.end())
+                return false;
+            switchEntry = it->second.switchEntry;
+            crewSize = it->second.crewSize;
+            return true;
         }
 
         // The tank slots (1-7) a unit of `entry` is assigned to by rows of its own, one per kind: a taunt_after_cast
@@ -1066,6 +1105,8 @@ namespace ai
         std::unordered_map<std::uint32_t, bool> healReserveMaps_;
         std::unordered_map<std::uint32_t, bool> anchorMaps_;
         std::unordered_map<std::uint32_t, bool> tankPostMaps_;
+        // add_crew: (map << 32 | boss entry) -> the switch unit and the crew size.
+        std::unordered_map<std::uint64_t, AddCrewRow> addCrew_;
         // map -> the unit -> the lowest raid tank slot a tank row (until_tank, tank_post) assigns it to, and which
         // kinds of row name it.
         std::unordered_map<std::uint32_t, std::unordered_map<std::uint32_t, AssignedTankSlot>> assignedTankSlots_;
@@ -4115,5 +4156,58 @@ namespace ai
             default:
                 return "none";
         }
+    }
+    // --- add_crew --------------------------------------------------------------------------------------------------
+    // AiPlayerbot.DungeonRunAddCrew: once the row's switch unit (`target_entry`) is dead, the boss's add duty goes to
+    // the melee, the tanks and the first `priority` AoE ranged bots of the raid; the other ranged damage dealers stay
+    // on the boss. Before the switch, and with the key or the row off, today's duty stands (the Onyxia whelp hunt for
+    // its own classes). The kind is generic: the caller supplies the roles and the raid order.
+    enum class AddCrewState : std::uint8_t { Waiting = 0, Crew = 1, NotCrew = 2 };
+
+    // AoE ranged classes in crew order (1.12 Classes): mage 0, warlock 1, hunter 2, shaman 3, druid 4; -1 none.
+    inline int AddCrewClassOrder(std::uint8_t classId)
+    {
+        switch (classId)
+        {
+            case 8: return 0;
+            case 9: return 1;
+            case 3: return 2;
+            case 7: return 3;
+            case 11: return 4;
+            default: return -1;
+        }
+    }
+
+    struct AddCrewCandidate
+    {
+        std::uint64_t guid = 0;
+        int order = -1;
+    };
+
+    // This bot's place among the raid's living AoE ranged damage dealers, sorted by (order, guid); -1 when not listed.
+    inline int AddCrewRank(std::vector<AddCrewCandidate> raid, std::uint64_t me)
+    {
+        std::sort(raid.begin(), raid.end(), [](const AddCrewCandidate& a, const AddCrewCandidate& b)
+        { return a.order != b.order ? a.order < b.order : a.guid < b.guid; });
+        for (std::size_t i = 0; i < raid.size(); ++i)
+            if (raid[i].guid == me)
+                return static_cast<int>(i);
+        return -1;
+    }
+
+    inline bool AddCrewMember(bool tank, bool healer, bool ranged, int aoeRank, std::uint8_t crewSize)
+    {
+        if (healer)
+            return false;
+        if (tank || !ranged)
+            return true;
+        return aoeRank >= 0 && aoeRank < crewSize;
+    }
+
+    inline AddCrewState AddCrewStateFor(bool keyOn, bool rowFound, bool switchAlive, bool member)
+    {
+        if (!keyOn || !rowFound || switchAlive)
+            return AddCrewState::Waiting;
+        return member ? AddCrewState::Crew : AddCrewState::NotCrew;
     }
 }

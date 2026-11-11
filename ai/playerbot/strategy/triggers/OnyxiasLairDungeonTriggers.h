@@ -104,4 +104,15 @@ namespace ai
         std::string GetTargetName() override { return "self target"; }
         bool IsActive() override;
     };
+
+    // After the add crew takes over (AiPlayerbot.DungeonRunAddCrew): a ranged damage dealer past the crew on a live
+    // whelp, while she hovers, goes back to her instead of staying on the whelps the crew now has.
+    class OnyxiaBossDutyTrigger : public Trigger
+    {
+    public:
+        OnyxiaBossDutyTrigger(PlayerbotAI* ai, std::string name = "onyxia boss duty", int checkInterval = 2)
+        : Trigger(ai, name, checkInterval) {}
+        std::string GetTargetName() override { return "self target"; }
+        bool IsActive() override;
+    };
 }

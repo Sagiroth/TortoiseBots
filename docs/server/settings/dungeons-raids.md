@@ -30,6 +30,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BotLfgGroupsPer100Bots`](#aiplayerbotbotlfggroupsper100bots) | `1` | How many groups exist at once per 100 bots online. |
 | [`AiPlayerbot.BotLfgMaxGroups`](#aiplayerbotbotlfgmaxgroups) | `5` | The most groups at once. |
 | [`AiPlayerbot.BotLfgOnlyWithPlayersOnline`](#aiplayerbotbotlfgonlywithplayersonline) | `1` | Groups form only while at least one real player is online. |
+| [`AiPlayerbot.DungeonRunAddCrew`](#aiplayerbotdungeonrunaddcrew) | `0` | `1`: the boss tactics keep their `add_crew` rows — once the row's switch unit is dead, the melee, the tanks and the first `priority` AoE ranged bots of the raid take the boss's adds, and the other ranged damage dealers stay on the boss (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunAggroCeiling`](#aiplayerbotdungeonrunaggroceiling) | `6` | Joiners above which the run leader rests the party before a pull (needs the estimate on). |
 | [`AiPlayerbot.DungeonRunAggroEstimate`](#aiplayerbotdungeonrunaggroestimate) | `0` | The run leader estimates how many creatures a pull brings and rests first when it is many. |
 | [`AiPlayerbot.DungeonRunAggroRingYd`](#aiplayerbotdungeonrunaggroringyd) | `20` | How far a call for help carries in the ring estimate. |
@@ -286,6 +287,21 @@ The waiting leader posts in LookingForGroup:
 - a short invite whisper (like "inv") from a fitting player gets an invite
 - other whispers: at most one answer per 10 s per sender (non-invite hints every 5 minutes)
 - answers: "inv sent", "already sent you an inv", "someone's joining atm", "sorry, we're full now", "sorry, can't group with hardcore chars", and short refusals (grouped, band, role, failed invite)
+
+</details>
+
+### `AiPlayerbot.DungeonRunAddCrew`
+Whether the boss tactics keep their `add_crew` rows: once the row's switch unit (`target_entry`) no longer stands alive, the boss's add duty goes to a named crew — the melee, the tanks and the first `priority` AoE ranged bots of the raid — and the other ranged damage dealers stay on the boss.
+**Default:** `0` · **Values:** `0` off (the rows are ignored, as before the kind existed), `1` on (needs `AiPlayerbot.DungeonTactics`, or a commander-bound group) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** `boss_entry` is the boss whose adds change hands, `target_entry` the switch unit whose death hands them over (never the boss itself), and `priority` the crew size (0-5). No spell, no radius, no health band and no mode word.
+
+**The state:** while the key is off, the boss has no row, or a unit of the switch entry within 200 yd still lives (a grid search; an empty list counts as dead, as for a corpse that despawned), the boss's own add duty stands. Once the switch unit is dead, the melee, the tanks and the first `priority` AoE ranged bots of the raid (class order mage, warlock, hunter, shaman, druid, the lower guid first inside one class) are the crew; a ranged damage dealer past the crew is not, and healers never are.
+
+**The consumers:** the kind is generic. Onyxia's Lair is its first consumer: the whelp duty (the whelp trigger, the kill action and the whelp hold) follows the crew once Cindarion is dead, and every ranged damage dealer past the crew returns from a whelp to Onyxia while she hovers (`onyxia boss duty` → `onyxia attack boss`).
 
 </details>
 

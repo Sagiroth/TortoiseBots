@@ -128,7 +128,11 @@ OnyxiaWhelpScan ai::ScanOnyxiaWhelps(PlayerbotAI* ai, Player* bot)
 
 bool ai::IsOnyxiaWhelpDuty(PlayerbotAI* ai, Player* bot)
 {
-    return IsOnyxiaWhelpHunter(bot->GetClass(), PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    bool const today = IsOnyxiaWhelpHunter(bot->GetClass(), PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    if (!sPlayerbotAIConfig.dungeonRunAddCrew)
+        return today;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    return OnyxiaWhelpDutyFor(today, AI_VALUE2(uint8, "add crew", static_cast<int32>(kOnyxiaEntry)));
 }
 
 std::vector<GameObject*> ai::CollectOnyxiaEggs(PlayerbotAI* ai)
@@ -183,6 +187,26 @@ bool OnyxiaKillWhelpsAction::Execute(Event& event)
     if (!PossibleAttackTargetsValue::IsValid(scan.whelp, bot))
         return false;
     return Attack(bot, scan.whelp);
+}
+
+bool OnyxiaAttackBossAction::Execute(Event& event)
+{
+    (void)event;
+    if (!sPlayerbotAIConfig.dungeonRunAddCrew || bot->GetMapId() != kOnyxiaMapId)
+        return false;
+    Unit* boss = nullptr;
+    for (const ObjectGuid& attackerGuid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* attacker = ai->GetUnit(attackerGuid);
+        if (attacker && attacker->GetEntry() == kOnyxiaEntry && sServerFacade.IsAlive(attacker))
+        {
+            boss = attacker;
+            break;
+        }
+    }
+    if (!boss || !PossibleAttackTargetsValue::IsValid(boss, bot))
+        return false;
+    return Attack(bot, boss);
 }
 
 float OnyxiaWhelpHoldMultiplier::GetValue(Action* action)

@@ -48,6 +48,12 @@ void OnyxiaFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "onyxia eggs near",
         NextAction::array(0, new NextAction("onyxia avoid eggs", ACTION_EMERGENCY), NULL)));
+
+    // AiPlayerbot.DungeonRunAddCrew: once the add crew has the whelps, a ranged damage dealer past the crew goes back
+    // to her while she hovers (the trigger stays silent with the key off).
+    triggers.push_back(new TriggerNode(
+        "onyxia boss duty",
+        NextAction::array(0, new NextAction("onyxia attack boss", ACTION_HIGH + 1), NULL)));
 }
 
 void OnyxiaFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)

@@ -118,6 +118,22 @@ namespace ai
         return !isTank && !isHealer && isRanged && IsOnyxiaWhelpHunterClass(classId);
     }
 
+    // AiPlayerbot.DungeonRunAddCrew: the whelp duty once the row's switch unit is dead (state from the "add crew"
+    // value). Waiting keeps today's duty; Crew takes it; NotCrew leaves it. So the whelp trigger, the kill action and
+    // the whelp hold follow the crew, and the melee and tanks that were never hunters join it.
+    inline bool OnyxiaWhelpDutyFor(bool todayDuty, std::uint8_t crewState)
+    {
+        return crewState == 1 ? true : crewState == 2 ? false : todayDuty;
+    }
+
+    // A ranged damage dealer off the crew on a whelp while she hovers goes back to her (not on an explicit order). The
+    // crew has the whelps, so a bot past it that stays would leave her to the melee, who cannot reach her in the air.
+    inline bool ShouldReturnToOnyxia(bool keyOn, std::uint8_t crewState, bool rangedDps, bool bossAirborne,
+                                     bool onWhelp, bool explicitOrder, bool bossValid)
+    {
+        return keyOn && crewState == 2 && rangedDps && bossAirborne && onWhelp && !explicitOrder && bossValid;
+    }
+
     struct OnyxiaPoint { float x, y; };
 
     // True when (x, y) lies inside the trap circle (10yd, no margin) of any

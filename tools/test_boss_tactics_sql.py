@@ -23,10 +23,11 @@ KINDS = {"interrupt", "kill_first", "behind", "avoid_cast", "tank_hold", "hold_k
          "linked_death", "dps_hold_after", "dispel_priority", "flee_on_aura", "freeze_on_aura",
          "taunt_after_cast", "swap_on_aura", "use_object", "seek_aura", "pull_gate", "spread", "needs_aura",
          "burn_mana", "ranged_only", "threat_successor", "anchor", "tank_ignore", "seek_pull", "gate_hold", "tank_post",
-         "heal_reserve"}
+         "add_crew", "heal_reserve"}
 # Kinds read straight from the table (the dps and tank pickers, the linked_death scan), never from a fight scan: a row
 # of one of them cannot answer a gate, so the loader refuses one.
-TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore"}
+TABLE_READ_KINDS = {"hold_kill", "tank_hold", "one_at_a_time", "linked_death", "threat_successor", "tank_ignore",
+                    "add_crew"}
 # The mode word each kind takes (`tactic_mode`); an empty word is the kind's own behaviour.
 MODE_WORDS = {
     "dispel_priority": {"now", "clear", "never"},
@@ -262,7 +263,7 @@ def new_kind_problem(row):
     if row["tactic_mode"] not in MODE_WORDS.get(kind, set()) | {""}:
         return "a mode word the kind does not take"
     if kind in ("seek_aura", "pull_gate", "spread", "burn_mana", "ranged_only", "threat_successor", "anchor",
-                "tank_ignore", "seek_pull", "gate_hold") and (
+                "tank_ignore", "seek_pull", "gate_hold", "add_crew") and (
             row["hp_min"] or row["hp_max"] != 100 or row["bot_aura"]):
         return "a health band or bot aura on a kind no fight scan asks"
     if kind == "gate_hold":
@@ -415,6 +416,24 @@ def new_kind_problem(row):
             return "tank_post window outside [10, 120]"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
+        return None
+    if kind == "add_crew":
+        # The switch unit whose death hands the boss's adds over (target_entry, never the boss itself) and the crew
+        # size (priority 0-5): no spell, no radius, no gate (see above), no mode word and no cycle or spot columns.
+        if not row["target_entry"]:
+            return "add_crew without its switch unit"
+        if row["target_entry"] == row["boss_entry"]:
+            return "add_crew switch unit is its own boss"
+        if row["spell_id"]:
+            return "add_crew with a spell"
+        if row["priority"] > 5:
+            return "add_crew crew size above 5"
+        if row["param"] != 0.0:
+            return "add_crew with a radius"
+        if row["tactic_mode"]:
+            return "a mode word on add_crew"
+        if row["cycle_spell"] or row["cycle_s"] or has_spot:
+            return "cycle or spot columns on another kind"
         return None
     if kind == "needs_aura":
         # The aura is the row's gate: it names the entry and the aura a bot must carry, and nothing else.
@@ -989,6 +1008,30 @@ class BossTacticsSql(unittest.TestCase):
                           hold["bot_aura"], hold["tactic_mode"]),
                          "the Onyxia opening dps_hold_after row drifted")
         self.assertIsNone(new_kind_problem(hold))
+
+    def test_onyxia_walk2e_add_crew(self):
+        # 20261111160000_world.sql: walk 2e, the add crew. Walk 2d a-1 put at least 79 % of the P2 damage on the
+        # whelps and the ranged bots stood on a whelp for 37 % of their frames, so once Cindarion 50143 is dead the
+        # melee, the tanks and two AoE ranged bots take the whelps and the other ranged bots stay on her (needs
+        # AiPlayerbot.DungeonRunAddCrew = 1).
+        name = "20261111160000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2e add_crew migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'add_crew';", text)
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(1, text.count("(249, 10184, 'add_crew'"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        crew = live.get((249, 10184, "add_crew", 50143, 0))
+        self.assertIsNotNone(crew, "the Onyxia add_crew row is missing")
+        self.assertEqual(name, crew["file"], "the walk 2e migration owns the add_crew row")
+        self.assertEqual((50143, 0, 2, 0.0, "", 0, 100, 0),
+                         (crew["target_entry"], crew["spell_id"], crew["priority"], crew["param"],
+                          crew["tactic_mode"], crew["hp_min"], crew["hp_max"], crew["bot_aura"]),
+                         "the Onyxia add_crew row drifted")
+        self.assertIsNone(new_kind_problem(crew))
 
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
