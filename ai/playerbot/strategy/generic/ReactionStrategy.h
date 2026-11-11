@@ -8,6 +8,8 @@ namespace ai
     {
     public:
         ReactionStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        // The name every reaction engine asks for (AiFactory::AddDefaultReactionStrategies).
+        std::string getName() override { return "react"; }
         virtual int GetType() override { return STRATEGY_TYPE_REACTION; }
 
     protected:

@@ -57,6 +57,9 @@ class ReactStrategyWiringTest(unittest.TestCase):
         for trig in ('"combat start"', '"combat end"', '"death"', '"resurrect"'):
             self.assertIn(trig, cls)
         self.assertNotIn("TO DO: Delete this", REACTION_H)
+        # The engine keys the strategy map and every removal by getName(), so
+        # the class must name itself exactly what AiFactory asks for.
+        self.assertIn('std::string getName() override { return "react"; }', REACTION_H)
 
     def test_the_rows_read_the_key(self):
         self.assertIn("ReactionRaidRows(sPlayerbotAIConfig.raidReactions)", REACTION)
