@@ -1,5 +1,6 @@
 # Changelog
 
+- Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.
 - New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: behind AiPlayerbot.SpellFacingPrecheck (default 0), a bot no longer tries Gouge from behind or Backstab from the front over and over, which spammed spell failures to everyone nearby (found by Tortoise Trials, #1556).
 - New: behind AiPlayerbot.InterruptIgnoresThreat (default 0), Kick, Pummel, Shield Bash, Bash, Counterspell and Silence skip the threat back-off while they would not pull the caster off the tank, so a damage dealer at the high-threat line still interrupts a cast (found by Tortoise Trials, #1556).

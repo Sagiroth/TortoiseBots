@@ -41801,9 +41801,9 @@
       "add": 0,
       "flag": "",
       "need": "front",
-      "level": "full",
+      "level": "partly",
       "name": "dragon flank",
-      "text": "everyone but the tank leaves her front and tail cones and works the flanks",
+      "text": "everyone but the tank leaves her front and tail cones and works the flanks (with AiPlayerbot.RaidReactions)",
       "source": [
         "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
@@ -41817,9 +41817,9 @@
       "add": 0,
       "flag": "",
       "need": "tail",
-      "level": "full",
+      "level": "partly",
       "name": "dragon flank",
-      "text": "everyone but the tank leaves her front and tail cones and works the flanks",
+      "text": "everyone but the tank leaves her front and tail cones and works the flanks (with AiPlayerbot.RaidReactions)",
       "source": [
         "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
@@ -41833,9 +41833,9 @@
       "add": 0,
       "flag": "",
       "need": "front",
-      "level": "full",
+      "level": "partly",
       "name": "dragon flank",
-      "text": "everyone but the tank leaves her front and tail cones and works the flanks",
+      "text": "everyone but the tank leaves her front and tail cones and works the flanks (with AiPlayerbot.RaidReactions)",
       "source": [
         "ai/playerbot/ReactionRowsPolicy.h",
         "ai/playerbot/strategy/triggers/DungeonTriggers.cpp"
@@ -41960,9 +41960,9 @@
       "add": 0,
       "flag": "",
       "need": "front",
-      "level": "full",
+      "level": "partly",
       "name": "dragon flank",
-      "text": "the tank holds the head away and everyone else works the flanks",
+      "text": "the tank holds the head away and everyone else works the flanks (with AiPlayerbot.RaidReactions)",
       "source": [
         "ai/playerbot/strategy/generic/EmeraldSanctumDungeonStrategies.cpp",
         "ai/playerbot/ReactionRowsPolicy.h",
