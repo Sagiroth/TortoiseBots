@@ -244,6 +244,13 @@ int main()
         CHECK(ShouldStopWandToCast(h));
         CHECK(!WandState{}.manaShortRowActive);
     }
+    // A grouped healer's wand sleeps one react delay, not swing + GCD.
+    CHECK(ShootSleepMs(true, true, 3000, 100) == 100);
+    CHECK(ShootSleepMs(true, false, 3000, 100) == 3000);
+    CHECK(ShootSleepMs(false, true, 3500, 100) == 3500);
+    CHECK(ShootSleepMs(false, false, 3500, 100) == 3500);
+    CHECK(ShootSleepMs(true, true, 3000, 250) == 250);
+
 
     std::printf("wand policy: %d checks passed\n", checks);
     return 0;

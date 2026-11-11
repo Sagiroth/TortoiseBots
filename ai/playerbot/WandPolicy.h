@@ -228,6 +228,20 @@ namespace ai
     // The old rule waited the ranged timer alone, capped at the unmodified
     // swing: about 70% of frost-mage stops in Zul'Farrak saw Frostbolt
     // still "not ready" and Shoot again within 1 s.
+
+    // How long the AI sleeps after the "shoot" action ran (CastShootAction::Execute).
+    // The donor slept the weapon delay plus a GCD (3 s for a 1.5 s wand) so the
+    // bot would not re-cast Shoot and cut its own shot. Re-casting is already
+    // prevented (a running wand is never re-cast), and a grouped healer must see
+    // a hit within one tick: its wand runs on its own, its stop rows
+    // (HealerMayWand, "wand blocks cast") wait out the swing themselves
+    // (WandStopWaitMs). Every other shooter (mage, warlock, shadow priest, a
+    // solo healer, a bow, gun, crossbow or thrown weapon) keeps the donor sleep.
+    inline std::uint32_t ShootSleepMs(bool wand, bool groupedHealer, std::uint32_t weaponDelayMs, std::uint32_t reactDelayMs)
+    {
+        return (wand && groupedHealer) ? reactDelayMs : weaponDelayMs;
+    }
+
     inline std::uint32_t WandStopWaitMs(std::uint32_t rangedTimerMs, std::uint32_t spellGcdRemainingMs, std::uint32_t reactDelayMs)
     {
         std::uint32_t wait = rangedTimerMs > spellGcdRemainingMs ? rangedTimerMs : spellGcdRemainingMs;
