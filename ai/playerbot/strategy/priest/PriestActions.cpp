@@ -41,13 +41,11 @@ bool ai::PriestShadowformHealGateOpen(PlayerbotAI* ai, std::string const& spell,
 
 bool CastRenewOnPartyAction::isUseful()
 {
-    Player* bot = ai->GetBot();
-    if (ai->HasAura("shadowform", bot) && !ai->ContainsStrategy(STRATEGY_TYPE_HEAL))
-    {
-        Unit* target = GetTarget();
-        if (target && target->GetHealthPercent() >= sPlayerbotAIConfig.lowHealth &&
-            AnotherHealerCoversAlly(ai, target, HealReachLimit(ai)))
-            return false;
-    }
+    Unit* target = GetTarget();
+    if (target && ShadowformOffhealYields(ai->HasAura("shadowform", ai->GetBot()),
+        ai->ContainsStrategy(STRATEGY_TYPE_HEAL),
+        target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth,
+        AnotherHealerCoversAlly(ai, target, HealReachLimit(ai))))
+        return false;
     return PriestFormGatedHeal<CastRenewOnPartyActionBase>::isUseful();
 }
