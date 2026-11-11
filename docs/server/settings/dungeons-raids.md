@@ -41,7 +41,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.BossStandOutranksBreathDodge`](#aiplayerbotbossstandoutranksbreathdodge) | `0` | `1`: a bot holding a boss stand seat keeps it through Onyxia's Deep Breath instead of walking to the generic safe spots (recommended on). |
 | [`AiPlayerbot.DungeonRunBossSpreadSlots`](#aiplayerbotdungeonrunbossspreadslots) | `0` | `1`: each ranged bot and healer of a live `spread` row owns a fixed ring slot and stands on it between the doses; off keeps the step-away (recommended on, needs `DungeonRunBossSpread`). |
 | [`AiPlayerbot.DungeonRunBossProtectionPotion`](#aiplayerbotdungeonrunbossprotectionpotion) | `0` | `1`: a `spread` row also names the protection potion its boss calls for (`spell_id`'s school) and who drinks it (`priority`'s role mask); off keeps only the built-in boss list (needs the boss tactics, `AiPlayerbot.DungeonTactics = 1` or a commander-bound run group, and the rows). |
-| [`AiPlayerbot.DungeonRunHealReserve`](#aiplayerbotdungeonrunhealreserve) | `0` | `1`: a live `heal_reserve` row raises the top-up mana line to its percent outside the row's release window; off keeps the `MediumMana` rule. |
+| [`AiPlayerbot.DungeonRunHealReserve`](#aiplayerbotdungeonrunhealreserve) | `0` | `0` (keep off: walk 75 showed more early deaths, 1.3 to 3.1 deaths by 90 s per fight, though healer mana at 60 s rose 12 points): a live `heal_reserve` row raises the top-up mana line to its percent outside the row's release window; off keeps the `MediumMana` rule. |
 | [`AiPlayerbot.DungeonRunCharmYield`](#aiplayerbotdungeonruncharmyield) | `0` | `1`: a bot a creature charms yields its AI, no action (area or targeted) lands on a charmed group member, and pets stand down while one is up (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunImmuneBossVictimEscape`](#aiplayerbotdungeonrunimmunebossvictimescape) | `0` | `1` (recommended on): a boss that cannot be taunted and turns on a damage dealer or healer makes that member escape with its own ability, or a nearby paladin protect it (needs no rows or tactics). |
 | [`AiPlayerbot.DungeonRunFightForward`](#aiplayerbotdungeonrunfightforward) | `1` | After a won fight the next pack within 30 yd is pulled from where the tank stands when the way there is direct and clear. |
@@ -744,7 +744,7 @@ Whether a live `spread` row gives each ranged bot and healer a fixed slot to sta
 
 </details>
 ### `AiPlayerbot.DungeonRunHealReserve`
-Whether a live `heal_reserve` boss-tactic row raises the healer's top-up mana line to the row's reserve percent.
+Whether a live `heal_reserve` boss-tactic row raises the healer's top-up mana line to the row's reserve percent. Keep off: walk 75 showed more early deaths.
 **Default:** `0` · **Values:** `0` off (the top-up tier keeps its `AiPlayerbot.MediumMana` rule), `1` on (needs the boss tactics and the rows) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>

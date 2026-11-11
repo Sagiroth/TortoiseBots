@@ -1450,6 +1450,8 @@ AiPlayerbot.DungeonRunBossProtectionPotion = 0
 # The healer top-up reserve (needs a heal_reserve row for the boss): outside the row's release window a healer tops
 # up members above the medium-health line only while its mana is at or above the row's percent; tanks and the boss's
 # victim are exempt, and every lower heal tier is unchanged. Off keeps the MediumMana rule.
+# Keep off: walk 75 showed more early deaths (deaths by 90 s 1.3 to 3.1 per fight) even though healer mana at 60 s
+# rose 12 points. The reserve waits for a redesign (no reserve in the opening, released when raid health drops).
 AiPlayerbot.DungeonRunHealReserve = 0
 
 # An avoid_cast row in mode `all` also clears the tanks: while its spell is cast no bot holds the caster, so every
