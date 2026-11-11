@@ -4081,6 +4081,13 @@ namespace ai
         if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return false;
         return !in.victimIsTank || in.ownsSubjectOn;
     }
+    // Whether the area taunt's own gate has to be read at all: the step picks the area taunt only with a known spell,
+    // castable now, the subject in range and off a non-tank. In every other state the gate cannot change the verdict,
+    // and reading it scans the radius and advances the other posts' clocks.
+    inline bool TankPostAreaTauntGateNeeded(const TankPostTauntIn& in)
+    {
+        return in.areaCastable && in.areaInRange && !in.victimIsTank;
+    }
     inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)
     {
         if (!TankPostTauntAttemptable(in)) return TankPostTaunt::None;

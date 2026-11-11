@@ -1432,6 +1432,36 @@ static void TestTankPostTauntAttemptable_UntakenSubject()
     CHECK(TankPostTauntAttemptable(reserved));
 }
 
+// The mutation case: with the area gate read as soon as an area spell is known, a taunt the step can never cast (its
+// spell on cooldown, the subject out of range, or the victim a tank) still scans the radius, advances the other posts'
+// clocks and writes BossTacticsTauntGate rows.
+static void TestTankPostAreaGateNeeded_CastOnly()
+{
+    TankPostTauntIn in;
+    in.areaCastable = true;
+    in.areaInRange = true;
+    CHECK(TankPostAreaTauntGateNeeded(in));
+    TankPostTauntIn cooldown = in; cooldown.areaCastable = false;   // the spell is known but not castable
+    CHECK(!TankPostAreaTauntGateNeeded(cooldown));
+    TankPostTauntIn far = in; far.areaInRange = false;
+    CHECK(!TankPostAreaTauntGateNeeded(far));
+    TankPostTauntIn tankVictim = in; tankVictim.victimIsTank = true;
+    CHECK(!TankPostAreaTauntGateNeeded(tankVictim));
+    // And the gate flag cannot change those states: the step already says NotReady, so nothing is read.
+    TankPostTauntIn base;
+    base.keyOn = true; base.engage = true; base.subjectSelectable = true;
+    base.areaCastable = true; base.areaInRange = true;
+    CHECK(TankPostTauntStep(base) == TankPostTaunt::AreaTaunt);
+    cooldown.keyOn = true; cooldown.engage = true; cooldown.subjectSelectable = true;
+    far.keyOn = true; far.engage = true; far.subjectSelectable = true;
+    tankVictim.keyOn = true; tankVictim.engage = true; tankVictim.subjectSelectable = true;
+    tankVictim.ownsSubjectOn = true;  // past the reservation rule, so only the area taunt is left
+    cooldown.areaGateRefuses = true; far.areaGateRefuses = true; tankVictim.areaGateRefuses = true;
+    CHECK(TankPostTauntStep(cooldown) == TankPostTaunt::NotReady);
+    CHECK(TankPostTauntStep(far) == TankPostTaunt::NotReady);
+    CHECK(TankPostTauntStep(tankVictim) == TankPostTaunt::NotReady);
+}
+
 // Every step that is not a taunt: off the post, off the key, on its own tank, or still in the air.
 static void TestTankPostTauntStep_Gates()
 {
@@ -1606,6 +1636,7 @@ int main()
     TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
     TestTankPostTauntStep_OffAnotherTank();
     TestTankPostTauntAttemptable_UntakenSubject();
+    TestTankPostAreaGateNeeded_CastOnly();
     TestTankPostTauntStep_Gates();
     TestTankPostTauntStep_Stance();
     TestTankPostTauntStep_AreaOnlyOffNonTank();

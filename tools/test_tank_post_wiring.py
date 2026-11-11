@@ -366,6 +366,16 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("AreaTauntRefusedByPost(ai, bot, area)", area)
         self.assertIn("bot->GetDistance(subject) <= kAreaTauntRadiusYd", area)
         self.assertIn("step = TankPostTauntStep(in);", area)
+        # The area gate scans the radius and advances other posts' clocks: read it only for a castable, in-range area
+        # taunt off a non-tank, after the cheap inputs.
+        self.assertIn("if (TankPostAreaTauntGateNeeded(in))", area)
+        guard = area.index("if (TankPostAreaTauntGateNeeded(in))")
+        self.assertLess(area.index("in.areaCastable"), guard)
+        self.assertLess(area.index("in.areaInRange"), guard)
+        self.assertLess(guard, area.index("step = TankPostTauntStep(in);"))
+        self.assertIn("AreaTauntRefusedByPost(ai, bot, area)", area[guard:])
+        self.assertIn("inline bool TankPostAreaTauntGateNeeded(const TankPostTauntIn& in)", POLICY)
+        self.assertIn("return in.areaCastable && in.areaInRange && !in.victimIsTank;", POLICY)
         self.assertIn("if (current != subject)\n                Attack(bot, subject);", take)
         self.assertIn("cast = ai->CastSpell(taunt, subject);", take)
         self.assertIn('cast = ai->CastSpell("defensive stance", bot);', take)

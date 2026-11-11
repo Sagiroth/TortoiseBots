@@ -12466,8 +12466,9 @@ bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* curr
             area = "challenging roar";
         in.areaCastable = area && ai->CanCastSpell(area, bot);
         in.areaInRange = area && bot->GetDistance(subject) <= kAreaTauntRadiusYd;
-        in.areaGateRefuses = area && (AreaTauntRefusedByPost(ai, bot, area) ||
-                                         TauntRefusedByGate(ai, bot, subject, area));
+        if (TankPostAreaTauntGateNeeded(in))
+            in.areaGateRefuses = AreaTauntRefusedByPost(ai, bot, area) ||
+                                     TauntRefusedByGate(ai, bot, subject, area);
         step = TankPostTauntStep(in);
     }
     const char* spell = nullptr;

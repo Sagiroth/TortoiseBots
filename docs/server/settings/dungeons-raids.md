@@ -1563,7 +1563,7 @@ Whether a `tank_post` row's Engage step taunts the awaited unit back off whoever
 
 **The gate:** the post tank's own reservation is skipped (`TankPostReservesSubject` ignores its own record), so `AiPlayerbot.DungeonRunTankPostOwnsSubject` never refuses the post's own taunt; every other tank stays refused while the reservation holds.
 
-**Diagnostics:** one `BossTacticsTankPost` row per cast (`event=taunt,step=taunt|stance|area,spell=<spell>,victim=<tank|healer|dps|none>,cast=1`), and for a word that did not cast (`gate`, `not_ready`) at most one per bot and word per 5 s; `step=none` writes nothing. The gates are read only for a taunt that can go out: a subject already on the post, in the air, or off another tank without the reservation writes no `BossTacticsTauntGate` row, and the area taunt's radius scan runs only once the single taunt cannot go out.
+**Diagnostics:** one `BossTacticsTankPost` row per cast (`event=taunt,step=taunt|stance|area,spell=<spell>,victim=<tank|healer|dps|none>,cast=1`), and for a word that did not cast (`gate`, `not_ready`) at most one per bot and word per 5 s; `step=none` writes nothing. The gates are read only for a taunt that can go out: a subject already on the post, in the air, or off another tank without the reservation writes no `BossTacticsTauntGate` row, and the area taunt's gates and radius scan run only once the single taunt cannot go out and the area taunt itself can (a known spell, castable now, the unit in range and off a non-tank).
 
 </details>
 
