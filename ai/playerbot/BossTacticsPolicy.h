@@ -3674,6 +3674,18 @@ namespace ai
         return true;
     }
 
+    // The post owner's own record update re-arms the same flag: its tank back within kTankPostReserveRangeYd of the
+    // subject with the subject on it, or loose off it for less than the grace, is the reservation holding again, so a
+    // later lapse writes its own row even when no other tank reads the reservation in between. While a lapse is still
+    // active the flag stays, and a reader's later read of that lapse stays quiet.
+    inline bool TankPostLapseOwnerUpdate(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,
+                                         std::uint32_t looseMs, bool& lapseLogged)
+    {
+        lapseLogged = lapseLogged && TankPostLapseOf(keyOn, ownerWithinRange, subjectOnOwner, looseMs) !=
+            TankPostLapse::None;
+        return lapseLogged;
+    }
+
     // The loose clock of a post record (AiPlayerbot.DungeonRunTankPostOwnsSubject). It is 0 while the subject is on its
     // post tank, and while the subject cannot be hit before the clock has started (unselectable or not attackable: a
     // boss still in the air, out of reach of every tank), so the grace is not spent before it lands. It starts on the

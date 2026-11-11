@@ -562,6 +562,25 @@ static void TestTankPostOwns_OneLapseRowPerLapse()
     CHECK(TankPostLapseDue(TankPostLapse::Range, lapseLogged));  // the next lapse writes again
 }
 
+// A recovery that only the post owner's own record update sees re-arms the row too: lapse logged, the subject back on
+// its tank with no other tank reading the reservation, then a second distinct lapse writes its own row. While the same
+// lapse is still active the owner's update keeps the flag, so the reader stays quiet.
+static void TestTankPostOwns_OwnerUpdateRearmsLapse()
+{
+    bool lapseLogged = false;
+    CHECK(TankPostLapseDue(TankPostLapse::Range, lapseLogged));            // first lapse: one row
+    CHECK(TankPostLapseOwnerUpdate(true, true, false, kTankPostReserveGraceMs, lapseLogged)); // still out of grace
+    CHECK(lapseLogged);
+    CHECK(!TankPostLapseDue(TankPostLapse::Grace, lapseLogged));           // the other limit of the same lapse: quiet
+    CHECK(!TankPostLapseOwnerUpdate(true, true, true, 0, lapseLogged));    // recovery seen only by the owner: re-armed
+    CHECK(!lapseLogged);
+    CHECK(TankPostLapseDue(TankPostLapse::Range, lapseLogged));            // the second distinct lapse writes again
+    CHECK(TankPostLapseOwnerUpdate(true, false, true, 0, lapseLogged));    // out of range again: the flag stays
+    CHECK(lapseLogged);
+    CHECK(!TankPostLapseOwnerUpdate(false, true, true, 0, lapseLogged));   // key off: nothing is written, flag cleared
+    CHECK(!lapseLogged);
+}
+
 // The area taunts scan every hostile in the spell's radius, not only the selected target: a second unit 6 yd away that
 // another post reserves refuses the cast; the same unit past 10 yd does not.
 static void TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius()
@@ -1407,6 +1426,7 @@ int main()
     TestTankPostOwns_LooseClockClearsOnTheOwner();
     TestTankPostOwns_ReadOnOwnerResetsBeforeTheNextLoss();
     TestTankPostOwns_OneLapseRowPerLapse();
+    TestTankPostOwns_OwnerUpdateRearmsLapse();
     TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestTankPostOwns_KeyOffWritesNoSlotWord();

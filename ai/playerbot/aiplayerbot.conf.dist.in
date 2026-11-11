@@ -1129,7 +1129,8 @@ AiPlayerbot.DungeonRunTankPostLeash = 0
 # cannot be hit and does not start the clock; a lift-off of 15 s or more starts a new grace at the next landing, shorter
 # blips keep the original start). A tank farther than 60 yd, or one that lost the unit past 15 s, reserves nothing, so
 # another tank may taunt it again, and the read that sees the lapse writes one row (reason post_lapsed, with the tank's
-# distance, the loose time and the limit that lapsed). The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off,
+# distance, the loose time and the limit that lapsed). The row re-arms once the reservation holds again, the post tank's
+# own update included, so each lapse writes its own row. The refusal does not need AiPlayerbot.DungeonRunTauntGate. Off,
 # every tank may taunt the subject as before.
 # 0 - off: every tank may taunt the post's subject (Default)
 # 1 - on (recommended on for a fight whose second boss lands later)

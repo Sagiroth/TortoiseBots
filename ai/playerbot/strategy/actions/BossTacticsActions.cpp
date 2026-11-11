@@ -12253,6 +12253,9 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     if (subjectUnit)
         in.subjectToSpotYd = TankPostDistanceYd(subjectUnit->x, subjectUnit->y, subjectUnit->z,
             row->spotX, row->spotY, row->spotZ);
+    bool const ownerWithinRange = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject && subject &&
+        TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), subject->GetPositionX(),
+            subject->GetPositionY(), subject->GetPositionZ()) <= kTankPostReserveRangeYd;
     in.botToSpotYd = TankPostDistanceYd(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
         row->spotX, row->spotY, row->spotZ);
     Unit* const currentTarget = AI_VALUE(Unit*, "current target");
@@ -12320,14 +12323,18 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         TankPostRecord& stored = g_tankPost[self];
         std::uint32_t const priorLoose = stored.looseSinceMs;
         std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
-        bool const priorLapseLogged = stored.lapseLogged;
+        bool lapseLogged = stored.lapseLogged;
         stored = record;
         stored.lastReadMs = nowMs;
-        stored.lapseLogged = priorLapseLogged;
         TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
             in.subjectSelectable, subject != nullptr && bot->IsValidAttackTarget(subject), nowMs);
         stored.looseSinceMs = loose.looseSinceMs;
         stored.unhittableSinceMs = loose.unhittableSinceMs;
+        // This is the only update a post gets while no other tank reads its reservation: a subject that came back
+        // must re-arm the row here, or the next lapse writes nothing.
+        TankPostLapseOwnerUpdate(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, ownerWithinRange, in.subjectOnTank,
+            loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs, lapseLogged);
+        stored.lapseLogged = lapseLogged;
         stepEntered = TankPostStepEntered(stored.lastStep, step);
         stored.lastStep = static_cast<std::uint8_t>(step);
         if (TankPostLatchesArrival(in, step))

@@ -1533,7 +1533,7 @@ Whether a live `tank_post` owns the unit it waits for: while another tank's post
 
 **Why:** walk 2c a-1 lost the second boss to the healers: Cindarion landed on a healer, slot 3's Challenging Shout at +1 s, slot 0's Taunt at +13 s and slot 2's Taunt at +58 s took him first, and slot 1's `taunt_after_cast` row stays quiet while he stands on any tank, so the post tank only got him at +21 s, after the mages passed every tank.
 
-**Diagnostics:** the first read that sees a lapse writes one `BossTacticsTankPost` row with `event=lapse`, `reason=post_lapsed`, `owner_yd`, `loose_ms` and `limit=range|grace`; the reads after it stay quiet until the reservation holds again.
+**Diagnostics:** the first read that sees a lapse writes one `BossTacticsTankPost` row with `event=lapse`, `reason=post_lapsed`, `owner_yd`, `loose_ms` and `limit=range|grace`; the reads after it stay quiet until the reservation holds again, and the post tank's own record update re-arms it, so a recovery no other tank read does not swallow the next lapse's row.
 
 **The end:** the reservation ends by itself when the post ends (the unit dies, evades or leaves the band), when its tank dies or is charmed, when the record goes stale (no read for 3 s), when the post tank is farther than 60 yd from the unit, or when the unit has been loose off that tank for 15 s from the first selectable tick it was off it (a short unhittable blip inside those 15 s does not restart it). A post tank that stands still on its spot keeps the subject reserved for the post's whole window, so the `taunt_after_cast` row of its slot is what takes the unit; a tank stranded across the room no longer keeps every other tank from rescuing it.
 

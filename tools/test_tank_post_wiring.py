@@ -270,9 +270,20 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("std::uint32_t unhittableSinceMs = 0;", ACTIONS)
         self.assertIn("bool lapseLogged = false;", ACTIONS)
         self.assertIn("std::uint8_t priority = 0;", ACTIONS)
-        # The post's own store keeps the lapse throttle the gate may have just set: the copy must not re-arm it.
-        self.assertIn("bool const priorLapseLogged = stored.lapseLogged;", ACTIONS)
-        self.assertIn("stored.lapseLogged = priorLapseLogged;", ACTIONS)
+        # The post's own store re-arms the throttle as soon as the reservation holds again, and keeps it while the
+        # same lapse lasts: a recovery no other tank read must not swallow the next lapse row.
+        self.assertIn("inline bool TankPostLapseOwnerUpdate(bool keyOn, bool ownerWithinRange, bool subjectOnOwner,",
+                      POLICY)
+        self.assertIn("std::uint32_t looseMs, bool& lapseLogged)", POLICY)
+        self.assertIn("bool const ownerWithinRange = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject && subject &&",
+                      ACTIONS)
+        self.assertIn("subject->GetPositionY(), subject->GetPositionZ()) <= kTankPostReserveRangeYd;", ACTIONS)
+        self.assertIn("bool lapseLogged = stored.lapseLogged;", ACTIONS)
+        self.assertIn("TankPostLapseOwnerUpdate(sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject, ownerWithinRange, "
+                      "in.subjectOnTank,", ACTIONS)
+        self.assertIn("loose.looseSinceMs == 0 ? 0 : nowMs - loose.looseSinceMs, lapseLogged);", ACTIONS)
+        self.assertIn("stored.lapseLogged = lapseLogged;", ACTIONS)
+        self.assertNotIn("stored.lapseLogged = priorLapseLogged;", ACTIONS)
         # The lapse row names the post and its limits.
         lapse_log = body(ACTIONS, "void LogTankPostLapse(")
         self.assertIn('"event=lapse,reason=post_lapsed,owner_yd=%.1f,loose_ms=%u,limit=%s"', lapse_log)
