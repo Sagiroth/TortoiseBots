@@ -4073,10 +4073,17 @@ namespace ai
         bool areaCastable = false; bool areaInRange = false; bool areaGateRefuses = false; bool victimIsTank = false;
         bool ownsSubjectOn = false;
     };
+    // Whether any taunt path is open at all: the key on, the subject off this tank and selectable, and off another tank
+    // only with the reservation (its taunt passes, but the other tank's own class taunt would not be refused, so the
+    // subject would flip between the two). Read before the gate inputs, which write rows and advance the post clocks.
+    inline bool TankPostTauntAttemptable(const TankPostTauntIn& in)
+    {
+        if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return false;
+        return !in.victimIsTank || in.ownsSubjectOn;
+    }
     inline TankPostTaunt TankPostTauntStep(const TankPostTauntIn& in)
     {
-        if (!in.keyOn || !in.engage || in.subjectOnTank || !in.subjectSelectable) return TankPostTaunt::None;
-        if (in.victimIsTank && !in.ownsSubjectOn) return TankPostTaunt::None;
+        if (!TankPostTauntAttemptable(in)) return TankPostTaunt::None;
         if (in.gateRefuses) return TankPostTaunt::Gate;
         if (in.tauntCastable) return TankPostTaunt::Taunt;
         if (in.needsStance && in.stanceCastable) return TankPostTaunt::Stance;

@@ -1386,10 +1386,10 @@ static void TestTankPost_HoldSpotModeLoadsOnlyOnTankPost()
     CHECK(table.Size() == 2);
 }
 
-// The mutation case: with the owns-subject half dropped from TankPostTauntStep, a post whose subject is on another
-// tank taunts it with AiPlayerbot.DungeonRunTankPostOwnsSubject off, and that tank's own class taunt is not refused
-// (TankPostReservesSubject returns false with the key off), so the subject flips between the two tanks every taunt
-// cooldown.
+// The mutation case: with the owns-subject half dropped from TankPostTauntAttemptable, a post whose subject is on
+// another tank taunts it with AiPlayerbot.DungeonRunTankPostOwnsSubject off, and that tank's own class taunt is not
+// refused (TankPostReservesSubject returns false with the key off), so the subject flips between the two tanks every
+// taunt cooldown.
 static void TestTankPostTauntStep_OffAnotherTank()
 {
     TankPostTauntIn in;
@@ -1406,6 +1406,30 @@ static void TestTankPostTauntStep_OffAnotherTank()
     // Off a healer or a damage dealer the taunt needs no reservation.
     TankPostTauntIn nonTank = in; nonTank.victimIsTank = false;
     CHECK(TankPostTauntStep(nonTank) == TankPostTaunt::Taunt);
+}
+
+// The mutation case: with the early return dropped, a post whose subject is already on it still reads the taunt and
+// area gates every Engage tick, and BossTacticsTauntGate rows name taunts that were never attempted.
+static void TestTankPostTauntAttemptable_UntakenSubject()
+{
+    TankPostTauntIn in;
+    in.keyOn = true;
+    in.engage = true;
+    in.subjectSelectable = true;
+    CHECK(TankPostTauntAttemptable(in));
+    TankPostTauntIn onTank = in; onTank.subjectOnTank = true;
+    CHECK(!TankPostTauntAttemptable(onTank));
+    // The gate flags cannot bring an untaken subject back: they are read only after this verdict.
+    TankPostTauntIn gated = onTank; gated.gateRefuses = true; gated.areaCastable = true; gated.areaInRange = true;
+    CHECK(!TankPostTauntAttemptable(gated));
+    TankPostTauntIn off = in; off.keyOn = false;
+    CHECK(!TankPostTauntAttemptable(off));
+    TankPostTauntIn airborne = in; airborne.subjectSelectable = false;
+    CHECK(!TankPostTauntAttemptable(airborne));
+    TankPostTauntIn tankVictim = in; tankVictim.victimIsTank = true;
+    CHECK(!TankPostTauntAttemptable(tankVictim));
+    TankPostTauntIn reserved = tankVictim; reserved.ownsSubjectOn = true;
+    CHECK(TankPostTauntAttemptable(reserved));
 }
 
 // Every step that is not a taunt: off the post, off the key, on its own tank, or still in the air.
@@ -1581,6 +1605,7 @@ int main()
     TestTankPost_StepEnteredOncePerEpisode();
     TestTankPost_HoldSpotModeLoadsOnlyOnTankPost();
     TestTankPostTauntStep_OffAnotherTank();
+    TestTankPostTauntAttemptable_UntakenSubject();
     TestTankPostTauntStep_Gates();
     TestTankPostTauntStep_Stance();
     TestTankPostTauntStep_AreaOnlyOffNonTank();

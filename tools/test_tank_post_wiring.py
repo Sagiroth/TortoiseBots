@@ -353,9 +353,19 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('"challenging shout"', take)
         self.assertIn('"challenging roar"', take)
         self.assertIn('ai->HasAura("defensive stance", bot)', take)
-        self.assertIn("bot->GetDistance(subject) <= kAreaTauntRadiusYd", take)
         self.assertIn("PlayerbotAI::IsTank(static_cast<Player*>(victim))", take)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject", take)
         self.assertIn("TankPostTauntStep(in)", take)
+        # No gate row for a taunt that cannot go out: the attemptable verdict comes before every gate read, and the
+        # area inputs only after the single taunt was found not usable.
+        self.assertIn("if (!TankPostTauntAttemptable(in))\n        return false;", take)
+        self.assertLess(take.index("TankPostTauntAttemptable(in)"),
+                        take.index("TauntRefusedByGate(ai, bot, subject, taunt)"))
+        area = take[take.index("if (step == TankPostTaunt::NotReady)"):]
+        area = area[:area.index("\n    }")]
+        self.assertIn("AreaTauntRefusedByPost(ai, bot, area)", area)
+        self.assertIn("bot->GetDistance(subject) <= kAreaTauntRadiusYd", area)
+        self.assertIn("step = TankPostTauntStep(in);", area)
         self.assertIn("if (current != subject)\n                Attack(bot, subject);", take)
         self.assertIn("cast = ai->CastSpell(taunt, subject);", take)
         self.assertIn('cast = ai->CastSpell("defensive stance", bot);', take)

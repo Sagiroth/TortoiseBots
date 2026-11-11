@@ -12440,12 +12440,6 @@ bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* curr
 {
     Unit* const subject = task.subject;
     Unit* const victim = subject->GetVictim();
-    const char* const taunt = KnownTaunt(ai);
-    const char* area = nullptr;
-    if (bot->GetClass() == CLASS_WARRIOR && ai->HasSpell("challenging shout"))
-        area = "challenging shout";
-    else if (bot->GetClass() == CLASS_DRUID && ai->HasSpell("challenging roar"))
-        area = "challenging roar";
     TankPostTauntIn in;
     in.keyOn = sPlayerbotAIConfig.dungeonRunTankPostTaunts;
     in.engage = true;
@@ -12454,15 +12448,28 @@ bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* curr
     in.victimIsTank = victim && victim->GetTypeId() == TYPEID_PLAYER &&
         PlayerbotAI::IsTank(static_cast<Player*>(victim));
     in.ownsSubjectOn = sPlayerbotAIConfig.dungeonRunTankPostOwnsSubject;
+    // The gate reads below write rows and advance the other posts' clocks: read them only for a taunt that can go out.
+    if (!TankPostTauntAttemptable(in))
+        return false;
+    const char* const taunt = KnownTaunt(ai);
     in.gateRefuses = taunt && TauntRefusedByGate(ai, bot, subject, taunt);
     in.tauntCastable = taunt && ai->CanCastSpell(taunt, subject);
     in.needsStance = taunt && std::strcmp(taunt, "taunt") == 0 && !ai->HasAura("defensive stance", bot);
     in.stanceCastable = in.needsStance && ai->CanCastSpell("defensive stance", bot);
-    in.areaCastable = area && ai->CanCastSpell(area, bot);
-    in.areaInRange = bot->GetDistance(subject) <= kAreaTauntRadiusYd;
-    in.areaGateRefuses = area && (AreaTauntRefusedByPost(ai, bot, area) ||
-                                     TauntRefusedByGate(ai, bot, subject, area));
-    TankPostTaunt const step = TankPostTauntStep(in);
+    TankPostTaunt step = TankPostTauntStep(in);
+    const char* area = nullptr;
+    if (step == TankPostTaunt::NotReady)
+    {
+        if (bot->GetClass() == CLASS_WARRIOR && ai->HasSpell("challenging shout"))
+            area = "challenging shout";
+        else if (bot->GetClass() == CLASS_DRUID && ai->HasSpell("challenging roar"))
+            area = "challenging roar";
+        in.areaCastable = area && ai->CanCastSpell(area, bot);
+        in.areaInRange = area && bot->GetDistance(subject) <= kAreaTauntRadiusYd;
+        in.areaGateRefuses = area && (AreaTauntRefusedByPost(ai, bot, area) ||
+                                         TauntRefusedByGate(ai, bot, subject, area));
+        step = TankPostTauntStep(in);
+    }
     const char* spell = nullptr;
     bool cast = false;
     switch (step)

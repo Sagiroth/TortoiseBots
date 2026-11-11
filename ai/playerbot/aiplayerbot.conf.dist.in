@@ -1144,7 +1144,8 @@ AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
 # druid) only goes out when the single taunt cannot, the unit stands within 10 yd and on a non-tank, and neither the
 # post reservation nor the taunt gate refuses it. Off, the step attacks the unit and waits for its `taunt_after_cast`
 # row as before. Needs AiPlayerbot.DungeonRunTankPost. The cast writes one BossTacticsTankPost row (event taunt, with
-# the step, the spell, the victim and the cast flag); a word that did not cast is written once per bot and word per 5 s.
+# the step, the spell, the victim and the cast flag); a word that did not cast is written once per bot and word per 5 s,
+# and the gate rows only for a taunt the step would actually cast.
 # 0 - off: the Engage step only attacks the unit (Default)
 # 1 - on
 AiPlayerbot.DungeonRunTankPostTaunts = 0
