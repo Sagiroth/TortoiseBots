@@ -337,4 +337,17 @@ namespace ai
         PriestWandBlocksCastTrigger(PlayerbotAI* ai) : WandBlocksCastTrigger(ai, "wand blocks cast") {}
         bool IsActive() override;
     };
+
+    // A grouped heal-spec priest's wand that HealerWandAllowed no longer
+    // allows (somebody needs a heal, or the mob left the party). The same
+    // test as healerMustStop in PriestWandBlocksCastTrigger, but with no
+    // spell probe, so it runs every tick (interval 1) instead of every 1-2 s:
+    // with the short shoot sleep (ShootSleepMs) the heal waits one swing at
+    // most, not the next probe.
+    class PriestHealerWandNotAllowedTrigger : public Trigger
+    {
+    public:
+        PriestHealerWandNotAllowedTrigger(PlayerbotAI* ai) : Trigger(ai, "healer wand not allowed", 1) {}
+        bool IsActive() override;
+    };
 }

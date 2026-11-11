@@ -151,6 +151,10 @@ void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "wand blocks cast",
         NextAction::array(0, new NextAction("stop wand", ACTION_CRITICAL_HEAL + 4), NULL)));
+    // The healer part of the stop above, every tick (no spell probe).
+    triggers.push_back(new TriggerNode(
+        "healer wand not allowed",
+        NextAction::array(0, new NextAction("stop wand", ACTION_CRITICAL_HEAL + 4), NULL)));
 }
 
 void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

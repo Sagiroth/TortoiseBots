@@ -791,6 +791,8 @@ namespace ai
     // without a heal spec. Used by the "shoot" action and the priest's
     // "wand blocks cast" stop, so both read the same line.
     bool HealerWandAllowed(PlayerbotAI* ai, Unit* target);
+    // A heal-spec bot in a group: HealerWandGate::groupedHealer (WandPolicy.h).
+    bool IsGroupedHealer(PlayerbotAI* ai);
 
     // Shared probes for the class "wand blocks ..." triggers (mage, priest,
     // warlock; rule in WandPolicy.h). Each Turtle wand shot renews the GCD,

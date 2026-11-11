@@ -1090,7 +1090,9 @@ bool CastShootAction::Execute(Event& event)
 
         if (succeeded)
         {
-            SetDuration(weaponDelay);
+            // A grouped healer wakes at the react delay (ShootSleepMs, WandPolicy.h).
+            bool const wand = GetSpellName() == "shoot";
+            SetDuration(ShootSleepMs(wand, IsGroupedHealer(ai), weaponDelay, sPlayerbotAIConfig.reactDelay));
         }
     }
 
