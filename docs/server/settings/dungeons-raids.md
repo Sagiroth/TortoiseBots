@@ -63,6 +63,7 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.PatchwerkOpeningDelay`](#aiplayerbotpatchwerkopeningdelay) | `4` | Seconds the DPS hold Patchwerk after an opt-in `patchwerk main` engages him (`0` = off, else 3-5). |
 | [`AiPlayerbot.RaidHealerSeatsByClass`](#aiplayerbotraidhealerseatsbyclass) | `0` | `1`: a raid binding's healer seats go by class — group healers on the raid, then the main tanks, the off-tanks whoever is left. |
 | [`AiPlayerbot.RaidTankHealerAssist`](#aiplayerbotraidtankhealerassist) | `0` | `1`: a layout tank healer's second seat on its tank heals a raid member in sight and in range below 70% while the tank is quiet (not on a boss, 90%+ after incoming damage). |
+| [`AiPlayerbot.RaidReactions`](#aiplayerbotraidreactions) | `0` | `1`: the reaction engine answers the universal raid hazards — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread. |
 | [`AiPlayerbot.DungeonRunPullStand`](#aiplayerbotdungeonrunpullstand) | `0` | For a tank that pulls with a ranged weapon, the run leader orders `pullback` only when it can shoot from where it stands, else it walks the party to a firing stand first. |
 | [`AiPlayerbot.DungeonRunPullGate`](#aiplayerbotdungeonrunpullgate) | `0` | `1`: the run leader never pulls a boss its `pull_gate` row gates while the boss wears the row's aura, and ends the run after the row's seconds (Hakkar needs all of this, seek, charm yield and boss spread, plus the aura tactics). |
 | [`AiPlayerbot.DungeonRunStandClearance`](#aiplayerbotdungeonrunstandclearance) | `0` | Every firing stand the run leader picks (an authored stand-pull step's own pull, this key being what gives that step a stand rule, a generic pull's with `AiPlayerbot.DungeonRunPullStand`) is refused when another live pack (its patrol loop included) can reach it; none clear, the stand the key is off for is used (advisory). |
@@ -667,6 +668,26 @@ A tank healer seated by a raid binding's layout helps the raid while its tank ha
 - it then treats any group member below 70% that is in sight and inside heal range; it never walks into sight for one
 - the tank and the healer itself keep the ordinary focus treatment
 - with `0` the tank healers keep their focus targets only
+
+</details>
+
+### `AiPlayerbot.RaidReactions`
+Whether the reaction engine answers the universal raid hazards.
+**Default:** `0` · **Values:** `0` off (no row is built, as before), `1` on · **Restart:** needed (the lists are built when an engine inits, so `.reload config` does not rebuild them)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Reaction rows:** the `react` strategy now exists (it was named by every reaction engine but had no creator, so the engine skipped it silently; #1589). With the key on it adds five rows, each from the reaction engine, so they fire in and out of combat where their trigger allows; the ranged spread answers only in combat:
+- `environmental hazard nearby` → `move away from hazard` (priority `ACTION_EMERGENCY + 5`): step out of a brazier or a ground effect
+- `raid bomb debuff` → `raid bomb runout` (`+6`): the carrier runs 30 yd clear of the living group (Vaelastrasz's fight has its own higher row in Blackwing Lair)
+- `four horsemen mark` → `four horsemen rotate` (`+6`): a carrier at 3+ stacks moves to the next horseman's corner
+- `dragon breath risk` → `dragon flank` (`+4`): a non-tank in the front cone or tail cone of a raid dragon steps to one of its two sides; if both side points are blocked the bot holds rather than walking into the breath or the tail
+- `raid spread needed` → `raid spread` (`+3`): a ranged bot stacked inside the spacing steps out
+- with `1` and a live `spread` boss-tactic row (`AiPlayerbot.DungeonRunBossSpread = 1`), the spread action no longer refuses a stay-held bot: the row's spacing outranks the order, as the trigger and the action already read it. The stay is the one the bot's current engine holds (the same state the movement gate reads); a stay kept in another state is not overruled. With `0` that gate is unchanged, and a stay-held bot costs no extra lookup.
+- the four state rows (combat start/end, death, resurrect) are not in `react`: every class strategy keeps them in `ClassStrategy::InitReactionTriggers`, and every class swaps its reaction engine onto its `… pve`/`… pvp`/`… raid` strategy.
+- with the key off the `react` strategy is still registered but empty: it appears in `react ?` and in the engine's strategy signature, and contributes no row. That is expected.
+- not marked "recommended on": that waits for a live walk.
 
 </details>
 
