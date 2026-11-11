@@ -10,7 +10,8 @@ the glue in ai/playerbot/strategy/actions/ReachTargetActions.h:
 - the hover walk paths to the floor under the target, never to the target;
 - the walk runs only for a hostile target (the trigger's own IsHostileTo), and for
   an attack reach only one the core lets the bot attack;
-- healers keep today's reach (PlayerbotAI::IsHeal read before the walk);
+- only ranged damage dealers take it (the tank, healer and IsRanged helpers are read
+  before the walk), so tanks, melee and healers keep today's reach;
 - the BossReachHover row is written only inside the key-on branch;
 and the key's read and shipped default.
 """
@@ -69,12 +70,14 @@ class HoverReachWiringTest(unittest.TestCase):
         self.assertLess(fn.index("if (!HoverReachTargetEligible(hostile, attackReach, attackable))"),
                         fn.index("if (!HoverReachApplies(true, map->IsDungeon()"))
 
-    def test_healer_with_a_hovering_boss_does_not_select_a_hover_destination(self):
+    def test_only_ranged_damage_dealers_select_a_hover_destination(self):
         fn = body(ACTIONS, "bool MoveIntoRangeUnderHover(Unit* target, float distance)", "\n        }")
-        # The spec says healers are unchanged, so the role is read (PlayerbotAI::IsHeal,
-        # the module's helper) before the walk, and after the hover gate so only a walk
-        # that would otherwise run pays the read.
-        gate = "if (!HoverReachTakerIsDps(PlayerbotAI::IsHeal(bot)))"
+        # The reach path is shared by melee, CC and pull reaches, so a tank or a melee
+        # damage dealer that got here would be walked toward the boss (off its post).
+        # The roles are read with the module's helpers (ai->IsRanged for the ranged
+        # one), after the hover gate so only a walk that would otherwise run pays them.
+        gate = ("if (!HoverReachTakerIsRangedDps(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), "
+                "ai->IsRanged(bot)))")
         self.assertIn(gate, fn)
         self.assertGreater(fn.index(gate), fn.index("if (!HoverReachApplies(true, map->IsDungeon()"))
         self.assertLess(fn.index(gate), fn.index("if (!bot->IsStopped()"))

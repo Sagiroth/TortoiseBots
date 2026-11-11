@@ -251,17 +251,21 @@ int main()
         std::cout << "  [PASS] hover target: hostile only, attackable for attack reaches\n";
     }
 
-    // A healer never takes the walk under the boss: "healers are unchanged" in the
-    // spec, so her reach spell on the hovering boss keeps today's path walk; a
-    // ranged DPS still walks.
+    // The walk is for ranged damage dealers only: a healer, a tank and a melee damage
+    // dealer keep today's reach (the reach path is shared with melee, CC and pull
+    // reaches; walking them toward the boss could pull a tank off its post).
     {
         bool const hoverApplies = ai::HoverReachApplies(true, true, true, 40.0f, 5.0f, true, -65.0f, -86.0f);
         CHECK(hoverApplies);
-        CHECK(!ai::HoverReachTakerIsDps(true));                   // healer: no hover destination
-        CHECK(ai::HoverReachTakerIsDps(false));                   // ranged DPS: the walk
-        CHECK(!(hoverApplies && ai::HoverReachTakerIsDps(true)));
-        CHECK(hoverApplies && ai::HoverReachTakerIsDps(false));
-        std::cout << "  [PASS] hover taker: healers keep today's reach\n";
+        CHECK(ai::HoverReachTakerIsRangedDps(false, false, true));   // ranged DPS: the walk
+        CHECK(!ai::HoverReachTakerIsRangedDps(true, false, false));  // tank
+        CHECK(!ai::HoverReachTakerIsRangedDps(true, false, true));   // tank that reads ranged
+        CHECK(!ai::HoverReachTakerIsRangedDps(false, true, false));  // healer
+        CHECK(!ai::HoverReachTakerIsRangedDps(false, true, true));   // healer that reads ranged
+        CHECK(!ai::HoverReachTakerIsRangedDps(false, false, false)); // melee DPS
+        CHECK(hoverApplies && ai::HoverReachTakerIsRangedDps(false, false, true));
+        CHECK(!(hoverApplies && ai::HoverReachTakerIsRangedDps(true, false, true)));
+        std::cout << "  [PASS] hover taker: ranged damage dealers only\n";
     }
 
     // No line of sight from the ground side: the second pass keeps the geometry

@@ -579,10 +579,11 @@ namespace ai
                 return false;
             }
 
-            // A healer's reach spell on her keeps today's path walk: the walk is a DPS
-            // position, and taking it would move her off her heal spot and put her mana
-            // and deaths into the walk's readings of a spot only damage dealers take.
-            if (!HoverReachTakerIsDps(PlayerbotAI::IsHeal(bot)))
+            // Only a ranged damage dealer takes the walk under her: the reach path is
+            // shared with melee, CC and pull reaches, so a tank or a melee damage dealer
+            // that got here would be pulled toward the boss (off its post); a healer keeps
+            // today's path walk. Everyone else falls through to it unchanged.
+            if (!HoverReachTakerIsRangedDps(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot)))
                 return false;
 
             if (!bot->IsStopped() && !bot->movespline->Finalized())

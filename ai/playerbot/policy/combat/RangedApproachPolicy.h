@@ -160,13 +160,14 @@ namespace ai
         return hostile && (!attackReach || attackable);
     }
 
-    // AiPlayerbot.RangedReachHoverTarget: the walk under the boss is a DPS position. A healer whose reach
-    // spell points at the hovering boss keeps today's path walk ("healers are unchanged" in the spec); the
-    // walk would move her off her heal spot and put healer mana and deaths-per-breath into the walk's DPS
-    // measures. The role is read at the call site, only once the walk would otherwise run.
-    inline bool HoverReachTakerIsDps(bool healer)
+    // AiPlayerbot.RangedReachHoverTarget: the walk under the boss is a ranged DPS position. The reach path is
+    // shared with melee, CC and pull reaches, so a tank or a melee damage dealer that reached it could be
+    // walked toward the boss and pulled off its post; healers keep today's path walk as well ("ranged damage
+    // dealers only; tanks, melee and healers are unchanged"). The roles are read at the call site, only once
+    // the walk would otherwise run.
+    inline bool HoverReachTakerIsRangedDps(bool tank, bool healer, bool ranged)
     {
-        return !healer;
+        return !tank && !healer && ranged;
     }
 
     // AiPlayerbot.RangedReachHoverTarget: a hostile at least this high above the floor under it is "hovering"
