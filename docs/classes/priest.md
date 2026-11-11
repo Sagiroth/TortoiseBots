@@ -56,7 +56,7 @@ In a Patchwerk fight with the opt-in tank roles ([Patchwerk roles](../play/dunge
 <summary>Healer off-spec damage and wand stops</summary>
 
 - **Off-spec DPS:** Enabled by default via the `offdps` strategy per [healer off-DPS rules](overview.md#shared-bot-behaviors), casting *Shadow Word: Pain*, *Holy Fire*, *Smite*, *Starshards* (only above 50% mana and beyond 15 yards), or *Mind Blast* (*Holy Nova* into packed melee) against engaged mobs.
-- **Wand Stops:** Because wand shots incur global cooldown on Turtle WoW, the `wand blocks cast` trigger stops active wanding as soon as a heal or a nuke needs the cast window. A separate `wand blocks cc` trigger stops wanding while a *Shackle Undead* cast is queued.
+- **Wand Stops:** Because wand shots incur global cooldown on Turtle WoW, the `wand blocks cast` trigger stops active wanding as soon as a heal or a nuke needs the cast window. A separate `wand blocks cc` trigger stops wanding while a *Shackle Undead* cast is queued. A Holy or Discipline priest in a group checks every moment while it wands (not once per shot), so it stops the wand and heals within one wand swing of a hit.
 
 </details>
 
