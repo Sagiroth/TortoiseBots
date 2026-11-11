@@ -278,7 +278,13 @@ Unit* PartyMemberToHeal::Calculate()
             tank, pet, false,
             sServerFacade.IsWithinLOSInMap(bot, target)};
         candidate.hunted = huntOn && HuntedByGatedUnit(target);
-        if (NeedsPartyHealing(candidate, bands) && targets.emplace(candidate.guid, target).second)
+        if (!NeedsPartyHealing(candidate, bands))
+            return;
+        // D2: with the reserve key on, a top-up candidate the live row refuses is not a pick: the heal falls to a
+        // tank, the boss's victim or a member in a lower tier rather than every healer idling on a refused band.
+        if (HealReserveRefusesTopUp(ai, bot, target))
+            return;
+        if (targets.emplace(candidate.guid, target).second)
             candidates.push_back(candidate);
     };
 

@@ -708,15 +708,23 @@ namespace ai
     // has a spread row; the row read does not need DungeonRunBossSpread.
     ProtectionPotion BossRowProtectionPotion(PlayerbotAI* ai, Player* bot);
 
-    // The boss's live `heal_reserve` row for this bot's fight (HealReservePolicy.h): whether one is live, its reserve
-    // percent, and whether its release window is open (the cycle clock is the fight's, from the seek read). Not live
-    // unless the bot is in the world, runs the "boss tactics" combat strategy, and its map has a row. Does not read
-    // the key: the caller decides what to do with it.
-    HealReserveRead BossHealReserve(PlayerbotAI* ai, Player* bot);
+    // The boss's live `heal_reserve` rows of this bot's fight (HealReservePolicy.h): the highest reserve wins, with its
+    // own release window and its boss. `boss` is that row's boss unit (null when no row is live), so the current-victim
+    // exemption never depends on the seek_aura row or its key. The clock is the seek_aura cycle's: without that key
+    // there is no clock and the reserve is never released. Not live unless the bot is in the world, runs the "boss
+    // tactics" combat strategy, and its map has a row. Does not read the key: the caller decides what to do with it.
+    HealReserveRead BossHealReserve(PlayerbotAI* ai, Player* bot, Unit*& boss);
+    // The reserve's target exemption: a tank, or the boss's current victim. Either keeps today's rule at all times.
+    bool HealReserveTargetExempt(Unit* target, Unit* boss);
+    // Whether the reserve refuses `target`'s top-up right now (the healer top-up pick reads it to skip a refused
+    // candidate). False with the key off, no live row, the window released, an exempt target, or mana at the row's
+    // line. Counts the refusal for the `BossTacticsHealReserve` row once per healer per tick.
+    bool HealReserveRefusesTopUp(PlayerbotAI* ai, Player* bot, Unit* target);
     // Whether a healer may top up `target` above the medium-health line right now (the almost-full tier and the
     // rejuvenation spread read it): with AiPlayerbot.DungeonRunHealReserve off or no live row, today's
     // `mana >= MediumMana` rule; else the row's reserve, outside its release window, with tanks and the boss's
-    // current victim always on today's rule. Writes the `BossTacticsHealReserve` row once per 5 s while it runs.
+    // current victim always on today's rule. Writes the `BossTacticsHealReserve` row once per 5 s while it runs, for
+    // healers only.
     bool HealTopUpAllowedFor(PlayerbotAI* ai, Player* bot, Unit* target);
 
     // A ranged bot's fixed point between the doses (DungeonRunBossSpreadSlots): the slot it owns in the ring order
