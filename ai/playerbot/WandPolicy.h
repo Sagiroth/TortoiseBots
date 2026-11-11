@@ -235,4 +235,13 @@ namespace ai
             wait = WAND_STOP_MAX_WAIT_MS;
         return wait + reactDelayMs;
     }
+    // AiPlayerbot.AirborneWandYieldsToNukes: a boss's "airborne -> shoot" row (Onyxia P2) sits at ACTION_HIGH, above the
+    // class "wand blocks nuke" stop (ACTION_NORMAL + 5); each Turtle wand shot renews the GCD, so the row kept every
+    // nuke "not ready" (walk 2d: 0 of 120 Shadow Bolt / Arcane Missiles on her, 193 wand shots). A damage-dealing wand
+    // caster leaves the wand to its own class rows ("no mana", "unaffordable", "wand blocks nuke").
+    inline bool IsWandCasterClass(std::uint8_t classId) { return classId == 5 || classId == 8 || classId == 9; } // priest, mage, warlock
+    inline bool AirborneWandYields(bool keyOn, bool wandCaster, bool isHealer)
+    {
+        return keyOn && wandCaster && !isHealer;
+    }
 }

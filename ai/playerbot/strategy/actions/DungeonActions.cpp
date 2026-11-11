@@ -20,6 +20,7 @@
 #include "Maps/GridNotifiers.h"
 #include "Maps/GridNotifiersImpl.h"
 #include "Maps/CellImpl.h"
+#include "playerbot/policy/combat/RangedApproachPolicy.h"
 
 using namespace ai;
 
@@ -551,7 +552,33 @@ bool RaidSpreadAction::isUseful()
             LogBossSpread(ai, bot, "stand", -1, -1.0f, -1);
         return false;
     }
+    if (sPlayerbotAIConfig.hoverCastHoldsSpread && HoverCastHolds())
+    {
+        if (SpreadLogOwned(sPlayerbotAIConfig.dungeonRunBossSpreadSlots, SpreadLogCaller::Legacy) &&
+            BossSpreadLive(ai, bot))
+            LogBossSpread(ai, bot, "hover_cast", -1, -1.0f, -1);
+        return false;
+    }
     return true;
+}
+
+bool RaidSpreadAction::HoverCastHolds()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target || !bot->GetMap())
+        return false;
+    bool const rangedDps = HoverReachTakerIsRangedDps(PlayerbotAI::IsTank(bot), PlayerbotAI::IsHeal(bot), ai->IsRanged(bot));
+    float const tx = target->GetPositionX();
+    float const ty = target->GetPositionY();
+    float const tz = target->GetPositionZ();
+    float const groundZ = bot->GetMap()->GetHeight(tx, ty, tz, true);
+    bool const groundValid = groundZ > INVALID_HEIGHT + 1.0f;
+    bool const hovering = HoverReachApplies(true, bot->GetMap()->IsDungeon(), sServerFacade.IsHostileTo(bot, target),
+        bot->GetDistance(target), ATTACK_DISTANCE, groundValid, tz, groundZ);
+    bool const inRange = bot->GetDistance(target, SizeFactor::CombatReach) <= ai->GetRange("spell") - sPlayerbotAIConfig.contactDistance &&
+        bot->IsWithinLOSInMap(target, true);
+    bool const spreadRowLive = BossSpreadLive(ai, bot);
+    return HoverCastHoldsSpread(true, rangedDps, hovering, inRange, spreadRowLive);
 }
 
 bool RaidSpreadAction::Execute(Event& event)

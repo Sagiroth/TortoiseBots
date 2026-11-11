@@ -848,6 +848,13 @@ public:
     // walks to the floor under it and stops at the trigger's own combat-reach distance instead of giving up under the
     // body (default off, recommended on).
     bool rangedReachHoverTarget = false;
+    // The airborne-boss wand row yields to the class nuke rows for damage-dealing wand casters (Onyxia P2: mage,
+    // warlock and non-healer priest; their class rows already wand only when the nuke cannot go out). Hunters,
+    // melee, tanks and healers keep the row (default off).
+    bool airborneWandYieldsToNukes = false;
+    // A ranged damage dealer whose hovering target stands in spell range takes no `raid spread` spacing step, unless
+    // a live boss `spread` row asks for one (default off).
+    bool hoverCastHoldsSpread = false;
     // The gate_hold boss-tactic kind (damage dealers stop on a boss at or below the row's health gate while its blocker
     // still fights): off, the rows are ignored and nothing reads the gate (default off, recommended on).
     bool dungeonRunGateHold = false;

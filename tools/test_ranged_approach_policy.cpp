@@ -295,6 +295,18 @@ int main()
         std::cout << "  [PASS] hover words: all of them\n";
     }
 
+    // HoverCastHoldsSpread_InRange (the failing case): all true holds the spacing step. Each of these alone
+    // flips it back to stepping: out of range, a live spread row, key off, not ranged dps, not hovering.
+    {
+        CHECK(ai::HoverCastHoldsSpread(true, true, true, true, false));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, true, false, false));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, true, true, true));
+        CHECK(!ai::HoverCastHoldsSpread(false, true, true, true, false));
+        CHECK(!ai::HoverCastHoldsSpread(true, false, true, true, false));
+        CHECK(!ai::HoverCastHoldsSpread(true, true, false, true, false));
+        std::cout << "  [PASS] hover cast: holds the spread step in range\n";
+    }
+
 
     std::cout << "Ranged approach policy tests: OK\n";
     return 0;

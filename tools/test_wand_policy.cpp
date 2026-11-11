@@ -245,6 +245,25 @@ int main()
         CHECK(!WandState{}.manaShortRowActive);
     }
 
+    // AirborneWandYields_CasterDps (the failing case): with the key on the airborne row is not useful for a
+    // damage-dealing wand caster (mage 8, warlock 9, non-healer priest 5), so its nukes run; a priest healer,
+    // a hunter (3), a warrior (1) and a druid (11) keep the wand. Key off: nobody yields.
+    {
+        CHECK(AirborneWandYields(true, IsWandCasterClass(8), false));
+        CHECK(AirborneWandYields(true, IsWandCasterClass(9), false));
+        CHECK(AirborneWandYields(true, IsWandCasterClass(5), false));
+        CHECK(!AirborneWandYields(true, IsWandCasterClass(5), true));
+        CHECK(!AirborneWandYields(true, IsWandCasterClass(3), false));
+        CHECK(!AirborneWandYields(true, IsWandCasterClass(1), false));
+        CHECK(!AirborneWandYields(true, IsWandCasterClass(11), false));
+        CHECK(!AirborneWandYields(false, IsWandCasterClass(8), false));
+        CHECK(!AirborneWandYields(false, IsWandCasterClass(9), false));
+        CHECK(!IsWandCasterClass(3));
+        CHECK(!IsWandCasterClass(1));
+        CHECK(!IsWandCasterClass(11));
+        CHECK(IsWandCasterClass(5));
+    }
+
     std::printf("wand policy: %d checks passed\n", checks);
     return 0;
 }

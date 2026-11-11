@@ -112,6 +112,8 @@ These settings configure boss encounter mechanics, environmental hazard evasion,
 | [`AiPlayerbot.DungeonRunBurnMana`](#aiplayerbotdungeonrunburnmana) | `0` | `1`: the boss tactics keep their `burn_mana` rows — a few eligible bots drain the boss's mana while it is above the row's start percent (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunRangedOnly`](#aiplayerbotdungeonrunrangedonly) | `0` | `1`: the boss tactics keep their `ranged_only` rows — melee bots leave a subject that stands the row's gap above them and take the adds (needs the boss tactics and the rows). |
 | [`AiPlayerbot.RangedReachHoverTarget`](#aiplayerbotrangedreachhovertarget) | `0` | `1` (recommended on): a ranged reach at a hostile hovering 8 yd or more above the floor inside a dungeon closes to the trigger's own combat-reach distance from the floor under it instead of standing still out of range (Onyxia P2). |
+| [`AiPlayerbot.AirborneWandYieldsToNukes`](#aiplayerbotairbornewandyieldstonukes) | `0` | `1`: the airborne-boss wand row yields to the class nuke rows for mage, warlock and non-healer priest, so casters nuke airborne Onyxia instead of wanding (needs no rows). |
+| [`AiPlayerbot.HoverCastHoldsSpread`](#aiplayerbothovercastholdsspread) | `0` | `1`: a ranged damage dealer in spell range of a hovering target takes no `raid spread` step, so its cast-time nukes are not refused for moving (a live `spread` row still steps). |
 | [`AiPlayerbot.DungeonRunGateHold`](#aiplayerbotdungeonrungatehold) | `0` | `1` (recommended on): the boss tactics keep their `gate_hold` rows — damage dealers stop on a boss at or below the row's health gate while its second unit still fights (needs the boss tactics and the rows). |
 | [`AiPlayerbot.DungeonRunWalkBackRescue`](#aiplayerbotdungeonrunwalkbackrescue) | `1` | A stuck walk back, and a placed run's lead bot revived behind its start step, are teleported to a safe point on the run's way. |
 | [`AiPlayerbot.DungeonRunDryWalk`](#aiplayerbotdungeonrundrywalk) | `0` | The run leader's route picks stay off deep water: a walk whose own way would swim goes in dry legs first, its approach hops and firing stand come from a ground-only navmesh path, and a walk-back shortcut's swim chord is refused. |
@@ -808,6 +810,26 @@ Whether a ranged reach at a hostile hovering in a dungeon walks to the floor und
 <summary>How it works in detail</summary>
 
 **Hover reach:** the `enemy out of spell range` trigger measures edge to edge with both combat reaches, but the ranged path walk measures centre to centre at 75 % of the spell range less the contact distance (~19 yd for a 26 yd spell). Onyxia in P2 hovers 19-23 yd above her floor point with a 22 yd combat reach, so no floor point is within the walk's distance of her body, the walk gives up under her, and the core chase (which refuses a destination that is not melee-reachable from the target inside a dungeon) stands still. With the key on, a hostile at least 8 yd above the floor under it, in a dungeon, beyond melee reach and with a known floor is approached instead along the navmesh path to that floor point: the bot stops where the centre distance is the trigger's own measure, `chaseDist + target reach + bot reach` (42.5 yd for the 26 yd spell and Onyxia's 22 yd reach, about 37 yd 2D from the hover point). A point in sight is preferred; when none is in sight the walk moves anyway (`moved_nolos`) and the next tick re-plans, because standing still is no damage. The boss stand seat still wins over the walk, and the pull's own reach and melee are unchanged. One `BossReachHover` row per bot per 5 s names the step (`result=` one of `not_hover`, `no_ground`, `no_path`, `no_point`, `hazard`, `move_failed`, `moved`, `moved_nolos`) with `yd2d=`, `height=`, `dist=` (the trigger's measure) and `path=` (path points), so a walk can tell which step failed. Needs `bot_events.csv` for the rows. The key is off by default; on other hovering bosses (Sapphiron) it applies the same rule.
+
+</details>
+### `AiPlayerbot.AirborneWandYieldsToNukes`
+Whether the airborne-boss wand row yields to the class nuke rows for damage-dealing wand casters.
+**Default:** `0` · **Values:** `0` off (every bot wands on the airborne row), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Airborne wand yield:** Onyxia's P2 `onyxia airborne` row sits at `ACTION_HIGH`, above the class `wand blocks nuke` stops (`ACTION_NORMAL + 5`); each Turtle wand shot renews the GCD, so the row kept every mage, warlock and priest nuke `not ready` (walk 2d: 0 of 120 Shadow Bolt / Arcane Missiles on her, 193 wand shots). With the key on, the row's `airborne shoot` action is not useful for a mage, warlock or non-healer priest, so their class nuke rows cast instead; hunters, melee, tanks and healers keep the wand as before. The class rows already wand only when the nuke cannot go out (`no mana`, `unaffordable`, `wand blocks nuke`), so flag off keeps today's behaviour exactly.
+
+</details>
+### `AiPlayerbot.HoverCastHoldsSpread`
+Whether a ranged damage dealer in spell range of a hovering target skips its `raid spread` spacing step.
+**Default:** `0` · **Values:** `0` off (the spread steps as before), `1` on · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**Hover cast hold:** a cast-time nuke is refused while the bot moves, and walk 2d's casters on airborne Onyxia moved more than 2 yd in 2 s in 48 % of their refused frames. With the key on, a ranged damage dealer whose hovering target stands in spell range by the `enemy out of spell range` trigger's own measure takes no spacing step (the `RaidSpreadAction` row reports `hover_cast` the same throttled way the stand row does); a live boss `spread` row (the boss's data asks for spacing) still steps. On Onyxia there is no spread row, so the row stays quiet.
 
 </details>
 ### `AiPlayerbot.DungeonRunGateHold`

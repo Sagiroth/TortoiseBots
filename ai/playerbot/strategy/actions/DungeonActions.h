@@ -174,6 +174,8 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
         bool isPossible() override { return MovementAction::isPossible() && ai->CanMove(); }
+    private:
+        bool HoverCastHolds();
     };
 
     // Explicit tank command: face the current dragon boss away from the

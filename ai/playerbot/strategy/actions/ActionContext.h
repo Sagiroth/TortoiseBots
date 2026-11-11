@@ -154,6 +154,7 @@ namespace ai
             creators["avoid elite"] = [](PlayerbotAI* ai) { return new AvoidEliteAction(ai); };
             creators["wait for attack keep safe distance"] = [](PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); };
             creators["shoot"] = [](PlayerbotAI* ai) { return new CastShootAction(ai); };
+            creators["airborne shoot"] = [](PlayerbotAI* ai) { return new CastAirborneShootAction(ai); };
             creators["whipper root tuber"] = [](PlayerbotAI* ai) { return new UseWhipperRootTuberAction(ai); };
             creators["healthstone"] = [](PlayerbotAI* ai) { return new UseHealthstoneAction(ai); };
             creators["healing potion"] = [](PlayerbotAI* ai) { return new UseHealingPotionAction(ai); };

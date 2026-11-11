@@ -1534,6 +1534,21 @@ AiPlayerbot.DungeonRunRangedOnly = 0
 # 1 - on
 AiPlayerbot.RangedReachHoverTarget = 0
 
+# The airborne-boss wand row (Onyxia P2 "onyxia airborne" -> shoot): with the key on the row is not useful for a
+# damage-dealing wand caster (mage, warlock, non-healer priest), so their class nuke rows cast instead; their class
+# rows already wand only when the nuke cannot go out ("no mana", "unaffordable", "wand blocks nuke"). Hunters, melee,
+# tanks and healers keep the row. `.reload config` reads it again.
+# 0 - off: every bot wands on the airborne row (Default)
+# 1 - on
+AiPlayerbot.AirborneWandYieldsToNukes = 0
+
+# A ranged damage dealer whose hovering target (Onyxia P2) stands in spell range by the trigger's own measure takes no
+# `raid spread` spacing step; a cast-time nuke is refused while the bot moves. A live boss `spread` row still steps.
+# `.reload config` reads it again.
+# 0 - off: the spread steps as before (Default)
+# 1 - on
+AiPlayerbot.HoverCastHoldsSpread = 0
+
 # The gate_hold boss tactic of the boss tactics rows (recommended on; ai_boss_tactic, docs/play/boss-tactics.md):
 # damage dealers leave the row's boss alone once its health is at or below the row's gate percent (param, 1-99) while
 # more than `priority` units of the row's blocker (target_entry) within the row's radius (window_s, 0 = 200 yd, else

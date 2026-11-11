@@ -296,6 +296,7 @@ bool CastSpellAction::isPossible()
     if (!spellTarget)
     {
         ai->GetHealerDiagnostics().CheckFailed(ai, nullptr, spellId, SPELL_FAILED_BAD_TARGETS);
+        ai->NoteCastCheckFail(SPELL_FAILED_BAD_TARGETS);
         return false;
     }
 
@@ -336,6 +337,7 @@ bool CastSpellAction::isPossible()
     {
         botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s reason=out-of-reach", spellName.c_str());
         ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, SPELL_FAILED_OUT_OF_RANGE);
+        ai->NoteCastCheckFail(SPELL_FAILED_OUT_OF_RANGE);
         return false;
     }
 
@@ -347,6 +349,7 @@ bool CastSpellAction::isPossible()
         // NOT_READY (GCD / cast in flight) is every tick's normal answer
         // between casts; logging it would bury the real refusals.
         ai->GetHealerDiagnostics().CheckFailed(ai, spellTarget, spellId, result);
+        ai->NoteCastCheckFail(result);
         if (result != SPELL_FAILED_NOT_READY)
             botdiag::BotActionLog::Write(ai, "CAST_REFUSED", "spell=%s result=%u", spellName.c_str(), (uint32)result);
         return false;
@@ -1066,6 +1069,11 @@ bool CastShootAction::isUseful()
     // "shoot" outlives that row by up to ExpireActionTime.
     return HealerWandAllowed(ai, GetTarget());
 }
+bool CastAirborneShootAction::isUseful()
+{
+    return CastShootAction::isUseful() && !AirborneWandYields(sPlayerbotAIConfig.airborneWandYieldsToNukes, IsWandCasterClass(bot->getClass()), PlayerbotAI::IsHeal(bot));
+}
+
 
 bool CastShootAction::Execute(Event& event)
 {
