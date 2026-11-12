@@ -2520,7 +2520,7 @@ int main()
         };
         CHECK(!table.Add(tankPost(0, 0, 1, 15.0f, 60.0f, true)));       // no awaited unit
         CHECK(!table.Add(tankPost(50143, 33439, 1, 15.0f, 60.0f, true)));  // a spell
-        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 is the main tank, not a post
+        CHECK(!table.Add(tankPost(50143, 0, 0, 15.0f, 60.0f, true)));   // slot 0 waits on its own boss only
         CHECK(!table.Add(tankPost(50143, 0, 8, 15.0f, 60.0f, true)));   // no such slot
         CHECK(!table.Add(tankPost(50143, 0, 1, 15.0f, 60.0f, false)));  // no spot
         CHECK(!table.Add(tankPost(50143, 0, 1, 4.0f, 60.0f, true)));    // radius below 5
@@ -2532,8 +2532,9 @@ int main()
         CHECK(modeWord.mode == TacticMode::Invalid);
         CHECK(!table.Add(modeWord));
         CHECK(table.Add(Gated(tankPost(50143, 0, 1, 15.0f, 60.0f, true), 41, 66)));  // the band arms it
+        CHECK(table.Add(tankPost(10184, 0, 0, 15.0f, 60.0f, true)));  // slot 0 on the row's own boss: the main tank's
         CHECK(table.Add(tankPost(50143, 0, 2, 15.0f, 60.0f, true)));    // another slot, another key
-        CHECK(table.Size() == 2);
+        CHECK(table.Size() == 3);
         CHECK(!table.HasTankPostMap(249));                              // not sealed yet
         table.Seal();
         CHECK(table.HasTankPostMap(249));

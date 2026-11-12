@@ -628,12 +628,13 @@ namespace ai
                     row.param > 60.0f || static_cast<float>(row.priority) > row.param ||
                     row.mode != TacticMode::Default))
                 return false;
-            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7), the wait spot, the arrival
-            // radius, 5-100 yd: a subject that lands and runs after a healer across the room, and the longest hold. A
-            // fight-scan kind, so its health band arms the post. No spell, no cycle columns; the only mode word is
-            // `hold_spot`.
+            // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7; slot 0 is the main tank, which
+            // holds a post on the row's own boss only), the wait spot, the arrival radius, 5-100 yd: a subject that
+            // lands and runs after a healer across the room, and the longest hold. A fight-scan kind, so its health
+            // band arms the post. No spell, no cycle columns; the only mode word is `hold_spot`.
             if (row.kind == BossTacticKind::TankPost &&
-                (row.targetEntry == 0 || row.priority < 1 || row.priority > 7 || !row.HasSpot() ||
+                (row.targetEntry == 0 || (row.priority < 1 && row.targetEntry != row.bossEntry) ||
+                    row.priority > 7 || !row.HasSpot() ||
                     row.param < 5.0f || row.param > 100.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
                     row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;

@@ -436,13 +436,16 @@ def new_kind_problem(row):
             return "cycle columns on another kind"
         return None
     if kind == "tank_post":
-        # The awaited unit (target_entry), the tank slot (priority 1-7), the wait spot, the arrival radius (5-100 yd)
-        # and the longest hold (window_s 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
+        # The awaited unit (target_entry), the tank slot (priority 1-7; slot 0 is the main tank, which holds a post on
+        # the row's own boss only), the wait spot, the arrival radius (5-100 yd) and the longest hold (window_s
+        # 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
         if row["spell_id"]:
             return "tank_post with a spell"
-        if not 1 <= row["priority"] <= 7:
+        if row["priority"] < 1 and row["target_entry"] != row["boss_entry"]:
+            return "tank_post tank slot outside 1-7"
+        if row["priority"] > 7:
             return "tank_post tank slot outside 1-7"
         if not has_spot:
             return "tank_post without its spot"
