@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/GroupMembers.h"
 #include "WarriorTriggers.h"
 #include "WarriorActions.h"
 #include "playerbot/strategy/actions/PatchwerkSoakerActions.h"
@@ -69,6 +70,14 @@ void SunderArmorDebuffTrigger::AnnounceFullStack(Unit* target)
     Group* group = bot->GetGroup();
     if (!group || ai->GetPlayersInGroup().empty())
         return;
+
+    // One voice per target: of the warrior bots fighting it, the lowest guid speaks.
+    for (Player* member : LiveGroupMembers(group))
+    {
+        if (member && member != bot && member->GetClass() == CLASS_WARRIOR && member->GetVictim() == target &&
+            member->GetGUIDLow() < bot->GetGUIDLow() && PlayerbotAIStorage::Instance().GetAI(member))
+            return;
+    }
 
     std::string const msg = "5 Sunders on " + std::string(creature->GetName());
     if (group->isRaidGroup())

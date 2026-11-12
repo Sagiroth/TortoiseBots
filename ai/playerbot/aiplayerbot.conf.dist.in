@@ -948,7 +948,8 @@ AiPlayerbot.WarriorGapCloser = 0
 # Warriors announce a full Sunder Armor stack.
 # A warrior bot (tank or dps) that sees five Sunder Armor stacks on its elite or
 # boss target says "5 Sunders on <name>" once per target in party or raid chat,
-# only while a real player is in the group.
+# only while a real player is in the group. The stacks may come from any
+# warrior; with several warrior bots on the target only one speaks.
 # 0 - silent (Default)
 # 1 - announce
 AiPlayerbot.AnnounceSunderStacks = 0
