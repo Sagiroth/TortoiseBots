@@ -734,6 +734,45 @@ static void TestTankPostRowUsable_SlotZeroNeedsKey()
     CHECK(TankPostRowUsable(true, 3));
 }
 
+// The row a tank's slot names: its own index, and slot 0 only with AiPlayerbot.DungeonRunTankPostMain. With the key
+// off a priority-0 row is never matched, whatever the bot's index.
+static void TestTankPostSlotRow_MainKeyGatesSlotZero()
+{
+    // TankPostSlotRow(mainKeyOn, priority, botIndex)
+    CHECK(!TankPostSlotRow(false, 0, 0)); // key off: a priority-0 row is no post
+    CHECK(TankPostSlotRow(true, 0, 0));   // key on: the main tank's row
+    CHECK(!TankPostSlotRow(true, 0, 1));  // a priority-0 row is not an off-tank's row
+    CHECK(!TankPostSlotRow(true, 1, 0));  // nor is a slot-1 row the main tank's
+    CHECK(TankPostSlotRow(false, 1, 1));  // any other slot needs no key
+    CHECK(!TankPostSlotRow(true, 1, -1)); // no tank index: no row
+}
+
+// Fable H1: the main tank dies, the raid order makes the old slot 1 the main tank (index 0), and that bot still holds
+// its kept slot-1 row with the latched unit alive. Nobody else can take the slot-0 (Onyxia) row, so the kept row must
+// give way; with the key off, or with the slot-0 row held by another live post, it does not.
+static void TestTankPost_NewMainTankTakesSlotZeroRow()
+{
+    // The new main tank: index 0, a kept row whose latched unit lives, Onyxia's row open and unheld.
+    bool const kept = TankPostKeepsRow(true, true, 4242, true);
+    CHECK(kept);
+    // The dead tank's record is no live post, so the slot-0 row is open for the new main tank.
+    CHECK(!TankPostRowHeldByOther(false, false)); // the record is not live
+    CHECK(!TankPostRowHeldByOther(true, false));  // its tank cannot act (dead): it holds nothing
+    CHECK(TankPostRowHeldByOther(true, true));    // a live post of a tank that can act does hold the row
+    bool const slotZeroOpen = TankPostSlotRow(true, 0, 0) && !TankPostRowHeldByOther(false, false);
+    CHECK(slotZeroOpen);
+    // The kept row yields, so the pick is the slot-0 row.
+    CHECK(TankPostKeptRowYields(true, slotZeroOpen));
+    CHECK(!TankPostKeptRowYields(false, slotZeroOpen)); // an off-tank keeps its own row
+    // The key gates the whole case: with it off, slot 0 is no row and the kept row stays.
+    CHECK(!(TankPostSlotRow(false, 0, 0) && !TankPostRowHeldByOther(false, false)));
+    CHECK(!TankPostKeptRowYields(true, TankPostSlotRow(false, 0, 0)));
+    // A live post on the slot-0 row keeps the newly main tank on its own row: two posts never share a row.
+    bool const heldSlotZeroOpen = TankPostSlotRow(true, 0, 0) && !TankPostRowHeldByOther(true, true);
+    CHECK(!heldSlotZeroOpen);
+    CHECK(!TankPostKeptRowYields(true, heldSlotZeroOpen));
+}
+
 // AiPlayerbot.DungeonRunTankPostKeepsUnit at the tank's target pick: the latched unit wins the comparison in both
 // directions and every other candidate leaves it alone.
 static void TestTankPostUnitPick_LatchedWins()
@@ -772,6 +811,60 @@ static void TestTankPostStep_WaitsAtSpot()
     in.seated = false;
     in.waits = false;
     CHECK(TankPostStep(in) == TankPostDecision::End);   // the key off: today's rule, a started post with no unit ends
+    in.started = false;
+    CHECK(TankPostStep(in) == TankPostDecision::None);  // the key off and no post yet: no post to end
+}
+
+// Codex T: the action's entry guard. A waiting post has no unit, so its Leash walk back and its Hold at the spot must
+// reach the action (the Hold stops the tank's move); every other step needs the awaited unit.
+static void TestTankPostActionRuns_WaitingPost()
+{
+    // TankPostActionRuns(valid, haveRow, haveSubject, step)
+    CHECK(TankPostActionRuns(true, true, false, TankPostDecision::Leash)); // no subject: the walk back runs
+    CHECK(TankPostActionRuns(true, true, false, TankPostDecision::Hold));  // no subject: the hold runs (StopMoving)
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Engage)); // every other step needs the unit
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Drag));
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::Walk));
+    CHECK(TankPostActionRuns(true, true, true, TankPostDecision::Engage));  // with the unit, all steps run
+    CHECK(TankPostActionRuns(true, true, true, TankPostDecision::Hold));
+    CHECK(!TankPostActionRuns(false, true, true, TankPostDecision::Engage)); // no post: nothing runs
+    CHECK(!TankPostActionRuns(true, false, true, TankPostDecision::Engage)); // no row: nothing runs
+    CHECK(!TankPostActionRuns(true, true, false, TankPostDecision::None));   // no step: nothing runs
+}
+
+// Fable M1: a waiting post restarted forever. Its unit dies, the step ends the post, and with the record erased the
+// next tick starts a fresh one (a new window) for as long as the band stands. The done record keeps the band from
+// starting it again; it goes when the band closes.
+static void TestTankPost_WaitDoesNotRestartInBand()
+{
+    // The band is open, the row is a wait row, the tank stands on its spot, and its unit has not arrived yet.
+    TankPostIn in;
+    in.live = true;
+    in.tankCanAct = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.waitRow = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.botToSpotYd = 2.0f;
+    // No record yet: the wait starts (Hold at the spot), and the action writes a record.
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);
+    in.started = true;
+    // Her unit lands and the arrival latches, then it dies: the step ends the post.
+    in.waits = false;
+    in.subjectFound = true;
+    in.subjectAlive = true;
+    in.subjectSelectable = true;
+    in.subjectToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Engage);
+    in.subjectAlive = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);
+    // The end keeps a done record: with it, the step does nothing, so no new post starts inside the band.
+    CHECK(TankPostKeepsDoneRecord(true, TankPostDecision::End));
+    in.done = true;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+    // A post that is not a wait row leaves nothing: its restart needs a living subject anyway.
+    CHECK(!TankPostKeepsDoneRecord(false, TankPostDecision::End));
+    CHECK(!TankPostKeepsDoneRecord(true, TankPostDecision::Engage));
 }
 
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
@@ -1892,8 +1985,12 @@ int main()
     TestTankPostPickKeepsOwnUnit();
     TestTankPostKeepsRow_SurvivesRenumber();
     TestTankPostRowUsable_SlotZeroNeedsKey();
+    TestTankPostSlotRow_MainKeyGatesSlotZero();
+    TestTankPost_NewMainTankTakesSlotZeroRow();
     TestTankPostUnitPick_LatchedWins();
     TestTankPostStep_WaitsAtSpot();
+    TestTankPostActionRuns_WaitingPost();
+    TestTankPost_WaitDoesNotRestartInBand();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

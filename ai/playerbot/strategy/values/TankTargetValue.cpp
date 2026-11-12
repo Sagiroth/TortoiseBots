@@ -193,8 +193,11 @@ public:
         // moved the post's row to another slot index (its record still names the unit it arrived on), and no other
         // loose add pulls the tank off it. Neither candidate latched: the ranking below is unchanged.
         std::uint64_t const oldGuid = oldUnit ? oldUnit->GetObjectGuid().GetRawValue() : 0;
-        int const postPick = ::ai::TankPostUnitPick(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit,
-            ::ai::TankPostLatchedUnit(bot), newUnit->GetObjectGuid().GetRawValue(), oldGuid);
+        // The record's lock is taken only with the key on: off, the pick is the pre-key comparison.
+        std::uint64_t const postLatched =
+            sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit ? ::ai::TankPostLatchedUnit(bot) : 0;
+        int const postPick = ::ai::TankPostUnitPick(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, postLatched,
+            newUnit->GetObjectGuid().GetRawValue(), oldGuid);
         if (postPick > 0)
             return true;
         if (postPick < 0)
