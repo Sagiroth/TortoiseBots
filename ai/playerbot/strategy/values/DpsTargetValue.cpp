@@ -557,7 +557,8 @@ Unit* DpsTargetValue::Calculate()
     // A raid mark set aside in a creature aura keep-out falls through to
     // the next pick like the tank's victim below. A mark on a member the group holds falls through to the group's pick
     // for the same reason the tactic exists (that member has to live to the burn); an explicit attack order above is
-    // the only thing that outranks the tactic, and a mark anywhere else still wins.    // Solnius adds beat the tank's target and raid marks (both are Solnius).
+    // the only thing that outranks the tactic, and a mark anywhere else still wins.
+    // Solnius adds beat the tank's target and raid marks (both are Solnius).
     if (Unit* add = SolniusAddTarget(ai, bot))
         return add;
 
