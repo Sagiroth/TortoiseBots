@@ -15,6 +15,7 @@
 
 #include "playerbot/strategy/actions/DestroyItemAction.h"
 #include "../../policy/loot/LootWindowPolicy.h"
+#include "../../policy/loot/BlockedTellPolicy.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -32,8 +33,6 @@ bool AddLootAction::Execute(Event& event)
 
 void AddAllLootAction::TellBlocked(Player* requester, ObjectGuid objectGuid, const std::string& text)
 {
-    const time_t kBlockedTellCooldown = 600;
-
     if (bot->GetMap()->IsDungeon() || bot->IsInCombat())
         return;
 
@@ -45,34 +44,20 @@ void AddAllLootAction::TellBlocked(Player* requester, ObjectGuid objectGuid, con
         !ai->IsTellAllowed(requester) || !ai->IsSafe(requester))
         return;
 
-    // One record shared by every bot, keyed by who is told and which object:
-    // the first companion to notice tells the master, the rest stay quiet,
-    // and nobody repeats it for 10 minutes.
+    // One record shared by every bot, keyed by the group (or the requester
+    // outside a group) and the object: the first companion to notice tells
+    // the group, the rest stay quiet, and nobody repeats it for 10 minutes.
     static std::mutex blockedMutex;
-    static std::map<std::pair<uint64, uint64>, time_t> blockedTold;
+    static std::map<std::pair<uint64_t, uint64_t>, time_t> blockedTold;
 
-    const time_t now = time(nullptr);
-    const std::pair<uint64, uint64> key(requester->GetObjectGuid().GetRawValue(), objectGuid.GetRawValue());
+    Group* group = requester->GetGroup();
+    const uint64_t owner = BlockedTellOwner(requester->GetObjectGuid().GetRawValue(),
+        group ? group->GetId() : 0);
 
     {
         std::lock_guard<std::mutex> lock(blockedMutex);
-        std::map<std::pair<uint64, uint64>, time_t>::iterator it = blockedTold.find(key);
-        if (it != blockedTold.end() && now - it->second < kBlockedTellCooldown)
+        if (!BlockedTellAllowed(blockedTold, owner, objectGuid.GetRawValue(), time(nullptr)))
             return;
-
-        // Drop only expired records, so a live entry is never forgotten early.
-        if (blockedTold.size() > 256)
-        {
-            for (it = blockedTold.begin(); it != blockedTold.end();)
-            {
-                if (now - it->second >= kBlockedTellCooldown)
-                    it = blockedTold.erase(it);
-                else
-                    ++it;
-            }
-        }
-
-        blockedTold[key] = now;
     }
 
     ai->TellError(requester, text);
