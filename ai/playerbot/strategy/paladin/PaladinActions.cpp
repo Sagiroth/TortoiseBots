@@ -113,6 +113,10 @@ std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
         ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", BlessingOrderKey(classIndex))->Get());
     if (spell.empty() || !ai->HasSpell(spell))
         return std::string();
+    // A tank bot cancels Salvation at once, so the order would be recast forever.
+    PlayerbotAI* const targetAi = PlayerbotAIStorage::Instance().GetAI(static_cast<Player*>(target));
+    if (spell == "blessing of salvation" && targetAi && targetAi->ContainsStrategy(STRATEGY_TYPE_TANK))
+        return std::string();
     return spell;
 }
 
