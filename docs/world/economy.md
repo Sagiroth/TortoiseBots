@@ -44,7 +44,7 @@ To prevent bots from walking to town after every kill, vendor trips are batched 
 - **Bag-pressure line:** With stock a vendor buys, bags at 85%+ full trigger the vendor errand; empty food or drink bags trigger it only when the bot can pay to restock.
 - **Camp distance limits:** Masterless bots below level 5 are restricted to nearby camp vendors within [`AiPlayerbot.LowLevelVendorMaxDistance`](../server/settings/economy.md#aiplayerbotlowlevelvendormaxdistance). If a vendor visit yields no valid sales, the errand is parked for ten minutes.
 - **One stock list:** the vendor-trip need, the batch and spell-funding rule, the nearby-service sell verb and the errand sale all read the same list (`SellAction::VendorSaleStock`), and a completed sale clears the cached need values, so a bot does not run a second empty sale and park the errand.
-- **No flip buys:** vendor runs never buy stock to relist on the Auction House. Recipes and gear are bought once per item per visit; stackable stock still buys up to 10. Hunters and gun users buy ammo only when they do not carry any (unless restocking), and item-cheat bots wait five minutes between ammo buys.
+- **Flip buys:** owned and hired bots still buy limited-supply stock to relist on the Auction House; bots on the item cheat seed their own stock, so they skip the flip. Recipes and gear are bought once per item per visit; stackable stock still buys up to 10. Hunters and gun users buy ammo only when they do not carry any (unless restocking), and item-cheat bots wait five minutes between ammo buys.
 
 </details>
 

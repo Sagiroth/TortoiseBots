@@ -117,6 +117,13 @@ bool BuyAction::Execute(Event& event)
                 // reputation discount
                 uint32 price = uint32(floor(proto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
 
+                // Upstream #462: owned and hired bots keep the earned
+                // vendor->AH flip of limited-supply stock. A bot on the item
+                // cheat gets its stock seeded without gold, so buying to
+                // relist only burns the trainer purse.
+                bool const canFlipAH = ai::VendorBuyAllowsAhFlip(ai->HasCheat(BotCheatMask::item)) &&
+                    ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
+
                 // Pool-bot weapon/shield upgrade pass: runs before the usage loop so
                 // NONE-classified vendor stock is reached too. A vendor weapon or
                 // shield the bot does not own can still be a real upgrade by the
@@ -183,10 +190,10 @@ bool BuyAction::Execute(Event& event)
                         case ItemUsage::ITEM_USAGE_QUEST:
                         case ItemUsage::ITEM_USAGE_FORCE_NEED:
                         case ItemUsage::ITEM_USAGE_FORCE_GREED: moneyKey = (uint32)NeedMoneyFor::anything; break;
-                        // ITEM_USAGE_AH is never bought: like mod-playerbots
-                        // (BuyAction.cpp:139-165, no AH case) a bot does not
-                        // buy vendor stock only to list it on the AH (live
-                        // pool: 20 copies of one recipe, 170 Strong Flux).
+                        case ItemUsage::ITEM_USAGE_AH:
+                            usageAllowed = canFlipAH;
+                            moneyKey = (uint32)NeedMoneyFor::anything;
+                            break;
                         default: usageAllowed = false; break;
                     }
                     if (!usageAllowed)

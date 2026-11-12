@@ -8,7 +8,7 @@
 - Fixed: Nefarian's priest, shaman and warlock class calls are answered: a priest with Corrupted Healing keeps to Renew and Power Word: Shield, and damage dealers kill the corrupted totems and then the Corrupted Infernals.
 - Fixed: Solnius's Call of Nightmare adds stay a damage dealer's `dps assist` target instead of being reset to Solnius every tick, and the Araxxna egg check re-reads its nearby list every five seconds.
 - Fixed: a trainer visit refuses ranks the bot cannot learn yet before charging for them, and the trainer trip and the visit read the same spendable money.
-- Fixed: vendor runs no longer buy stock to relist on the Auction House, recipes and gear are bought once per item per visit, and hunters and gun users stop re-buying ammo every few seconds.
+- Fixed: vendor runs on the item cheat no longer buy stock to relist on the Auction House, recipes and gear are bought once per item per visit, and hunters and gun users stop re-buying ammo every few seconds.
 - Changed: usable food, drink, potions and bandages are kept at any item level, and class poisons, stones and oils are kept until a higher tier is in the bags, instead of being sold by item level.
 - Fixed: the vendor-trip need, the batch rule, the nearby-service sell and the errand sale read one item list, and a completed sale clears the cached need so no second empty sale parks the errand.
 - Fixed: crafting requires every reagent in the bags (the item cheat no longer conjures them) and writes a `Craft` row to `bot_events.csv`.

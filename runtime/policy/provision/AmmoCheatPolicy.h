@@ -17,8 +17,8 @@ namespace ai
 // EQUIP checks (empty slot / better ammo) run before this gate, so cheat
 // bots still equip ammo. Bots without the cheat (owned/hired) keep the
 // earned needAmmo = 8/2 restock path. BuyAction caps the rest with
-// VendorAmmoBuyAllowed below; vendor->AH flips (quivers included) are never
-// bought.
+// VendorAmmoBuyAllowed below; vendor->AH flips keep the earned path for
+// owned and hired bots and are skipped only on the item cheat.
 inline bool SuppressAmmoBuy(bool hasItemCheat) { return hasItemCheat; }
 
 // Per-bot cooldown between two vendor ammo buys of an item-cheat bot. The
