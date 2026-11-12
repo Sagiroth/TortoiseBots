@@ -1894,6 +1894,41 @@ static void TestTankPostHealerFar_PastThirty()
     CHECK(TankPostHealerFar(30.1f));
 }
 
+// Walk 2i C: the holder's cooldown fires on the first sighting of the row's spell after its unit was on it, once per
+// post. The failing case is the landing cast: without heldOnce a Roar at the landing spends the window before the
+// tank has her, and the first Roar that matters finds nothing left.
+static void TestTankPostCooldownSeen_FirstSightingAfterHold()
+{
+    CHECK(TankPostCooldownSeen(true, 18431, true, false, true));
+    CHECK(!TankPostCooldownSeen(false, 18431, true, false, true));  // key off
+    CHECK(!TankPostCooldownSeen(true, 0, true, false, true));       // no row spell
+    CHECK(!TankPostCooldownSeen(true, 18431, false, false, true));  // the landing cast, before the tank had her
+    CHECK(!TankPostCooldownSeen(true, 18431, true, true, true));    // a second Roar of the same post
+    CHECK(!TankPostCooldownSeen(true, 18431, true, false, false));  // no aura seen
+    CHECK(kTankPostCooldownTryMs == 10000);
+}
+
+// The class's defensive actions, in cast order; a class with none keeps its own rules.
+static void TestTankPostCooldownActions_ByClass()
+{
+    CHECK(TankPostCooldownActions(1) == std::vector<const char*>({"shield wall", "last stand"}));
+    CHECK(TankPostCooldownActions(11) == std::vector<const char*>({"frenzied regeneration", "barkskin"}));
+    CHECK(TankPostCooldownActions(2).empty());   // paladin
+    CHECK(TankPostCooldownActions(5).empty());   // priest
+    CHECK(TankPostCooldownActions(0).empty());
+}
+
+// The window: cast while a name is left, give up once at its end, nothing after the last one.
+static void TestTankPostCooldownStep_WindowAndGiveUp()
+{
+    CHECK(TankPostCooldownStep(true, 0, 2, 500) == TankPostCooldown::Cast);
+    CHECK(TankPostCooldownStep(true, 1, 2, 9999) == TankPostCooldown::Cast);
+    CHECK(TankPostCooldownStep(true, 2, 2, 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownStep(true, 1, 2, 10000) == TankPostCooldown::GiveUp);
+    CHECK(TankPostCooldownStep(false, 0, 2, 500) == TankPostCooldown::None);
+    CHECK(TankPostCooldownStep(true, 0, 0, 500) == TankPostCooldown::None);
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -2125,6 +2160,9 @@ int main()
     TestTankPostHealPickOf_HolderOrNobody();
     TestTankPostHealerPoint_FlankOrLine();
     TestTankPostHealerFar_PastThirty();
+    TestTankPostCooldownSeen_FirstSightingAfterHold();
+    TestTankPostCooldownActions_ByClass();
+    TestTankPostCooldownStep_WindowAndGiveUp();
     AddCrewState_SwitchesAfterDeath();
     AddCrewLoader_Rows();
     AddCrewRank_Order();

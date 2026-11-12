@@ -759,6 +759,76 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('"boss=%u,subject=%u,tank=%d"', note)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', note)
 
+    def test_post_cooldown_is_wired(self):
+        # Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post's tank answers the first sighting of the row's
+        # spell after its unit was on it with its class's defensive cooldown, once per post. The rules are pure
+        # (TankPostCooldownSeen, TankPostCooldownActions, TankPostCooldownStep in tools/test_boss_tactics_policy.cpp);
+        # these pins prove the live code uses them and names no boss and no spell id.
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        self.assertIn("record.heldOnce = record.heldOnce || in.subjectOnTank;", find)
+        sight = find[find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && !record.cooldownClosed"):]
+        sight = sight[:sight.index("bool arrivedNow = false;")]
+        self.assertIn("record.heldOnce &&", sight)
+        self.assertIn("row->spellId != 0 && record.cooldownSeenMs == 0", sight)
+        self.assertIn("bot->HasAura(row->spellId)", sight)
+        self.assertIn("member->HasAura(row->spellId)", sight)
+        self.assertIn("TankPostCooldownSeen(sPlayerbotAIConfig.dungeonRunTankPostHealers, row->spellId, "
+                      "record.heldOnce,", sight)
+        self.assertIn("record.cooldownSeenMs != 0, auraOnRaid)", sight)
+        self.assertIn("record.cooldownSeenMs = nowMs;", sight)
+        self.assertIn('"event=cd_seen,spell=%u,s=%.1f"', sight)
+        self.assertNotIn("g_tankPostMutex", sight)
+        self.assertIn("std::uint32_t cooldownSeenMs = 0;", ACTIONS)
+        self.assertIn("std::uint8_t cooldownTried = 0;", ACTIONS)
+        self.assertIn("bool cooldownClosed = false;", ACTIONS)
+        self.assertIn("bool heldOnce = false;", ACTIONS)
+        # The action: the policy's names in order through DoSpecificAction, the two rows, then the count.
+        action = body(ACTIONS, "bool BossTacticsTankPostCooldownAction::Execute(Event& event)")
+        self.assertIn("TankPostCooldownRead(bot, tried, seenMs)", action)
+        self.assertIn("const std::vector<const char*> names = TankPostCooldownActions(bot->GetClass());", action)
+        self.assertIn("ai->DoSpecificAction(names[tried], event, true)", action)
+        self.assertIn("TankPostCooldownStep(true, tried, names.size(), WorldTimer::getMSTime() - seenMs)", action)
+        self.assertIn('"event=cd_cast,spell=%s,hp=%.0f"', action)
+        self.assertIn('"event=cd_none,left=%u"', action)
+        self.assertIn('"event=cd_none,left=0"', action)
+        self.assertIn("TankPostCooldownNote(bot, true);", action)
+        self.assertIn("TankPostCooldownNote(bot, false);", action)
+        # The clock lives in the record, read and written under its lock only.
+        read = body(ACTIONS, "bool ai::TankPostCooldownRead(")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", read)
+        self.assertIn("record.cooldownSeenMs == 0 || record.cooldownClosed", read)
+        note = body(ACTIONS, "void ai::TankPostCooldownNote(Player* bot, bool cast)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", note)
+        self.assertIn("++record.cooldownTried;", note)
+        self.assertIn("record.cooldownClosed = true;", note)
+        self.assertIn("TankPostCooldownActions(bot->GetClass()).size()", note)
+        self.assertIn("bool TankPostCooldownDue(Player* bot);", ACTIONS_H)
+        self.assertIn("bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);", ACTIONS_H)
+        self.assertIn("void TankPostCooldownNote(Player* bot, bool cast);", ACTIONS_H)
+        # The trigger and its node: above the post's own node.
+        self.assertIn('creators["boss tank post cooldown"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankPostCooldownTrigger(ai); };', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics tank post cooldown"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankPostCooldownAction(ai); };', ACTION_CONTEXT)
+        self.assertIn('new NextAction("boss tactics tank post cooldown", ACTION_EMERGENCY + 3)', STRATEGY)
+        self.assertIn('"boss tank post cooldown"', STRATEGY)
+        trigger = body(TRIGGERS, "bool BossTacticsTankPostCooldownTrigger::IsActive()")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostHealers", trigger)
+        self.assertIn("PlayerbotAI::IsTank(bot)", trigger)
+        self.assertIn("TankPostCooldownDue(bot)", trigger)
+        self.assertIn("BossTacticsTankPostCooldownAction(PlayerbotAI* ai) : Action(ai, "
+                      "\"boss tactics tank post cooldown\")", ACTIONS_H)
+        # No boss and no spell id in the code: the row names the spell.
+        self.assertNotIn("18431", ACTIONS)
+        self.assertNotIn("18431", TRIGGERS)
+        self.assertIn("constexpr std::uint32_t kTankPostCooldownTryMs = 10000;", POLICY)
+        self.assertIn("inline bool TankPostCooldownSeen(bool keyOn, std::uint32_t rowSpell, bool heldOnce, "
+                      "bool seenBefore,", POLICY)
+        self.assertIn("inline std::vector<const char*> TankPostCooldownActions(std::uint8_t classId)", POLICY)
+        self.assertIn("enum class TankPostCooldown : std::uint8_t { None, Cast, GiveUp };", POLICY)
+        self.assertIn("inline TankPostCooldown TankPostCooldownStep(bool seen, std::size_t tried, "
+                      "std::size_t total,", POLICY)
+
     def test_a_done_record_survives_a_renumbering(self):
         # Codex M: a renumbering erased the waiting post's done record before its band closed, and the row started a
         # fresh post inside the same band. The rule is pure (TankPostDoneRecordStays) and tested in

@@ -97,6 +97,12 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tank post",
         NextAction::array(0, new NextAction("boss tactics tank post", ACTION_EMERGENCY + 2), NULL)));
 
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post's tank answers the first cast its row's spell marks
+    // with its class's defensive cooldown. Above the post's own node so the cast goes out before its move.
+    triggers.push_back(new TriggerNode(
+        "boss tank post cooldown",
+        NextAction::array(0, new NextAction("boss tactics tank post cooldown", ACTION_EMERGENCY + 3), NULL)));
+
     // AiPlayerbot.DungeonRunTankPostHealers: a healer held on a post's tank stands out past its leash and walks back.
     // Every heal, dispel and interrupt cast and every survival move (seat, avoid, flee) outranks it; it outranks step
     // behind and the target picks.

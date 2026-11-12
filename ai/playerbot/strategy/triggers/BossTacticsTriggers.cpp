@@ -593,6 +593,17 @@ bool BossTacticsTankPostHealerTrigger::IsActive()
     return TankPostHealerFar(std::sqrt(dx * dx + dy * dy));
 }
 
+bool BossTacticsTankPostCooldownTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Its own key, the map flag and the tank test keep every other bot and every key-off fight at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunTankPostHealers || !GetBossTactics().HasTankPostMap(bot->GetMapId()) ||
+        !PlayerbotAI::IsTank(bot))
+        return false;
+    return TankPostCooldownDue(bot);
+}
+
 bool BossTacticsBurnManaTrigger::IsActive()
 {
     if (!Ready(ai, bot) || !sPlayerbotAIConfig.dungeonRunBurnMana)

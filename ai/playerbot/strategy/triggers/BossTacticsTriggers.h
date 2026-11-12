@@ -251,6 +251,15 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post's tank saw the row's spell on the raid after its
+    // unit was on it, and its cooldown window is still open.
+    class BossTacticsTankPostCooldownTrigger : public Trigger
+    {
+    public:
+        BossTacticsTankPostCooldownTrigger(PlayerbotAI* ai) : Trigger(ai, "boss tank post cooldown", 1) {}
+        bool IsActive() override;
+    };
+
     // A burn_mana row's boss is in the fight at or above the row's start % of mana and this bot is one of the row's
     // burners (FindBossBurnMana): it casts its longest drain spell on the boss.
     class BossTacticsBurnManaTrigger : public Trigger

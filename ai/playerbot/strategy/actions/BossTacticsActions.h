@@ -219,6 +219,13 @@ namespace ai
     };
     TankPostHealDuty FindTankPostHealDuty(PlayerbotAI* ai, Player* bot);
 
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post holder's cooldown at the first cast the row's spell
+    // marks. `Due` is the trigger's read (seen, not closed, the record live); `Read` hands the action the same
+    // record's tried count and sighting clock; `Note` advances the count after a cast and closes the window otherwise.
+    bool TankPostCooldownDue(Player* bot);
+    bool TankPostCooldownRead(Player* bot, std::uint8_t& tried, std::uint32_t& seenMs);
+    void TankPostCooldownNote(Player* bot, bool cast);
+
     // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
     // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
     // read). Logs the refusal row for the first such unit.
@@ -965,6 +972,16 @@ namespace ai
         // The Engage step's walk row (AiPlayerbot.DungeonRunTankPostWalks) is written once per walk episode, not on
         // every tick the tank stays on it.
         bool walkLogged = false;
+    };
+
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the post's tank casts its class's defensive actions, in
+    // order, inside the window the first sighting of the row's spell opened. Above the post's own node, so the cast
+    // goes out before the post's move.
+    class BossTacticsTankPostCooldownAction : public Action
+    {
+    public:
+        BossTacticsTankPostCooldownAction(PlayerbotAI* ai) : Action(ai, "boss tactics tank post cooldown") {}
+        bool Execute(Event& event) override;
     };
 
     // AiPlayerbot.DungeonRunTankPostHealers: the post healer's walk back to its holder, or beside the unit the post

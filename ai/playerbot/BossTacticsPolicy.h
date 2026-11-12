@@ -4246,6 +4246,36 @@ namespace ai
         y = holderY + kTankPostHealerWalkYd;
     }
 
+    // Walk 2i C (AiPlayerbot.DungeonRunTankPostHealers): the holder's defensive cooldown at the first cast the row's
+    // spell marks. The window is long enough for a feared tank (the Roar's own fear lasts 3 s).
+    constexpr std::uint32_t kTankPostCooldownTryMs = 10000;
+    // The first sighting that counts: the key, a row spell, the unit was on this tank at least once (so a cast at the
+    // landing, before the tank has her, spends nothing), nothing seen yet, and a raid member carries the aura now.
+    inline bool TankPostCooldownSeen(bool keyOn, std::uint32_t rowSpell, bool heldOnce, bool seenBefore,
+                                     bool auraOnRaid)
+    {
+        return keyOn && rowSpell != 0 && heldOnce && !seenBefore && auraOnRaid;
+    }
+    // The defensive actions of a tank class, in cast order; empty for a class with none. By class id only: the code
+    // names no boss and no spell id.
+    inline std::vector<const char*> TankPostCooldownActions(std::uint8_t classId)
+    {
+        if (classId == 1) // CLASS_WARRIOR
+            return {"shield wall", "last stand"};
+        if (classId == 11) // CLASS_DRUID
+            return {"frenzied regeneration", "barkskin"};
+        return {};
+    }
+    enum class TankPostCooldown : std::uint8_t { None, Cast, GiveUp };
+    // Cast while an action is left inside the window; GiveUp once at its end with actions left; else None.
+    inline TankPostCooldown TankPostCooldownStep(bool seen, std::size_t tried, std::size_t total,
+                                                 std::uint32_t msSinceSeen)
+    {
+        if (!seen || tried >= total)
+            return TankPostCooldown::None;
+        return msSinceSeen >= kTankPostCooldownTryMs ? TankPostCooldown::GiveUp : TankPostCooldown::Cast;
+    }
+
     // AiPlayerbot.DungeonRunTankPostKeepsUnit, for the tank's own target pick: whether the post's latched unit decides
     // this comparison. 1: the new candidate is the latched unit (keep it), -1: the old one is (do not switch off it),
     // 0: the key is off, nothing is latched, or both or neither candidate is it (the ordinary ranking decides).
