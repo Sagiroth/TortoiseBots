@@ -37,6 +37,7 @@ TortoiseBots includes a structured command interface for inspecting companion vi
 | [`.bot behavior`](#bot-behavior) | `<Name\|scope> <key> <on\|off>` | Sets persistent bot behaviors (loot, AoE, mimic...). |
 | [`.bot service`](#bot-service) | `<Name> [portal <spellId>]` | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](#bot-totem) | `<scope> <slot\|mode\|drop> [...]` | Configures and drops shaman totem loadouts. |
+| [`.bot blessing`](#bot-blessing) | `<scope> <class> <blessing\|auto>` \| `status` | Assigns the blessing each class gets from a paladin bot. |
 
 ---
 
@@ -345,5 +346,26 @@ Configures and manages shaman totem loadouts and casting policies.
 - **Recall:** *Totemic Recall* refunds a standing set once the bot and its group are out of combat. The refund waits while the pre-pull window is open or *Mana Tide Totem* is down.
 - **Status Query:** `.bot totem <bot|party|raid> status` reports current loadout and mode via `TBM:TOTEM` records followed by a trailing `TBM:ACTION_ACK|totem status|<scope>|<n>|-`.
 - **`TBM:TOTEM` Record:** `TBM:TOTEM|<bot>|earth=<x>,fire=<x>,water=<x>,air=<x>,mode=<mode>,known=<name>+<name>+...`. `known` lists every totem the bot has trained (full lowercase names, each once, earth to air slot order) and is empty (`known=`) when it has none. A single-slot order, `mode` and `set` also send the fresh record for each shaman they changed, before their ACK.
+
+</details>
+
+### `.bot blessing` <a id="bot-blessing"></a>
+
+Assigns, per paladin bot, the blessing each class gets. Classes left on `auto` keep the automatic coverage pick.
+
+```text
+.bot blessing <bot|party|raid> <warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid> <might|wisdom|kings|salvation|sanctuary|light|auto>
+.bot blessing <bot|party|raid> status
+```
+
+<details>
+<summary>Blessing assignment rules</summary>
+
+- **Per Paladin, Per Class:** The order is saved with the paladin bot. A paladin gives one blessing per member, so the order replaces its automatic pick for that class and, where needed, its own live blessing on those members. `auto` clears the order.
+- **Covered Already:** The paladin stands down on a member that already carries the ordered blessing from any caster, so two paladins ordered the same blessing do not overwrite each other.
+- **Untrained Blessing:** A paladin that has not trained the blessing answers `TBM:ACTION_ERR|blessing|unknown-spell|<message>` and keeps its assignment. After a respec an order for a blessing the bot no longer knows is ignored (automatic pick) until it is trained again.
+- **Fixed Blessing Strategies:** The `blessing kings`, `blessing might` and similar strategies still give one blessing to everyone and win over the per-class orders.
+- **Replies:** An order answers one fresh `TBM:BLESSING` record per paladin changed, then `TBM:ACTION_ACK|blessing|<scope>|<n>|<class>=<blessing>`. `status` answers one record per paladin bot in scope (other classes produce none), then `TBM:ACTION_ACK|blessing status|<scope>|<n>|-`.
+- **`TBM:BLESSING` Record:** `TBM:BLESSING|<bot>|warrior=<b>,paladin=<b>,hunter=<b>,rogue=<b>,priest=<b>,shaman=<b>,mage=<b>,warlock=<b>,druid=<b>,known=<b>+<b>+...`. `<b>` is `auto` or a blessing word; `known` lists the blessings the paladin has trained and may be empty.
 
 </details>

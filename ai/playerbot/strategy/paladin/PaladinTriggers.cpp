@@ -346,6 +346,9 @@ Unit* FindBlessingCandidate(PlayerbotAI* ai, Player* bot, bool greaterOnly)
     // runs at cast time; the trigger only needs "something could land".)
     auto CouldBless = [&](Player* member)
     {
+        std::string const ordered = OrderedBlessingFor(ai, member);
+        if (!ordered.empty())
+            return !ai->HasAura(ordered, member) && !ai->HasAura("greater " + ordered, member);
         for (char const* blessing : kBlessings)
         {
             std::string const base(blessing);

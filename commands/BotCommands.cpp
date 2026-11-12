@@ -649,6 +649,7 @@ static BotCommandEntry const botCommands[] = {
     {"service", HandleService, "service <bot> [portal <spellId>]", {}, AlwaysVisible},
     {"behavior", HandleBehavior, "behavior <bot|party|raid> <behavior> <on|off>", {"behaviour"}, AlwaysVisible},
     {"totem", HandleTotem, "totem <bot|party|raid> ...", {}, AlwaysVisible},
+    {"blessing", HandleBlessing, "blessing <bot|party|raid> <class> <blessing|auto> | status", {}, AlwaysVisible},
     {"strategy", HandleStrategy, "strategy <+/-/~><strategy name> [role or botName] | strategy reset", {}, AlwaysVisible},
     {"help", HandleHelp, "help", {"h"}, AlwaysVisible},
 };

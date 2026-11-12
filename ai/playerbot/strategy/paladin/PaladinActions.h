@@ -179,6 +179,14 @@ namespace ai
         CastSanctityAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "sanctity aura") {}
     };
 
+    // The blessing the player ordered for this member's class and this paladin
+    // has trained, as its base spell name; empty when the class is on auto.
+    std::string OrderedBlessingFor(PlayerbotAI* ai, Unit* target);
+
+    // The cast an ordered blessing still needs on this member, or empty: the
+    // same family from any caster already covers it.
+    std::string OrderedBlessingCast(PlayerbotAI* ai, Unit* target, std::string const& ordered, bool greater);
+
     // Pick the best blessing based on spec
     class CastBlessingAction : public CastSpellAction
     {

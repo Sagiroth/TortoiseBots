@@ -3,6 +3,7 @@
 #include "PaladinActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/GroupMembers.h"
+#include "PaladinBlessingOrderPolicy.h"
 
 using namespace ai;
 
@@ -101,6 +102,29 @@ bool CastPaladinAuraAction::Execute(Event& event)
     return false;
 }
 
+std::string ai::OrderedBlessingFor(PlayerbotAI* ai, Unit* target)
+{
+    if (!target || !target->IsPlayer())
+        return std::string();
+    int const classIndex = BlessingOrderClassIndexById(static_cast<Player*>(target)->GetClass());
+    if (classIndex < 0)
+        return std::string();
+    std::string const spell = BlessingOrderSpell(
+        ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", BlessingOrderKey(classIndex))->Get());
+    if (spell.empty() || !ai->HasSpell(spell))
+        return std::string();
+    return spell;
+}
+
+std::string ai::OrderedBlessingCast(PlayerbotAI* ai, Unit* target, std::string const& ordered, bool greater)
+{
+    std::string const greaterOrdered = "greater " + ordered;
+    if (ai->HasAura(ordered, target) || ai->HasAura(greaterOrdered, target))
+        return std::string();
+    std::string const spell = greater ? greaterOrdered : ordered;
+    return ai->CanCastSpell(spell, target, 0, nullptr, true) ? spell : std::string();
+}
+
 Unit* CastBlessingAction::GetTarget()
 {
     return bot;
@@ -130,6 +154,10 @@ std::string CastBlessingAction::GetBlessingForTarget(Unit* target)
     std::string chosenBlessing = "";
     if (target)
     {
+        std::string const ordered = OrderedBlessingFor(ai, target);
+        if (!ordered.empty())
+            return OrderedBlessingCast(ai, target, ordered, greater);
+
         static char const* const kBlessings[] =
         {
             "blessing of might", "blessing of wisdom", "blessing of kings",
@@ -412,6 +440,12 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     // member lacks it, whatever else the member holds from others.
     if (!target)
         return std::string();
+
+    // A player order replaces the automatic pick, and may replace this bot's
+    // own live blessing with the ordered one.
+    std::string const ordered = OrderedBlessingFor(ai, target);
+    if (!ordered.empty())
+        return OrderedBlessingCast(ai, target, ordered, greater);
 
     static char const* const kBlessings[] =
     {
