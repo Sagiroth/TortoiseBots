@@ -221,6 +221,24 @@ inline std::string OrderedTotemForSlot(std::string const& storedOrder)
     return storedOrder;
 }
 
+// A slot with an order takes only the ordered totem: every other totem of
+// that slot (spec rows, pack and reactive picks) stays out of it.
+inline bool TotemBlockedBySlotOrder(std::string const& totem, std::string const storedOrders[4])
+{
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        std::string const ordered = OrderedTotemForSlot(storedOrders[slot]);
+        if (ordered.empty() || ordered == totem)
+            continue;
+        std::uint32_t count = 0;
+        char const* const* choices = TotemChoicesForSlot(slot, count);
+        for (std::uint32_t i = 0; i < count; ++i)
+            if (totem == choices[i])
+                return true;
+    }
+    return false;
+}
+
 // Should the automatic (non-manual, non-drop) rows fire right now?
 // auto (default) and prepull share one rule: combat, or the pre-pull window
 // while a fight is imminent (ready-check anchor / force-rebuff window).

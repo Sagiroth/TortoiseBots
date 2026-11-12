@@ -150,5 +150,14 @@ int main()
     std::puts("  [PASS] set list parses four valid words, rejects the rest");
 
     std::puts("All totem command policy checks PASSED!");
+    {
+        std::string const orders[4] = { "strength of earth totem", "auto", "", "windfury totem" };
+        CHECK(!ai::TotemBlockedBySlotOrder("strength of earth totem", orders));
+        CHECK(ai::TotemBlockedBySlotOrder("earthbind totem", orders));
+        CHECK(ai::TotemBlockedBySlotOrder("tranquil air totem", orders));
+        CHECK(!ai::TotemBlockedBySlotOrder("magma totem", orders));
+        CHECK(!ai::TotemBlockedBySlotOrder("mana spring totem", orders));
+    }
+
     return 0;
 }

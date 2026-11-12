@@ -194,6 +194,7 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
     std::string const ackScope = scopeIsParty ? "party" : std::string("bot:") + bots.front()->GetName();
 
     uint32 paladins = 0;
+    bool refused = false;
     std::string const spell = ai::BlessingOrderSpell(word3);
     for (Player* bot : bots)
     {
@@ -206,6 +207,7 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
             {
                 std::string msg = std::string(bot->GetName()) + " has not trained " + spell + ".";
                 SendActionError(handler, intent, "unknown-spell", msg.c_str());
+                refused = true;
                 continue;
             }
             ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::BlessingOrderKey(classIndex))->Set(word3);
@@ -221,7 +223,8 @@ bool HandleBlessing(ChatHandler* handler, char const* args)
     }
     if (!paladins)
     {
-        SendActionError(handler, intent, "no-paladin", "No paladin bots in scope could take that order.");
+        if (!refused)
+            SendActionError(handler, intent, "no-paladin", "No paladin bots in scope could take that order.");
         return true;
     }
     SendActionAck(handler, intent, ackScope, paladins, word2 + "=" + word3);

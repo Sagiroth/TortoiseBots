@@ -376,6 +376,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
             return true;
         }
         uint32 succeeded = 0;
+        bool refused = false;
         for (Player* bot : bots)
         {
             PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -389,6 +390,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
                     std::string msg = std::string(bot->GetName()) + " has not trained " + stored[slot] + ".";
                     SendActionError(handler, "totem set", "unknown-spell", msg.c_str());
                     trained = false;
+                    refused = true;
                 }
             }
             if (!trained)
@@ -401,7 +403,8 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         }
         if (!succeeded)
         {
-            SendActionError(handler, "totem set", "no-shaman", "No shaman bots in scope.");
+            if (!refused)
+                SendActionError(handler, "totem set", "no-shaman", "No shaman bots in scope.");
             return true;
         }
         SendActionAck(handler, "totem set", ackScope, succeeded, "-");
@@ -429,6 +432,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         return true;
     }
     uint32 succeeded = 0;
+    bool refused = false;
     for (Player* bot : bots)
     {
         PlayerbotAI* ai = PlayerbotAIStorage::Instance().GetAI(bot);
@@ -440,6 +444,7 @@ bool HandleTotem(ChatHandler* handler, char const* args)
         {
             std::string msg = std::string(bot->GetName()) + " has not trained " + stored + ".";
             SendActionError(handler, "totem", "unknown-spell", msg.c_str());
+            refused = true;
             continue;
         }
         ai->GetAiObjectContext()->GetValue<std::string>("manual saved string", ai::TotemOrderKey(slot))->Set(stored);
@@ -449,7 +454,8 @@ bool HandleTotem(ChatHandler* handler, char const* args)
     }
     if (!succeeded)
     {
-        SendActionError(handler, "totem", "no-shaman", "No shaman bots in scope.");
+        if (!refused)
+            SendActionError(handler, "totem", "no-shaman", "No shaman bots in scope.");
         return true;
     }
     std::string const detail = std::string(ai::TotemSlotName(slot)) + "=" + (stored.empty() ? "none" : stored);

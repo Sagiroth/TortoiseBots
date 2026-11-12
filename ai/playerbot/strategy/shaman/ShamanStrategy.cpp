@@ -39,6 +39,13 @@ void ShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
 
+    for (char const* slot : { "earth", "fire", "water", "air" })
+    {
+        triggers.push_back(new TriggerNode(
+            std::string(slot) + " totem",
+            NextAction::array(0, new NextAction(std::string("ordered ") + slot + " totem", ACTION_HIGH), NULL)));
+    }
+
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("healing wave", ACTION_MEDIUM_HEAL), NULL)));
@@ -59,6 +66,13 @@ void ShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void ShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+
+    for (char const* slot : { "earth", "fire", "water", "air" })
+    {
+        triggers.push_back(new TriggerNode(
+            std::string(slot) + " totem",
+            NextAction::array(0, new NextAction(std::string("ordered ") + slot + " totem", ACTION_HIGH - 1), NULL)));
+    }
 
     triggers.push_back(new TriggerNode(
         "party member dead",
