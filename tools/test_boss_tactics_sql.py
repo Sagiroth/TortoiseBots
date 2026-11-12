@@ -1094,6 +1094,48 @@ class BossTacticsSql(unittest.TestCase):
                          "the Onyxia add_crew row drifted")
         self.assertIsNone(new_kind_problem(crew))
 
+    def test_onyxia_walk2g_hatcher_posts(self):
+        # 20261112100000_world.sql: walk 2f a-2 reached P3 with the slot-1 post alone, no Hatcher was taunted and 9 of
+        # the P3 deaths went to the two 50144s, so each Hatcher gets its own post: slot 2 at S' (-29.0, -245.7) and
+        # slot 3 at N' (-29.0, -183.8), 12 yd off the spawn points and clear of the eggs. The loader refuses a second
+        # row with the same kind, target, spell and band, so the bands differ (0-41 and 0-40) and both rows load. The
+        # DELETE is target-scoped: the slot-1 row on 50143 must survive it.
+        name = "20261112100000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2g Hatcher post migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(1, text.count("INSERT INTO `ai_boss_tactic`"))
+        self.assertEqual(2, text.count("(249, 10184, 'tank_post', 50144,"))
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        by_slot = {post["priority"]: post for post in posts}
+        self.assertIn(1, by_slot, "the slot-1 Cindarion 50143 post was deleted")
+        cindarion = by_slot[1]
+        self.assertEqual(("20261111160100_world.sql", 50143, 41, 65),
+                         (cindarion["file"], cindarion["target_entry"], cindarion["hp_min"], cindarion["hp_max"]),
+                         "the slot-1 Cindarion post drifted")
+        self.assertEqual(3, len(posts), "the Onyxia tank_post rows are not exactly three")
+        self.assertEqual([1, 2, 3], sorted(by_slot), "the three Onyxia posts do not fill slots 1, 2 and 3")
+        for slot, target, band, spot in ((2, 50144, (0, 41), (-29.0, -245.7, -88.5)),
+                                         (3, 50144, (0, 40), (-29.0, -183.8, -88.4))):
+            post = by_slot[slot]
+            self.assertEqual(name, post["file"], "the walk 2g migration owns slot %d" % slot)
+            self.assertEqual((target, 0, 90.0, "hold_spot", 120.0, band[0], band[1], 0),
+                             (post["target_entry"], post["spell_id"], post["param"], post["tactic_mode"],
+                              post["window_s"], post["hp_min"], post["hp_max"], post["bot_aura"]),
+                             "the slot-%d Hatcher post drifted" % slot)
+            self.assertEqual(spot, (post["spot_x"], post["spot_y"], post["spot_z"]),
+                             "the slot-%d Hatcher post moved off its spawn point" % slot)
+            self.assertIsNone(new_kind_problem(post), "the loader rules refuse the slot-%d Hatcher post" % slot)
+        # Both 50144 rows pass the loader's duplicate rule: one kind, target and spell, two bands.
+        self.assertEqual(2, len({(post["hp_min"], post["hp_max"]) for post in posts if post["target_entry"] == 50144}),
+                         "the loader drops one of the two Hatcher posts as a duplicate")
+        # The DELETE is scoped to the two 50144 rows: it frees exactly what this file inserts, so a re-run never
+        # doubles them and never takes the slot-1 row on 50143.
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post' AND `target_entry` = 50144;", text)
+
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
         # points, one stand anchor per point opening on that point's breath spell while she
