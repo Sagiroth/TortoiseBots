@@ -16,6 +16,7 @@ POLICY = (ROOT / "ai/playerbot/BossTacticsPolicy.h").read_text()
 MGR = (ROOT / "ai/playerbot/BossTacticsMgr.cpp").read_text()
 ACTIONS = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.cpp").read_text()
 ACTIONS_H = (ROOT / "ai/playerbot/strategy/actions/BossTacticsActions.h").read_text()
+TANK_TARGET = (ROOT / "ai/playerbot/strategy/values/TankTargetValue.cpp").read_text()
 TRIGGERS = (ROOT / "ai/playerbot/strategy/triggers/BossTacticsTriggers.cpp").read_text()
 STRATEGY = (ROOT / "ai/playerbot/strategy/generic/BossTacticsStrategy.cpp").read_text()
 ACTION_CONTEXT = (ROOT / "ai/playerbot/strategy/actions/ActionContext.h").read_text()
@@ -530,6 +531,73 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("DungeonRunTankPostOwnsUnit", BOSS_DOCS)
         self.assertIn("`AiPlayerbot.DungeonRunTankPostOwnsUnit = 1`", BOSS_DOCS)
         self.assertIn("DungeonRunTankPostOwnsUnit", CHANGELOG)
+
+
+    def test_p3_main_tank_post_keeps_its_row_and_waits(self):
+        # Walk 2g P3: the slot-0 tank targets a whelp in 42 % of its frames, all five post ends were `reason=slot` (a
+        # tank ahead died and the row pick followed the live index), and no post could run before Onyxia was
+        # targetable. The rules are pure (TankPostRowUsable, TankPostKeepsRow, TankPostUnitPick, the step's wait) and
+        # tested in tools/test_boss_tactics_policy.cpp; these pins prove the live code uses them.
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        # The bot's record is read before the row pick: the kept-row rule needs its latched unit.
+        self.assertLess(find.index("TankPostRecord record;"), find.index("const BossTacticRow* row = nullptr;"))
+        self.assertIn("TankPostKeepsRow(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, haveRecord, "
+                      "record.arrivedSubjectGuid,", find)
+        self.assertIn("latchedUnit && sServerFacade.IsAlive(latchedUnit)", find)
+        # The kept row is the record's own row, with no priority test, and the slot pick runs only when it is gone.
+        self.assertIn("candidate->kind != BossTacticKind::TankPost || !TankPostSameRow(record, *candidate)", find)
+        self.assertIn("if (!row)\n    {\n        for (const BossTacticRow* candidate : fight.rows)", find)
+        self.assertIn("candidate->priority != roles.botIndex ||", find)
+        self.assertIn("!TankPostRowUsable(sPlayerbotAIConfig.dungeonRunTankPostMain, candidate->priority)", find)
+        self.assertIn("inline bool TankPostRowUsable(bool mainKeyOn, std::uint32_t priority)", POLICY)
+        self.assertIn("return priority != 0 || mainKeyOn;", POLICY)
+        self.assertIn("inline bool TankPostKeepsRow(bool keyOn, bool haveRecord, std::uint64_t latchedGuid, "
+                      "bool latchedAlive)", POLICY)
+        self.assertIn("return keyOn && haveRecord && latchedGuid != 0 && latchedAlive;", POLICY)
+        # A waiting hold_spot post: the input, the start without a subject, and the action's subjectless leash walk.
+        self.assertIn("in.waits = sPlayerbotAIConfig.dungeonRunTankPostWaits && holdSpot &&", find)
+        self.assertIn("(!haveRecord || record.arrivedSubjectGuid == 0);", find)
+        self.assertIn("bool waits = false;", POLICY)
+        self.assertIn("if (!in.waits && (!in.subjectFound || !in.subjectAlive || in.subjectEvading ||", find)
+        action = body(ACTIONS, "bool BossTacticsTankPostAction::Execute(Event& event)")
+        self.assertIn("if (!task.valid || !task.row || (!task.subject && task.step != TankPostDecision::Leash))",
+                      action)
+        step = body(POLICY, "inline TankPostDecision TankPostStep(const TankPostIn& in)")
+        waits = step[step.index("if (in.waits)"):]
+        waits = waits[:waits.index("return in.started ?")]
+        self.assertIn("if (in.seated)\n                    return TankPostDecision::Yield;", waits)
+        self.assertIn("return in.botToSpotYd > kTankPostDragYd ? TankPostDecision::Leash : "
+                      "TankPostDecision::Hold;", waits)
+        # The tank's own pick keeps the latched unit before any rule that could switch it off (the seek source still
+        # reads first), and only when the key is on.
+        is_better = TANK_TARGET[TANK_TARGET.index("bool IsBetter(Unit* newUnit, Unit* oldUnit)"):]
+        is_better = is_better[:is_better.index("float newThreat")]
+        self.assertIn("::ai::TankPostUnitPick(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit,", is_better)
+        self.assertLess(is_better.index("TankPostUnitPick("), is_better.index("IsTankHoldPickup("))
+        self.assertGreater(is_better.index("TankPostUnitPick("),
+                           is_better.index("::ai::IsSeekSourceForTankPickup(ai, bot, oldUnit)"))
+        self.assertIn("if (postPick > 0)\n            return true;", is_better)
+        self.assertIn("if (postPick < 0)\n            return false;", is_better)
+        self.assertIn("inline int TankPostUnitPick(bool keyOn, std::uint64_t latched, std::uint64_t newGuid, "
+                      "std::uint64_t oldGuid)", POLICY)
+        # The latched unit is read from the live record under the post lock.
+        latched = body(ACTIONS, "std::uint64_t ai::TankPostLatchedUnit(Player* bot)")
+        self.assertIn("std::lock_guard<std::mutex> lock(g_tankPostMutex);", latched)
+        self.assertIn("WorldTimer::getMSTime() - it->second.lastReadMs >= kTankPostLiveMs", latched)
+        self.assertIn("return it->second.arrivedSubjectGuid;", latched)
+        self.assertIn("std::uint64_t TankPostLatchedUnit(Player* bot);", ACTIONS_H)
+        # The three keys: read, defaulted off, templated and documented without "recommended on".
+        for key in ("DungeonRunTankPostMain", "DungeonRunTankPostKeepsUnit", "DungeonRunTankPostWaits"):
+            self.assertIn('config.GetBoolDefault("AiPlayerbot.%s", false);' % key, CONFIG_CPP)
+            self.assertIn("bool dungeonRun%s = false;" % key[len("DungeonRun"):], CONFIG_H)
+            self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.%s = 0$" % key)
+            self.assertIn("AiPlayerbot.%s" % key, DOCS)
+            self.assertIn("`0` off",
+                          DOCS[DOCS.index("### `AiPlayerbot.%s`" % key):][:900])
+            self.assertNotIn("recommended on",
+                             DOCS[DOCS.index("### `AiPlayerbot.%s`" % key):][:900])
+            self.assertIn(key, BOSS_DOCS)
+            self.assertIn(key, CHANGELOG)
 
 
 if __name__ == "__main__":

@@ -1237,6 +1237,30 @@ AiPlayerbot.DungeonRunTankPostWalks = 0
 # 1 - on
 AiPlayerbot.DungeonRunTankPostOwnsUnit = 0
 
+# The main tank's own tank_post row: with the key on, a `tank_post` row whose `priority` is 0 (the main tank's slot)
+# is picked for the main tank, so a `hold_spot` post on the row's own boss takes the boss and drags it to the post's
+# spot (the loader accepts a slot-0 row only on the row's own boss; any other target is refused). Off, slot 0 is no
+# post and the boss goes to the ordinary tank pick, as before the key. Needs AiPlayerbot.DungeonRunTankPost.
+# 0 - off: slot 0 is no post (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTankPostMain = 0
+
+# A post keeps the row and unit it latched: with the key on, while the unit a post latched at its arrival is alive the
+# post keeps its row through a raid tank renumbering (the `slot` end a tank death causes) and that unit wins the tank's
+# target pick over any other candidate, so the post does not hand its unit off or end when the tank order moves.
+# Off, a renumbering ends the post and every unit of the entry ranks as before. Needs AiPlayerbot.DungeonRunTankPost.
+# 0 - off: a renumbering ends the post (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTankPostKeepsUnit = 0
+
+# A `hold_spot` post waits at its spot before its unit exists: with the key on, the post starts with no subject, walks
+# to the spot when it stands past the 8 yd drag distance, holds there and yields to a boss stand seat; the window still
+# ends it. Off, a post starts only once a living unit of the entry stands in the fight, as before the key. Needs
+# AiPlayerbot.DungeonRunTankPost and AiPlayerbot.DungeonRunTankPostHoldSpot.
+# 0 - off: a post starts only on a living unit (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTankPostWaits = 0
+
 # A seek_aura row makes the raid gather in the cloud a dying source creature leaves; off ignores the rows.
 AiPlayerbot.DungeonRunSeekAura = 0
 

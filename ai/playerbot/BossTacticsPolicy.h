@@ -3949,9 +3949,25 @@ namespace ai
     // With the row's `hold_spot` mode and AiPlayerbot.DungeonRunTankPostHoldSpot, the post also starts while the tank
     // holds another hostile, latches its arrival, drags the subject back to the spot, outlives its window once arrived
     // and yields to a boss stand seat. AiPlayerbot.DungeonRunTankPostLeash adds the pre-arrival walk back.
+    // AiPlayerbot.DungeonRunTankPostMain lets the main tank hold the row's own boss;
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit keeps a latched post's row through a renumbering;
+    // AiPlayerbot.DungeonRunTankPostWaits starts a `hold_spot` post before its unit exists.
     constexpr float kTankPostSpotYd = 3.0f;    // the tank holds within this of the spot
     constexpr float kTankPostSearchYd = 200.0f; // the awaited unit's grid search radius
     constexpr float kTankPostDragYd = 8.0f;     // hold_spot: past this from the spot with the subject on the tank, walk back
+
+    // AiPlayerbot.DungeonRunTankPostMain: whether the main tank may hold a post (slot 0). The loader accepts a slot-0
+    // row only on the row's own boss, so the key is the whole gate: off, slot 0 is no post and the boss is taken by
+    // the ordinary pick, exactly as before the key.
+    inline bool TankPostRowUsable(bool mainKeyOn, std::uint32_t priority) { return priority != 0 || mainKeyOn; }
+
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit: whether a post keeps the row it started with. A latched, living unit is
+    // the post's own: the raid tank order may renumber the row to another slot index (a tank died, GetRaidTankRoles
+    // moved this bot) and the post still holds it, instead of ending at its `slot` word and leaving the unit loose.
+    inline bool TankPostKeepsRow(bool keyOn, bool haveRecord, std::uint64_t latchedGuid, bool latchedAlive)
+    {
+        return keyOn && haveRecord && latchedGuid != 0 && latchedAlive;
+    }
 
     enum class TankPostDecision : std::uint8_t
     {
@@ -3985,6 +4001,7 @@ namespace ai
         bool subjectOnTank = false;       // the subject's victim is this tank
         bool seated = false;              // the tank holds a boss stand seat (read only with holdSpot)
         bool leash = false;               // hold_spot and its leash key: walk back before the arrival
+        bool waits = false;               // hold_spot and its wait key: the post runs before its unit exists
         bool slotMoved = false;           // the post's row is still in the fight, for another slot index (read by the end word only)
         std::uint64_t subjectGuid = 0;    // the awaited unit this read saw (0: none)
     };
@@ -4073,11 +4090,26 @@ namespace ai
         return best;
     }
 
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit, for the tank's own target pick: whether the post's latched unit decides
+    // this comparison. 1: the new candidate is the latched unit (keep it), -1: the old one is (do not switch off it),
+    // 0: the key is off, nothing is latched, or both or neither candidate is it (the ordinary ranking decides).
+    inline int TankPostUnitPick(bool keyOn, std::uint64_t latched, std::uint64_t newGuid, std::uint64_t oldGuid)
+    {
+        if (!keyOn || latched == 0)
+            return 0;
+        bool const newIs = newGuid == latched;
+        bool const oldIs = oldGuid == latched;
+        if (newIs == oldIs)
+            return 0;
+        return newIs ? 1 : -1;
+    }
+
     // What the post's tank does this tick. A post that was held and can no longer be held ends; a row that is not
     // open (or has nothing to wait for) and holds no post does nothing. Another hostile on a group member keeps the
     // tank on it and the post waits, except in hold_spot once the subject arrives, where the subject outranks it.
     // In hold_spot the window closes only before the arrival, the arrival stays latched while the subject is alive and
-    // selectable, and a stand seat yields the post (the record is kept).
+    // selectable, and a stand seat yields the post (the record is kept). A waiting hold_spot post (its wait key on,
+    // nothing latched yet) walks to its spot and holds there with no unit at all.
     inline TankPostDecision TankPostStep(const TankPostIn& in)
     {
         if (!in.live || !in.tankCanAct)
@@ -4085,7 +4117,15 @@ namespace ai
         if (in.windowExpired && !(in.holdSpot && in.arrivedBefore))
             return in.started ? TankPostDecision::End : TankPostDecision::None;
         if (!in.subjectFound || !in.subjectAlive || in.subjectEvading)
+        {
+            if (in.waits)
+            {
+                if (in.seated)
+                    return TankPostDecision::Yield;
+                return in.botToSpotYd > kTankPostDragYd ? TankPostDecision::Leash : TankPostDecision::Hold;
+            }
             return in.started ? TankPostDecision::End : TankPostDecision::None;
+        }
         if (in.holdSpot && in.seated)
             return TankPostDecision::Yield;
         bool const arrived = TankPostArrived(in.subjectFound, in.subjectAlive, in.subjectSelectable,

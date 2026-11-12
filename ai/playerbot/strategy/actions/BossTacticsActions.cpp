@@ -12046,6 +12046,20 @@ const char* TankPostEndReason(const TankPostIn& in)
 }
 }  // namespace
 
+// AiPlayerbot.DungeonRunTankPostKeepsUnit: the unit this bot's live post latched at its arrival, 0 when the bot holds
+// no post or its record was not read within kTankPostLiveMs (a post that ended, went stale or whose tank died names
+// nothing). Read under the same lock as every other post record, and only the guid leaves it.
+std::uint64_t ai::TankPostLatchedUnit(Player* bot)
+{
+    if (!bot)
+        return 0;
+    std::lock_guard<std::mutex> lock(g_tankPostMutex);
+    auto const it = g_tankPost.find(bot->GetObjectGuid().GetRawValue());
+    if (it == g_tankPost.end() || WorldTimer::getMSTime() - it->second.lastReadMs >= kTankPostLiveMs)
+        return 0;
+    return it->second.arrivedSubjectGuid;
+}
+
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
 // a post that ended, went stale or whose tank died reserves nothing, so the other tanks taunt the subject again. The
 // reservation also ends while its tank is farther than kTankPostReserveRangeYd from the subject, or once the subject
@@ -12169,21 +12183,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     const std::uint32_t mapId = bot->GetMapId();
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    // The row this bot's slot holds now, if any.
-    const BossTacticRow* row = nullptr;
-    Unit* boss = nullptr;
-    for (const BossTacticRow* candidate : fight.rows)
-    {
-        if (candidate->kind != BossTacticKind::TankPost || candidate->priority != roles.botIndex)
-            continue;
-        Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
-        if (!candidateBoss)
-            continue;
-        row = candidate;
-        boss = candidateBoss;
-        break;
-    }
-
+    // The bot's own record first: the kept-row rule below and the row pick both read it.
     TankPostRecord record;
     bool haveRecord = false;
     bool sweepDue = false;
@@ -12199,6 +12199,46 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         sweepDue = lastSweep == 0 || nowMs - lastSweep >= kTankPostSweepMs;
         if (sweepDue)
             g_tankPostSweepMs.store(nowMs, std::memory_order_relaxed);
+    }
+
+    // The row this bot's slot holds now, if any. AiPlayerbot.DungeonRunTankPostMain: slot 0 (the main tank) holds a
+    // post only with the key on. AiPlayerbot.DungeonRunTankPostKeepsUnit: a post that latched a living unit keeps the
+    // row it started with, whatever slot index the raid tank order moved this bot to, so a renumbering no longer ends
+    // it at its `slot` word; the kept row is the record's own row (no priority test), and the pick runs as today
+    // when it is gone.
+    const BossTacticRow* row = nullptr;
+    Unit* boss = nullptr;
+    Unit* const latchedUnit = record.arrivedSubjectGuid != 0 ? ai->GetUnit(ObjectGuid(record.arrivedSubjectGuid))
+                                                             : nullptr;
+    if (TankPostKeepsRow(sPlayerbotAIConfig.dungeonRunTankPostKeepsUnit, haveRecord, record.arrivedSubjectGuid,
+            latchedUnit && sServerFacade.IsAlive(latchedUnit)))
+    {
+        for (const BossTacticRow* candidate : fight.rows)
+        {
+            if (candidate->kind != BossTacticKind::TankPost || !TankPostSameRow(record, *candidate))
+                continue;
+            Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+            if (!candidateBoss)
+                continue;
+            row = candidate;
+            boss = candidateBoss;
+            break;
+        }
+    }
+    if (!row)
+    {
+        for (const BossTacticRow* candidate : fight.rows)
+        {
+            if (candidate->kind != BossTacticKind::TankPost || candidate->priority != roles.botIndex ||
+                !TankPostRowUsable(sPlayerbotAIConfig.dungeonRunTankPostMain, candidate->priority))
+                continue;
+            Unit* const candidateBoss = TankPostBoss(fight, candidate->bossEntry);
+            if (!candidateBoss)
+                continue;
+            row = candidate;
+            boss = candidateBoss;
+            break;
+        }
     }
 
     // A post whose tank died, was charmed or logged out ends wherever its record is read from, and a record nobody
@@ -12350,6 +12390,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         ? FindBossStand(ai, bot) : BossStandTarget();
     in.seated = TankPostSeated(stand.valid, stand.stay);
     in.leash = holdSpot && sPlayerbotAIConfig.dungeonRunTankPostLeash;
+    // AiPlayerbot.DungeonRunTankPostWaits: a hold_spot post runs before its unit exists, from its first tick until
+    // the arrival latches (a record without a latched unit keeps waiting; a latched unit's death still ends it).
+    in.waits = sPlayerbotAIConfig.dungeonRunTankPostWaits && holdSpot &&
+        (!haveRecord || record.arrivedSubjectGuid == 0);
     in.slotMoved = slotMoved;
     // The arrived subject is not "another hostile": it outranks everything else the tank holds.
     if (holdSpot && currentTarget == subject)
@@ -12359,11 +12403,13 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
 
     // A post starts once there is a living subject to wait for: no record before that, so an idle row costs nothing,
     // and an add the tank holds does not spend the post's window. A hold_spot post also starts while the tank holds
-    // another hostile (the post waits on it until the subject arrives).
+    // another hostile (the post waits on it until the subject arrives). AiPlayerbot.DungeonRunTankPostWaits: a
+    // waiting hold_spot post starts with no subject at all and walks to its spot.
     bool startedNow = false;
     if (!haveRecord)
     {
-        if (!in.subjectFound || !in.subjectAlive || in.subjectEvading || (!holdSpot && in.holdingOtherHostile))
+        if (!in.waits && (!in.subjectFound || !in.subjectAlive || in.subjectEvading ||
+                (!holdSpot && in.holdingOtherHostile)))
             return out;
         record.map = row->map;
         record.bossEntry = row->bossEntry;
@@ -12552,7 +12598,9 @@ bool BossTacticsTankPostAction::Execute(Event& event)
 {
     (void)event;
     const BossTankPost task = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
-    if (!task.valid || !task.row || !task.subject)
+    // A waiting post has no unit yet (AiPlayerbot.DungeonRunTankPostWaits): its leash walk runs off the row alone, so
+    // only the steps that need a subject are refused here.
+    if (!task.valid || !task.row || (!task.subject && task.step != TankPostDecision::Leash))
     {
         hasLast = false;
         walkLogged = false;

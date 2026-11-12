@@ -203,6 +203,11 @@ namespace ai
     // single-target taunt reads it through the gate above.
     bool TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target);
 
+    // AiPlayerbot.DungeonRunTankPostKeepsUnit: the unit this bot's live `tank_post` latched at its arrival, or 0 when
+    // the bot holds no post or its record was not read within the reservation's liveness window. The tank pick keeps
+    // that unit while it lives, so a renumbering of the raid tank order does not move the post off it.
+    std::uint64_t TankPostLatchedUnit(Player* bot);
+
     // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
     // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
     // read). Logs the refusal row for the first such unit.

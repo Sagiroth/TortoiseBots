@@ -727,6 +727,20 @@ public:
     // each other's Hatchers; a record with no latched unit reserves as before; off, every post on the entry reserves
     // every unit of it (default off).
     bool dungeonRunTankPostOwnsUnit = false;
+    // The main tank's own post (AiPlayerbot.DungeonRunTankPostMain): on, a slot-0 `tank_post` row is picked for the
+    // main tank, so a `hold_spot` post on the row's own boss takes it and drags it to the post's spot (the loader
+    // accepts slot 0 only on the row's own boss); off, slot 0 is no post and the boss goes to the ordinary pick as
+    // before the key (default off).
+    bool dungeonRunTankPostMain = false;
+    // A post keeps the row it latched (AiPlayerbot.DungeonRunTankPostKeepsUnit): on, while the unit a post latched is
+    // alive the post keeps its row through a raid tank renumbering (its `slot` end) and that unit wins the tank's
+    // target pick; off, a renumbering ends the post and every unit of the entry ranks as before (default off).
+    bool dungeonRunTankPostKeepsUnit = false;
+    // A `hold_spot` post waits before its unit exists (AiPlayerbot.DungeonRunTankPostWaits): on, the post starts with
+    // no subject, walks to its spot when it stands past the drag distance, holds there and yields to a boss stand
+    // seat; off, a post starts only once a living unit of the entry stands in the fight, as before the key (default
+    // off).
+    bool dungeonRunTankPostWaits = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

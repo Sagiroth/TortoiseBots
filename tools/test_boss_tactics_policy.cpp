@@ -710,6 +710,70 @@ static void TestTankPostPickKeepsOwnUnit()
     CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, both) == 0);
 }
 
+// Walk 2g: all five P3 post ends were `reason=slot`, a tank ahead died and the row pick followed the live index, so a
+// post that had its unit lost it to a renumbering. With the key on the record's row and its living unit are the
+// post's own, whatever slot index the tank order moved the bot to.
+static void TestTankPostKeepsRow_SurvivesRenumber()
+{
+    // TankPostKeepsRow(keyOn, haveRecord, latchedGuid, latchedAlive)
+    CHECK(TankPostKeepsRow(true, true, 4242, true));   // a latched, living unit: the row survives the renumbering
+    CHECK(!TankPostKeepsRow(true, true, 4242, false)); // the unit died: the post ends as today
+    CHECK(!TankPostKeepsRow(true, true, 0, true));     // nothing latched yet: the slot pick runs
+    CHECK(!TankPostKeepsRow(true, false, 4242, true)); // no record: no post to keep
+    CHECK(!TankPostKeepsRow(false, true, 4242, true)); // key off: today's `slot` end
+}
+
+// AiPlayerbot.DungeonRunTankPostMain: slot 0 is the main tank, and it holds a post only with the key on (the loader
+// accepts such a row only on the row's own boss, so the key is the whole gate).
+static void TestTankPostRowUsable_SlotZeroNeedsKey()
+{
+    // TankPostRowUsable(mainKeyOn, priority)
+    CHECK(TankPostRowUsable(true, 0));   // slot 0 with the key: the main tank's post on the boss
+    CHECK(!TankPostRowUsable(false, 0)); // key off: slot 0 is no post and the boss is taken by the ordinary pick
+    CHECK(TankPostRowUsable(false, 3));  // any other slot needs no key
+    CHECK(TankPostRowUsable(true, 3));
+}
+
+// AiPlayerbot.DungeonRunTankPostKeepsUnit at the tank's target pick: the latched unit wins the comparison in both
+// directions and every other candidate leaves it alone.
+static void TestTankPostUnitPick_LatchedWins()
+{
+    std::uint64_t const latched = 4242, other = 777;
+    // TankPostUnitPick(keyOn, latched, newGuid, oldGuid)
+    CHECK(TankPostUnitPick(true, latched, latched, other) == 1);  // the new candidate is the post's unit: keep it
+    CHECK(TankPostUnitPick(true, latched, other, latched) == -1); // the held one is: do not switch off it
+    CHECK(TankPostUnitPick(true, latched, latched, latched) == 0); // both: the ranking below decides
+    CHECK(TankPostUnitPick(true, latched, other, other) == 0);     // neither: as before
+    CHECK(TankPostUnitPick(false, latched, latched, other) == 0);  // key off: today's pick
+    CHECK(TankPostUnitPick(true, 0, latched, other) == 0);         // nothing latched: today's pick
+}
+
+// Walk 2g: Onyxia's post must run before she is targetable (a hold_spot post on the row's own boss). With the wait key
+// a subjectless post walks to its spot, holds there, and still yields to a stand seat; with the key off today's rule
+// ends a started post whose unit is gone.
+static void TestTankPostStep_WaitsAtSpot()
+{
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.tankCanAct = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.leash = true;
+    in.botToSpotYd = 26.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Leash); // 26 yd out with no unit: walk to the spot
+    in.botToSpotYd = 4.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);  // at the spot: wait for her
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::Hold);  // inside the hold radius, still waiting
+    in.seated = true;
+    CHECK(TankPostStep(in) == TankPostDecision::Yield); // a boss stand seat outranks the wait
+    in.seated = false;
+    in.waits = false;
+    CHECK(TankPostStep(in) == TankPostDecision::End);   // the key off: today's rule, a started post with no unit ends
+}
+
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
 // interval is 1 s under the hold.
 static void TestCarrierHold()
@@ -1826,6 +1890,10 @@ int main()
     TestTankPostMeleePoint_NoFormationNeeded();
     TestTankPostRecordCovers_OtherUnitFree();
     TestTankPostPickKeepsOwnUnit();
+    TestTankPostKeepsRow_SurvivesRenumber();
+    TestTankPostRowUsable_SlotZeroNeedsKey();
+    TestTankPostUnitPick_LatchedWins();
+    TestTankPostStep_WaitsAtSpot();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

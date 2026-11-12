@@ -1655,6 +1655,49 @@ Whether a live `tank_post` owns the one unit it latched at its arrival: another 
 
 </details>
 
+### `AiPlayerbot.DungeonRunTankPostMain`
+Whether the main tank may hold a `tank_post` row: a row whose `priority` is 0 (the main tank's slot, the `GetRaidTankRoles` order) is then picked for it, so a `hold_spot` post on the row's own boss takes the boss and drags it to the post's spot. Off by default: walk 2g's slot-0 tank targeted a whelp in 42 % of its P3 frames, so nobody held Onyxia.
+**Default:** `0` · **Values:** `0` off (slot 0 is no post and the boss goes to the ordinary tank pick, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** the loader accepts a slot-0 `tank_post` row only on the row's own boss (`target_entry` equal to `boss_entry`); a slot-0 row on any other unit is refused as before, so the key cannot send the main tank to an add. With the key off the row loads but is never picked.
+
+**What the post does:** the fight scan keeps its band as for any post, the row pick takes it for the main tank only with the key on, and the `hold_spot` mode and `AiPlayerbot.DungeonRunTankPostWaits` then run it as they run any post: she arrives at once inside the row's arrival radius, `Engage` attacks and walks to her, and `Drag` walks her back to the spot once she is on the tank. Without the mode the post is a plain post on the boss.
+
+**Why:** Onyxia's Flame Breath and Cleave are frontal, and a boss fought at a chosen spot needs its main tank to be the one that holds it there; no row could name slot 0 before this key. The shipped row and its evidence are in `docs/play/boss-tactics.md` (Onyxia's Lair).
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostKeepsUnit`
+Whether a `tank_post` keeps the row and unit it latched: while the unit a post latched at its arrival is alive the post keeps its row through a raid tank renumbering, and that unit wins the tank's target pick. Off by default: all five of walk 2g's P3 post ends were `reason=slot`, a tank ahead died and the row pick followed the live index.
+**Default:** `0` · **Values:** `0` off (a renumbering ends the post at its `slot` word, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** before the slot pick the read takes the bot's own post record; when the key is on, the record holds a latched unit and that unit is alive in the world, the row is the first `tank_post` row of the fight with the record's own columns (map, boss, target, band, radius, spot — no priority test) whose boss stands in the fight. The slot pick then runs only when no such row is found. A kept row no longer reaches the `slot` end: the post keeps running for the new slot index, and its `BossTacticsTankPost` rows keep naming the row's own `tank=`.
+
+**The pick:** the tank's target comparison asks the live record for the latched unit (read under the post lock, only a record read within the reservation's 3 s counts). A candidate that is that unit wins the comparison, the held target that is that unit is never switched off, and when neither or both are it the ordinary ranking decides. The seek-source rule still reads first.
+
+**Why:** a post that lost its unit to a renumbering left the unit loose and the tank walked to whatever the raid order gave it next.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostWaits`
+Whether a `hold_spot` post runs before its unit exists: it starts with no subject, walks to its spot and holds there until the unit arrives. Off by default: a post started only once a living unit of its entry stood in the fight, which no boss landed later than the landing itself can use.
+**Default:** `0` · **Values:** `0` off (a post starts only on a living unit of its entry, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost` and `AiPlayerbot.DungeonRunTankPostHoldSpot`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The start:** with a hold_spot row and no record yet, or a record that has not latched an arrival, the post starts without a subject and writes its `start` row as any post does. The window still runs from the start, so a wait longer than `window_s` ends it.
+
+**The steps:** with no living subject the step yields to a boss stand seat (`Yield`), walks back to the spot when the tank stands farther than the 8 yd drag distance (`Leash`, keeping its current target) and holds inside that distance (`Hold`). The action's leash branch runs off the row alone, so no subject is needed for the walk. Once the unit arrives the post runs exactly as any hold_spot post, and after a latched unit dies the post ends as before (its `arrivedSubjectGuid` is still set, so the wait does not restart).
+
+</details>
+
 ### `AiPlayerbot.DungeonRunShadeHealerCover`
 Whether the Delusions carriers at Jin'do cover the healers a Shade attacks: a cursed off-tank that does not hold the boss takes a Shade on a healer, and a cursed DPS carrier ranks a Shade on a healer ahead of the other Shades. Recommended on.
 **Default:** `0` · **Values:** `0` off (today's carrier pick and strike), `1` on (the off-tank half needs `AiPlayerbot.DungeonRunCarrierStrike`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
