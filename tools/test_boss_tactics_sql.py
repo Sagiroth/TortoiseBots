@@ -1112,17 +1112,20 @@ class BossTacticsSql(unittest.TestCase):
         self.assertEqual(2, text.count("(249, 10184, 'tank_post', 50144,"))
         posts = [_payload_dict(row) for row in effective_rows()
                  if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
-        by_slot = {post["priority"]: post for post in posts}
-        self.assertIn(1, by_slot, "the slot-1 Cindarion 50143 post was deleted")
-        cindarion = by_slot[1]
-        self.assertEqual(("20261111160100_world.sql", 50143, 41, 65),
-                         (cindarion["file"], cindarion["target_entry"], cindarion["hp_min"], cindarion["hp_max"]),
+        # 20261112200000_world.sql moves the north row from slot 3 to slot 1 and adds slot 0 on Onyxia herself, so
+        # the live rows are keyed by (target, slot): the 50143 row keeps slot 1 and the two bands never overlap.
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertIn((50143, 1), shape, "the slot-1 Cindarion 50143 post was deleted")
+        cindarion = shape[(50143, 1)]
+        self.assertEqual(("20261111160100_world.sql", 41, 65),
+                         (cindarion["file"], cindarion["hp_min"], cindarion["hp_max"]),
                          "the slot-1 Cindarion post drifted")
-        self.assertEqual(3, len(posts), "the Onyxia tank_post rows are not exactly three")
-        self.assertEqual([1, 2, 3], sorted(by_slot), "the three Onyxia posts do not fill slots 1, 2 and 3")
+        self.assertEqual(4, len(posts), "the Onyxia tank_post rows are not exactly four")
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the four Onyxia posts do not fill slots 0, 1, 1 and 2 (walk 2h)")
         for slot, target, band, spot in ((2, 50144, (0, 41), (-29.0, -245.7, -88.5)),
-                                         (3, 50144, (0, 40), (-29.0, -183.8, -88.4))):
-            post = by_slot[slot]
+                                         (1, 50144, (0, 40), (-29.0, -183.8, -88.4))):
+            post = shape[(target, slot)]
             self.assertEqual(name, post["file"], "the walk 2g migration owns slot %d" % slot)
             self.assertEqual((target, 0, 90.0, "hold_spot", 120.0, band[0], band[1], 0),
                              (post["target_entry"], post["spell_id"], post["param"], post["tactic_mode"],
@@ -1161,6 +1164,63 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn((249, 50143, "kill_first", 50143, 0), live, "the Cindarion kill_first row was deleted")
         self.assertIn((249, 10184, "gate_hold", 50143, 0), live,
                       "the 50143 gate_hold row was deleted with the Hatcher kill order")
+
+    def test_onyxia_walk2h_p3_rows(self):
+        # 20261112200000_world.sql: walk 2g's four P3 pulls (109 deaths) lost 47 to Onyxia (Flame Breath 17,
+        # Cleave 15; 28 of those 32 non-tanks) while the slot-0 tank targeted a whelp in 42 % of its frames, and
+        # only 4 of the 8 Hatchers had a post (the rows name slots 2 and 3; the live tanks at the landings were
+        # 2, 4, 3, 3). Slot 0 holds her at the spot E (20.0, -218.0, -85.3), the north Hatcher row moves to slot 1
+        # (the 50143 row keeps slot 1 in the 41-65 band, so the two slot-1 bands never overlap) and a `behind` row
+        # keeps the non-tanks out of her front in P3. The slot-0 row needs AiPlayerbot.DungeonRunTankPostMain.
+        name = "20261112200000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2h row migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(2, text.count("(249, 10184, '"))
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'tank_post' AND `target_entry` = 10184;", text)
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'behind';", text)
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the Onyxia tank_post rows are not slots 0, 1, 1 and 2")
+        main = shape[(10184, 0)]
+        self.assertEqual(name, main["file"], "the walk 2h migration owns the slot-0 row")
+        self.assertEqual((0, 90.0, "hold_spot", 120.0, 0, 40, 0, (20.0, -218.0, -85.3)),
+                         (main["spell_id"], main["param"], main["tactic_mode"], main["window_s"],
+                          main["hp_min"], main["hp_max"], main["bot_aura"],
+                          (main["spot_x"], main["spot_y"], main["spot_z"])),
+                         "the slot-0 Onyxia post drifted")
+        self.assertIsNone(new_kind_problem(main), "the loader refuses the slot-0 Onyxia post")
+        # Slot 1 is Cindarion 50143 from 65-41 % and the north Hatcher 50144 from 40 % down: the bands never
+        # overlap, so one of the two slot-1 posts is armed at a time.
+        cindarion, north = shape[(50143, 1)], shape[(50144, 1)]
+        self.assertEqual((41, 65), (cindarion["hp_min"], cindarion["hp_max"]))
+        self.assertEqual((0, 40), (north["hp_min"], north["hp_max"]))
+        self.assertLess(north["hp_max"], cindarion["hp_min"], "the slot-1 health bands overlap")
+        self.assertEqual((-29.0, -183.8, -88.4), (north["spot_x"], north["spot_y"], north["spot_z"]),
+                         "the slot-1 Hatcher post is not the north spot N'")
+        # One `behind` row, Flame Breath 18435, 40 yd of front, P3 only.
+        behind = [_payload_dict(row) for row in effective_rows()
+                  if row[1] == 249 and row[2] == 10184 and row[3] == "behind"]
+        self.assertEqual(1, len(behind), "the Onyxia `behind` row is not exactly one")
+        front = behind[0]
+        self.assertEqual(name, front["file"], "the walk 2h migration owns the `behind` row")
+        self.assertEqual((0, 18435, 0, 40.0, "", 0, 40, 0),
+                         (front["target_entry"], front["spell_id"], front["priority"], front["param"],
+                          front["tactic_mode"], front["hp_min"], front["hp_max"], front["bot_aura"]),
+                         "the Onyxia `behind` row drifted")
+        self.assertIsNone(new_kind_problem(front), "the loader rules refuse the Onyxia `behind` row")
+        # The two Hatcher taunt windows are renumbered off the main tank: 50144's own row 2 -> 1 and the 10184
+        # second window 3 -> 2 (with 3 live tanks slot 3 read 3 % 3 = 0, the main tank).
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        self.assertEqual(1, live.get((249, 50144, "taunt_after_cast", 0, 0))["priority"],
+                         "the 50144 taunt window is not on slot 1")
+        self.assertEqual(2, live.get((249, 10184, "taunt_after_cast", 50144, 0))["priority"],
+                         "the Onyxia second Hatcher window is not on slot 2")
 
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
