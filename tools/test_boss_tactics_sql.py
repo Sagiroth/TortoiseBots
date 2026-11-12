@@ -1150,6 +1150,43 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
                       "AND `kind` = 'tank_post' AND `target_entry` = 50144;", text)
 
+    def test_onyxia_walk2i_main_tank_row(self):
+        # 20261113200000_world.sql: walk 2g-2h's slot-0 post ran and the main tank still died at +50 s in 15 of 15 P3
+        # pulls. The row now names Bellowing Roar 18431 (the aura that marks the cast the holder answers with its
+        # class's defensive actions) and holds two healers on its tank; the column is added through information_schema
+        # so a database without it upgrades in place, and no other post row gains either column.
+        name = "20261113200000_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2i row migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("FROM information_schema.COLUMNS", text)
+        self.assertIn("COLUMN_NAME = 'healers'", text)
+        self.assertIn("ADD COLUMN `healers` tinyint unsigned NOT NULL DEFAULT 0 AFTER `spot_z`", text)
+        posts = [_payload_dict(row) for row in effective_rows()
+                 if row[1] == 249 and row[2] == 10184 and row[3] == "tank_post"]
+        shape = {(post["target_entry"], post["priority"]): post for post in posts}
+        self.assertEqual([(10184, 0), (50143, 1), (50144, 1), (50144, 2)], sorted(shape),
+                         "the Onyxia tank_post rows are not four")
+        main = shape[(10184, 0)]
+        self.assertEqual((18431, 2), (main["spell_id"], main["healers"]),
+                         "the slot-0 Onyxia post does not name the Roar and its two healers")
+        self.assertEqual((0, "hold_spot", 90.0, 0, 40, (20.0, -218.0, -85.3)),
+                         (main["priority"], main["tactic_mode"], main["param"], main["hp_min"], main["hp_max"],
+                          (main["spot_x"], main["spot_y"], main["spot_z"])),
+                         "the slot-0 Onyxia post moved")
+        # The row itself stays the 2h INSERT; the 2i file sets its spell, healers and comment.
+        self.assertEqual("20261112200000_world.sql", main["file"])
+        self.assertIn("UPDATE `ai_boss_tactic` SET `spell_id` = 18431, `healers` = 2,", text)
+        self.assertIsNone(new_kind_problem(main), "the loader mirror refuses the slot-0 Onyxia post")
+        # The other three posts keep both columns at 0.
+        for key in ((50143, 1), (50144, 1), (50144, 2)):
+            post = shape[key]
+            self.assertEqual((0, 0), (post["spell_id"], post["healers"]),
+                             "the post on %u gained a spell or healers" % key[0])
+        # No stand row and no other 2i row changed.
+        self.assertNotIn("ai_boss_stand", text)
+
     def test_onyxia_walk2h_burn_order(self):
         # 20261112200100_world.sql (lead decision 1): the Hatchers lost 9-25 % in 56-83 s of P3 (466k health
         # together) while P1 takes 39 % off Onyxia in 83-97 s, so the kill-first order spent the phase on adds. The
