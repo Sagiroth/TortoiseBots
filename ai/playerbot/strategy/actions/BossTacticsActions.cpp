@@ -12352,10 +12352,38 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
     }
 
     // An open post ends when its row is gone (the band closed) or another row of this bot's slot took over. A done
-    // record goes the same way, without a second end row: its post already wrote one when it ended.
+    // record goes the same way, without a second end row: its post already wrote one when it ended. A renumbering is no
+    // band close, though: the record's row still stands for another slot index, so its done record stays until the band
+    // itself goes.
     if (haveRecord && (!row || record.map != mapId || !TankPostSameRow(record, *row) ||
             record.bossGuid != boss->GetObjectGuid().GetRawValue()))
     {
+        // The band is open while the record's row is in the fight and the boss the post started on still lives.
+        bool bandOpen = false;
+        if (record.done && record.map == mapId)
+        {
+            Unit* const recordBoss = record.bossGuid != 0 ? ai->GetUnit(ObjectGuid(record.bossGuid)) : nullptr;
+            if (recordBoss && sServerFacade.IsAlive(recordBoss))
+            {
+                for (const BossTacticRow* candidate : fight.rows)
+                {
+                    if (candidate->kind == BossTacticKind::TankPost && TankPostSameRow(record, *candidate))
+                    {
+                        bandOpen = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (TankPostDoneRecordStays(record.done, bandOpen))
+        {
+            // The renumbering moved the row, not the band: keep the record live, and the row cannot start it again.
+            std::lock_guard<std::mutex> lock(g_tankPostMutex);
+            auto const it = g_tankPost.find(self);
+            if (it != g_tankPost.end())
+                it->second.lastReadMs = nowMs;
+            return out;
+        }
         {
             std::lock_guard<std::mutex> lock(g_tankPostMutex);
             g_tankPost.erase(self);

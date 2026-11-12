@@ -661,6 +661,27 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("entry.first == self || entry.second.done ||", owns)
         self.assertIn("if (!it->second.done)\n                        ended.push_back(", ACTIONS)
 
+    def test_a_done_record_survives_a_renumbering(self):
+        # Codex M: a renumbering erased the waiting post's done record before its band closed, and the row started a
+        # fresh post inside the same band. The rule is pure (TankPostDoneRecordStays) and tested in
+        # tools/test_boss_tactics_policy.cpp; this pin proves the live code keeps the record while its band stands.
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        self.assertIn("if (TankPostDoneRecordStays(record.done, bandOpen))", find)
+        self.assertIn("inline bool TankPostDoneRecordStays(bool done, bool bandOpen) { return done && bandOpen; }",
+                      POLICY)
+        # The band stands while the record's row is in the fight, whatever slot index it moved to, and its boss lives.
+        self.assertIn("if (record.done && record.map == mapId)", find)
+        self.assertIn("Unit* const recordBoss = record.bossGuid != 0 ? ai->GetUnit(ObjectGuid(record.bossGuid)) : "
+                      "nullptr;", find)
+        self.assertIn("if (recordBoss && sServerFacade.IsAlive(recordBoss))", find)
+        self.assertIn("candidate->kind == BossTacticKind::TankPost && TankPostSameRow(record, *candidate)", find)
+        # The keep refreshes the read time instead of erasing, so the idle sweep cannot drop it; the closed band still
+        # erases without a second end row.
+        keep = find[find.index("if (TankPostDoneRecordStays(record.done, bandOpen))"):]
+        keep = keep[:keep.index("g_tankPost.erase(self);")]
+        self.assertIn("it->second.lastReadMs = nowMs;", keep)
+        self.assertIn("if (!record.done)\n        {\n            BossTacticRow closed;", find)
+
 
 if __name__ == "__main__":
     unittest.main()

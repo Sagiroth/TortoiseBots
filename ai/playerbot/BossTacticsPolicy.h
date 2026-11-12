@@ -4073,6 +4073,11 @@ namespace ai
         return waitRow && step == TankPostDecision::End;
     }
 
+    // Whether a done record survives this read. A raid tank renumbering moves its row to another slot index, so the row
+    // pick no longer names it; the band still stands, and erasing the record there would let the band start the waiting
+    // post again with a fresh window. The record goes when its row leaves the fight.
+    inline bool TankPostDoneRecordStays(bool done, bool bandOpen) { return done && bandOpen; }
+
     // The action's entry guard: a valid post runs when its step needs no subject (the waiting post's Leash walk back
     // and its Hold at the spot run off the row alone), else only with the awaited unit.
     inline bool TankPostActionRuns(bool valid, bool haveRow, bool haveSubject, TankPostDecision step)

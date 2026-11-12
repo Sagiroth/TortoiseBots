@@ -867,6 +867,29 @@ static void TestTankPost_WaitDoesNotRestartInBand()
     CHECK(!TankPostKeepsDoneRecord(true, TankPostDecision::Engage));
 }
 
+// Codex M: a renumbering erased the waiting post's done record before its band closed, so the row started a fresh post
+// inside the same band. The record stays while its row stands in the fight for another slot index, and the step keeps
+// doing nothing with it; only a band that closed (its row and boss gone) releases it.
+static void TestTankPost_DoneRecordSurvivesRenumber()
+{
+    // TankPostDoneRecordStays(done, bandOpen)
+    CHECK(TankPostDoneRecordStays(true, true));   // a renumbering: the row moved to another slot index, the band stands
+    CHECK(!TankPostDoneRecordStays(false, true)); // an open post: the row pick decides it as today
+    CHECK(!TankPostDoneRecordStays(true, false)); // the band closed: the record goes
+    // The kept record's step, at the bot's new slot row: no post starts in the band.
+    TankPostIn in;
+    in.live = true;
+    in.started = true;
+    in.done = true;
+    in.slotMoved = true;
+    in.holdSpot = true;
+    in.waits = true;
+    in.waitRow = true;
+    in.arrivalRadiusYd = 90.0f;
+    in.botToSpotYd = 2.0f;
+    CHECK(TankPostStep(in) == TankPostDecision::None);
+}
+
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
 // interval is 1 s under the hold.
 static void TestCarrierHold()
@@ -1991,6 +2014,7 @@ int main()
     TestTankPostStep_WaitsAtSpot();
     TestTankPostActionRuns_WaitingPost();
     TestTankPost_WaitDoesNotRestartInBand();
+    TestTankPost_DoneRecordSurvivesRenumber();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

@@ -1700,7 +1700,7 @@ Whether a `hold_spot` post runs before its unit exists: it starts with no subjec
 
 **The steps:** with no living subject the step yields to a boss stand seat (`Yield`), walks back to the spot when the tank stands farther than the 8 yd drag distance (`Leash`, keeping its current target) and holds inside that distance (`Hold`, which stops the tank's move). The action runs the leash walk and the hold off the row alone, so no subject is needed for either. Once the unit arrives the post runs exactly as any hold_spot post.
 
-**The end:** a waiting post that ends for its band (its latched unit died, its window closed) keeps a done record until the band closes: the record does nothing, holds no unit or reservation, and keeps its read time fresh so the idle sweep cannot drop it and reopen the row inside the same band. Without that record the next tick would start a fresh post with a new window for as long as the band stands. The done record goes when the band closes (no second `end` row) or its row is replaced.
+**The end:** a waiting post that ends for its band (its latched unit died, its window closed) keeps a done record until the band closes: the record does nothing, holds no unit or reservation, and keeps its read time fresh so the idle sweep cannot drop it and reopen the row inside the same band. Without that record the next tick would start a fresh post with a new window for as long as the band stands. The done record goes when the band closes (no second `end` row); a raid tank renumbering moves its row to another slot index but keeps the record, since that row and its boss still stand.
 
 </details>
 
