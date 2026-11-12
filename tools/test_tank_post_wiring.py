@@ -26,6 +26,7 @@ CONFIG_H = (ROOT / "ai/playerbot/PlayerbotAIConfig.h").read_text()
 TEMPLATE = (ROOT / "ai/playerbot/aiplayerbot.conf.dist.in").read_text()
 DOCS = (ROOT / "docs/server/settings/dungeons-raids.md").read_text()
 BOSS_DOCS = (ROOT / "docs/play/boss-tactics.md").read_text()
+HEAL = (ROOT / "ai/playerbot/strategy/values/PartyMemberToHeal.cpp").read_text()
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text()
 WARRIOR = (ROOT / "ai/playerbot/strategy/warrior/WarriorActions.h").read_text()
 DRUID = (ROOT / "ai/playerbot/strategy/druid/DruidActions.h").read_text()
@@ -661,6 +662,103 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("entry.first == self || entry.second.done ||", owns)
         self.assertIn("if (!it->second.done)\n                        ended.push_back(", ACTIONS)
 
+    def test_post_healers_are_wired(self):
+        # Walk 2i H (AiPlayerbot.DungeonRunTankPostHealers): a `hold_spot` post holds its row's `healers` on its tank,
+        # each heals only that tank, and one that falls behind walks back. The pick, the heal-target verdict and the
+        # walk point are pure (tools/test_boss_tactics_policy.cpp); these pins prove the live code uses them.
+        self.assertIn('dungeonRunTankPostHealers = config.GetBoolDefault('
+                      '"AiPlayerbot.DungeonRunTankPostHealers", false);', CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostHealers = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostHealers = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostHealers", DOCS)
+        section = DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostHealers`"):][:1200]
+        self.assertIn("`0` off", section)
+        self.assertNotIn("recommended on", section)
+        self.assertIn("DungeonRunTankPostHealers", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostHealers", CHANGELOG)
+        # The fill: behind the key, the `hold_spot` mode and the row's count; at most once a second and outside the
+        # record lock (the group read and the seat lookups never hold g_tankPostMutex).
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        fill = find[find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0"):]
+        fill = fill[:fill.index("bool arrivedNow = false;")]
+        self.assertIn("nowMs - record.healerScanMs >= 1000", fill)
+        self.assertIn("LiveGroupMembers(bot->GetGroup())", fill)
+        self.assertNotIn("g_tankPostMutex", fill)
+        self.assertIn("record.healerScanMs = nowMs;", fill)
+        self.assertIn("PickTankPostHealers(current, healerCandidates, row->healers)", fill)
+        self.assertIn('"event=healers,n=%u"', fill)
+        self.assertIn("LogTankPostNote(ai, *row, info2)", fill)
+        self.assertIn("PlayerbotAI::IsHeal(member)", fill)
+        self.assertIn('memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT)', fill)
+        self.assertIn("TortoiseBots::BotCommands::RaidTankHealerSeat(member)", fill)
+        self.assertIn("candidate.seatRank = seat.tank == bot->GetObjectGuid() ? 0 : 2;", fill)
+        self.assertIn("kTankPostHealerMinManaPct", fill)
+        self.assertIn("otherHeld.count(memberGuid) != 0", fill)
+        # The fill runs after the step is known (a yield keeps its healers) and before the record is stored.
+        self.assertGreater(find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0"),
+                           find.index("if (step == TankPostDecision::None)"))
+        self.assertLess(find.index("if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0"),
+                        find.index("bool arrivedNow = false;"))
+        self.assertIn("std::array<std::uint64_t, 4> healers{};", ACTIONS)
+        self.assertIn("std::uint8_t healerCount = 0;", ACTIONS)
+        self.assertIn("std::uint32_t healerScanMs = 0;", ACTIONS)
+        # The duty read: one atomic for the common case, then the record lock; the holder alive and on this map.
+        duty = body(ACTIONS, "ai::TankPostHealDuty ai::FindTankPostHealDuty(")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostHealers", duty)
+        self.assertIn("PlayerbotAI::IsHeal(bot)", duty)
+        self.assertIn("HasTankPostMap(bot->GetMapId())", duty)
+        self.assertIn("g_tankPostHealersLive.load(std::memory_order_relaxed) == 0", duty)
+        self.assertLess(duty.index("g_tankPostHealersLive.load("),
+                        duty.index("std::lock_guard<std::mutex> lock(g_tankPostMutex);"))
+        self.assertIn("entry.second.done", duty)
+        self.assertIn("nowMs - entry.second.lastReadMs >= kTankPostLiveMs", duty)
+        self.assertIn("entry.second.healers[i] == self", duty)
+        self.assertIn("holder->GetMapId() != bot->GetMapId()", duty)
+        self.assertIn("duty.unit = unitGuid != 0 ? ai->GetUnit(ObjectGuid(unitGuid)) : nullptr;", duty)
+        self.assertIn("TankPostHealDuty FindTankPostHealDuty(PlayerbotAI* ai, Player* bot);", ACTIONS_H)
+        self.assertIn("struct TankPostHealDuty", ACTIONS_H)
+        # The counter moves with every record write and erase, under the record lock.
+        self.assertIn("void TankPostHealersNote(std::uint8_t prior, std::uint8_t next)", ACTIONS)
+        self.assertIn("g_tankPostHealersLive.fetch_add(1, std::memory_order_relaxed);", ACTIONS)
+        self.assertIn("g_tankPostHealersLive.fetch_sub(1, std::memory_order_relaxed);", ACTIONS)
+        self.assertIn("TankPostHealersNote(priorHealers, stored.healerCount);", find)
+        self.assertEqual(ACTIONS.count("TankPostHealersNote(it->second.healerCount, 0);"), 2)
+        self.assertEqual(ACTIONS.count("TankPostHealersNote(mine->second.healerCount, 0);"), 2)
+        # The heal pick: after the Patchwerk block, before the bands, and a strict holder-or-nobody verdict.
+        heal = body(HEAL, "Unit* PartyMemberToHeal::Calculate()")
+        self.assertLess(heal.index("PatchwerkHealingTarget(ai)"), heal.index("FindTankPostHealDuty(ai, bot).holder"))
+        self.assertLess(heal.index("FindTankPostHealDuty(ai, bot).holder"), heal.index("HealingBands const bands"))
+        self.assertIn("return TankPostHealPickOf(true, Check(held)) == TankPostHealPick::Holder ? held : nullptr;",
+                      heal)
+        # The leash: the trigger, the action and its node.
+        self.assertIn('creators["boss tank post healer"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankPostHealerTrigger(ai); };', TRIGGER_CONTEXT)
+        self.assertIn('creators["boss tactics tank post healer"] = [](PlayerbotAI* ai) '
+                      '{ return new BossTacticsTankPostHealerAction(ai); };', ACTION_CONTEXT)
+        self.assertIn('new NextAction("boss tactics tank post healer", ACTION_HIGH + 8)', STRATEGY)
+        self.assertIn('"boss tank post healer"', STRATEGY)
+        trigger = body(TRIGGERS, "bool BossTacticsTankPostHealerTrigger::IsActive()")
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostHealers", trigger)
+        self.assertIn("HasTankPostMap(bot->GetMapId())", trigger)
+        self.assertIn("FindTankPostHealDuty(ai, bot)", trigger)
+        self.assertIn("!duty.holder || bot->IsNonMeleeSpellCasted(false)", trigger)
+        self.assertIn("TankPostHealerFar(std::sqrt(dx * dx + dy * dy))", trigger)
+        self.assertIn("BossTacticsTankPostHealerAction(PlayerbotAI* ai) : MovementAction(ai, "
+                      "\"boss tactics tank post healer\")", ACTIONS_H)
+        action = body(ACTIONS, "bool BossTacticsTankPostHealerAction::Execute(Event& event)")
+        self.assertIn("TankPostHealerPoint(unit != nullptr,", action)
+        self.assertIn("TankPostHealerPoint(false, 0.0f, 0.0f, holderX, holderY,", action)
+        self.assertIn("if (walk(x, y))\n        return true;\n    return walk(lineX, lineY);", action)
+        self.assertIn("ClampMoveToBossAnchor(ai, bot, targetX, targetY, z)", action)
+        self.assertIn("float z = duty.holder->GetPositionZ();", action)
+        self.assertIn("bot->UpdateGroundPositionZ(targetX, targetY, z);", action)
+        self.assertIn("MoveTo(bot->GetMapId(), targetX, targetY, z, false, false, false, true)", action)
+        self.assertIn("std::fabs(lastX - targetX) < 3.0f && std::fabs(lastY - targetY) < 3.0f", action)
+        # The healers row's logger: the post's own first field, a caller-built second one.
+        note = body(ACTIONS, "void LogTankPostNote(")
+        self.assertIn('"boss=%u,subject=%u,tank=%d"', note)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', note)
+
     def test_a_done_record_survives_a_renumbering(self):
         # Codex M: a renumbering erased the waiting post's done record before its band closed, and the row started a
         # fresh post inside the same band. The rule is pure (TankPostDoneRecordStays) and tested in
@@ -678,7 +776,7 @@ class TankPostWiring(unittest.TestCase):
         # The keep refreshes the read time instead of erasing, so the idle sweep cannot drop it; the closed band still
         # erases without a second end row.
         keep = find[find.index("if (TankPostDoneRecordStays(record.done, bandOpen))"):]
-        keep = keep[:keep.index("g_tankPost.erase(self);")]
+        keep = keep[:keep.index("g_tankPost.erase(mine);")]
         self.assertIn("it->second.lastReadMs = nowMs;", keep)
         self.assertIn("if (!record.done)\n        {\n            BossTacticRow closed;", find)
 

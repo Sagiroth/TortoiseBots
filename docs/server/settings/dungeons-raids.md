@@ -1486,7 +1486,7 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 <details>
 <summary>How it works in detail</summary>
 
-**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, or 0 for the main tank, which holds a post on the row's own boss only, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-100 yd) and `window_s` the longest hold (10-120 s). No spell; `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`). The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
+**The row:** `boss_entry` is the unit whose health band (`hp_min`/`hp_max`) arms the post, `target_entry` the awaited unit, `priority` the raid tank slot (1-7, or 0 for the main tank, which holds a post on the row's own boss only, the `GetRaidTankRoles` order), `spot_x/y/z` the wait point, `param` the arrival radius (5-100 yd) and `window_s` the longest hold (10-120 s). `hold_spot` is the only mode word it takes (see `AiPlayerbot.DungeonRunTankPostHoldSpot`); a `hold_spot` row alone may also name the boss spell whose aura marks the cast its tank answers (`spell_id`) and the healers it holds on its tank (`healers`, 0-4, see `AiPlayerbot.DungeonRunTankPostHealers`), and a plain post refuses both. The kind is fight-scan read, so its health band is allowed; the post is armed only while the boss entry stands in the band among the bot's attackers.
 
 **The pick:** a tank takes the row its slot index names, and a row another live post holds is no row for it (a record read within the reservation's 3 s by a tank in the same instance that can act, with no done flag). A waiting post that ends for its band keeps a done record until the band closes, so the row cannot restart it inside the same band.
 
@@ -1494,7 +1494,7 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 
 **The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
 
-**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row; `AiPlayerbot.DungeonRunTankPostOwnsSubject` adds one `event=lapse,reason=post_lapsed` row per reservation lapse; `AiPlayerbot.DungeonRunTankPostWalks` adds one `event=walk,subject_yd=<yd>` row per Engage walk episode.
+**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row; `AiPlayerbot.DungeonRunTankPostOwnsSubject` adds one `event=lapse,reason=post_lapsed` row per reservation lapse; `AiPlayerbot.DungeonRunTankPostWalks` adds one `event=walk,subject_yd=<yd>` row per Engage walk episode; `AiPlayerbot.DungeonRunTankPostHealers` adds one `event=healers,n=<count>,h1=<name>...` row whenever the held set changes, and `event=cd_seen|cd_cast|cd_none` rows for the holder's cooldown.
 
 </details>
 
@@ -1626,6 +1626,27 @@ Whether a `tank_post` row's Engage step walks to the unit it awaits while that u
 **Known limit:** the walk follows its unit wherever it stands, so a Hatcher that walks to its spawn near the eggs drags the post tank there.
 
 **Diagnostics:** one `BossTacticsTankPost` row per walk episode (`event=walk,subject_yd=<yd>`), written when a walk starts, not on the ticks it stays on; leaving the Engage step or reaching the unit ends the episode.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostHealers`
+Whether a `hold_spot` post holds healers on its tank, and the post's tank answers the first cast the row's spell names with its defensive cooldown. Off by default: neither column existed, and the healers healed the raid.
+**Default:** `0` · **Values:** `0` off (every `tank_post` row runs as before; the row's `healers` and `spell_id` do nothing), `1` on (needs `AiPlayerbot.DungeonRunTankPost` and `AiPlayerbot.DungeonRunTankPostHoldSpot`; a row with `healers` 0 and `spell_id` 0 is unaffected) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The row:** a `hold_spot` post's `healers` column (0-4) is the number of the group's healers it holds on its tank; `spell_id` is the boss spell whose aura on a raid member marks the cast the holder answers. A plain post refuses both, and any other kind refuses `healers` (its own `spell_id` rules are unchanged).
+
+**The hold:** the post scans its group at most once a second: every member alive, in the world, on the post's map, a bot with the `boss tactics` combat strategy that heals, not charmed, not the holder and not held by another live post is a candidate. The raid layout's own tank seats rank first: a seat on this holder (0), then no tank seat (1), then another tank's seat (2); then mana at or above 10 %, then distance to the holder, then guid. A healer already held stays while it is still a candidate, so the set only changes when one dies, leaves, loses its mana or its place to a better-ranked healer. Each change writes one `event=healers,n=<count>,h1=<name>...` row (an empty set included).
+
+**The heal pick:** a held healer's single-target heal pick is its post's holder or nobody: no self-heal, no fallback to another target while the holder is out of reach (the walk back brings it in), and dispels, buffs and resurrections keep their own picks. A holder that is dead or on another map leaves no duty, so the healer heals as before.
+
+**The leash:** a held healer farther than 30 yd (2D) from its holder that is not casting walks to a point beside the unit the post holds (20 yd from it, at a right angle to the line from the unit to the holder, on the healer's side) while that unit stands within 15 yd of the holder, else to a point 25 yd from the holder toward the healer. The walk is held inside a live boss anchor, and a flank point the mover refuses falls back to the line point. Every heal, dispel and interrupt cast and every survival move outranks it.
+
+**The cooldown:** once the post's unit has been on its tank at least once (so a cast at the landing, before the tank has her, spends nothing) and the row names a spell, the first sighting of that aura on the holder or a living group member within 60 yd of it writes `event=cd_seen` and opens a 10 s window. The holder then casts the next untried name of its class's list — warrior `shield wall`, `last stand`; druid `frenzied regeneration`, `barkskin`; no other class — writing `event=cd_cast,spell=<name>,hp=<pct>` on each cast. At the window's end with names left it writes `event=cd_none,left=<n>` once; a class with no action writes `cd_none,left=0` at once. One sighting per post: a second cast does nothing. The class's own health rules are not changed.
+
+**The end:** a post that yields to a boss stand seat keeps its healers; a post that ends or goes done frees them at once (no live record lists them, so their heal pick is today's).
 
 </details>
 

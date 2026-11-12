@@ -176,6 +176,11 @@ Unit* PartyMemberToHeal::Calculate()
             if (Check(assigned))
                 return assigned;
 
+    // AiPlayerbot.DungeonRunTankPostHealers: a healer held on a post's tank heals that tank or nobody. Dispels, buffs
+    // and resurrections keep their own picks, and a healer with no duty keeps today's.
+    if (Player* held = FindTankPostHealDuty(ai, bot).holder)
+        return TankPostHealPickOf(true, Check(held)) == TankPostHealPick::Holder ? held : nullptr;
+
     HealingBands const bands{float(sPlayerbotAIConfig.criticalHealth), float(sPlayerbotAIConfig.lowHealth),
         float(sPlayerbotAIConfig.mediumHealth), float(sPlayerbotAIConfig.almostFullHealth)};
     bool const preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);

@@ -97,6 +97,13 @@ void BossTacticsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "boss tank post",
         NextAction::array(0, new NextAction("boss tactics tank post", ACTION_EMERGENCY + 2), NULL)));
 
+    // AiPlayerbot.DungeonRunTankPostHealers: a healer held on a post's tank stands out past its leash and walks back.
+    // Every heal, dispel and interrupt cast and every survival move (seat, avoid, flee) outranks it; it outranks step
+    // behind and the target picks.
+    triggers.push_back(new TriggerNode(
+        "boss tank post healer",
+        NextAction::array(0, new NextAction("boss tactics tank post healer", ACTION_HIGH + 8), NULL)));
+
     // A burn_mana row's boss stands above the row's start % of mana and this bot is one of its burners: the drain
     // cast goes out above the ordinary damage rotation, below every survival and avoid action.
     triggers.push_back(new TriggerNode(

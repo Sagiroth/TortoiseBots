@@ -4150,6 +4150,102 @@ namespace ai
         return best;
     }
 
+    // AiPlayerbot.DungeonRunTankPostHealers: the healers a `hold_spot` post holds on its tank.
+    constexpr float kTankPostHealerYd = 30.0f;      // a post healer stays within this of the holder (2D)
+    constexpr float kTankPostHealerWalkYd = 25.0f;  // its walk back ends this far from the holder
+    constexpr float kTankPostHealerFlankYd = 20.0f; // or this far beside the held unit
+    constexpr float kTankPostHealerUnitYd = 15.0f;  // the held unit counts while it is this near the holder
+    constexpr float kTankPostHealerMinManaPct = 10.0f;
+    struct TankPostHealerCandidate
+    {
+        std::uint64_t guid = 0;
+        std::uint8_t seatRank = 1; // 0: the raid layout seats it on this holder, 1: no tank seat, 2: a seat on another tank
+        bool hasMana = true;       // at or above kTankPostHealerMinManaPct
+        float ydToHolder = 0.0f;
+    };
+    // The post's healers: every current one that is still a candidate stays (in order), then the rest fill up to
+    // `want` by seat rank, mana, distance, guid. Never more than kTankPostHealersMax.
+    inline std::vector<std::uint64_t> PickTankPostHealers(const std::vector<std::uint64_t>& current,
+        const std::vector<TankPostHealerCandidate>& candidates, std::size_t want)
+    {
+        std::vector<std::uint64_t> picked;
+        std::size_t const cap = std::min<std::size_t>(want, kTankPostHealersMax);
+        if (cap == 0)
+            return picked;
+        for (const std::uint64_t guid : current)
+        {
+            if (picked.size() >= cap)
+                break;
+            const auto found = std::find_if(candidates.begin(), candidates.end(),
+                [guid](const TankPostHealerCandidate& candidate) { return candidate.guid == guid; });
+            if (found != candidates.end())
+                picked.push_back(guid);
+        }
+        std::vector<TankPostHealerCandidate> rest;
+        for (const TankPostHealerCandidate& candidate : candidates)
+        {
+            if (std::find(picked.begin(), picked.end(), candidate.guid) == picked.end())
+                rest.push_back(candidate);
+        }
+        std::sort(rest.begin(), rest.end(),
+            [](const TankPostHealerCandidate& a, const TankPostHealerCandidate& b)
+            {
+                if (a.seatRank != b.seatRank)
+                    return a.seatRank < b.seatRank;
+                if (a.hasMana != b.hasMana)
+                    return a.hasMana;
+                if (a.ydToHolder != b.ydToHolder)
+                    return a.ydToHolder < b.ydToHolder;
+                return a.guid < b.guid;
+            });
+        for (const TankPostHealerCandidate& candidate : rest)
+        {
+            if (picked.size() >= cap)
+                break;
+            picked.push_back(candidate.guid);
+        }
+        return picked;
+    }
+    enum class TankPostHealPick : std::uint8_t { Normal, Holder, None };
+    inline TankPostHealPick TankPostHealPickOf(bool onDuty, bool holderHealable)
+    {
+        return !onDuty ? TankPostHealPick::Normal : holderHealable ? TankPostHealPick::Holder : TankPostHealPick::None;
+    }
+    inline bool TankPostHealerFar(float ydToHolder) { return ydToHolder > kTankPostHealerYd; }
+    // Where a post healer walks: beside the held unit (kTankPostHealerFlankYd from it, at a right angle to the line
+    // from the unit to the holder, on the healer's side) while the unit stands within kTankPostHealerUnitYd of the
+    // holder; else kTankPostHealerWalkYd from the holder toward the healer.
+    inline void TankPostHealerPoint(bool haveUnit, float unitX, float unitY, float holderX, float holderY,
+                                    float botX, float botY, float& x, float& y)
+    {
+        if (haveUnit)
+        {
+            const float dx = holderX - unitX;
+            const float dy = holderY - unitY;
+            const float line = std::sqrt(dx * dx + dy * dy);
+            const float ux = unitX - holderX;
+            const float uy = unitY - holderY;
+            if (line >= 0.1f && std::sqrt(ux * ux + uy * uy) <= kTankPostHealerUnitYd)
+            {
+                const float side = dx * (botY - unitY) - dy * (botX - unitX) >= 0.0f ? 1.0f : -1.0f;
+                x = unitX - side * dy / line * kTankPostHealerFlankYd;
+                y = unitY + side * dx / line * kTankPostHealerFlankYd;
+                return;
+            }
+        }
+        const float bx = botX - holderX;
+        const float by = botY - holderY;
+        const float botYd = std::sqrt(bx * bx + by * by);
+        if (botYd >= 0.1f)
+        {
+            x = holderX + bx / botYd * kTankPostHealerWalkYd;
+            y = holderY + by / botYd * kTankPostHealerWalkYd;
+            return;
+        }
+        x = holderX;
+        y = holderY + kTankPostHealerWalkYd;
+    }
+
     // AiPlayerbot.DungeonRunTankPostKeepsUnit, for the tank's own target pick: whether the post's latched unit decides
     // this comparison. 1: the new candidate is the latched unit (keep it), -1: the old one is (do not switch off it),
     // 0: the key is off, nothing is latched, or both or neither candidate is it (the ordinary ranking decides).

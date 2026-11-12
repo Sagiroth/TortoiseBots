@@ -741,6 +741,11 @@ public:
     // seat; off, a post starts only once a living unit of the entry stands in the fight, as before the key (default
     // off).
     bool dungeonRunTankPostWaits = false;
+    // Healers held on a `hold_spot` tank_post's tank (AiPlayerbot.DungeonRunTankPostHealers): on, the row's `healers`
+    // column (0-4) holds that many of the group's healers on the post's tank, each healing only it and walking back
+    // past 30 yd, and the row's `spell_id` makes the holder answer the first sighting of that aura after the unit was
+    // on it with its class's defensive cooldown; off, both columns do nothing (default off).
+    bool dungeonRunTankPostHealers = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

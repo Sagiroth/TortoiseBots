@@ -1824,6 +1824,76 @@ static void TestTankPostRow_RadiusCap()
     CHECK(loads(40.0f));
 }
 
+// Walk 2i H: the healers a `hold_spot` post holds on its tank. A healer already held stays while it is still a
+// candidate, and the rest fill by the raid layout's seat on this holder, then mana, then distance, then guid. The
+// failing case is the fill itself: sorting by distance first picks B (5 yd) over C (the layout's own tank seat, 40 yd).
+static void TestPickTankPostHealers_KeepsAndFills()
+{
+    auto const candidate = [](std::uint64_t guid, std::uint8_t rank, bool mana, float yd)
+    {
+        TankPostHealerCandidate c;
+        c.guid = guid;
+        c.seatRank = rank;
+        c.hasMana = mana;
+        c.ydToHolder = yd;
+        return c;
+    };
+    const std::vector<TankPostHealerCandidate> all = {
+        candidate(1, 1, true, 30.0f),   // A: held
+        candidate(2, 2, true, 5.0f),    // B: another tank's seat, nearest
+        candidate(3, 0, true, 40.0f),   // C: the layout's seat on this holder
+        candidate(4, 1, false, 10.0f),  // D: no mana
+        candidate(5, 1, true, 20.0f),   // E: no tank seat
+    };
+    CHECK(PickTankPostHealers({1}, all, 2) == std::vector<std::uint64_t>({1, 3}));
+    CHECK(PickTankPostHealers({}, all, 2) == std::vector<std::uint64_t>({3, 5}));
+    CHECK(PickTankPostHealers({1}, all, 0).empty());            // want 0: nobody
+    CHECK(PickTankPostHealers({}, {candidate(2, 1, true, 5.0f)}, 2) == std::vector<std::uint64_t>({2}));
+    CHECK(PickTankPostHealers({}, all, 9).size() == 4);          // never more than kTankPostHealersMax
+    // A held healer that is no candidate any more is dropped, and the held order is kept.
+    CHECK(PickTankPostHealers({1, 5}, all, 2) == std::vector<std::uint64_t>({1, 5}));
+    CHECK(PickTankPostHealers({5}, {candidate(3, 0, true, 1.0f)}, 2) == std::vector<std::uint64_t>({3}));
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: a post healer's heal target is its holder or nobody.
+static void TestTankPostHealPickOf_HolderOrNobody()
+{
+    CHECK(TankPostHealPickOf(false, true) == TankPostHealPick::Normal);  // no duty: today's pick
+    CHECK(TankPostHealPickOf(false, false) == TankPostHealPick::Normal);
+    CHECK(TankPostHealPickOf(true, true) == TankPostHealPick::Holder);   // on duty, in reach: the holder
+    CHECK(TankPostHealPickOf(true, false) == TankPostHealPick::None);    // out of reach: nobody, never another target
+}
+
+// The walk back: beside the held unit while it stands near the holder, else a point on the line to the healer.
+static void TestTankPostHealerPoint_FlankOrLine()
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    // Unit (0, 0), holder (10, 0): the flank is 20 yd from the unit on the healer's side of that line.
+    TankPostHealerPoint(true, 0.0f, 0.0f, 10.0f, 0.0f, -5.0f, 40.0f, x, y);
+    CHECK(Near(x, 0.0f) && Near(y, 20.0f));
+    TankPostHealerPoint(true, 0.0f, 0.0f, 10.0f, 0.0f, -5.0f, -40.0f, x, y);
+    CHECK(Near(x, 0.0f) && Near(y, -20.0f));
+    // The flank only while the unit stands within 15 yd of the holder; else the line, 25 yd from the holder.
+    TankPostHealerPoint(true, 0.0f, 0.0f, 16.0f, 0.0f, -5.0f, 40.0f, x, y);
+    const float dx = x - 16.0f;
+    const float dy = y - 0.0f;
+    CHECK(Near(std::sqrt(dx * dx + dy * dy), 25.0f));
+    CHECK(x < 16.0f && y > 0.0f);
+    // No unit: the same line.
+    TankPostHealerPoint(false, 0.0f, 0.0f, 10.0f, 0.0f, 10.0f, 40.0f, x, y);
+    CHECK(Near(x, 10.0f) && Near(y, 25.0f));
+}
+
+// Walk 2i H: the leash is 30 yd (2D), not 30.01.
+static void TestTankPostHealerFar_PastThirty()
+{
+    CHECK(kTankPostHealerYd == 30.0f);
+    CHECK(!TankPostHealerFar(0.0f));
+    CHECK(!TankPostHealerFar(30.0f));
+    CHECK(TankPostHealerFar(30.1f));
+}
+
 static CastDangerZone Zone(float x, float y, float z, float radius)
 {
     CastDangerZone zone;
@@ -2051,6 +2121,10 @@ int main()
     TestTankPostTauntStep_AreaOnlyOffNonTank();
     TestTankPostTauntWord_All();
     TestTankPostRow_RadiusCap();
+    TestPickTankPostHealers_KeepsAndFills();
+    TestTankPostHealPickOf_HolderOrNobody();
+    TestTankPostHealerPoint_FlankOrLine();
+    TestTankPostHealerFar_PastThirty();
     AddCrewState_SwitchesAfterDeath();
     AddCrewLoader_Rows();
     AddCrewRank_Order();

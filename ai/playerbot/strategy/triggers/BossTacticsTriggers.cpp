@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include "BossTacticsTriggers.h"
 #include "playerbot/BossTacticsMgr.h"
@@ -575,6 +576,21 @@ bool BossTacticsTankPostTrigger::IsActive()
         return false;
     const BossTankPost post = FindBossTankPost(ai, bot, ScanBossTactics(ai, bot));
     return post.valid && !post.holdingOtherHostile;
+}
+
+bool BossTacticsTankPostHealerTrigger::IsActive()
+{
+    if (!Ready(ai, bot))
+        return false;
+    // Its own key and the map flag keep every other map and every key-off fight at one lookup.
+    if (!sPlayerbotAIConfig.dungeonRunTankPostHealers || !GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return false;
+    const TankPostHealDuty duty = FindTankPostHealDuty(ai, bot);
+    if (!duty.holder || bot->IsNonMeleeSpellCasted(false))
+        return false;
+    const float dx = bot->GetPositionX() - duty.holder->GetPositionX();
+    const float dy = bot->GetPositionY() - duty.holder->GetPositionY();
+    return TankPostHealerFar(std::sqrt(dx * dx + dy * dy));
 }
 
 bool BossTacticsBurnManaTrigger::IsActive()

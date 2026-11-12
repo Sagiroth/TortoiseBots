@@ -42,6 +42,7 @@
 #include "playerbot/EbonrocSwapPolicy.h"
 #include "playerbot/GroupMembers.h"
 #include "../../../../runtime/PlayerbotAIStorage.h"
+#include "../../../../runtime/CommandedGroupQuery.h"
 #include "ChooseTargetActions.h"
 #include "PositionAction.h"
 #include "FollowActions.h"
@@ -11886,6 +11887,11 @@ struct TankPostRecord
     std::uint8_t lastStep = 0;
     // The taunt rows' throttle per word (TankPostTaunt, indexed by its value; 0 = never written), read under the lock.
     std::array<std::uint32_t, 6> tauntLogMs{};
+    // AiPlayerbot.DungeonRunTankPostHealers: the healers held on this post's tank (`event=healers`, in pick order) and
+    // the last scan; the row is written when this set changes.
+    std::array<std::uint64_t, 4> healers{};
+    std::uint8_t healerCount = 0;
+    std::uint32_t healerScanMs = 0;
 };
 
 std::mutex g_tankPostMutex;
@@ -11897,6 +11903,20 @@ constexpr std::uint32_t kTankPostTauntLogGapMs = 5000;
 // The dead-tank sweep runs at most this often, whatever asks.
 constexpr std::uint32_t kTankPostSweepMs = 1000;
 std::atomic<std::uint32_t> g_tankPostSweepMs{0};
+// The records that hold healers right now (AiPlayerbot.DungeonRunTankPostHealers): a heal pick off every post reads it
+// without the lock, and the ticks that change a record adjust it under g_tankPostMutex.
+std::atomic<std::uint32_t> g_tankPostHealersLive{0};
+
+// Under g_tankPostMutex: the record with `prior` healers now holds `next`, so the count moves with it.
+void TankPostHealersNote(std::uint8_t prior, std::uint8_t next)
+{
+    if ((prior != 0) == (next != 0))
+        return;
+    if (next != 0)
+        g_tankPostHealersLive.fetch_add(1, std::memory_order_relaxed);
+    else
+        g_tankPostHealersLive.fetch_sub(1, std::memory_order_relaxed);
+}
 
 bool TankPostSameRow(const TankPostRecord& record, const BossTacticRow& row)
 {
@@ -12041,6 +12061,18 @@ void LogTankPostLapse(PlayerbotAI* ai, std::uint32_t bossEntry, std::uint32_t ta
     sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
 }
 
+// One BossTacticsTankPost row with a caller-built second field: the post's held healers (`event=healers`) and the
+// holder's cooldown events (`event=cd_seen|cd_cast|cd_none`). The first field is the post's, as on every other row.
+void LogTankPostNote(PlayerbotAI* ai, const BossTacticRow& row, const char* info2)
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+    char info1[64];
+    snprintf(info1, sizeof(info1), "boss=%u,subject=%u,tank=%d", row.bossEntry, row.targetEntry,
+             static_cast<int>(row.priority));
+    sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2);
+}
+
 // The end word of a post that the step closed: the first closed input in the step's own order.
 const char* TankPostEndReason(const TankPostIn& in)
 {
@@ -12062,6 +12094,52 @@ std::uint64_t ai::TankPostLatchedUnit(Player* bot)
         WorldTimer::getMSTime() - it->second.lastReadMs >= kTankPostLiveMs)
         return 0;
     return it->second.arrivedSubjectGuid;
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: the live post this healer is held on (see the header). The heal target pick
+// runs on every healer tick, so a counter of the records that hold healers answers the common case without the lock.
+ai::TankPostHealDuty ai::FindTankPostHealDuty(PlayerbotAI* ai, Player* bot)
+{
+    TankPostHealDuty duty;
+    if (!ai || !bot || !sPlayerbotAIConfig.dungeonRunTankPostHealers || !PlayerbotAI::IsHeal(bot))
+        return duty;
+    if (!GetBossTactics().HasTankPostMap(bot->GetMapId()))
+        return duty;
+    if (g_tankPostHealersLive.load(std::memory_order_relaxed) == 0)
+        return duty;
+    const std::uint64_t self = bot->GetObjectGuid().GetRawValue();
+    const std::uint32_t nowMs = WorldTimer::getMSTime();
+    std::uint64_t holderGuid = 0;
+    std::uint64_t unitGuid = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_tankPostMutex);
+        for (std::pair<std::uint64_t const, TankPostRecord> const& entry : g_tankPost)
+        {
+            if (entry.first == self || entry.second.map != bot->GetMapId() || entry.second.done ||
+                nowMs - entry.second.lastReadMs >= kTankPostLiveMs)
+                continue;
+            bool listed = false;
+            for (std::size_t i = 0; i < entry.second.healerCount && i < entry.second.healers.size(); ++i)
+            {
+                if (entry.second.healers[i] == self)
+                    listed = true;
+            }
+            if (!listed)
+                continue;
+            holderGuid = entry.first;
+            unitGuid = entry.second.arrivedSubjectGuid;
+            break;
+        }
+    }
+    if (holderGuid == 0)
+        return duty;
+    Player* const holder = sObjectMgr.GetPlayer(ObjectGuid(holderGuid));
+    if (!holder || !holder->IsInWorld() || holder->GetMapId() != bot->GetMapId() ||
+        !sServerFacade.IsAlive(holder))
+        return duty;
+    duty.holder = holder;
+    duty.unit = unitGuid != 0 ? ai->GetUnit(ObjectGuid(unitGuid)) : nullptr;
+    return duty;
 }
 
 // AiPlayerbot.DungeonRunTankPostOwnsSubject. A post is live while its tank's record was read within kTankPostLiveMs;
@@ -12294,6 +12372,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
             {
                 if (nowMs - it->second.lastReadMs > kTankPostIdleMs)
                 {
+                    TankPostHealersNote(it->second.healerCount, 0);
                     it = g_tankPost.erase(it);
                     continue;
                 }
@@ -12308,6 +12387,7 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
                 {
                     if (!it->second.done)
                         ended.push_back(std::make_pair(it->first, it->second));
+                    TankPostHealersNote(it->second.healerCount, 0);
                     it = g_tankPost.erase(it);
                     continue;
                 }
@@ -12386,7 +12466,12 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         }
         {
             std::lock_guard<std::mutex> lock(g_tankPostMutex);
-            g_tankPost.erase(self);
+            auto const mine = g_tankPost.find(self);
+            if (mine != g_tankPost.end())
+            {
+                TankPostHealersNote(mine->second.healerCount, 0);
+                g_tankPost.erase(mine);
+            }
         }
         if (!record.done)
         {
@@ -12525,7 +12610,12 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         else
         {
             std::lock_guard<std::mutex> lock(g_tankPostMutex);
-            g_tankPost.erase(self);
+            auto const mine = g_tankPost.find(self);
+            if (mine != g_tankPost.end())
+            {
+                TankPostHealersNote(mine->second.healerCount, 0);
+                g_tankPost.erase(mine);
+            }
         }
         LogTankPost(ai, *row, "end", TankPostEndReason(in));
         return out;
@@ -12544,6 +12634,77 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         return out;
     }
 
+    // AiPlayerbot.DungeonRunTankPostHealers: a `hold_spot` post holds its row's healers on this tank
+    // (`ai_boss_tactic.healers`). The scan runs at most once a second and outside the record lock: the group read and
+    // the seat lookups are the expensive part. `others` is the map's other live records, so a healer another post
+    // holds is no candidate here.
+    if (sPlayerbotAIConfig.dungeonRunTankPostHealers && holdSpot && row->healers > 0 &&
+        (record.healerScanMs == 0 || nowMs - record.healerScanMs >= 1000))
+    {
+        std::vector<std::uint64_t> current;
+        current.reserve(record.healerCount);
+        for (std::size_t i = 0; i < record.healerCount && i < record.healers.size(); ++i)
+            current.push_back(record.healers[i]);
+        std::unordered_set<std::uint64_t> otherHeld;
+        for (std::pair<std::uint64_t const, TankPostRecord> const& other : others)
+        {
+            if (other.second.done)
+                continue;
+            for (std::size_t i = 0; i < other.second.healerCount && i < other.second.healers.size(); ++i)
+                otherHeld.insert(other.second.healers[i]);
+        }
+        std::vector<TankPostHealerCandidate> healerCandidates;
+        for (Player* member : LiveGroupMembers(bot->GetGroup()))
+        {
+            if (!member || member == bot || !sServerFacade.IsAlive(member) || !member->IsInWorld() ||
+                member->GetMapId() != mapId || !member->GetCharmerGuid().IsEmpty() || !PlayerbotAI::IsHeal(member))
+                continue;
+            PlayerbotAI* const memberAi = GET_PLAYERBOT_AI(member);
+            if (!memberAi || !memberAi->HasStrategy("boss tactics", BotState::BOT_STATE_COMBAT))
+                continue;
+            const std::uint64_t memberGuid = member->GetObjectGuid().GetRawValue();
+            if (otherHeld.count(memberGuid) != 0)
+                continue;
+            TankPostHealerCandidate candidate;
+            candidate.guid = memberGuid;
+            // The raid layout's tank seat ranks it: on this holder, no seat, another tank's seat (2).
+            const TortoiseBots::BotCommands::RaidTankSeat seat =
+                TortoiseBots::BotCommands::RaidTankHealerSeat(member);
+            if (seat.seated)
+                candidate.seatRank = seat.tank == bot->GetObjectGuid() ? 0 : 2;
+            const std::uint32_t maxMana = member->GetMaxPower(POWER_MANA);
+            candidate.hasMana = maxMana == 0 ||
+                100.0f * member->GetPower(POWER_MANA) / maxMana >= kTankPostHealerMinManaPct;
+            const float dx = member->GetPositionX() - bot->GetPositionX();
+            const float dy = member->GetPositionY() - bot->GetPositionY();
+            candidate.ydToHolder = std::sqrt(dx * dx + dy * dy);
+            healerCandidates.push_back(candidate);
+        }
+        const std::vector<std::uint64_t> picked = PickTankPostHealers(current, healerCandidates, row->healers);
+        record.healerScanMs = nowMs;
+        record.healerCount = static_cast<std::uint8_t>(picked.size());
+        record.healers = {};
+        for (std::size_t i = 0; i < picked.size() && i < record.healers.size(); ++i)
+            record.healers[i] = picked[i];
+        if (picked != current)
+        {
+            char info2[128];
+            std::size_t used = static_cast<std::size_t>(std::snprintf(info2, sizeof(info2), "event=healers,n=%u",
+                static_cast<unsigned>(picked.size())));
+            if (used >= sizeof(info2))
+                used = sizeof(info2) - 1;
+            for (std::size_t i = 0; i < picked.size() && i < record.healers.size(); ++i)
+            {
+                Player* const healer = sObjectMgr.GetPlayer(ObjectGuid(picked[i]));
+                const int written = std::snprintf(info2 + used, sizeof(info2) - used, ",h%u=%s",
+                    static_cast<unsigned>(i + 1), healer ? healer->GetName() : "gone");
+                if (written > 0)
+                    used = std::min(used + static_cast<std::size_t>(written), sizeof(info2) - 1);
+            }
+            LogTankPostNote(ai, *row, info2);
+        }
+    }
+
     bool arrivedNow = false;
     bool stepEntered = false;
     {
@@ -12552,8 +12713,10 @@ BossTankPost ai::FindBossTankPost(PlayerbotAI* ai, Player* bot, const BossTactic
         std::uint32_t const priorLoose = stored.looseSinceMs;
         std::uint32_t const priorUnhittable = stored.unhittableSinceMs;
         std::array<std::uint32_t, 6> const priorTauntLog = stored.tauntLogMs;
+        std::uint8_t const priorHealers = stored.healerCount;
         bool lapseLogged = stored.lapseLogged;
         stored = record;
+        TankPostHealersNote(priorHealers, stored.healerCount);
         stored.tauntLogMs = priorTauntLog;
         stored.lastReadMs = nowMs;
         TankPostLooseClockState const loose = TankPostLooseClock(priorLoose, priorUnhittable, in.subjectOnTank,
@@ -12829,6 +12992,51 @@ bool BossTacticsTankPostAction::Execute(Event& event)
     lastY = task.y;
     hasLast = true;
     return true;
+}
+
+// AiPlayerbot.DungeonRunTankPostHealers: a post healer the post's tank left behind walks back. It aims beside the unit
+// the post latched while that unit stands near the holder (kTankPostHealerFlankYd at a right angle, so the healers do
+// not gather in the boss's front), else at a point kTankPostHealerWalkYd from the holder toward the healer. A flank
+// point the mover refuses (no floor under it) falls back to the line point.
+bool BossTacticsTankPostHealerAction::Execute(Event& event)
+{
+    (void)event;
+    const TankPostHealDuty duty = FindTankPostHealDuty(ai, bot);
+    if (!duty.holder)
+    {
+        hasLast = false;
+        return false;
+    }
+    Unit* const unit = duty.unit && sServerFacade.IsAlive(duty.unit) ? duty.unit : nullptr;
+    const float holderX = duty.holder->GetPositionX();
+    const float holderY = duty.holder->GetPositionY();
+    float x = 0.0f;
+    float y = 0.0f;
+    TankPostHealerPoint(unit != nullptr, unit ? unit->GetPositionX() : 0.0f, unit ? unit->GetPositionY() : 0.0f,
+        holderX, holderY, bot->GetPositionX(), bot->GetPositionY(), x, y);
+    float lineX = 0.0f;
+    float lineY = 0.0f;
+    TankPostHealerPoint(false, 0.0f, 0.0f, holderX, holderY, bot->GetPositionX(), bot->GetPositionY(), lineX, lineY);
+    auto const walk = [&](float targetX, float targetY) -> bool
+    {
+        // Already on its way to this point: leave the spline alone (the stand action's guard).
+        if (hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&
+            std::fabs(lastX - targetX) < 3.0f && std::fabs(lastY - targetY) < 3.0f)
+            return true;
+        float z = duty.holder->GetPositionZ();
+        if (!ClampMoveToBossAnchor(ai, bot, targetX, targetY, z))
+            return false;
+        bot->UpdateGroundPositionZ(targetX, targetY, z);
+        if (!MoveTo(bot->GetMapId(), targetX, targetY, z, false, false, false, true))
+            return false;
+        lastX = targetX;
+        lastY = targetY;
+        hasLast = true;
+        return true;
+    };
+    if (walk(x, y))
+        return true;
+    return walk(lineX, lineY);
 }
 
 namespace

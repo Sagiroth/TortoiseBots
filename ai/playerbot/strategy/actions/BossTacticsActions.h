@@ -208,6 +208,17 @@ namespace ai
     // that unit while it lives, so a renumbering of the raid tank order does not move the post off it.
     std::uint64_t TankPostLatchedUnit(Player* bot);
 
+    // AiPlayerbot.DungeonRunTankPostHealers: the live post this healer is held on. `holder` is the post's tank (the
+    // only member this healer may heal) and `unit` the unit the post latched (null before the arrival). Both null when
+    // the key is off, the bot is no healer, the map has no post rows, or no live record lists the bot. The record
+    // must have been read within kTankPostLiveMs and not be done; the holder must be alive and on the bot's map.
+    struct TankPostHealDuty
+    {
+        Player* holder = nullptr;
+        Unit* unit = nullptr;
+    };
+    TankPostHealDuty FindTankPostHealDuty(PlayerbotAI* ai, Player* bot);
+
     // The area taunts' own scan: whether any hostile within kAreaTauntRadiusYd of the bot is another live post's
     // reserved subject, so Challenging Shout or Challenging Roar must not cast (the selected target alone is the gate's
     // read). Logs the refusal row for the first such unit.
@@ -954,6 +965,22 @@ namespace ai
         // The Engage step's walk row (AiPlayerbot.DungeonRunTankPostWalks) is written once per walk episode, not on
         // every tick the tank stays on it.
         bool walkLogged = false;
+    };
+
+    // AiPlayerbot.DungeonRunTankPostHealers: the post healer's walk back to its holder, or beside the unit the post
+    // holds. The heal target pick is PartyMemberToHeal's (FindTankPostHealDuty); this action only closes a distance the
+    // trigger saw open.
+    class BossTacticsTankPostHealerAction : public MovementAction
+    {
+    public:
+        BossTacticsTankPostHealerAction(PlayerbotAI* ai) : MovementAction(ai, "boss tactics tank post healer") {}
+        bool Execute(Event& event) override;
+
+    private:
+        // The walk was started for this point: MoveTo relaunches the spline on every call (the stand action's guard).
+        float lastX = 0.0f;
+        float lastY = 0.0f;
+        bool hasLast = false;
     };
 
     // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap
