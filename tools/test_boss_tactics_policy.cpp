@@ -4365,6 +4365,15 @@ int main()
         CHECK(TauntAfterTankIndex(std::vector<bool>{ false, false }, 1) == -1);
         CHECK(TauntAfterTankIndex(onlyFirst, -1) == -1);
 
+        // AiPlayerbot.DungeonRunTauntAfterSkipsMain: an off-tank row with only the main tank alive has no off-tank to
+        // name, so it answers an invalid index and the caller finds no window owner at all; never a fallback to the
+        // main tank. The main tank's own row and the key off keep today's index.
+        CHECK(TauntAfterScanIndex(true, 1, 0, 1) == -1);
+        CHECK(TauntAfterTankIndex(std::vector<bool>{ true }, 1, true) == -1);
+        CHECK(TauntAfterScanIndex(true, 2, 0, 1) == -1);   // a slot past the count too
+        CHECK(TauntAfterScanIndex(true, 0, 0, 1) == 0);    // the main tank's own row
+        CHECK(TauntAfterScanIndex(false, 1, 0, 1) == 0);   // the key is off
+
         CHECK(TauntAfterDue(true, 0, 10000, false));      // the rising edge itself
         CHECK(TauntAfterDue(true, 1, 10000, false));
         CHECK(TauntAfterDue(true, 9999, 10000, false));
@@ -4628,6 +4637,10 @@ int main()
             std::vector<bool> const onlyMain = {true, false, false};
             CHECK(TauntAfterTankPick(onlyMain, allCan, allCan, 1, true) == -1);     // no off-tank: nobody taunts
             CHECK(TauntAfterTankPick(usable, allCan, allCan, 0, true) == 0);        // the main tank's own row
+            std::vector<bool> const soleMain = {true};
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 1, true) == -1);     // only the main tank alive
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 0, true) == 0);
+            CHECK(TauntAfterTankPick(soleMain, {true}, {true}, 1) == 0);            // the key is off: today
         }
 
         // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
@@ -4681,6 +4694,16 @@ int main()
             CHECK(TauntWindowOwner(usable, {true, false, false}, 1, 1) == 0);  // wraps past the unavailable ones
             CHECK(TauntWindowOwner(usable, {false, false, false}, 1, 0) == 0);
             CHECK(TauntWindowOwner({true, true, false}, {false, false, true}, 0, 0) == 0); // available but unusable: no
+            // With the key on, an off-tank row never hands the advance to the main tank, and with only the main tank
+            // alive it has no writer at all, so no window opens. The main tank's own row and the key off keep today's.
+            std::vector<bool> const two = {true, true};
+            std::vector<bool> const one = {true};
+            CHECK(TauntWindowOwner(two, two, -1, 1, true) == 1);   // the row's off-tank
+            CHECK(TauntWindowOwner(two, two, -1, 0, true) == 0);   // the main tank's own row
+            CHECK(TauntWindowOwner(two, two, -1, 0) == 0);         // the key is off
+            CHECK(TauntWindowOwner(one, one, -1, 1, true) == -1);  // only the main tank alive: no owner
+            CHECK(TauntWindowOwner(one, one, -1, 1) == 0);         // the key is off: today's fallback
+            CHECK(TauntWindowAssign(true, false, -1, 1, one, one, one, true) == -1); // no tank is assigned
             CHECK(TauntWindowAdvance(1, 1, 5000, 4000, 1000));          // the owner's own read
             CHECK(!TauntWindowAdvance(1, 2, 5000, 4500, 1000));         // a rival, the owner just read
             CHECK(TauntWindowAdvance(1, 2, 5000, 4000, 1000));          // the owner went quiet: anyone advances

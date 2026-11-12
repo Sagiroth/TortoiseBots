@@ -2489,12 +2489,16 @@ namespace ai
     // row that names an off-tank (`wanted >= 1`), the scan runs over the off-tanks only, so a window never wraps past the
     // last tank to the main tank and the main tank never leaves the boss (walk 2g: 13 of 26 rows said `tank=0` with 3
     // live tanks). A slot past the live count starts at the last tank and still wraps to 1; `wanted < 1` (the main
-    // tank's own row) and fewer than two tanks keep today's index. The loops still step `count` times: the off-tank
-    // indices repeat past the last one, so a scan that finds nothing answers -1.
+    // tank's own row) keeps today's index even with one tank, since that row is the main tank himself. An off-tank row
+    // with fewer than two tanks alive has no off-tank to name, so it answers -1 and the caller finds no window owner
+    // rather than falling back to the main tank. The loops still step `count` times: the off-tank indices repeat past
+    // the last one, so a scan that finds nothing answers -1.
     inline int TauntAfterScanIndex(bool skipMain, int wanted, int step, int count)
     {
-        if (!skipMain || wanted < 1 || count < 2)
+        if (!skipMain || wanted < 1)
             return (wanted + step) % count;
+        if (count < 2)
+            return -1;
         int const first = std::min(wanted, count - 1);
         return 1 + (first - 1 + step) % (count - 1);
     }
@@ -2512,7 +2516,7 @@ namespace ai
         for (int step = 0; step < count; ++step)
         {
             int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
-            if (tankAlive[index])
+            if (index >= 0 && tankAlive[index])
                 return index;
         }
         return -1;
@@ -2565,13 +2569,13 @@ namespace ai
         for (int step = 0; step < count; ++step)
         {
             int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
-            if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
+            if (index >= 0 && usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
                 return index;
         }
         for (int step = 0; step < count; ++step)
         {
             int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
-            if (usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
+            if (index >= 0 && usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
                 return index;
         }
         return TauntAfterTankIndex(usable, wanted, skipMain);
