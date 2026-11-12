@@ -82,7 +82,7 @@ struct Berserker : BuffTrigger { using BuffTrigger::BuffTrigger; bool IsActive()
 struct BattleAction : CastBuffSpellAction {using CastBuffSpellAction::CastBuffSpellAction;bool isUseful(){return BATTLE_ACTION;} };
 struct BerserkerAction : CastBuffSpellAction {using CastBuffSpellAction::CastBuffSpellAction;bool isUseful(){return BERSERKER_ACTION;} };
 struct Block : BuffTrigger {using BuffTrigger::BuffTrigger;bool IsActive() BLOCK };
-struct SunderTrigger : BuffTrigger {using BuffTrigger::BuffTrigger;bool IsActive() SUNDER_TRIGGER };
+struct SunderTrigger : BuffTrigger {using BuffTrigger::BuffTrigger;void AnnounceFullStack(Unit*){}bool IsActive() SUNDER_TRIGGER };
 struct SunderAction : BuffTrigger {using BuffTrigger::BuffTrigger;bool isUseful() SUNDER_ACTION };
 int main(int argc,char** argv){
  assert(argc==2);std::string test=argv[1]; AI ai; Unit bot,target; Aura aura; sServerFacade.ai=&ai;
