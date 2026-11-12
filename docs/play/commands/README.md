@@ -167,7 +167,7 @@ The table below lists all primary commands and links to their authoritative docu
 | [`.bot item <Name> equip`](bot-panel.md#bot-item-equip) | Bot Panel | Equips an item from the bot's bags into gear slots. |
 | [`.bot item <Name> unequip`](bot-panel.md#bot-item-unequip) | Bot Panel | Moves an equipped item into inventory bags. |
 | [`.bot item <Name> give`](bot-panel.md#bot-item-give) | Bot Panel | Offers a bag item in an open trade window. |
-| [`.bot behavior`](bot-panel.md#bot-behavior) | Bot Panel | Toggles persistent behaviors (loot, AoE, mimic...). |
+| [`.bot behavior`](bot-panel.md#bot-behavior) | Bot Panel | Toggles persistent behaviors (loot, AoE, mimic, no Blink in instances...). |
 | [`.bot service`](bot-panel.md#bot-service) | Bot Panel | Reports conjure/healthstone knowledge and portals; orders a portal cast. |
 | [`.bot totem`](bot-panel.md#bot-totem) | Bot Panel | Configures and drops shaman totem loadouts. |
 | [`/w <BotName> portal`](whispers.md#w--portal) | Whisper Command | Lists the mage's learned portals or casts one. |

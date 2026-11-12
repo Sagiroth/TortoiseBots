@@ -26,7 +26,7 @@ Mages provide high-burst ranged spell DPS, dependable crowd control (*Polymorph*
 
 ### Frost Mage
 - Defaults to *Frostbolt* in combat; pulls open with Shoot (wand).
-- If enemies close within 8 yards and attack the mage, turns away and casts *Blink* to reset distance.
+- If enemies close within 8 yards and attack the mage, turns away and casts *Blink* to reset distance. With `.bot behavior <bot> noblink on` it never casts *Blink* inside a dungeon or raid and keeps fighting instead.
 - Roots attackers with *Frost Nova* — only when a mob within reach is attacking the mage itself, skipping targets already frozen or immune.
 - Casts *Arcane Explosion* when 3 or more enemies cluster inside 10 yards and none of them is loose on the party.
 - Casts *Flamestrike* on 3 or more grouped enemies, layering channeled *Blizzard* over the burning zone (6-second window).

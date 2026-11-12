@@ -8,7 +8,12 @@ namespace ai
 {
     BUFF_ACTION(CastFireWardAction, "fire ward");
     BUFF_ACTION(CastFrostWardAction, "frost ward");
-    BUFF_ACTION(CastBlinkAction, "blink");
+    class CastBlinkAction : public CastBuffSpellAction
+    {
+    public:
+        CastBlinkAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "blink") {}
+        bool isUseful() override;
+    };
 
     // Kite escape ("blink back" trigger, a live target inside 8 yd). Blink
     // lands along the caster's facing: the core fills its destination from
@@ -18,10 +23,10 @@ namespace ai
     // Ported from mod-playerbots CastBlinkBackAction (MageActions.cpp, 79bd428):
     // turn away from the current target, then cast. The plain "blink" (root
     // and stun escape) keeps the current facing.
-    class CastBlinkBackAction : public CastBuffSpellAction
+    class CastBlinkBackAction : public CastBlinkAction
     {
     public:
-        CastBlinkBackAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "blink") {}
+        CastBlinkBackAction(PlayerbotAI* ai) : CastBlinkAction(ai) {}
         std::string getName() override { return "blink back"; }
         bool Execute(Event& event) override;
     };
