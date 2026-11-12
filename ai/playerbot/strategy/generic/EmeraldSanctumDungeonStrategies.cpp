@@ -31,10 +31,11 @@ void SolniusFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("raid bomb runout", ACTION_EMERGENCY + 6), NULL)));
 
     // Call of Nightmare (46079) spawns Suppressor 61212 / Scalebane 60746 /
-    // Dragonkin 60743 / Wyrmkin 60745: focus-fire the adds off the raid.
+    // Dragonkin 60743 / Wyrmkin 60745: DPS focus-fire the adds off the raid
+    // (the trigger is DPS-only; tanks and healers keep their jobs).
     triggers.push_back(new TriggerNode(
         "solnius adds",
-        NextAction::array(0, new NextAction("dps assist", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("solnius attack add", ACTION_HIGH + 2), NULL)));
 }
 
 void SolniusFightStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

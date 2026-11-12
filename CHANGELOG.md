@@ -20,6 +20,22 @@
 - Fixed: the AoE taunts re-walk the loose-add count at cast time instead of the cached trigger value, so a shout or roar queued for loose adds stands down once the pack settles onto tanks (no flag).
 - Fixed: the AoE taunts also stand down at cast time. Challenging Shout and Challenging Roar re-check the "loose adds near" count before they fire, so a shout queued for loose adds no longer fires after the pack settles (no flag, no per-mob tank check).
 - Fixed: a tank bot no longer taunts a mob off a tank player. A taunt queued while a fresh mob had no victim yet outlived its reach walk and fired after the mob turned onto the tank player, so each generic taunt now stands down at cast time while its mob stands on another tank (no flag).
+
+- New: behind `AiPlayerbot.PoolGearTopUpOnLevel` (default 0), a masterless pool bot that reaches a new level gets its empty slots and clearly outdated grey/white items filled from the fresh-seed gear selection, once per level, without replacing green or better gear.
+- New: behind `AiPlayerbot.PoolMoneyTopUp` (default 0), a pool bot that dings holding less than its next trainer visit costs is topped up to that amount (capped at 1 gold per level), once per level.
+- New: behind `AiPlayerbot.WsgFlagRoles` (default 0), each Warsong Gulch team's bots split into attackers, defenders and midfielders, re-split only when the match or the roster changes; real players are not counted in the split.
+- New: Sunnyglade Valley and the Blood Ring arena join the battleground queue and tactics alongside WSG, AB and AV; Blood Ring takes max-level bots only.
+- Fixed: a Frost mage waits 10 seconds into a fight before casting Flamestrike, the same opener gate Blizzard has, so it no longer opens a fresh pack before the tank holds it.
+- Fixed: Nefarian's priest, shaman and warlock class calls are answered: a priest with Corrupted Healing keeps to Renew and Power Word: Shield, and damage dealers kill the corrupted totems and then the Corrupted Infernals.
+- Fixed: Solnius's Call of Nightmare adds stay a damage dealer's `dps assist` target instead of being reset to Solnius every tick, and the Araxxna egg check re-reads its nearby list every five seconds.
+- Fixed: a trainer visit refuses ranks the bot cannot learn yet before charging for them, and the trainer trip and the visit read the same spendable money.
+- Fixed: vendor runs on the item cheat no longer buy stock to relist on the Auction House, recipes and gear are bought once per item per visit, and hunters and gun users stop re-buying ammo every few seconds.
+- Changed: usable food, drink, potions and bandages are kept at any item level, and class poisons, stones and oils are kept until a higher tier is in the bags, instead of being sold by item level.
+- Fixed: the vendor-trip need, the batch rule, the nearby-service sell and the errand sale read one item list, and a completed sale clears the cached need so no second empty sale parks the errand.
+- Fixed: crafting requires every reagent in the bags (the item cheat no longer conjures them) and writes a `Craft` row to `bot_events.csv`.
+- Fixed: Arathi Basin bots skip their own team's banners instead of standing still casting at a banner the core refuses.
+- Fixed: the "is blocking" whisper is sent once per master and object at most every 10 minutes instead of on every attempt.
+
 - Fixed: with `AiPlayerbot.RaidReactions` on (default 0), a bot driven out of a dragon's breath or tail cone only steps to one of the dragon's sides and stays put when neither side is clear, and a stay order is overruled by the raid spread only while a boss tactic is actually widening the spacing.
 - New: behind `AiPlayerbot.RaidReactions` (default 0), the reaction engine's universal raid answers — environmental hazard step-away, bomb runout, Four Horsemen mark rotation, dragon flank and ranged raid spread — actually run: the `react` strategy they live in had no creator and every reaction engine skipped it silently (#1589).
 - Fixed: with AiPlayerbot.DungeonRunSeekVictimRelief on, a relief take is confirmed under the latch lock on the clock of its own pick immediately before any attack or taunt, so a tank whose claim a nearer tank took over issues nothing at all, and a take that still held its claim when picked is no longer refused for confirming on a later clock.

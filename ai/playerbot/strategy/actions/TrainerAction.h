@@ -16,6 +16,9 @@ namespace ai
         // many spells this visit actually learned. Reset before each visit.
         uint32 visitCheapestUnaffordable = UINT32_MAX;
         uint32 visitLearned = 0;
+        // Trainer type of the visit, so Learn pays from the same budget the
+        // trip decision and the rpg trigger checked (TrainerSpendableMoney).
+        TrainerType visitTrainerType = TRAINER_TYPE_CLASS;
 
         typedef void (TrainerAction::*TrainerSpellAction)(uint32, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const*, std::ostringstream& msg);
         bool Iterate(Player* requester, Creature* creature, TrainerSpellAction action, SpellIds& spells);

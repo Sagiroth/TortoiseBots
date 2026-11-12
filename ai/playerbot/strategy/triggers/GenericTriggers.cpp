@@ -927,6 +927,7 @@ bool AoeTrigger::IsActive()
                 return false;
         }
     }
+
     return true;
 }
 

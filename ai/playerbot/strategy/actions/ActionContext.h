@@ -43,6 +43,8 @@
 #include "CheckMountStateAction.h"
 #include "ChangeTalentsAction.h"
 #include "AutoLearnSpellAction.h"
+#include "PoolGearTopUpAction.h"
+#include "PoolMoneyTopUpAction.h"
 #include "XpGainAction.h"
 #include "HonorGainAction.h"
 #include "InviteToGroupAction.h"
@@ -229,6 +231,8 @@ namespace ai
             creators["mount"] = [](PlayerbotAI* ai) { return new CastSpellAction(ai, "mount"); };
             creators["auto talents"] = [](PlayerbotAI* ai) { return new AutoSetTalentsAction(ai); };
 			creators["auto learn spell"] = [](PlayerbotAI* ai) { return new AutoLearnSpellAction(ai); };
+            creators["pool gear top up"] = [](PlayerbotAI* ai) { return new PoolGearTopUpAction(ai); };
+            creators["pool money top up"] = [](PlayerbotAI* ai) { return new PoolMoneyTopUpAction(ai); };
             creators["auto share quest"] = [](PlayerbotAI* ai) { return new AutoShareQuestAction(ai); };
             creators["xp gain"] = [](PlayerbotAI* ai) { return new XpGainAction(ai); };
             creators["honor gain"] = [](PlayerbotAI* ai) { return new HonorGainAction(ai); };
@@ -482,6 +486,7 @@ namespace ai
             creators["move away from broodlord"] = [](PlayerbotAI* ai) { return new BroodlordMoveAwayAction(ai); };
             creators["enable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianEnableFightStrategyAction(ai); };
             creators["disable nefarian fight strategy"] = [](PlayerbotAI* ai) { return new NefarianDisableFightStrategyAction(ai); };
+            creators["nefarian kill class call add"] = [](PlayerbotAI* ai) { return new NefarianKillClassCallAddAction(ai); };
             creators["enable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelEnableFightStrategyAction(ai); };
             creators["disable vael fight strategy"] = [](PlayerbotAI* ai) { return new VaelDisableFightStrategyAction(ai); };
 
@@ -525,6 +530,7 @@ namespace ai
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new FourHorsemanMoveAwayFromVoidZoneAction(ai); };
             creators["enable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusEnableFightStrategyAction(ai); };
             creators["disable solnius fight strategy"] = [](PlayerbotAI* ai) { return new SolniusDisableFightStrategyAction(ai); };
+            creators["solnius attack add"] = [](PlayerbotAI* ai) { return new SolniusAttackAddAction(ai); };
             creators["enable araxxna fight strategy"] = [](PlayerbotAI* ai) { return new AraxxnaEnableFightStrategyAction(ai); };
             creators["disable araxxna fight strategy"] = [](PlayerbotAI* ai) { return new AraxxnaDisableFightStrategyAction(ai); };
             creators["enable moroes fight strategy"] = [](PlayerbotAI* ai) { return new MoroesEnableFightStrategyAction(ai); };

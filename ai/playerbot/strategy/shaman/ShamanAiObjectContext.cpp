@@ -406,6 +406,7 @@ namespace ai
                 creators["earth shock on enemy healer"] = [](PlayerbotAI* ai) { return new CastEarthShockOnEnemyHealerAction(ai); };
                 creators["frost shock"] = [](PlayerbotAI* ai) { return new CastFrostShockAction(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new CastChainLightningAction(ai); };
+                creators["chain lightning single"] = [](PlayerbotAI* ai) { return new CastChainLightningSingleAction(ai); };
                 creators["lightning bolt"] = [](PlayerbotAI* ai) { return new CastLightningBoltAction(ai); };
                 creators["bloodlust"] = [](PlayerbotAI* ai) { return new CastBloodlustAction(ai); };
                 creators["cure disease"] = [](PlayerbotAI* ai) { return new CastCureDiseaseAction(ai); };

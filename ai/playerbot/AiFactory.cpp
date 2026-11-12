@@ -1637,7 +1637,12 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
         BattleGroundTypeId bgType = player->GetBattleGroundTypeId();
 
-        if (bgType <= BATTLEGROUND_AB) // Vanilla WSG, AV, and AB tactics
+        // Every battleground gets the base tactics (start gate, objective,
+        // banner capture, leave): the vanilla WSG/AV/AB with their own map
+        // strategy below, Turtle's Sunnyglade Valley and Blood Ring through
+        // the generic BGTactics cases. Without "battleground" PlayerbotAI
+        // also resets the strategies every tick while inside.
+        if (bgType <= BATTLEGROUND_AB || bgType == BATTLEGROUND_SV || bgType == BATTLEGROUND_BR)
         {
             nonCombatEngine->addStrategy("battleground");
 

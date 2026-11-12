@@ -93,6 +93,12 @@ public:
     // subclass (gun -> bullets, bow/crossbow -> arrows). Weapons that need no
     // ammo report true. Used by the autogear reply to warn about a dud weapon.
     bool HasAmmoInBagsFor(uint32 weaponSubClass);
+    // Level-up gear top-up for masterless pool bots (AiPlayerbot.PoolGearTopUpOnLevel):
+    // the fresh-seed item selection (InitEquipment incremental), restricted to
+    // empty slots and clearly outdated grey/white items (runtime/
+    // PoolGearTopUpPolicy.h). Never replaces green or better. Returns the
+    // number of slots that changed; the caller gates pool identity.
+    uint32 TopUpPoolGear();
     // Weapon/armour/riding skills plus two class-appropriate professions and the
     // secondary skills, all bounded by the current level. Public so the runtime can
     // give it to persistent-level bots on first login. Primaries are granted from
@@ -246,6 +252,9 @@ private:
 private:
     uint32 level;
     uint32 itemQuality;
+    // Bit per equipment slot InitEquipment may touch; 0 = every slot (the
+    // default for all other gear paths). Set only by TopUpPoolGear.
+    uint32 slotMask = 0;
     PlayerbotAI* ai;
     Player* bot;
     // Set only by AutogearOwned: InitEquipment then filters the ranged slot

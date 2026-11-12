@@ -91,6 +91,7 @@ class ShadeCoverRow(unittest.TestCase):
         self.assertIn("BossTacticsShadeCover", DOCS)
         self.assertIn("BossTacticsShadeCover", DOCS_ROWS)
         self.assertIn("BossTacticsShadeCover", newest_release_block(CHANGELOG))  # newest entries
+        self.assertIn("BossTacticsShadeCover", "".join(CHANGELOG.split("\n- ", 80)[1:80]))  # newest entries (October window)
         for word in ("dead", "charmed", "other_shade", "out_of_range", "threat_gate", "guard", "on_boss", "other_target",
                      "no_target"):
             self.assertIn(word, member(DOCS_ROWS, "`BossTacticsShadeCover`", "\n"))
@@ -106,6 +107,7 @@ class ShadeHealerCover(unittest.TestCase):
         self.assertIn("recommended on", member(CONF, "# Shade healer cover at Jin'do", "AiPlayerbot.DungeonRunShadeHealerCover = 0"))
         self.assertIn("DungeonRunShadeHealerCover", DOCS)
         self.assertIn("DungeonRunShadeHealerCover", newest_release_block(CHANGELOG))  # newest entries
+        self.assertIn("DungeonRunShadeHealerCover", "".join(CHANGELOG.split("\n- ", 80)[1:80]))  # newest entries (October window)
 
     def test_the_carrier_pick_reads_the_key(self):
         pick = member(ACTIONS, "Unit* PickBossKillFirst(PlayerbotAI* ai, Player* bot, const BossTacticsFight& fight, KillFirstPickMode mode,\n    float carrierReachYd)\n{", "\n}\n")

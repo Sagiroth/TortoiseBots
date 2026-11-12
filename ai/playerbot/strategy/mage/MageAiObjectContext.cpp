@@ -192,6 +192,7 @@ namespace ai
                 creators["icicles channel check"] = [](PlayerbotAI* ai) { return new IciclesChannelCheckTrigger(ai); };
                 creators["evocation channel check"] = [](PlayerbotAI* ai) { return new EvocationChannelCheckTrigger(ai); };
                 creators["flamestrike window"] = [](PlayerbotAI* ai) { return new FlamestrikeWindowTrigger(ai); };
+                creators["ranged medium aoe after opener"] = [](PlayerbotAI* ai) { return new RangedMediumAoeAfterOpenerTrigger(ai); };
                 creators["blizzard channel check"] = [](PlayerbotAI* ai) { return new BlizzardChannelCheckTrigger(ai); };
                 creators["arcane explosion window"] = [](PlayerbotAI* ai) { return new ArcaneExplosionWindowTrigger(ai); };
                 creators["frost nova window"] = [](PlayerbotAI* ai) { return new FrostNovaWindowTrigger(ai); };

@@ -141,8 +141,11 @@ void FrostMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "ranged light aoe",
         NextAction::array(0, new NextAction("cone of cold", ACTION_HIGH), NULL)));
 
+    // Donor order (flamestrike above blizzard), but flamestrike waits for
+    // the same 10 s opener gate blizzard has, so it no longer opens a pack
+    // before the tank holds it.
     triggers.push_back(new TriggerNode(
-        "ranged medium aoe",
+        "ranged medium aoe after opener",
         NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(

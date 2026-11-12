@@ -20,6 +20,7 @@ const char* BattlegroundName(BattleGroundTypeId type)
         case BATTLEGROUND_WS: return "WSG";
         case BATTLEGROUND_AB: return "AB";
         case BATTLEGROUND_SV: return "SV";
+        case BATTLEGROUND_BR: return "BR";
         default: return "BG";
     }
 }

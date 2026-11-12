@@ -1,6 +1,7 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "playerbot/policy/raid/RazorgorePolicy.h"
+#include "playerbot/policy/raid/BwlBundle1Policy.h"
 #include "playerbot/GroupMembers.h"
 #include "playerbot/strategy/values/PartyMemberToHeal.h"
 #include "GenericTriggers.h"
@@ -220,6 +221,67 @@ namespace ai
             if (bot->GetClass() != CLASS_MAGE)
                 return false;
             return bot->HasAura(23410);
+        }
+    };
+
+    // Nefarian class-call add for this bot to kill: a corrupted totem
+    // first, then a Corrupted Infernal, nearest within a rank and within
+    // kNefarianClassCallAddRange. Reads the cached "attackers" list only.
+    inline Unit* FindNefarianClassCallAdd(PlayerbotAI* ai, Player* bot)
+    {
+        AiObjectContext* context = ai->GetAiObjectContext();
+        Unit* best = nullptr;
+        int bestRank = 0;
+        float bestDistance = 0.0f;
+        const std::list<ObjectGuid>& attackers = AI_VALUE(std::list<ObjectGuid>, "attackers");
+        for (const ObjectGuid& attackerGuid : attackers)
+        {
+            Unit* attacker = ai->GetUnit(attackerGuid);
+            if (!attacker || !sServerFacade.IsAlive(attacker))
+                continue;
+            const int rank = NefarianClassCallAddRank(attacker->GetEntry());
+            if (!rank)
+                continue;
+            const float distance = bot->GetDistance(attacker);
+            if (distance > kNefarianClassCallAddRange)
+                continue;
+            if (!best || rank > bestRank || (rank == bestRank && distance < bestDistance))
+            {
+                best = attacker;
+                bestRank = rank;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    // Nefarian shaman/warlock calls: damage dealers switch to the corrupted
+    // totems, then the Corrupted Infernals. Native gap (no donor).
+    class NefarianClassCallAddTrigger : public Trigger
+    {
+    public:
+        NefarianClassCallAddTrigger(PlayerbotAI* ai, std::string name = "nefarian class call add", int checkInterval = 1)
+        : Trigger(ai, name, checkInterval) {}
+
+        bool IsActive() override
+        {
+            if (!bot->IsInWorld() || bot->IsBeingTeleported() || !sServerFacade.IsAlive(bot))
+                return false;
+            if (!ai->HasStrategy("nefarian", BotState::BOT_STATE_COMBAT))
+                return false;
+            AiObjectContext* context = ai->GetAiObjectContext();
+            // Look for an add first (cheap, nearly always empty): IsTank/IsHeal
+            // scan talents, so they only run while a class-call add exists.
+            Unit* add = FindNefarianClassCallAdd(ai, bot);
+            if (!add)
+                return false;
+            if (!ShouldNefarianKillClassCallAdd(ai->IsTank(bot), ai->IsHeal(bot),
+                    !AI_VALUE(ObjectGuid, "explicit attack target").IsEmpty()))
+                return false;
+            Unit* current = AI_VALUE(Unit*, "current target");
+            const int currentRank = (current && sServerFacade.IsAlive(current))
+                ? NefarianClassCallAddRank(current->GetEntry()) : 0;
+            return ShouldSwitchToClassCallAdd(NefarianClassCallAddRank(add->GetEntry()), currentRank);
         }
     };
 

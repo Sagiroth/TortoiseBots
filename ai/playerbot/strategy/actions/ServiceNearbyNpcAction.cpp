@@ -133,6 +133,14 @@ bool ServiceNearbyNpcAction::TryVerb(Event& event, GuidPosition target, NearbySe
                 return false;
         }
 
+        // Nothing the sale would sell: not a vendor visit. The target is cached
+        // for 5 s and may have been picked for a quest or a trainer on the same
+        // NPC, so without this fresh read of the sale's own list the verb ran a
+        // sale with empty bags (a SellErrandFailed row and a ten-minute vendor
+        // park) right after a sale that worked.
+        if (SellAction::VendorSaleStock(ai).empty())
+            return false;
+
         return RunVerb(npcGuid, verbId, kind, verb, "sell", Event("rpg action", "vendor"), target, now);
     }
 

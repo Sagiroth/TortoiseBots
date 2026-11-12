@@ -246,6 +246,22 @@ namespace ai
         bool IsActive() override;
     };
 
+    // Frost's flamestrike row: same pack test as "ranged medium aoe", plus
+    // the 10 s opener gate blizzard already has (CastBlizzardAction), so a
+    // frost mage does not open a pack with a fire nuke before the tank holds
+    // it.
+    class RangedMediumAoeAfterOpenerTrigger : public RangedMediumAoeTrigger
+    {
+    public:
+        RangedMediumAoeAfterOpenerTrigger(PlayerbotAI* ai) : RangedMediumAoeTrigger(ai) {}
+        std::string getName() override { return "ranged medium aoe after opener"; }
+        bool IsActive() override
+        {
+            return ai->GetCombatStartTime() && (time(0) - ai->GetCombatStartTime()) > 10 &&
+                   RangedMediumAoeTrigger::IsActive();
+        }
+    };
+
     class BlizzardChannelCheckTrigger : public Trigger
     {
     public:
