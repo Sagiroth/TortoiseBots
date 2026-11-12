@@ -1,4 +1,5 @@
 #pragma once
+#include <cctype>
 #include <cstdint>
 #include <string>
 
@@ -164,6 +165,49 @@ inline std::string NormalizeTotemOrder(int slot, std::string const& word, bool& 
         }
     valid = false;
     return "";
+}
+
+// `.bot totem <scope> set <earth>,<fire>,<water>,<air>`: exactly four
+// comma-separated order words (any case, whitespace around commas trimmed,
+// spaces inside a name kept). Fills the canonical stored form per slot, or
+// returns false without a usable result when the count is not four or any
+// word is empty or invalid for its slot.
+inline bool ParseTotemSetList(std::string const& list, std::string stored[4])
+{
+    std::string words[4];
+    int count = 0;
+    std::string::size_type begin = 0;
+    for (;;)
+    {
+        std::string::size_type const comma = list.find(',', begin);
+        if (count == 4)
+            return false;
+        words[count++] = list.substr(begin, comma == std::string::npos ? std::string::npos : comma - begin);
+        if (comma == std::string::npos)
+            break;
+        begin = comma + 1;
+    }
+    if (count != 4)
+        return false;
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        std::string& word = words[slot];
+        while (!word.empty() && std::isspace(static_cast<unsigned char>(word.back())))
+            word.pop_back();
+        std::string::size_type first = 0;
+        while (first < word.size() && std::isspace(static_cast<unsigned char>(word[first])))
+            ++first;
+        word.erase(0, first);
+        if (word.empty())
+            return false;
+        for (char& c : word)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        bool valid = false;
+        stored[slot] = NormalizeTotemOrder(slot, word, valid);
+        if (!valid)
+            return false;
+    }
+    return true;
 }
 
 // Which totem the slot trigger/action should want: the explicit order when
