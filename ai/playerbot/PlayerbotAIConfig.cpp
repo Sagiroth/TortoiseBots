@@ -1110,6 +1110,7 @@ bool PlayerbotAIConfig::Initialize()
     rogueDungeonThreatDrops = config.GetBoolDefault("AiPlayerbot.RogueDungeonThreatDrops", true);
     sapApproachAvoidPack = config.GetBoolDefault("AiPlayerbot.SapApproachAvoidPack", false);
     warriorGapCloser = config.GetBoolDefault("AiPlayerbot.WarriorGapCloser", false);
+    announceSunderStacks = config.GetBoolDefault("AiPlayerbot.AnnounceSunderStacks", false);
     hunterViperOnLowMana = config.GetBoolDefault("AiPlayerbot.HunterViperOnLowMana", true);
     hunterCarveInReachOnly = config.GetBoolDefault("AiPlayerbot.HunterCarveInReachOnly", false);
     paladinJudgementUpkeep = config.GetBoolDefault("AiPlayerbot.PaladinJudgementUpkeep", true);

@@ -594,6 +594,7 @@ public:
     bool rogueDungeonThreatDrops;
     bool sapApproachAvoidPack;
     bool warriorGapCloser;
+    bool announceSunderStacks;
     // Hunter swaps to Aspect of the Viper on low mana and back to Hawk once mana recovers (opt-in).
     bool hunterViperOnLowMana;
     // Hunters cast Carve only on a target already in melee reach, never walking in for it.

@@ -939,6 +939,14 @@ AiPlayerbot.SapApproachAvoidPack = 0
 # 1 - Charge to open, tank Intercept to rescue a party member
 AiPlayerbot.WarriorGapCloser = 0
 
+# Warriors announce a full Sunder Armor stack.
+# A warrior bot (tank or dps) that sees five Sunder Armor stacks on its elite or
+# boss target says "5 Sunders on <name>" once per target in party or raid chat,
+# only while a real player is in the group.
+# 0 - silent (Default)
+# 1 - announce
+AiPlayerbot.AnnounceSunderStacks = 0
+
 # Hunter Aspect of the Viper on low mana.
 # A hunter that has learned Aspect of the Viper (Turtle 1.18.1 spell 45651,
 # trainer level 56) switches to it in combat when its mana drops below 20
