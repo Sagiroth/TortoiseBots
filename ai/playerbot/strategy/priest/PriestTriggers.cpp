@@ -246,3 +246,13 @@ bool PriestWandBlocksCastTrigger::IsActive()
     state.healerMustStop = healerSpec && !HealerWandAllowed(ai, target);
     return ShouldStopWandToCast(state);
 }
+
+bool PriestHealerWandNotAllowedTrigger::IsActive()
+{
+    Spell* autoRepeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    if (!autoRepeat || !autoRepeat->m_spellInfo || autoRepeat->m_spellInfo->Category != WAND_SHOOT_CATEGORY)
+        return false;
+    if (!IsGroupedHealer(ai))
+        return false;
+    return !HealerWandAllowed(ai, AI_VALUE(Unit*, "current target"));
+}

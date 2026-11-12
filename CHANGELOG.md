@@ -1,6 +1,7 @@
 # Changelog
 
 - Fixed: a Shadow priest no longer drops Shadowform to Renew an ally another healer already covers, and drops the form only for a heal it can cast at once, not into a global cooldown or wand swing (found by Tortoise Trials, #1556).
+- Fixed: a Holy or Discipline priest in a group no longer goes 3 s without reacting after each wand shot, so its heal starts within one wand swing of a hit instead of up to 3 s later (found by Tortoise Trials, #1556).
 
 - New: behind AiPlayerbot.DungeonRunGuardClockHittable (default 0), the raid guard's assignment clock starts on the first hittable tick (attackable and selectable), so a boss still in the air no longer spends the grace, and a tank_post unit gets the post's 15 s grace instead of 8 s; an unhittable spell shorter than 8 s keeps the running clock's start, a longer one clears it.
 

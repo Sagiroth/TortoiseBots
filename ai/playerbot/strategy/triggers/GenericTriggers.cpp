@@ -153,12 +153,17 @@ bool ai::NoGroupMemberNear(Player* bot)
     return true;
 }
 
+bool ai::IsGroupedHealer(PlayerbotAI* ai)
+{
+    return ai->GetBot()->GetGroup() && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
+}
+
 bool ai::HealerWandAllowed(PlayerbotAI* ai, Unit* target)
 {
     Player* const bot = ai->GetBot();
     Group* const group = bot->GetGroup();
     HealerWandGate gate;
-    gate.groupedHealer = group && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
+    gate.groupedHealer = IsGroupedHealer(ai);
     if (!gate.groupedHealer)
         return true;
 
