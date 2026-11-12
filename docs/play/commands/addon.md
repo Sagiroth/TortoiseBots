@@ -124,7 +124,7 @@ The module transmits structured protocol lines (prefixed with `TBM:`) to keep th
   - Sent first inside every `ORDER_BEGIN`/`ORDER_END` list, again after `.bot order rank`, and as the answer to `.bot order access`.
 - **Bot State Grammar (`TBM:BOTSTATE`):** Emitted for all controllable party bots (owned alts and hired companions). Format:
   ```text
-  TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,hold=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]
+  TBM:BOTSTATE|<bot>|move=<follow|stay|guard|free|flee|custom>,loot=<on|off>,aoe=<on|off>,autocc=<on|off>,savemana=<on|off>,boost=<on|off>,threat=<on|off>,potions=<on|off>,mimic=<on|off>,spread=<on|off>,hold=<on|off>,noblink=<on|off>,sap=<on|off>[,specs=<strategy>+<strategy>...]
   ```
   `specs` lists the spec strategies the bot fights with (for example `retribution`, `balance`, `holy+offdps`), so the addon shows the real spec.
 - **Raid Layout (`TBM:RAID_LAYOUT`):** `.bot commander bind <LeadBot> raid` sends one `TBM:RAID_LAYOUT|<bots>|<tanks>|<tankHealers>|<raidHealers>|<groups>` built from the real subgroups read back after the moves (never the plan alone); `<tanks>` lists the main tank first. Members not where planned ride a separate `TBM:RAID_LAYOUT|warning|<text>` line (a warning, not a `TBM:ACTION_ERR`). The bind ACK scope is `raid` for a raid bind (`party` otherwise).
