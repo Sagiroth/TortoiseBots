@@ -4016,15 +4016,29 @@ namespace ai
     inline bool TankPostSeated(bool standValid, bool stay) { return standValid && !stay; }
 
     // The unit the post waits for: the nearest living one to the spot (the nearest dead one when none lives, so its
-    // death still ends the post). -1 for an empty list.
-    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ)
+    // death still ends the post). -1 for an empty list. With `ownsUnit` (AiPlayerbot.DungeonRunTankPostOwnsUnit) the
+    // unit this post latched wins while it lives, and a unit another live post latched is no candidate, so two posts
+    // on one entry (two Hatchers, say) each keep their own unit instead of trading them read by read.
+    inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, float spotZ,
+                                bool ownsUnit, std::uint64_t latchedGuid,
+                                const std::unordered_set<std::uint64_t>& otherLatched)
     {
+        if (ownsUnit && latchedGuid != 0)
+        {
+            for (std::size_t i = 0; i < units.size(); ++i)
+            {
+                if (units[i].guid == latchedGuid && units[i].alive)
+                    return static_cast<int>(i);
+            }
+        }
         int best = -1;
         float bestYd = 0.0f;
         bool bestAlive = false;
         for (std::size_t i = 0; i < units.size(); ++i)
         {
             const TankPostUnit& unit = units[i];
+            if (ownsUnit && unit.guid != latchedGuid && otherLatched.count(unit.guid) != 0)
+                continue;
             const float dx = unit.x - spotX;
             const float dy = unit.y - spotY;
             const float dz = unit.z - spotZ;
@@ -4072,13 +4086,31 @@ namespace ai
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
     }
 
-    // AiPlayerbot.DungeonRunTankPostWalks: the Engage step walks to the subject while it is out of melee reach and no
-    // taunt went out (a taunt that cast ends the tick; a subject in reach is attacked where it stands). Walk 2f a-2:
-    // slot 1 stood on the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the
-    // step never walked.
-    inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach)
+    // The Engage walk's destination: a point at melee distance on the line from the tank to the subject. The action
+    // walks there itself because MoveTo(Unit*) aims a hostile unit at the stance's formation spot (or refuses the move
+    // when there is none), not at the unit. `reachYd` is the combined melee reach; the point stands 80 % of it from the
+    // subject, so the next tick's reach test passes without hugging the body. False when the two stand on one spot.
+    inline bool TankPostMeleePoint(float botX, float botY, float subjectX, float subjectY, float reachYd, float& x,
+                                   float& y)
     {
-        return keyOn && !tauntWentOut && !inMeleeReach;
+        float const dx = botX - subjectX;
+        float const dy = botY - subjectY;
+        float const len = std::sqrt(dx * dx + dy * dy);
+        if (len < 0.1f)
+            return false;
+        float const stop = std::min(len, std::max(0.5f, reachYd * 0.8f));
+        x = subjectX + dx / len * stop;
+        y = subjectY + dy / len * stop;
+        return true;
+    }
+
+    // AiPlayerbot.DungeonRunTankPostWalks: the Engage step walks to the subject while it is out of melee reach and no
+    // taunt went out (a taunt that cast ends the tick; a subject in reach is attacked where it stands). A boss stand
+    // seat, a stay included, owns the tank: the step does not walk out of a breath lane. Walk 2f a-2: slot 1 stood on
+    // the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the step never walked.
+    inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach, bool standActive)
+    {
+        return keyOn && !tauntWentOut && !inMeleeReach && !standActive;
     }
 
     // The end word of a post (the step's own order). `slotMoved`: the post's row is still in the fight, but for another

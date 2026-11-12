@@ -1610,15 +1610,17 @@ Whether a `tank_post` row's Engage step taunts the awaited unit back off whoever
 </details>
 
 ### `AiPlayerbot.DungeonRunTankPostWalks`
-Whether a `tank_post` row's Engage step walks to the unit it awaits while that unit is out of melee reach: the step takes the unit as its target and moves to it, instead of ending the tick on the attack. Off by default: walk 2f a-2 had slot 1 standing on the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the step never walked, for five ticks to the taunt.
+Whether a `tank_post` row's Engage step walks to the unit it awaits while that unit is out of melee reach: the step takes the unit as its target and walks to a point at melee distance on the line to it, instead of ending the tick on the attack. Off by default: walk 2f a-2 had slot 1 standing on the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the step never walked, for five ticks to the taunt.
 **Default:** `0` · **Values:** `0` off (the Engage step attacks the unit where it stands, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
 
 <details>
 <summary>How it works in detail</summary>
 
-**The walk:** on the Engage decision, after the taunt attempt, while the awaited unit is out of melee reach (`CanReachWithMeleeAutoAttack`), the post tank takes the unit as its target when it is not already (the attack's result is ignored) and moves to it; the move's result is the tick's result. A subject in reach, or a taunt that cast this tick, keeps the old attack-only path. A stand seat still wins: the seat yields the post before the Engage step runs.
+**The walk:** on the Engage decision, after the taunt attempt, while the awaited unit is out of melee reach (`CanReachWithMeleeAutoAttack`), the post tank takes the unit as its target when it is not already (the attack's result is ignored) and walks to a point at melee distance on the line from the tank to the unit (80 % of the combined reach, so the next tick's reach test passes). The point is checked for ground under it; a point with none is no walk. The move's result is the tick's result. A subject in reach, or a taunt that cast this tick, keeps the old attack-only path. A boss stand seat still wins, a stay included: no walk while any stand is active, so a breath lane is not left. The walk is issued as `MoveTo(x, y, z)`: `MoveTo(Unit*)` aims a hostile unit at the stance's formation spot, or refuses the move when there is none.
 
-**The spline guard:** the walk's own guard, with the unit's position as the launch point instead of the spot: no second spline while the tank is moving and the unit still stands within 3 yd of where it stood at the last launch, so a walking chase is not relaunched every tick. The timer and the drag/leash branches are unchanged.
+**The spline guard:** the walk's own guard, with the issued destination as the launch point: no second spline while the tank is moving and the point still stands within 3 yd of the last one, so a walking chase is not relaunched every tick. The timer and the drag/leash branches are unchanged.
+
+**Known limit:** the walk follows its unit wherever it stands, so a Hatcher that walks to its spawn near the eggs drags the post tank there.
 
 **Diagnostics:** one `BossTacticsTankPost` row per walk episode (`event=walk,subject_yd=<yd>`), written when a walk starts, not on the ticks it stays on; leaving the Engage step or reaching the unit ends the episode.
 
@@ -1631,7 +1633,7 @@ Whether a live `tank_post` owns the one unit it latched at its arrival: another 
 <details>
 <summary>How it works in detail</summary>
 
-**The unit:** a post record latches the unit its arrival was logged on (`arrivedSubjectGuid`, set by every arrived tick of that unit, held in the record, reset when the post starts). With the key on, another tank's record reserves a unit only when it latched nothing yet or latched that unit; with the key off, or a record that has not arrived, the entry's every unit stays reserved as `AiPlayerbot.DungeonRunTankPostOwnsSubject` has it. The reservation's own limits (3 s live, 60 yd, the 15 s loose grace) are unchanged and apply per record as before.
+**The unit:** a post record latches the unit its arrival was logged on (`arrivedSubjectGuid`, set by every arrived tick of that unit, held in the record, reset when the post starts). With the key on, another tank's record reserves a unit only when it latched nothing yet or latched that unit, and the post's own pick keeps the unit it latched while it lives and skips a unit another live post latched, so two posts on one entry each keep their own unit read by read; with the key off, or a record that has not arrived, the entry's every unit stays reserved as `AiPlayerbot.DungeonRunTankPostOwnsSubject` has it and the pick is the nearest as before. The reservation's own limits (3 s live, 60 yd, the 15 s loose grace) are unchanged and apply per record as before.
 
 **Why:** the two Onyxia Hatcher posts (slots 2 and 3) name the same entry, so the per-entry match made each post reserve both Hatchers; with the per-unit rule each post covers the Hatcher it landed, and the `AiPlayerbot.DungeonRunTauntAfterSkipsMain` windows cover the other.
 

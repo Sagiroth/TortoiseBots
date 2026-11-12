@@ -916,6 +916,7 @@ namespace ai
     {
         bool valid = false;
         bool holdingOtherHostile = false;
+        bool standActive = false; // a boss stand seat (a stay included) owns the tank: the Engage walk stays put
         TankPostDecision step = TankPostDecision::None;
         Unit* boss = nullptr;
         Unit* subject = nullptr;

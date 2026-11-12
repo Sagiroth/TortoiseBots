@@ -64,7 +64,8 @@ class TankPostWiring(unittest.TestCase):
         # The awaited unit comes from the throttled grid-search value, not the attackers list.
         self.assertIn('AI_VALUE2(std::vector<TankPostUnit>, "tank post units", static_cast<int32>(row->targetEntry))',
                       find)
-        self.assertIn("PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ)", find)
+        self.assertIn("PickTankPostUnit(candidates, row->spotX, row->spotY, row->spotZ,", find)
+        self.assertIn("sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit, ownLatched, otherLatched);", find)
         blockers = (ROOT / "ai/playerbot/strategy/values/HoldKillBlockersValue.cpp").read_text()
         self.assertIn("std::vector<TankPostUnit> TankPostUnitsValue::Calculate()", blockers)
         self.assertIn("ScanEntry(bot, QualifierEntry(qualifier), found, kTankPostSearchYd)", blockers)
@@ -80,8 +81,10 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("TankPostLatchCounts(record.arrivedLogged, record.arrivedSubjectGuid, in.subjectGuid)", find)
         self.assertIn("stored.arrivedSubjectGuid = in.subjectGuid;", find)
         self.assertIn("in.subjectOnTank = subject && subject->GetVictim() == bot", find)
-        self.assertIn("const BossStandTarget stand = holdSpot ? FindBossStand(ai, bot) : BossStandTarget();", find)
+        self.assertIn("const BossStandTarget stand = (holdSpot || sPlayerbotAIConfig.dungeonRunTankPostWalks)", find)
+        self.assertIn("? FindBossStand(ai, bot) : BossStandTarget();", find)
         self.assertIn("in.seated = TankPostSeated(stand.valid, stand.stay);", find)
+        self.assertIn("out.standActive = stand.valid;", find)
         self.assertIn("if (holdSpot && currentTarget == subject)\n        in.holdingOtherHostile = false;", find)
         self.assertIn("(!holdSpot && in.holdingOtherHostile)", find)
         # The step's arrived decision reaches the trigger and the action: a hold_spot post does not stand down for
@@ -343,7 +346,7 @@ class TankPostWiring(unittest.TestCase):
         engage = action[action.index("if (task.step == TankPostDecision::Engage)"):]
         engage = engage[:engage.index("return Attack(bot, task.subject);")]
         self.assertIn("if (sPlayerbotAIConfig.dungeonRunTankPostTaunts && TakeSubject(task, current))\n"
-                      "            return true;", engage)
+                      "        {\n", engage)
         self.assertLess(engage.index("TakeSubject(task, current)"), engage.index("if (current == task.subject)"))
         take = body(ACTIONS, "bool BossTacticsTankPostAction::TakeSubject(const BossTankPost& task, Unit* current)")
         self.assertIn("TauntRefusedByGate(ai, bot, subject, taunt)", take)
@@ -437,20 +440,28 @@ class TankPostWiring(unittest.TestCase):
         engage = action[action.index("if (task.step == TankPostDecision::Engage)"):]
         engage = engage[:engage.index("return Attack(bot, task.subject);")]
         self.assertIn("TankPostEngageWalks(sPlayerbotAIConfig.dungeonRunTankPostWalks, false,", engage)
-        self.assertIn("bot->CanReachWithMeleeAutoAttack(task.subject));", engage)
+        self.assertIn("bot->CanReachWithMeleeAutoAttack(task.subject), task.standActive);", engage)
         # After the taunt, before the plain attack: a taunt that cast ends the tick, a walk only starts without one.
         self.assertLess(engage.index("TakeSubject(task, current)"), engage.index("TankPostEngageWalks("))
         self.assertLess(engage.index("TankPostEngageWalks("), engage.index("if (current == task.subject)"))
-        # The subject is taken first (the result ignored), then the tank moves to it and the move's result is returned.
+        # A taunt that cast keeps the walk's launch point with the key on; with it off the old reset stands.
+        self.assertIn("if (!sPlayerbotAIConfig.dungeonRunTankPostWalks)\n                hasLast = false;", engage)
+        # The destination is a point at melee distance on the line to the subject, not MoveTo(Unit*) (a hostile unit's
+        # MoveTo aims the stance's formation spot): the point is checked for ground and the walk issues it itself.
+        self.assertIn("TankPostMeleePoint(bot->GetPositionX(), bot->GetPositionY(),", engage)
+        self.assertIn("bot->GetCombatReach(task.subject, false, 0.0f), x, y)", engage)
+        self.assertIn("float const floor = map ? map->GetHeight(x, y, z + 5.0f) : INVALID_HEIGHT;", engage)
+        self.assertIn("walkPoint = floor > INVALID_HEIGHT;", engage)
+        self.assertNotIn("MoveTo(task.subject)", engage)
+        self.assertIn("if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, true))\n                return false;",
+                      engage)
+        # The subject is taken first (the result ignored), then the tank walks and the move's result is returned.
         self.assertIn("if (current != task.subject)\n                Attack(bot, task.subject);", engage)
-        self.assertIn("if (!MoveTo(task.subject))\n                return false;", engage)
-        self.assertLess(engage.index("if (!MoveTo(task.subject))"), engage.index("lastX = task.subject->GetPositionX();"))
-        # The spline guard is the walk's own, with the subject's launch point and 3 yd.
+        self.assertLess(engage.index("if (!MoveTo(bot->GetMapId()"), engage.index("lastX = x;"))
+        # The spline guard is the walk's own, with the issued destination and 3 yd.
         self.assertIn("hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&", engage)
-        self.assertIn("std::fabs(lastX - task.subject->GetPositionX()) < 3.0f &&", engage)
-        self.assertIn("std::fabs(lastY - task.subject->GetPositionY()) < 3.0f", engage)
-        self.assertIn("lastX = task.subject->GetPositionX();", engage)
-        self.assertIn("lastY = task.subject->GetPositionY();", engage)
+        self.assertIn("std::fabs(lastX - x) < 3.0f && std::fabs(lastY - y) < 3.0f", engage)
+        self.assertIn("lastX = x;\n            lastY = y;", engage)
         # One row per walk episode, through the post's own logger.
         self.assertIn("if (!walkLogged)\n            {\n                LogTankPostWalk(ai, *task.row,", engage)
         self.assertIn("walkLogged = true;", engage)
@@ -460,8 +471,11 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('"event=walk,subject_yd=%.1f", subjectYd', walk_log)
         self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', walk_log)
         self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', walk_log)
-        self.assertIn("inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach)", POLICY)
-        self.assertIn("return keyOn && !tauntWentOut && !inMeleeReach;", POLICY)
+        self.assertIn("inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach, "
+                      "bool standActive)", POLICY)
+        self.assertIn("return keyOn && !tauntWentOut && !inMeleeReach && !standActive;", POLICY)
+        self.assertIn("inline bool TankPostMeleePoint(float botX, float botY, float subjectX, float subjectY, "
+                      "float reachYd, float& x,", POLICY)
         # The key: read with the row's mode, defaulted off, templated and documented without "recommended on".
         self.assertIn('dungeonRunTankPostWalks = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostWalks", false);',
                       CONFIG_CPP)
@@ -490,6 +504,21 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("inline bool TankPostRecordCovers(bool keyOn, std::uint64_t latchedGuid, "
                       "std::uint64_t targetGuid)", POLICY)
         self.assertIn("return !keyOn || latchedGuid == 0 || latchedGuid == targetGuid;", POLICY)
+        # The pick keeps each post on its own unit: this record's latched unit wins, another live post's is no
+        # candidate, so two posts on one entry do not trade Hatchers read by read.
+        find = body(ACTIONS, "BossTankPost ai::FindBossTankPost")
+        self.assertIn("std::unordered_set<std::uint64_t> otherLatched;", find)
+        self.assertIn("if (sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit)\n    {\n        "
+                      "std::lock_guard<std::mutex> lock(g_tankPostMutex);", find)
+        self.assertIn("entry.second.arrivedSubjectGuid == 0 ||", find)
+        self.assertIn("nowMs - entry.second.lastReadMs >= kTankPostLiveMs)", find)
+        self.assertIn("otherLatched.insert(entry.second.arrivedSubjectGuid);", find)
+        self.assertIn("const std::uint64_t ownLatched = haveRecord ? record.arrivedSubjectGuid : 0;", find)
+        self.assertIn("inline int PickTankPostUnit(const std::vector<TankPostUnit>& units, float spotX, float spotY, "
+                      "float spotZ,", POLICY)
+        self.assertIn("if (ownsUnit && latchedGuid != 0)", POLICY)
+        self.assertIn("if (units[i].guid == latchedGuid && units[i].alive)", POLICY)
+        self.assertIn("if (ownsUnit && unit.guid != latchedGuid && otherLatched.count(unit.guid) != 0)", POLICY)
         self.assertIn('dungeonRunTankPostOwnsUnit = '
                       'config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostOwnsUnit", false);', CONFIG_CPP)
         self.assertIn("bool dungeonRunTankPostOwnsUnit = false;", CONFIG_H)
@@ -499,6 +528,7 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn("`0` off", section)
         self.assertNotIn("recommended on", section)
         self.assertIn("DungeonRunTankPostOwnsUnit", BOSS_DOCS)
+        self.assertIn("`AiPlayerbot.DungeonRunTankPostOwnsUnit = 1`", BOSS_DOCS)
         self.assertIn("DungeonRunTankPostOwnsUnit", CHANGELOG)
 
 

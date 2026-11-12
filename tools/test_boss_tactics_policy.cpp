@@ -629,15 +629,35 @@ static void TestTankPostOwns_KeyOffWritesNoSlotWord()
 }
 
 // Walk 2f a-2: slot 1 stood on the post at (8, -200) with Cindarion 40 yd away, the Engage step's attack returned true
-// every tick and `reach melee` never ran, so the step never walked. The walk needs the key, no taunt this tick and the
-// unit out of melee reach.
+// every tick and `reach melee` never ran, so the step never walked. The walk needs the key, no taunt this tick, the
+// unit out of melee reach and no boss stand (a seat, a stay included, keeps the tank on its breath lane).
 static void TestTankPostEngageWalks_OutOfReach()
 {
-    // TankPostEngageWalks(keyOn, tauntWentOut, inMeleeReach)
-    CHECK(TankPostEngageWalks(true, false, false)); // key on, no taunt, out of reach: the step walks to the unit
-    CHECK(!TankPostEngageWalks(true, false, true));  // in reach: attack it where it stands
-    CHECK(!TankPostEngageWalks(true, true, false));  // a taunt went out: the tick ends on it
-    CHECK(!TankPostEngageWalks(false, false, false)); // key off: today's attack only
+    // TankPostEngageWalks(keyOn, tauntWentOut, inMeleeReach, standActive)
+    CHECK(TankPostEngageWalks(true, false, false, false)); // key on, no taunt, out of reach: the step walks to the unit
+    CHECK(!TankPostEngageWalks(true, false, true, false)); // in reach: attack it where it stands
+    CHECK(!TankPostEngageWalks(true, true, false, false)); // a taunt went out: the tick ends on it
+    CHECK(!TankPostEngageWalks(false, false, false, false)); // key off: today's attack only
+    CHECK(!TankPostEngageWalks(true, false, false, true)); // a stand (a stay included): no walk out of its lane
+}
+
+// The walk's destination is a point at melee distance on the line from the tank to the subject, not MoveTo(Unit*),
+// which aims a hostile unit at the stance's formation spot (or refuses the move when there is none).
+static void TestTankPostMeleePoint_NoFormationNeeded()
+{
+    float x = 0.0f, y = 0.0f;
+    // A tank 40 yd east of its subject, a 6 yd combined reach: 4.8 yd east of the subject.
+    CHECK(TankPostMeleePoint(40.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
+    CHECK(std::fabs(x - 4.8f) < 0.01f);
+    CHECK(std::fabs(y) < 0.01f);
+    // Never past the tank's own spot: a 6 yd reach with the tank 3 yd off stays on its side of the subject.
+    CHECK(TankPostMeleePoint(3.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
+    CHECK(std::fabs(x - 3.0f) < 0.01f);
+    // A tiny reach still leaves a standing point off the body.
+    CHECK(TankPostMeleePoint(0.0f, 10.0f, 0.0f, 0.0f, 0.2f, x, y));
+    CHECK(std::fabs(y - 0.5f) < 0.01f);
+    // On one spot there is no line to walk.
+    CHECK(!TankPostMeleePoint(0.0f, 0.0f, 0.0f, 0.0f, 6.0f, x, y));
 }
 
 // Walk 2f F2: two posts on the Hatcher entry 50144 each reserved both Hatchers against the other tank, and the post's
@@ -650,6 +670,44 @@ static void TestTankPostRecordCovers_OtherUnitFree()
     CHECK(TankPostRecordCovers(true, a, a));  // the unit it latched
     CHECK(TankPostRecordCovers(true, 0, b));  // nothing latched yet: the entry reserves as before
     CHECK(TankPostRecordCovers(false, a, b)); // key off: every unit of the entry
+}
+
+// Two posts and two Hatchers: the pick prefers the unit a post latched and skips the other post's, so repeated reads
+// keep each post on its own Hatcher instead of trading them.
+static void TestTankPostPickKeepsOwnUnit()
+{
+    std::uint64_t const a = 1000, b = 2000;
+    std::vector<TankPostUnit> units(2);
+    units[0].guid = a;
+    units[0].x = 1.0f;
+    units[0].alive = true; // the nearer one
+    units[1].guid = b;
+    units[1].x = 30.0f;
+    units[1].alive = true;
+    std::unordered_set<std::uint64_t> none;
+    std::unordered_set<std::uint64_t> otherA;
+    otherA.insert(a);
+    // Without a latch the posts would both take the nearest; with the key each record keeps its own.
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, none) == 0);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, a, none) == 0);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, none) == 1);
+    // The second post skips the unit the first latched and picks the free one (the same across reads).
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, otherA) == 1);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, otherA) == 1);
+    // Its own latched unit is never skipped, even if another record also latched it.
+    std::unordered_set<std::uint64_t> otherB;
+    otherB.insert(b);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, otherB) == 1);
+    // A dead latched unit does not win: the free living one does.
+    units[1].alive = false;
+    otherB.clear();
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, b, otherB) == 0);
+    // Every unit another post latched: no candidate, and with the key off the nearest as before.
+    std::unordered_set<std::uint64_t> both;
+    both.insert(a);
+    both.insert(b);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, true, 0, both) == -1);
+    CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, both) == 0);
 }
 
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
@@ -994,11 +1052,11 @@ static void TestTankPost_UnselectableSubjectNotArrived()
         units[2].y = 0.0f;
         units[2].z = 0.0f;
         units[2].alive = true;
-        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 2);
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, {}) == 2);
         units[2].alive = false;
         units[1].alive = false;
-        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f) == 0);  // the nearest, now that none lives
-        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f) == -1);
+        CHECK(PickTankPostUnit(units, 0.0f, 0.0f, 0.0f, false, 0, {}) == 0);  // the nearest, now that none lives
+        CHECK(PickTankPostUnit(std::vector<TankPostUnit>(), 0.0f, 0.0f, 0.0f, false, 0, {}) == -1);
     }
 
     // The step closes a held post on each of the row's ends, and does nothing before a post exists.
@@ -1765,7 +1823,9 @@ int main()
     TestTankPostEndWord_SlotMoved();
     TestTankPostOwns_KeyOffWritesNoSlotWord();
     TestTankPostEngageWalks_OutOfReach();
+    TestTankPostMeleePoint_NoFormationNeeded();
     TestTankPostRecordCovers_OtherUnitFree();
+    TestTankPostPickKeepsOwnUnit();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

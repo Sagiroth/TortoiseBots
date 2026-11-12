@@ -1215,20 +1215,24 @@ AiPlayerbot.DungeonRunTankPostOwnsSubject = 0
 AiPlayerbot.DungeonRunTankPostTaunts = 0
 
 # A tank_post row's Engage step walks to the unit it awaits while the unit is out of melee reach: with the key on, the
-# step takes the unit as its target (the attack first, the result ignored) and moves to it instead of ending the tick on
-# the attack, and no second spline is launched while the tank is already moving and the unit still stands within 3 yd of
-# where it stood at the last launch. One BossTacticsTankPost row (event walk, with the distance to the unit) is written
-# each time the tank starts walking. A boss stand seat still wins (the seat yields the post before the Engage step).
-# Off, the step only attacks the unit where it stands, as before. Needs AiPlayerbot.DungeonRunTankPost.
+# step takes the unit as its target (the attack first, the result ignored) and walks to a point at melee distance on
+# the line to it, instead of ending the tick on the attack, and no second spline is launched while the tank is already
+# moving and the point still stands within 3 yd of the last one. One BossTacticsTankPost row (event walk, with the
+# distance to the unit) is written each time the tank starts walking. A boss stand seat still wins (a stay included:
+# no walk while any stand is active). The walk follows the unit wherever it stands, so a Hatcher that walks to its
+# spawn by the eggs drags the post tank there. Off, the step only attacks the unit where it stands, as before. Needs
+# AiPlayerbot.DungeonRunTankPost.
 # 0 - off: the Engage step only attacks the unit where it stands (Default)
 # 1 - on
 AiPlayerbot.DungeonRunTankPostWalks = 0
 
 # A live tank_post owns the one unit it latched at its arrival: with the key on, another tank's post record reserves
-# only the unit its arrival was latched on, not every unit of the row's `target_entry`, so two posts on one entry (two
-# Hatchers, say) each reserve their own unit and neither locks the other's taunts out. A record that has not latched a
-# unit yet reserves every unit of the entry, as before. Off, every post on the entry reserves every unit of it. Needs
-# AiPlayerbot.DungeonRunTankPost and AiPlayerbot.DungeonRunTankPostOwnsSubject.
+# only the unit its arrival was latched on, not every unit of the row's `target_entry`, and each post's pick keeps its
+# own latched living unit while another live post's latched unit is no candidate, so two posts on one entry (two
+# Hatchers, say) each keep their own unit and neither locks the other's taunts out or trades units read by read. A
+# record that has not latched a unit yet reserves every unit of the entry, as before, and takes a unit no other post
+# latched. Off, every post on the entry reserves every unit of it. Needs AiPlayerbot.DungeonRunTankPost and
+# AiPlayerbot.DungeonRunTankPostOwnsSubject.
 # 0 - off: every post on the entry reserves every unit of it (Default)
 # 1 - on
 AiPlayerbot.DungeonRunTankPostOwnsUnit = 0
