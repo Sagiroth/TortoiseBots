@@ -44,9 +44,9 @@ namespace ai
         return maxStackSize > 1 ? VENDOR_BUY_MAX_STACKABLE_PURCHASES : 1;
     }
 
-    // Vendor->AH resell flips (upstream #462): owned and hired bots keep the
-    // earned flip of limited-supply stock. A bot on the item cheat has its
-    // stock seeded without gold, so a flip only burns the trainer purse.
+    // Vendor->AH resell flips: owned and hired bots keep the earned flip of
+    // limited-supply stock. A bot on the item cheat has its stock seeded
+    // without gold, so a flip only burns the trainer purse.
     inline bool VendorBuyAllowsAhFlip(bool hasItemCheat)
     {
         return !hasItemCheat;

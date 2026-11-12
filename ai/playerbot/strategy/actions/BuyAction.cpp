@@ -117,10 +117,10 @@ bool BuyAction::Execute(Event& event)
                 // reputation discount
                 uint32 price = uint32(floor(proto->BuyPrice * bot->GetReputationPriceDiscount(pCreature)));
 
-                // Upstream #462: owned and hired bots keep the earned
-                // vendor->AH flip of limited-supply stock. A bot on the item
-                // cheat gets its stock seeded without gold, so buying to
-                // relist only burns the trainer purse.
+                // Owned and hired bots keep the earned vendor->AH flip of
+                // limited-supply stock. A bot on the item cheat gets its stock
+                // seeded without gold, so buying to relist only burns the
+                // trainer purse.
                 bool const canFlipAH = ai::VendorBuyAllowsAhFlip(ai->HasCheat(BotCheatMask::item)) &&
                     ItemUsageValue::IsWorthBuyingFromVendorToResellAtAH(proto, tItem->maxcount > 0);
 
