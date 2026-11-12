@@ -1040,7 +1040,6 @@ bool PlayerbotAIConfig::Initialize()
     passingBuffs = config.GetBoolDefault("AiPlayerbot.PassingBuffs", true);
     playerbotsXPrate = config.GetFloatDefault("AiPlayerbot.XPRate", 3.0f);
     disableActivityPriorities = config.GetBoolDefault("AiPlayerbot.DisableActivityPriorities", true);
-    worldPvpEngage = config.GetBoolDefault("AiPlayerbot.WorldPvpEngage", false);
     forceActiveWhenNearPlayer = config.GetBoolDefault("AiPlayerbot.ForceActiveWhenNearPlayer", false);
     limitCombatActivity = config.GetBoolDefault("AiPlayerbot.LimitCombatActivity", false);
     guildOrderAlwaysActive = config.GetBoolDefault("AiPlayerbot.GuildOrderAlwaysActive", true);

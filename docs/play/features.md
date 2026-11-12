@@ -200,7 +200,6 @@ New here? Read [Getting Started](getting-started.md) first.
 | Your alts join a battleground with you (Join as Group; hires stay out unless allowed in) | Always | — | [Your party in BGs](../world/queues.md#battlegrounds-with-your-own-party-bots) |
 | Bots play the objectives in WSG, AB, AV, Sunnyglade Valley and Blood Ring | Always | — | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
 | WSG teams split into attackers, defenders and midfielders | No | [`AiPlayerbot.WsgFlagRoles`](../server/settings/queues.md#aiplayerbotwsgflagroles) | [Battleground AI](../world/queues.md#battleground-auto-queue-human-demand) |
-| Pool bots start fights with flagged enemy players in the open world | No | [`AiPlayerbot.WorldPvpEngage`](../server/settings/combat.md#aiplayerbotworldpvpengage) | [World PvP](../server/settings/combat.md#aiplayerbotworldpvpengage) |
 | Level-up gear top-up for pool bots | No | [`AiPlayerbot.PoolGearTopUpOnLevel`](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) | [Economy](../server/settings/economy.md#aiplayerbotpoolgeartopuponlevel) |
 | Level-up money top-up for pool bots | No | [`AiPlayerbot.PoolMoneyTopUp`](../server/settings/economy.md#aiplayerbotpoolmoneytopup) | [Economy](../server/settings/economy.md#aiplayerbotpoolmoneytopup) |
 

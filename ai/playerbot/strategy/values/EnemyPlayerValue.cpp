@@ -6,42 +6,6 @@
 
 using namespace ai;
 
-namespace
-{
-    // AiPlayerbot.WorldPvpEngage: may this masterless pool bot open a fight with
-    // a PvP-flagged enemy player outside a battleground? Ranges follow the
-    // mod-playerbots proximity rule (40 yd, 20 yd when the target has more HP,
-    // line of sight, within 30 yd of height); level rule: never a target 5+ levels
-    // above the bot. Cheap checks first; callers only get here out of combat.
-    bool CanEngageWorldPvp(PlayerbotAI* ai, Player* bot, Unit* unit)
-    {
-        Player* enemy = dynamic_cast<Player*>(unit);
-        if (!enemy || !enemy->IsPvP())
-            return false;
-
-        if (enemy->GetLevel() >= bot->GetLevel() + 5)
-            return false;
-
-        if (sPlayerbotAIConfig.IsInPvpProhibitedZone(sServerFacade.GetAreaId(enemy)))
-            return false;
-
-        if (enemy->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_SANCTUARY))
-            return false;
-
-        const float maxDist = bot->GetHealth() > enemy->GetHealth() ? 40.0f : 20.0f;
-        if (!bot->IsWithinDist(enemy, maxDist) || fabs(bot->GetPositionZ() - enemy->GetPositionZ()) >= 30.0f)
-            return false;
-
-        if (AreaTableEntry const* area = GetAreaEntryByAreaID(sServerFacade.GetAreaId(enemy)))
-        {
-            if (area->Flags & AREA_FLAG_CAPITAL)
-                return false;
-        }
-
-        return bot->IsWithinLOSInMap(enemy);
-    }
-}
-
 std::list<ObjectGuid> EnemyPlayersValue::Calculate()
 {
     std::list<ObjectGuid> result;
@@ -99,36 +63,6 @@ std::list<ObjectGuid> EnemyPlayersValue::Calculate()
             {
                 result = AI_VALUE(std::list<ObjectGuid>, "possible targets");
                 ApplyWorldPvpFilter(result, getOne);
-            }
-
-            // Opt-in world PvP (AiPlayerbot.WorldPvpEngage): masterless pool bots
-            // start the fight with a PvP-flagged enemy player in range instead of
-            // only hitting back. Reuses the "possible targets" scan above, so no
-            // extra world scan. Never for a real player's companions, never while
-            // the bot is already fighting, never in a city. Only for a bot whose
-            // non-combat engine carries "pvp" (the node that opens the fight):
-            // otherwise the list would only flip IsInPvp() and the mount check
-            // (dismount next to the enemy) without any attack following.
-            if (result.empty() && sPlayerbotAIConfig.worldPvpEngage && !bot->InBattleGround() &&
-                !ai->GetMaster() && !bot->IsInCombat() && bot->GetAttackers().empty() &&
-                ai->HasStrategy("pvp", BotState::BOT_STATE_NON_COMBAT) &&
-                !ai->IsInCapitalCity() && !bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_SANCTUARY) &&
-                TortoiseBots::BotManager::Instance().IsRandomBot(bot->GetObjectGuid()))
-            {
-                std::list<ObjectGuid> candidates = AI_VALUE(std::list<ObjectGuid>, "possible targets");
-                for (const ObjectGuid& guid : candidates)
-                {
-                    if (!guid.IsPlayer())
-                        continue;
-
-                    Unit* unit = ai->GetUnit(guid);
-                    if (unit && IsValid(unit, bot) && CanEngageWorldPvp(ai, bot, unit))
-                    {
-                        result.push_back(guid);
-                        if (getOne)
-                            break;
-                    }
-                }
             }
         }
     }

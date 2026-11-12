@@ -4,7 +4,6 @@
 - New: behind `AiPlayerbot.PoolMoneyTopUp` (default 0), a pool bot that dings holding less than its next trainer visit costs is topped up to that amount (capped at 1 gold per level), once per level.
 - New: behind `AiPlayerbot.WsgFlagRoles` (default 0), each Warsong Gulch team's bots split into attackers, defenders and midfielders, re-split only when the match or the roster changes; real players are not counted in the split.
 - New: Sunnyglade Valley and the Blood Ring arena join the battleground queue and tactics alongside WSG, AB and AV; Blood Ring takes max-level bots only.
-- New: behind `AiPlayerbot.WorldPvpEngage` (default 0), a masterless pool bot out of combat attacks a nearby PvP-flagged enemy player instead of waiting to be attacked.
 - Fixed: a Frost mage waits 10 seconds into a fight before casting Flamestrike, the same opener gate Blizzard has, so it no longer opens a fresh pack before the tank holds it.
 - Fixed: Nefarian's priest, shaman and warlock class calls are answered: a priest with Corrupted Healing keeps to Renew and Power Word: Shield, and damage dealers kill the corrupted totems and then the Corrupted Infernals.
 - Fixed: Solnius's Call of Nightmare adds stay a damage dealer's `dps assist` target instead of being reset to Solnius every tick, and the Araxxna egg check re-reads its nearby list every five seconds.
