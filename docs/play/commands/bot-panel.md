@@ -301,6 +301,7 @@ Alias: `.bot behaviour`. Settings are persisted per bot across sessions.
 - `threat`: Threat back-off that eases off when the bot nears the tank's threat.
 - `potions`: Automatic consumption of healing and mana potions through the reaction engine.
 - `spread`: Opt-in tactical spacing to avoid stacking in combat.
+- `hold`: Hold position (off by default). The bot keeps following and fighting but never moves away from enemies on its own: no panic or outnumbered flee, no kiting, no stepping back for casting or shooting room (a hunter stays in melee range too). Stepping out of ground effects and boss mechanics still happen.
 - `mimic`: Mimics consumable usage out of combat (food, elixirs, flasks, scrolls, and more, but not plain water). The bot resolves a class-, spec-, and level-appropriate equivalent and casts it virtually (no inventory item needed). When more than 4 bots mimic at once, individual chat confirmations are suppressed in favor of a single `[Raid Mimic]` summary. Supports party-wide toggles: `.bot behavior party mimic on`.
 
 </details>

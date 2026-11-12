@@ -101,6 +101,7 @@ namespace ai
             creators["force rebuff"] = [](PlayerbotAI* ai) { return new ForceRebuffStrategy(ai); };
             creators["dead"] = [](PlayerbotAI* ai) { return new DeadStrategy(ai); };
             creators["flee"] = [](PlayerbotAI* ai) { return new FleeStrategy(ai); };
+            creators["hold position"] = [](PlayerbotAI* ai) { return new HoldPositionStrategy(ai); };
             creators["avoid mobs"] = [](PlayerbotAI* ai) { return new AvoidMobsStrategy(ai); };
             creators["duel"] = [](PlayerbotAI* ai) { return new DuelStrategy(ai); };
             creators["start duel"] = [](PlayerbotAI* ai) { return new StartDuelStrategy(ai); };

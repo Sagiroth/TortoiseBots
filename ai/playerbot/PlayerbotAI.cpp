@@ -435,11 +435,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // Issue #846: after the master check, so the gate sees the live master.
     PublishChatGate();
 
-    // Raid/dungeon wedge: sample the leader's path on every AI tick, because the
-    // follow action is not called while the core follow runs and a straggler
-    // needs the points from before it fell behind. One branch while off.
-    if (sPlayerbotAIConfig.raidFollowWedge)
-        UpdateLeadTrail();
+    // Sample the leader's path on every AI tick, because the follow action is
+    // not called while the core follow runs: a straggler needs the points from
+    // before it fell behind, and a back-off needs the ground the group came from.
+    UpdateLeadTrail();
 
     if(aiInternalUpdateDelay > elapsed)
     {
