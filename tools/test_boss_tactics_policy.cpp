@@ -2665,6 +2665,35 @@ int main()
         CHECK(!table.HasKindFor(309, 10184, BossTacticKind::TankPost));
     }
 
+    // Walk 2i H: the row's `healers` count and its `spell_id` belong to a `hold_spot` post. A plain post refuses both,
+    // four is the most healers the loader takes, and no other kind takes the count (TestTankPostRow_HealersAndSpell:
+    // without the two hold_spot tests the plain-post rows below load).
+    {
+        CHECK(kTankPostHealersMax == 4);
+        BossTacticTable table;
+        auto held = [](std::uint32_t target, std::uint32_t spell, std::uint8_t priority, std::uint8_t healers,
+                       TacticMode mode)
+        {
+            BossTacticRow row = Row(249, 10184, BossTacticKind::TankPost, target, spell, priority, 90.0f);
+            row.windowSec = 120.0f;
+            row.spotX = 20.0f;
+            row.spotY = -218.0f;
+            row.spotZ = -85.3f;
+            row.mode = mode;
+            row.healers = healers;
+            return row;
+        };
+        CHECK(table.Add(held(10184, 18431, 0, 2, TacticMode::HoldSpot)));  // the 2i row: a spell and two healers
+        CHECK(!table.Add(held(50144, 18431, 2, 0, TacticMode::Default)));  // a spell on a plain post
+        CHECK(!table.Add(held(50144, 0, 2, 1, TacticMode::Default)));      // healers on a plain post
+        CHECK(!table.Add(held(50144, 0, 2, 5, TacticMode::HoldSpot)));     // healers 5
+        BossTacticRow behind = Row(249, 10184, BossTacticKind::Behind, 0, 18435, 0, 40.0f);
+        behind.hpMax = 40;
+        behind.healers = 1;
+        CHECK(!table.Add(behind));                                          // healers on another kind
+        CHECK(table.Size() == 1);
+    }
+
     // Activation gate: needs rows on the map, then the opt-in or a commander binding.
     CHECK(!BossTacticsWanted(false, false, true));   // default install, normal player's bots: unchanged
     CHECK(BossTacticsWanted(true, false, true));     // AiPlayerbot.DungeonTactics = 1

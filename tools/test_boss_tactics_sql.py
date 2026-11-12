@@ -42,11 +42,11 @@ MODE_WORDS = {
 # A row as the replay hands it around: (file,) + the table columns in this order.
 FIELDS = ("file", "map", "boss_entry", "kind", "target_entry", "spell_id", "priority", "param", "burn_order",
           "hp_min", "hp_max", "bot_aura", "tactic_mode", "window_s", "cycle_spell", "cycle_s", "spot_x", "spot_y",
-          "spot_z")
+          "spot_z", "healers")
 INSERT_COLUMNS = {
     "map": 0, "boss_entry": 0, "kind": "", "target_entry": 0, "spell_id": 0, "priority": 0, "param": 0.0,
     "burn_order": None, "comment": "", "hp_min": 0, "hp_max": 100, "bot_aura": 0, "tactic_mode": "",
-    "window_s": 7.0, "cycle_spell": 0, "cycle_s": 0.0, "spot_x": 0.0, "spot_y": 0.0, "spot_z": 0.0,
+    "window_s": 7.0, "cycle_spell": 0, "cycle_s": 0.0, "spot_x": 0.0, "spot_y": 0.0, "spot_z": 0.0, "healers": 0,
 }
 DELETE = re.compile(
     r"^DELETE FROM `ai_boss_tactic` WHERE `map` = (\d+)"
@@ -93,6 +93,7 @@ def _row_dict(name, columns, tuple_text):
     row["cycle_s"] = float(row["cycle_s"] or 0.0)
     for column in ("spot_x", "spot_y", "spot_z"):
         row[column] = float(row[column] or 0.0)
+    row["healers"] = int(row["healers"] or 0)
     return row
 
 
@@ -438,10 +439,11 @@ def new_kind_problem(row):
     if kind == "tank_post":
         # The awaited unit (target_entry), the tank slot (priority 1-7; slot 0 is the main tank, which holds a post on
         # the row's own boss only), the wait spot, the arrival radius (5-100 yd) and the longest hold (window_s
-        # 10-120 s). No spell, no cycle columns; the one mode word is hold_spot.
+        # 10-120 s). No cycle columns; the one mode word is hold_spot, and only a hold_spot row names the boss spell
+        # whose aura marks the cast (spell_id) and the healers it holds on its tank (healers, 0-4).
         if not row["target_entry"]:
             return "tank_post without its awaited unit"
-        if row["spell_id"]:
+        if row["spell_id"] and row["tactic_mode"] != "hold_spot":
             return "tank_post with a spell"
         if row["priority"] < 1 and row["target_entry"] != row["boss_entry"]:
             return "tank_post tank slot outside 1-7"
@@ -453,6 +455,10 @@ def new_kind_problem(row):
             return "tank_post arrival radius outside [5, 100]"
         if not 10.0 <= row["window_s"] <= 120.0:
             return "tank_post window outside [10, 120]"
+        if row["healers"] > 4:
+            return "tank_post healers above 4"
+        if row["healers"] and row["tactic_mode"] != "hold_spot":
+            return "tank_post healers outside hold_spot"
         if row["cycle_spell"] or row["cycle_s"]:
             return "cycle columns on another kind"
         return None
@@ -483,6 +489,8 @@ def new_kind_problem(row):
         if row["tactic_mode"]:
             return "a mode word on needs_aura"
         return None
+    if row["healers"]:
+        return "healers on another kind"
     if row["cycle_spell"] or row["cycle_s"] or has_spot:
         return "cycle or spot columns on another kind"
     return None

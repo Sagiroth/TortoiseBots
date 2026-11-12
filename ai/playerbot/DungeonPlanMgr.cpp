@@ -219,7 +219,7 @@ namespace
             "`timeout_s`, `entries`"},
         {"ai_dungeon_leg_need", "`plan`, `leg`, `item`, `mode`, `pick`, `object`, `name`, `how`"},
         {"ai_dungeon_boss", "`map`, `entry`"},
-        {"ai_boss_tactic", "`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`"},
+        {"ai_boss_tactic", "`map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `healers`"},
     };
 }
 

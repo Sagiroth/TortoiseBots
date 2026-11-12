@@ -242,6 +242,8 @@ namespace ai
         std::uint32_t cycleSpell = 0;
         float cycleSec = 0.0f;
         float spotX = 0.0f, spotY = 0.0f, spotZ = 0.0f;
+        // tank_post (a `hold_spot` post): the healers held on the post's tank (`healers`, 0-4). 0 for every other kind.
+        std::uint8_t healers = 0;
 
         bool HasSpot() const { return spotX != 0.0f || spotY != 0.0f || spotZ != 0.0f; }
     };
@@ -469,6 +471,9 @@ namespace ai
         std::uint8_t crewSize = 0;
     };
 
+    // A `hold_spot` tank_post row's healers: the most the rule takes (`healers`, 0-4).
+    constexpr std::uint8_t kTankPostHealersMax = 4;
+
     class BossTacticTable
     {
     public:
@@ -631,12 +636,17 @@ namespace ai
             // tank_post: the awaited unit (`target_entry`), the tank slot (priority 1-7; slot 0 is the main tank, which
             // holds a post on the row's own boss only), the wait spot, the arrival radius, 5-100 yd: a subject that
             // lands and runs after a healer across the room, and the longest hold. A fight-scan kind, so its health
-            // band arms the post. No spell, no cycle columns; the only mode word is `hold_spot`.
+            // band arms the post. No cycle columns; the only mode word is `hold_spot`. A `hold_spot` row may name the
+            // boss spell whose aura marks the cast the tank answers (`spell_id`) and the healers it holds on its tank
+            // (`healers`, 0-4); a plain post names neither.
             if (row.kind == BossTacticKind::TankPost &&
                 (row.targetEntry == 0 || (row.priority < 1 && row.targetEntry != row.bossEntry) ||
                     row.priority > 7 || !row.HasSpot() ||
                     row.param < 5.0f || row.param > 100.0f || row.windowSec < 10.0f || row.windowSec > 120.0f ||
-                    row.spellId != 0 || (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
+                    (row.spellId != 0 && row.mode != TacticMode::HoldSpot) ||
+                    row.healers > kTankPostHealersMax ||
+                    (row.healers != 0 && row.mode != TacticMode::HoldSpot) ||
+                    (row.mode != TacticMode::Default && row.mode != TacticMode::HoldSpot)))
                 return false;
             // heal_reserve: the boss itself (target_entry 0, no spell, priority 0), the reserve percent (`param`,
             // 10-100) and the release lead in seconds (`window_s`, 0-120). A fight-scan kind, so its health band
@@ -654,9 +664,11 @@ namespace ai
                     row.priority > 5 || row.param != 0.0f || RowGateSet(row) || row.mode != TacticMode::Default))
                 return false;
             // The cycle columns are the seek_aura kind's and the reset window's (threat_successor with a cycle_spell),
-            // the spot columns the seek_aura, anchor and tank_post kinds'.
+            // the spot columns the seek_aura, anchor and tank_post kinds', the healers count the tank_post kind's.
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::ThreatSuccessor &&
                 (row.cycleSpell != 0 || row.cycleSec != 0.0f))
+                return false;
+            if (row.kind != BossTacticKind::TankPost && row.healers != 0)
                 return false;
             if (row.kind != BossTacticKind::SeekAura && row.kind != BossTacticKind::Anchor &&
                 row.kind != BossTacticKind::TankPost && row.HasSpot())
