@@ -4614,6 +4614,22 @@ int main()
             CHECK(TauntAfterTankPick(soleUsable, {false}, soleHold, 0) == 0); // the only tank stays pickable
         }
 
+        // AiPlayerbot.DungeonRunTauntAfterSkipsMain (walk 2g): a row that names an off-tank never sends its window to the
+        // main tank. With 3 live tanks the 10184 row's slot 3 read 3 % 3 = 0 and 13 of 26 window rows said tank=0, so a
+        // slot past the live count starts at the last tank, the scan runs over the off-tanks only, and no usable off-tank
+        // answers -1 (the main tank never leaves the boss). The main tank's own row (wanted 0) is unchanged.
+        {
+            std::vector<bool> const usable = {true, true, true};
+            std::vector<bool> const allCan = {true, true, true};
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 3) == 0);              // today: wraps to the front
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 3, true) == 2);        // the last off-tank
+            std::vector<bool> const lastUnusable = {true, true, false};
+            CHECK(TauntAfterTankPick(lastUnusable, allCan, allCan, 2, true) == 1);  // wraps back to the first off-tank
+            std::vector<bool> const onlyMain = {true, false, false};
+            CHECK(TauntAfterTankPick(onlyMain, allCan, allCan, 1, true) == -1);     // no off-tank: nobody taunts
+            CHECK(TauntAfterTankPick(usable, allCan, allCan, 0, true) == 0);        // the main tank's own row
+        }
+
         // A tank that lost control (a stun, a fear, a confuse, a hex), is silenced, has no taunt, or whose taunt is on
         // cooldown cannot take the subject back now: it is skipped for a tank that can.
         CHECK(TauntAfterTankCanTaunt(true, false, true, true, true, false, true));

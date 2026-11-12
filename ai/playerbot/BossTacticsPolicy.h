@@ -2485,18 +2485,33 @@ namespace ai
         return -1;
     }
 
+    // The index one step of an until_tank scan reads (AiPlayerbot.DungeonRunTauntAfterSkipsMain): with the key on and a
+    // row that names an off-tank (`wanted >= 1`), the scan runs over the off-tanks only, so a window never wraps past the
+    // last tank to the main tank and the main tank never leaves the boss (walk 2g: 13 of 26 rows said `tank=0` with 3
+    // live tanks). A slot past the live count starts at the last tank and still wraps to 1; `wanted < 1` (the main
+    // tank's own row) and fewer than two tanks keep today's index. The loops still step `count` times: the off-tank
+    // indices repeat past the last one, so a scan that finds nothing answers -1.
+    inline int TauntAfterScanIndex(bool skipMain, int wanted, int step, int count)
+    {
+        if (!skipMain || wanted < 1 || count < 2)
+            return (wanted + step) % count;
+        int const first = std::min(wanted, count - 1);
+        return 1 + (first - 1 + step) % (count - 1);
+    }
+
     // taunt_after_cast (mode until_tank), the `priority` tank of the raid order: the first ALIVE tank at or after it,
     // wrapping to the front, so a dead first off-tank hands the taunt to the next one instead of leaving the subject
-    // loose. -1 when no tank is alive or the row names no index. `tankAlive` is the raid order (GetRaidTankRoles), so
-    // its own list already drops a tank that is dead or out of the group.
-    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted)
+    // loose. `skipMain` keeps the main tank out of the wrap (TauntAfterScanIndex). -1 when no tank is alive or the row
+    // names no index. `tankAlive` is the raid order (GetRaidTankRoles), so its own list already drops a tank that is
+    // dead or out of the group.
+    inline int TauntAfterTankIndex(const std::vector<bool>& tankAlive, int wanted, bool skipMain = false)
     {
         int const count = static_cast<int>(tankAlive.size());
         if (count == 0 || wanted < 0)
             return -1;
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
             if (tankAlive[index])
                 return index;
         }
@@ -2542,24 +2557,24 @@ namespace ai
     // one past the previous holder for a window whose taunt was cast and failed, so a resisted taunt hands the next
     // one to another tank. -1 when no tank is usable.
     inline int TauntAfterTankPick(const std::vector<bool>& usable, const std::vector<bool>& canTaunt,
-        const std::vector<bool>& canHold, int wanted)
+        const std::vector<bool>& canHold, int wanted, bool skipMain = false)
     {
         int const count = static_cast<int>(usable.size());
         if (count == 0 || wanted < 0)
             return -1;
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
             if (usable[index] && index < static_cast<int>(canTaunt.size()) && canTaunt[index])
                 return index;
         }
         for (int step = 0; step < count; ++step)
         {
-            int const index = (wanted + step) % count;
+            int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
             if (usable[index] && index < static_cast<int>(canHold.size()) && canHold[index])
                 return index;
         }
-        return TauntAfterTankIndex(usable, wanted);
+        return TauntAfterTankIndex(usable, wanted, skipMain);
     }
 
     // The tank a window's read assigns: its holder while the window runs and that tank is still available (in
@@ -2567,11 +2582,12 @@ namespace ai
     // `wanted`. The glue's advance and the policy tests read this one expression, so a holder that loses control
     // hands the window over at once while one whose taunt is cooling keeps it.
     inline int TauntWindowAssign(bool opening, bool holderAvailable, int holderSlot, int wanted,
-        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold)
+        const std::vector<bool>& usable, const std::vector<bool>& canTaunt, const std::vector<bool>& canHold,
+        bool skipMain = false)
     {
         if (!opening && holderAvailable)
             return holderSlot;
-        return TauntAfterTankPick(usable, canTaunt, canHold, wanted);
+        return TauntAfterTankPick(usable, canTaunt, canHold, wanted, skipMain);
     }
 
     // The slot of `guid` in the raid order, -1 when it is no tank of it any more: a window's holder is kept by guid,
@@ -2594,7 +2610,7 @@ namespace ai
     // therefore not the writer any more, so another tank hands the window over in the same tick instead of waiting for
     // the silent-writer timeout. -1 when no tank is usable.
     inline int TauntWindowOwner(const std::vector<bool>& usable, const std::vector<bool>& available, int holder,
-        int wanted)
+        int wanted, bool skipMain = false)
     {
         auto const ready = [&](int index) {
             return index >= 0 && index < static_cast<int>(usable.size()) && usable[index] &&
@@ -2607,12 +2623,12 @@ namespace ai
         {
             for (int step = 0; step < count; ++step)
             {
-                int const index = (wanted + step) % count;
+                int const index = TauntAfterScanIndex(skipMain, wanted, step, count);
                 if (ready(index))
                     return index;
             }
         }
-        return TauntAfterTankIndex(usable, wanted);
+        return TauntAfterTankIndex(usable, wanted, skipMain);
     }
 
     // Whether one tank's read is the window's single writer: the owner's own read, or any read once the owner has not

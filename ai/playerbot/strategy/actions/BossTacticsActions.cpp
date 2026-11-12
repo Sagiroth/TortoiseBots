@@ -11730,7 +11730,13 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                 bool const holderAvailable = holderSlot >= 0 &&
                     holderSlot < static_cast<int>(usable.size()) && usable[holderSlot] &&
                     holderSlot < static_cast<int>(available.size()) && available[holderSlot];
-                int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority));
+                // AiPlayerbot.DungeonRunTauntAfterSkipsMain: a row that names an off-tank scans the off-tanks only, so a
+                // window never wraps to the main tank and the main tank never leaves the boss; its own row (priority 0)
+                // still takes it (TauntAfterScanIndex).
+                bool const skipMain = sPlayerbotAIConfig.dungeonRunTauntAfterSkipsMain &&
+                    row->mode == TacticMode::UntilTank && row->priority >= 1;
+                int const owner = TauntWindowOwner(usable, available, holderSlot, static_cast<int>(row->priority),
+                    skipMain);
                 // One tank advances the window (its holder while it is still an available tank, else the order's first
                 // usable AND available tank, so an incapacitated holder is replaced as writer in the same tick), so a window's transitions and their outcome rows happen once each. A holder nobody
                 // has read for kTauntAfterOwnerSilentMs stands out of the scan and hands the advance over.
@@ -11748,8 +11754,8 @@ BossTauntAfter ai::FindBossTauntAfter(PlayerbotAI* ai, Player* bot, const BossTa
                     int const wanted = (opening && state.open && state.taunted && holderSlot >= 0)
                         ? holderSlot + 1
                         : static_cast<int>(row->priority);
-                    int const assigned =
-                        TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable, canTaunt, canHold);
+                    int const assigned = TauntWindowAssign(opening, holderAvailable, holderSlot, wanted, usable,
+                        canTaunt, canHold, skipMain);
                     if (assigned >= 0 && assigned < static_cast<int>(roles.tanks.size()))
                     {
                         bool const victimIsAssigned = victimIsPlayer && victim == roles.tanks[assigned];

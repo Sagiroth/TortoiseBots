@@ -1549,6 +1549,16 @@ AiPlayerbot.DungeonRunFactJudgeCharmedLead = 0
 # 1 - on (recommended on)
 AiPlayerbot.DungeonRunTauntGate = 0
 
+# A `taunt_after_cast` row in mode `until_tank` that names an off-tank never sends its window to the main tank: the scan
+# runs over the off-tanks only, a row slot past the live tank count starts at the last tank and then wraps back to the
+# first off-tank, and with no usable off-tank the row does nothing, so the main tank never leaves the boss. A row that
+# names the main tank (priority 0) is unchanged. Onyxia's Lair walk 2g: with three live tanks the 10184 row's slot 3 read
+# 3 % 3 = 0, so 13 of 26 window rows went to the main tank. `.reload config` reads it again with the other
+# AiPlayerbot.DungeonRun* keys.
+# 0 - off: the scan wraps to the front as before (Default)
+# 1 - on
+AiPlayerbot.DungeonRunTauntAfterSkipsMain = 0
+
 # A spread row widens the ranged raid's spacing while the boss fights; off ignores the rows.
 AiPlayerbot.DungeonRunBossSpread = 0
 

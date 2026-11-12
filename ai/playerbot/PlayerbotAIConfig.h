@@ -934,6 +934,11 @@ public:
     // The taunt gate: a tank does not taunt a needs_aura subject (a Shade of Jin'do, which only a carrier can damage) or
     // a creature the core marks immune to taunts (Jin'do). Off, every taunt goes out as before (default off).
     bool dungeonRunTauntGate = false;
+    // An until_tank row that names an off-tank scans the off-tanks only (AiPlayerbot.DungeonRunTauntAfterSkipsMain): a
+    // window never wraps past the last tank to the main tank, a slot past the live count starts at the last tank and
+    // still wraps to 1, and the main tank never leaves the boss; the row's own main-tank slot (priority 0) is unchanged.
+    // Off, the scan wraps to the front as before (default off).
+    bool dungeonRunTauntAfterSkipsMain = false;
     // The run leader's time limit from `run start`, in minutes (0 = none; default 180 = 3 h).
     uint32 dungeonRunMaxMinutes;
     // The run leader estimates how many creatures a pull brings (PullAggroEstimatePolicy.h) and rests the party
