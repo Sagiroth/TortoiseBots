@@ -628,6 +628,30 @@ static void TestTankPostOwns_KeyOffWritesNoSlotWord()
     CHECK(!TankPostEndsAsSlot(false, true, false)); // the same renumbering with the key off: band
 }
 
+// Walk 2f a-2: slot 1 stood on the post at (8, -200) with Cindarion 40 yd away, the Engage step's attack returned true
+// every tick and `reach melee` never ran, so the step never walked. The walk needs the key, no taunt this tick and the
+// unit out of melee reach.
+static void TestTankPostEngageWalks_OutOfReach()
+{
+    // TankPostEngageWalks(keyOn, tauntWentOut, inMeleeReach)
+    CHECK(TankPostEngageWalks(true, false, false)); // key on, no taunt, out of reach: the step walks to the unit
+    CHECK(!TankPostEngageWalks(true, false, true));  // in reach: attack it where it stands
+    CHECK(!TankPostEngageWalks(true, true, false));  // a taunt went out: the tick ends on it
+    CHECK(!TankPostEngageWalks(false, false, false)); // key off: today's attack only
+}
+
+// Walk 2f F2: two posts on the Hatcher entry 50144 each reserved both Hatchers against the other tank, and the post's
+// own update reset the shared loose clock, so the 15 s grace never ended. A record owns the one unit it latched.
+static void TestTankPostRecordCovers_OtherUnitFree()
+{
+    std::uint64_t const a = 1000, b = 2000;
+    // TankPostRecordCovers(keyOn, latchedGuid, targetGuid)
+    CHECK(!TankPostRecordCovers(true, a, b)); // latched A, target B: not this post's unit
+    CHECK(TankPostRecordCovers(true, a, a));  // the unit it latched
+    CHECK(TankPostRecordCovers(true, 0, b));  // nothing latched yet: the entry reserves as before
+    CHECK(TankPostRecordCovers(false, a, b)); // key off: every unit of the entry
+}
+
 // 2b: a carrier on its Shade keeps it (the "not dps target active" trigger stays quiet); 2c: the kill-first check
 // interval is 1 s under the hold.
 static void TestCarrierHold()
@@ -1740,6 +1764,8 @@ int main()
     TestTankPostOwns_AreaTauntRefusedWhenReservedInRadius();
     TestTankPostEndWord_SlotMoved();
     TestTankPostOwns_KeyOffWritesNoSlotWord();
+    TestTankPostEngageWalks_OutOfReach();
+    TestTankPostRecordCovers_OtherUnitFree();
     TestCarrierHold();
     TestNotDpsTargetFires();
     TestKillFirstCheckDueFlips();

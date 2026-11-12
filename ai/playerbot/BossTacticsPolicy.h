@@ -3664,6 +3664,14 @@ namespace ai
         return keyOn && otherPostLive && otherTankCanAct && !botOwnsPost;
     }
 
+    // AiPlayerbot.DungeonRunTankPostOwnsUnit: a live post owns the one unit it latched at its arrival, so another
+    // tank's record reserves no unit of the row's entry but that one. A record that latched nothing yet (`latchedGuid`
+    // 0) covers every unit of the entry as before, and with the key off every record does.
+    inline bool TankPostRecordCovers(bool keyOn, std::uint64_t latchedGuid, std::uint64_t targetGuid)
+    {
+        return !keyOn || latchedGuid == 0 || latchedGuid == targetGuid;
+    }
+
     // The post's reservation also needs its tank able to take the unit back: the tank within kTankPostReserveRangeYd
     // of the subject (3D), and the subject still on it or loose (not its victim) for less than
     // kTankPostReserveGraceMs. A tank stranded across the room, or one that lost the unit past the grace, reserves
@@ -4062,6 +4070,15 @@ namespace ai
         if (in.holdingOtherHostile)
             return TankPostDecision::Hold;
         return in.botToSpotYd > kTankPostSpotYd ? TankPostDecision::Walk : TankPostDecision::Hold;
+    }
+
+    // AiPlayerbot.DungeonRunTankPostWalks: the Engage step walks to the subject while it is out of melee reach and no
+    // taunt went out (a taunt that cast ends the tick; a subject in reach is attacked where it stands). Walk 2f a-2:
+    // slot 1 stood on the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the
+    // step never walked.
+    inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach)
+    {
+        return keyOn && !tauntWentOut && !inMeleeReach;
     }
 
     // The end word of a post (the step's own order). `slotMoved`: the post's row is still in the fight, but for another

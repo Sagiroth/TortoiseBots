@@ -717,6 +717,16 @@ public:
     // Defensive Stance first for a warrior, and by area taunt only when the single taunt cannot go out, the unit is
     // within 10 yd and on a non-tank; off, the step only attacks the unit as before (default off).
     bool dungeonRunTankPostTaunts = false;
+    // The post's Engage step walks to its subject (AiPlayerbot.DungeonRunTankPostWalks): on, while the awaited unit is
+    // not in melee reach and no taunt went out, the post tank moves to it (the target is taken first, the spline is not
+    // relaunched while the tank walks and the unit stands where it did at the last launch, and the walk writes one
+    // event=walk row on entry); off, the step only attacks the unit where it stands as before (default off).
+    bool dungeonRunTankPostWalks = false;
+    // A live post owns one unit (AiPlayerbot.DungeonRunTankPostOwnsUnit): on, another tank's record reserves the unit
+    // it latched at its arrival only, not every unit of the row's entry, so two posts on one entry no longer reserve
+    // each other's Hatchers; a record with no latched unit reserves as before; off, every post on the entry reserves
+    // every unit of it (default off).
+    bool dungeonRunTankPostOwnsUnit = false;
     // The seek_aura boss-tactic kind (the raid gathers in the cloud a dying `target_entry` leaves, to carry its aura
     // into the boss's cycle): on, the rows load and run; off, they are ignored (default off).
     bool dungeonRunSeekAura = false;

@@ -1491,7 +1491,7 @@ Whether the boss tactics keep their `tank_post` rows: a tank named by a row wait
 
 **The end:** the post ends on the awaited unit's death or evade, `window_s` after it started, the tank's death or a creature charm, or the band closing. The record is one per bot, so a successor in the same slot starts its own post after its predecessor dies.
 
-**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row; `AiPlayerbot.DungeonRunTankPostOwnsSubject` adds one `event=lapse,reason=post_lapsed` row per reservation lapse.
+**Diagnostics:** one `BossTacticsTankPost` row per post and event (`event=start|arrive|end`), with `reason=band|window|dead|evade|gone|tank|slot` on the end row; `AiPlayerbot.DungeonRunTankPostOwnsSubject` adds one `event=lapse,reason=post_lapsed` row per reservation lapse; `AiPlayerbot.DungeonRunTankPostWalks` adds one `event=walk,subject_yd=<yd>` row per Engage walk episode.
 
 </details>
 
@@ -1606,6 +1606,34 @@ Whether a `tank_post` row's Engage step taunts the awaited unit back off whoever
 **The gate:** the post tank's own reservation is skipped (`TankPostReservesSubject` ignores its own record), so `AiPlayerbot.DungeonRunTankPostOwnsSubject` never refuses the post's own taunt; every other tank stays refused while the reservation holds.
 
 **Diagnostics:** one `BossTacticsTankPost` row per cast (`event=taunt,step=taunt|stance|area,spell=<spell>,victim=<tank|healer|dps|none>,cast=1`), and for a word that did not cast (`gate`, `not_ready`) at most one per bot and word per 5 s; `step=none` writes nothing. The gates are read only for a taunt that can go out: a subject already on the post, in the air, or off another tank without the reservation writes no `BossTacticsTauntGate` row, and the area taunt's gates and radius scan run only once the single taunt cannot go out and the area taunt itself can (a known spell, castable now, the unit in range and off a non-tank).
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostWalks`
+Whether a `tank_post` row's Engage step walks to the unit it awaits while that unit is out of melee reach: the step takes the unit as its target and moves to it, instead of ending the tick on the attack. Off by default: walk 2f a-2 had slot 1 standing on the post at (8, -200) with Cindarion 40 yd away, the attack returned true every tick and the step never walked, for five ticks to the taunt.
+**Default:** `0` · **Values:** `0` off (the Engage step attacks the unit where it stands, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The walk:** on the Engage decision, after the taunt attempt, while the awaited unit is out of melee reach (`CanReachWithMeleeAutoAttack`), the post tank takes the unit as its target when it is not already (the attack's result is ignored) and moves to it; the move's result is the tick's result. A subject in reach, or a taunt that cast this tick, keeps the old attack-only path. A stand seat still wins: the seat yields the post before the Engage step runs.
+
+**The spline guard:** the walk's own guard, with the unit's position as the launch point instead of the spot: no second spline while the tank is moving and the unit still stands within 3 yd of where it stood at the last launch, so a walking chase is not relaunched every tick. The timer and the drag/leash branches are unchanged.
+
+**Diagnostics:** one `BossTacticsTankPost` row per walk episode (`event=walk,subject_yd=<yd>`), written when a walk starts, not on the ticks it stays on; leaving the Engage step or reaching the unit ends the episode.
+
+</details>
+
+### `AiPlayerbot.DungeonRunTankPostOwnsUnit`
+Whether a live `tank_post` owns the one unit it latched at its arrival: another tank's record then reserves only that unit, not every unit of the row's `target_entry`, so two posts on one entry no longer lock each other's taunts out. Off by default: with two posts on the Hatcher entry 50144, each reserved both Hatchers against the other tank and the post's own update reset the shared loose clock, so the 15 s grace never ended.
+**Default:** `0` · **Values:** `0` off (every post on the entry reserves every unit of it, as before), `1` on (needs `AiPlayerbot.DungeonRunTankPost` and `AiPlayerbot.DungeonRunTankPostOwnsSubject`) · **Restart:** not needed (`.reload config` applies it on the next world tick)
+
+<details>
+<summary>How it works in detail</summary>
+
+**The unit:** a post record latches the unit its arrival was logged on (`arrivedSubjectGuid`, set by every arrived tick of that unit, held in the record, reset when the post starts). With the key on, another tank's record reserves a unit only when it latched nothing yet or latched that unit; with the key off, or a record that has not arrived, the entry's every unit stays reserved as `AiPlayerbot.DungeonRunTankPostOwnsSubject` has it. The reservation's own limits (3 s live, 60 yd, the 15 s loose grace) are unchanged and apply per record as before.
+
+**Why:** the two Onyxia Hatcher posts (slots 2 and 3) name the same entry, so the per-entry match made each post reserve both Hatchers; with the per-unit rule each post covers the Hatcher it landed, and the `AiPlayerbot.DungeonRunTauntAfterSkipsMain` windows cover the other.
 
 </details>
 

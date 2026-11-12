@@ -945,6 +945,9 @@ namespace ai
         float lastX = 0.0f;
         float lastY = 0.0f;
         bool hasLast = false;
+        // The Engage step's walk row (AiPlayerbot.DungeonRunTankPostWalks) is written once per walk episode, not on
+        // every tick the tank stays on it.
+        bool walkLogged = false;
     };
 
     // The ranged_only boss-tactic kind: this melee bot leaves `unit` alone while the unit stands the row's gap

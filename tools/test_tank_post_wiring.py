@@ -429,6 +429,78 @@ class TankPostWiring(unittest.TestCase):
         self.assertIn('case TauntGate::PostSubject: return "post_subject";', POLICY)
         self.assertIn("constexpr std::size_t kTauntGateWords = 5;", POLICY)
 
+    def test_engage_step_walks_to_its_subject(self):
+        # AiPlayerbot.DungeonRunTankPostWalks: the Engage step walks to a subject out of melee reach instead of ending
+        # the tick on the attack (walk 2f a-2: slot 1 on the post 40 yd from Cindarion). The rule is pure
+        # (TankPostEngageWalks) and tested in tools/test_boss_tactics_policy.cpp; these pins prove the live use.
+        action = body(ACTIONS, "bool BossTacticsTankPostAction::Execute(Event& event)")
+        engage = action[action.index("if (task.step == TankPostDecision::Engage)"):]
+        engage = engage[:engage.index("return Attack(bot, task.subject);")]
+        self.assertIn("TankPostEngageWalks(sPlayerbotAIConfig.dungeonRunTankPostWalks, false,", engage)
+        self.assertIn("bot->CanReachWithMeleeAutoAttack(task.subject));", engage)
+        # After the taunt, before the plain attack: a taunt that cast ends the tick, a walk only starts without one.
+        self.assertLess(engage.index("TakeSubject(task, current)"), engage.index("TankPostEngageWalks("))
+        self.assertLess(engage.index("TankPostEngageWalks("), engage.index("if (current == task.subject)"))
+        # The subject is taken first (the result ignored), then the tank moves to it and the move's result is returned.
+        self.assertIn("if (current != task.subject)\n                Attack(bot, task.subject);", engage)
+        self.assertIn("if (!MoveTo(task.subject))\n                return false;", engage)
+        self.assertLess(engage.index("if (!MoveTo(task.subject))"), engage.index("lastX = task.subject->GetPositionX();"))
+        # The spline guard is the walk's own, with the subject's launch point and 3 yd.
+        self.assertIn("hasLast && !bot->IsStopped() && !bot->movespline->Finalized() &&", engage)
+        self.assertIn("std::fabs(lastX - task.subject->GetPositionX()) < 3.0f &&", engage)
+        self.assertIn("std::fabs(lastY - task.subject->GetPositionY()) < 3.0f", engage)
+        self.assertIn("lastX = task.subject->GetPositionX();", engage)
+        self.assertIn("lastY = task.subject->GetPositionY();", engage)
+        # One row per walk episode, through the post's own logger.
+        self.assertIn("if (!walkLogged)\n            {\n                LogTankPostWalk(ai, *task.row,", engage)
+        self.assertIn("walkLogged = true;", engage)
+        self.assertIn("if (task.step != TankPostDecision::Engage)\n        walkLogged = false;", action)
+        self.assertIn("bool walkLogged = false;", ACTIONS_H)
+        walk_log = body(ACTIONS, "void LogTankPostWalk(")
+        self.assertIn('"event=walk,subject_yd=%.1f", subjectYd', walk_log)
+        self.assertIn('sPlayerbotAIConfig.logEvent(ai, "BossTacticsTankPost", info1, info2)', walk_log)
+        self.assertIn('sPlayerbotAIConfig.hasLog("bot_events.csv")', walk_log)
+        self.assertIn("inline bool TankPostEngageWalks(bool keyOn, bool tauntWentOut, bool inMeleeReach)", POLICY)
+        self.assertIn("return keyOn && !tauntWentOut && !inMeleeReach;", POLICY)
+        # The key: read with the row's mode, defaulted off, templated and documented without "recommended on".
+        self.assertIn('dungeonRunTankPostWalks = config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostWalks", false);',
+                      CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostWalks = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostWalks = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostWalks", DOCS)
+        section = DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostWalks`"):][:900]
+        self.assertIn("`0` off", section)
+        self.assertNotIn("recommended on", section)
+        self.assertIn("DungeonRunTankPostWalks", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostWalks", CHANGELOG)
+
+    def test_a_post_record_owns_one_unit(self):
+        # AiPlayerbot.DungeonRunTankPostOwnsUnit: two posts on the Hatcher entry 50144 reserved each other's units and
+        # the post's own update reset the shared loose clock, so the 15 s grace never ended. The rule is pure
+        # (TankPostRecordCovers) and tested in tools/test_boss_tactics_policy.cpp; this pin proves the live use.
+        reserve = body(ACTIONS, "bool ai::TankPostReservesSubject(PlayerbotAI* ai, Player* bot, Unit* target)")
+        self.assertIn("!TankPostRecordCovers(sPlayerbotAIConfig.dungeonRunTankPostOwnsUnit,", reserve)
+        self.assertIn("entry.second.arrivedSubjectGuid, target->GetObjectGuid().GetRawValue()) ||", reserve)
+        # The per-unit filter sits in the key-collecting loop, beside the entry and liveness tests.
+        collect = reserve[reserve.index("for (std::pair<std::uint64_t const, TankPostRecord>& entry : g_tankPost)"):]
+        collect = collect[:collect.index("others.push_back(entry.first);")]
+        self.assertIn("entry.second.targetEntry != target->GetEntry()", collect)
+        self.assertIn("TankPostRecordCovers(", collect)
+        self.assertLess(collect.index("TankPostRecordCovers("), collect.index("nowMs - entry.second.lastReadMs"))
+        self.assertIn("inline bool TankPostRecordCovers(bool keyOn, std::uint64_t latchedGuid, "
+                      "std::uint64_t targetGuid)", POLICY)
+        self.assertIn("return !keyOn || latchedGuid == 0 || latchedGuid == targetGuid;", POLICY)
+        self.assertIn('dungeonRunTankPostOwnsUnit = '
+                      'config.GetBoolDefault("AiPlayerbot.DungeonRunTankPostOwnsUnit", false);', CONFIG_CPP)
+        self.assertIn("bool dungeonRunTankPostOwnsUnit = false;", CONFIG_H)
+        self.assertRegex(TEMPLATE, r"(?m)^AiPlayerbot\.DungeonRunTankPostOwnsUnit = 0$")
+        self.assertIn("AiPlayerbot.DungeonRunTankPostOwnsUnit", DOCS)
+        section = DOCS[DOCS.index("### `AiPlayerbot.DungeonRunTankPostOwnsUnit`"):][:900]
+        self.assertIn("`0` off", section)
+        self.assertNotIn("recommended on", section)
+        self.assertIn("DungeonRunTankPostOwnsUnit", BOSS_DOCS)
+        self.assertIn("DungeonRunTankPostOwnsUnit", CHANGELOG)
+
 
 if __name__ == "__main__":
     unittest.main()
