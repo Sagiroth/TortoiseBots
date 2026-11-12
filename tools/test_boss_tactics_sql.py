@@ -1139,6 +1139,29 @@ class BossTacticsSql(unittest.TestCase):
         self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
                       "AND `kind` = 'tank_post' AND `target_entry` = 50144;", text)
 
+    def test_onyxia_walk2h_burn_order(self):
+        # 20261112200100_world.sql (lead decision 1): the Hatchers lost 9-25 % in 56-83 s of P3 (466k health
+        # together) while P1 takes 39 % off Onyxia in 83-97 s, so the kill-first order spent the phase on adds. The
+        # `hold_kill` row goes with it and the damage dealers fight her from the first pull; Cindarion's kill_first
+        # stays, and the 50143 gate_hold row still holds them off her while he fights.
+        name = "20261112200100_world.sql"
+        path = os.path.join(ROOT, "data/sql/world", name)
+        self.assertTrue(os.path.isfile(path), "the Onyxia walk 2h burn-order migration is missing")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 10184 "
+                      "AND `kind` = 'hold_kill' AND `target_entry` = 50144;", text)
+        self.assertIn("DELETE FROM `ai_boss_tactic` WHERE `map` = 249 AND `boss_entry` = 50144 "
+                      "AND `kind` = 'kill_first';", text)
+        self.assertEqual(0, text.count("INSERT INTO `ai_boss_tactic`"))
+        live = {(row[1], row[2], row[3], row[4], row[5]): _payload_dict(row) for row in effective_rows()}
+        self.assertNotIn((249, 10184, "hold_kill", 50144, 0), live, "the Onyxia hold_kill row is back")
+        self.assertFalse([key for key in live if key[:2] == (249, 50144) and key[2] == "kill_first"],
+                         "a Hatcher kill_first row is back")
+        self.assertIn((249, 50143, "kill_first", 50143, 0), live, "the Cindarion kill_first row was deleted")
+        self.assertIn((249, 10184, "gate_hold", 50143, 0), live,
+                      "the 50143 gate_hold row was deleted with the Hatcher kill order")
+
     def test_onyxia_walk2b_stand_seats_are_live(self):
         # 20261110120300_world.sql: the 601 Deep Breath seats for Onyxia 10184's eight hover
         # points, one stand anchor per point opening on that point's breath spell while she
