@@ -399,6 +399,7 @@ public:
     // entry dismisses them, and hiring is refused while queued or inside.
     // Set for today's behaviour (hires may go to battlegrounds).
     bool hireAllowPvP = false;
+    bool hireCrossFactionNeutralInns = false;
     // Hired companions loot and roll by default. Unset: a hire never opens a
     // corpse and passes on every roll (pool bots and alts are unaffected).
     bool hireLoot = true;

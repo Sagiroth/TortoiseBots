@@ -669,6 +669,7 @@ bool PlayerbotAIConfig::Initialize()
         static_cast<int64_t>(config.GetIntDefault("AiPlayerbot.HireFreeMinSecurity", 0)));
     hireAnywhere = config.GetBoolDefault("AiPlayerbot.HireAnywhere", false);
     hireAllowPvP = config.GetBoolDefault("AiPlayerbot.HireAllowPvP", false);
+    hireCrossFactionNeutralInns = config.GetBoolDefault("AiPlayerbot.HireCrossFactionNeutralInns", false);
     hireLoot = config.GetBoolDefault("AiPlayerbot.HireLoot", false);
     shamanTankEnabled = config.GetBoolDefault("AiPlayerbot.ShamanTankEnabled", true);
     hireBaseCostCopper = static_cast<uint32>(config.GetIntDefault("AiPlayerbot.HireBaseCostCopper", 15000));

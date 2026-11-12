@@ -387,6 +387,12 @@ AiPlayerbot.TravelPickBudgetUs = 4000
 # warns once, entering dismisses them, hiring is refused while queued or
 # inside). 1 = today's behaviour (hires may go to battlegrounds).
 #AiPlayerbot.HireAllowPvP = 0
+# HireCrossFactionNeutralInns: 1 = recruiters at neutral inns (Booty Bay,
+# Gadgetzan, Everlook, Ratchet and the like) hire companions of both factions.
+# Needs AllowTwoSide.Interaction.Group = 1 in the core config; without it this
+# does nothing. City guards attack a hire of the other faction and it cannot
+# use your flight paths. 0 (default) = hires are of your own faction.
+#AiPlayerbot.HireCrossFactionNeutralInns = 0
 # HireLoot: 1 = hired companions loot corpses and roll on group loot.
 # 0 (default) = a hire never loots: it passes on every roll and leaves every
 # corpse alone. Hires never quest, whatever this is set to.
