@@ -111,6 +111,22 @@ namespace ai
             {
                 UpdateMovementState();
 
+                // A ranged reach that is still walking its approach stops the
+                // moment the target is in casting range and in sight: the
+                // booked walk runs past the stop band whenever the target
+                // closes the gap on its own, and the next tick would
+                // re-book it while the cast is already possible.
+                if (range > ATTACK_DISTANCE && !RequiresAttackableTarget())
+                {
+                    float const stopDist = bot->GetDistance(target);
+                    if (RangedApproachInPosition(stopDist, range, bot->IsWithinLOSInMap(target, true)))
+                    {
+                        if (!bot->IsStopped())
+                            ai->StopMoving();
+                        return true;
+                    }
+                }
+
                 // Ignore movement if too far
                 const float distanceToTarget = bot->GetDistance(target);
                 float chaseDist = range;
@@ -185,13 +201,11 @@ namespace ai
 
                 if (range > 0.0f)
                 {
-                    // Move to 75% of max range so we land comfortably inside the
-                    // range envelope rather than at its edge. This prevents constant
-                    // fidgeting when the target drifts slightly out of max range, and
-                    // stops bots from walking all the way out to the range limit before
-                    // they cast. The 0.75 factor keeps a buffer for target movement
-                    // while still being well within casting distance.
-                    const float preferredDist = range * 0.75f;
+                    // Stand at the stop band inside the range envelope, not at
+                    // its rim: a bot there casts instead of stepping again,
+                    // and a small step by the target does not kick the reach
+                    // back off (RangedApproachPolicy.h).
+                    const float preferredDist = RangedApproachStopDistance(range);
                     chaseDist = inLos ? preferredDist : (isFriend ? std::min(distanceToTarget * 0.9f, preferredDist) : preferredDist);
                     chaseDist = std::max(chaseDist - sPlayerbotAIConfig.contactDistance, 0.0f);
                 }
@@ -438,7 +452,11 @@ namespace ai
             // and a bot already walking its approach never pays a second path
             // search. MoveTo relaunches the spline every call, so without this
             // the reach re-pathed and restarted the walk on every tick.
+            bool const rangedReach = range > ATTACK_DISTANCE && !RequiresAttackableTarget();
+            if (!rangedReach)
+                return false;
             bool const partyHunter = bot->GetClass() == CLASS_HUNTER && GetMaster() && bot->GetGroup();
+            bool const inDungeonGroup = map->IsDungeon() && bot->GetGroup();
             if (!UseRangedApproach(map->IsDungeon() || partyHunter, distance, ATTACK_DISTANCE))
                 return false;
 
@@ -493,9 +511,61 @@ namespace ai
                     goal.x, goal.y, goal.z + targetHeight, true);
             };
 
-            RangedApproachChoice const choice = SelectRangedApproachPoint(points, goal, distance, seesTarget);
+            // The walk ends at the stop band inside casting distance, not at
+            // its rim, so the bot casts there instead of stepping again.
+            float const stop = RangedApproachStopDistance(distance);
+            RangedApproachChoice choice = SelectRangedApproachPoint(points, goal, stop, seesTarget);
             if (!choice.valid)
                 return false;
+
+            // In a dungeon group the destination must not lie in the aggro
+            // range of an idle pack when a closer-to-self point in range and
+            // sight exists: walk back along the path to the nearest such
+            // point to the bot. None found: keep the choice, the bot must
+            // still be able to fight.
+            if (inDungeonGroup)
+            {
+                std::vector<ApproachIdlePack> idle;
+                // Around a corner the next pack has no line of sight to the
+                // bot yet, so the list without the sight filter is the one
+                // that knows it (the flee's own veto reads the same list).
+                for (ObjectGuid const& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets no los"))
+                {
+                    Unit* unit = ai->GetUnit(guid);
+                    if (!unit || unit == target || !sServerFacade.IsAlive(unit) || unit->IsFriendlyTo(bot) || unit->GetVictim())
+                        continue;
+                    Creature* creature = unit->ToCreature();
+                    if (!creature)
+                        continue;
+                    float const radius = creature->GetAttackDistance(bot);
+                    if (radius <= 0.0f)
+                        continue;
+                    ApproachIdlePack pack;
+                    pack.x = unit->GetPositionX();
+                    pack.y = unit->GetPositionY();
+                    pack.radius = radius;
+                    idle.push_back(pack);
+                    if (idle.size() >= 16)
+                        break;
+                }
+
+                if (!idle.empty())
+                {
+                    ApproachPoint const botPoint = points.front();
+                    auto const packSafe = [&idle, &botPoint, &goal, stop, &seesTarget](ApproachPoint const& point)
+                    {
+                        return RangedApproachPointSafe(point, goal, botPoint, stop, seesTarget,
+                            idle.data(), idle.size());
+                    };
+                    if (!packSafe(choice.point))
+                    {
+                        RangedApproachChoice const nearer = StepBackToPackSafePoint(points, choice.point,
+                            goal, stop, seesTarget, idle.data(), idle.size());
+                        if (nearer.valid)
+                            choice.point = nearer.point;
+                    }
+                }
+            }
 
             WorldPosition const destination(bot->GetMapId(), choice.point.x, choice.point.y, choice.point.z);
             if (IsHazardNearPosition(destination))
@@ -598,6 +668,11 @@ namespace ai
                         // Force move if not in los
                         if (bot->IsWithinLOSInMap(target, true))
                         {
+                            // A ranged reach stands at the stop band inside
+                            // the range envelope, not at the rim or the
+                            // target: a bot there casts instead of moving.
+                            if (range > ATTACK_DISTANCE && !RequiresAttackableTarget())
+                                return !RangedApproachInPosition(bot->GetDistance(target), range, true);
                             // Check if the bot is already on the range required
                             return !IsWithinReach(target);
                         }
