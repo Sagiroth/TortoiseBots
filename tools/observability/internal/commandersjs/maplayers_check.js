@@ -1,5 +1,5 @@
 "use strict";
-// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 28 layers in 7 groups and their
+// Run by commandersjs_test.go under node: the Commanders tab's map layer state: the 32 layers in 8 groups and their
 // defaults, the migration from the 32-switch v2 (and the v1 booleans), effective() (the old keys the drawing code reads),
 // the per-layer greying rule, the raid presets, the trail time cut, the mob union of a commander card with its dungeon
 // run, and the "N of M" note.
@@ -11,20 +11,20 @@ const mem = () => { const d = {}; return { d, getItem: (k) => (k in d ? d[k] : n
 const oldAll = (v) => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = v; }); return o; };
 const oldDefaults = () => { const o = {}; L.OLD_KEYS.forEach((k) => { o[k] = L.OLD_LAYERS[k].def; }); return o; };
 
-// ---- the 28 layers, 7 groups, and the defaults the brief asks for
+// ---- the 32 layers, 8 groups, and the defaults the brief asks for
 const KEYS = ["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "memberpaths", "commanderline", "planroute",
   "planstands", "stalls", "runinfo", "enemies", "critters", "enemynames", "facing", "mobcast", "threat", "aggro", "patrols", "actionlines", "subgroups",
-  "healtank", "healrange", "deaths", "events", "objects"];
+  "healtank", "healrange", "deaths", "events", "objects", "fighttrails", "fightmarks", "fightheat", "fightsummons"];
 const def = L.defaults();
 assert.deepStrictEqual(Object.keys(def).sort(), KEYS.concat(["dim", "trailLen", "trailSec", "style"]).sort());
-assert.strictEqual(L.keys().length, 28);
-assert.deepStrictEqual(L.groups(), ["Map", "Party", "Route", "Threat", "Raid", "Events", "Objects"]);
+assert.strictEqual(L.keys().length, 32);
+assert.deepStrictEqual(L.groups(), ["Map", "Party", "Route", "Threat", "Raid", "Events", "Objects", "Fight"]);
 assert.deepStrictEqual(L.keys(), KEYS, "the panel's order");
 ["bg", "grid", "zone", "bots", "botnames", "hpbars", "leadpath", "planroute", "planstands", "runinfo", "enemies", "enemynames",
-  "facing", "mobcast", "threat", "aggro", "patrols", "deaths", "events"].forEach((k) => assert.strictEqual(def[k], true, k));
-["memberpaths", "commanderline", "critters", "stalls", "actionlines", "subgroups", "healtank", "healrange", "objects"]
+  "facing", "mobcast", "threat", "aggro", "patrols", "deaths", "events", "fighttrails", "fightmarks", "fightsummons"].forEach((k) => assert.strictEqual(def[k], true, k));
+["memberpaths", "commanderline", "critters", "stalls", "actionlines", "subgroups", "healtank", "healrange", "objects", "fightheat"]
   .forEach((k) => assert.strictEqual(def[k], false, k));
-assert.strictEqual(L.DEFS.filter((d) => d.def).length, 19);
+assert.strictEqual(L.DEFS.filter((d) => d.def).length, 22);
 assert.strictEqual(new Set(L.keys()).size, L.keys().length);
 L.DEFS.forEach((d) => {
   assert.ok(d.label && d.group && d.tip, d.key + " has a label, a group and a tooltip");
@@ -67,11 +67,36 @@ assert.deepStrictEqual(Object.keys(eff).sort(), L.OLD_KEYS.concat(["runsteps"]).
   "planroute", "planstands", "planrings", "deaths"].forEach((k) => assert.strictEqual(eff[k], true, k));
 ["membertrails", "healring", "commander", "mobcritter", "bottarget", "healline", "ccline", "stalls", "objects", "subgroups", "healtank"]
   .forEach((k) => assert.strictEqual(eff[k], false, k));
+["fighttrails", "fightmarks", "fightsummons"].forEach((k) => assert.strictEqual(eff[k], true, k));
+assert.strictEqual(eff.fightheat, false, "the heat is off by default");
 assert.strictEqual(eff.runsteps, false, "the run route is not offered (the run leader is on its own branch)");
 const e2 = L.effective(L.set(L.set(L.set(def, "enemies", false), "critters", true), "bots", false));
 assert.strictEqual(e2.mobhostile, false); assert.strictEqual(e2.mobneutral, false); assert.strictEqual(e2.mobcritter, true);
 assert.strictEqual(e2.bots, false); assert.strictEqual(e2.lead, false);
 assert.strictEqual(e2.botnames, true, "all bot names has its own layer now");
+
+// ---- the Fight group: four layers in the Fight debugger only, each with one old key of its own name
+["fighttrails", "fightmarks", "fightheat", "fightsummons"].forEach((k) => {
+  const d = L.DEFS.find((x) => x.key === k);
+  assert.ok(d && d.group === "Fight" && d.parts.length === 1 && d.parts[0] === k, k + " is a Fight layer with its own old key");
+  assert.strictEqual(L.OLD_LAYERS[k].needs, "fightMap", k + " needs the debugger's fight");
+  assert.strictEqual(L.OLD_LAYERS[k].why, "In the Fight debugger", k + " says why outside the debugger");
+  assert.strictEqual(L.availability({})[k].ok, false, k + " is greyed outside the debugger");
+  assert.strictEqual(L.availability({})[k].why, "In the Fight debugger");
+  assert.strictEqual(L.availability({ fightMap: true })[k].ok, true, k + " is available in the debugger");
+});
+assert.deepStrictEqual(L.DEFS.filter((d) => d.group === "Fight").map((d) => [d.key, d.def]), [["fighttrails", true], ["fightmarks", true], ["fightheat", false], ["fightsummons", true]]);
+assert.strictEqual(L.DEFS.find((d) => d.key === "fightmarks").label, "Mechanic markers (anchor, stand, clouds, puller)");
+// outside the debugger nothing of the group is drawn, even when chosen; inside it the chosen ones are
+const outD = L.active(def, L.availability({}), {});
+["fighttrails", "fightmarks", "fightheat", "fightsummons"].forEach((k) => assert.strictEqual(outD[k], false, k + " is not drawn outside the debugger"));
+const inD = L.active(L.set(def, "fightheat", true), L.availability({ fightMap: true }), { fightMap: true });
+["fighttrails", "fightmarks", "fightheat", "fightsummons"].forEach((k) => assert.strictEqual(inD[k], true, k + " is drawn in the debugger"));
+assert.strictEqual(L.active(L.set(def, "fighttrails", false), L.availability({ fightMap: true }), { fightMap: true }).fighttrails, false, "a layer switched off is not drawn");
+// the saved choice of a browser that never saw the group gets the defaults
+assert.strictEqual(L.normalize({ bg: false }).fighttrails, true);
+assert.strictEqual(L.normalize({ bg: false }).fightheat, false);
+assert.strictEqual(L.normalize({ fightheat: true }).fightheat, true);
 
 // ---- availability: greyed only when NONE of a layer's parts has data
 let av = L.availability({});

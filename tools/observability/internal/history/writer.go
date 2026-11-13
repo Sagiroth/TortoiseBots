@@ -288,10 +288,11 @@ func (s *Store) write(it Item) bool {
 			ntMs, longest = &a, &b
 		}
 	}
+	meters := s.buildMeters(f)
 	key := combat.Key(f.Commander, it.Session, f.ID)
 	stored := line{
 		V: 1, Session: it.Session, Key: key, SavedAt: now.Unix(), PackKey: packKey(f, pack), Pack: pack,
-		Engaged: engagedSorted(f.Engaged), NonTankMs: ntMs, NonTankLongestMs: longest, Warnings: it.Warnings, Fight: f,
+		Engaged: engagedSorted(f.Engaged), NonTankMs: ntMs, NonTankLongestMs: longest, Warnings: it.Warnings, Fight: f, Meters: meters,
 	}
 	data, err := json.Marshal(stored)
 	if err != nil {
@@ -301,6 +302,17 @@ func (s *Store) write(it Item) bool {
 	data = append(data, '\n')
 
 	size := s.fileSize[path]
+	// The meters are budgeted apart from the fight: a line that would cross the day file's cap with them is written without them, and
+	// only a fight too big even then is dropped (the rule before meters existed).
+	if len(stored.Meters) > 0 && size+int64(len(data)) > s.cfg.MaxFileBytes {
+		stored.Meters = nil
+		if data, err = json.Marshal(stored); err != nil {
+			log.Printf("[History] %s: %v", key, err)
+			return true
+		}
+		data = append(data, '\n')
+		s.logOnce(path+" (meters)", "the day file is nearly full; later fights of that day are kept without their meters")
+	}
 	if size+int64(len(data)) > s.cfg.MaxFileBytes {
 		s.logOnce(path, "the day file is full; later fights of that day are not kept")
 		s.dropped("file_cap")
@@ -500,4 +512,19 @@ func (s *Store) dropRowsOf(path string) {
 	for i := range s.rows {
 		s.byKey[s.rows[i].Key] = i
 	}
+}
+
+// buildMeters asks the meters callback for the fight's series. The callback is the writer's only call into code that works on telemetry
+// numbers, so a panic in it costs the fight its meters (logged once), never the writer goroutine or the daemon.
+func (s *Store) buildMeters(f combat.Fight) (raw json.RawMessage) {
+	if s.meters == nil {
+		return nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			raw = nil
+			s.logOnce("meters panic", fmt.Sprintf("building the meters of %s failed (%v); the fight is kept without them", f.ID, r))
+		}
+	}()
+	return s.meters(f.Commander, f)
 }

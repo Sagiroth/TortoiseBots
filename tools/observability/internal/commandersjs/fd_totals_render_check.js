@@ -29,8 +29,8 @@ function take(name) {
 
 const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock", "cmdPlanName", "cmdPlanFor",
   "cmdBossTable", "cmdBossPanels", "cmdPaintBosses", "cmdLiveBossPanels", "cmdFightBossPanels", "cmdTrashBlockHtml",
-  "fdState", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
-  "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
+  "fdState", "fdLiveState", "fdLiveTimelineHtml", "fdLiveFiledRow", "fdLiveClock", "fdLiveWinLabel", "fdEmptyNote", "fdSet", "fdSyncSel", "fdFightHash", "fdReplayStop",
+  "fdHasMeters", "fdReadyNotRun", "fdFrameStats", "fdReadyHtml", "fdFramesHtml",
   "fdShowAllGet", "fdTotalsGet", "fdTotalsSet", "fdTotalsSession", "fdTotalsLoad",
   "fdTotalChipsHtml", "fdTotalsSegHtml", "fdRunStartText", "fdTotalTitleHtml",
   "fdTonightRows", "fdMergeRows", "fdTodayDay", "fdOlderState",
@@ -38,7 +38,7 @@ const FNS = ["esc", "numOr0", "setHtml", "jsonOrThrow", "cmdNowFor", "cmdClock",
   "fdRunPlaySync", "fdRunSync", "fdRunLoad", "fdRunStop", "fdRunStopAll",
   "fdFightExtra", "fdPrevPackI", "fdFightHist",
   "fdRailFoldHtml", "fdRailCardHtml", "fdRailParts", "fdRailPatch",
-  "fdBossPhase", "fdUnderSync", "fdCheckNum", "fdCheckTitle", "fdChecksHtml", "fdTimelineHtml", "fdRecapHtml",
+  "fdRangeBandHtml", "fdOutCls", "fdMarkOut", "fdViewSync", "fdRangeBarHtml", "fdLinkTail", "fdWholeTags", "fdDragBandSync", "fdBossPhase", "fdUnderSync", "fdCheckNum", "fdCheckTitle", "fdChecksHtml", "fdTimelineHtml", "fdRecapHtml",
   "fdRolesHtml", "fdLiveTableHtml", "fdBotHtml",
   "fdPackLoad", "fdPackShow", "fdPackHtml", "fdDayOptionsHtml", "paintSeg",
   "fdPlayHtml", "fdPlayNote", "fdPlaySync", "fdLanesHtml", "fdCursorSync", "fdTrackLoad", "fdDayPaint",
@@ -84,6 +84,11 @@ const fetchStub = (url) => {
 const ctx = {
   console, setTimeout, clearTimeout, Date, Math, JSON,
   FightDebug: require(path.join(dir, "fightdebug.js")),
+  FdLive: require(path.join(dir, "fdlive.js")),
+  FightMeters: require(path.join(dir, "fightmeters.js")),
+  WipeRecap: require(path.join(dir, "wiperecap.js")),
+  FdView: require(path.join(dir, "fdview.js")),
+  FdFilter: require(path.join(dir, "fdfilter.js")),
   FdTabs: require(path.join(dir, "fdtabs.js")),
   FightReplay: require(path.join(dir, "fightreplay.js")),
   AggroLanes: require(path.join(dir, "aggrolanes.js")),
@@ -99,6 +104,12 @@ vm.runInContext([
   "var cmdPageMode = () => 'debug';",
   "var cmdPageHash = () => {};",
   "var fdPage = { open: null };",
+  "var fdLive = {}, fdLivePaintBar = () => {}, fdLiveCatchUp = () => {}, fdLiveTickSync = () => {};",
+  "var fdAurasSync = () => {}, fdAuraFight = (f) => f, fdAuLiveOpts = () => null, fdAuLiveKey = () => 'live:k';", // the Auras panel has its own check (fightauras_ui_check.js)
+  "var fdEventsSync = () => {}, fdEvKeep = () => null, FD_EV_PAGE = 500;", // the Events panel has its own check (fdevents_ui_check.js)
+  "var fdMetersSync = () => {}, fdMetersInputs = () => null;", // the Meters panel has its own check (fdmeters_ui_check.js)
+  "var fdWipeHtml = () => '', fdWipeLiveSync = () => {};", // the wipe box has its own check (wiperecap_ui_check.js)
+  "var fdMechSync = () => {}, fdMechLine = () => null, fdMechSamples = () => [], fdLiveMechBar = () => {};", // the boss mechanics have their own check (mechpanel_ui_check.js)
   "var cmdFindBind = (k) => null;",
 ].join("\n"), ctx);
 vm.runInContext(FNS.map(take).join("\n"), ctx, { filename: "app.js totals render" });

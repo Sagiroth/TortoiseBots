@@ -200,4 +200,8 @@ assert.strictEqual(L.fallback([], now), false);
   assert.strictEqual(sched.shown("lead"), true);
 }
 
+// ---- the names the page listens to: the raid combat frames the daemon publishes are part of the stream's event list
+assert.ok(Array.isArray(L.NAMES) && L.NAMES.indexOf("raid_combat") >= 0, "raid_combat is a listened frame");
+["snapshot", "commander", "pos", "events", "fight_live", "fight", "resync"].forEach((n) => assert.ok(L.NAMES.indexOf(n) >= 0, n + " stays listened"));
+
 console.log("live_check.js ok");

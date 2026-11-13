@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>TortoiseBots — Server & Bot Observability</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=22">
+  <link rel="stylesheet" href="/static/css/app.css?v=35">
   <link rel="stylesheet" href="/static/css/underperf.css?v=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%232ea043%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polygon points=%2212 2 2 7 12 12 22 7 12 2%22/><polyline points=%222 17 12 22 22 17%22/><polyline points=%222 12 12 17 22 12%22/></svg>">
 </head>
@@ -153,6 +153,8 @@
 
     <!-- Shown only while the numbers below are not live (server down, stale, dashboard unreachable). -->
     <div id="health-banner" class="health-banner" role="alert" hidden></div>
+    <!-- One line when a shared link was too long to keep through login. -->
+    <div id="link-note" class="health-banner warn" role="status" hidden></div>
 
     <!-- Page Content -->
     <div class="content-area">
@@ -556,6 +558,7 @@
           <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one dungeon appear as one run per map. Update the module to tell copies apart.</p>
         </div>
         <!-- The list of runs -->
+        <div id="dgn-live" class="fd-livegrid" hidden></div>
         <div id="dgn-list" class="card"></div>
         <!-- The live view of one run: back link, header and the Commanders map card -->
         <div id="dgn-view" style="display: none;">
@@ -578,6 +581,7 @@
           <p class="empty-hint">The game server runs an older module that reports no instance id, so all copies of one raid appear as one run per map. Update the module to tell copies apart.</p>
         </div>
         <!-- The list of runs -->
+        <div id="raid-live" class="fd-livegrid" hidden></div>
         <div id="raid-list" class="card"></div>
         <!-- The live view of one group: back link, header and the Commanders map card -->
         <div id="raid-view" style="display: none;">
@@ -642,6 +646,8 @@
             <button type="button" class="seg-btn" data-page-mode="live" aria-pressed="false">Live</button>
             <button type="button" class="seg-btn" data-page-mode="debug" aria-pressed="false">Fight debugger</button>
           </div>
+          <button type="button" class="btn" id="cmd-fd-panels" hidden title="Move, resize and hide the Fight debugger's panels; keep named layouts in this browser">Panels</button>
+          <button type="button" class="fd-laychip" id="cmd-fd-laychip" hidden title="This page shows a layout from a link. It is not saved: open Panels to keep it or pick another.">Shared layout</button>
         </div>
         <!-- Refresh rate: the same choice as in the top bar (one setting for every live view, kept in this browser). -->
         <div class="card cmd-refresh-bar">
@@ -875,28 +881,38 @@
 
 <script src="/static/js/refresh.js?v=1"></script>
 <script src="/static/js/commanders.js?v=8"></script>
-<script src="/static/js/dungeons.js?v=2"></script>
+<script src="/static/js/dungeons.js?v=3"></script>
 <script src="/static/js/raids.js?v=1"></script>
 <script src="/static/js/agentmaps.js?v=1"></script>
-<script src="/static/js/maplayers.js?v=7"></script>
+<script src="/static/js/maplayers.js?v=8"></script>
 <script src="/static/js/unitinfo.js?v=2"></script>
 <script src="/static/js/paths.js?v=2"></script>
 <script src="/static/js/dungeon-runs.js?v=1"></script>
 <script src="/static/js/fights.js?v=1"></script>
 <script src="/static/js/fightdebug.js?v=3"></script>
+<script src="/static/js/fdview.js?v=3"></script>
+<script src="/static/js/fdlayout.js?v=2"></script>
+<script src="/static/js/fightauras.js?v=4"></script>
+<script src="/static/js/fdmech.js?v=2"></script>
+<script src="/static/js/fightevents.js?v=2"></script>
+<script src="/static/js/fightmeters.js?v=1"></script>
+<script src="/static/js/wiperecap.js?v=4"></script>
+<script src="/static/js/fdfilter.js?v=2"></script>
 <script src="/static/js/bosspanel.js?v=1"></script>
 <script src="/static/js/fdtabs.js?v=1"></script>
 <script src="/static/js/planoverlay.js?v=1"></script>
-<script src="/static/js/fightreplay.js?v=2"></script>
+<script src="/static/js/fightreplay.js?v=4"></script>
+<script src="/static/js/fightmap.js?v=2"></script>
 <script src="/static/js/aggrolanes.js?v=1"></script>
 <script src="/static/js/demo.js?v=2"></script>
 <script src="/static/js/glide.js?v=1"></script>
 <script src="/static/js/readycheck.js?v=1"></script>
-<script src="/static/js/live.js?v=1"></script>
+<script src="/static/js/live.js?v=2"></script>
+<script src="/static/js/fdlive.js?v=4"></script>
 <script src="/static/js/fighthistory.js?v=1"></script>
 <script src="/static/js/coverage.js?v=1"></script>
 <script src="/static/js/trash.js?v=1"></script>
 <script src="/static/js/underperf.js?v=2"></script>
-<script src="/static/js/app.js?v=41"></script>
+<script src="/static/js/app.js?v=66"></script>
 </body>
 </html>

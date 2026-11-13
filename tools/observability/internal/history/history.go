@@ -129,14 +129,20 @@ type line struct {
 	NonTankLongestMs *int64       `json:"nontank_longest_ms"`
 	Warnings         int          `json:"warnings"`
 	Fight            combat.Fight `json:"fight"`
+
+	// Meters is the fight's damage and healing series (internal/meters), stored as the daemon built it when the fight was filed;
+	// a line written without it (an older file, or a fight outside the kept track) reads as before.
+	Meters json.RawMessage `json:"meters,omitempty"`
 }
 
 // Store is the index plus the writer. rows and byKey sit under mu; the writer's bookkeeping (total, fileSize, skipped, rotate)
 // belongs to the writer goroutine alone, which also runs the rotation.
 type Store struct {
-	cfg    Config
-	pack   func(ctx context.Context, plan string, f combat.Fight) int
-	lanes  func(commander string, f combat.Fight) (int64, int64, bool)
+	cfg   Config
+	pack  func(ctx context.Context, plan string, f combat.Fight) int
+	lanes func(commander string, f combat.Fight) (int64, int64, bool)
+	// meters builds the series stored beside the fight (nil: none); set by SetMeters so Open keeps its signature.
+	meters func(commander string, f combat.Fight) json.RawMessage
 	remove func(path string) error
 	// writeFn and truncate are the file operations the append does; the defaults are the real ones.
 	writeFn  func(f *os.File, p []byte) (int, error)
@@ -551,28 +557,40 @@ func (s *Store) Lookup(key string) (Row, bool) {
 	return s.rows[i], true
 }
 
+// SetMeters sets the callback that builds the fight's damage and healing series when the fight is written (it may return nil).
+// Call it before fights are enqueued; Open's signature stays as it was.
+func (s *Store) SetMeters(fn func(commander string, f combat.Fight) json.RawMessage) {
+	s.meters = fn
+}
+
 // Fight re-reads one stored fight from disk; the line's own key must match, so a file rewritten around the index never answers
 // with the wrong fight.
 func (s *Store) Fight(key string) (combat.Fight, Row, bool) {
+	f, row, _, ok := s.FightMeters(key)
+	return f, row, ok
+}
+
+// FightMeters is Fight plus the damage and healing series stored beside it (nil when the line carries none).
+func (s *Store) FightMeters(key string) (combat.Fight, Row, json.RawMessage, bool) {
 	row, ok := s.Lookup(key)
 	if !ok || row.file == "" || row.size <= 0 {
-		return combat.Fight{}, Row{}, false
+		return combat.Fight{}, Row{}, nil, false
 	}
 	buf := make([]byte, row.size)
 	f, err := os.Open(row.file)
 	if err != nil {
-		return combat.Fight{}, Row{}, false
+		return combat.Fight{}, Row{}, nil, false
 	}
 	n, _ := f.ReadAt(buf, row.off)
 	f.Close()
 	if n != len(buf) {
-		return combat.Fight{}, Row{}, false
+		return combat.Fight{}, Row{}, nil, false
 	}
 	var ln line
 	if err := json.Unmarshal(bytes.TrimRight(buf, "\r\n"), &ln); err != nil || ln.Key != key {
-		return combat.Fight{}, Row{}, false
+		return combat.Fight{}, Row{}, nil, false
 	}
-	return ln.Fight, row, true
+	return ln.Fight, row, ln.Meters, true
 }
 
 // Summary is the row as the fights list shows it.

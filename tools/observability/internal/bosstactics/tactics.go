@@ -44,6 +44,10 @@ const (
 	// never got, and the coverage view treats it as "no rows", not as an
 	// error.
 	mysqlNoSuchTable = 1146
+
+	// mysqlBadColumn is MySQL's "unknown column" (1054): a world database from before the seek_aura migration has no
+	// spot_x/spot_y/spot_z/cycle_spell/cycle_s, and the tactics read then runs QueryTacticsV1 and leaves them zero.
+	mysqlBadColumn = 1054
 )
 
 // The queries order and aggregate, so the snapshot needs no per-row work.
@@ -51,7 +55,10 @@ const (
 // mapFilterMarker through placeholders (queryWithMaps), and every other
 // filter the page offers is applied to the cached snapshot, never in SQL.
 const (
-	QueryTactics = "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment` FROM `ai_boss_tactic`/*maps*/ ORDER BY `map`, `boss_entry`, `kind`, `target_entry`, `spell_id` LIMIT 5001"
+	QueryTactics = "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `spot_x`, `spot_y`, `spot_z`, `cycle_spell`, `cycle_s`, `comment` FROM `ai_boss_tactic`/*maps*/ ORDER BY `map`, `boss_entry`, `kind`, `target_entry`, `spell_id` LIMIT 5001"
+
+	// QueryTacticsV1 is the read of a world database without the spot and cycle columns.
+	QueryTacticsV1 = "SELECT `map`, `boss_entry`, `kind`, `target_entry`, `spell_id`, `priority`, `param`, `comment` FROM `ai_boss_tactic`/*maps*/ ORDER BY `map`, `boss_entry`, `kind`, `target_entry`, `spell_id` LIMIT 5001"
 
 	QueryStands = "SELECT `map`, `boss_entry`, `window_spell`, `aura`, `role`, `window_signal`, SUM(`slots`) FROM `ai_boss_stand`/*maps*/ GROUP BY `map`, `boss_entry`, `window_spell`, `aura`, `role`, `window_signal` ORDER BY `map`, `boss_entry`, `window_spell`, `role` LIMIT 5001"
 
@@ -71,7 +78,14 @@ type Tactic struct {
 	Spell    uint32  `json:"spell"`
 	Priority uint32  `json:"priority"`
 	Param    float64 `json:"param"`
-	Comment  string  `json:"comment"`
+	// SpotX/Y/Z are the row's world point (Hakkar's anchor centre, the raid's stand for the seek_aura row); zero when the
+	// row has none or the world database predates the columns. CycleSpell/CycleS are the seek_aura row's cycle clock.
+	SpotX      float64 `json:"spotX,omitempty"`
+	SpotY      float64 `json:"spotY,omitempty"`
+	SpotZ      float64 `json:"spotZ,omitempty"`
+	CycleSpell uint32  `json:"cycleSpell,omitempty"`
+	CycleS     uint32  `json:"cycleS,omitempty"`
+	Comment    string  `json:"comment"`
 }
 
 // Stand is the seats of one stand set, aggregated by (map, boss, window
@@ -175,25 +189,52 @@ type sqlSource struct {
 }
 
 func (s *sqlSource) Tactics(ctx context.Context) ([]Tactic, bool, error) {
-	query, args := queryWithMaps(QueryTactics, s.maps)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	out, err := s.readTactics(ctx, QueryTactics, true)
+	if err != nil && badColumn(err) {
+		// An older world database: the spot and cycle columns are not there yet, so read the old column list.
+		out, err = s.readTactics(ctx, QueryTacticsV1, false)
+	}
 	if err != nil {
 		return nil, false, err
+	}
+	out, truncated := capRows(out, TacticsLimit)
+	return out, truncated, nil
+}
+
+// readTactics runs one tactics query; withSpots says it selects the spot and cycle columns.
+func (s *sqlSource) readTactics(ctx context.Context, base string, withSpots bool) ([]Tactic, error) {
+	query, args := queryWithMaps(base, s.maps)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 	var out []Tactic
 	for rows.Next() {
 		var r Tactic
-		if err := rows.Scan(&r.Map, &r.Boss, &r.Kind, &r.Target, &r.Spell, &r.Priority, &r.Param, &r.Comment); err != nil {
-			return nil, false, err
+		if withSpots {
+			var cycleS float64
+			if err := rows.Scan(&r.Map, &r.Boss, &r.Kind, &r.Target, &r.Spell, &r.Priority, &r.Param, &r.SpotX, &r.SpotY, &r.SpotZ, &r.CycleSpell, &cycleS, &r.Comment); err != nil {
+				return nil, err
+			}
+			r.CycleS = seconds(cycleS)
+		} else if err := rows.Scan(&r.Map, &r.Boss, &r.Kind, &r.Target, &r.Spell, &r.Priority, &r.Param, &r.Comment); err != nil {
+			return nil, err
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	out, truncated := capRows(out, TacticsLimit)
-	return out, truncated, nil
+	return out, nil
+}
+
+// seconds turns the cycle_s float column into whole seconds; a negative, NaN or absurd value reads as zero.
+func seconds(v float64) uint32 {
+	if !(v >= 0) || v > 86400 {
+		return 0
+	}
+	return uint32(v + 0.5)
 }
 
 func (s *sqlSource) Stands(ctx context.Context) ([]Stand, bool, error) {
@@ -373,6 +414,12 @@ func buildPlanKills(rows []planKillRow) []PlanKill {
 func missingTable(err error) bool {
 	var myErr *mysql.MySQLError
 	return errors.As(err, &myErr) && myErr.Number == mysqlNoSuchTable
+}
+
+// badColumn reports MySQL's "unknown column": the world database predates the spot and cycle columns.
+func badColumn(err error) bool {
+	var myErr *mysql.MySQLError
+	return errors.As(err, &myErr) && myErr.Number == mysqlBadColumn
 }
 
 // Service caches one snapshot of the three tables: one read per CacheTTL, one

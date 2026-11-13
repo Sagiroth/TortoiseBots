@@ -30,7 +30,7 @@ vm.createContext(ctx);
 });
 vm.runInContext([grab("esc"), grab("numOr0"), grab("fdRunModel"), grab("fdRunClock"), grab("fdRunPct"), grab("fdRunT"),
   grab("fdRunHtml"), grab("fdRunWindow"), grab("fdRunCoverage"), grabConst("FD_TRACK_WINDOW_S"), grab("fdRunPlayHtml"),
-  grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdLanesHtml"), grab("cmdClock")].join("\n"), ctx);
+  grab("fdRailHtml"), grab("fdRailParts"), grab("fdRailCardHtml"), grab("fdRailFoldHtml"), grab("fdChecksHtml"), grab("fdCheckNum"), grab("fdCheckTitle"), grab("fdRangeBandHtml"), grab("fdLanesHtml"), grab("cmdClock")].join("\n"), ctx);
 const run = (expr, vars) => { if (vars) Object.assign(ctx, vars); return vm.runInContext(expr, ctx); };
 
 // ---- the model: walking between the fights, P1..Pn blocks, a boss block from its name, deaths at their second ----------------
@@ -122,7 +122,7 @@ assert.strictEqual(run("fdCheckNum({ id: 'taken_outside', num: '6%' })"), "6% of
 const runSec = src.indexOf('class="fd-runtl"'), framesSec = src.indexOf('aria-label="Raid frames"');
 assert.ok(runSec > 0 && runSec < framesSec, "the run strip is above the raid frames");
 assert.ok(src.includes("card.querySelectorAll('.fd-runtl, .fd-raid,"), "the strip follows the debugger mode");
-assert.ok(src.includes("fdReplayActive(key) || fdRunActive(key)"), "the map draws the run replay when it is on");
+assert.ok(src.includes("act && act.track ? act : fdRunActive(key)"), "the map draws the run replay when it is on (a replay with no positions leaves the map alone)");
 assert.ok(src.includes("'&from=' + from + '&to=' + to"), "the run's kept positions are fetched once per run");
 assert.ok(src.includes("FD_TRACK_WINDOW_S"), "a run longer than the kept window is clamped");
 assert.ok(src.includes("setTimeout(() => fdRunTick(key)"), "the run plays as a setTimeout chain");
@@ -133,6 +133,6 @@ assert.ok(!/(AM|PM)/i.test(clock), "no 12 h marker: " + clock);
 assert.ok(grab("fdRunHtml").includes("cmdClock(d.tS)"), "the run strip's death titles use it");
 assert.ok(grab("cmdClock").includes("hourCycle: 'h23'"), "the hour cycle is pinned, not the browser's");
 assert.ok(grab("fdRunStop").includes("clearTimeout("), "stopping the run clears the pending step");
-assert.strictEqual((src.match(/setInterval\(/g) || []).length, 9, "no new setInterval but the live stream's fallback poll");
+assert.strictEqual((src.match(/setInterval\(/g) || []).length, 10, "no new setInterval but the live stream's fallback poll and the live views' 1 s repaint (FdLive.TICK_MS)");
 
 console.log("fight debugger run timeline ok");

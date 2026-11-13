@@ -41,6 +41,11 @@ type TrackBot struct {
 	HP    uint8 // percent, round(hp * 100 / max_hp)
 	Alive bool
 	Map   uint32
+	// The live view's samples: the bot's damage and healing per second over the report's window (Combat.WinS seconds),
+	// and the first four boss debuff ids it carried, in report order (0: unused). Fixed-size, so a frame's charge still
+	// follows Sizeof(TrackBot{}).
+	DPS, HPS uint32
+	DB       [4]uint32
 }
 
 // TrackMob is one enemy near the lead in a frame. VictimBot is the bound bot it targeted (0: none); VictimOther means it
@@ -71,6 +76,7 @@ type TrackFrame struct {
 	Map   uint32
 	Step  uint32
 	Fight bool
+	WinS  uint32 // the length in seconds of the window DPS and HPS of the bots cover (0: no combat report)
 	Bots  []TrackBot
 	Mobs  []TrackMob
 }
@@ -115,6 +121,9 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 		if b.Run != nil {
 			f.Step = b.Run.Step
 		}
+		if b.Combat != nil {
+			f.WinS = b.Combat.WinS
+		}
 		ids := make(map[string]uint32, len(b.Bots))
 		for _, bot := range b.Bots {
 			if bot.GUID == 0 {
@@ -125,7 +134,28 @@ func (st *commandersState) noteTracks(list []model.CommanderBinding, ts int64, n
 				id = strconv.FormatUint(uint64(bot.GUID), 10)
 			}
 			ids[id] = bot.GUID
-			f.Bots = append(f.Bots, TrackBot{GUID: bot.GUID, X: float32(bot.X), Y: float32(bot.Y), HP: hpPercent(bot.HP, bot.MaxHP), Alive: bot.Alive, Map: bot.MapID})
+			tb := TrackBot{GUID: bot.GUID, X: float32(bot.X), Y: float32(bot.Y), HP: hpPercent(bot.HP, bot.MaxHP), Alive: bot.Alive, Map: bot.MapID}
+			if b.Combat != nil {
+				// A scan of the report's window (at most a raid's bots): no map per report.
+				for i := range b.Combat.Bots {
+					if cb := &b.Combat.Bots[i]; cb.GUID == bot.GUID {
+						tb.DPS, tb.HPS = saturate32(cb.DPS), saturate32(cb.HPS)
+						break
+					}
+				}
+			}
+			n := 0
+			for _, d := range bot.Debuffs {
+				if d.ID == 0 {
+					continue
+				}
+				if n == len(tb.DB) {
+					break
+				}
+				tb.DB[n] = d.ID
+				n++
+			}
+			f.Bots = append(f.Bots, tb)
 		}
 		for _, m := range b.Mobs {
 			mob := TrackMob{ID: m.ID, Entry: m.Entry, X: float32(m.X), Y: float32(m.Y), HP: uint8(m.HP), Rank: m.Rank,
@@ -245,6 +275,14 @@ func (st *commandersState) trimTrackBudgetLocked() {
 		total -= st.tracks[oldest].bytes
 		delete(st.tracks, oldest)
 	}
+}
+
+// saturate32 narrows a counter to uint32, clamping instead of wrapping.
+func saturate32(v uint64) uint32 {
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
 }
 
 // hpPercent is the health percentage a bot's frame carries: round(hp * 100 / maxHP), zero when the maximum is unknown.
@@ -381,12 +419,25 @@ type trackFrameJSON struct {
 	Fight bool           `json:"fight"`
 	Bots  [][]any        `json:"bots"`
 	Mobs  []trackMobJSON `json:"mobs"`
+	W     uint32         `json:"w,omitempty"` // x=1 only: the seconds the bots' dps and hps cover
 }
 
 // TrackJSON is the wire shape of GET /api/v1/commanders/track: bots as [guid, x, y, hp %, alive, map], places rounded to 0.1 yd.
 // tracked says whether the daemon keeps a track for that commander at all: a commander outside the four it tracks has no
 // positions to replay, which the page says instead of "nothing kept for this fight".
 func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, tracked bool) any {
+	return trackJSON(commander, frames, names, tracked, false)
+}
+
+// TrackJSONX is TrackJSON with the live view's samples (GET /api/v1/commanders/track?x=1): each bot row grows to
+// [guid, x, y, hp %, alive, map, dps, hps, [boss debuff ids, unused slots left out]] and a frame with a combat report
+// carries w, the seconds that report's window covers. The reader that takes the plain form reads rows by index and
+// ignores what follows (row.length >= 3), so the plain form stays as it was.
+func TrackJSONX(commander string, frames []TrackFrame, names map[uint32]string, tracked bool) any {
+	return trackJSON(commander, frames, names, tracked, true)
+}
+
+func trackJSON(commander string, frames []TrackFrame, names map[uint32]string, tracked bool, extra bool) any {
 	out := struct {
 		Commander string            `json:"commander"`
 		Tracked   bool              `json:"tracked"`
@@ -405,7 +456,17 @@ func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, t
 			if b.Alive {
 				alive = 1
 			}
-			bots = append(bots, []any{b.GUID, roundTenth(b.X), roundTenth(b.Y), b.HP, alive, b.Map})
+			row := []any{b.GUID, roundTenth(b.X), roundTenth(b.Y), b.HP, alive, b.Map}
+			if extra {
+				ids := make([]uint32, 0, len(b.DB))
+				for _, id := range b.DB {
+					if id != 0 {
+						ids = append(ids, id)
+					}
+				}
+				row = append(row, b.DPS, b.HPS, ids)
+			}
+			bots = append(bots, row)
 		}
 		mobs := make([]trackMobJSON, 0, len(f.Mobs))
 		for _, m := range f.Mobs {
@@ -423,7 +484,11 @@ func TrackJSON(commander string, frames []TrackFrame, names map[uint32]string, t
 			}
 			mobs = append(mobs, o)
 		}
-		out.Frames = append(out.Frames, trackFrameJSON{T: f.T, Map: f.Map, Step: f.Step, Fight: f.Fight, Bots: bots, Mobs: mobs})
+		fj := trackFrameJSON{T: f.T, Map: f.Map, Step: f.Step, Fight: f.Fight, Bots: bots, Mobs: mobs}
+		if extra {
+			fj.W = f.WinS
+		}
+		out.Frames = append(out.Frames, fj)
 	}
 	for e, n := range names {
 		out.Names[strconv.FormatUint(uint64(e), 10)] = n

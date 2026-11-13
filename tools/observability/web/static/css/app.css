@@ -3288,7 +3288,10 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .fd-runtl,
 .cmd-card.fd-on .fd-raid,
 .cmd-card.fd-on .fd-checks,
+.cmd-card.fd-on .fd-meters,
 .cmd-card.fd-on .fd-timeline,
+.cmd-card.fd-on .fd-auras,
+.cmd-card.fd-on .fd-events,
 .cmd-card.fd-on .fd-t,
 .cmd-card.fd-on .cmd-mapbox {
   min-width: 0;
@@ -3298,6 +3301,9 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
   background: var(--bg-card);
 }
 .cmd-card.fd-on .fd-timeline { padding-top: 10px; }
+.cmd-card.fd-on .fd-meters { padding-top: 10px; }
+.cmd-card.fd-on .fd-auras { padding-top: 10px; }
+.cmd-card.fd-on .fd-events { padding-top: 10px; }
 
 /* The page's own tiles and boxes belong to Live; every card in the debugger drops them. */
 #tab-commanders.cmd-debug-only > .kpi-row,
@@ -3337,7 +3343,9 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .cmd-card.fd-on .cmd-maptools [data-act="layers"] { display: none; }
 
 .fd-raid { grid-area: frames; min-width: 0; }
-.fd-railcol { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.cmd-card.fd-on .fd-railwrap { grid-area: rail; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.fd-railwrap[hidden], .cmd-card.fd-on .fd-railwrap[hidden] { display: none; }
+.fd-railcol { min-width: 0; display: grid; gap: 6px; align-content: start; }
 .fd-raidhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
 .fd-raidhead .cmd-h { margin: 0; }
 .fd-dead { color: inherit; }
@@ -3347,7 +3355,7 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-ready .fd-chip.warn { color: var(--fd-warn); border-color: color-mix(in srgb, var(--fd-warn) 45%, transparent); background: color-mix(in srgb, var(--fd-warn) 12%, transparent); }
 .fd-ready .fd-chip.fail { color: var(--fd-fail); border-color: color-mix(in srgb, var(--fd-fail) 45%, transparent); background: color-mix(in srgb, var(--fd-fail) 12%, transparent); }
 .fd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 8px; }
-.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-timeline[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
+.fd-runtl[hidden], .fd-frames[hidden], .fd-raid[hidden], .fd-railcol[hidden], .fd-rail[hidden], .fd-checks[hidden], .fd-meters[hidden], .fd-timeline[hidden], .fd-auras[hidden], .fd-events[hidden], .fd-roles[hidden], .fd-bot[hidden] { display: none; }
 /* One group spans the row and lays its own tiles out; a raid's five bots fill five columns instead of one. */
 .fd-grp { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 8px; align-content: start; }
 .fd-gl { grid-column: 1 / -1; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
@@ -3412,6 +3420,29 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-title { margin: 0; }
 .fd-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; color: var(--text-muted); font-size: 0.74rem; }
 .fd-chip { padding: 1px 8px; border: 1px solid var(--border-color); border-radius: 999px; }
+/* Live fights: the bar above the timeline of a running fight, and the grid of live tiles on the Raids and Dungeons lists. */
+.fd-livebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; font-size: 0.84rem; }
+.fd-livebar[hidden] { display: none; }
+.fd-livetitle { font-weight: 600; }
+.fd-livewin { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.74rem; }
+.fd-livegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.fd-livegrid[hidden] { display: none; }
+.fd-live-more { grid-column: 1 / -1; margin: 0; font-size: 0.78rem; }
+.fd-livetile { display: grid; gap: 4px; padding: 10px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-width: 0; font-size: 0.84rem; }
+.fd-livetile-head, .fd-livetile-boss { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.fd-livetile-title, .fd-livetile-group, .fd-livetile-bossname { overflow-wrap: anywhere; min-width: 0; }
+.fd-livetile-open { white-space: nowrap; }
+.fd-livetile-time { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.fd-livetile-hp { position: relative; height: 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; }
+.fd-livetile-hp i { display: block; height: 100%; background: color-mix(in srgb, var(--text-muted) 35%, transparent); }
+.fd-livetile-hp span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.68rem; }
+.fd-livetile-nums { color: var(--text-muted); font-size: 0.74rem; }
+.fd-livetile-hp[hidden], .fd-livetile-ev[hidden] { display: none; }
+.fd-livetile-mech { font-size: 0.74rem; overflow-wrap: anywhere; }
+.fd-livetile-mech:empty { display: none; }
+.fd-livetile-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-size: 0.74rem; color: var(--text-muted); }
+.fd-livetile-events li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-livetile .btn { justify-self: start; }
 .fd-checklist { list-style: none; display: grid; gap: 0; }
 .fd-checkfor { margin: 2px 0 0; font-size: 0.72rem; color: var(--text-muted); }
 .fd-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 2px 8px; padding: 6px 0; border-top: 1px solid var(--border-color); font-size: 0.84rem; }
@@ -3430,6 +3461,43 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-death { cursor: pointer; }
 
 .fd-timeline { min-width: 0; }
+/* The Auras panel: one row per bot (name | uptime | bar); the boss-cast lines cross every row from one overlay. */
+.fd-auras { min-width: 0; }
+/* The Meters panel: damage, healing and deaths side by side (one column on a narrow page); bars are plain divs whose width the
+   replay moves. */
+.fd-meters { min-width: 0; }
+.fd-mtbody { min-width: 0; }
+.fd-mtnote { font-weight: 400; font-size: 0.72rem; color: var(--text-muted); margin-left: 6px; }
+.fd-mtcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; }
+.fd-mtcol { min-width: 0; }
+.fd-mtcol h4 { margin: 0 0 4px; font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+.fd-mtlist { list-style: none; margin: 0; padding: 0; }
+.fd-mtrow { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 18px; font-size: 0.78rem; }
+.fd-mtname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-mtbar { display: block; height: 8px; background: var(--border-color); border-radius: 2px; overflow: hidden; }
+.fd-mtfill { display: block; height: 100%; background: var(--accent-blue); transition: width 200ms linear; }
+.fd-mtfill.heal { background: var(--accent-green); }
+.fd-mtval { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-mtdeath { font-size: 0.78rem; margin: 0 0 2px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .fd-mtfill { transition: none; } }
+.fd-aubody, .fd-auslot, .fd-aurest { min-width: 0; }
+.fd-au-raid { font-weight: 600; }
+.fd-auctl { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.fd-au-note { margin: 0 0 6px; }
+.fd-au-strip { position: relative; margin-bottom: 8px; }
+.fd-au-row { display: grid; grid-template-columns: 140px 48px 1fr; gap: 8px; align-items: center; min-height: 18px; }
+.fd-au-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-au-pct { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-au-bar { position: relative; display: block; height: 10px; background: var(--border-color); border-radius: 2px; }
+.fd-au-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-yellow); border-radius: 2px; }
+.fd-au-on { position: absolute; top: 0; bottom: 0; min-width: 1px; background: var(--accent-yellow); }
+.fd-au-unk { position: absolute; top: 0; bottom: 0; background: var(--text-dim); opacity: 0.35; }
+.fd-au-death { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-red); }
+.fd-au-marks { position: absolute; top: 0; bottom: 0; left: 204px; right: 0; pointer-events: none; }
+.fd-au-mark { position: absolute; top: 0; bottom: 0; width: 6px; margin-left: -3px; cursor: pointer; pointer-events: auto; background: linear-gradient(var(--text-muted), var(--text-muted)) center / 1px 100% no-repeat; }
+.fd-au-table { margin: 6px 0; }
+.fd-au-table caption { text-align: left; color: var(--text-muted); font-size: 0.72rem; padding-bottom: 2px; }
+.fd-au-focus { margin: 6px 0 0; color: var(--text-muted); font-size: 0.78rem; }
 .fd-tl { position: relative; height: 64px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
 .fd-tick { position: absolute; top: 0; bottom: 0; padding: 2px 0 0 3px; border-left: 1px solid var(--border-color); font-size: 0.6rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .fd-hit { position: absolute; bottom: 0; width: 3px; background: color-mix(in srgb, var(--fd-fail) 70%, transparent); pointer-events: none; }
@@ -3441,6 +3509,30 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-recaptbl { width: 100%; font-size: 0.78rem; }
 .fd-recaptbl th, .fd-recaptbl td { padding: 2px 6px; }
 .fd-recaptbl td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-wipe { margin: 0 0 10px; }
+.fd-wipe[hidden] { display: none; }
+.fd-wipetbl { width: 100%; font-size: 0.78rem; }
+.fd-wipetbl th, .fd-wipetbl td { padding: 2px 6px; }
+.fd-wipetbl td.n, .fd-wipetbl th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-wiperow.on { background: var(--bg-card-subtle); }
+.fd-wrole, .fd-wlikely { color: var(--text-muted); font-size: 0.72rem; }
+.fd-wipenote { margin: 4px 0 0; }
+.fd-wsp { overflow-wrap: anywhere; }
+.fd-whp, .fd-wdmg { white-space: nowrap; }
+/* Boss mechanics: the row of the fight in the live bar and in the section under the underperforming bots, and the night's table. */
+.fd-livemech { margin-left: 8px; font-size: 0.78rem; overflow-wrap: anywhere; }
+.fd-livemech:empty { display: none; }
+.fd-under .fd-mech { border-top: 1px solid var(--border-color); }
+.fd-under .fd-mechbox > summary { cursor: pointer; }
+.fd-under .fd-mechbody { padding: 6px 0 10px; }
+.fd-mechnow { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+.fd-mechtable { overflow-x: auto; }
+.fd-mechtable table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.fd-mechtable th { color: var(--text-muted); font-weight: 600; text-align: left; padding: 4px 8px 4px 0; white-space: nowrap; }
+.fd-mechtable td { vertical-align: top; padding: 5px 8px 5px 0; border-top: 1px solid var(--border-color); }
+.fd-mechtable .n { text-align: right; font-variant-numeric: tabular-nums; }
+.fd-mechrow:hover { background: var(--bg-card-subtle); }
+.fd-mechworst { white-space: nowrap; }
 
 .fd-roles { grid-area: roles; min-width: 0; display: grid; gap: 14px; align-content: start; }
 .fd-totalsseg:empty { display: none; }
@@ -3505,6 +3597,37 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-railbosses .fd-boss-castwrap { grid-column: 2; }
 .fd-railbosses .fd-boss-aura, .fd-railbosses .fd-boss-add { font-size: 0.66rem; }
 .fd-railbosses .fd-boss-other > summary { font-size: 0.66rem; }
+
+/* Panel layouts (FdLayout): only a card the Panels dialog gave a layout carries .fd-custom; with none, the grid above is untouched. A custom card is
+   a 12-column grid: every panel the template tags with data-fd-panel takes its width (--fd-span) and its place (order) from the layout, a hidden one
+   is display: none, and the wrappers that hold two panels (the rail column with the boss abilities, the underperforming bots with the boss
+   mechanics) stop being boxes so each panel is its own grid item. A panel the render itself hides stays hidden: nothing here un-hides. */
+.cmd-card.fd-on.fd-custom .cmd-body { grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-areas: none; grid-template-rows: none; grid-auto-flow: row dense; }
+.cmd-card.fd-on.fd-custom .fd-centre, .cmd-card.fd-on.fd-custom .fd-railwrap, .cmd-card.fd-on.fd-custom .fd-under { display: contents; }
+.cmd-card.fd-on.fd-custom [data-fd-panel] { grid-area: auto; grid-column: span var(--fd-span, 12); min-width: 0; margin-top: 0; }
+.cmd-card.fd-on.fd-custom [data-fd-hide] { display: none !important; }
+.cmd-card.fd-on.fd-custom .fd-nofight { grid-area: auto; grid-column: 1 / -1; order: -1; }
+.cmd-card.fd-on.fd-custom .fd-under .fd-mech { border-top: 0; }
+.cmd-card.fd-custom > .fd-livebar { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-card); }
+@media (max-width: 760px) {
+  .cmd-card.fd-on.fd-custom [data-fd-panel] { grid-column: 1 / -1; }
+}
+#cmd-fd-panels[hidden], #cmd-fd-laychip[hidden] { display: none; }
+.fd-laychip { padding: 3px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-card-subtle); color: var(--accent-yellow); font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.fd-arrange { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 14px 16px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-card); color: var(--text-main); }
+.fd-arrange::backdrop { background: rgba(0, 0, 0, 0.5); }
+.fd-arr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fd-arr-head .cmd-h { margin: 0; }
+.fd-arr-pick { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--text-muted); font-size: 0.8rem; }
+.fd-arr-pick select { flex: 1; min-width: 0; }
+.fd-arr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.fd-arr-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-card-subtle); }
+.fd-arr-row.off .fd-arr-name { color: var(--text-dim); text-decoration: line-through; }
+.fd-arr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-arr-show { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--text-muted); }
+.fd-arr-save, .fd-arr-act { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fd-arr-save input { flex: 1; min-width: 0; }
+.fd-arr-note { min-height: 1.2em; margin: 8px 0 0; color: var(--text-muted); font-size: 0.78rem; overflow-wrap: anywhere; }
 .fd-bosslist { display: grid; gap: 8px; min-width: 0; }
 /* The Live card's "Dangerous here" block, drawn in the boss section's place when no engaged boss owns it. */
 .fd-trashlist { grid-column: 1 / -1; display: grid; gap: 4px; margin: 0; padding: 0 0 0 1.1em; font-size: 0.76rem; color: var(--text-muted); }
@@ -3679,7 +3802,39 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .fd-seg.k-other { background: var(--text-dim); }
 .fd-seg.k-none, .fd-seg.k-dead { background: transparent; }
 .fd-lanesum { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-[data-fd-seekbar] { cursor: pointer; }
+[data-fd-seekbar] { cursor: pointer; touch-action: pan-y; user-select: none; }
+
+/* The time range: a drag-select on the timeline, the lanes and the aura strip filters every panel that has time data. */
+.fd-range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent-blue) 15%, transparent); pointer-events: none; }
+.fd-range-live { background: color-mix(in srgb, var(--accent-blue) 28%, transparent); }
+.fd-out { opacity: .3; }
+.fd-tl, .fd-lanebar, .fd-au-bar { touch-action: pan-y; user-select: none; }
+.fd-rangebar { min-height: 1.4em; margin-bottom: 6px; font-size: 0.78rem; color: var(--text-muted); }
+.fd-rangehint, .fd-recapout { color: var(--text-muted); }
+.fd-recapout { margin: 6px 0 0; }
+.fd-rangelabel { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.fd-rangebar .fd-link { font-size: inherit; }
+.fd-linkbad { color: var(--text-muted); font-style: italic; }
+.fd-linkbox { width: min(38em, 100%); font-size: inherit; }
+.fd-whole { display: inline-block; margin-left: 6px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-muted); font-size: 0.66rem; font-weight: 400; vertical-align: middle; }
+.fd-whole[hidden] { display: none; }
+
+/* The Events panel: the filter builder (nested group boxes) over a compact table that scrolls inside its own box. */
+.fd-events { min-width: 0; }
+.fd-evcount { color: var(--text-muted); font-size: 0.72rem; font-weight: 400; }
+.fd-evfilter { margin-bottom: 8px; }
+.fd-evpresets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.fd-evbtn { padding: 1px 8px; font-size: 0.74rem; cursor: pointer; }
+.fd-evgroup { margin: 4px 0 4px 0; padding: 4px 0 4px 8px; border-left: 2px solid var(--border-color); }
+.fd-evghead, .fd-evcond { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 3px 0; font-size: 0.78rem; }
+.fd-evcond input[type="text"] { width: 11rem; max-width: 100%; }
+.fd-evcond option:disabled, .fd-evgroup option:disabled { color: var(--text-muted); }
+.fd-evdesc { margin: 4px 0 0; }
+.fd-evwhy { margin: 4px 0 0; color: var(--accent-red); font-size: 0.78rem; }
+.fd-evlist { max-height: 26rem; overflow: auto; min-width: 0; }
+.fd-evtable { width: 100%; font-size: 0.78rem; }
+.fd-evtable td, .fd-evtable th { padding-top: 1px; padding-bottom: 1px; white-space: nowrap; }
+.fd-evrow { cursor: pointer; }
 
 @media (max-width: 760px) {
   .fd-lane { grid-template-columns: 1fr; }
@@ -3932,3 +4087,32 @@ body.refresh-paused .topbar { box-shadow: inset 0 -2px 0 #f59e0b; }
 .go-plan { font-size: 0.88em; margin-bottom: 10px; }
 .go-plan-now { color: var(--accent-blue-bright); font-weight: 600; }
 .go-plan-past { color: var(--text-dim); text-decoration: line-through; }
+
+/* ---------- Fight map: trails, heat, the boss's anchor and stand, clouds, the puller's path, the focus chip, the pull pins (fightmap.js) ---------- */
+.cmd-map .fm-heat { fill: var(--accent-red); stroke: none; pointer-events: none; }
+.cmd-map .fm-trail { fill: none; stroke: #9ca3af; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; opacity: 0.75; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-trail.r-tank { stroke: var(--role-tank, #2f80ff); } .cmd-map .fm-trail.r-healer { stroke: var(--role-healer, #22c55e); }
+.cmd-map .fm-trail.r-dps { stroke: var(--role-dps, #ff9f1c); } .cmd-map .fm-trail.r-other { stroke: var(--role-other, #9ca3af); }
+.cmd-map .fm-trail.mob { stroke: var(--accent-red); stroke-dasharray: 5 3; stroke-width: 1.6; }
+.cmd-map .fm-cloud { fill: var(--accent-green); fill-opacity: 0.22; stroke: var(--accent-green); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-anchor { fill: none; stroke: var(--accent-blue); stroke-width: 1.6; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-anchor.tank { stroke-dasharray: 3 4; opacity: 0.8; }
+.cmd-map .fm-stand polygon { fill: var(--accent-blue); stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-puller { fill: none; stroke: var(--accent-yellow); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.9; vector-effect: non-scaling-stroke; }
+.cmd-map text.fm-label { fill: #fff; font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; pointer-events: none; }
+.cmd-map .fm-pin { cursor: pointer; }
+.cmd-map .fm-pin circle.pin { fill: var(--accent-blue); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.cmd-map .fm-pin.wipe circle.pin { fill: var(--accent-red); }
+.cmd-map .fm-pin text { fill: #fff; font-weight: 600; paint-order: stroke; stroke: var(--bg-app); stroke-linejoin: round; }
+.cmd-map .fm-pin.live circle.ring { fill: none; stroke: var(--accent-yellow); stroke-width: 2; vector-effect: non-scaling-stroke; animation: fm-pulse 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes fm-pulse { from { opacity: 0.9; transform: scale(1); } to { opacity: 0; transform: scale(2.4); } }
+@media (prefers-reduced-motion: reduce) { .cmd-map .fm-pin.live circle.ring { animation: none; opacity: 0.8; } }
+.cmd-legend i.fm-sw { width: 16px; height: 3px; border: 0; border-radius: 2px; vertical-align: 3px; background: #9ca3af; }
+.cmd-legend i.fm-sw.heat { height: 10px; background: var(--accent-red); opacity: 0.6; vertical-align: -1px; }
+.cmd-legend i.fm-sw.anchor { background: var(--accent-blue); }
+.cmd-legend i.fm-sw.cloud { height: 10px; background: var(--accent-green); opacity: 0.5; vertical-align: -1px; }
+.cmd-legend i.fm-sw.puller { background: var(--accent-yellow); height: 4px; }
+.fm-focus { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.fm-focus[hidden] { display: none; }
+.fm-focus > span { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg-card-hover, rgba(255, 255, 255, 0.08)); border: 1px solid var(--accent-yellow); font-size: 12px; }
+.fm-focus .fm-unfocus { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; }

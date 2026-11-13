@@ -62,7 +62,7 @@ func Handler(src Sources) http.HandlerFunc {
 			writeErr(w, "commander is required")
 			return
 		}
-		since, until, fallback, msg := window(q, nowFn())
+		since, until, fallback, msg := Window(q, nowFn())
 		if msg != "" {
 			writeErr(w, msg)
 			return
@@ -88,7 +88,7 @@ func Handler(src Sources) http.HandlerFunc {
 		}
 		floors := ParseFloors(rules)
 		lim := DefaultLimits()
-		fights, preTruncated := collect(src, commander, since, until, rules, lim.MaxFights)
+		fights, preTruncated := Collect(src, commander, since, until, rules, lim.MaxFights)
 		base := Build(commander, since, until, fights, rules, floors, lim)
 		base.Truncated = base.Truncated || preTruncated
 
@@ -124,11 +124,11 @@ func Handler(src Sources) http.HandlerFunc {
 	}
 }
 
-// window reads the half-open [since, until) the request asks for: one UTC
+// Window reads the half-open [since, until) the request asks for: one UTC
 // day, one local night (night with the history routes' tz and rollover), or
 // an explicit since (until defaulting to now+1). A night with an unknown
 // zone falls back to that UTC day, as the history list does.
-func window(q map[string][]string, now time.Time) (since, until int64, fallback bool, msg string) {
+func Window(q map[string][]string, now time.Time) (since, until int64, fallback bool, msg string) {
 	get := func(name string) string {
 		if v := q[name]; len(v) > 0 {
 			return v[0]
@@ -197,10 +197,10 @@ type candidate struct {
 	mem     bool
 }
 
-// collect reads the window's fights: memory first (its warnings are the ones
+// Collect reads the window's fights: memory first (its warnings are the ones
 // the store judged with), then the history's fights the store no longer
 // holds, re-judged with the current rules. The newest maxFights are kept.
-func collect(src Sources, commander string, since, until int64, rules []combat.Rule, maxFights int) ([]Input, bool) {
+func Collect(src Sources, commander string, since, until int64, rules []combat.Rule, maxFights int) ([]Input, bool) {
 	seen := map[string]bool{}
 	var cands []candidate
 	if src.Mem != nil {

@@ -207,6 +207,7 @@ func TestRaidsPollJS(t *testing.T) {
 func TestRaidsRouteJS(t *testing.T) {
 	runCheck(t, "raids_route_check.js", "../../web/static/js/app.js")
 }
+
 // walk 2 track fixture.
 func TestFightReplayJS(t *testing.T) {
 	runCheck(t, "fightreplay_check.js", "../../web/static/js/fightreplay.js")
@@ -340,6 +341,154 @@ func TestTrashJS(t *testing.T) {
 // the other visible maps, none for a hidden one, at most 8 glide-only draws per frame round robin).
 func TestLiveViewJS(t *testing.T) {
 	runCheck(t, "live_check.js", "../../web/static/js/live.js")
+}
+
+// TestFdLiveJS runs fdlive_check.js: the live fight view's pure state (the event cursor with its frames, duplicates, gaps, resets and
+// catch-up, the bounded buffers, the sampled aura rows, the follow range, the fight clock, the synthetic fight object, the
+// hand-over match and the catch-up rate limit).
+func TestFdLiveJS(t *testing.T) {
+	runCheck(t, "fdlive_check.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFdLiveUIJS runs fdlive_ui_check.js: the live fight view's wiring in app.js (the tile's escaped markup and link, the window
+// labels, the hand-over's filed-row match, the live hash segment, and the stream handlers feeding the live view before any gate).
+func TestFdLiveUIJS(t *testing.T) {
+	runCheck(t, "fdlive_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFightAurasJS runs fightauras_check.js: the Auras panel's pure logic (intervals from aura rows, alive spans, raid and per-bot
+// uptime, boss-cast and death markers, who had the aura at each cast, cycles, applications, the boss presets, aura names, and the
+// rows FdLive rebuilds from the 2 s boss-debuff samples).
+func TestFightAurasJS(t *testing.T) {
+	runCheck(t, "fightauras_check.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFightAurasUIJS runs fightauras_ui_check.js: the Auras panel's markup and wiring in app.js (a bar per interval, the cast markers,
+// escaped names, the hints, the live and fallback sampled rows, the pick kept through the hand-over, x=1 on the replay's track request).
+func TestFightAurasUIJS(t *testing.T) {
+	runCheck(t, "fightauras_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFdViewJS runs fdview_check.js: the Fight debugger's time range as pure arithmetic and state (the pixel-to-time grid, the
+// clamp and its 1 s minimum, membership, overlap, the label, the band style, set / clear / follow, and the live view's hand-over
+// with its re-clamp).
+func TestFdViewJS(t *testing.T) {
+	runCheck(t, "fdview_check.js", "../../web/static/js/fdview.js")
+}
+
+// TestFdRangeUIJS runs fdrange_ui_check.js: the range in app.js (the band and the dimmed marks on the timeline, lanes and aura strip,
+// the death recap that hides what is outside and counts it, the cycle Select buttons, the range bar, the live follow range and a
+// fixed live range, the hand-over, and the wiring pins of the drag, the click guard and Escape).
+func TestFdRangeUIJS(t *testing.T) {
+	runCheck(t, "fdrange_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFightEventsJS runs fightevents_check.js: the Events panel's one normalised event list (the eight kinds from the log, the aura
+// rows, the boss's victim rows and each death's last hits, sorted by time, roles from the fight's bots, malformed rows skipped, the
+// 5000 cap, the value lists, and the running fight object of FdLive building without target or hit events).
+func TestFightEventsJS(t *testing.T) {
+	runCheck(t, "fightevents_check.js", "../../web/static/js/fightevents.js", "../../web/static/js/fdlive.js")
+}
+
+// TestFdFilterJS runs fdfilter_check.js: the event filter's AND / OR / NOT tree (matching, the depth, condition and value limits,
+// the two fields the game server does not send, the ability id match, the URL-safe text form and its caps, the pure tree edits, the
+// range, the presets and the header line).
+func TestFdFilterJS(t *testing.T) {
+	runCheck(t, "fdfilter_check.js", "../../web/static/js/fdfilter.js", "../../web/static/js/fightevents.js")
+}
+
+// TestFdEventsUIJS runs fdevents_ui_check.js: the Events panel in app.js (500 rows then Show 500 more, escaped names, the seek on
+// every row, the filter builder with school and hit disabled, the edits and their refusals, the timeline marks the filter dims, a
+// running fight's newest-first list and live note, the 1 s repaint that leaves the builder alone, and the focus an edit gets back).
+func TestFdEventsUIJS(t *testing.T) {
+	runCheck(t, "fdevents_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFdLayoutJS runs fdlayout_check.js: FdLayout (web/static/js/fdlayout.js), the pure side of the Fight debugger's panel layouts: the panel
+// table and its default code (mech included), normalize (unknown ids, repeats, a bad span, missing panels), encode/decode (400-character and
+// 60-item bounds, bad item syntax), the dialog's move/resize/show, and the named layouts in storage (junk, a storage that throws, hostile names,
+// the 20-layout cap, name rules). The failing case: on a tree without fdlayout.js (the dash/fight-map head) the check cannot load the module.
+func TestFdLayoutJS(t *testing.T) {
+	runCheck(t, "fdlayout_check.js", "../../web/static/js/fdlayout.js")
+}
+
+// TestFdLayoutUIJS runs fdlayout_ui_check.js: the layouts in app.js over the fake DOM (every panel tagged once, the order/span/hide marks, no
+// fd-custom class with no layout, the live bar kept outside every panel, the arrange dialog's escaping, Save as, the cap, the two-click Delete,
+// a link's Shared layout, a blocked storage, the route and hash wiring, and the stylesheet rules).
+func TestFdLayoutUIJS(t *testing.T) {
+	runCheck(t, "fdlayout_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFdShareUIJS runs fdshare_ui_check.js: the Fight debugger's share links in app.js (the route reads and writes the view after bot and
+// p, a new fight starts clean, the card writes its view with replaceState only and never from a tick, a link is applied once when its
+// fight is on screen, the live hand-over rewrites the hash to the filed fight, Copy link, the link kept through login, a hostile link
+// that carries no markup and breaks nothing).
+func TestFdShareUIJS(t *testing.T) {
+	runCheck(t, "fdshare_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFightMetersJS runs fightmeters_check.js: the Meters panel's pure logic (at() inside a bucket, before 0 and after the end, window()
+// of a range, rank() top ten of twelve, deathsBy() and fromSamples(), the live series built with the daemon's rules on the same fixture
+// as internal/meters: a steady 100 dps for 20 s).
+func TestFightMetersJS(t *testing.T) {
+	runCheck(t, "fightmeters_check.js", "../../web/static/js/fightmeters.js")
+}
+
+// TestFdMetersUIJS runs fdmeters_ui_check.js: the Meters panel in app.js (ten damage rows of twelve, escaped names, the ~ on a ramp,
+// the deaths, a range, the "No meter data" text, the live note with no ~ and no Play button, a replay that needs no track once the
+// detail has meters, the play row's meters-only note, and the pins that the replay and the 1 s live tick repaint the body only).
+func TestFdMetersUIJS(t *testing.T) {
+	runCheck(t, "fdmeters_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestWipeRecapJS runs wiperecap_check.js: the pure logic of the "first 3 deaths" box (isWipe by outcome or half the bots dead, firstDeaths
+// in time order with ties by name, hpBefore from the replay's frames, framesFromSamples for a live fight, hostile input).
+func TestWipeRecapJS(t *testing.T) {
+	runCheck(t, "wiperecap_check.js", "../../web/static/js/wiperecap.js")
+}
+
+// TestWipeRecapUIJS runs wiperecap_ui_check.js: the box in app.js (a wipe draws three rows that select a death, a calm fight draws
+// nothing, a live wipe is headed "Wiping" with dashes and its note, the live box repaints only on a new death, escaping, the wiring).
+func TestWipeRecapUIJS(t *testing.T) {
+	runCheck(t, "wiperecap_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFightMapJS runs fightmap_check.js: the pure logic of the Fight layers on the card map (trails cut by the range and split at a 40 yd jump,
+// 1000 frames thinned to 300 points with the first and last kept, the cloud a Son of Hakkar seen in frames 1-3 and gone in 4 leaves with its
+// radius from the seek_aura row or the default 4, the puller's path, the anchor circle and stand from the two Hakkar rows and nothing for a
+// row with spot 0, heat cells (a 40 % drop and a death, 500 cells kept at 400), the focus filter through FdFilter, the fit box, the track and
+// live frames, the Dungeons pull pins, hostile input).
+func TestFightMapJS(t *testing.T) {
+	runCheck(t, "fightmap_check.js", "../../web/static/js/fightmap.js", "../../web/static/js/fdfilter.js")
+}
+
+// TestFightMapUIJS runs fightmap_ui_check.js: the Fight layers in app.js (the source of a finished fight or a live view and nothing outside the
+// debugger, the model rebuilt only when something it reads changed, trails, anchor, clouds, puller and heat each switched off alone, every name
+// escaped including the death mark's killer, the one fit, the unit focus through FdFilter, the Dungeons pull pins and their 30 s request rule,
+// and the wiring pins).
+func TestFightMapUIJS(t *testing.T) {
+	runCheck(t, "fightmap_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestFdMechJS runs fdmech_check.js: the per-fight mechanic row (the dash-2 Hakkar fixture: dosed 0/2 and, with two more applies, 1/2; the
+// 80 % boundary; Son pulled by the samples' windows, unknown without samples; Jin'do's Hex time on the layout's main tank; Shade deaths by
+// killer; any other boss's deaths; a capped aura list as a minimum; hostile input).
+func TestFdMechJS(t *testing.T) {
+	runCheck(t, "fdmech_check.js", "../../web/static/js/fdmech.js", "../../web/static/js/fightauras.js", "../../web/static/js/fdlive.js",
+		filepath.Join("..", "mechanics", "testdata", "mt-rule.json"))
+}
+
+// TestMechPanelUIJS runs mechpanel_ui_check.js: the Boss mechanics section in app.js (one row per boss with the worst fight's link, the
+// "not deployed" text for a null Hex or dose, this fight's row above the table, escaping, one request per 30 s and per window and only while
+// open), the live tile's mechanic slot, the live bar's row, and the page's script order and versions.
+func TestMechPanelUIJS(t *testing.T) {
+	runCheck(t, "mechpanel_ui_check.js", "../../web/static/js/app.js")
+}
+
+// TestLoginTargetJS runs login_target_check.js: login.html's own dashboardTarget() on plain, hostile and over-long fragments (#//evil.example,
+// #javascript:alert(1), a route of 5000 characters): the target is always /dashboard on this origin with at most a #/ route.
+func TestLoginTargetJS(t *testing.T) {
+	runCheck(t, "login_target_check.js", "../../web/login.html")
 }
 
 // TestFightPackParityJS runs fightpack_parity_check.js: web/static/js/planoverlay.js's fightPack and the Go port in
