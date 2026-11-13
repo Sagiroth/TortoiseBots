@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include "BossTacticsActions.h"
 #include "playerbot/BossTacticsMgr.h"
+#include "playerbot/CheckedMutex.h"
 #include "playerbot/BossEngagedPolicy.h"
 #include "playerbot/BossStandMgr.h"
 #include "playerbot/SeekAuraPolicy.h"
@@ -8292,7 +8293,7 @@ namespace
 {
 // What each bot remembers of the window it was seated in (BossStandPolicy.h StandHold), by guid. A mutex guards it:
 // the plan is asked for from the trigger, the action, the reach and the dodge of every bot.
-std::mutex g_standHoldMutex;
+CheckedMutex g_standHoldMutex;
 std::unordered_map<uint64, StandHold> g_standHolds;
 // Seats the mover refused, by bot guid (StandFailure): three in a row for one seat and the bot gets no seat.
 std::unordered_map<uint64, StandFailure> g_standFailures;
@@ -8354,7 +8355,7 @@ void ReleaseStandEpisode(PlayerbotAI* ai, uint64 key, const char* reason)
         return;
     StandEpisode episode;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto it = g_standEpisodes.find(key);
         if (it == g_standEpisodes.end())
             return;
@@ -8373,7 +8374,7 @@ void ForgetStand(uint64 key)
 {
     if (g_standStateCount.load(std::memory_order_relaxed) == 0)
         return;
-    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+    std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
     g_standHolds.erase(key);
     g_standFailures.erase(key);
     g_standEpisodes.erase(key);
@@ -8422,7 +8423,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     StandEpisode episode;
     bool haveEpisode = false;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto it = g_standHolds.find(selfKey);
         if (it != g_standHolds.end())
             hold = it->second;
@@ -8553,7 +8554,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
                     continue;
                 StandHold memberHold;
                 {
-                    std::lock_guard<std::mutex> lock(g_standHoldMutex);
+                    std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
                     auto it = g_standHolds.find(member->GetObjectGuid().GetRawValue());
                     if (it != g_standHolds.end())
                         memberHold = it->second;
@@ -8565,7 +8566,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     }
 
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         // The hold is kept for a bot that takes part (it is what the others read); a bot that does not count leaves
         // none behind. A tick that sees no boss with rows (it dropped off the attacker list for a moment) keeps the
         // hold until its time is up; StandPointsNow clears it itself when a boss is seen and the hold is over.
@@ -8631,7 +8632,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
         bool logRelease = false, logAssigned = false, logArrived = false, logUnseated = false;
         uint32 assignedMs = 0;
         {
-            std::lock_guard<std::mutex> lock(g_standHoldMutex);
+            std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
             if (step.release)
             {
                 auto it = g_standEpisodes.find(selfKey);
@@ -8706,7 +8707,7 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     const StandLane lane = bossRows ? StandLaneOf(*bossRows, *points[0]) : StandLane();
     StandSeat seat;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         Group* group = bot->GetGroup();
         // a bot with no group plans alone: its own guid keeps two groupless bots from sharing one plan
         const uint64 groupGuid = group ? group->GetLeaderGuid().GetRawValue() : bot->GetObjectGuid().GetRawValue();
@@ -8738,13 +8739,17 @@ BossStandTarget ai::FindBossStand(PlayerbotAI* ai, Player* bot)
     // reactive dodge.
     if (!seat.valid)
         return finishStandRead(target, false, selfCounts ? "side_full" : "not_counted");
-    // A seat the mover refused three times in a row is given up on: the reach and the dodge take over.
+    // A seat the mover refused three times in a row is given up on: the reach and the dodge take over. The decision is
+    // made under the lock and the read finished after it: finishStandRead takes g_standHoldMutex again for its episode
+    // row, and a non-recursive mutex locked twice on one thread deadlocks it (the World thread freeze of 2026-11-13).
+    bool givenUp = false;
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(selfKey);
-        if (failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y))
-            return finishStandRead(target, false, "given_up");
+        givenUp = failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y);
     }
+    if (givenUp)
+        return finishStandRead(target, false, "given_up");
     // AiPlayerbot.BossStandWholeRaid: a bot on its seat's side of the lane and at least as far from the lane line as
     // the seats next to it along the lane stays where it stands; the seat is its own position, so the reach, the dodge
     // and the flee see it seated and the stand action sees it arrived. A stay is not a planned seat, so the tank post
@@ -8812,14 +8817,14 @@ bool BossTacticsStandAction::Execute(Event& event)
     if (!MoveTo(bot->GetMapId(), seatX, seatY, z, false, false, false, true))
     {
         // A seat the mover keeps refusing is given up on after three tries (FindBossStand returns invalid for it).
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         StandNoteMoveFailure(g_standFailures[key], stand.x, stand.y);
         g_standStateCount.store(g_standHolds.size() + g_standFailures.size() + g_standEpisodes.size(),
                                 std::memory_order_relaxed);
         return false;
     }
     {
-        std::lock_guard<std::mutex> lock(g_standHoldMutex);
+        std::lock_guard<CheckedMutex> lock(g_standHoldMutex);
         auto failure = g_standFailures.find(key);
         if (failure != g_standFailures.end())
         {

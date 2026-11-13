@@ -1,4 +1,5 @@
 # Changelog
+- Fixed: a BossStand read no longer takes g_standHoldMutex twice on one thread (the given_up read logged its row inside the lock and froze the World thread), and the mutex asserts a self-deadlock in debug builds.
 
 - Fixed: a summoned bot's live hunter pet or warlock demon is teleported with it and resummoned beside it instead of walking through the instance to its owner and pulling whatever it passes (#1606).
 - Fixed: a Shadow priest no longer drops Shadowform to Renew an ally another healer already covers, and drops the form only for a heal it can cast at once, not into a global cooldown or wand swing (found by Tortoise Trials, #1556).

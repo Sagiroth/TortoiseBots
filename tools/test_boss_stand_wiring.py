@@ -104,8 +104,8 @@ class BossStandWiring(unittest.TestCase):
         self.assertLess(policy, write)
         self.assertIn("const uint32 nowMs = WorldTimer::getMSTime();", fn)
         self.assertIn("const uint64 selfKey = bot->GetObjectGuid().GetRawValue();", fn)
-        self.assertIn("std::lock_guard<std::mutex> lock(g_standHoldMutex);", fn)
-        self.assertEqual(fn.count("std::lock_guard<std::mutex> lock(g_standHoldMutex);"), 6)
+        self.assertIn("std::lock_guard<CheckedMutex> lock(g_standHoldMutex);", fn)
+        self.assertEqual(fn.count("std::lock_guard<CheckedMutex> lock(g_standHoldMutex);"), 6)
         # A spent hold is dropped (no entry left behind for a bot that never sat again).
         self.assertIn("g_standHolds.erase(selfKey);", fn)
         # A tick without the boss keeps the hold only until its time is up.
@@ -391,7 +391,12 @@ class BossStandWiring(unittest.TestCase):
         self.assertIn("logged = StandEpisodeKeep(it->second, step, nowMs);", fn)
         self.assertIn("return finishStandRead(target, false, nullptr);", fn)
         self.assertIn("return finishStandRead(target, false, selfCounts ? \"side_full\" : \"not_counted\");", fn)
-        self.assertIn('return finishStandRead(target, false, "given_up");', fn)
+        # 2026-11-13: the given-up verdict is decided under the lock and the read is finished after it. finishStandRead
+        # takes g_standHoldMutex for its episode row itself, so finishing inside the block self-deadlocks the read.
+        self.assertIn("bool givenUp = false;", fn)
+        self.assertIn("givenUp = failure != g_standFailures.end() && StandSeatGivenUp(failure->second, seat.x, seat.y);",
+                      fn)
+        self.assertIn('if (givenUp)\n        return finishStandRead(target, false, "given_up");', fn)
         self.assertIn("return finishStandRead(target, true, nullptr);", fn)
         for function, reason in (("void ReleaseStandEpisode(", "dead"), ("BossStandTarget ai::FindBossStand(", "gone")):
             text = body(ACTIONS, function)
@@ -419,6 +424,37 @@ class BossStandWiring(unittest.TestCase):
         self.assertNotIn("fresh = StandEpisode()", fn)
         self.assertEqual(fn.count("g_standEpisodes[selfKey]"), 1)
 
+    def test_no_stand_read_call_runs_inside_a_stand_lock(self):
+        # A g_standHoldMutex lock scope in FindBossStand must not call finishStandRead, ReleaseStandEpisode,
+        # ForgetStand or LogBossStand: each of them takes g_standHoldMutex itself, and a non-recursive mutex locked
+        # twice on one thread freezes the World thread (2026-11-13, the given_up return inside the lock). The scan takes
+        # each lock's innermost enclosing brace block and looks inside it.
+        fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
+        lock = "std::lock_guard<CheckedMutex> lock(g_standHoldMutex);"
+        calls = ("finishStandRead(", "ReleaseStandEpisode(", "ForgetStand(", "LogBossStand(")
+        scopes = 0
+        for match in re.finditer(re.escape(lock), fn):
+            open_at = fn.rfind("{", 0, match.start())
+            self.assertGreaterEqual(open_at, 0)
+            depth = 0
+            close_at = None
+            for index in range(open_at, len(fn)):
+                if fn[index] == "{":
+                    depth += 1
+                elif fn[index] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        close_at = index
+                        break
+            self.assertIsNotNone(close_at, "unbalanced brace after offset %d" % open_at)
+            scope = fn[open_at:close_at + 1]
+            for call in calls:
+                self.assertNotIn(call, scope, "the lock scope at offset %d calls %s" % (open_at, call))
+            scopes += 1
+        # The read of the hold, the member hold, the kept hold, the episode row, the plan and the given-up verdict: a
+        # renamed lock line must not make this scan find nothing.
+        self.assertGreaterEqual(scopes, 6)
+
     def test_the_whole_raid_key_seats_the_wiped_and_keeps_the_clear(self):
         # AiPlayerbot.BossStandWholeRaid, S2: both keys are read; the engagement rule is the policy's; the stay sits
         # after the given-up check and before the target is handed out; the flee action asks before it flees.
@@ -428,7 +464,7 @@ class BossStandWiring(unittest.TestCase):
         fn = body(ACTIONS, "BossStandTarget ai::FindBossStand(")
         self.assertIn("candidate.engaged = StandMemberEngaged(", fn)
         self.assertIn("member->IsInCombat(), boss->IsInCombat());", fn)
-        given_up = fn.index('return finishStandRead(target, false, "given_up");')
+        given_up = fn.index('if (givenUp)\n        return finishStandRead(target, false, "given_up");')
         stay = fn.index("StandAlreadyClear(lane, *points[0], *bossRows, bot->GetPositionX(),")
         valid = fn.index("target.valid = true;\n    target.x = seat.x;")
         self.assertLess(given_up, stay)
